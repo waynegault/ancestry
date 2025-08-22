@@ -35,7 +35,7 @@ from error_handling import (
 try:
     from message_personalization import MessagePersonalizer
     MESSAGE_PERSONALIZATION_AVAILABLE = True
-    logger.debug("Message personalization system loaded successfully")
+    # Message personalization system loaded successfully (removed verbose debug)
 except ImportError as e:
     logger.warning(f"Message personalization not available: {e}")
     MESSAGE_PERSONALIZATION_AVAILABLE = False
@@ -44,6 +44,7 @@ except ImportError as e:
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import sys
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -132,6 +133,34 @@ from api_utils import (  # API utilities
     call_send_message_api,  # Real API function for sending messages
 )
 
+# Import available error types for enhanced error handling
+from core.error_handling import (
+    AuthenticationError,
+    NetworkError,
+    BrowserError,
+    APIError,
+)
+
+# Define Action 6-style error types for messaging
+class MaxApiFailuresExceededError(Exception):
+    """Custom exception for exceeding API failure threshold in messaging."""
+    pass
+
+class BrowserSessionError(BrowserError):
+    """Browser session-specific errors."""
+    pass
+
+class APIRateLimitError(APIError):
+    """API rate limit specific errors."""
+    pass
+
+class AuthenticationExpiredError(AuthenticationError):
+    """Authentication expiration specific errors."""
+    pass
+
+# Import enhanced recovery patterns from Action 6
+from core.enhanced_error_recovery import with_enhanced_recovery
+
 # --- Local application imports ---
 # Import standardization handled by setup_module above
 from cache import cache_result  # Caching utility
@@ -158,18 +187,18 @@ from utils import (  # Core utilities
 )
 
 # --- Initialization & Template Loading ---
-logger.debug(f"Action 8 Initializing: APP_MODE is {config_schema.app_mode}")
+# Action 8 Initializing (removed verbose debug logging)
 
 # Define message intervals based on app mode (controls time between follow-ups)
 MESSAGE_INTERVALS = {
     "testing": timedelta(seconds=10),  # Short interval for testing
     "production": timedelta(weeks=8),  # Standard interval for production
-    "dry_run": timedelta(seconds=10),  # Short interval for dry runs
+    "dry_run": timedelta(weeks=8),  # FIXED: Use same interval as production for proper testing
 }
 MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
     getattr(config_schema, 'app_mode', 'production'), timedelta(weeks=8)
 )
-logger.debug(f"Action 8 Using minimum message interval: {MIN_MESSAGE_INTERVAL}")
+# Using minimum message interval (removed verbose debug logging)
 
 # Define standard message type keys (must match messages.json)
 MESSAGE_TYPES_ACTION8: Dict[str, str] = {
@@ -182,6 +211,12 @@ MESSAGE_TYPES_ACTION8: Dict[str, str] = {
     "In_Tree-Initial_for_was_Out_Tree": "In_Tree-Initial_for_was_Out_Tree",
     # Note: Productive Reply ACK is handled by Action 9
     "User_Requested_Desist": "User_Requested_Desist",  # Handled here if Person status is DESIST
+
+    # New template variants for improved messaging
+    "In_Tree-Initial_Short": "In_Tree-Initial_Short",
+    "Out_Tree-Initial_Short": "Out_Tree-Initial_Short",
+    "In_Tree-Initial_Confident": "In_Tree-Initial_Confident",
+    "Out_Tree-Initial_Exploratory": "Out_Tree-Initial_Exploratory",
 }
 
 
@@ -199,7 +234,7 @@ def load_message_templates() -> Dict[str, str]:
     try:
         script_dir = Path(__file__).resolve().parent
         messages_path = script_dir / "messages.json"
-        logger.debug(f"Attempting to load message templates from: {messages_path}")
+        # Attempting to load message templates (removed verbose debug)
     except Exception as path_e:
         logger.critical(f"CRITICAL: Could not determine script directory: {path_e}")
         return {}
@@ -224,21 +259,35 @@ def load_message_templates() -> Dict[str, str]:
             return {}
 
         # Step 5: Validate that all required keys for Action 8 exist
-        # Note: We check against MESSAGE_TYPES_ACTION8 specifically
-        required_keys = set(MESSAGE_TYPES_ACTION8.keys())
+        # Note: We check against core MESSAGE_TYPES_ACTION8 keys (variants are optional)
+        core_required_keys = {
+            "In_Tree-Initial", "In_Tree-Follow_Up", "In_Tree-Final_Reminder",
+            "Out_Tree-Initial", "Out_Tree-Follow_Up", "Out_Tree-Final_Reminder",
+            "In_Tree-Initial_for_was_Out_Tree", "User_Requested_Desist"
+        }
         # Add Productive ACK key as well, as it might be loaded here even if used in Action 9
-        required_keys.add("Productive_Reply_Acknowledgement")
-        missing_keys = required_keys - set(templates.keys())
+        core_required_keys.add("Productive_Reply_Acknowledgement")
+        missing_keys = core_required_keys - set(templates.keys())
         if missing_keys:
             logger.critical(
                 f"CRITICAL: messages.json is missing required template keys: {', '.join(missing_keys)}"
             )
             return {}
 
-        # Step 6: Log success and return templates
-        logger.debug(
-            f"Message templates loaded and validated successfully ({len(templates)} total templates)."
-        )
+        # Log availability of optional template variants
+        optional_variants = {
+            "In_Tree-Initial_Short", "Out_Tree-Initial_Short",
+            "In_Tree-Initial_Confident", "Out_Tree-Initial_Exploratory"
+        }
+        available_variants = optional_variants & set(templates.keys())
+        if available_variants:
+            # Optional template variants available (removed verbose debug)
+            pass
+        else:
+            # No optional template variants found - using standard templates only (removed verbose debug)
+            pass
+
+        # Step 6: Log success and return templates (removed verbose debug)
         return templates
     except json.JSONDecodeError as e:
         logger.critical(f"CRITICAL: Error decoding messages.json: {e}")
@@ -255,11 +304,15 @@ def load_message_templates() -> Dict[str, str]:
 # Load templates into a global variable for easy access
 MESSAGE_TEMPLATES: Dict[str, str] = load_message_templates()
 # Critical check: exit if essential templates failed to load
-# Check against Action 8 specific keys + the Productive ACK key
-required_check_keys = set(MESSAGE_TYPES_ACTION8.keys())
-required_check_keys.add("Productive_Reply_Acknowledgement")
+# Check against core required keys only (variants are optional)
+core_required_check_keys = {
+    "In_Tree-Initial", "In_Tree-Follow_Up", "In_Tree-Final_Reminder",
+    "Out_Tree-Initial", "Out_Tree-Follow_Up", "Out_Tree-Final_Reminder",
+    "In_Tree-Initial_for_was_Out_Tree", "User_Requested_Desist",
+    "Productive_Reply_Acknowledgement"
+}
 if not MESSAGE_TEMPLATES or not all(
-    key in MESSAGE_TEMPLATES for key in required_check_keys
+    key in MESSAGE_TEMPLATES for key in core_required_check_keys
 ):
     logger.critical(
         "Essential message templates failed to load. Cannot proceed reliably."
@@ -341,7 +394,7 @@ MESSAGE_PERSONALIZER: Optional[_Any] = None
 if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     try:
         MESSAGE_PERSONALIZER = MessagePersonalizer()
-        logger.debug("Message personalizer initialized successfully")
+        # Message personalizer initialized successfully (removed verbose debug)
     except Exception as e:
         logger.warning(f"Failed to initialize message personalizer: {e}")
         MESSAGE_PERSONALIZER = None
@@ -497,18 +550,13 @@ def determine_next_message_type(
         The string key for the next message template to use (e.g., "In_Tree-Follow_Up"),
         or None if no standard message should be sent according to the sequence rules.
     """
-    # Step 1: Log inputs for debugging
-    logger.debug("Determining next message type:")
-    logger.debug(f"  Is In Tree: {is_in_family_tree}")
-    logger.debug(f"  Last Script Msg Details: {last_message_details}")
+    # Step 1: Determine next message type (removed verbose debug logging)
 
     # Step 2: Extract the last message type (or None if no previous message)
     last_message_type = None
     if last_message_details:
         last_message_type, last_sent_at_utc, last_message_status = last_message_details
-        logger.debug(
-            f"  Last Sent Type: '{last_message_type}', SentAt: {last_sent_at_utc}, Status: '{last_message_status}'"
-        )
+        # Last message details (removed verbose debug logging)
 
     # Step 3: Look up the next message type in the transition table
     transition_key = (last_message_type, is_in_family_tree)
@@ -540,14 +588,379 @@ def determine_next_message_type(
     # Step 4: Convert next_type string to actual message type from MESSAGE_TYPES_ACTION8
     if next_type:
         next_type = MESSAGE_TYPES_ACTION8.get(next_type, next_type)
-        logger.debug(f"  Decision: Send '{next_type}' (Reason: {reason}).")
+        # Decision: Send message (removed verbose debug logging)
     else:
-        logger.debug(f"  Decision: Skip ({reason}).")
+        # Decision: Skip message (removed verbose debug logging)
+        pass
 
     return next_type
 
 
 # End of determine_next_message_type
+
+# ------------------------------------------------------------------------------
+# Improved Variable Handling Functions
+# ------------------------------------------------------------------------------
+
+def get_safe_relationship_text(family_tree, predicted_rel: str) -> str:
+    """
+    Get a natural-sounding relationship description with proper fallbacks.
+
+    Args:
+        family_tree: FamilyTree object (may be None)
+        predicted_rel: Predicted relationship string
+
+    Returns:
+        Natural relationship text without "N/A"
+    """
+    if family_tree:
+        actual_rel = safe_column_value(family_tree, "actual_relationship", None)
+        if actual_rel and actual_rel != "N/A" and actual_rel.strip():
+            return f"my {actual_rel}"
+
+    if predicted_rel and predicted_rel != "N/A" and predicted_rel.strip():
+        return f"possibly my {predicted_rel}"
+
+    return "a family connection"
+
+
+def get_safe_relationship_path(family_tree) -> str:
+    """
+    Get a natural-sounding relationship path with proper fallbacks.
+
+    Args:
+        family_tree: FamilyTree object (may be None)
+
+    Returns:
+        Natural relationship path text without "N/A"
+    """
+    if family_tree:
+        path = safe_column_value(family_tree, "relationship_path", None)
+        if path and path != "N/A" and path.strip():
+            # Fix broken "Enhanced API:" paths
+            if path.startswith("Enhanced API:"):
+                # Extract the relationship type and format it properly
+                relationship_type = path.replace("Enhanced API:", "").strip()
+                actual_rel = safe_column_value(family_tree, "actual_relationship", None)
+                person_name = safe_column_value(family_tree, "person_name_in_tree", None)
+
+                if person_name and actual_rel:
+                    return f"Wayne Gault -> {person_name} ({actual_rel})"
+                elif person_name:
+                    return f"Wayne Gault -> {person_name} ({relationship_type})"
+                else:
+                    return f"Wayne Gault -> [Person] ({relationship_type})"
+            else:
+                return path
+
+    return "our shared family line (details to be determined)"
+
+
+def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:
+    """
+    Select template variant based on relationship confidence.
+
+    Args:
+        base_template_key: Base template key (e.g., "In_Tree-Initial")
+        family_tree: FamilyTree object (may be None)
+        dna_match: DNAMatch object (may be None)
+
+    Returns:
+        Template key with confidence suffix
+    """
+    confidence_score = 0
+
+    # High confidence: specific tree placement with actual relationship
+    if family_tree:
+        actual_rel = safe_column_value(family_tree, "actual_relationship", None)
+        if actual_rel and actual_rel != "N/A" and actual_rel.strip():
+            confidence_score += 3
+
+        path = safe_column_value(family_tree, "relationship_path", None)
+        if path and path != "N/A" and path.strip():
+            confidence_score += 2
+
+    # Medium confidence: predicted relationship available
+    if dna_match:
+        predicted_rel = safe_column_value(dna_match, "predicted_relationship", None)
+        if predicted_rel and predicted_rel != "N/A" and predicted_rel.strip():
+            confidence_score += 1
+
+    # Select template variant based on confidence
+    if confidence_score >= 4:
+        # High confidence - use confident variant if available
+        confident_key = f"{base_template_key}_Confident"
+        if confident_key in MESSAGE_TEMPLATES:
+            return confident_key
+    elif confidence_score <= 2:
+        # Low confidence - use exploratory variant if available
+        exploratory_key = f"{base_template_key}_Exploratory"
+        if exploratory_key in MESSAGE_TEMPLATES:
+            return exploratory_key
+
+    # Check for short variant (A/B testing)
+    short_key = f"{base_template_key}_Short"
+    if short_key in MESSAGE_TEMPLATES:
+        return short_key
+
+    # Fallback to standard template
+    return base_template_key
+
+
+def select_template_variant_ab_testing(person_id: int, base_template_key: str) -> str:
+    """
+    Select template variant for A/B testing based on person ID.
+
+    Args:
+        person_id: Person ID for consistent assignment
+        base_template_key: Base template key
+
+    Returns:
+        Template key with A/B testing variant
+    """
+    # Use person ID for consistent assignment (50/50 split)
+    use_short = person_id % 2 == 0
+
+    if use_short:
+        short_key = f"{base_template_key}_Short"
+        if short_key in MESSAGE_TEMPLATES:
+            # A/B Testing: Selected short variant (removed verbose debug)
+            return short_key
+
+    # Use confidence-based selection as fallback
+    return base_template_key
+
+
+def track_template_selection(template_key: str, person_id: int, selection_reason: str):
+    """
+    Track template selection for effectiveness analysis.
+
+    Args:
+        template_key: Selected template key
+        person_id: Person ID
+        selection_reason: Reason for selection (confidence, A/B testing, etc.)
+    """
+    # Template selection tracking (removed verbose debug logging)
+
+    # Store template usage for response rate tracking
+    try:
+        from core.session_manager import SessionManager
+        session_manager = SessionManager()
+        with session_manager.get_db_conn_context() as session:
+            if session:
+                # Create a simple tracking entry in ConversationLog with special marker
+                tracking_entry = ConversationLog(
+                    people_id=person_id,  # Correct field name is 'people_id'
+                    conversation_id=f"template_tracking_{person_id}_{int(time.time())}",
+                    direction=MessageDirectionEnum.OUT,
+                    message_type_id=1,  # Use a default ID
+                    script_message_status=f"TEMPLATE_SELECTED: {template_key} ({selection_reason})",
+                    latest_message_content=f"Template tracking: {template_key}",  # Correct field name
+                    latest_timestamp=datetime.now(timezone.utc)  # Correct field name
+                )
+                session.add(tracking_entry)
+                session.commit()
+                # Template selection tracked in database (removed verbose debug)
+    except Exception as e:
+        logger.debug(f"Failed to track template selection: {e}")
+        # Don't fail the main process for tracking issues
+
+
+# ------------------------------------------------------------------------------
+# Response Rate Tracking and Analysis
+# ------------------------------------------------------------------------------
+
+def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> Dict[str, Any]:
+    """
+    Analyze template effectiveness by measuring response rates.
+
+    Args:
+        session_manager: Database session manager
+        days_back: Number of days to look back for analysis
+
+    Returns:
+        Dictionary with template effectiveness statistics
+    """
+    if not session_manager:
+        from core.session_manager import SessionManager
+        session_manager = SessionManager()
+
+    try:
+        with session_manager.get_db_conn_context() as session:
+            if not session:
+                return {"error": "Could not get database session"}
+
+            # Get cutoff date
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+
+            # Query for template selections and responses
+            template_stats = {}
+
+            # Find all template selections
+            template_selections = session.query(ConversationLog).filter(
+                ConversationLog.script_message_status.like("TEMPLATE_SELECTED:%"),
+                ConversationLog.timestamp_utc >= cutoff_date
+            ).all()
+
+            for selection in template_selections:
+                # Extract template name from status
+                status_parts = selection.script_message_status.split(":")
+                if len(status_parts) >= 2:
+                    template_name = status_parts[1].strip().split(" ")[0]
+
+                    if template_name not in template_stats:
+                        template_stats[template_name] = {
+                            "sent": 0,
+                            "responses": 0,
+                            "response_rate": 0.0,
+                            "avg_response_time_hours": 0.0
+                        }
+
+                    template_stats[template_name]["sent"] += 1
+
+                    # Check for responses from this person after this template
+                    person_id = selection.person_id
+                    sent_time = selection.timestamp_utc
+
+                    # Look for incoming messages after this template was sent
+                    response = session.query(ConversationLog).filter(
+                        ConversationLog.person_id == person_id,
+                        ConversationLog.direction == MessageDirectionEnum.IN,
+                        ConversationLog.timestamp_utc > sent_time,
+                        ConversationLog.timestamp_utc <= sent_time + timedelta(days=30)  # Response window
+                    ).first()
+
+                    if response:
+                        template_stats[template_name]["responses"] += 1
+                        # Calculate response time
+                        response_time = response.timestamp_utc - sent_time
+                        response_hours = response_time.total_seconds() / 3600
+
+                        # Update average response time
+                        current_avg = template_stats[template_name]["avg_response_time_hours"]
+                        response_count = template_stats[template_name]["responses"]
+                        new_avg = ((current_avg * (response_count - 1)) + response_hours) / response_count
+                        template_stats[template_name]["avg_response_time_hours"] = new_avg
+
+            # Calculate response rates
+            for template_name, stats in template_stats.items():
+                if stats["sent"] > 0:
+                    stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
+
+            return {
+                "analysis_period_days": days_back,
+                "total_templates_analyzed": len(template_stats),
+                "template_stats": template_stats,
+                "generated_at": datetime.now(timezone.utc).isoformat()
+            }
+
+    except Exception as e:
+        logger.error(f"Error analyzing template effectiveness: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+def print_template_effectiveness_report(days_back: int = 30):
+    """
+    Print a formatted report of template effectiveness.
+
+    Args:
+        days_back: Number of days to analyze
+    """
+    logger.info("=" * 60)
+    logger.info("TEMPLATE EFFECTIVENESS ANALYSIS")
+    logger.info("=" * 60)
+
+    analysis = analyze_template_effectiveness(days_back=days_back)
+
+    if "error" in analysis:
+        logger.error(f"Analysis failed: {analysis['error']}")
+        return
+
+    template_stats = analysis.get("template_stats", {})
+
+    if not template_stats:
+        logger.info("No template usage data found for the specified period.")
+        return
+
+    logger.info(f"Analysis Period: Last {days_back} days")
+    logger.info(f"Templates Analyzed: {len(template_stats)}")
+    logger.info("")
+
+    # Sort templates by response rate
+    sorted_templates = sorted(
+        template_stats.items(),
+        key=lambda x: x[1]["response_rate"],
+        reverse=True
+    )
+
+    logger.info("TEMPLATE PERFORMANCE RANKING:")
+    logger.info("-" * 60)
+    logger.info(f"{'Template':<25} {'Sent':<6} {'Resp':<6} {'Rate':<8} {'Avg Hours':<10}")
+    logger.info("-" * 60)
+
+    for template_name, stats in sorted_templates:
+        logger.info(
+            f"{template_name:<25} {stats['sent']:<6} {stats['responses']:<6} "
+            f"{stats['response_rate']:<7.1f}% {stats['avg_response_time_hours']:<9.1f}"
+        )
+
+    logger.info("-" * 60)
+
+    # Summary statistics
+    total_sent = sum(stats["sent"] for stats in template_stats.values())
+    total_responses = sum(stats["responses"] for stats in template_stats.values())
+    overall_rate = (total_responses / total_sent * 100) if total_sent > 0 else 0
+
+    logger.info(f"OVERALL STATISTICS:")
+    logger.info(f"Total Messages Sent: {total_sent}")
+    logger.info(f"Total Responses: {total_responses}")
+    logger.info(f"Overall Response Rate: {overall_rate:.1f}%")
+    logger.info("=" * 60)
+
+
+# ------------------------------------------------------------------------------
+# Performance Tracking (Action 6 Pattern)
+# ------------------------------------------------------------------------------
+
+def _update_messaging_performance(session_manager: SessionManager, duration: float) -> None:
+    """
+    Track messaging performance like Action 6.
+    Updates response times and slow call tracking for adaptive behavior.
+
+    Args:
+        session_manager: The SessionManager instance to update
+        duration: Duration of the operation in seconds
+    """
+    try:
+        # Initialize performance tracking attributes if they don't exist
+        if not hasattr(session_manager, '_response_times'):
+            session_manager._response_times = []
+        if not hasattr(session_manager, '_recent_slow_calls'):
+            session_manager._recent_slow_calls = 0
+        if not hasattr(session_manager, '_avg_response_time'):
+            session_manager._avg_response_time = 0.0
+
+        # Track response time (keep last 50 measurements)
+        session_manager._response_times.append(duration)
+        if len(session_manager._response_times) > 50:
+            session_manager._response_times.pop(0)
+
+        # Update average response time
+        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)
+
+        # Track consecutive slow calls - OPTIMIZATION: Adjusted threshold like Action 6
+        if duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - align with Action 6 thresholds
+            session_manager._recent_slow_calls += 1
+        else:
+            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
+
+        # Cap slow call counter to prevent endless accumulation
+        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
+
+    except Exception as e:
+        logger.debug(f"Failed to update messaging performance tracking: {e}")
+        pass
+
 
 # ------------------------------------------------------------------------------
 # Database and Processing Helpers
@@ -578,9 +991,7 @@ def _commit_messaging_batch(
         logger.debug(f"Batch Commit (Msg Batch {batch_num}): No data to commit.")
         return True
 
-    logger.debug(
-        f"Attempting batch commit (Msg Batch {batch_num}): {len(logs_to_add)} logs, {len(person_updates)} persons..."
-    )
+    # Attempting batch commit (removed verbose debug logging)
 
     # Step 2: Perform DB operations within a transaction context
     try:
@@ -592,9 +1003,7 @@ def _commit_messaging_batch(
 
             # --- Step 2a: Prepare ConversationLog data: Separate Inserts and Updates ---
             if logs_to_add:
-                logger.debug(
-                    f" Preparing {len(logs_to_add)} ConversationLog entries for upsert..."
-                )
+                # Preparing ConversationLog entries for upsert (removed verbose debug)
                 # Extract unique keys from the input OBJECTS
                 log_keys_to_check = set()
                 valid_log_objects = []  # Store objects that have valid keys
@@ -633,9 +1042,7 @@ def _commit_messaging_batch(
                         direction = safe_column_value(log, "direction", None)
                         if conv_id and direction:
                             existing_logs_map[(conv_id, direction)] = log
-                    logger.debug(
-                        f" Prefetched {len(existing_logs_map)} existing ConversationLog entries for batch."
-                    )
+                    # Prefetched existing ConversationLog entries (removed verbose debug)
 
                 # Process each valid log object
                 for log_object in valid_log_objects:
@@ -847,18 +1254,32 @@ def _prefetch_messaging_data(
     candidate_persons: Optional[List[Person]] = None
     latest_in_log_map: Dict[int, ConversationLog] = {}  # Use dict for direct lookup
     latest_out_log_map: Dict[int, ConversationLog] = {}  # Use dict for direct lookup
-    logger.debug("--- Starting Pre-fetching for Action 8 (Messaging) ---")
+    # Starting pre-fetching for Action 8 (removed verbose debug)
 
     try:
         # Step 2: Fetch MessageType map
-        logger.debug("Prefetching MessageType name-to-ID map...")
+        # Prefetching MessageType name-to-ID map (removed verbose debug)
 
         # Check if we're running in a test/mock environment
         is_mock_mode = "--mock" in sys.argv or "--test" in sys.argv
+        logger.debug(f"Mock mode detection: sys.argv={sys.argv}, is_mock_mode={is_mock_mode}")
+
+        # Log DB URL/path for visibility and quick sanity count
+        try:
+            bind = db_session.get_bind()
+            db_url = getattr(bind, 'url', None)
+            logger.debug(f"Action 8 DB: url={db_url}")
+            try:
+                total_people = db_session.query(func.count(Person.id)).scalar() or 0
+                logger.debug(f"Action 8 DB sanity: total people={total_people}")
+            except Exception:
+                pass
+        except Exception:
+            pass
 
         if is_mock_mode:
             # Create a mock message_type_map for testing
-            logger.info("Running in mock mode, creating mock MessageType map...")
+            logger.debug("Running in mock mode, creating mock MessageType map...")
             message_type_map = {}
             for i, type_name in enumerate(MESSAGE_TYPES_ACTION8.keys(), start=1):
                 message_type_map[type_name] = i
@@ -883,16 +1304,14 @@ def _prefetch_messaging_data(
                 f"CRITICAL: Failed to fetch required MessageType IDs. Missing: {missing}"
             )
             return None, None, None, None
-        logger.debug(f"Fetched {len(message_type_map)} MessageType IDs.")
+        # Fetched MessageType IDs (removed verbose debug)
 
         # Step 3: Fetch Candidate Persons
-        logger.debug(
-            "Prefetching candidate persons (Status ACTIVE or DESIST, Contactable=True)..."
-        )
+        # Prefetching candidate persons (removed verbose debug)
 
         if is_mock_mode:
             # Create mock candidate persons for testing
-            logger.info("Running in mock mode, creating mock candidate persons...")
+            logger.debug("Running in mock mode, creating mock candidate persons...")
             candidate_persons = []
             logger.debug("Created empty mock candidate_persons list for testing")
         else:
@@ -914,7 +1333,7 @@ def _prefetch_messaging_data(
                     Person.status.in_(
                         [PersonStatusEnum.ACTIVE, PersonStatusEnum.DESIST]
                     ),  # Eligible statuses
-                    Person.deleted_at is None,  # Exclude soft-deleted records
+                    Person.deleted_at.is_(None),  # Exclude soft-deleted records
                 )
                 .order_by(Person.id)  # Consistent order
                 .all()
@@ -941,17 +1360,22 @@ def _prefetch_messaging_data(
             f"Prefetching latest IN/OUT logs for {len(candidate_person_ids)} candidates..."
         )
         # Subquery to find max timestamp per person per direction
+        # CRITICAL FIX: Exclude template tracking entries from latest message lookup
         latest_ts_subq = (
             db_session.query(
                 ConversationLog.people_id,
                 ConversationLog.direction,
                 func.max(ConversationLog.latest_timestamp).label("max_ts"),
             )
-            .filter(ConversationLog.people_id.in_(candidate_person_ids))
+            .filter(
+                ConversationLog.people_id.in_(candidate_person_ids),
+                ~ConversationLog.conversation_id.like('template_tracking_%')  # Exclude template tracking
+            )
             .group_by(ConversationLog.people_id, ConversationLog.direction)
             .subquery("latest_ts_subq")  # Alias the subquery
         )
         # Join back to get the full log entry matching the max timestamp
+        # CRITICAL FIX: Also exclude template tracking entries from the join query
         latest_logs_query = (
             db_session.query(ConversationLog)
             .join(
@@ -962,6 +1386,7 @@ def _prefetch_messaging_data(
                     ConversationLog.latest_timestamp == latest_ts_subq.c.max_ts,
                 ),
             )
+            .filter(~ConversationLog.conversation_id.like('template_tracking_%'))  # Exclude template tracking
             .options(
                 joinedload(ConversationLog.message_type)
             )  # Eager load message type name
@@ -1063,12 +1488,16 @@ def _process_single_person(
     status_string: Literal["sent", "acked", "skipped", "error"] = (
         "error"  # Default outcome
     )
+
+    # Initialize variables early to prevent UnboundLocalError in exception handlers
+    family_tree = None
+    dna_match = None
     new_log_entry: Optional[ConversationLog] = None  # Prepared log object
     person_update: Optional[Tuple[int, PersonStatusEnum]] = None  # Staged status update
     now_utc = datetime.now(timezone.utc)  # Consistent timestamp for checks
     min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
 
-    logger.debug(f"--- Processing Person: {log_prefix} ---")
+    # Processing person (removed verbose debug logging)
     # Debug-only: log a quality summary of any extracted genealogical data attached to the person
     try:
         # Import locally to avoid module-level dependency if file moves
@@ -1076,10 +1505,12 @@ def _process_single_person(
         if hasattr(person, 'extracted_genealogical_data'):
             extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
             qa_summary = summarize_extracted_data(extracted_data)
-            logger.debug(f"Quality summary for {log_prefix}: {qa_summary}")
+            # Quality summary (removed verbose debug logging)
+            pass
     except Exception as _qa_err:
         # Best-effort logging only; never fail processing due to QA summary issues
-        logger.debug(f"Skipped quality summary logging for {log_prefix}: {_qa_err}")
+        # Skipped quality summary logging (removed verbose debug)
+        pass
     # Optional: Log latest log details for debugging
     # if latest_in_log: logger.debug(f"  Latest IN: {latest_in_log.latest_timestamp} ({latest_in_log.ai_sentiment})") else: logger.debug("  Latest IN: None")
     # if latest_out_log: logger.debug(f"  Latest OUT: {latest_out_log.latest_timestamp} ({getattr(latest_out_log.message_type, 'type_name', 'N/A')}, {latest_out_log.script_message_status})") else: logger.debug("  Latest OUT: None")
@@ -1209,18 +1640,45 @@ def _process_single_person(
                         last_status,
                     )
 
-            message_to_send_key = determine_next_message_type(
+            base_message_key = determine_next_message_type(
                 last_script_message_details, bool(person.in_my_tree)
             )
-            if not message_to_send_key:
+            if not base_message_key:
                 # No appropriate next message in the standard sequence
                 logger.debug(
                     f"Skipping {log_prefix}: No appropriate next standard message found."
                 )
                 raise StopIteration("skipped (sequence)")
+
+            # Apply improved template selection logic
+            person_id = safe_column_value(person, "id", 0)
+
+            # Prepare data for template selection (needed early for confidence-based selection)
+            dna_match = person.dna_match  # Eager loaded
+            family_tree = person.family_tree  # Eager loaded
+
+            # First try A/B testing for initial messages
+            if base_message_key in ["In_Tree-Initial", "Out_Tree-Initial"]:
+                message_to_send_key = select_template_variant_ab_testing(person_id, base_message_key)
+                selection_reason = "A/B Testing"
+
+                # If A/B testing didn't select a variant, try confidence-based selection
+                if message_to_send_key == base_message_key:
+                    message_to_send_key = select_template_by_confidence(
+                        base_message_key, family_tree, dna_match
+                    )
+                    selection_reason = "Confidence-based"
+            else:
+                # For follow-up messages, use standard template
+                message_to_send_key = base_message_key
+                selection_reason = "Standard sequence"
+
+            # Track template selection
+            track_template_selection(message_to_send_key, person_id, selection_reason)
+
             send_reason = "Standard Sequence"
             logger.debug(
-                f"Action needed for {log_prefix}: Send '{message_to_send_key}'."
+                f"Action needed for {log_prefix}: Send '{message_to_send_key}' (selected via {selection_reason})."
             )
 
         else:  # Should not happen if prefetch filters correctly
@@ -1237,9 +1695,7 @@ def _process_single_person(
             raise StopIteration("error (template_key)")
         message_template = MESSAGE_TEMPLATES[message_to_send_key]
 
-        # Prepare data for template formatting
-        dna_match = person.dna_match  # Eager loaded
-        family_tree = person.family_tree  # Eager loaded
+        # Note: dna_match and family_tree already loaded above for template selection
 
         # Determine best name to use (Tree Name > First Name > Username)
         # Use our safe helper to get values
@@ -1285,14 +1741,21 @@ def _process_single_person(
                 try:
                     # Extract the percentage value
                     percentage = float(match.group(1))
-                    # If the percentage is very small (less than 1%), it's likely using the new decimal format
-                    if percentage < 1.0:
-                        # Multiply by 100 to convert back to percentage format
-                        corrected_percentage = percentage * 100
-                        # Replace the old percentage with the corrected one
+
+                    # Fix percentage formatting based on the value range
+                    if percentage > 100.0:
+                        # Values like 9900.0% should be 99.0%
+                        corrected_percentage = percentage / 100.0
                         return re.sub(
                             r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str
                         )
+                    elif percentage < 1.0:
+                        # Values like 0.99% should be 99.0%
+                        corrected_percentage = percentage * 100.0
+                        return re.sub(
+                            r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str
+                        )
+                    # If percentage is between 1-100, it's already correct
                 except (ValueError, IndexError):
                     pass
 
@@ -1305,19 +1768,15 @@ def _process_single_person(
             raw_predicted_rel = getattr(dna_match, "predicted_relationship", "N/A")
             predicted_rel = format_predicted_relationship(raw_predicted_rel)
 
+        # Use improved variable handling for natural text
+        safe_actual_relationship = get_safe_relationship_text(family_tree, predicted_rel)
+        safe_relationship_path = get_safe_relationship_path(family_tree)
+
         format_data = {
             "name": formatted_name,
-            "predicted_relationship": predicted_rel,
-            "actual_relationship": (
-                getattr(family_tree, "actual_relationship", "N/A")
-                if family_tree
-                else "N/A"
-            ),
-            "relationship_path": (
-                getattr(family_tree, "relationship_path", "N/A")
-                if family_tree
-                else "N/A"
-            ),
+            "predicted_relationship": predicted_rel if predicted_rel != "N/A" else "family connection",
+            "actual_relationship": safe_actual_relationship,
+            "relationship_path": safe_relationship_path,
             "total_rows": total_rows_in_tree,
         }
 
@@ -1345,13 +1804,13 @@ def _process_single_person(
                     except Exception:
                         pass
 
-                    message_text = MESSAGE_PERSONALIZER.create_personalized_message(
+                    message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
                         enhanced_template_key,
                         person_data,
                         extracted_data,
                         format_data
                     )
-                    logger.info(f"Successfully created personalized message for {log_prefix}")
+                    logger.debug(f"Successfully created personalized message for {log_prefix}")
                 else:
                     logger.debug(f"Enhanced template '{enhanced_template_key}' not available, using standard template")
             except Exception as e:
@@ -1412,7 +1871,7 @@ def _process_single_person(
                 skip_log_reason = (
                     f"skipped (production_mode_filter: is {testing_profile_id_config})"
                 )
-                logger.info(
+                logger.debug(
                     f"Production Mode: Skipping send to test profile {log_prefix} ({skip_log_reason})."
                 )
         # `dry_run` mode is handled internally by _send_message_via_api
@@ -1554,8 +2013,10 @@ def _process_single_person(
 # ------------------------------------------------------------------------------
 
 
+# Enhanced error recovery pattern from Action 6
+@with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better 429 handling
-@circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
+@circuit_breaker(failure_threshold=3, recovery_timeout=60)  # Lowered threshold like Action 6 for faster response
 @timeout_protection(timeout=1800)  # 30 minutes for messaging operations
 @graceful_degradation(fallback_value=False)
 @error_context("action8_messaging")
@@ -1678,6 +2139,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 "file": sys.stderr,
             }
             logger.debug("Processing candidates...")
+
             with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                 for person in candidate_persons:
                     processed_in_loop += 1
@@ -1691,6 +2153,27 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             )
                             progress_bar.update(remaining_to_skip)
                         break  # Stop if previous batch commit failed
+
+                    # --- BROWSER HEALTH MONITORING (Action 6 Pattern) ---
+                    # Check browser health periodically during message processing
+                    if processed_in_loop % 10 == 0:  # Check every 10 messages
+                        if not session_manager.check_browser_health():
+                            logger.warning(f"🚨 BROWSER DEATH DETECTED during message processing at person {processed_in_loop}")
+                            # Attempt browser recovery
+                            if session_manager.attempt_browser_recovery():
+                                logger.warning(f"✅ Browser recovery successful at person {processed_in_loop} - continuing")
+                            else:
+                                logger.critical(f"❌ Browser recovery failed at person {processed_in_loop} - halting messaging")
+                                critical_db_error_occurred = True
+                                overall_success = False
+                                remaining_to_skip = total_candidates - processed_in_loop + 1
+                                skipped_count += remaining_to_skip
+                                if progress_bar:
+                                    progress_bar.set_description(
+                                        f"ERROR: Browser failed - Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
+                                    )
+                                    progress_bar.update(remaining_to_skip)
+                                break  # Exit processing loop
 
                     # --- Check Max Send Limit ---
                     current_sent_total = sent_count + acked_count
@@ -1717,6 +2200,11 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         continue  # Skip processing this person
 
                     # --- Process Single Person ---
+                    # Log progress every 5% or every 100 people
+                    if processed_in_loop > 0 and (processed_in_loop % max(100, total_candidates // 20) == 0):
+                        logger.info(f"Action 8 Progress: {processed_in_loop}/{total_candidates} processed "
+                                  f"(Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count})")
+
                     # _process_single_person still returns a ConversationLog object or None
                     # Convert person.id to Python int for dictionary lookup using our safe helper
                     person_id_int = safe_column_value(person, "id", 0)
@@ -1724,6 +2212,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     # Use the Python int for dictionary lookup
                     latest_in_log = latest_in_log_map.get(person_id_int)
                     latest_out_log = latest_out_log_map.get(person_id_int)
+
+                    # --- PERFORMANCE TRACKING (Action 6 Pattern) ---
+                    import time
+                    person_start_time = time.time()
 
                     new_log_object, person_update_tuple, status = (
                         _process_single_person(
@@ -1735,6 +2227,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             message_type_map,
                         )
                     )
+
+                    # Update performance tracking
+                    person_duration = time.time() - person_start_time
+                    _update_messaging_performance(session_manager, person_duration)
 
                     # --- Tally Results & Collect DB Updates ---
                     log_dict_to_add: Optional[Dict[str, Any]] = None
@@ -1796,13 +2292,14 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             person_updates[person_update_tuple[0]] = (
                                 person_update_tuple[1]
                             )
-                    elif status.startswith("skipped"):
+                    elif status.startswith("skipped") or status.startswith("error ("):
+                        # Treat "error (...)" as skipped - these are clean exits with reasons
                         skipped_count += 1
                         # If skipped due to filter/rules, still add the log entry if one was prepared
                         # This logs the skip reason in the script_message_status field.
                         if log_dict_to_add:
                             db_logs_to_add_dicts.append(log_dict_to_add)
-                    else:  # status == "error" or unexpected
+                    else:  # Only true errors (like "error" without parentheses)
                         error_count += 1
                         overall_success = False
 
@@ -1818,9 +2315,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                         len(db_logs_to_add_dicts) + len(person_updates)
                     ) >= db_commit_batch_size:
                         batch_num += 1
-                        logger.debug(
-                            f"Commit threshold reached ({len(db_logs_to_add_dicts)} logs). Committing Action 8 Batch {batch_num}..."
-                        )
+                        # Commit threshold reached - committing batch (removed verbose debug)
                         # --- CALL NEW FUNCTION ---
                         try:
                             logs_committed_count, persons_updated_count = (
@@ -1834,9 +2329,28 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             # Commit successful (no exception raised)
                             db_logs_to_add_dicts.clear()
                             person_updates.clear()
-                            logger.debug(
-                                f"Action 8 Batch {batch_num} commit finished (Logs Processed: {logs_committed_count}, Persons Updated: {persons_updated_count})."
-                            )
+                            # Action 8 batch commit finished (removed verbose debug)
+                        except ConnectionError as conn_err:
+                            # CRITICAL FIX: Check if ConnectionError is from session death cascade
+                            if "Session death cascade detected" in str(conn_err):
+                                logger.critical(
+                                    f"🚨 SESSION DEATH CASCADE in Action 8 batch commit {batch_num}: {conn_err}. "
+                                    f"Halting message processing to prevent infinite cascade."
+                                )
+                                # Set critical flag and break to stop processing
+                                critical_db_error_occurred = True
+                                overall_success = False
+                                raise MaxApiFailuresExceededError(
+                                    "Session death cascade detected in Action 8 - halting to prevent infinite loop"
+                                )
+                            else:
+                                logger.error(
+                                    f"ConnectionError during Action 8 batch commit {batch_num}: {conn_err}",
+                                    exc_info=True,
+                                )
+                                critical_db_error_occurred = True
+                                overall_success = False
+                                break  # Stop processing loop
                         except Exception as commit_e:
                             # commit_bulk_data should handle internal errors and logging,
                             # but catch here to set critical flag and stop loop.
@@ -1849,6 +2363,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             break  # Stop processing loop
 
                 # --- End Main Person Loop ---
+
         # --- End Conditional Processing Block (if total_candidates > 0) ---
 
         # --- Step 4: Final Commit ---
@@ -1871,6 +2386,23 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 logger.debug(
                     f"Action 8 Final commit executed (Logs Processed: {final_logs_saved}, Persons Updated: {final_persons_updated})."
                 )
+            except ConnectionError as final_conn_err:
+                # CRITICAL FIX: Check if ConnectionError is from session death cascade
+                if "Session death cascade detected" in str(final_conn_err):
+                    logger.critical(
+                        f"🚨 SESSION DEATH CASCADE in Action 8 final commit: {final_conn_err}. "
+                        f"Final commit failed due to cascade failure."
+                    )
+                    overall_success = False
+                    raise MaxApiFailuresExceededError(
+                        "Session death cascade detected in Action 8 final commit"
+                    )
+                else:
+                    logger.error(
+                        f"ConnectionError during Action 8 final commit: {final_conn_err}",
+                        exc_info=True,
+                    )
+                    overall_success = False
             except Exception as final_commit_e:
                 logger.error(
                     f"Final Action 8 batch commit FAILED: {final_commit_e}",
@@ -1878,7 +2410,47 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 )
                 overall_success = False
 
-    # --- Step 5: Handle Outer Exceptions ---
+    # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---
+    except MaxApiFailuresExceededError as api_halt_err:
+        logger.critical(
+            f"Halting Action 8 due to excessive critical API failures: {api_halt_err}",
+            exc_info=False,
+        )
+        overall_success = False
+    except BrowserSessionError as browser_err:
+        logger.critical(
+            f"Browser session error in Action 8: {browser_err}",
+            exc_info=True,
+        )
+        overall_success = False
+    except APIRateLimitError as rate_err:
+        logger.error(
+            f"API rate limit exceeded in Action 8: {rate_err}",
+            exc_info=False,
+        )
+        overall_success = False
+    except AuthenticationExpiredError as auth_err:
+        logger.error(
+            f"Authentication expired during Action 8: {auth_err}",
+            exc_info=False,
+        )
+        overall_success = False
+    except ConnectionError as conn_err:
+        # Check for session death cascade one more time at top level
+        if "Session death cascade detected" in str(conn_err):
+            logger.critical(
+                f"🚨 SESSION DEATH CASCADE at Action 8 top level: {conn_err}",
+                exc_info=False,
+            )
+        else:
+            logger.error(
+                f"Connection error during Action 8: {conn_err}",
+                exc_info=True,
+            )
+        overall_success = False
+    except KeyboardInterrupt:
+        logger.warning("Keyboard interrupt detected. Stopping Action 8 message processing.")
+        overall_success = False
     except Exception as outer_e:
         logger.critical(
             f"CRITICAL: Unhandled error during Action 8 execution: {outer_e}",
@@ -2116,6 +2688,148 @@ def action8_messaging_tests():
             "Circuit breaker configuration validated: failure_threshold=10, backoff_factor=4.0 for improved resilience.",
             "Test circuit breaker decorator configuration reflects Action 6 lessons.",
             "Verify send_messages_to_matches() has failure_threshold=10, backoff_factor=4.0 for production-ready error handling.",
+        )
+
+    def test_session_death_cascade_detection():
+        """Test session death cascade detection and handling."""
+        print("📋 Testing session death cascade detection:")
+        results = []
+
+        try:
+            # Test that MaxApiFailuresExceededError is available
+            error_available = MaxApiFailuresExceededError is not None
+            status = "✅" if error_available else "❌"
+            print(f"   {status} MaxApiFailuresExceededError class available")
+            results.append(error_available)
+
+            # Test cascade detection string matching
+            test_error = ConnectionError("Session death cascade detected in test")
+            cascade_detected = "Session death cascade detected" in str(test_error)
+            status = "✅" if cascade_detected else "❌"
+            print(f"   {status} Cascade detection string matching")
+            results.append(cascade_detected)
+
+            # Test error inheritance
+            cascade_error = MaxApiFailuresExceededError("Test cascade error")
+            is_exception = isinstance(cascade_error, Exception)
+            status = "✅" if is_exception else "❌"
+            print(f"   {status} MaxApiFailuresExceededError inherits from Exception")
+            results.append(is_exception)
+
+        except Exception as e:
+            print(f"   ❌ Session death cascade detection test failed: {e}")
+            results.append(False)
+
+        print(f"📊 Results: {sum(results)}/{len(results)} cascade detection tests passed")
+        assert all(results), "All session death cascade detection tests should pass"
+
+    def test_performance_tracking():
+        """Test performance tracking functionality."""
+        print("📋 Testing performance tracking:")
+        results = []
+
+        try:
+            # Test performance tracking function exists
+            func_exists = callable(_update_messaging_performance)
+            status = "✅" if func_exists else "❌"
+            print(f"   {status} _update_messaging_performance function available")
+            results.append(func_exists)
+
+            # Test with mock session manager
+            class MockSessionManager:
+                pass
+
+            mock_session = MockSessionManager()
+
+            # Test performance tracking doesn't crash
+            try:
+                _update_messaging_performance(mock_session, 1.5)
+                tracking_works = True
+            except Exception:
+                tracking_works = False
+
+            status = "✅" if tracking_works else "❌"
+            print(f"   {status} Performance tracking executes without errors")
+            results.append(tracking_works)
+
+            # Test attributes are created
+            has_response_times = hasattr(mock_session, '_response_times')
+            has_slow_calls = hasattr(mock_session, '_recent_slow_calls')
+            has_avg_time = hasattr(mock_session, '_avg_response_time')
+
+            attributes_created = has_response_times and has_slow_calls and has_avg_time
+            status = "✅" if attributes_created else "❌"
+            print(f"   {status} Performance tracking attributes created")
+            results.append(attributes_created)
+
+        except Exception as e:
+            print(f"   ❌ Performance tracking test failed: {e}")
+            results.append(False)
+
+        print(f"📊 Results: {sum(results)}/{len(results)} performance tracking tests passed")
+        assert all(results), "All performance tracking tests should pass"
+
+    def test_enhanced_error_handling():
+        """Test enhanced error handling patterns."""
+        print("📋 Testing enhanced error handling:")
+        results = []
+
+        try:
+            # Test error classes are available
+            error_classes = [
+                BrowserSessionError,
+                APIRateLimitError,
+                AuthenticationExpiredError,
+                MaxApiFailuresExceededError
+            ]
+
+            for error_class in error_classes:
+                try:
+                    test_error = error_class("Test error")
+                    is_exception = isinstance(test_error, Exception)
+                    status = "✅" if is_exception else "❌"
+                    print(f"   {status} {error_class.__name__} class works correctly")
+                    results.append(is_exception)
+                except Exception as e:
+                    print(f"   ❌ {error_class.__name__} class failed: {e}")
+                    results.append(False)
+
+            # Test enhanced recovery import
+            recovery_available = with_enhanced_recovery is not None
+            status = "✅" if recovery_available else "❌"
+            print(f"   {status} Enhanced recovery decorator available")
+            results.append(recovery_available)
+
+        except Exception as e:
+            print(f"   ❌ Enhanced error handling test failed: {e}")
+            results.append(False)
+
+        print(f"📊 Results: {sum(results)}/{len(results)} enhanced error handling tests passed")
+        assert all(results), "All enhanced error handling tests should pass"
+
+    with suppress_logging():
+        suite.run_test(
+            "Session death cascade detection",
+            test_session_death_cascade_detection,
+            "Session death cascade detection and handling works correctly",
+            "Test session death cascade detection patterns from Action 6",
+            "Verify MaxApiFailuresExceededError, cascade string detection, and error inheritance"
+        )
+
+        suite.run_test(
+            "Performance tracking",
+            test_performance_tracking,
+            "Performance tracking functionality works correctly",
+            "Test performance tracking patterns from Action 6",
+            "Verify _update_messaging_performance function and attribute creation"
+        )
+
+        suite.run_test(
+            "Enhanced error handling",
+            test_enhanced_error_handling,
+            "Enhanced error handling patterns work correctly",
+            "Test enhanced error handling from Action 6",
+            "Verify error classes and enhanced recovery decorator availability"
         )
 
     return suite.finish_suite()

@@ -54,10 +54,35 @@ from database import (
     commit_bulk_data,
 )
 
+# === ACTION 7 ERROR CLASSES (Action 8 Pattern) ===
+from core.error_handling import (
+    AuthenticationError,
+    BrowserError,
+    APIError,
+)
+
+# Define Action 6/8-style error types for inbox processing
+class MaxApiFailuresExceededError(Exception):
+    """Custom exception for exceeding API failure threshold in inbox processing."""
+    pass
+
+class BrowserSessionError(BrowserError):
+    """Browser session-specific errors."""
+    pass
+
+class APIRateLimitError(APIError):
+    """API rate limit specific errors."""
+    pass
+
+class AuthenticationExpiredError(AuthenticationError):
+    """Authentication expiration specific errors."""
+    pass
+
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from error_handling import (
     circuit_breaker,
     error_context,
+    graceful_degradation,
     retry_on_failure,
     timeout_protection,
 )
@@ -200,9 +225,7 @@ class InboxProcessor:
             "end_time": None,
         }
 
-        logger.debug(
-            f"InboxProcessor initialized: MaxInbox={self.max_inbox_limit}, BatchSize={self.api_batch_size}, AIContext={self.ai_context_msg_count} msgs / {self.ai_context_max_words} words."
-        )
+        # InboxProcessor initialized (removed verbose debug)
 
     # End of __init__
 
@@ -251,9 +274,7 @@ class InboxProcessor:
         url = f"{api_base}conversations?q=user:{my_profile_id}&limit={limit}"
         if cursor:
             url += f"&cursor={cursor}"
-        logger.debug(
-            f"Fetching conversation batch: Limit={limit}, Cursor='{cursor or 'None'}'"
-        )
+        # Fetching conversation batch (removed verbose debug)
 
         # Step 3: Make API call using _api_req helper
         try:
@@ -291,9 +312,7 @@ class InboxProcessor:
                 )
 
             forward_cursor = response_data.get("paging", {}).get("forward_cursor")
-            logger.debug(
-                f"API call returned {len(all_conversations_processed)} conversations. Next cursor: '{forward_cursor or 'None'}'."
-            )
+            # API call returned conversations (removed verbose debug)
 
             # Step 6: Return processed data and cursor
             return all_conversations_processed, forward_cursor
@@ -478,9 +497,7 @@ class InboxProcessor:
         headers = {k: v for k, v in headers.items() if v is not None}
         # Construct URL
         url = f"{api_base}conversations/{conversation_id}/messages?limit={limit}"
-        logger.debug(
-            f"Fetching context (last {limit} msgs) for ConvID {conversation_id}..."
-        )
+        # Fetching context for conversation (removed verbose debug)
 
         # Step 3: Make API call and apply rate limiting wait first
         try:
@@ -643,13 +660,11 @@ class InboxProcessor:
         # Step 2: Determine if lookup is needed or use prefetched person
         if existing_person_arg:
             person = existing_person_arg
-            logger.debug(f"{log_ref}: Using prefetched Person ID {person.id}.")
+            # Using prefetched Person (removed verbose debug)
         else:
             # If not prefetched, query DB by profile ID
             try:
-                logger.debug(
-                    f"{log_ref}: Prefetched person not found. Querying DB by Profile ID..."
-                )
+                # Prefetched person not found - querying DB (removed verbose debug)
                 # Robust lookup: match by normalized profile_id (uppercase)
                 person = (
                     session.query(Person)
@@ -798,7 +813,7 @@ class InboxProcessor:
             Timestamp is guaranteed to be timezone-aware (UTC).
         """
         latest_log_entry_info: Optional[Dict[str, Any]] = None
-        logger.debug("Creating comparator by finding latest ConversationLog entry...")
+        # Creating comparator by finding latest ConversationLog entry (removed verbose debug)
         try:
             # Step 1: Query for the entry with the maximum timestamp
             # Order by descending timestamp, handle NULLs last, take the first result
@@ -838,7 +853,7 @@ class InboxProcessor:
                     )
             else:
                 # Step 4: Log if table is empty
-                logger.info(
+                logger.debug(
                     "ConversationLog table appears empty. Comparator not created."
                 )
 
@@ -858,6 +873,7 @@ class InboxProcessor:
     @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased backoff from 2.0 to 4.0
     @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 5 to 10 for better tolerance
     @timeout_protection(timeout=600)  # 10 minutes for inbox processing
+    @graceful_degradation(fallback_value=False)
     @error_context("Action 7: Search Inbox")
     def search_inbox(self) -> bool:
         """
@@ -876,7 +892,7 @@ class InboxProcessor:
             pass
 
         # --- Step 1: Initialization ---
-        logger.debug("--- Starting Action 7: Search Inbox ---")
+        # Starting Action 7: Search Inbox (removed verbose debug)
         # Counters and state for this run
         ai_classified_count = 0
         status_updated_count = 0  # Person status updates (e.g., to DESIST)
@@ -912,9 +928,7 @@ class InboxProcessor:
             max_inbox_str = (
                 str(self.max_inbox_limit) if self.max_inbox_limit > 0 else "Unlimited"
             )
-            logger.debug(
-                f"Starting inbox search (MaxInbox={max_inbox_str}, BatchSize={self.api_batch_size}, Comparator={comp_conv_id or 'None'})..."
-            )
+            # Starting inbox search (removed verbose debug)
 
             # Use a progress bar with dynamic total that gets updated as we discover the actual number of conversations
             tqdm_args = {
@@ -976,7 +990,39 @@ class InboxProcessor:
             if stop_reason and "error" in stop_reason.lower():
                 overall_success = False
 
-        # --- Step 4: Handle Outer Exceptions ---
+        # --- Step 4: Handle Outer Exceptions (Action 6/8 Pattern) ---
+        except MaxApiFailuresExceededError as api_halt_err:
+            self.stats["errors"] += 1
+            self.stats["end_time"] = datetime.now(timezone.utc)
+            logger.critical(
+                f"Halting Action 7 due to excessive critical API failures: {api_halt_err}",
+                exc_info=False,
+            )
+            overall_success = False
+        except BrowserSessionError as browser_err:
+            self.stats["errors"] += 1
+            self.stats["end_time"] = datetime.now(timezone.utc)
+            logger.critical(
+                f"Browser session error in Action 7: {browser_err}",
+                exc_info=True,
+            )
+            overall_success = False
+        except APIRateLimitError as rate_err:
+            self.stats["errors"] += 1
+            self.stats["end_time"] = datetime.now(timezone.utc)
+            logger.error(
+                f"API rate limit exceeded in Action 7: {rate_err}",
+                exc_info=False,
+            )
+            overall_success = False
+        except AuthenticationExpiredError as auth_err:
+            self.stats["errors"] += 1
+            self.stats["end_time"] = datetime.now(timezone.utc)
+            logger.error(
+                f"Authentication expired during Action 7: {auth_err}",
+                exc_info=False,
+            )
+            overall_success = False
         except Exception as outer_e:
             self.stats["errors"] += 1
             self.stats["end_time"] = datetime.now(timezone.utc)
@@ -1064,14 +1110,24 @@ class InboxProcessor:
         # Step 2: Main loop - continues until stop condition met
         while not stop_processing:
             try:  # Inner try for handling exceptions within a single batch iteration
-                # Step 2a: Check session validity before each API call
+                # Step 2a: Browser Health Monitoring (Action 6/8 Pattern)
+                if current_batch_num % 5 == 0:  # Check every 5 batches
+                    if not self.session_manager.check_browser_health():
+                        logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
+                        if not self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
+                            logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
+                            stop_reason = "Browser Recovery Failed"
+                            stop_processing = True
+                            break
+
+                # Step 2b: Check session validity before each API call
                 if not self.session_manager.is_sess_valid():
                     logger.error("Session became invalid during inbox processing loop.")
                     raise WebDriverException(
                         "Session invalid before overview batch fetch"
                     )
 
-                # Step 2b: Calculate API Limit for this batch, considering overall limit
+                # Step 2c: Calculate API Limit for this batch, considering overall limit
                 current_limit = self.api_batch_size
                 if self.max_inbox_limit > 0:
                     remaining_allowed = (
@@ -1084,14 +1140,14 @@ class InboxProcessor:
                         break
                     current_limit = min(self.api_batch_size, remaining_allowed)
 
-                # Step 2c: Fetch a batch of conversations from API
+                # Step 2d: Fetch a batch of conversations from API
                 all_conversations_batch, next_cursor_from_api = (
                     self._get_all_conversations_api(
                         self.session_manager, limit=current_limit, cursor=next_cursor
                     )
                 )
 
-                # Step 2d: Handle API failure
+                # Step 2e: Handle API failure
                 if all_conversations_batch is None:
                     logger.error(
                         "API call to fetch conversation batch failed critically."
@@ -1100,13 +1156,16 @@ class InboxProcessor:
                     stop_processing = True
                     break
 
-                # Step 2e: Process fetched batch
+                # Step 2f: Process fetched batch
                 batch_api_item_count = len(all_conversations_batch)
                 total_processed_api_items += batch_api_item_count
                 current_batch_num += 1
-                logger.debug(
-                    f"Processing Batch {current_batch_num} ({batch_api_item_count} items)..."
-                )
+                # Processing batch (removed verbose debug)
+                # Log progress every 5 batches or when significant progress is made
+                if current_batch_num % 5 == 0 or items_processed >= 100:
+                    logger.info(f"Action 7 Progress: Batch {current_batch_num} "
+                              f"(Processed={items_processed}, AI={ai_classified}, "
+                              f"StatusUpdates={status_updates}, Errors={error_count_this_loop})")
 
                 # Handle empty batch result
                 if batch_api_item_count == 0:
@@ -1386,13 +1445,10 @@ class InboxProcessor:
                         if hasattr(person, 'extracted_genealogical_data'):
                             extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
                             summary = summarize_extracted_data(extracted_data)
-                            logger.debug(
-                                f"Quality summary for ConvID {api_conv_id} / PersonID {people_id}: {summary}"
-                            )
+                            # Quality summary (removed verbose debug)
                     except Exception as qa_log_err:
-                        logger.debug(
-                            f"Skipped quality summary logging for ConvID {api_conv_id} due to: {qa_log_err}"
-                        )
+                        # Skipped quality summary logging (removed verbose debug)
+                        pass
 
                     # --- Process Fetched Context Messages ---
                     latest_ctx_in: Optional[Dict] = None
@@ -1516,17 +1572,14 @@ class InboxProcessor:
 
                             # Stage Person status update based on AI classification
                             if ai_sentiment_result == "UNINTERESTED":
-                                logger.debug(
-                                    f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as 'UNINTERESTED'. Staging status update to DESIST."
-                                )
+                                # AI classified as UNINTERESTED - staging status update (removed verbose debug)
                                 # Directly assign the Enum value to the person ID key
                                 person_updates[people_id] = PersonStatusEnum.DESIST
                             elif ai_sentiment_result == "PRODUCTIVE":
-                                logger.debug(
-                                    f"AI classified ConvID {api_conv_id} (PersonID {people_id}) as 'PRODUCTIVE'. Keeping status as ACTIVE for Action 9 processing."
-                                )
+                                # AI classified as PRODUCTIVE - keeping status ACTIVE (removed verbose debug)
                                 # Keep person as ACTIVE so Action 9 can process them
                                 # No status change needed
+                                pass
 
                     # --- Process OUT Row ---
                     if latest_ctx_out:
@@ -1584,9 +1637,7 @@ class InboxProcessor:
 
                 # --- Commit Batch Data ---
                 if conv_log_upserts_dicts or person_updates:
-                    logger.debug(
-                        f"Attempting batch commit (Batch {current_batch_num}): {len(conv_log_upserts_dicts)} logs, {len(person_updates)} persons..."
-                    )
+                    # Attempting batch commit (removed verbose debug)
                     # --- CALL NEW FUNCTION ---
                     logs_committed_count, persons_updated_count = commit_bulk_data(
                         session=session,
@@ -1604,9 +1655,7 @@ class InboxProcessor:
                     # --- Clear lists ---
                     conv_log_upserts_dicts.clear()
                     person_updates.clear()
-                    logger.debug(
-                        f"Batch commit finished (Batch {current_batch_num}). Logs Processed: {logs_committed_count}, Persons Updated: {persons_updated_count}."
-                    )
+                    # Batch commit finished (removed verbose debug)
 
                 # Step 2h: Check stop flag *after* potential commit
                 if stop_processing:
@@ -1649,13 +1698,26 @@ class InboxProcessor:
                 stop_processing = True  # Stop processing
                 # Attempt final save before exiting loop
                 logger.warning("Attempting final save due to WebDriverException...")
-                # --- CALL NEW FUNCTION ---
-                final_logs_saved, final_persons_updated = commit_bulk_data(
-                    session=session,
-                    log_upserts=conv_log_upserts_dicts,
-                    person_updates=person_updates,
-                    context="Action 7 Final Save (WebDriverException)",
-                )
+                try:
+                    # --- CALL NEW FUNCTION ---
+                    final_logs_saved, final_persons_updated = commit_bulk_data(
+                        session=session,
+                        log_upserts=conv_log_upserts_dicts,
+                        person_updates=person_updates,
+                        context="Action 7 Final Save (WebDriverException)",
+                    )
+                except ConnectionError as conn_err:
+                    # Check for session death cascade
+                    if "Session death cascade detected" in str(conn_err):
+                        logger.critical(
+                            f"🚨 SESSION DEATH CASCADE in Action 7 WebDriverException save: {conn_err}"
+                        )
+                        raise MaxApiFailuresExceededError(
+                            "Session death cascade detected in Action 7 WebDriverException save"
+                        )
+                    else:
+                        logger.error(f"ConnectionError during Action 7 WebDriverException save: {conn_err}")
+                        final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
                 logs_processed_in_run += final_logs_saved
                 # Break loop after final save attempt
@@ -1666,13 +1728,26 @@ class InboxProcessor:
                 stop_processing = True  # Stop processing
                 # Attempt final save
                 logger.warning("Attempting final save due to KeyboardInterrupt...")
-                # --- CALL NEW FUNCTION ---
-                final_logs_saved, final_persons_updated = commit_bulk_data(
-                    session=session,
-                    log_upserts=conv_log_upserts_dicts,
-                    person_updates=person_updates,
-                    context="Action 7 Final Save (Interrupt)",
-                )
+                try:
+                    # --- CALL NEW FUNCTION ---
+                    final_logs_saved, final_persons_updated = commit_bulk_data(
+                        session=session,
+                        log_upserts=conv_log_upserts_dicts,
+                        person_updates=person_updates,
+                        context="Action 7 Final Save (Interrupt)",
+                    )
+                except ConnectionError as conn_err:
+                    # Check for session death cascade
+                    if "Session death cascade detected" in str(conn_err):
+                        logger.critical(
+                            f"🚨 SESSION DEATH CASCADE in Action 7 KeyboardInterrupt save: {conn_err}"
+                        )
+                        raise MaxApiFailuresExceededError(
+                            "Session death cascade detected in Action 7 KeyboardInterrupt save"
+                        )
+                    else:
+                        logger.error(f"ConnectionError during Action 7 KeyboardInterrupt save: {conn_err}")
+                        final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
                 logs_processed_in_run += final_logs_saved
                 # Break loop after final save attempt
@@ -1687,13 +1762,26 @@ class InboxProcessor:
                 stop_processing = True  # Stop processing
                 # Attempt final save
                 logger.warning("Attempting final save due to critical error...")
-                # --- CALL NEW FUNCTION ---
-                final_logs_saved, final_persons_updated = commit_bulk_data(
-                    session=session,
-                    log_upserts=conv_log_upserts_dicts,
-                    person_updates=person_updates,
-                    context="Action 7 Final Save (Critical Error)",
-                )
+                try:
+                    # --- CALL NEW FUNCTION ---
+                    final_logs_saved, final_persons_updated = commit_bulk_data(
+                        session=session,
+                        log_upserts=conv_log_upserts_dicts,
+                        person_updates=person_updates,
+                        context="Action 7 Final Save (Critical Error)",
+                    )
+                except ConnectionError as conn_err:
+                    # Check for session death cascade
+                    if "Session death cascade detected" in str(conn_err):
+                        logger.critical(
+                            f"🚨 SESSION DEATH CASCADE in Action 7 Critical Error save: {conn_err}"
+                        )
+                        raise MaxApiFailuresExceededError(
+                            "Session death cascade detected in Action 7 Critical Error save"
+                        )
+                    else:
+                        logger.error(f"ConnectionError during Action 7 Critical Error save: {conn_err}")
+                        final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
                 logs_processed_in_run += final_logs_saved
                 # Return from helper to signal failure to outer function
@@ -1720,7 +1808,7 @@ class InboxProcessor:
             )
         ):
             if conv_log_upserts_dicts or person_updates:
-                logger.info("Performing final commit at end of processing loop...")
+                logger.debug("Performing final commit at end of processing loop...")
                 # --- CALL NEW FUNCTION ---
                 final_logs_saved, final_persons_updated = commit_bulk_data(
                     session=session,

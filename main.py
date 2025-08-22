@@ -76,7 +76,7 @@ def validate_action_config() -> bool:
         # Remove RPS warning since 0.25 is actually conservative
 
         if warnings:
-            logger.info(f"Configuration notes: {'; '.join(warnings)}")
+            logger.debug(f"Configuration notes: {'; '.join(warnings)}")
 
         # Log current configuration for transparency
         logger.debug("=== ACTION CONFIGURATION VALIDATION ===")
