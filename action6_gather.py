@@ -31,8 +31,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
 
     duration = time.time() - start_time
 
-    # Always log performance metrics for analysis
-    logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
+    # API performance metrics (removed verbose debug logging)
 
     # Update session manager performance tracking
     if session_manager:
@@ -280,7 +279,7 @@ def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
             if cache_key in API_RESPONSE_CACHE:
                 cached_data, cache_time = API_RESPONSE_CACHE[cache_key]
                 if current_time - cache_time < ttl_seconds:
-                    logger.debug(f"Cache hit: {cache_key_prefix} (age: {current_time - cache_time:.1f}s)")
+                    # Cache hit (removed verbose debug logging)
                     return cached_data
                 else:
                     # Remove expired entry
@@ -486,13 +485,13 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
         base_delay = 0.0
         if avg_response_time > 20.0:  # OPTIMIZATION: Increased from 8.0s to 20.0s - very slow responses
             base_delay = min(avg_response_time * 0.2, 3.0)  # OPTIMIZATION: Reduced multiplier from 0.3 to 0.2, max from 4.0 to 3.0
-            logger.debug(f"Very slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
+            # Very slow API responses detected - adding delay (removed verbose debug)
         elif avg_response_time > 12.0:  # OPTIMIZATION: Increased from 5.0s to 12.0s - moderate slow responses
             base_delay = min(avg_response_time * 0.1, 1.5)  # OPTIMIZATION: Reduced multiplier from 0.2 to 0.1, max from 2.0 to 1.5
-            logger.debug(f"Slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
+            # Slow API responses detected - adding delay (removed verbose debug)
         elif recent_slow_calls > 3:  # Multiple consecutive slow calls
             base_delay = 1.0
-            logger.debug(f"Multiple slow calls detected ({recent_slow_calls}), adding {base_delay:.1f}s delay")
+            # Multiple slow calls detected - adding delay (removed verbose debug)
 
         # Apply token-based backoff
         if current_tokens < 1.0:
@@ -780,6 +779,13 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
+                # Log progress every 10 pages or 10%
+                if current_page_num > start_page and (current_page_num % 10 == 0 or current_page_num % max(1, total_pages_in_run // 10) == 0):
+                    pages_completed = current_page_num - start_page
+                    logger.info(f"Action 6 Progress: Page {current_page_num}/{last_page_to_process} "
+                              f"({pages_completed}/{total_pages_in_run} pages, "
+                              f"{state['total_new']} new, {state['total_updated']} updated, "
+                              f"{state['total_errors']} errors)")
                 # If a refresh is in progress, pause all processing until it completes
                 while True:
                     refresh_event = session_manager.session_health_monitor.get('refresh_in_progress')
@@ -818,7 +824,7 @@ def _main_page_processing_loop(
 
                 # PROACTIVE SESSION REFRESH: Check if session needs refresh before processing
                 if session_manager.should_proactive_refresh():
-                    logger.info(f"🔄 Performing proactive session refresh at page {current_page_num}")
+                    logger.warning(f"🔄 Performing proactive session refresh at page {current_page_num}")
 
                     # Let SessionManager manage its own refresh_in_progress flag internally
                     refresh_success = session_manager.perform_proactive_refresh()
@@ -841,7 +847,7 @@ def _main_page_processing_loop(
                     logger.warning(f"🚨 BROWSER DEATH DETECTED at page {current_page_num}")
                     # Attempt browser recovery
                     if session_manager.attempt_browser_recovery():
-                        logger.info(f"✅ Browser recovery successful at page {current_page_num} - continuing")
+                        logger.warning(f"✅ Browser recovery successful at page {current_page_num} - continuing")
                     else:
                         logger.critical(f"❌ Browser recovery failed at page {current_page_num} - halting")
                         loop_final_success = False
@@ -930,9 +936,9 @@ def _main_page_processing_loop(
                 if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
                     session_age = time.time() - session_manager.session_start_time
                     if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
-                        logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
+                        logger.warning(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
                         if session_manager._attempt_session_recovery():
-                            logger.info("✅ Proactive session refresh successful")
+                            logger.warning("✅ Proactive session refresh successful")
                             session_manager.session_start_time = time.time()  # Reset session timer
                         else:
                             logger.error("❌ Proactive session refresh failed")
@@ -1018,7 +1024,7 @@ def _main_page_processing_loop(
                             # Force immediate session refresh
                             try:
                                 session_manager.perform_proactive_refresh()
-                                logger.info(f"✅ Emergency session refresh completed at page {current_page_num}")
+                                logger.warning(f"✅ Emergency session refresh completed at page {current_page_num}")
                             except Exception as refresh_exc:
                                 logger.error(f"❌ Emergency session refresh failed: {refresh_exc}")
                                 # If emergency refresh fails, halt processing to prevent cascade
@@ -1034,7 +1040,7 @@ def _main_page_processing_loop(
                                 logger.warning(f"   Recommended: {action}")
 
                         elif risk_score > 0.4:
-                            logger.info(f"⚠️ MODERATE RISK - Page {current_page_num} (Risk: {risk_score:.2f}, Health: {health_score:.1f})")
+                            logger.warning(f"⚠️ MODERATE RISK - Page {current_page_num} (Risk: {risk_score:.2f}, Health: {health_score:.1f})")
 
                         # VERIFICATION: Log that health monitoring is working
                         if current_page_num % 10 == 0:
@@ -1483,7 +1489,7 @@ def _lookup_existing_persons(
 
     # Step 3: Query the database
     try:
-        logger.debug(f"Querying DB for {len(uuids_on_page)} existing Person records...")
+        # Querying DB for existing Person records (removed verbose debug)
         # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
         uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
 
@@ -1501,9 +1507,7 @@ def _lookup_existing_persons(
             if person.uuid is not None
         }
 
-        logger.debug(
-            f"Found {len(existing_persons_map)} existing Person records for this batch."
-        )
+        # Found existing Person records for this batch (removed verbose debug)
 
     # Step 5: Handle potential database errors
     except SQLAlchemyError as db_lookup_err:
@@ -1712,19 +1716,17 @@ def _perform_api_prefetches(
     if num_candidates <= 3:
         # Light load - reduce workers to avoid rate limiting overhead
         optimized_workers = 1
-        logger.debug(f"Light load optimization: Using {optimized_workers} worker for {num_candidates} candidates")
+        # Light load optimization (removed verbose debug)
     elif num_candidates >= 15:
         # Heavy load - increase workers but respect rate limits
         optimized_workers = min(4, base_workers + 1)
-        logger.debug(f"Heavy load optimization: Using {optimized_workers} workers for {num_candidates} candidates")
+        # Heavy load optimization (removed verbose debug)
     else:
         # Medium load - use configured workers
         optimized_workers = base_workers
-        logger.debug(f"Optimal load: Using {optimized_workers} workers for {num_candidates} candidates")
+        # Optimal load (removed verbose debug)
 
-    logger.debug(
-        f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {optimized_workers} workers) ---"
-    )
+    # Starting parallel API pre-fetch (removed verbose debug)
 
     # CRITICAL FIX: Check for halt signal before starting batch processing
     if session_manager.should_halt_operations():
@@ -1743,9 +1745,7 @@ def _perform_api_prefetches(
         if match_data.get("in_my_tree")
         and match_data.get("uuid") in fetch_candidates_uuid
     }
-    logger.debug(
-        f"Identified {len(uuids_for_tree_badge_ladder)} candidates for Badge/Ladder fetch."
-    )
+    # Identified candidates for Badge/Ladder fetch (removed verbose debug)
 
     with ThreadPoolExecutor(max_workers=optimized_workers) as executor:
         # OPTIMIZATION: Conditional relationship probability fetching
@@ -1764,11 +1764,11 @@ def _perform_api_prefetches(
                 # Enhanced priority classification
                 if is_starred or cm_value > 50:  # Very high priority
                     high_priority_uuids.add(uuid_val)
-                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, favorite={is_starred}")
+                    # High priority match (removed verbose debug)
                 elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
                     # Medium priority: above threshold OR low DNA but has tree
                     medium_priority_uuids.add(uuid_val)
-                    logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
+                    # Medium priority match (removed verbose debug)
                 else:
                     logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
                                 f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)")
@@ -1885,7 +1885,7 @@ def _perform_api_prefetches(
             {}
         )  # For ladder results before combining
 
-        logger.debug(f"Processing {len(futures)} initially submitted API tasks...")
+        # Processing initially submitted API tasks (removed verbose debug)
         processed_tasks = 0
         for future in as_completed(futures):
             # SURGICAL FIX #20: Universal session health check during batch processing
@@ -2024,7 +2024,7 @@ def _perform_api_prefetches(
                         )
                     ] = ("ladder", cfpid_item)
 
-        logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
+        # Processing Ladder API tasks (removed verbose debug)
         for future in as_completed(ladder_futures):
             task_type, identifier_cfpid = ladder_futures[future]
             uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
@@ -2052,9 +2052,7 @@ def _perform_api_prefetches(
                 temp_ladder_results[uuid_for_ladder] = None
 
     fetch_duration = time.time() - fetch_start_time
-    logger.debug(
-        f"--- Finished Parallel API Pre-fetch. Duration: {fetch_duration:.2f}s ---"
-    )
+    # Finished parallel API pre-fetch (removed verbose debug)
 
     for uuid_val, badge_result in temp_badge_results.items():
         if badge_result:  # Badge fetch was successful and returned data
@@ -4349,7 +4347,7 @@ def get_matches(
         logger.error("get_matches: Session invalid at start.")
         return None
 
-    logger.debug(f"--- Fetching Match List Page {current_page} ---")
+    # Fetching match list page (removed verbose debug)
 
     # Validate session state before API call
     try:
@@ -4912,7 +4910,7 @@ def _fetch_combined_details(
         try:
             cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
             if cached_data is not ENOVAL and isinstance(cached_data, dict):
-                logger.debug(f"Cache hit for combined details: {match_uuid}")
+                # Cache hit for combined details (removed verbose debug)
                 _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
                 return cached_data
         except Exception as cache_exc:
@@ -4958,7 +4956,7 @@ def _fetch_combined_details(
     #     config_schema.api.base_url,
     #     f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
     # )
-    logger.debug(f"Fetching /details API for UUID {match_uuid}...")
+    # Fetching details API (removed verbose debug)
 
     # Use headers from working cURL command
     details_headers = {
@@ -5139,9 +5137,7 @@ def _fetch_combined_details(
                     api_description="Profile Details API (Batch)",
                 )
                 if profile_response and isinstance(profile_response, dict):
-                    logger.debug(
-                        f"Successfully fetched /profiles/details for {tester_profile_id_for_api}."
-                    )
+                    # Successfully fetched profiles/details (removed verbose debug)
 
                     # Parse last login date
                     last_login_dt = None
@@ -5702,7 +5698,7 @@ def _log_coord_summary(
     else:
         logger.info(Colors.green(f"Processed: {processed}"))
 
-    logger.info(Colors.green("------------------------------------\n"))
+    logger.info(Colors.green("------------------------------------"))
 
 
 
