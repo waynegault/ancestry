@@ -158,7 +158,7 @@ from utils import (  # Core utilities
 )
 
 # --- Initialization & Template Loading ---
-logger.debug(f"Action 8 Initializing: APP_MODE is {config_schema.environment}")
+logger.debug(f"Action 8 Initializing: APP_MODE is {config_schema.app_mode}")
 
 # Define message intervals based on app mode (controls time between follow-ups)
 MESSAGE_INTERVALS = {
@@ -167,7 +167,7 @@ MESSAGE_INTERVALS = {
     "dry_run": timedelta(seconds=10),  # Short interval for dry runs
 }
 MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
-    config_schema.environment, timedelta(weeks=8)
+    getattr(config_schema, 'app_mode', 'production'), timedelta(weeks=8)
 )
 logger.debug(f"Action 8 Using minimum message interval: {MIN_MESSAGE_INTERVAL}")
 
@@ -1375,7 +1375,7 @@ def _process_single_person(
                 raise StopIteration("error (template_format)")
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
-        app_mode = config_schema.environment
+        app_mode = getattr(config_schema, 'app_mode', 'production')
         testing_profile_id_config = config_schema.testing_profile_id
         # Use profile_id for filtering (should exist for contactable ACTIVE/DESIST persons)
         current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
