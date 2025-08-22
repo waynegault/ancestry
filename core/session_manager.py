@@ -226,7 +226,7 @@ class SessionManager:
             'session_start_time': time.time(),
             'max_session_age': 2400,  # 40 minutes (before 45min expiry)
             'last_proactive_refresh': time.time(),
-            'proactive_refresh_interval': 1800,  # 30 minutes
+            'proactive_refresh_interval': getattr(config_schema, 'proactive_refresh_interval_seconds', 1800),  # default 30 min
             'refresh_in_progress': threading.Event()
         }
 

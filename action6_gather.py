@@ -1264,7 +1264,7 @@ def _main_page_processing_loop(
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=3, recovery_timeout=60)
-@timeout_protection(timeout=1800)  # Increased from 900s (15min) to 1800s (30min) for Action 6's extended runtime
+@timeout_protection(timeout=getattr(config_schema, 'action6_coord_timeout_seconds', 1800))
 @error_context("DNA match gathering coordination")
 def coord(
     session_manager: SessionManager, _config_schema: "ConfigSchema", start: int = 1

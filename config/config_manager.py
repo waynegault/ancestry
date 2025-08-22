@@ -664,6 +664,22 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid PROACTIVE_REFRESH_COOLDOWN: {refresh_cooldown}")
 
+        # Proactive refresh interval (seconds)
+        refresh_interval = os.getenv("PROACTIVE_REFRESH_INTERVAL")
+        if refresh_interval:
+            try:
+                config["proactive_refresh_interval_seconds"] = int(refresh_interval)
+            except ValueError:
+                logger.warning(f"Invalid PROACTIVE_REFRESH_INTERVAL: {refresh_interval}")
+
+        # Action 6 coord timeout (seconds)
+        a6_coord_timeout = os.getenv("ACTION6_COORD_TIMEOUT")
+        if a6_coord_timeout:
+            try:
+                config["action6_coord_timeout_seconds"] = int(a6_coord_timeout)
+            except ValueError:
+                logger.warning(f"Invalid ACTION6_COORD_TIMEOUT: {a6_coord_timeout}")
+
         # Load API configuration
         api_config = {}
 
