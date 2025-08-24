@@ -6009,7 +6009,7 @@ def action6_gather_module_tests() -> bool:
             print("     ✅ RetryableError constructor handles conflicting parameters correctly")
         except TypeError as e:
             if "got multiple values for keyword argument" in str(e):
-                assert False, f"CRITICAL: RetryableError constructor bug still exists: {e}"
+                raise AssertionError(f"CRITICAL: RetryableError constructor bug still exists: {e}")
             else:
                 raise
 
@@ -6025,7 +6025,7 @@ def action6_gather_module_tests() -> bool:
             assert db_error.recovery_hint and "temporarily unavailable" in db_error.recovery_hint
             print("     ✅ DatabaseConnectionError constructor works correctly")
         except TypeError as e:
-            assert False, f"DatabaseConnectionError constructor has parameter conflicts: {e}"
+            raise AssertionError(f"DatabaseConnectionError constructor has parameter conflicts: {e}")
 
         # Test 3: Simulate the specific database transaction rollback scenario
         print("   • Test 3: Database transaction rollback scenario simulation")
@@ -6055,7 +6055,7 @@ def action6_gather_module_tests() -> bool:
                     assert retryable_error.context["error_type"] == "IntegrityError"
                     print("     ✅ Database rollback error handling works correctly")
         except Exception as e:
-            assert False, f"Database transaction rollback simulation failed: {e}"
+            raise AssertionError(f"Database transaction rollback simulation failed: {e}")
 
         # Test 4: Test all error class constructors to prevent future regressions
         print("   • Test 4: All error class constructors parameter validation")
@@ -6091,7 +6091,7 @@ def action6_gather_module_tests() -> bool:
                 print(f"     ✅ {error_class.__name__} constructor works correctly")
             except TypeError as e:
                 if "got multiple values for keyword argument" in str(e):
-                    assert False, f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}"
+                    raise AssertionError(f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}")
                 else:
                     raise
 
@@ -6152,7 +6152,7 @@ def action6_gather_module_tests() -> bool:
             print("     ✅ UNIQUE constraint error handling works without constructor conflicts")
 
         except Exception as e:
-            assert False, f"Duplicate record error handling failed: {e}"
+            raise AssertionError(f"Duplicate record error handling failed: {e}")
 
         # Test 8: Final Summary Accuracy Test
         print("   • Test 8: Final summary accuracy validation")

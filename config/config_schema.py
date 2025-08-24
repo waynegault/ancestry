@@ -858,13 +858,13 @@ def run_comprehensive_tests() -> bool:
             # Test validation errors
             try:
                 SeleniumConfig(debug_port=-1)
-                assert False, "Should have raised ValueError for invalid debug_port"
+                raise AssertionError("Should have raised ValueError for invalid debug_port")
             except ValueError:
                 pass  # Expected
 
             try:
                 SeleniumConfig(window_size="invalid")
-                assert False, "Should have raised ValueError for invalid window_size"
+                raise AssertionError("Should have raised ValueError for invalid window_size")
             except ValueError:
                 pass  # Expected
 
@@ -890,7 +890,7 @@ def run_comprehensive_tests() -> bool:
             # Test validation errors
             try:
                 APIConfig(base_url="invalid-url")
-                assert False, "Should have raised ValueError for invalid base_url"
+                raise AssertionError("Should have raised ValueError for invalid base_url")
             except ValueError:
                 pass  # Expected
 
@@ -922,7 +922,7 @@ def run_comprehensive_tests() -> bool:
             # Test validation errors
             try:
                 LoggingConfig(log_level="INVALID")
-                assert False, "Should have raised ValueError for invalid log_level"
+                raise AssertionError("Should have raised ValueError for invalid log_level")
             except ValueError:
                 pass  # Expected
 
@@ -1077,7 +1077,7 @@ def run_comprehensive_tests() -> bool:
             # Test configuration with invalid environment
             try:
                 ConfigSchema(environment="invalid")
-                assert False, "Should have raised ValueError for invalid environment"
+                raise AssertionError("Should have raised ValueError for invalid environment")
             except ValueError:
                 pass  # Expected
 
@@ -1098,7 +1098,7 @@ def run_comprehensive_tests() -> bool:
             # Test empty strings in API config
             try:
                 APIConfig(base_url="")
-                assert False, "Should have raised ValueError for empty base_url"
+                raise AssertionError("Should have raised ValueError for empty base_url")
             except ValueError:
                 pass  # Expected
 

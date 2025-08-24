@@ -525,7 +525,7 @@ def test_error_handling_robustness():
         # Test division by zero handling
         try:
             result = 1.0 / 0.0
-            assert False, "Should have raised ZeroDivisionError"
+            raise AssertionError("Should have raised ZeroDivisionError")
         except ZeroDivisionError:
             pass  # Expected
 
