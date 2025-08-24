@@ -3458,6 +3458,8 @@ def action8_messaging_tests():
                 # Test database session manager integration (now in core/database_manager.py)
                 try:
                     from core.database_manager import DatabaseManager
+
+
                     db_manager_available = DatabaseManager is not None
                 except ImportError:
                     db_manager_available = False
@@ -3485,6 +3487,97 @@ def action8_messaging_tests():
             "All shared modules integrate correctly with Action 8",
             "Test integration with universal session monitor, API framework, error recovery, database manager, and performance monitor",
             "Verify all shared modules are available and properly integrated"
+        )
+
+
+        # Additional hardening tests integrated from test_action8_hardening.py
+        def test_system_health_validation_hardening():
+            from unittest.mock import Mock
+            # None session manager
+            assert _validate_system_health(None) is False  # type: ignore[arg-type]
+            # Healthy mock
+            mock_session = Mock()
+            mock_session.should_halt_operations.return_value = False
+            mock_session.validate_system_health.return_value = True
+            mock_session.session_health_monitor = {'death_cascade_count': 0}
+            for k in set(MESSAGE_TYPES_ACTION8.keys()):
+                MESSAGE_TEMPLATES.setdefault(k, "test template")
+            assert _validate_system_health(mock_session) is True
+            # Death cascade
+            mock_session.should_halt_operations.return_value = True
+            mock_session.validate_system_health.return_value = False
+            mock_session.session_health_monitor = {'death_cascade_count': 5}
+            assert _validate_system_health(mock_session) is False
+
+        def test_confidence_scoring_hardening():
+            from unittest.mock import Mock
+            family = Mock(); family.actual_relationship = "6th cousin"; family.relationship_path = "Some path"
+            dna = Mock(); dna.predicted_relationship = "Distant cousin"
+            key = select_template_by_confidence("In_Tree-Initial", family, dna)
+            assert isinstance(key, str) and key.startswith("In_Tree-Initial")
+
+        def test_halt_signal_integration():
+            from unittest.mock import Mock
+            mock_session = Mock()
+            mock_session.should_halt_operations.return_value = True
+            mock_session.session_health_monitor = {'death_cascade_count': 3}
+            mock_session.validate_system_health.return_value = False
+            assert _validate_system_health(mock_session) is False
+
+        def test_real_api_manager_integration_minimal():
+            class MockSessionManager:
+                def __init__(self):
+                    self.session_health_monitor = {'death_cascade_count': 0}
+                    self.should_halt_operations = lambda: False
+                    self._my_profile_id = "test_profile_123"
+                def is_sess_valid(self):
+                    return True
+                @property
+                def my_profile_id(self):
+                    return self._my_profile_id
+            api = ProactiveApiManager(MockSessionManager())
+            delay = api.calculate_delay(); assert isinstance(delay, (int, float)) and delay >= 0
+            assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True
+
+        def test_error_categorization_integration_minimal():
+            categorizer = ErrorCategorizer()
+            category, error_type = categorizer.categorize_status("skipped (interval)")
+            assert category == 'skipped' and 'interval' in error_type
+
+        suite.run_test(
+            "System health validation (hardening)",
+            test_system_health_validation_hardening,
+            "System health validation mirrors Action 6 patterns and template availability.",
+            "Test consolidated health validation and template presence.",
+            "Validate None, healthy mock, and death cascade cases.",
+        )
+        suite.run_test(
+            "Confidence scoring (hardening)",
+            test_confidence_scoring_hardening,
+            "Confidence scoring avoids overconfident messaging for distant relationships.",
+            "Test template selection for distant relationships.",
+            "Ensure conservative template selection.",
+        )
+        suite.run_test(
+            "Halt signal integration",
+            test_halt_signal_integration,
+            "Halt signals cause validation to fail.",
+            "Test integration of halt signals.",
+            "Confirm fast failure.",
+        )
+        suite.run_test(
+            "Proactive API manager (minimal)",
+            test_real_api_manager_integration_minimal,
+            "API manager delay and response validation work.",
+            "Test delay calculation and response validation.",
+            "Avoid external calls.",
+        )
+        suite.run_test(
+            "Error categorization (minimal)",
+            test_error_categorization_integration_minimal,
+            "Error categorization basic path works.",
+            "Test skip categorization.",
+            "Ensure categorizer returns expected tuple.",
         )
 
     return suite.finish_suite()
