@@ -433,7 +433,7 @@ def run_comprehensive_tests() -> bool:
             # Test immutability
             try:
                 config.name = "changed"  # type: ignore
-                assert False, "Should not be able to modify immutable config"
+                raise AssertionError("Should not be able to modify immutable config")
             except AttributeError:
                 pass  # Expected
 
@@ -450,7 +450,7 @@ def run_comprehensive_tests() -> bool:
             # Invalid call should raise TypeError
             try:
                 create_person("John", "thirty")  # type: ignore
-                assert False, "Should raise TypeError for invalid type"
+                raise AssertionError("Should raise TypeError for invalid type")
             except TypeError:
                 pass  # Expected
 

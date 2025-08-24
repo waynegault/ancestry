@@ -3092,7 +3092,7 @@ def api_utils_module_tests() -> bool:
             assert isinstance(parsed, dict), "Parsed JSON should be dictionary"
             assert "status" in parsed, "Parsed response should have status"
         except json.JSONDecodeError:
-            assert False, "Valid JSON should parse successfully"
+            raise AssertionError("Valid JSON should parse successfully")
 
     def test_url_construction():
         """Test URL construction and encoding functions."""
@@ -3173,7 +3173,7 @@ def api_utils_module_tests() -> bool:
         try:
             logger.info("Test log message")
         except Exception as e:
-            assert False, f"Logging should work without errors: {e}"
+            raise AssertionError(f"Logging should work without errors: {e}")
 
     def test_datetime_handling():
         """Test datetime parsing and formatting integration."""

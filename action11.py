@@ -537,7 +537,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         api_session = get_api_session(session_manager)
         if not api_session:
             print(f"{Colors.RED}❌ Failed to create API session for search test{Colors.RESET}")
-            assert False, "API search test requires a valid session manager but failed to create one"
+            raise AssertionError("API search test requires a valid session manager but failed to create one")
 
         # Enhanced search criteria with revised format
         search_criteria = {
@@ -650,17 +650,17 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 # Check if we found the right person
                 if test_first_name.lower() not in found_name.lower() or test_last_name.lower() not in found_name.lower():
                     print(f"❌ WRONG PERSON FOUND: Expected '{expected_name}', got '{found_name}'")
-                    assert False, f"API search found wrong person: expected '{expected_name}', got '{found_name}'"
+                    raise AssertionError(f"API search found wrong person: expected '{expected_name}', got '{found_name}'")
 
                 # Check score is adequate
                 if score < 50:
                     print(f"❌ SCORE TOO LOW: Expected ≥50, got {score}")
-                    assert False, f"API search score too low: expected ≥50, got {score}"
+                    raise AssertionError(f"API search score too low: expected ≥50, got {score}")
 
                 # Check expected score matches
                 if score != expected_score:
                     print(f"❌ SCORE MISMATCH: Expected {expected_score}, got {score}")
-                    assert False, f"API search score mismatch: expected {expected_score}, got {score}"
+                    raise AssertionError(f"API search score mismatch: expected {expected_score}, got {score}")
 
                 # Check performance
                 assert performance_ok, f"API search should complete in < 8s, took {search_time:.3f}s"
@@ -670,7 +670,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             else:
                 print("❌ NO MATCHES FOUND - This is a FAILURE")
-                assert False, f"API search must find {test_first_name} {test_last_name} but found 0 matches"
+                raise AssertionError(f"API search must find {test_first_name} {test_last_name} but found 0 matches")
 
             print("✅ API search performance and accuracy test completed")
             print(f"Conclusion: API search functionality validated with {len(results)} matches")
@@ -696,7 +696,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         api_session = get_api_session(session_manager)
         if not api_session:
             print("❌ Failed to create API session for family analysis test")
-            assert False, "Family analysis test requires a valid session manager but failed to create one"
+            raise AssertionError("Family analysis test requires a valid session manager but failed to create one")
 
         print("🔍 Testing API family analysis...")
 
@@ -734,7 +734,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
                 if not results:
                     print("❌ No API results found for family analysis")
-                    assert False, "Family analysis test must find Fraser Gault but found 0 matches"
+                    raise AssertionError("Family analysis test must find Fraser Gault but found 0 matches")
 
                 top_match = results[0]
                 person_id = top_match.get('person_id') or top_match.get('id')
@@ -746,7 +746,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             if not person_id:
                 print("❌ No person ID available for family analysis")
-                assert False, "Family analysis requires person ID but none found"
+                raise AssertionError("Family analysis requires person ID but none found")
 
             # Get required IDs for the API call
             user_id = api_session.my_profile_id or api_session.my_uuid
@@ -754,7 +754,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             if not user_id or not tree_id:
                 print(f"❌ Missing required IDs - User ID: {user_id}, Tree ID: {tree_id}")
-                assert False, "Family analysis requires valid user_id and tree_id"
+                raise AssertionError("Family analysis requires valid user_id and tree_id")
 
             # Use the editrelationships endpoint (much better than other endpoints)
             base_url = config_schema.api.base_url.rstrip('/')
@@ -855,7 +855,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 print("Conclusion: Fraser Gault's family structure successfully analyzed via editrelationships API")
                 return True
             print("❌ No family data returned from editrelationships API")
-            assert False, "editrelationships API should return family data"
+            raise AssertionError("editrelationships API should return family data")
 
         except Exception as e:
             print(f"❌ API family analysis test failed: {e}")
@@ -879,7 +879,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         api_session = get_api_session(session_manager)
         if not api_session:
             print("❌ Failed to create API session for relationship path test")
-            assert False, "Relationship path test requires a valid session manager but failed to create one"
+            raise AssertionError("Relationship path test requires a valid session manager but failed to create one")
 
         try:
             # Use cached Fraser data from Test 3 if available
@@ -912,7 +912,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
                 if not results:
                     print("❌ No API results found for relationship path")
-                    assert False, "Relationship path test must find Fraser Gault but found 0 matches"
+                    raise AssertionError("Relationship path test must find Fraser Gault but found 0 matches")
 
                 top_match = results[0]
                 person_id = top_match.get('person_id') or top_match.get('id')
@@ -928,7 +928,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             if not person_id:
                 print("❌ No person ID available for relationship calculation")
-                assert False, "Relationship path requires person ID but none found"
+                raise AssertionError("Relationship path requires person ID but none found")
 
             # Get required IDs for the API call
             user_id = api_session.my_profile_id or api_session.my_uuid
@@ -936,7 +936,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
 
             if not user_id or not tree_id:
                 print(f"❌ Missing required IDs - User ID: {user_id}, Tree ID: {tree_id}")
-                assert False, "Relationship path requires valid user_id and tree_id"
+                raise AssertionError("Relationship path requires valid user_id and tree_id")
 
             # Use the relationladderwithlabels endpoint (perfect for relationship paths)
             base_url = config_schema.api.base_url.rstrip('/')

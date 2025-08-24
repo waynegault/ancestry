@@ -744,7 +744,7 @@ def run_comprehensive_tests() -> bool:
             assert isinstance(results, list)
         except Exception as e:
             # Should not raise unhandled exceptions
-            assert False, f"Optimization should handle errors gracefully: {e}"
+            raise AssertionError(f"Optimization should handle errors gracefully: {e}")
 
     def test_function_availability():
         """Test that all required optimization functions are available"""
