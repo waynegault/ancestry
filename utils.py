@@ -42,18 +42,18 @@ import re
 import threading
 import time
 import uuid  # For generating trace IDs and session IDs
+from collections.abc import Generator  # Consolidated typing imports
 from typing import (
     IO,
     Any,
     Callable,
     Dict,
-    Generator,
     List,
     Optional,
     Tuple,
     Type,
     Union,
-)  # Consolidated typing imports
+)
 
 
 # PHASE 1: Utility function to get configured concurrency across the codebase
@@ -236,19 +236,19 @@ try:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.remote.webdriver import WebDriver
-    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
     from selenium.webdriver.support.wait import WebDriverWait
 
     # --- Local application imports ---
     # Assume these are essential or handled elsewhere if missing
-    # from chromedriver import init_webdvr  # noqa: F401 - not directly used in utils
-    from config import config_schema  # noqa: F401 - config_manager unused here
+    # from chromedriver import init_webdvr
+    from config import config_schema
     from core_imports import get_logger
 
     # Initialize logger with standardized pattern
     logger = get_logger(__name__)
 
-    from my_selectors import *  # noqa: F403 - Controlled star import for selector constants
+    from my_selectors import *
     from selenium_utils import (
         is_browser_open,
         is_elem_there,
@@ -312,15 +312,13 @@ def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool =
         if indent:
             # orjson doesn't support indent, fall back to json for pretty printing
             return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
-        else:
-            # Fast compact serialization
-            return orjson.dumps(obj).decode('utf-8')
+        # Fast compact serialization
+        return orjson.dumps(obj).decode('utf-8')
     except (ImportError, ModuleNotFoundError):
         if indent:
             return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
-        else:
-            # Optimized compact serialization
-            return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
+        # Optimized compact serialization
+        return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
 
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)
@@ -432,8 +430,7 @@ def ordinal_case(text: Union[str, int]) -> str:
                 # End of if
             # End of for
             return " ".join(words)
-        else:
-            return str(text)
+        return str(text)
         # End of if/else
     # End of try/except
 
@@ -622,28 +619,50 @@ def format_name(name: Optional[str]) -> str:
 # ------------------------------
 
 def retry(
-    MAX_RETRIES: Optional[int] = None,
-    BACKOFF_FACTOR: Optional[float] = None,
-    MAX_DELAY: Optional[float] = None,
+    max_retries: Optional[int] = None,
+    backoff_factor: Optional[float] = None,
+    max_delay: Optional[float] = None,
+    **kwargs: Any,
 ):
-    """Decorator factory to retry a function with exponential backoff and jitter."""
+    """Decorator factory to retry a function with exponential backoff and jitter.
+
+    Accepts both lowercase and legacy UPPERCASE keyword arguments for compatibility.
+    Lowercase parameters take precedence when both are provided.
+    """
+
+    # Map legacy UPPERCASE kwargs to lowercase if not explicitly provided
+    if max_retries is None and "MAX_RETRIES" in kwargs:
+        try:
+            max_retries = int(kwargs["MAX_RETRIES"])  # type: ignore[arg-type]
+        except Exception:
+            max_retries = None
+    if backoff_factor is None and "BACKOFF_FACTOR" in kwargs:
+        try:
+            backoff_factor = float(kwargs["BACKOFF_FACTOR"])  # type: ignore[arg-type]
+        except Exception:
+            backoff_factor = None
+    if max_delay is None and "MAX_DELAY" in kwargs:
+        try:
+            max_delay = float(kwargs["MAX_DELAY"])  # type: ignore[arg-type]
+        except Exception:
+            max_delay = None
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             cfg = config_schema  # Use new config system
             attempts = (
-                MAX_RETRIES
-                if MAX_RETRIES is not None
+                max_retries
+                if max_retries is not None
                 else getattr(cfg, "MAX_RETRIES", 3)
             )
             backoff = (
-                BACKOFF_FACTOR
-                if BACKOFF_FACTOR is not None
+                backoff_factor
+                if backoff_factor is not None
                 else getattr(cfg, "BACKOFF_FACTOR", 1.0)
             )
-            max_delay = (
-                MAX_DELAY if MAX_DELAY is not None else getattr(cfg, "MAX_DELAY", 10.0)
+            effective_max_delay = (
+                max_delay if max_delay is not None else getattr(cfg, "MAX_DELAY", 10.0)
             )
             for i in range(attempts):
                 try:
@@ -656,7 +675,7 @@ def retry(
                         )
                         raise  # Re-raise the final exception
                     # End of if
-                    sleep_time = min(backoff * (2**i), max_delay) + random.uniform(
+                    sleep_time = min(backoff * (2**i), effective_max_delay) + random.uniform(
                         0, 0.5
                     )
                     logger.warning(
@@ -769,9 +788,8 @@ def retry_api(
                         time.sleep(sleep_time)
                         delay *= _backoff_factor
                         continue
-                    else:
-                        # Success or non-retryable error, return the response
-                        return response
+                    # Success or non-retryable error, return the response
+                    return response
                     # End of if/else
                 except retry_on_exceptions as e:
                     last_exception = e
@@ -810,13 +828,12 @@ def retry_api(
             )
             if last_exception:
                 raise last_exception  # Re-raise the last exception if one occurred
-            else:
-                # This case implies a retryable status on the last attempt
-                return (
-                    last_response
-                    if last_response is not None
-                    else RuntimeError(f"{func.__name__} failed after all retries.")
-                )
+            # This case implies a retryable status on the last attempt
+            return (
+                last_response
+                if last_response is not None
+                else RuntimeError(f"{func.__name__} failed after all retries.")
+            )
             # End of if/else
 
         # End of wrapper
@@ -844,15 +861,17 @@ def ensure_browser_open(func: Callable) -> Callable:
                 driver_instance = args[0]
             # End of if/elif
         # End of if
-        if not driver_instance and "driver" in kwargs:
-            if isinstance(kwargs["driver"], WebDriver):  # type: ignore
-                driver_instance = kwargs["driver"]
+        if not driver_instance and "driver" in kwargs and isinstance(kwargs["driver"], WebDriver):  # type: ignore
+            driver_instance = kwargs["driver"]
             # End of if
         # End of if
-        if not driver_instance and "session_manager" in kwargs:
-            if isinstance(kwargs["session_manager"], SessionManager):  # type: ignore
-                session_manager_instance = kwargs["session_manager"]
-                driver_instance = session_manager_instance.driver
+        if (
+            not driver_instance
+            and "session_manager" in kwargs
+            and isinstance(kwargs["session_manager"], SessionManager)  # type: ignore
+        ):
+            session_manager_instance = kwargs["session_manager"]
+            driver_instance = session_manager_instance.driver
             # End of if
         # End of if
 
@@ -884,8 +903,7 @@ def time_wait(wait_description: str) -> Callable:
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
             try:
-                result = func(*args, **kwargs)
-                return result
+                return func(*args, **kwargs)
             except TimeoutException as e:  # type: ignore # Assume imported
                 duration = time.time() - start_time
                 logger.warning(
@@ -1527,10 +1545,9 @@ def _generate_ancestry_context_ube(session_manager: 'SessionManager', tree_id: s
 
         # Convert to JSON and encode
         context_json = json.dumps(context_data)
-        context_encoded = base64.b64encode(context_json.encode('utf-8')).decode('utf-8')
+        return base64.b64encode(context_json.encode('utf-8')).decode('utf-8')
 
         # Consolidated logging - reduced verbosity
-        return context_encoded
 
     except Exception as e:
         logger.debug(f"Failed to generate ancestry context: {e}")
@@ -1851,8 +1868,7 @@ def _process_api_response(
         if "application/json" in content_type:
             try:
                 # Handle empty response body for JSON
-                json_result = response.json() if response.content else None
-                return json_result
+                return response.json() if response.content else None
             except JSONDecodeError as json_err:  # type: ignore
                 logger.error(
                     f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
@@ -1981,17 +1997,16 @@ def _api_req(
                         f"{api_description}: Request failed after {max_retries} attempts."
                     )
                     return None
-                else:
-                    sleep_time = min(
-                        current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                    ) + random.uniform(0, 0.2)
-                    sleep_time = max(0.1, sleep_time)
-                    logger.warning(
-                        f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
-                    )
-                    time.sleep(sleep_time)
-                    current_delay *= backoff_factor
-                    continue  # Go to next iteration of the while loop
+                sleep_time = min(
+                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
+                ) + random.uniform(0, 0.2)
+                sleep_time = max(0.1, sleep_time)
+                logger.warning(
+                    f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                )
+                time.sleep(sleep_time)
+                current_delay *= backoff_factor
+                continue  # Go to next iteration of the while loop
                 # End of if/else retries_left
             # End of if response is None
 
@@ -2017,48 +2032,47 @@ def _api_req(
                         pass
                     # End of try/except
                     return response
-                else:
-                    sleep_time = min(
-                        current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                    ) + random.uniform(0, 0.2)
-                    sleep_time = max(0.1, sleep_time)
+                sleep_time = min(
+                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
+                ) + random.uniform(0, 0.2)
+                sleep_time = max(0.1, sleep_time)
 
-                    # Handle rate limiting feedback
-                    if status == 429:  # Too Many Requests
-                        if session_manager.dynamic_rate_limiter:
-                            session_manager.dynamic_rate_limiter.increase_delay()
+                # Handle rate limiting feedback
+                if status == 429:  # Too Many Requests
+                    if session_manager.dynamic_rate_limiter:
+                        session_manager.dynamic_rate_limiter.increase_delay()
 
-                        # Record rate limit error for adaptive learning
-                        _record_adaptive_response(
-                            session_manager=session_manager,
-                            success=False,
-                            response_time=2.0,  # Approximate - we know it was slow
-                            status_code=status,
-                            error_type="rate limit"
-                        )
-                    else:
-                        # Record other failure types for adaptive learning
-                        _record_adaptive_response(
-                            session_manager=session_manager,
-                            success=False,
-                            response_time=1.0,  # Approximate response time
-                            status_code=status,
-                            error_type=f"http_error_{status}"
-                        )
-                    # End of if/else status == 429
-                    logger.warning(
-                        f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                    # Record rate limit error for adaptive learning
+                    _record_adaptive_response(
+                        session_manager=session_manager,
+                        success=False,
+                        response_time=2.0,  # Approximate - we know it was slow
+                        status_code=status,
+                        error_type="rate limit"
                     )
-                    try:
-                        logger.debug(
-                            f"   << Response Text (Retry): {response.text[:500]}..."
-                        )
-                    except Exception:
-                        pass
-                    # End of try/except
-                    time.sleep(sleep_time)
-                    current_delay *= backoff_factor
-                    continue  # Go to next iteration of the while loop
+                else:
+                    # Record other failure types for adaptive learning
+                    _record_adaptive_response(
+                        session_manager=session_manager,
+                        success=False,
+                        response_time=1.0,  # Approximate response time
+                        status_code=status,
+                        error_type=f"http_error_{status}"
+                    )
+                # End of if/else status == 429
+                logger.warning(
+                    f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                )
+                try:
+                    logger.debug(
+                        f"   << Response Text (Retry): {response.text[:500]}..."
+                    )
+                except Exception:
+                    pass
+                # End of try/except
+                time.sleep(sleep_time)
+                current_delay *= backoff_factor
+                continue  # Go to next iteration of the while loop
                 # End of if/else retries_left
             # End of if status in retry_status_codes
 
@@ -2112,14 +2126,13 @@ def _api_req(
                         # Custom param to track redirect count
                         redirect_count=redirect_count+1,
                     )
-                else:
-                    logger.warning(
-                        f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
-                    )
-                    logger.debug(
-                        f"   << Redirect Location: {location}"
-                    )
-                    return response
+                logger.warning(
+                    f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
+                )
+                logger.debug(
+                    f"   << Redirect Location: {location}"
+                )
+                return response
             # End of if
 
             # --- Step 3.5: Handle non-retryable error status codes ---
@@ -2197,17 +2210,16 @@ def _api_req(
                     exc_info=False,
                 )
                 return None  # Return None after all retries fail for network errors
-            else:
-                sleep_time = min(
-                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                ) + random.uniform(0, 0.2)
-                sleep_time = max(0.1, sleep_time)
-                logger.warning(
-                    f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
-                )
-                time.sleep(sleep_time)
-                current_delay *= backoff_factor
-                continue  # Go to next attempt
+            sleep_time = min(
+                current_delay * (backoff_factor ** (attempt - 1)), max_delay
+            ) + random.uniform(0, 0.2)
+            sleep_time = max(0.1, sleep_time)
+            logger.warning(
+                f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
+            )
+            time.sleep(sleep_time)
+            current_delay *= backoff_factor
+            continue  # Go to next attempt
             # End of if/else retries_left
         except Exception as e:
             logger.critical(
@@ -2307,8 +2319,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
     # Encode the payload
     try:
         json_payload = fast_json_dumps(ube_data).encode("utf-8")
-        encoded_payload = base64.b64encode(json_payload).decode("utf-8")
-        return encoded_payload
+        return base64.b64encode(json_payload).decode("utf-8")
     except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
         logger.error(f"Error encoding UBE header data: {encode_e}", exc_info=True)
         return None
@@ -2344,8 +2355,7 @@ def make_newrelic(driver: DriverType) -> Optional[str]:
             },
         }
         json_payload = fast_json_dumps(newrelic_data).encode("utf-8")
-        encoded_payload = base64.b64encode(json_payload).decode("utf-8")
-        return encoded_payload
+        return base64.b64encode(json_payload).decode("utf-8")
     except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
         logger.error(f"Error generating NewRelic header: {encode_e}", exc_info=True)
         return None
@@ -2364,8 +2374,7 @@ def make_traceparent(driver: DriverType) -> Optional[str]:
         trace_id = uuid.uuid4().hex  # Full 32-char trace ID
         parent_id = uuid.uuid4().hex[:16]  # 16-char parent/span ID
         flags = "01"  # Sampled flag (usually 01)
-        traceparent = f"{version}-{trace_id}-{parent_id}-{flags}"
-        return traceparent
+        return f"{version}-{trace_id}-{parent_id}-{flags}"
     except Exception as e:
         logger.error(f"Error generating traceparent header: {e}", exc_info=True)
         return None
@@ -2384,9 +2393,8 @@ def make_tracestate(driver: DriverType) -> Optional[str]:
         span_id = uuid.uuid4().hex[:16]  # Another span ID
         timestamp = int(time.time() * 1000)
         # Format follows NewRelic's tracestate structure
-        tracestate = f"{tk}@nr=0-1-{account_id}-{app_id}-{span_id}----{timestamp}"
+        return f"{tk}@nr=0-1-{account_id}-{app_id}-{span_id}----{timestamp}"
         # Other vendors could potentially be added, comma-separated
-        return tracestate
     except Exception as e:
         logger.error(f"Error generating tracestate header: {e}", exc_info=True)
         return None
@@ -2400,7 +2408,7 @@ def make_tracestate(driver: DriverType) -> Optional[str]:
 TWO_STEP_VERIFICATION_HEADER_SELECTOR = "h1.two-step-verification-header"
 
 @time_wait("Handle 2FA Page")
-def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
+def handle_twofa(session_manager: SessionManager) -> bool:  # type: ignore
     if session_manager.driver is None:
         logger.error("handle_twoFA: SessionManager driver is None. Cannot proceed.")
         return False
@@ -2563,17 +2571,15 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
                     "User completed 2FA successfully (login confirmed after page change)."
                 )
                 return True
-            else:
-                logger.error(
-                    "2FA page disappeared, but final login status check failed or returned False."
-                )
-                return False
-            # End of if/else
-        else:
             logger.error(
-                f"Timed out ({code_entry_timeout}s) waiting for user 2FA action (page did not change)."
+                "2FA page disappeared, but final login status check failed or returned False."
             )
             return False
+            # End of if/else
+        logger.error(
+            f"Timed out ({code_entry_timeout}s) waiting for user 2FA action (page did not change)."
+        )
+        return False
         # End of if/else user_action_detected
 
     except WebDriverException as e:  # type: ignore
@@ -2993,9 +2999,8 @@ def _navigate_to_signin_page(driver: WebDriver, session_manager: SessionManager)
                 "Detected as already logged in during navigation attempt. Login considered successful."
             )
             return "LOGIN_SUCCEEDED"
-        else:
-            logger.error("Failed to navigate to login page (and not logged in).")
-            return "LOGIN_FAILED_NAVIGATION"
+        logger.error("Failed to navigate to login page (and not logged in).")
+        return "LOGIN_FAILED_NAVIGATION"
 
     logger.debug("Successfully navigated to sign-in page.")
     return "NAVIGATION_SUCCESS"
@@ -3102,28 +3107,25 @@ def _check_for_2fa(driver: WebDriver, session_manager: SessionManager) -> Union[
         )  # API check only for speed
         if status is True:
             return "LOGIN_SUCCEEDED"
-        elif status is False:
+        if status is False:
             return "LOGIN_FAILED_UNKNOWN"  # Error + not logged in
-        else:
-            return "LOGIN_FAILED_STATUS_CHECK_ERROR"  # Critical status check error
+        return "LOGIN_FAILED_STATUS_CHECK_ERROR"  # Critical status check error
 
 
 def _handle_2fa_verification(session_manager: SessionManager) -> str:
     """Handle 2FA verification process."""
-    if handle_twoFA(session_manager):
+    if handle_twofa(session_manager):
         logger.info("Two-step verification handled successfully.")
         # Re-verify login status after 2FA
         if login_status(session_manager) is True:
             print("\n✓ Two-factor authentication completed successfully!")
             return "LOGIN_SUCCEEDED"
-        else:
-            logger.error(
-                "Login status check failed AFTER successful 2FA handling report."
-            )
-            return "LOGIN_FAILED_POST_2FA_VERIFY"
-    else:
-        logger.error("Two-step verification handling failed.")
-        return "LOGIN_FAILED_2FA_HANDLING"
+        logger.error(
+            "Login status check failed AFTER successful 2FA handling report."
+        )
+        return "LOGIN_FAILED_POST_2FA_VERIFY"
+    logger.error("Two-step verification handling failed.")
+    return "LOGIN_FAILED_2FA_HANDLING"
 
 
 def _handle_no_2fa_verification(driver: WebDriver, session_manager: SessionManager) -> str:  # type: ignore
@@ -3139,7 +3141,7 @@ def _handle_no_2fa_verification(driver: WebDriver, session_manager: SessionManag
     if login_check_result is True:
         print("\n✓ Login successful!")
         return "LOGIN_SUCCEEDED"
-    elif login_check_result is False:
+    if login_check_result is False:
         # Verify why it failed if no 2FA was shown
         print("\n✗ Login failed. Please check your credentials.")
         logger.error(
@@ -3180,11 +3182,10 @@ def _handle_no_2fa_verification(driver: WebDriver, session_manager: SessionManag
                             "Login failed: Still on login page (post-check), no error message found."
                         )
                         return "LOGIN_FAILED_STUCK_ON_LOGIN"
-                    else:
-                        logger.error(
-                            "Login failed: Status False, no 2FA, no error msg, not on login page."
-                        )
-                        return "LOGIN_FAILED_UNKNOWN"
+                    logger.error(
+                        "Login failed: Status False, no 2FA, no error msg, not on login page."
+                    )
+                    return "LOGIN_FAILED_UNKNOWN"
                 except WebDriverException:  # type: ignore
                     logger.error(
                         "Login failed: Status False, WebDriverException getting URL."
@@ -3222,8 +3223,8 @@ def _handle_2fa_and_verification(driver: WebDriver, session_manager: SessionMana
     # Handle 2FA or direct verification based on detection
     if two_fa_check:  # 2FA present
         return _handle_2fa_verification(session_manager)
-    else:  # No 2FA detected
-        return _handle_no_2fa_verification(driver, session_manager)
+    # No 2FA detected
+    return _handle_no_2fa_verification(driver, session_manager)
 
 
 def log_in(session_manager: SessionManager) -> str:  # type: ignore
@@ -3326,7 +3327,7 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
         if api_check_result is True:
             logger.debug("API login check confirmed user is logged in.")
             return True
-        elif api_check_result is False:
+        if api_check_result is False:
             logger.debug("API login check confirmed user is NOT logged in.")
             return False
         # End of if/elif
@@ -3534,15 +3535,13 @@ def nav_to_page(
                             return False
                         # End of if
                         continue  # Retry navigation with new driver
-                    else:
-                        logger.error("Session restart failed. Cannot navigate.")
-                        return False  # Unrecoverable
-                    # End of if/else restart
-                else:
-                    logger.error(
-                        "Session invalid and no SessionManager provided for restart."
-                    )
+                    logger.error("Session restart failed. Cannot navigate.")
                     return False  # Unrecoverable
+                    # End of if/else restart
+                logger.error(
+                    "Session invalid and no SessionManager provided for restart."
+                )
+                return False  # Unrecoverable
                 # End of if/else session_manager
             # End of if not is_browser_open
 
@@ -3640,29 +3639,26 @@ def nav_to_page(
                             "Login status OK after landing on login page redirect. Retrying original navigation."
                         )
                         continue  # Retry original nav_to_page call
-                    else:
-                        # Attempt automated login
+                    # Attempt automated login
+                    logger.info(
+                        "Not logged in according to API. Attempting re-login..."
+                    )
+                    login_result_str = log_in(session_manager)
+                    if login_result_str == "LOGIN_SUCCEEDED":
                         logger.info(
-                            "Not logged in according to API. Attempting re-login..."
+                            "Re-login successful. Retrying original navigation..."
                         )
-                        login_result_str = log_in(session_manager)
-                        if login_result_str == "LOGIN_SUCCEEDED":
-                            logger.info(
-                                "Re-login successful. Retrying original navigation..."
-                            )
-                            continue  # Retry original nav_to_page call
-                        else:
-                            logger.error(
-                                f"Re-login attempt failed ({login_result_str}). Cannot complete navigation."
-                            )
-                            return False  # Fail navigation if re-login fails
+                        continue  # Retry original nav_to_page call
+                    logger.error(
+                        f"Re-login attempt failed ({login_result_str}). Cannot complete navigation."
+                    )
+                    return False  # Fail navigation if re-login fails
                         # End of if/else login_result_str
                     # End of if/else login_stat
-                else:
-                    logger.error(
-                        "Landed on login page, no SessionManager provided for re-login attempt."
-                    )
-                    return False  # Fail navigation
+                logger.error(
+                    "Landed on login page, no SessionManager provided for re-login attempt."
+                )
+                return False  # Fail navigation
                 # End of if/else session_manager
             # End of if is_on_login_page
 
@@ -3702,18 +3698,17 @@ def nav_to_page(
                 if action == "skip":
                     logger.error("Page no longer available message found. Skipping.")
                     return False  # Fail navigation
-                elif action == "refresh":
+                if action == "refresh":
                     logger.info(
                         f"Temporary unavailability message found. Waiting {wait_time}s and retrying..."
                     )
                     time.sleep(wait_time)
                     continue  # Retry navigation attempt
-                else:
-                    # Wrong URL, no specific message, likely a redirect issue
-                    logger.warning(
-                        "Wrong URL, no specific unavailability message found. Retrying navigation."
-                    )
-                    continue  # Retry navigation attempt
+                # Wrong URL, no specific message, likely a redirect issue
+                logger.warning(
+                    "Wrong URL, no specific unavailability message found. Retrying navigation."
+                )
+                continue  # Retry navigation attempt
                 # End of if/elif/else action
             # End of if landed_url_base != target_url_base
 
@@ -3752,7 +3747,7 @@ def nav_to_page(
                 )
                 if action == "skip":
                     return False
-                elif action == "refresh":
+                if action == "refresh":
                     time.sleep(wait_time)
                     continue  # Retry navigation
                 # End of if/elif
@@ -3810,16 +3805,14 @@ def nav_to_page(
                         return False  # Fail if restart didn't provide driver
                     # End of if
                     continue  # Retry navigation
-                else:
-                    logger.error("Session restart failed. Cannot complete navigation.")
-                    return False  # Unrecoverable
+                logger.error("Session restart failed. Cannot complete navigation.")
+                return False  # Unrecoverable
                 # End of if/else restart
-            else:
-                logger.warning(
-                    "WebDriverException occurred, session seems valid or no restart possible. Waiting before retry."
-                )
-                time.sleep(random.uniform(2, 4))
-                continue  # Retry navigation attempt
+            logger.warning(
+                "WebDriverException occurred, session seems valid or no restart possible. Waiting before retry."
+            )
+            time.sleep(random.uniform(2, 4))
+            continue  # Retry navigation attempt
             # End of if/else session_manager
         except Exception as e:  # Catch other unexpected errors
             logger.error(
@@ -4263,8 +4256,8 @@ def safe_file_operation(file_path: Union[str, Path], mode: str = 'r', encoding: 
     file_handle = None
 
     try:
-        file_handle = open(file_path, mode, encoding=encoding)
-        yield file_handle
+        with file_path.open(mode, encoding=encoding) as file_handle:
+            yield file_handle
     except FileNotFoundError as e:
         logger.error(f"File not found: {file_path}")
         raise FileNotFoundError(f"Cannot access file: {file_path}") from e
@@ -4475,7 +4468,7 @@ async def async_api_request(
                             result = await response.json()
                             logger.info(f"[{api_description}] Successful async request (attempt {attempt})")
                             return result
-                        except (aiohttp.ContentTypeError if aiohttp else Exception):
+                        except Exception:
                             # Try to get text response
                             text_result = await response.text()
                             logger.debug(f"[{api_description}] Non-JSON response: {text_result[:200]}")
@@ -4485,33 +4478,29 @@ async def async_api_request(
                         if attempt < max_retries:
                             await asyncio.sleep(backoff_factor * (2 ** attempt))
                             continue
-                        else:
-                            logger.error(f"[{api_description}] Rate limit exceeded after {max_retries} attempts")
-                            return None
+                        logger.error(f"[{api_description}] Rate limit exceeded after {max_retries} attempts")
+                        return None
                     else:
                         logger.warning(f"[{api_description}] HTTP {response.status}: {response.reason}")
                         if attempt < max_retries:
                             await asyncio.sleep(backoff_factor * attempt)
                             continue
-                        else:
-                            return None
+                        return None
 
             except asyncio.TimeoutError:
                 logger.warning(f"[{api_description}] Timeout on attempt {attempt}/{max_retries}")
                 if attempt < max_retries:
                     await asyncio.sleep(backoff_factor * attempt)
                     continue
-                else:
-                    logger.error(f"[{api_description}] Timeout after {max_retries} attempts")
-                    return None
+                logger.error(f"[{api_description}] Timeout after {max_retries} attempts")
+                return None
             except Exception as e:
                 logger.error(f"[{api_description}] Error on attempt {attempt}/{max_retries}: {e}")
                 if attempt < max_retries:
                     await asyncio.sleep(backoff_factor * attempt)
                     continue
-                else:
-                    logger.error(f"[{api_description}] Failed after {max_retries} attempts")
-                    return None
+                logger.error(f"[{api_description}] Failed after {max_retries} attempts")
+                return None
 
     return None
 
@@ -4628,7 +4617,7 @@ async def async_file_context(
         loop = asyncio.get_event_loop()
 
         def _open_file():
-            return open(file_path, mode=mode, encoding=encoding, **kwargs)
+            return Path(file_path).open(mode=mode, encoding=encoding, **kwargs)
 
         file_handle = await loop.run_in_executor(None, _open_file)
 

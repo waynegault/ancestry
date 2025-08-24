@@ -874,7 +874,7 @@ def demonstrate_api_cache_usage() -> Dict[str, Any]:
         demo_results["demonstrations"].append(
             {
                 "name": "Error in Demonstration",
-                "description": f"Error occurred: {str(e)}",
+                "description": f"Error occurred: {e!s}",
                 "status": "error",
             }
         )

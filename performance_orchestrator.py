@@ -287,8 +287,9 @@ class ModuleLoadOptimizer:
         self.optimization_applied = set()
         self._lock = threading.Lock()
 
+    @staticmethod
     @lru_cache(maxsize=128)
-    def get_cached_import(self, module_name: str):
+    def get_cached_import(module_name: str):
         """Cache frequently imported modules."""
         try:
             return __import__(module_name)

@@ -194,11 +194,10 @@ def _has_direct_relationship(
             return True
 
     # Check for grandchild relationship
-    for child_id in id_to_children.get(id1, set()):
-        if id2 in id_to_children.get(child_id, set()):
-            return True
-
-    return False
+    return any(
+        id2 in id_to_children.get(child_id, set())
+        for child_id in id_to_children.get(id1, set())
+    )
 
 
 # --- Relationship Path Finding Functions ---
@@ -294,14 +293,14 @@ def fast_bidirectional_bfs(
             # Expand to parents (direct relationship)
             for parent_id in id_to_parents.get(current_id, set()):
                 if parent_id not in visited_fwd:
-                    new_path = path + [parent_id]
+                    new_path = [*path, parent_id]
                     visited_fwd[parent_id] = (depth + 1, new_path)
                     queue_fwd.append((parent_id, depth + 1, new_path))
 
             # Expand to children (direct relationship)
             for child_id in id_to_children.get(current_id, set()):
                 if child_id not in visited_fwd:
-                    new_path = path + [child_id]
+                    new_path = [*path, child_id]
                     visited_fwd[child_id] = (depth + 1, new_path)
                     queue_fwd.append((child_id, depth + 1, new_path))
 
@@ -310,7 +309,7 @@ def fast_bidirectional_bfs(
                 for sibling_id in id_to_children.get(parent_id, set()):
                     if sibling_id != current_id and sibling_id not in visited_fwd:
                         # Include parent in path for proper relationship context
-                        new_path = path + [parent_id, sibling_id]
+                        new_path = [*path, parent_id, sibling_id]
                         visited_fwd[sibling_id] = (
                             depth + 2,
                             new_path,
@@ -342,14 +341,14 @@ def fast_bidirectional_bfs(
             # Expand to parents (direct relationship)
             for parent_id in id_to_parents.get(current_id, set()):
                 if parent_id not in visited_bwd:
-                    new_path = [parent_id] + path
+                    new_path = [parent_id, *path]
                     visited_bwd[parent_id] = (depth + 1, new_path)
                     queue_bwd.append((parent_id, depth + 1, new_path))
 
             # Expand to children (direct relationship)
             for child_id in id_to_children.get(current_id, set()):
                 if child_id not in visited_bwd:
-                    new_path = [child_id] + path
+                    new_path = [child_id, *path]
                     visited_bwd[child_id] = (depth + 1, new_path)
                     queue_bwd.append((child_id, depth + 1, new_path))
 
@@ -358,7 +357,7 @@ def fast_bidirectional_bfs(
                 for sibling_id in id_to_children.get(parent_id, set()):
                     if sibling_id != current_id and sibling_id not in visited_bwd:
                         # Include parent in path for proper relationship context
-                        new_path = [sibling_id, parent_id] + path
+                        new_path = [sibling_id, parent_id, *path]
                         visited_bwd[sibling_id] = (depth + 2, new_path)
                         queue_bwd.append((sibling_id, depth + 2, new_path))
 
@@ -521,8 +520,7 @@ def format_api_relationship_path(
                 path_steps_json.append(f"*   {step_name}")
             path_steps_json.append("    -> leads to")
             path_steps_json.append(f"*   {owner_name} (You)")
-            result_str = "\n".join(path_steps_json)
-            return result_str
+            return "\n".join(path_steps_json)
 
     # Process HTML content if available
     if not html_content_raw:
@@ -666,12 +664,10 @@ def format_api_relationship_path(
                 return "(Error: Could not convert relationship data to unified format)"
 
             # Format the path using the unified formatter
-            result_str = format_relationship_path_unified(
+            return format_relationship_path_unified(
                 unified_path, target_name, owner_name, relationship_type
             )
-            return result_str
-        else:
-            return "(Could not extract relationship data from HTML)"
+        return "(Could not extract relationship data from HTML)"
 
     except Exception as e:
         logger.error(f"Error parsing relationship HTML: {e}", exc_info=True)
@@ -1019,10 +1015,7 @@ def convert_api_path_to_unified_format(
         if years_match:
             birth_year = years_match.group(1)
             death_year_raw = years_match.group(2)
-            if death_year_raw == "-" or death_year_raw.lower() == "living":
-                death_year = None
-            else:
-                death_year = death_year_raw
+            death_year = None if death_year_raw == "-" or death_year_raw.lower() == "living" else death_year_raw
 
     # Determine gender from name and other information
     gender: Optional[str] = (
@@ -1566,10 +1559,9 @@ def format_relationship_path_unified(
         path_lines.append(line)
 
     # Combine all parts
-    result_str = f"{header}\n{summary}\n\n" + "\n".join(
+    return f"{header}\n{summary}\n\n" + "\n".join(
         path_lines
     )  # Renamed result to result_str
-    return result_str
 
 
 def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str:
@@ -1588,33 +1580,33 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
     # Direct relationships
     if relationship_code_lower == "parent":
         return "father" if gender == "M" else "mother" if gender == "F" else "parent"
-    elif relationship_code_lower == "child":
+    if relationship_code_lower == "child":
         return "son" if gender == "M" else "daughter" if gender == "F" else "child"
-    elif relationship_code_lower == "spouse":
+    if relationship_code_lower == "spouse":
         return "husband" if gender == "M" else "wife" if gender == "F" else "spouse"
-    elif relationship_code_lower == "sibling":
+    if relationship_code_lower == "sibling":
         return "brother" if gender == "M" else "sister" if gender == "F" else "sibling"
 
     # Extended relationships
-    elif "grandparent" in relationship_code_lower:
+    if "grandparent" in relationship_code_lower:
         return (
             "grandfather"
             if gender == "M"
             else "grandmother" if gender == "F" else "grandparent"
         )
-    elif "grandchild" in relationship_code_lower:
+    if "grandchild" in relationship_code_lower:
         return (
             "grandson"
             if gender == "M"
             else "granddaughter" if gender == "F" else "grandchild"
         )
-    elif "aunt" in relationship_code_lower or "uncle" in relationship_code_lower:
+    if "aunt" in relationship_code_lower or "uncle" in relationship_code_lower:
         return "uncle" if gender == "M" else "aunt" if gender == "F" else "aunt/uncle"
-    elif "niece" in relationship_code_lower or "nephew" in relationship_code_lower:
+    if "niece" in relationship_code_lower or "nephew" in relationship_code_lower:
         return (
             "nephew" if gender == "M" else "niece" if gender == "F" else "niece/nephew"
         )
-    elif "cousin" in relationship_code_lower:
+    if "cousin" in relationship_code_lower:
         return "cousin"
 
     # Default
@@ -1665,7 +1657,7 @@ def relationship_module_tests():
                 status = "✅" if test_passed else "❌"
                 print(f"   {status} {description}")
                 print(
-                    f"      Input: {repr(input_name)} → Output: {repr(result)} (Expected: {repr(expected)})"
+                    f"      Input: {input_name!r} → Output: {result!r} (Expected: {expected!r})"
                 )
 
                 results.append(test_passed)
@@ -1675,7 +1667,7 @@ def relationship_module_tests():
 
             except Exception as e:
                 print(f"   ❌ {description}")
-                print(f"      Input: {repr(input_name)} → Error: {e}")
+                print(f"      Input: {input_name!r} → Error: {e}")
                 results.append(False)
                 raise
 

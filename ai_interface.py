@@ -448,14 +448,12 @@ def classify_message_intent(
                 f"AI intent classification: '{processed_classification}' (Took {duration:.2f}s)"
             )
             return processed_classification
-        else:
-            logger.warning(
-                f"AI returned unexpected classification: '{raw_classification}'. Defaulting to OTHER."
-            )
-            return "OTHER"
-    else:
-        logger.error(f"AI intent classification failed. (Took {duration:.2f}s)")
-        return None
+        logger.warning(
+            f"AI returned unexpected classification: '{raw_classification}'. Defaulting to OTHER."
+        )
+        return "OTHER"
+    logger.error(f"AI intent classification failed. (Took {duration:.2f}s)")
+    return None
 
 
 # End of classify_message_intent
@@ -582,109 +580,108 @@ def extract_genealogical_entities(
                 except Exception:
                     pass
                 return parsed_json
-            else:
-                logger.warning(
-                    f"AI extraction response is valid JSON but uses flat structure instead of nested. Attempting to transform. Response: {cleaned_response_str[:500]}"
-                )
-                # Attempt to salvage by transforming flat structure to expected nested structure
-                salvaged = default_empty_result.copy()
-                if isinstance(parsed_json, dict):
-                    # Handle expected nested structure
-                    if "extracted_data" in parsed_json and isinstance(
-                        parsed_json["extracted_data"], dict
-                    ):
-                        salvaged["extracted_data"] = parsed_json["extracted_data"]
-                    if "suggested_tasks" in parsed_json and isinstance(
-                        parsed_json["suggested_tasks"], list
-                    ):
-                        salvaged["suggested_tasks"] = parsed_json["suggested_tasks"]
+            logger.warning(
+                f"AI extraction response is valid JSON but uses flat structure instead of nested. Attempting to transform. Response: {cleaned_response_str[:500]}"
+            )
+            # Attempt to salvage by transforming flat structure to expected nested structure
+            salvaged = default_empty_result.copy()
+            if isinstance(parsed_json, dict):
+                # Handle expected nested structure
+                if "extracted_data" in parsed_json and isinstance(
+                    parsed_json["extracted_data"], dict
+                ):
+                    salvaged["extracted_data"] = parsed_json["extracted_data"]
+                if "suggested_tasks" in parsed_json and isinstance(
+                    parsed_json["suggested_tasks"], list
+                ):
+                    salvaged["suggested_tasks"] = parsed_json["suggested_tasks"]
 
-                    # Handle flat structure and transform to nested
-                    else:
-                        extracted_data = {}
-                        # Map flat structure keys to expected nested structure
-                        key_mapping = {
-                            "mentioned_names": "mentioned_names",
-                            "dates": "mentioned_dates",
-                            "locations": "mentioned_locations",
-                            "relationships": "potential_relationships",
-                            "occupations": "key_facts",
-                            "events": "key_facts",
-                            "research_questions": "key_facts",
-                        }
+                # Handle flat structure and transform to nested
+                else:
+                    extracted_data = {}
+                    # Map flat structure keys to expected nested structure
+                    key_mapping = {
+                        "mentioned_names": "mentioned_names",
+                        "dates": "mentioned_dates",
+                        "locations": "mentioned_locations",
+                        "relationships": "potential_relationships",
+                        "occupations": "key_facts",
+                        "events": "key_facts",
+                        "research_questions": "key_facts",
+                    }
 
-                        for flat_key, nested_key in key_mapping.items():
-                            if flat_key in parsed_json and isinstance(
-                                parsed_json[flat_key], list
-                            ):
-                                if nested_key not in extracted_data:
-                                    extracted_data[nested_key] = []
-                                extracted_data[nested_key].extend(parsed_json[flat_key])
+                    for flat_key, nested_key in key_mapping.items():
+                        if flat_key in parsed_json and isinstance(
+                            parsed_json[flat_key], list
+                        ):
+                            if nested_key not in extracted_data:
+                                extracted_data[nested_key] = []
+                            extracted_data[nested_key].extend(parsed_json[flat_key])
 
-                        # Ensure all expected keys exist
-                        for key in [
-                            "mentioned_names",
-                            "mentioned_locations",
-                            "mentioned_dates",
-                            "potential_relationships",
-                            "key_facts",
-                        ]:
-                            if key not in extracted_data:
-                                extracted_data[key] = []
+                    # Ensure all expected keys exist
+                    for key in [
+                        "mentioned_names",
+                        "mentioned_locations",
+                        "mentioned_dates",
+                        "potential_relationships",
+                        "key_facts",
+                    ]:
+                        if key not in extracted_data:
+                            extracted_data[key] = []
 
-                        salvaged["extracted_data"] = extracted_data
-                        # Note: flat structure doesn't include suggested_tasks, so it remains empty
-                        logger.info(
-                            f"Successfully transformed flat structure to nested. Extracted {len(extracted_data.get('mentioned_names', []))} names, {len(extracted_data.get('mentioned_locations', []))} locations, {len(extracted_data.get('mentioned_dates', []))} dates"
-                        )
-
-                try:  # Telemetry salvage event
-                    from ai_prompt_utils import get_prompt_version
-                    from extraction_quality import compute_anomaly_summary, compute_extraction_quality
-                    from prompt_telemetry import record_extraction_experiment_event
-                    variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
-                    quality_score = compute_extraction_quality(salvaged)
-                    try:
-                        extracted_component = salvaged.get("extracted_data", {}) if isinstance(salvaged, dict) else {}
-                        structured_keys = [
-                            "structured_names","vital_records","relationships","locations","occupations",
-                            "research_questions","documents_mentioned","dna_information"
-                        ]
-                        non_empty = 0
-                        total_keys = len(structured_keys)
-                        for k in structured_keys:
-                            v = extracted_component.get(k)
-                            if isinstance(v, list) and len(v) > 0:
-                                non_empty += 1
-                        component_coverage = (non_empty / total_keys) if total_keys else 0.0
-                    except Exception:
-                        component_coverage = None
-                    try:
-                        salvaged["quality_score"] = quality_score
-                    except Exception:
-                        pass
-                    anomaly_summary = None
-                    try:
-                        anomaly_summary = compute_anomaly_summary(salvaged)
-                    except Exception:
-                        anomaly_summary = None
-                    record_extraction_experiment_event(
-                        variant_label=variant_label,
-                        prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
-                        prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
-                        parse_success=False,
-                        extracted_data=salvaged.get("extracted_data"),
-                        suggested_tasks=salvaged.get("suggested_tasks"),
-                        raw_response_text=cleaned_response_str,
-                        user_id=getattr(session_manager, "user_id", None),
-                        error="structure_salvaged",
-                        quality_score=quality_score,
-                        component_coverage=component_coverage,
-                        anomaly_summary=anomaly_summary,
+                    salvaged["extracted_data"] = extracted_data
+                    # Note: flat structure doesn't include suggested_tasks, so it remains empty
+                    logger.info(
+                        f"Successfully transformed flat structure to nested. Extracted {len(extracted_data.get('mentioned_names', []))} names, {len(extracted_data.get('mentioned_locations', []))} locations, {len(extracted_data.get('mentioned_dates', []))} dates"
                     )
+
+            try:  # Telemetry salvage event
+                from ai_prompt_utils import get_prompt_version
+                from extraction_quality import compute_anomaly_summary, compute_extraction_quality
+                from prompt_telemetry import record_extraction_experiment_event
+                variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
+                quality_score = compute_extraction_quality(salvaged)
+                try:
+                    extracted_component = salvaged.get("extracted_data", {}) if isinstance(salvaged, dict) else {}
+                    structured_keys = [
+                        "structured_names","vital_records","relationships","locations","occupations",
+                        "research_questions","documents_mentioned","dna_information"
+                    ]
+                    non_empty = 0
+                    total_keys = len(structured_keys)
+                    for k in structured_keys:
+                        v = extracted_component.get(k)
+                        if isinstance(v, list) and len(v) > 0:
+                            non_empty += 1
+                    component_coverage = (non_empty / total_keys) if total_keys else 0.0
+                except Exception:
+                    component_coverage = None
+                try:
+                    salvaged["quality_score"] = quality_score
                 except Exception:
                     pass
-                return salvaged
+                anomaly_summary = None
+                try:
+                    anomaly_summary = compute_anomaly_summary(salvaged)
+                except Exception:
+                    anomaly_summary = None
+                record_extraction_experiment_event(
+                    variant_label=variant_label,
+                    prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
+                    prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
+                    parse_success=False,
+                    extracted_data=salvaged.get("extracted_data"),
+                    suggested_tasks=salvaged.get("suggested_tasks"),
+                    raw_response_text=cleaned_response_str,
+                    user_id=getattr(session_manager, "user_id", None),
+                    error="structure_salvaged",
+                    quality_score=quality_score,
+                    component_coverage=component_coverage,
+                    anomaly_summary=anomaly_summary,
+                )
+            except Exception:
+                pass
+            return salvaged
         except json.JSONDecodeError as e:
             logger.error(
                 f"AI extraction response was not valid JSON: {e}. Response: {ai_response_str[:500]}"
@@ -1327,9 +1324,8 @@ def test_ai_functionality(session_manager: SessionManager) -> bool:
         if result is None:
             logger.info("✅ Fallback behavior works correctly")
             return True
-        else:
-            logger.error(f"❌ Expected None for disabled AI, got: {result}")
-            return False
+        logger.error(f"❌ Expected None for disabled AI, got: {result}")
+        return False
 
     # Test with simple inputs if AI is configured
     logger.info(f"Testing with AI provider: {ai_provider}")

@@ -8,11 +8,12 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -189,7 +190,7 @@ class SessionValidator:
             if login_ok is True:
                 logger.debug("Login status check: User is logged in.")
                 return True, None
-            elif login_ok is False:
+            if login_ok is False:
                 logger.warning(
                     "Login status check: User is NOT logged in. Attempting relogin..."
                 )
@@ -199,14 +200,13 @@ class SessionValidator:
                 if relogin_success:
                     logger.info("Relogin successful.")
                     return True, None
-                else:
-                    error_msg = "Relogin failed"
-                    logger.error(error_msg)
-                    return False, error_msg
-            else:  # login_ok is None
-                error_msg = "Login status check returned None (critical failure)"
+                error_msg = "Relogin failed"
                 logger.error(error_msg)
                 return False, error_msg
+            # login_ok is None
+            error_msg = "Login status check returned None (critical failure)"
+            logger.error(error_msg)
+            return False, error_msg
 
         except Exception as e:
             error_msg = f"Exception during login check: {e}"
@@ -239,9 +239,8 @@ class SessionValidator:
             if login_result == "LOGIN_SUCCEEDED":
                 logger.info("Relogin successful.")
                 return True
-            else:
-                logger.error(f"Relogin failed: {login_result}")
-                return False
+            logger.error(f"Relogin failed: {login_result}")
+            return False
 
         except Exception as e:
             logger.error(f"Exception during relogin attempt: {e}", exc_info=True)
@@ -465,14 +464,13 @@ class SessionValidator:
             if api_login_status is True:
                 logger.debug("Login verification successful (API method).")
                 return True
-            elif api_login_status is False:
+            if api_login_status is False:
                 logger.warning("Login verification failed (API method).")
                 return False
-            else:
-                logger.error(
-                    "Login verification failed critically (API returned None)."
-                )
-                return False
+            logger.error(
+                "Login verification failed critically (API returned None)."
+            )
+            return False
 
         except Exception as e:
             logger.error(

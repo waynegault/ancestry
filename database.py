@@ -1037,9 +1037,7 @@ def create_or_update_dna_match(
                     # Treat None as 0.0 for comparison to avoid errors, but check explicitly
                     old_float = float(old_value) if old_value is not None else None
                     new_float = float(new_value) if new_value is not None else None
-                    if old_float is None and new_float is not None:
-                        value_changed = True
-                    elif old_float is not None and new_float is None:
+                    if (old_float is None and new_float is not None) or (old_float is not None and new_float is None):
                         value_changed = True
                     elif (
                         old_float is not None
@@ -1067,24 +1065,20 @@ def create_or_update_dna_match(
 
             if updated:
                 # Use setattr to avoid type checking issues with SQLAlchemy columns
-                setattr(
-                    existing_dna_match, "updated_at", datetime.now(timezone.utc)
-                )  # Update timestamp
+                existing_dna_match.updated_at = datetime.now(timezone.utc)  # Update timestamp
                 logger.debug(f"Updating existing DnaMatch record for {log_ref}.")
                 # No need to session.add() for updates if object fetched within session
                 return "updated"
-            else:
-                logger.debug(
-                    f"Existing DnaMatch found for {log_ref}, no changes needed. Skipping."
-                )
-                return "skipped"
-        else:
-            # Step 5: Create new record
-            logger.debug(f"Creating new DnaMatch record for {log_ref}.")
-            new_dna_match = DnaMatch(**validated_data)
-            session.add(new_dna_match)
-            logger.debug(f"DnaMatch record added to session for {log_ref}.")
-            return "created"
+            logger.debug(
+                f"Existing DnaMatch found for {log_ref}, no changes needed. Skipping."
+            )
+            return "skipped"
+        # Step 5: Create new record
+        logger.debug(f"Creating new DnaMatch record for {log_ref}.")
+        new_dna_match = DnaMatch(**validated_data)
+        session.add(new_dna_match)
+        logger.debug(f"DnaMatch record added to session for {log_ref}.")
+        return "created"
 
     # Step 6: Handle database errors
     except (
@@ -1164,24 +1158,20 @@ def create_or_update_family_tree(
 
             if updated:
                 # Use setattr to avoid type checking issues with SQLAlchemy columns
-                setattr(
-                    existing_tree, "updated_at", datetime.now(timezone.utc)
-                )  # Update timestamp
+                existing_tree.updated_at = datetime.now(timezone.utc)  # Update timestamp
                 logger.debug(f"Updating existing FamilyTree record for {log_ref}.")
                 # No need to session.add() for updates
                 return "updated"
-            else:
-                logger.debug(
-                    f"Existing FamilyTree record found for {log_ref}, no changes needed. Skipping."
-                )
-                return "skipped"
-        else:
-            # Step 5: Create new record
-            logger.debug(f"Creating new FamilyTree record for {log_ref}.")
-            new_tree = FamilyTree(**valid_tree_args)
-            session.add(new_tree)
-            logger.debug(f"FamilyTree record added to session for {log_ref}.")
-            return "created"
+            logger.debug(
+                f"Existing FamilyTree record found for {log_ref}, no changes needed. Skipping."
+            )
+            return "skipped"
+        # Step 5: Create new record
+        logger.debug(f"Creating new FamilyTree record for {log_ref}.")
+        new_tree = FamilyTree(**valid_tree_args)
+        session.add(new_tree)
+        logger.debug(f"FamilyTree record added to session for {log_ref}.")
+        return "created"
 
     # Step 6: Handle database errors
     except TypeError as te:
@@ -1365,20 +1355,19 @@ def create_or_update_person(
                         value_to_set = current_value
 
                 # General comparison for other fields
-                else:
-                    # Ensure boolean comparisons work correctly
-                    if isinstance(current_value, bool) or isinstance(new_value, bool):
-                        if bool(current_value) != bool(new_value):
-                            value_changed = True
-                            value_to_set = bool(new_value)
-                        else:
-                            value_to_set = current_value
-                    # Standard comparison for other types
-                    elif current_value != new_value:
+                # Ensure boolean comparisons work correctly
+                elif isinstance(current_value, bool) or isinstance(new_value, bool):
+                    if bool(current_value) != bool(new_value):
                         value_changed = True
-                        value_to_set = new_value
+                        value_to_set = bool(new_value)
                     else:
                         value_to_set = current_value
+                # Standard comparison for other types
+                elif current_value != new_value:
+                    value_changed = True
+                    value_to_set = new_value
+                else:
+                    value_to_set = current_value
 
                 # Apply the update if value changed
                 if value_changed:
@@ -1389,37 +1378,33 @@ def create_or_update_person(
             # Step 4c: Set updated_at timestamp if any field changed
             if person_update_needed:
                 # Use setattr to avoid type checking issues with SQLAlchemy columns
-                setattr(existing_person, "updated_at", datetime.now(timezone.utc))
+                existing_person.updated_at = datetime.now(timezone.utc)
                 session.flush()  # Apply updates to DB session state
                 return existing_person, "updated"
-            else:
-                logger.debug(f"{log_ref}: No updates needed for existing person.")
-                return existing_person, "skipped"
-        else:
-            # --- Step 5: CREATE new person ---
-            logger.debug(f"{log_ref}: Creating new Person.")
-            # Use the helper function for creation
-            new_person_id = create_person(session, person_data)
-            if new_person_id > 0:
-                # Fetch the newly created object to return it
-                new_person_obj = session.get(Person, new_person_id)
-                if new_person_obj:
-                    return new_person_obj, "created"
-                else:
-                    # This indicates a problem if create_person returned an ID but get() failed
-                    logger.error(
-                        f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report."
-                    )
-                    # Rollback might be needed if state is inconsistent
-                    try:
-                        session.rollback()
-                    except Exception:
-                        pass
-                    return None, "error"
-            else:
-                # create_person already logged the error
-                logger.error(f"create_person helper failed for {log_ref}.")
-                return None, "error"
+            logger.debug(f"{log_ref}: No updates needed for existing person.")
+            return existing_person, "skipped"
+        # --- Step 5: CREATE new person ---
+        logger.debug(f"{log_ref}: Creating new Person.")
+        # Use the helper function for creation
+        new_person_id = create_person(session, person_data)
+        if new_person_id > 0:
+            # Fetch the newly created object to return it
+            new_person_obj = session.get(Person, new_person_id)
+            if new_person_obj:
+                return new_person_obj, "created"
+            # This indicates a problem if create_person returned an ID but get() failed
+            logger.error(
+                f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report."
+            )
+            # Rollback might be needed if state is inconsistent
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            return None, "error"
+        # create_person already logged the error
+        logger.error(f"create_person helper failed for {log_ref}.")
+        return None, "error"
 
     # --- Step 6: Handle Exceptions ---
     except IntegrityError as ie:
@@ -1600,8 +1585,7 @@ def get_person_and_dna_match(
         # Step 4: Return results
         if person:
             return person, person.dna_match  # dna_match is already loaded
-        else:
-            return None, None
+        return None, None
     except SQLAlchemyError as e:
         logger.error(
             f"DB error retrieving person/DNA match for profile {profile_id}/{username}: {e}",
@@ -1694,9 +1678,8 @@ def find_existing_person(
             if not potential_matches:
                 pass  # No matches found by profile ID, proceed to final check
             elif len(potential_matches) == 1:
-                person = potential_matches[0]  # Unique match found by profile ID
+                return potential_matches[0]  # Unique match found by profile ID
                 # logger.debug(f"Found unique person by ProfileID for {log_ref} (ID: {person.id}).")
-                return person
             else:  # Multiple matches found for the same profile ID
                 logger.warning(
                     f"Multiple ({len(potential_matches)}) people found for Profile ID: {person_profile_id}. Attempting disambiguation..."
@@ -1716,21 +1699,21 @@ def find_existing_person(
                             f"Disambiguated multiple ProfileID matches using exact Username '{person_username}' for {log_ref} (ID: {found_by_username.id})."
                         )
                         return found_by_username
-                    elif username_match_count > 1:
+                    if username_match_count > 1:
                         logger.error(
                             f"CRITICAL AMBIGUITY: Found {username_match_count} people matching BOTH ProfileID {person_profile_id} AND Username '{person_username}'. Cannot reliably identify."
                         )
                         return None  # Cannot safely return a match
-                    else:  # No username match among the profile ID matches
-                        logger.warning(
-                            f"Multiple matches for ProfileID {person_profile_id}, but none matched exact Username '{person_username}'."
-                        )
-                        return None  # Cannot safely return a match
-                else:  # Multiple profile ID matches, but no username provided for disambiguation
+                    # No username match among the profile ID matches
                     logger.warning(
-                        f"Multiple matches for ProfileID {person_profile_id}, but no Username provided for disambiguation."
+                        f"Multiple matches for ProfileID {person_profile_id}, but none matched exact Username '{person_username}'."
                     )
                     return None  # Cannot safely return a match
+                # Multiple profile ID matches, but no username provided for disambiguation
+                logger.warning(
+                    f"Multiple matches for ProfileID {person_profile_id}, but no Username provided for disambiguation."
+                )
+                return None  # Cannot safely return a match
 
         # Step 4: Log if no reliable match found
         if person is None:
@@ -2029,10 +2012,8 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
         person_id_for_log = person.id  # Get ID for logging
         logger.info(f"Soft-deleting Person ID {person_id_for_log} ({log_ref})...")
         # Use setattr to avoid type checking issues with SQLAlchemy columns
-        setattr(person, "deleted_at", datetime.now(timezone.utc))
-        setattr(
-            person, "status", PersonStatusEnum.ARCHIVE
-        )  # Also set status to ARCHIVE
+        person.deleted_at = datetime.now(timezone.utc)
+        person.status = PersonStatusEnum.ARCHIVE  # Also set status to ARCHIVE
         session.flush()  # Apply changes to session state immediately
         logger.info(
             f"Soft-deleted Person ID {person_id_for_log} ({log_ref}) successfully."
@@ -2156,8 +2137,7 @@ def delete_person(
     """
     if soft_delete:
         return soft_delete_person(session, profile_id, username)
-    else:
-        return hard_delete_person(session, profile_id, username)
+    return hard_delete_person(session, profile_id, username)
 
 
 # End of delete_person
@@ -2210,21 +2190,20 @@ def delete_database(
 
             # Step 2b: Check if file exists
             if db_path.exists():
-                logger.debug(f"Attempting os.remove on {db_path}...")
-                os.remove(db_path)
+                logger.debug(f"Attempting Path.unlink on {db_path}...")
+                db_path.unlink(missing_ok=True)
                 time.sleep(0.1)  # Short pause to allow filesystem to update
                 # Step 2c: Verify deletion
                 if not db_path.exists():
                     logger.info(f"Database file '{db_path.name}' deleted successfully.")
                     return  # Success
-                else:
-                    # This might happen if deletion fails silently or is delayed
-                    logger.warning(
-                        f"os.remove called, but file '{db_path}' still exists."
-                    )
-                    last_error = OSError(
-                        f"File exists after os.remove attempt {attempt + 1}"
-                    )
+                # This might happen if deletion fails silently or is delayed
+                logger.warning(
+                    f"os.remove called, but file '{db_path}' still exists."
+                )
+                last_error = OSError(
+                    f"File exists after os.remove attempt {attempt + 1}"
+                )
             else:
                 # File doesn't exist, consider it deleted
                 logger.info(
@@ -2332,7 +2311,7 @@ def backup_database(_session_manager=None):
 
         # Check if database file is readable
         try:
-            with open(db_path, "rb") as f:
+            with db_path.open("rb") as f:
                 f.read(1)  # Try to read first byte
         except PermissionError:
             raise DatabaseConnectionError(
@@ -2751,18 +2730,10 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
             # Set different deleted_at timestamps using setattr to avoid type checking issues
             if i == 0:
                 # 40 days ago (should be cleaned up)
-                setattr(
-                    person,
-                    "deleted_at",
-                    datetime.now(timezone.utc) - timedelta(days=40),
-                )
+                person.deleted_at = datetime.now(timezone.utc) - timedelta(days=40)
             elif i == 1:
                 # 20 days ago (should not be cleaned up with 30-day cutoff)
-                setattr(
-                    person,
-                    "deleted_at",
-                    datetime.now(timezone.utc) - timedelta(days=20),
-                )
+                person.deleted_at = datetime.now(timezone.utc) - timedelta(days=20)
             # Leave the third person with the current timestamp
 
             logger.info(f"Set deleted_at for test person {i+1} to {person.deleted_at}")
@@ -3263,7 +3234,7 @@ def database_module_tests() -> bool:
             try:
                 instance = model_class()
                 instance_created = instance is not None
-                type(instance).__name__
+                _ = type(instance).__name__  # ensure attribute access is not useless
             except Exception as e:
                 print(f"   ❌ {model_name} instantiation failed: {e}")
                 instance_created = False

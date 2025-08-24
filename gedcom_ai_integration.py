@@ -226,7 +226,7 @@ class GedcomAIIntegrator:
             analysis = self.intelligence_analyzer.analyze_gedcom_data(gedcom_data)
 
             # Extract person-specific insights
-            person_insights = {
+            return {
                 "person_identifier": person_identifier,
                 "relevant_gaps": self._find_person_relevant_gaps(person_identifier, analysis),
                 "relevant_conflicts": self._find_person_relevant_conflicts(person_identifier, analysis),
@@ -235,7 +235,6 @@ class GedcomAIIntegrator:
                 "ai_recommendations": self._get_person_ai_recommendations(person_identifier, analysis)
             }
 
-            return person_insights
 
         except Exception as e:
             logger.error(f"Error getting GEDCOM insights for person {person_identifier}: {e}")
@@ -272,7 +271,7 @@ class GedcomAIIntegrator:
         prioritization_analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate integrated insights from all analyses."""
-        insights = {
+        return {
             "tree_health_score": self._calculate_tree_health_score(gedcom_analysis),
             "research_efficiency_opportunities": self._identify_efficiency_opportunities(prioritization_analysis),
             "dna_verification_potential": self._assess_dna_verification_potential(dna_analysis),
@@ -280,7 +279,6 @@ class GedcomAIIntegrator:
             "data_quality_assessment": self._assess_data_quality(gedcom_analysis)
         }
 
-        return insights
 
     def _generate_actionable_recommendations(
         self,
@@ -463,10 +461,9 @@ class GedcomAIIntegrator:
         verification_opportunities = len(dna_analysis.get("verification_opportunities", []))
         if verification_opportunities > 5:
             return "High DNA verification potential"
-        elif verification_opportunities > 2:
+        if verification_opportunities > 2:
             return "Moderate DNA verification potential"
-        else:
-            return "Limited DNA verification potential"
+        return "Limited DNA verification potential"
 
     def _identify_priority_research_areas(self, prioritization_analysis: Dict[str, Any]) -> List[str]:
         """Identify priority research areas."""
@@ -492,12 +489,11 @@ class GedcomAIIntegrator:
 
         if conflict_ratio < 0.05:
             return "High data quality"
-        elif conflict_ratio < 0.15:
+        if conflict_ratio < 0.15:
             return "Good data quality"
-        elif conflict_ratio < 0.30:
+        if conflict_ratio < 0.30:
             return "Fair data quality"
-        else:
-            return "Poor data quality - needs attention"
+        return "Poor data quality - needs attention"
 
     def _unavailable_analysis_result(self) -> Dict[str, Any]:
         """Return result when GEDCOM AI is not available."""

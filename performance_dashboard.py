@@ -273,7 +273,7 @@ RECOMMENDATIONS:
         if not recommendations:
             recommendations.append("✅ System performing within normal parameters")
 
-        return "\n  ".join([""] + recommendations)
+        return "\n  ".join(["", *recommendations])
 
     def get_current_session_summary(self) -> Dict[str, Any]:
         """Get summary of current session performance."""

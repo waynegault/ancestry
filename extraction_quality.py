@@ -114,7 +114,7 @@ def compute_task_quality(tasks: Optional[List[Any]]) -> int:
     # Map avg (-5..15) to 0..30
     normalized = (avg + 5) / 20  # 0..1
     scaled = max(0.0, min(1.0, normalized)) * 30.0
-    return int(round(scaled))
+    return round(scaled)
 
 
 def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
@@ -229,7 +229,7 @@ def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
         task_quality_component = max(0, task_quality_component - 8)
 
     total = max(0.0, min(100.0, base_score + task_quality_component))
-    return int(round(total))
+    return round(total)
 
 
 # === Phase 2 (2025-08-11): Anomaly & Consistency Summary (debug / telemetry only) ===

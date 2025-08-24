@@ -143,7 +143,7 @@ def run_linter() -> bool:
             "W291,W292,W293,E401",
             ".",
         ]
-        subprocess.run(fix_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        subprocess.run(fix_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())
 
         # Step 2: blocking rule set
         print("🧹 LINTER: Enforcing blocking rules (E722,F821,F811,F823,I001,F401)...")
@@ -156,7 +156,7 @@ def run_linter() -> bool:
             "E722,F821,F811,F823,I001,F401",
             ".",
         ]
-        block_res = subprocess.run(block_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        block_res = subprocess.run(block_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())
         if block_res.returncode != 0:
             print("❌ LINTER FAILED (blocking): violations in E722,F821,F811,F823,I001,F401")
             # Tail the output to keep logs compact
@@ -176,7 +176,7 @@ def run_linter() -> bool:
             "--exit-zero",
             ".",
         ]
-        diag_res = subprocess.run(diag_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        diag_res = subprocess.run(diag_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())
         if diag_res.stdout:
             lines = [ln for ln in diag_res.stdout.splitlines() if ln.strip()]
             for line in lines[-25:]:
@@ -201,7 +201,7 @@ def run_quality_checks() -> bool:
         from code_quality_checker import CodeQualityChecker
 
         checker = CodeQualityChecker()
-        current_dir = Path(".")
+        current_dir = Path()
 
         # Check key files for quality
         key_files = [
@@ -284,7 +284,7 @@ def discover_test_modules():
 
         # Check if the file has the standardized test function
         try:
-            with open(python_file, "r", encoding="utf-8") as f:
+            with python_file.open(encoding="utf-8") as f:
                 content = f.read()
 
                 # Skip files with interactive components that would block testing
@@ -314,7 +314,8 @@ def extract_module_description(module_path: str) -> str | None:
     """Extract the first line of a module's docstring for use as description."""
     try:
         # Read the file and look for the module docstring
-        with open(module_path, 'r', encoding='utf-8') as f:
+        from pathlib import Path
+        with Path(module_path).open(encoding='utf-8') as f:
             content = f.read()
 
         # Look for triple-quoted docstring after any initial comments/shebang
@@ -346,10 +347,9 @@ def extract_module_description(module_path: str) -> str | None:
                     if before_quotes:
                         docstring_lines.append(before_quotes)
                     break
-                else:
-                    # Regular docstring line
-                    if stripped:
-                        docstring_lines.append(stripped)
+                # Regular docstring line
+                if stripped:
+                    docstring_lines.append(stripped)
 
         # Return the first meaningful line as description
         if docstring_lines:
@@ -395,42 +395,41 @@ def run_module_tests(
     # Show description for consistency - avoid repeating module name
     if description:
         print(f"   📝 {description}")
+    # Create a meaningful description based on module name instead of just repeating it
+    elif "core/" in module_name:
+        component = (
+            module_name.replace("core/", "")
+            .replace(".py", "")
+            .replace("_", " ")
+            .title()
+        )
+        print(f"   📝 Core {component} functionality")
+    elif "config/" in module_name:
+        component = (
+            module_name.replace("config/", "")
+            .replace(".py", "")
+            .replace("_", " ")
+            .title()
+        )
+        print(f"   📝 Configuration {component} management")
+    elif "action" in module_name:
+        action_name = module_name.replace(".py", "").replace("_", " ").title()
+        print(f"   📝 {action_name} automation")
+    elif module_name.endswith("_utils.py"):
+        util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
+        print(f"   📝 {util_type} utility functions")
+    elif module_name.endswith("_manager.py"):
+        manager_type = (
+            module_name.replace("_manager.py", "").replace("_", " ").title()
+        )
+        print(f"   📝 {manager_type} management system")
+    elif module_name.endswith("_cache.py"):
+        cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
+        print(f"   📝 {cache_type} caching system")
     else:
-        # Create a meaningful description based on module name instead of just repeating it
-        if "core/" in module_name:
-            component = (
-                module_name.replace("core/", "")
-                .replace(".py", "")
-                .replace("_", " ")
-                .title()
-            )
-            print(f"   📝 Core {component} functionality")
-        elif "config/" in module_name:
-            component = (
-                module_name.replace("config/", "")
-                .replace(".py", "")
-                .replace("_", " ")
-                .title()
-            )
-            print(f"   📝 Configuration {component} management")
-        elif "action" in module_name:
-            action_name = module_name.replace(".py", "").replace("_", " ").title()
-            print(f"   📝 {action_name} automation")
-        elif module_name.endswith("_utils.py"):
-            util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
-            print(f"   📝 {util_type} utility functions")
-        elif module_name.endswith("_manager.py"):
-            manager_type = (
-                module_name.replace("_manager.py", "").replace("_", " ").title()
-            )
-            print(f"   📝 {manager_type} management system")
-        elif module_name.endswith("_cache.py"):
-            cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
-            print(f"   📝 {cache_type} caching system")
-        else:
-            # Generic fallback that's more descriptive than just repeating the filename
-            clean_name = module_name.replace(".py", "").replace("_", " ").title()
-            print(f"   📝 {clean_name} module functionality")
+        # Generic fallback that's more descriptive than just repeating the filename
+        clean_name = module_name.replace(".py", "").replace("_", " ").title()
+        print(f"   📝 {clean_name} module functionality")
 
     try:
         start_time = time.time()
@@ -453,7 +452,7 @@ def run_module_tests(
             cmd.append(module_name)
         result = subprocess.run(
             cmd,
-            capture_output=True,
+            check=False, capture_output=True,
             text=True,
             cwd=Path.cwd(),
             env=env
@@ -769,7 +768,7 @@ def save_performance_metrics(metrics: List[TestExecutionMetrics], suite_performa
         existing_data = []
         if metrics_file.exists():
             try:
-                with open(metrics_file, 'r') as f:
+                with metrics_file.open() as f:
                     existing_data = json.load(f)
             except (json.JSONDecodeError, FileNotFoundError):
                 existing_data = []
@@ -787,7 +786,7 @@ def save_performance_metrics(metrics: List[TestExecutionMetrics], suite_performa
             existing_data = existing_data[-50:]
 
         # Save updated metrics
-        with open(metrics_file, 'w') as f:
+        with metrics_file.open('w', encoding='utf-8') as f:
             json.dump(existing_data, f, indent=2)
 
         print(f"📊 Performance metrics saved to {metrics_file}")
@@ -993,7 +992,7 @@ def main():
         print(f"\n🎉 ALL {len(discovered_modules)} MODULES PASSED!")
         print(f"   Professional testing framework with {len(discovered_modules)} standardized modules complete.\n")
     else:
-        print(f"\n⚠️  {failed_count} module(s) failed.")
+        print(f"\n⚠️{failed_count} module(s) failed.")
         print("   Check individual test outputs above for details.\n")
 
     return failed_count == 0
@@ -1004,7 +1003,7 @@ if __name__ == "__main__":
         success = main()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n\n⚠️  Test run interrupted by user!\n\n")
+        print("\n\n⚠️ Test run interrupted by user!\n\n")
         sys.exit(130)
     except Exception as e:
         print(f"\n💥 Unexpected error in test runner: {e}\n\n")

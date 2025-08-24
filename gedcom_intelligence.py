@@ -357,7 +357,7 @@ class GedcomIntelligenceAnalyzer:
 
             completeness_score = (people_with_parents / total_people) * 100 if total_people > 0 else 0
 
-            insights = {
+            return {
                 "tree_completeness": {
                     "total_individuals": total_people,
                     "individuals_with_parents": people_with_parents,
@@ -369,7 +369,6 @@ class GedcomIntelligenceAnalyzer:
                 "recommendations": self._generate_ai_recommendations()
             }
 
-            return insights
 
         except Exception as e:
             logger.error(f"Error generating AI insights: {e}")
@@ -396,12 +395,11 @@ class GedcomIntelligenceAnalyzer:
 
     def _analyze_family_patterns(self, gedcom_data: Any) -> Dict[str, Any]:
         """Analyze patterns in the family tree."""
-        patterns = {
+        return {
             "common_surnames": self._find_common_surnames(gedcom_data),
             "geographic_concentrations": self._find_geographic_patterns(gedcom_data),
             "time_period_coverage": self._analyze_time_coverage(gedcom_data)
         }
-        return patterns
 
     def _generate_ai_recommendations(self) -> List[str]:
         """Generate AI-powered recommendations for research."""

@@ -4,10 +4,10 @@ Continuous Action 6 Health Monitor
 Provides real-time monitoring of Action 6 execution with health status updates.
 """
 
-import os
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import psutil
 
@@ -98,12 +98,17 @@ def check_action6_logs():
 
     # Look for recent log files or output
     log_files = []
-    for file in os.listdir("."):
-        if (file.endswith(".log") or "log" in file.lower()) and "action" in file.lower():
-            stat = os.stat(file)
-            mod_time = stat.st_mtime
-            if time.time() - mod_time < 7200:  # Modified in last 2 hours
-                log_files.append((file, mod_time, os.path.getsize(file)))
+    for path in Path().iterdir():
+        try:
+            if path.is_file():
+                name = path.name
+                if (name.endswith(".log") or "log" in name.lower()) and "action" in name.lower():
+                    stat = path.stat()
+                    mod_time = stat.st_mtime
+                    if time.time() - mod_time < 7200:  # Modified in last 2 hours
+                        log_files.append((name, mod_time, stat.st_size))
+        except Exception:
+            continue
 
     if log_files:
         print("Recent Action 6 log files:")

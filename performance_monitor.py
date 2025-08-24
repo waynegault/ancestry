@@ -224,8 +224,7 @@ class PerformanceMonitor:
             error_occurred = False
 
             try:
-                result = func(*args, **kwargs)
-                return result
+                return func(*args, **kwargs)
             except Exception:
                 error_occurred = True
                 raise
@@ -307,21 +306,20 @@ class PerformanceMonitor:
             avg_value = statistics.mean(values)
             threshold = self.alert_thresholds.get(metric_name)
 
-            if threshold is not None:
-                if avg_value > threshold:
-                    alert_level = (
-                        AlertLevel.CRITICAL
-                        if avg_value > threshold * 1.5
-                        else AlertLevel.WARNING
-                    )
-                    self._create_alert(
-                        alert_level,
-                        f"High {metric_name}: {avg_value:.2f}",
-                        metric_name,
-                        avg_value,
-                        threshold,
-                        self._get_optimization_recommendation(metric_name, avg_value),
-                    )
+            if threshold is not None and avg_value > threshold:
+                alert_level = (
+                    AlertLevel.CRITICAL
+                    if avg_value > threshold * 1.5
+                    else AlertLevel.WARNING
+                )
+                self._create_alert(
+                    alert_level,
+                    f"High {metric_name}: {avg_value:.2f}",
+                    metric_name,
+                    avg_value,
+                    threshold,
+                    self._get_optimization_recommendation(metric_name, avg_value),
+                )
 
     def _create_alert(
         self,
@@ -500,7 +498,7 @@ class PerformanceMonitor:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = Path(f"performance_report_{timestamp}.json")
 
-        with open(filepath, "w") as f:
+        with Path(filepath).open("w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, default=str)
 
         logger.info(f"Performance report exported to {filepath}")
@@ -858,7 +856,7 @@ class AdvancedPerformanceMonitor:
                 validation_results["score"] -= 20
                 return validation_results
 
-            with open(config_file, 'r') as f:
+            with Path(config_file).open(encoding="utf-8") as f:
                 config = json.load(f)
 
             # Validate API settings
@@ -1208,7 +1206,7 @@ def run_comprehensive_tests() -> bool:
             pass  # Expected
 
         # Function should still be in profiles despite error
-        error_profiles = [name for name in monitor.function_profiles.keys() if "error_function" in name]
+        error_profiles = [name for name in monitor.function_profiles if "error_function" in name]
         assert len(error_profiles) > 0
 
     def test_function_availability():

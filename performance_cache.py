@@ -24,9 +24,10 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-# === PERFORMANCE CACHE CLASSES ===
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
-from memory_utils import ObjectPool, lazy_property
+from memory_utils import ObjectPool
+
+# === PERFORMANCE CACHE CLASSES ===
 
 
 class CacheableObject:
@@ -78,7 +79,7 @@ class PerformanceCache:
             f"Performance cache initialized with max size {max_memory_cache_size} (Phase 7.3.1 Enhanced)"
         )
 
-    @lazy_property
+    @property
     def cache_stats(self):
         """Lazily compute cache statistics."""
         return {
@@ -207,7 +208,7 @@ class PerformanceCache:
         invalidated = 0
         keys_to_remove = []
 
-        for key in self._memory_cache.keys():
+        for key in self._memory_cache:
             if pattern in key or any(pattern in dep for dep in self._cache_dependencies.get(key, [])):
                 keys_to_remove.append(key)
 
@@ -234,7 +235,7 @@ class PerformanceCache:
         disk_path = self._disk_cache_dir / f"{cache_key}.pkl"
         if disk_path.exists():
             try:
-                with open(disk_path, "rb") as f:
+                with disk_path.open("rb") as f:
                     data = pickle.load(f)
                     # Move to memory cache for faster access
                     self._memory_cache[cache_key] = data
@@ -277,7 +278,7 @@ class PerformanceCache:
                 pickle.dumps(value)  # Test serialization
 
                 disk_path = self._disk_cache_dir / f"{cache_key}.pkl"
-                with open(disk_path, "wb") as f:
+                with disk_path.open("wb") as f:
                     pickle.dump(value, f)
                 logger.debug(f"Cache SET (disk): {cache_key[:12]}...")
             except (pickle.PicklingError, TypeError) as e:
@@ -412,9 +413,8 @@ def progressive_processing(
                     logger.debug(f"Processed chunk {chunk_num}/{total_chunks}")
 
                 return results
-            else:
-                # Process normally for small datasets
-                return func(*args, **kwargs)
+            # Process normally for small datasets
+            return func(*args, **kwargs)
 
         return wrapper
 
@@ -426,7 +426,6 @@ def progressive_processing(
 
 def clear_performance_cache():
     """Clear all performance caches"""
-    global _performance_cache
     _performance_cache._memory_cache.clear()
     _performance_cache._cache_timestamps.clear()
     _performance_cache._cache_hit_counts.clear()

@@ -371,9 +371,8 @@ class IntelligentResearchPrioritizer:
 
             # Check for prerequisite relationships
             for other_priority in self.research_priorities:
-                if other_priority != priority:
-                    if self._is_prerequisite(priority, other_priority):
-                        dependency_bonus += 3
+                if other_priority != priority and self._is_prerequisite(priority, other_priority):
+                    dependency_bonus += 3
 
             priority.dependency_bonus = dependency_bonus
 
@@ -467,9 +466,9 @@ class IntelligentResearchPrioritizer:
         # Simple implementation - look for location keywords
         if "Scotland" in description:
             return "Scotland"
-        elif "Ireland" in description:
+        if "Ireland" in description:
             return "Ireland"
-        elif "England" in description:
+        if "England" in description:
             return "England"
         return None
 
@@ -479,9 +478,9 @@ class IntelligentResearchPrioritizer:
         # Simple implementation
         if "Scotland" in description:
             return "Scotland"
-        elif "Ireland" in description:
+        if "Ireland" in description:
             return "Ireland"
-        elif "England" in description:
+        if "England" in description:
             return "England"
         return None
 
@@ -628,12 +627,11 @@ class IntelligentResearchPrioritizer:
         # Simple heuristic based on ID patterns (this would be more sophisticated in practice)
         if "parent" in person_id.lower() or "father" in person_id.lower() or "mother" in person_id.lower():
             return 1
-        elif "grandparent" in person_id.lower() or "grand" in person_id.lower():
+        if "grandparent" in person_id.lower() or "grand" in person_id.lower():
             return 2
-        elif "great" in person_id.lower():
+        if "great" in person_id.lower():
             return 3
-        else:
-            return 4  # Default for other relatives
+        return 4  # Default for other relatives
 
     def _map_gap_to_task_type(self, gap_type: str) -> str:
         """Map gap type to research task type."""
@@ -650,12 +648,11 @@ class IntelligentResearchPrioritizer:
         """Determine urgency level from priority score."""
         if score >= 85:
             return "critical"
-        elif score >= 70:
+        if score >= 70:
             return "high"
-        elif score >= 50:
+        if score >= 50:
             return "medium"
-        else:
-            return "low"
+        return "low"
 
     def _map_severity_to_urgency(self, severity: str) -> str:
         """Map conflict severity to urgency."""
@@ -671,10 +668,9 @@ class IntelligentResearchPrioritizer:
         gap_type = gap.get("gap_type", "")
         if gap_type in ["missing_dates", "missing_places"]:
             return "medium"
-        elif gap_type == "missing_parents":
+        if gap_type == "missing_parents":
             return "high"
-        else:
-            return "medium"
+        return "medium"
 
     def _estimate_success_probability(self, gap: Dict[str, Any]) -> float:
         """Estimate probability of successfully filling a gap using genealogical research factors."""

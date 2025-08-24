@@ -10,7 +10,7 @@ from config.config_manager import ConfigManager
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-__all__ = ["config_manager", "config_schema", "ConfigManager"]
+__all__ = ["ConfigManager", "config_manager", "config_schema"]
 
 
 # =============================================================================

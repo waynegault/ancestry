@@ -190,7 +190,7 @@ class AlignedMessageFormatter(logging.Formatter):
         record_copy = copy.copy(record)
         placeholder = "X"  # Placeholder character for calculation
         record_copy.msg = placeholder
-        record_copy.args = tuple()  # Clear args for prefix calculation
+        record_copy.args = ()  # Clear args for prefix calculation
         record_copy.message = (
             record_copy.getMessage()
         )  # Ensure message attribute is generated
@@ -261,7 +261,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     Returns:
         The configured 'logger' instance.
     """
-    global _logging_initialized, logger, LOG_DIRECTORY
+    global _logging_initialized
 
     # Validate log level
     log_level_upper = log_level.upper()
@@ -278,7 +278,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     # Construct full log file path
-    log_file_path = logs_dir / Path(log_file).name
+    log_file_path = logs_dir / Path(str(log_file)).name
     log_file_for_handler = str(log_file_path)
 
     # Clear any existing handlers
@@ -289,7 +289,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
 
     # Configure File Handler
-    os.makedirs(os.path.dirname(log_file_for_handler), exist_ok=True)
+    Path(log_file_for_handler).parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file_for_handler, mode="a", encoding="utf-8")
     file_handler.setFormatter(formatter)
     file_handler.setLevel(numeric_log_level)
@@ -537,7 +537,7 @@ def test_directory_creation():
     import tempfile
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        global LOG_DIRECTORY, logger, _logging_initialized
+        global LOG_DIRECTORY, _logging_initialized
         original_dir = LOG_DIRECTORY
         original_init_state = _logging_initialized
         _logging_initialized = False  # Reset to allow fresh setup
@@ -616,7 +616,7 @@ def test_missing_directory():
     import tempfile
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        global LOG_DIRECTORY, logger, _logging_initialized
+        global LOG_DIRECTORY, _logging_initialized
         original_dir = LOG_DIRECTORY
         original_init_state = _logging_initialized
         _logging_initialized = False  # Reset to allow fresh setup
@@ -732,24 +732,21 @@ def test_handler_performance():
 
 def test_invalid_file_path():
     """Test handling of invalid file paths."""
-    try:
+    from contextlib import suppress
+    with suppress(Exception):
         # Try with an invalid path - should handle gracefully
         setup_logging("/invalid/path/test.log", "INFO")
         # If it doesn't raise an exception, that's fine too
-    except Exception:
-        # Expected for truly invalid paths
-        pass
 
 
 def test_permission_errors():
     """Test handling of permission errors."""
     # This test is platform-specific and may not always be testable
     # Just verify the function doesn't crash with edge cases
-    try:
+    from contextlib import suppress
+    with suppress(Exception):
         setup_logging("test.log", "INFO")
-    except Exception:
-        # Permission errors are acceptable in some environments
-        pass
+    # Permission errors are acceptable in some environments
 
 
 # ==============================================

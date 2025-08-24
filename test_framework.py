@@ -25,24 +25,23 @@ from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities
 __all__ = [
-    "TestSuite",
-    "suppress_logging",
-    "create_mock_data",
-    "assert_valid_function",
-    "mock_logger_context",
-    "MockLogger",
-    "MagicMock",
-    "patch",
     "Colors",
     "Icons",
-    # Universal formatting functions
-    "format_test_section_header",
+    "MagicMock",
+    "MockLogger",
+    "TestSuite",
+    "assert_valid_function",
+    "clean_test_output",
+    "create_mock_data",
     "format_score_breakdown_table",
     "format_search_criteria",
     "format_test_result",
-    "suppress_debug_logging",
+    "format_test_section_header",
+    "mock_logger_context",
+    "patch",
     "restore_debug_logging",
-    "clean_test_output",
+    "suppress_debug_logging",
+    "suppress_logging",
     "test_function_availability",
 ]
 
@@ -67,7 +66,7 @@ class Icons:
     PASS = "✅"
     FAIL = "❌"
     WARNING = "⚠️"
-    INFO = "ℹ️"
+    INFO = "i"
     GEAR = "⚙️"
     ROCKET = "🚀"
     BUG = "🐛"
@@ -160,7 +159,7 @@ class TestSuite:
             import traceback
 
             duration = time.time() - test_start
-            outcome_description = f"Assertion failed: {str(e)}"
+            outcome_description = f"Assertion failed: {e!s}"
             print(f"Outcome: {outcome_description}")
             traceback.print_exc()
             print(f"Duration: {duration:.3f}s")
@@ -182,7 +181,7 @@ class TestSuite:
 
         except Exception as e:
             duration = time.time() - test_start
-            outcome_description = f"Exception occurred: {type(e).__name__}: {str(e)}"
+            outcome_description = f"Exception occurred: {type(e).__name__}: {e!s}"
             print(f"Outcome: {outcome_description}")
             print(f"Duration: {duration:.3f}s")
             print(f"Conclusion: {Colors.RED}{Icons.FAIL} FAILED{Colors.RESET}")
@@ -194,7 +193,7 @@ class TestSuite:
                     "name": test_name,
                     "status": "ERROR",
                     "duration": duration,
-                    "error": f"{type(e).__name__}: {str(e)}",
+                    "error": f"{type(e).__name__}: {e!s}",
                     "expected": expected_behavior,
                     "outcome": outcome_description,
                 }
@@ -398,15 +397,17 @@ def create_isolated_test_environment():
 def cleanup_test_environment(env):
     """Clean up test environment and resources."""
     # Clean up temporary files
-    import os
+    from pathlib import Path
     for temp_file in env.get("temp_files", []):
         try:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
+            p = Path(temp_file)
+            if p.exists():
+                p.unlink(missing_ok=True)
         except Exception:
             pass
 
     # Restore environment variables
+    import os
     for var, value in env.get("original_env_vars", {}).items():
         if value is None:
             os.environ.pop(var, None)
@@ -456,7 +457,7 @@ def test_framework_module_tests():
         assert Icons.PASS == "✅"
         assert Icons.FAIL == "❌"
         assert Icons.WARNING == "⚠️"
-        assert Icons.INFO == "ℹ️"
+        assert Icons.INFO == "i"
         assert Icons.GEAR == "⚙️"
         assert Icons.ROCKET == "🚀"
         assert Icons.BUG == "🐛"
@@ -494,9 +495,9 @@ def test_framework_module_tests():
             logging.critical("This logging should be suppressed")
 
         # Test that it doesn't raise an exception
-        import os  # Should work fine
+        from pathlib import Path  # Should work fine
 
-        assert os.path.exists(".")
+        assert Path().exists()
 
     suite.run_test(
         "Color constants", test_colors, "Should define all standard ANSI color codes"

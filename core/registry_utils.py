@@ -16,11 +16,12 @@ Key improvements:
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -206,7 +207,7 @@ def create_registration_report() -> str:
     avg_lines_per_function = 3  # if/callable/register pattern
     lines_saved = stats["total_registered"] * avg_lines_per_function
 
-    report = f"""
+    return f"""
 🚀 FUNCTION REGISTRATION EFFICIENCY REPORT
 ==========================================
 
@@ -228,7 +229,6 @@ def create_registration_report() -> str:
    • Consistent registration patterns
    • Automatic duplicate prevention
 """
-    return report
 
 
 # Backwards compatibility aliases

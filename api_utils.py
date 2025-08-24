@@ -126,7 +126,7 @@ API_PATH_PERSON_FACTS_USER = (
 API_PATH_PERSON_GETLADDER = (
     "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
 )
-API_PATH_DISCOVERY_RELATIONSHIP = "discoveryui-matchingservice/api/relationship"  # noqa: E501 - Ancestry's matching service API
+API_PATH_DISCOVERY_RELATIONSHIP = "discoveryui-matchingservice/api/relationship"
 API_PATH_TREESUI_LIST = "trees/{tree_id}/persons"
 
 # Message API keys
@@ -236,7 +236,7 @@ class TreeOwnerResponse:
                 # Fallback to raw if not int-coercible
                 normalized["peopleCount"] = normalized.get("treeMembersCount")
         # Filter to known fields only
-        filtered = {k: normalized[k] for k in cls.__dataclass_fields__.keys() if k in normalized}
+        filtered = {k: normalized[k] for k in cls.__dataclass_fields__ if k in normalized}
         return cls(**filtered)
 
     def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
@@ -382,10 +382,7 @@ class ApiRateLimiter:
         # Check limits
         if len(self.minute_calls) >= self.max_calls_per_minute:
             return False
-        if len(self.hour_calls) >= self.max_calls_per_hour:
-            return False
-
-        return True
+        return not len(self.hour_calls) >= self.max_calls_per_hour
 
     def record_request(self):
         """Record that a request was made."""
@@ -818,7 +815,7 @@ def _generate_person_link(
     """
     if tree_id and person_id:
         return f"{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts"
-    elif person_id:
+    if person_id:
         return f"{base_url}/discoveryui-matches/list/summary/{person_id}"
     # End of if/elif
     return "(Link unavailable)"
@@ -985,11 +982,10 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
         referer = urljoin(base_url.rstrip("/") + "/", referer_path.lstrip("/"))
         logger.debug(f"Using owner facts page as referer: {referer}")
         return referer
-    else:
-        logger.warning(
-            "Owner profile/tree ID missing in session. Using base URL as referer."
-        )
-        return base_url.rstrip("/") + "/"
+    logger.warning(
+        "Owner profile/tree ID missing in session. Using base URL as referer."
+    )
+    return base_url.rstrip("/") + "/"
     # End of if/else
 
 
@@ -1003,7 +999,7 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 def call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],  # noqa: F401 - Kept for API signature consistency
+    owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: Dict[str, Any],
     timeouts: Optional[List[int]] = None,
@@ -1131,7 +1127,7 @@ def call_suggest_api(
                     f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}), found {len(suggest_response)} results."
                 )
                 return suggest_response
-            elif suggest_response is None:
+            if suggest_response is None:
                 logger.warning(
                     f"{api_description} call using _api_req returned None on attempt {attempt}/{max_attempts}."
                 )
@@ -1235,11 +1231,10 @@ def call_suggest_api(
                         f"Direct request fallback successful! Found {len(direct_data)} results."
                     )
                     return direct_data
-                else:
-                    logger.warning(
-                        f"Direct request succeeded (200 OK) but returned non-list data: {type(direct_data)}"
-                    )
-                    logger.debug(f"Direct Response content: {str(direct_data)[:500]}")
+                logger.warning(
+                    f"Direct request succeeded (200 OK) but returned non-list data: {type(direct_data)}"
+                )
+                logger.debug(f"Direct Response content: {str(direct_data)[:500]}")
                 # End of if/else
             else:
                 logger.warning(
@@ -1417,7 +1412,7 @@ def call_facts_user_api(
                         f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts})."
                     )
                     break
-                elif api_response is None:
+                if api_response is None:
                     logger.warning(
                         f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
                     )
@@ -1566,16 +1561,15 @@ def call_getladder_api(
 
             logger.debug(f"{api_description} call successful, received string response.")
             return relationship_data
-        elif isinstance(relationship_data, str):
+        if isinstance(relationship_data, str):
             logger.warning(
                 f"{api_description} call returned a very short string: '{relationship_data}'"
             )
             return None
-        else:
-            logger.warning(
-                f"{api_description} call returned non-string or None: {type(relationship_data)}"
-            )
-            return None
+        logger.warning(
+            f"{api_description} call returned non-string or None: {type(relationship_data)}"
+        )
+        return None
         # End of if/elif/else
     except requests.exceptions.Timeout:
         logger.error(f"{api_description} call timed out after {api_timeout_val}s.")
@@ -1695,7 +1689,7 @@ def call_discovery_relationship_api(
                 f"{api_description} call successful, received valid JSON response with path data."
             )
             return relationship_data
-        elif isinstance(relationship_data, dict):
+        if isinstance(relationship_data, dict):
             # Validate response with Pydantic if available
             if PYDANTIC_AVAILABLE:
                 try:
@@ -1714,11 +1708,10 @@ def call_discovery_relationship_api(
                 f"{api_description} call returned JSON without 'path' key: {list(relationship_data.keys())}"
             )
             return relationship_data  # Still return the data for potential debugging
-        else:
-            logger.warning(
-                f"{api_description} call returned unexpected type: {type(relationship_data)}"
-            )
-            return None
+        logger.warning(
+            f"{api_description} call returned unexpected type: {type(relationship_data)}"
+        )
+        return None
         # End of if/elif/else
     except requests.exceptions.Timeout:
         logger.error(f"{api_description} call timed out after {api_timeout_val}s.")
@@ -1735,7 +1728,7 @@ def call_discovery_relationship_api(
 def call_treesui_list_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],  # noqa: F401 - Kept for API signature consistency
+    owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: Dict[str, Any],
     timeouts: Optional[List[int]] = None,
@@ -1825,7 +1818,7 @@ def call_treesui_list_api(
                     f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}), found {len(treesui_response)} results."
                 )
                 return treesui_response
-            elif treesui_response is None:
+            if treesui_response is None:
                 logger.warning(
                     f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
                 )
@@ -1892,7 +1885,7 @@ def call_send_message_api(
             f"{log_prefix}: Dry Run - Simulated message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown') }."
         )
         return message_status, effective_conv_id
-    elif app_mode not in ["production", "testing"]:
+    if app_mode not in ["production", "testing"]:
         logger.error(
             f"{log_prefix}: Logic Error - Unexpected APP_MODE '{app_mode}' reached send logic."
         )
@@ -1981,10 +1974,9 @@ def call_send_message_api(
         logger.error(
             f"{log_prefix}: API POST ({send_api_desc}) failed with status {api_response.status_code}."
         )
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             logger.debug(f"Error response body: {api_response.text[:500]}")
-        except Exception:
-            pass
         # End of try/except
     elif isinstance(api_response, dict):
         try:
@@ -2181,21 +2173,20 @@ def call_profile_details_api(
                 )
             # End of if/else
             return result_data
-        elif isinstance(profile_response, requests.Response):
+        if isinstance(profile_response, requests.Response):
             logger.warning(
                 f"Failed profile details fetch for {profile_id}. Status: {profile_response.status_code}."
             )
             return None
-        elif profile_response is None:
+        if profile_response is None:
             logger.warning(
                 f"Failed profile details fetch for {profile_id} (_api_req returned None)."
             )
             return None
-        else:
-            logger.warning(
-                f"Failed profile details fetch for {profile_id} (Invalid response type: {type(profile_response)})."
-            )
-            return None
+        logger.warning(
+            f"Failed profile details fetch for {profile_id} (Invalid response type: {type(profile_response)})."
+        )
+        return None
         # End of if/elif/else
     except requests.exceptions.RequestException as req_e:
         logger.error(
@@ -2299,10 +2290,9 @@ def call_header_trees_api_for_tree_id(
                                 f"Found tree ID '{my_tree_id_val}' for tree '{tree_name_config}'."
                             )
                             return my_tree_id_val
-                        else:
-                            logger.warning(
-                                f"Found tree '{tree_name_config}', but URL format unexpected: {tree_url}"
-                            )
+                        logger.warning(
+                            f"Found tree '{tree_name_config}', but URL format unexpected: {tree_url}"
+                        )
                         # End of if/else
                     else:
                         logger.warning(
@@ -2316,19 +2306,18 @@ def call_header_trees_api_for_tree_id(
                 f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response."
             )
             return None
-        elif response_data is None:
+        if response_data is None:
             logger.warning(f"{api_description} call failed (_api_req returned None).")
             return None
-        else:
-            status = "N/A"
-            if isinstance(response_data, requests.Response):
-                status = str(response_data.status_code)
-            # End of if
-            logger.warning(
-                f"Unexpected response format from {api_description} (Type: {type(response_data)}, Status: {status})."
-            )
-            logger.debug(f"Full {api_description} response data: {str(response_data)}")
-            return None
+        status = "N/A"
+        if isinstance(response_data, requests.Response):
+            status = str(response_data.status_code)
+        # End of if
+        logger.warning(
+            f"Unexpected response format from {api_description} (Type: {type(response_data)}, Status: {status})."
+        )
+        logger.debug(f"Full {api_description} response data: {response_data!s}")
+        return None
         # End of if/elif/else
     except Exception as e:
         logger.error(f"Error during {api_description}: {e}", exc_info=True)
@@ -2412,10 +2401,9 @@ def call_tree_owner_api(
                         f"Found tree owner '{display_name}' for tree ID {tree_id}."
                     )
                     return display_name
-                else:
-                    logger.warning(
-                        f"Could not find '{KEY_DISPLAY_NAME}' in owner data for tree {tree_id}."
-                    )
+                logger.warning(
+                    f"Could not find '{KEY_DISPLAY_NAME}' in owner data for tree {tree_id}."
+                )
                 # End of if/else
             else:
                 logger.warning(
@@ -2424,19 +2412,18 @@ def call_tree_owner_api(
             # End of if/else
             logger.debug(f"Full {api_description} response data: {response_data}")
             return None
-        elif response_data is None:
+        if response_data is None:
             logger.warning(f"{api_description} call failed (_api_req returned None).")
             return None
-        else:
-            status = "N/A"
-            if isinstance(response_data, requests.Response):
-                status = str(response_data.status_code)
-            # End of if
-            logger.warning(
-                f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None."
-            )
-            logger.debug(f"Response received: {str(response_data)}")
-            return None
+        status = "N/A"
+        if isinstance(response_data, requests.Response):
+            status = str(response_data.status_code)
+        # End of if
+        logger.warning(
+            f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None."
+        )
+        logger.debug(f"Response received: {response_data!s}")
+        return None
         # End of if/elif/else
     except Exception as e:
         logger.error(
@@ -2866,9 +2853,8 @@ def call_enhanced_api(
         if response:
             logger.debug(f"{api_description} successful")
             return response
-        else:
-            logger.warning(f"{api_description} returned no data")
-            return None
+        logger.warning(f"{api_description} returned no data")
+        return None
 
     except Exception as e:
         logger.error(f"Error calling {api_description}: {e}")
@@ -2985,12 +2971,10 @@ def get_relationship_path_data(
                     "kinship_persons": kinship_persons,
                     "raw_data": result
                 }
-            else:
-                logger.warning(f"No kinship persons found in relationship data for {person_id}")
-                return None
-        else:
-            logger.warning(f"Invalid or empty relationship data for person {person_id}")
+            logger.warning(f"No kinship persons found in relationship data for {person_id}")
             return None
+        logger.warning(f"Invalid or empty relationship data for person {person_id}")
+        return None
 
     except Exception as e:
         logger.error(f"Error getting relationship path data for {person_id}: {e}")
@@ -3306,11 +3290,10 @@ def api_utils_module_tests() -> bool:
         for config_case in missing_config_cases:
             if config_case is None:
                 assert config_case is None, "None config should be detectable"
-            elif isinstance(config_case, dict):
-                if not config_case or "base_url" not in config_case:
-                    assert (
-                        len(config_case) == 0 or "base_url" not in config_case
-                    ), "Missing config should be detectable"
+            elif isinstance(config_case, dict) and (not config_case or "base_url" not in config_case):
+                assert (
+                    len(config_case) == 0 or "base_url" not in config_case
+                ), "Missing config should be detectable"
 
     # === RUN ALL TESTS ===
     suite.run_test(

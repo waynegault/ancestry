@@ -21,10 +21,12 @@ Performance Optimizations:
 
 import os
 import sys
-from typing import Any, Dict, List, Optional
 
 # Add current directory to path for imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+current_dir = str(Path(__file__).resolve().parent)
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
@@ -408,18 +410,16 @@ def get_api_session(session_manager: Optional[SessionManager] = None) -> Optiona
         if login_ok is True:
             logger.debug("Already logged in - session ready")
             return new_session_manager
-        elif login_ok is False:
+        if login_ok is False:
             logger.debug("Not logged in - attempting authentication...")
             login_result = log_in(new_session_manager)
             if login_result == "LOGIN_SUCCEEDED":
                 logger.debug("Authentication successful - session ready")
                 return new_session_manager
-            else:
-                logger.error(f"Authentication failed: {login_result}")
-                return None
-        else:
-            logger.error("Login status check failed critically")
+            logger.error(f"Authentication failed: {login_result}")
             return None
+        logger.error("Login status check failed critically")
+        return None
 
     except Exception as e:
         logger.error(f"Failed to create authenticated SessionManager: {e}", exc_info=True)
@@ -450,9 +450,8 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     # --- TESTS ---
     def debug_wrapper(test_func):
         def wrapped():
-            result = test_func()
+            return test_func()
             # Debug timing removed for cleaner output
-            return result
         return wrapped
 
     def test_input_sanitization():
@@ -691,7 +690,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         load_dotenv()
 
         # Check if we have cached Fraser data from Test 3
-        global _cached_fraser_person_id, _cached_fraser_name
+        # Read-only usage; no need to declare global
 
         # Check if we have a valid session for API calls
         api_session = get_api_session(session_manager)
@@ -855,9 +854,8 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 print(f"   Total family members found: {total_family}")
                 print("Conclusion: Fraser Gault's family structure successfully analyzed via editrelationships API")
                 return True
-            else:
-                print("❌ No family data returned from editrelationships API")
-                assert False, "editrelationships API should return family data"
+            print("❌ No family data returned from editrelationships API")
+            assert False, "editrelationships API should return family data"
 
         except Exception as e:
             print(f"❌ API family analysis test failed: {e}")
@@ -872,7 +870,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         load_dotenv()
 
         # Check if we have cached Fraser data from Test 3
-        global _cached_fraser_person_id, _cached_fraser_name
+        # Read-only usage; no need to declare global
 
         # Get tree owner data from configuration
         reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
@@ -991,11 +989,10 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 print("✅ Relationship path calculation completed successfully")
                 print(f"Conclusion: Relationship path between Fraser Gault and {reference_person_name} successfully calculated via API")
                 return True
-            else:
-                print("⚠️ API limitation: Relationship path data not available")
-                print("   This is a known limitation of the API vs GEDCOM approach")
-                print("✅ Relationship path framework validated (despite API data limitation)")
-                return True
+            print("⚠️ API limitation: Relationship path data not available")
+            print("   This is a known limitation of the API vs GEDCOM approach")
+            print("✅ Relationship path framework validated (despite API data limitation)")
+            return True
 
         except Exception as e:
             print(f"❌ API relationship path test failed: {e}")

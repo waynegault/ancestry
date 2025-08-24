@@ -33,6 +33,7 @@ import re
 import sys
 import time
 from collections import deque
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
@@ -40,7 +41,6 @@ from typing import (
     Any,
     Dict,
     List,
-    Mapping,
     Optional,
     Set,
     Tuple,
@@ -317,8 +317,7 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
                 if cleaned_name and cleaned_name != "Unknown"
                 else f"Unknown ({name_source} Error)"
             )
-        else:
-            return "Unknown (No Name Found)"
+        return "Unknown (No Name Found)"
 
     except Exception as e:
         logger.error(
@@ -368,7 +367,7 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
     cleaned_str = re.split(r"\s+(?:AND|OR|TO)\s+", cleaned_str, maxsplit=1)[
         0
     ].strip()  # CORRECTED SPLIT
-    year_range_match = re.match(r"^(\d{4})\s*[-–]\s*\d{4}$", cleaned_str)
+    year_range_match = re.match(r"^(\d{4})\s*[-]\s*\d{4}$", cleaned_str)
     if year_range_match:
         cleaned_str = year_range_match.group(1)
         logger.debug(f"Treated as year range, using first year: '{cleaned_str}'")
@@ -461,13 +460,11 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
             return None
         if parsed_dt.tzinfo is None:
             return parsed_dt.replace(tzinfo=timezone.utc)
-        else:
-            return parsed_dt.astimezone(timezone.utc)
-    else:
-        logger.warning(
-            f"All parsing attempts failed for: '{original_date_str}' -> cleaned: '{cleaned_str}'"
-        )
-        return None
+        return parsed_dt.astimezone(timezone.utc)
+    logger.warning(
+        f"All parsing attempts failed for: '{original_date_str}' -> cleaned: '{cleaned_str}'"
+    )
+    return None
 
 
 def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementation ...
@@ -665,7 +662,7 @@ def _reconstruct_path(
             full_path = full_path[start_idx:]
         else:
             # Prepend start_id if not in path
-            full_path = [start_id] + full_path
+            full_path = [start_id, *full_path]
 
     # Check if end_id is in the path
     if full_path[-1] != end_id:
@@ -690,7 +687,7 @@ def _reconstruct_path(
         if meeting_id == end_id and path and path[0] == start_id:
             return path  # FWD search found END directly
         if meeting_id == start_id and path_end and path_end[-1] == end_id:
-            return [start_id] + path_end  # BWD search found START directly
+            return [start_id, *path_end]  # BWD search found START directly
 
         # Last resort: create a direct path if all else fails
         logger.warning(
@@ -741,14 +738,14 @@ def _expand_forward_node(current_id: str, depth: int, path: List[str],
     # Expand to parents (direct relationship)
     for parent_id in id_to_parents.get(current_id, set()):
         if parent_id not in visited_fwd:
-            new_path = path + [parent_id]
+            new_path = [*path, parent_id]
             visited_fwd[parent_id] = (depth + 1, new_path)
             queue_fwd.append((parent_id, depth + 1, new_path))
 
     # Expand to children (direct relationship)
     for child_id in id_to_children.get(current_id, set()):
         if child_id not in visited_fwd:
-            new_path = path + [child_id]
+            new_path = [*path, child_id]
             visited_fwd[child_id] = (depth + 1, new_path)
             queue_fwd.append((child_id, depth + 1, new_path))
 
@@ -757,7 +754,7 @@ def _expand_forward_node(current_id: str, depth: int, path: List[str],
         for sibling_id in id_to_children.get(parent_id, set()):
             if sibling_id != current_id and sibling_id not in visited_fwd:
                 # Include parent in path for proper relationship context
-                new_path = path + [parent_id, sibling_id]
+                new_path = [*path, parent_id, sibling_id]
                 visited_fwd[sibling_id] = (depth + 2, new_path)
                 queue_fwd.append((sibling_id, depth + 2, new_path))
 
@@ -773,14 +770,14 @@ def _expand_backward_node(current_id: str, depth: int, path: List[str],
     # Expand to parents (direct relationship)
     for parent_id in id_to_parents.get(current_id, set()):
         if parent_id not in visited_bwd:
-            new_path = [parent_id] + path
+            new_path = [parent_id, *path]
             visited_bwd[parent_id] = (depth + 1, new_path)
             queue_bwd.append((parent_id, depth + 1, new_path))
 
     # Expand to children (direct relationship)
     for child_id in id_to_children.get(current_id, set()):
         if child_id not in visited_bwd:
-            new_path = [child_id] + path
+            new_path = [child_id, *path]
             visited_bwd[child_id] = (depth + 1, new_path)
             queue_bwd.append((child_id, depth + 1, new_path))
 
@@ -789,7 +786,7 @@ def _expand_backward_node(current_id: str, depth: int, path: List[str],
         for sibling_id in id_to_children.get(parent_id, set()):
             if sibling_id != current_id and sibling_id not in visited_bwd:
                 # Include parent in path for proper relationship context
-                new_path = [sibling_id, parent_id] + path
+                new_path = [sibling_id, parent_id, *path]
                 visited_bwd[sibling_id] = (depth + 2, new_path)
                 queue_bwd.append((sibling_id, depth + 2, new_path))
 
@@ -971,11 +968,10 @@ def _has_direct_relationship(
             return True
 
     # Check for grandchild relationship
-    for child_id in id_to_children.get(id1, set()):
-        if id2 in id_to_children.get(child_id, set()):
-            return True
-
-    return False
+    return any(
+        id2 in id_to_children.get(child_id, set())
+        for child_id in id_to_children.get(id1, set())
+    )
 
 
 def _find_direct_relationship(
@@ -1042,10 +1038,7 @@ def _are_directly_related(
     # Sibling relationship (share at least one parent)
     parents_1 = id_to_parents.get(id1, set())
     parents_2 = id_to_parents.get(id2, set())
-    if parents_1 and parents_2 and not parents_1.isdisjoint(parents_2):
-        return True
-
-    return False
+    return bool(parents_1 and parents_2 and not parents_1.isdisjoint(parents_2))
 
 
 def explain_relationship_path(
@@ -1249,8 +1242,7 @@ def explain_relationship_path(
         steps.append(f"  -> {relationship_phrase}")
 
     # Join the start name and all the steps
-    explanation_str = full_start_name + "\n" + "\n".join(steps)
-    return explanation_str
+    return full_start_name + "\n" + "\n".join(steps)
 
 
 def _are_siblings(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
@@ -1358,11 +1350,10 @@ def _are_cousins(
                 grandparents1
                 and grandparents2
                 and not grandparents1.isdisjoint(grandparents2)
-            ):
-                if (
-                    parent1 != parent2
-                ):  # Make sure they don't have the same parent (which would make them siblings)
-                    return True
+            ) and (
+                parent1 != parent2
+            ):  # Make sure they don't have the same parent (which would make them siblings)
+                return True
 
     return False
 
@@ -1731,7 +1722,7 @@ def calculate_match_score(
     # Calculate Final Total Score
     final_total_score = sum(field_scores.values())
     final_total_score = max(0.0, round(final_total_score))
-    unique_reasons = sorted(list(set(match_reasons)))
+    unique_reasons = sorted(set(match_reasons))
 
     # Final Debug Logs
     logger.debug(
@@ -2527,7 +2518,7 @@ def test_id_normalization():
 
             status = "✅" if is_valid_result else "❌"
             print(f"   {status} {description}")
-            print(f"      Input: {repr(test_id)} → Output: {repr(normalized)}")
+            print(f"      Input: {test_id!r} → Output: {normalized!r}")
 
             results.append(is_valid_result)
             assert (
@@ -2536,7 +2527,7 @@ def test_id_normalization():
 
         except Exception as e:
             print(f"   ⚠️ {description}")
-            print(f"      Input: {repr(test_id)} → Error: {e} (may be acceptable)")
+            print(f"      Input: {test_id!r} → Error: {e} (may be acceptable)")
             results.append(True)  # Some formats may be invalid, which is acceptable
 
     print(f"📊 Results: {sum(results)}/{len(results)} ID normalization tests passed")

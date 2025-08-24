@@ -4,7 +4,6 @@ Simple Database Viewer for ancestry.db
 Run this anytime to browse your database content
 """
 
-import os
 import sqlite3
 
 
@@ -84,7 +83,7 @@ def run_custom_query(cursor):
                     print("-" * (len(col_names) * 16))
 
                 for row in results[:50]:  # Limit to 50 rows
-                    print(" | ".join(f"{str(val):15}" if val is not None else "NULL           " for val in row))
+                    print(" | ".join(f"{val!s:15}" if val is not None else "NULL           " for val in row))
 
                 if len(results) > 50:
                     print(f"... and {len(results) - 50} more results")
@@ -103,9 +102,14 @@ def show_db_stats(cursor):
     # Database info
     cursor.execute("PRAGMA database_list")
     db_info = cursor.fetchall()
+    from pathlib import Path
     for seq, name, file in db_info:
         if file:
-            size = os.path.getsize(file)
+            p = Path(file)
+            try:
+                size = p.stat().st_size
+            except OSError:
+                size = 0
             print(f"Database: {file}")
             print(f"Size: {size:,} bytes ({size/(1024*1024):.2f} MB)")
 
@@ -123,9 +127,10 @@ def show_db_stats(cursor):
     print(f"Total records: {total_records:,}")
 
 def main():
-    db_path = "Data/ancestry.db"
+    from pathlib import Path
+    db_path = Path("Data/ancestry.db")
 
-    if not os.path.exists(db_path):
+    if not db_path.exists():
         print(f"❌ Database not found: {db_path}")
         return
 
@@ -138,7 +143,7 @@ def main():
 
             if choice == 'q':
                 break
-            elif choice == '1':
+            if choice == '1':
                 show_tables(cursor)
             elif choice == '2':
                 show_table_data(cursor, 'message_types')
@@ -211,7 +216,8 @@ def run_comprehensive_tests() -> bool:
 
             conn.close()
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     def test_table_display_functions():
         """Test table display and data retrieval functions"""
@@ -249,7 +255,8 @@ def run_comprehensive_tests() -> bool:
 
             conn.close()
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     def test_table_data_display():
         """Test table data display formatting"""
@@ -284,7 +291,8 @@ def run_comprehensive_tests() -> bool:
 
             conn.close()
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     def test_database_stats():
         """Test database statistics generation"""
@@ -319,7 +327,8 @@ def run_comprehensive_tests() -> bool:
 
             conn.close()
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     def test_custom_query_handling():
         """Test custom query execution"""
@@ -349,7 +358,8 @@ def run_comprehensive_tests() -> bool:
 
             conn.close()
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     def test_menu_display():
         """Test menu display functionality"""
@@ -384,7 +394,8 @@ def run_comprehensive_tests() -> bool:
         import tempfile
 
         # Test with non-existent database
-        assert not os.path.exists("nonexistent_database.db")
+        from pathlib import Path
+        assert not Path("nonexistent_database.db").exists()
 
         # Test with invalid table operations
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
@@ -403,7 +414,8 @@ def run_comprehensive_tests() -> bool:
 
             conn.close()
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     def test_function_availability():
         """Test that all required functions are available"""
@@ -512,7 +524,8 @@ def _run_basic_tests() -> bool:
             print("✅ Basic database viewer tests passed")
             return True
         finally:
-            os.unlink(test_db)
+            from pathlib import Path
+            Path(test_db).unlink(missing_ok=True)
 
     except Exception as e:
         print(f"❌ Basic tests failed: {e}")

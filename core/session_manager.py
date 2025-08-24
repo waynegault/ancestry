@@ -16,7 +16,9 @@ import os
 import sys
 
 # Add parent directory to path for core_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -66,7 +68,6 @@ from core.session_cache import (
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -536,11 +537,10 @@ class SessionManager:
                     return True
 
         # Ensure driver is live if browser is needed (with optimization)
-        if self.browser_manager.browser_needed:
-            if not self.browser_manager.ensure_driver_live(action_name):
-                logger.error("Failed to ensure driver live.")
-                self.session_ready = False
-                return False
+        if self.browser_manager.browser_needed and not self.browser_manager.ensure_driver_live(action_name):
+            logger.error("Failed to ensure driver live.")
+            self.session_ready = False
+            return False
 
         # PHASE 5.1: Optimized readiness checks with circuit breaker pattern
         try:
@@ -602,12 +602,12 @@ class SessionManager:
             if login_ok is True:
                 logger.debug("Session verification successful (logged in).")
                 return True
-            elif login_ok is False:
+            if login_ok is False:
                 logger.warning("Session verification failed (user not logged in).")
                 return False
-            else:  # login_ok is None
-                logger.error("Session verification failed critically (login_status returned None).")
-                return False
+            # login_ok is None
+            logger.error("Session verification failed critically (login_status returned None).")
+            return False
         except Exception as e:
             logger.error(f"Unexpected error during session verification: {e}", exc_info=True)
             return False
@@ -639,8 +639,7 @@ class SessionManager:
                 if self._attempt_session_recovery():
                     logger.info("✅ Session recovery successful")
                     return True
-                else:
-                    logger.error("❌ Session recovery failed")
+                logger.error("❌ Session recovery failed")
             else:
                 logger.debug("⏭️  Skipping session recovery (not in long-running operation)")
             return False
@@ -678,8 +677,7 @@ class SessionManager:
                 if login_status(self, disable_ui_fallback=False):
                     logger.info("Session recovery and re-authentication successful")
                     return True
-                else:
-                    logger.error("Re-authentication failed after browser recovery")
+                logger.error("Re-authentication failed after browser recovery")
 
         except Exception as e:
             logger.error(f"Session recovery failed: {e}", exc_info=True)
@@ -926,9 +924,8 @@ class SessionManager:
 
                 logger.info("✅ Session cascade recovery completed successfully")
                 return True
-            else:
-                logger.error("❌ Session cascade recovery failed - could not establish new session")
-                return False
+            logger.error("❌ Session cascade recovery failed - could not establish new session")
+            return False
 
         except Exception as exc:
             logger.error(f"❌ Session cascade recovery failed with exception: {exc}")
@@ -1047,11 +1044,10 @@ class SessionManager:
                     if success:
                         logger.info(f"   ✅ Session refresh successful on attempt {attempt}")
                         break
-                    else:
-                        logger.warning(f"   ❌ Session refresh failed on attempt {attempt}")
-                        if attempt < max_attempts:
-                            logger.info(f"   Waiting 2s before attempt {attempt + 1}...")
-                            time.sleep(2)
+                    logger.warning(f"   ❌ Session refresh failed on attempt {attempt}")
+                    if attempt < max_attempts:
+                        logger.info(f"   Waiting 2s before attempt {attempt + 1}...")
+                        time.sleep(2)
                 except Exception as attempt_exc:
                     logger.error(f"   ❌ Session refresh attempt {attempt} exception: {attempt_exc}")
                     if attempt < max_attempts:
@@ -1089,21 +1085,19 @@ class SessionManager:
                         logger.warning(f"   ⚠️ Post-refresh API test failed: {test_exc}")
 
                     return True
-                else:
-                    logger.error("   ❌ Post-refresh verification failed - session still invalid")
-                    # Minimal guard: still update last_proactive_refresh to prevent immediate re-trigger
-                    self.session_health_monitor['last_proactive_refresh'] = time.time()
-                    return False
-            else:
-                logger.error("   ❌ All refresh attempts failed")
-                # Minimal guard: update last_proactive_refresh so next page doesn't immediately re-trigger
+                logger.error("   ❌ Post-refresh verification failed - session still invalid")
+                # Minimal guard: still update last_proactive_refresh to prevent immediate re-trigger
                 self.session_health_monitor['last_proactive_refresh'] = time.time()
                 return False
+            logger.error("   ❌ All refresh attempts failed")
+            # Minimal guard: update last_proactive_refresh so next page doesn't immediately re-trigger
+            self.session_health_monitor['last_proactive_refresh'] = time.time()
+            return False
 
         except Exception as exc:
             logger.error(f"❌ Enhanced proactive session refresh failed with exception: {exc}")
             logger.error(f"   Exception type: {type(exc).__name__}")
-            logger.error(f"   Exception details: {str(exc)}")
+            logger.error(f"   Exception details: {exc!s}")
             return False
         finally:
             self.session_health_monitor['refresh_in_progress'].clear()
@@ -1127,7 +1121,7 @@ class SessionManager:
         if health_check_result == "unhealthy":
             logger.info("🔍 Browser health pre-check: Browser is unhealthy - immediate refresh needed")
             return True
-        elif health_check_result == "healthy_skip_refresh":
+        if health_check_result == "healthy_skip_refresh":
             logger.debug("🔍 Browser health pre-check: Browser is very healthy, skipping refresh")
             return False
         # If "healthy_allow_refresh", continue with normal time/page-based checks
@@ -1292,8 +1286,7 @@ class SessionManager:
                             if 'refresh_in_progress' in self.session_health_monitor:
                                 self.session_health_monitor['refresh_in_progress'].clear()
                             return True
-                        else:
-                            logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
+                        logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
                     else:
                         logger.warning(f"❌ Browser refresh attempt {attempt}: Atomic browser replacement failed")
 
@@ -1594,11 +1587,10 @@ class SessionManager:
                     self.session_health_monitor['death_timestamp'] = time.time()
                     self.session_health_monitor['death_reason'] = f"Failed Recovery: {intervention_info['reason']}"
                     return True
-                else:
-                    logger.info("✅ Browser refresh successful during immediate intervention")
-                    # Reset immediate intervention flag after successful recovery
-                    health_monitor._immediate_intervention_requested = False
-                    return False
+                logger.info("✅ Browser refresh successful during immediate intervention")
+                # Reset immediate intervention flag after successful recovery
+                health_monitor._immediate_intervention_requested = False
+                return False
 
             # Check for enhanced monitoring
             if health_monitor.is_enhanced_monitoring_active():
@@ -1660,12 +1652,10 @@ class SessionManager:
 
                     logger.info("✅ Browser recovery completed successfully")
                     return True
-                else:
-                    logger.error("❌ Browser recovery failed - re-authentication failed")
-                    return False
-            else:
-                logger.error("❌ Browser recovery failed - atomic replacement failed")
+                logger.error("❌ Browser recovery failed - re-authentication failed")
                 return False
+            logger.error("❌ Browser recovery failed - atomic replacement failed")
+            return False
 
         except Exception as exc:
             logger.error(f"❌ Browser recovery failed with exception: {exc}")
@@ -1694,7 +1684,7 @@ class SessionManager:
         # Get Profile ID
         if not self.my_profile_id:
             logger.debug("Retrieving profile ID (ucdmid)...")
-            profile_id = self.get_my_profileId()
+            profile_id = self.get_my_profile_id()
             if not profile_id:
                 logger.error("Failed to retrieve profile ID (ucdmid).")
                 all_ok = False
@@ -1838,9 +1828,8 @@ class SessionManager:
         if missing_final:
             logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
             return False
-        else:
-            logger.debug("Cookies found in final check after loop (unexpected).")
-            return True
+        logger.debug("Cookies found in final check after loop (unexpected).")
+        return True
 
     def _sync_cookies_to_requests(self):
         """
@@ -1953,7 +1942,7 @@ class SessionManager:
             # Get browser logs (if available)
             if hasattr(self.driver, 'get_log'):
                 # Type: ignore to handle dynamic method availability
-                logs = getattr(self.driver, 'get_log')('browser')  # type: ignore
+                logs = self.driver.get_log('browser')  # type: ignore
             else:
                 logger.debug("WebDriver does not support get_log method")
                 return []
@@ -2131,19 +2120,17 @@ class SessionManager:
                     logger.debug(f"CSRF token successfully retrieved (Length: {len(csrf_token_val)}).")
                     self.api_manager.csrf_token = csrf_token_val
                     return csrf_token_val
-                else:
-                    logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
-                    return None
-            else:
-                logger.warning("Failed to get CSRF token response via _api_req.")
+                logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
                 return None
+            logger.warning("Failed to get CSRF token response via _api_req.")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_csrf: {e}", exc_info=True)
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_my_profileId(self) -> Optional[str]:
+    def get_my_profile_id(self) -> Optional[str]:
         """
         Retrieve user's profile ID (ucdmid).
 
@@ -2185,12 +2172,10 @@ class SessionManager:
                         logger.info(f"My profile id: {my_profile_id_val}")
                         self._profile_id_logged = True
                     return my_profile_id_val
-                else:
-                    logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
-                    return None
-            else:
-                logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
+                logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
                 return None
+            logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
@@ -2237,12 +2222,10 @@ class SessionManager:
                         logger.debug(f"My uuid: {my_uuid_val}")
                         self._uuid_logged = True
                     return my_uuid_val
-                else:
-                    logger.error("Could not retrieve UUID ('testId' missing in response).")
-                    return None
-            else:
-                logger.error("Failed to get header/dna data via _api_req.")
+                logger.error("Could not retrieve UUID ('testId' missing in response).")
                 return None
+            logger.error("Failed to get header/dna data via _api_req.")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
@@ -2283,9 +2266,8 @@ class SessionManager:
                     logger.debug(f"My tree id: {my_tree_id_val}")
                     self._tree_id_logged = True
                 return my_tree_id_val
-            else:
-                logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
-                return None
+            logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
+            return None
         except Exception as e:
             logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
             return None
@@ -2329,9 +2311,8 @@ class SessionManager:
                     logger.info(f"Tree owner name: {owner_name}\n")
                     self._owner_logged = True
                 return owner_name
-            else:
-                logger.warning("api_utils.call_tree_owner_api returned None.")
-                return None
+            logger.warning("api_utils.call_tree_owner_api returned None.")
+            return None
         except Exception as e:
             logger.error(f"Error calling api_utils.call_tree_owner_api: {e}", exc_info=True)
             return None
@@ -2381,7 +2362,7 @@ class SessionManager:
         # Try to get from API manager first, then retrieve if needed
         profile_id = self.api_manager.my_profile_id
         if not profile_id:
-            profile_id = self.get_my_profileId()
+            profile_id = self.get_my_profile_id()
         return profile_id
 
     @property
@@ -2436,7 +2417,7 @@ class SessionManager:
             }
 
             for name in csrf_cookie_names:
-                if name in driver_cookies_dict and driver_cookies_dict[name]:
+                if driver_cookies_dict.get(name):
                     from urllib.parse import unquote
                     # CRITICAL FIX: Handle both ^| and | separators in CSRF token
                     unquoted_val = unquote(driver_cookies_dict[name])

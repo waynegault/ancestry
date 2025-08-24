@@ -5,11 +5,12 @@ This module extracts API management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -209,11 +210,10 @@ class APIManager:
                         f"{api_description} request successful (text response)"
                     )
                     return response.text
-                else:
-                    logger.debug(
-                        f"{api_description} request successful (response object)"
-                    )
-                    return response
+                logger.debug(
+                    f"{api_description} request successful (response object)"
+                )
+                return response
 
         except RequestException as e:
             logger.error(f"{api_description} request failed: {e}")
@@ -252,8 +252,7 @@ class APIManager:
                 self.csrf_token = csrf_token
                 logger.debug("CSRF token retrieved successfully")
                 return csrf_token
-            else:
-                logger.debug("CSRF token not found in response (non-critical)")
+            logger.debug("CSRF token not found in response (non-critical)")
         else:
             logger.debug("Failed to retrieve CSRF token (non-critical)")
 
@@ -290,8 +289,7 @@ class APIManager:
                     logger.debug(f"My profile ID: {profile_id}")
                     self._profile_id_logged = True
                 return profile_id
-            else:
-                logger.error("Profile ID not found in response")
+            logger.error("Profile ID not found in response")
         else:
             logger.error("Failed to retrieve profile ID")
 
@@ -319,8 +317,7 @@ class APIManager:
                     logger.info(f"My UUID: {uuid_value}")
                     self._uuid_logged = True
                 return uuid_value
-            else:
-                logger.error("UUID not found in response")
+            logger.error("UUID not found in response")
         else:
             logger.error("Failed to retrieve UUID")
 

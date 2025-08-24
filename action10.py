@@ -29,9 +29,10 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from error_handling import (
     circuit_breaker,
@@ -596,9 +597,11 @@ def calculate_match_score_cached(
     candidate_data: Dict[str, Any],
     scoring_weights: Mapping[str, Union[int, float]],
     date_flex: Dict[str, Any],
-    cache: Dict[Tuple, Any] = {},
+    cache: Optional[Dict[Tuple, Any]] = None,
 ) -> Tuple[float, Dict[str, int], List[str]]:
     """Calculate match score with caching for performance."""
+    if cache is None:
+        cache = {}
     # Create a hash key from the relevant parts of the inputs
     # We use a tuple of immutable representations of the data
     criterion_hash = tuple(
@@ -666,8 +669,7 @@ def filter_and_score_individuals(
 
     logger.debug(f"Processing {total_records} individuals from cache...")
 
-    for indi_id_norm, indi_data in gedcom_data.processed_data_cache.items():
-        processed += 1
+    for processed, (indi_id_norm, indi_data) in enumerate(gedcom_data.processed_data_cache.items(), start=1):
 
         # Show progress updates
         if processed % progress_interval == 0:
@@ -1029,7 +1031,7 @@ def analyze_top_match(
     # Format years display
     years_display = ""
     if birth_year and death_year:
-        years_display = f" ({birth_year}–{death_year})"
+        years_display = f" ({birth_year}-{death_year})"
     elif birth_year:
         years_display = f" (b. {birth_year})"
     elif death_year:
@@ -1966,9 +1968,8 @@ def action10_module_tests() -> bool:
                 print("✅ Relationship path calculation completed successfully")
                 print("Conclusion: Relationship path between test person and tree owner successfully calculated")
                 return True
-            else:
-                print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
-                return False
+            print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
+            return False
 
         except Exception as e:
             print(f"❌ Relationship path calculation failed: {e}")

@@ -121,7 +121,7 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
         if attr_name == "direction":
             if isinstance(value, MessageDirectionEnum):
                 return value
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 try:
                     return MessageDirectionEnum(value)
                 except ValueError:
@@ -135,7 +135,7 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
         if attr_name == "status":
             if isinstance(value, PersonStatusEnum):
                 return value
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 try:
                     return PersonStatusEnum(value)
                 except ValueError:
@@ -146,16 +146,15 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
                 return default
 
         # For different types of attributes
-        if isinstance(value, (bool, type(True), type(False))):
+        if isinstance(value, (bool, bool, bool)):
             return bool(value)
-        elif isinstance(value, int):
+        if isinstance(value, int):
             return int(value)
-        elif isinstance(value, float):
+        if isinstance(value, float):
             return float(value)
-        elif hasattr(value, "isoformat"):  # datetime-like
+        if hasattr(value, "isoformat"):  # datetime-like
             return value
-        else:
-            return str(value)
+        return str(value)
     except (ValueError, TypeError, AttributeError):
         return default
 
@@ -397,27 +396,26 @@ class InboxProcessor:
                 f"Members not a list for ConvID {conversation_id}: {type(members)}"
             )
             return None  # Return None for invalid member data
-        elif len(members) < 2:
+        if len(members) < 2:
             logger.warning(
                 f"Insufficient members ({len(members)}) for ConvID {conversation_id}"
             )
             return None  # Return None for insufficient members
-        else:
-            for member in members:
-                if not isinstance(member, dict):
-                    continue
-                member_user_id = member.get("user_id")
-                if not member_user_id:
-                    continue
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            member_user_id = member.get("user_id")
+            if not member_user_id:
+                continue
 
-                member_user_id_str = str(member_user_id).lower().strip()
+            member_user_id_str = str(member_user_id).lower().strip()
 
-                # Check if this member is not the script user
-                if member_user_id_str and member_user_id_str != my_pid_lower:
-                    profile_id = str(member_user_id).upper().strip()
-                    username = str(member.get("display_name", "Unknown")).strip()
-                    other_member_found = True
-                    break
+            # Check if this member is not the script user
+            if member_user_id_str and member_user_id_str != my_pid_lower:
+                profile_id = str(member_user_id).upper().strip()
+                username = str(member.get("display_name", "Unknown")).strip()
+                other_member_found = True
+                break
 
         if not other_member_found:
             logger.warning(
@@ -691,7 +689,7 @@ class InboxProcessor:
                 logger.debug(
                     f"Updating username for {log_ref} from '{current_username}' to '{formatted_username}'."
                 )
-                setattr(person, "username", formatted_username)
+                person.username = formatted_username
                 updated = True
             # Update message link if missing or different
             correct_message_link = urljoin(
@@ -701,14 +699,12 @@ class InboxProcessor:
             current_message_link = safe_column_value(person, "message_link", None)
             if current_message_link != correct_message_link:
                 logger.debug(f"Updating message link for {log_ref}.")
-                setattr(person, "message_link", correct_message_link)
+                person.message_link = correct_message_link
                 updated = True
             # Optional: Add logic here to fetch details and update other fields if they are NULL
 
             if updated:
-                setattr(
-                    person, "updated_at", datetime.now(timezone.utc)
-                )  # Set update timestamp
+                person.updated_at = datetime.now(timezone.utc)  # Set update timestamp
                 try:
                     session.add(person)  # Ensure updates are staged
                     session.flush()  # Apply update within the transaction
@@ -956,7 +952,7 @@ class InboxProcessor:
                 with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                     # Link enhanced progress to tqdm for updates (avoid pylance attr warnings)
                     try:
-                        setattr(progress_bar, "_enhanced_progress", enhanced_progress)
+                        progress_bar._enhanced_progress = enhanced_progress
                     except Exception:
                         pass
                     (
@@ -1172,12 +1168,12 @@ class InboxProcessor:
                         stop_reason = "End of Inbox Reached (Empty Batch, No Cursor)"
                         stop_processing = True
                         break
-                    else:  # Empty batch BUT cursor exists (API might sometimes do this)
-                        logger.debug(
-                            "API returned empty batch but provided cursor. Continuing fetch."
-                        )
-                        next_cursor = next_cursor_from_api
-                        continue  # Fetch next batch
+                    # Empty batch BUT cursor exists (API might sometimes do this)
+                    logger.debug(
+                        "API returned empty batch but provided cursor. Continuing fetch."
+                    )
+                    next_cursor = next_cursor_from_api
+                    continue  # Fetch next batch
 
                 # Update progress bar total if this is the first batch or if we're not limited
                 if progress_bar is not None and progress_bar.total is None:
@@ -1232,11 +1228,7 @@ class InboxProcessor:
                         for log in logs:
                             timestamp = safe_column_value(log, "latest_timestamp", None)
                             if timestamp and timestamp.tzinfo is None:
-                                setattr(
-                                    log,
-                                    "latest_timestamp",
-                                    timestamp.replace(tzinfo=timezone.utc),
-                                )
+                                log.latest_timestamp = timestamp.replace(tzinfo=timezone.utc)
                         existing_conv_logs = {
                             (
                                 str(safe_column_value(log, "conversation_id")),
@@ -1711,9 +1703,8 @@ class InboxProcessor:
                         raise MaxApiFailuresExceededError(
                             "Session death cascade detected in Action 7 WebDriverException save"
                         )
-                    else:
-                        logger.error(f"ConnectionError during Action 7 WebDriverException save: {conn_err}")
-                        final_logs_saved, final_persons_updated = 0, 0
+                    logger.error(f"ConnectionError during Action 7 WebDriverException save: {conn_err}")
+                    final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
                 logs_processed_in_run += final_logs_saved
                 # Break loop after final save attempt
@@ -1741,9 +1732,8 @@ class InboxProcessor:
                         raise MaxApiFailuresExceededError(
                             "Session death cascade detected in Action 7 KeyboardInterrupt save"
                         )
-                    else:
-                        logger.error(f"ConnectionError during Action 7 KeyboardInterrupt save: {conn_err}")
-                        final_logs_saved, final_persons_updated = 0, 0
+                    logger.error(f"ConnectionError during Action 7 KeyboardInterrupt save: {conn_err}")
+                    final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
                 logs_processed_in_run += final_logs_saved
                 # Break loop after final save attempt
@@ -1775,9 +1765,8 @@ class InboxProcessor:
                         raise MaxApiFailuresExceededError(
                             "Session death cascade detected in Action 7 Critical Error save"
                         )
-                    else:
-                        logger.error(f"ConnectionError during Action 7 Critical Error save: {conn_err}")
-                        final_logs_saved, final_persons_updated = 0, 0
+                    logger.error(f"ConnectionError during Action 7 Critical Error save: {conn_err}")
+                    final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
                 logs_processed_in_run += final_logs_saved
                 # Return from helper to signal failure to outer function
@@ -1896,7 +1885,7 @@ def action7_inbox_module_tests() -> bool:
         # search_inbox method exists and is callable on an instance
         sm = MagicMock()
         processor = InboxProcessor(sm)
-        assert hasattr(processor, 'search_inbox') and callable(getattr(processor, 'search_inbox'))
+        assert hasattr(processor, 'search_inbox') and callable(processor.search_inbox)
         # internal helpers exist
         assert hasattr(processor, '_process_inbox_loop'), "_process_inbox_loop should exist"
         assert hasattr(processor, '_log_unified_summary'), "_log_unified_summary should exist"

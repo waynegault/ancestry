@@ -8,11 +8,12 @@ application with proper logging, recovery strategies, and user-friendly messages
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -294,7 +295,7 @@ class DatabaseErrorHandler(ErrorHandler):
                 context=context,
                 original_exception=error,
             )
-        elif "integrity" in error_message.lower():
+        if "integrity" in error_message.lower():
             return DatabaseError(
                 "Database integrity constraint violated",
                 technical_details=error_message,
@@ -302,14 +303,13 @@ class DatabaseErrorHandler(ErrorHandler):
                 context=context,
                 original_exception=error,
             )
-        else:
-            return DatabaseError(
-                "Database operation failed",
-                technical_details=error_message,
-                recovery_suggestion="Try the operation again or contact support",
-                context=context,
-                original_exception=error,
-            )
+        return DatabaseError(
+            "Database operation failed",
+            technical_details=error_message,
+            recovery_suggestion="Try the operation again or contact support",
+            context=context,
+            original_exception=error,
+        )
 
 
 class NetworkErrorHandler(ErrorHandler):
@@ -334,7 +334,7 @@ class NetworkErrorHandler(ErrorHandler):
                 context=context,
                 original_exception=error,
             )
-        elif "connection" in error_message.lower():
+        if "connection" in error_message.lower():
             return NetworkError(
                 "Network connection failed",
                 technical_details=error_message,
@@ -342,14 +342,13 @@ class NetworkErrorHandler(ErrorHandler):
                 context=context,
                 original_exception=error,
             )
-        else:
-            return NetworkError(
-                "Network request failed",
-                technical_details=error_message,
-                recovery_suggestion="Check your internet connection and try again",
-                context=context,
-                original_exception=error,
-            )
+        return NetworkError(
+            "Network request failed",
+            technical_details=error_message,
+            recovery_suggestion="Check your internet connection and try again",
+            context=context,
+            original_exception=error,
+        )
 
 
 class BrowserErrorHandler(ErrorHandler):
@@ -374,7 +373,7 @@ class BrowserErrorHandler(ErrorHandler):
                 context=context,
                 original_exception=error,
             )
-        elif "element" in error_message.lower():
+        if "element" in error_message.lower():
             return BrowserError(
                 "Web element not found or not accessible",
                 technical_details=error_message,
@@ -382,14 +381,13 @@ class BrowserErrorHandler(ErrorHandler):
                 context=context,
                 original_exception=error,
             )
-        else:
-            return BrowserError(
-                "Browser operation failed",
-                technical_details=error_message,
-                recovery_suggestion="Restart the browser and try again",
-                context=context,
-                original_exception=error,
-            )
+        return BrowserError(
+            "Browser operation failed",
+            technical_details=error_message,
+            recovery_suggestion="Restart the browser and try again",
+            context=context,
+            original_exception=error,
+        )
 
 
 class ErrorHandlerRegistry:
@@ -607,13 +605,12 @@ class ErrorContext:
                 f"Operation failed: {self.operation_name} ({duration:.2f}s) - {app_error.message}"
             )
             return False  # Don't suppress the exception
-        else:
-            # Success
-            if self.log_success:
-                logger.debug(
-                    f"Operation completed: {self.operation_name} ({duration:.2f}s)"
-                )
-            return True
+        # Success
+        if self.log_success:
+            logger.debug(
+                f"Operation completed: {self.operation_name} ({duration:.2f}s)"
+            )
+        return True
 
 
 def get_error_handler(error_type: Type[Exception]) -> ErrorHandler:
@@ -652,11 +649,10 @@ def get_error_handler(error_type: Type[Exception]) -> ErrorHandler:
     }
 
     # Find handler by error type
-    handler = next(
+    return next(
         (h for t, h in error_handlers.items() if t in str(error_type).lower()),
         DefaultHandler(),
     )
-    return handler
 
 
 # =============================================

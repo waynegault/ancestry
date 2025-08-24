@@ -9,7 +9,6 @@ handling for the entire Ancestry automation project infrastructure.
 """
 
 import logging
-import os
 import sys
 import threading
 import time
@@ -131,7 +130,7 @@ def _log_error(message: str) -> None:
 
 def ensure_imports() -> None:
     """Ensure all imports are properly configured. Call once per module."""
-    global _initialized, _stats
+    global _initialized
     if _initialized:
         return
 
@@ -199,7 +198,7 @@ def call_function(name: str, *args, **kwargs) -> Any:
 
 def get_available_functions() -> List[str]:
     """Get list of all available function names."""
-    return [name for name in _registry.keys() if callable(_registry[name])]
+    return [name for name in _registry if callable(_registry[name])]
 
 
 def auto_register_module(module_globals: Dict[str, Any], module_name: str) -> None:
@@ -243,7 +242,6 @@ def standardize_module_imports() -> bool:
         # Try common fallback patterns
         fallback_patterns = [
             str(Path(__file__).parent.parent),
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             str(Path(__file__).resolve().parent.parent),
         ]
 
@@ -314,13 +312,12 @@ def safe_execute(
 
     if func is None:
         return decorator
-    else:
-        return decorator(func)
+    return decorator(func)
 
 
 def cleanup_registry() -> None:
     """Clean up the registry and reset caches."""
-    global _registry, _import_cache, _stats
+    global _stats
     _registry.clear()
     _import_cache.clear()
     _stats = {
@@ -700,20 +697,20 @@ ensure_imports()
 
 # Export clean, unified interface
 __all__ = [
-    "ensure_imports",
-    "register_function",
-    "register_many",
-    "get_function",
-    "is_function_available",
-    "call_function",
-    "get_available_functions",
     "auto_register_module",
-    "standardize_module_imports",
+    "call_function",
+    "cleanup_registry",
+    "ensure_imports",
+    "get_available_functions",
+    "get_function",
     "get_logger",
     "get_project_root",
-    "import_context",
-    "safe_execute",
-    "cleanup_registry",
     "get_stats",
+    "import_context",
+    "is_function_available",
+    "register_function",
+    "register_many",
     "run_comprehensive_tests",
+    "safe_execute",
+    "standardize_module_imports",
 ]

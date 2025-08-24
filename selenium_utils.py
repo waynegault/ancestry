@@ -25,7 +25,7 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
 from selenium.webdriver.support.wait import WebDriverWait
 
 # Local imports
@@ -120,7 +120,8 @@ def export_cookies(driver, filepath: str) -> bool:
         return False
 
     cookies = get_driver_cookies(driver)
-    with open(filepath, "w") as f:
+    from pathlib import Path
+    with Path(filepath).open("w", encoding="utf-8") as f:
         json.dump(cookies, f, indent=2)
     return True
 

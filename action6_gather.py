@@ -163,9 +163,8 @@ def _a6_acquire_single_instance_lock() -> bool:
             if prev_pid and _a6_is_process_alive(prev_pid):
                 # Active holder: refuse
                 return False
-            else:
-                # Not alive → consider stale
-                stale = True
+            # Not alive → consider stale
+            stale = True
 
             if stale:
                 try:
@@ -281,9 +280,8 @@ def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
                 if current_time - cache_time < ttl_seconds:
                     # Cache hit (removed verbose debug logging)
                     return cached_data
-                else:
-                    # Remove expired entry
-                    del API_RESPONSE_CACHE[cache_key]
+                # Remove expired entry
+                del API_RESPONSE_CACHE[cache_key]
 
             # Cache miss - execute function
             result = func(*args, **kwargs)
@@ -316,7 +314,7 @@ import logging
 import random
 import re
 import sys
-import time  # noqa: F401  # Used in performance/logging timestamps below
+import time  # Used in performance/logging timestamps below
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -578,8 +576,7 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
                     if fresh_token:
                         logger.debug("Successfully obtained fresh CSRF token from API")
                         return fresh_token
-                    else:
-                        logger.debug("API CSRF token request returned None, falling back to cookies")
+                    logger.debug("API CSRF token request returned None, falling back to cookies")
                 else:
                     logger.debug("API CSRF token method not available, falling back to cookies")
             except Exception as api_error:
@@ -816,8 +813,7 @@ def _main_page_processing_loop(
                             session_manager.session_health_monitor['death_detected'].set()
                             session_manager.session_health_monitor['death_timestamp'] = time.time()
                             break
-                        else:
-                            logger.warning("⚠️ Browser refresh failed but session still valid - continuing with current session")
+                        logger.warning("⚠️ Browser refresh failed but session still valid - continuing with current session")
                     else:
                         logger.debug(f"✅ Proactive browser refresh successful at page {current_page_num}")
 
@@ -835,7 +831,7 @@ def _main_page_processing_loop(
                 if session_manager.check_automatic_intervention():
                     logger.critical(f"🚨 AUTOMATIC INTERVENTION TRIGGERED - Halting processing at page {current_page_num}")
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                    remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
                         progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
@@ -850,7 +846,7 @@ def _main_page_processing_loop(
                     else:
                         logger.critical(f"❌ Browser recovery failed at page {current_page_num} - halting")
                         loop_final_success = False
-                        remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                        remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                         if remaining_matches_estimate > 0:
                             progress.update(remaining_matches_estimate)
                             state["total_errors"] += remaining_matches_estimate
@@ -867,7 +863,7 @@ def _main_page_processing_loop(
                             f"Immediately halting processing to prevent cascade failures."
                         )
                         loop_final_success = False
-                        remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                        remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                         if remaining_matches_estimate > 0:
                             progress.update(remaining_matches_estimate)
                             state["total_errors"] += remaining_matches_estimate
@@ -880,7 +876,7 @@ def _main_page_processing_loop(
                         f"Immediate termination required."
                     )
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                    remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
                         progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
@@ -894,7 +890,7 @@ def _main_page_processing_loop(
                         f"Cascade count: {cascade_count}. Emergency termination triggered."
                     )
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                    remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
                         progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
@@ -907,7 +903,7 @@ def _main_page_processing_loop(
                         f"Terminating immediately to prevent infinite loops."
                     )
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                    remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                     if remaining_matches_estimate > 0:
                         progress.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
@@ -925,7 +921,7 @@ def _main_page_processing_loop(
                         session_manager.session_health_monitor['death_detected'].set()
                         session_manager.session_health_monitor['is_alive'].clear()
                         loop_final_success = False
-                        remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                        remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                         if remaining_matches_estimate > 0:
                             progress.update(remaining_matches_estimate)
                             state["total_errors"] += remaining_matches_estimate
@@ -1062,7 +1058,7 @@ def _main_page_processing_loop(
                     )
                     loop_final_success = False
                     remaining_matches_estimate = max(
-                        0, int((progress.stats.total_items or 0)) - progress.stats.items_processed
+                        0, int(progress.stats.total_items or 0) - progress.stats.items_processed
                     )
                     if remaining_matches_estimate > 0:
                         progress.update(remaining_matches_estimate)
@@ -1098,7 +1094,7 @@ def _main_page_processing_loop(
                             )
                             loop_final_success = False
                             remaining_matches_estimate = max(
-                                0, int((progress.stats.total_items or 0)) - progress.stats.items_processed
+                                0, int(progress.stats.total_items or 0) - progress.stats.items_processed
                             )
                             if remaining_matches_estimate > 0:
                                 progress.update(remaining_matches_estimate)
@@ -1135,7 +1131,7 @@ def _main_page_processing_loop(
                                 f"Halting main loop to prevent infinite cascade."
                             )
                             loop_final_success = False
-                            remaining_matches_estimate = max(0, int((progress.stats.total_items or 0)) - progress.stats.items_processed)
+                            remaining_matches_estimate = max(0, int(progress.stats.total_items or 0) - progress.stats.items_processed)
                             if remaining_matches_estimate > 0:
                                 progress.update(remaining_matches_estimate)
                                 state["total_errors"] += remaining_matches_estimate
@@ -1207,7 +1203,7 @@ def _main_page_processing_loop(
 
                                 # If all matches on the page can be skipped, do fast processing
                                 if len(fetch_candidates_uuid) == 0:
-                                    logger.debug((f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip"))
+                                    logger.debug(f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip")
                                     progress.update(len(matches_on_page_for_batch))
                                     state["total_skipped"] += page_skip_count
                                     state["total_pages_processed"] += 1
@@ -1249,7 +1245,7 @@ def _main_page_processing_loop(
                 session_manager.increment_page_count()
         finally:
             # Finalization handled by ProgressIndicator context manager; ensure stats reflect any remaining errors
-            remaining_to_mark_error = int((progress.stats.total_items or 0)) - progress.stats.items_processed
+            remaining_to_mark_error = int(progress.stats.total_items or 0) - progress.stats.items_processed
             if remaining_to_mark_error > 0 and not loop_final_success:
                 try:
                     progress.update(remaining_to_mark_error)
@@ -1519,13 +1515,12 @@ def _lookup_existing_persons(
             raise ValueError(
                 "Database enum mismatch detected during person lookup."
             ) from db_lookup_err
-        else:
-            # Log other SQLAlchemy errors and re-raise
-            logger.error(
-                f"Database lookup failed during prefetch: {db_lookup_err}",
-                exc_info=True,
-            )
-            raise  # Re-raise to be handled by the caller (_do_batch)
+        # Log other SQLAlchemy errors and re-raise
+        logger.error(
+            f"Database lookup failed during prefetch: {db_lookup_err}",
+            exc_info=True,
+        )
+        raise  # Re-raise to be handled by the caller (_do_batch)
     except Exception as e:
         # Catch any other unexpected errors
         logger.error(f"Unexpected error during Person lookup: {e}", exc_info=True)
@@ -1804,37 +1799,35 @@ def _perform_api_prefetches(
                         logger.debug(f"Predictive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (current tokens: {current_tokens:.2f})")
                         import time
                         time.sleep(optimal_pre_delay)
+                    # Use existing tiered approach for light loads
+                    elif total_api_calls >= 15:
+                        _apply_rate_limiting(session_manager)
+                        logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+                    elif total_api_calls >= 5:
+                        import time
+                        time.sleep(1.2)  # Shorter than normal rate limiting
+                        logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
                     else:
-                        # Use existing tiered approach for light loads
-                        if total_api_calls >= 15:
-                            _apply_rate_limiting(session_manager)
-                            logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-                        elif total_api_calls >= 5:
-                            import time
-                            time.sleep(1.2)  # Shorter than normal rate limiting
-                            logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
-                        else:
-                            import time
-                            time.sleep(0.3)  # Just 300ms delay for light loads
-                            logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                        import time
+                        time.sleep(0.3)  # Just 300ms delay for light loads
+                        logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
                 else:
                     # Sufficient tokens available - minimal delay
                     import time
                     time.sleep(0.1)  # Minimal delay to prevent hammering
                     logger.debug(f"Sufficient tokens available ({current_tokens:.2f}) for {total_api_calls} API calls - minimal delay")
+            # Fallback to original tiered approach if rate_limiter not available
+            elif total_api_calls >= 15:
+                _apply_rate_limiting(session_manager)
+                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+            elif total_api_calls >= 5:
+                import time
+                time.sleep(1.2)
+                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
             else:
-                # Fallback to original tiered approach if rate_limiter not available
-                if total_api_calls >= 15:
-                    _apply_rate_limiting(session_manager)
-                    logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-                elif total_api_calls >= 5:
-                    import time
-                    time.sleep(1.2)
-                    logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
-                else:
-                    import time
-                    time.sleep(0.3)
-                    logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                import time
+                time.sleep(0.3)
+                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
         else:
             logger.debug("No API calls needed - skipping all rate limiting")
 
@@ -1884,12 +1877,9 @@ def _perform_api_prefetches(
         )  # For ladder results before combining
 
         # Processing initially submitted API tasks (removed verbose debug)
-        processed_tasks = 0
-        for future in as_completed(futures):
+        for processed_tasks, future in enumerate(as_completed(futures), start=1):
             # SURGICAL FIX #20: Universal session health check during batch processing
-            processed_tasks += 1
-            if processed_tasks % 10 == 0:  # Check every 10 processed tasks
-                if not session_manager.check_session_health():
+            if processed_tasks % 10 == 0 and not session_manager.check_session_health():
                     logger.critical(
                         f"🚨 Session death detected during batch processing "
                         f"(task {processed_tasks}/{len(futures)}). Cancelling remaining tasks."
@@ -3529,9 +3519,7 @@ def _process_page_matches(
             for var_name in cleanup_vars:
                 if var_name in locals():
                     var_obj = locals()[var_name]
-                    if hasattr(var_obj, 'clear'):
-                        var_obj.clear()
-                    elif isinstance(var_obj, (list, set)):
+                    if hasattr(var_obj, 'clear') or isinstance(var_obj, (list, set)):
                         var_obj.clear()
                     # Set to None to free reference
                     locals()[var_name] = None
@@ -3700,113 +3688,112 @@ def _prepare_person_operation_data(
             person_op_dict,
             False,
         )  # False for person_fields_changed as it's a new person
-    else:
-        person_data_for_update: Dict[str, Any] = {
-            "_operation": "update",
-            "_existing_person_id": existing_person.id,
-            "uuid": match_uuid.upper(),  # Keep UUID for identification
-        }
-        person_fields_changed = False
-        for key, new_value in incoming_person_data.items():
-            if key == "uuid":  # UUID should not be changed for existing records
-                continue
-            current_value = getattr(existing_person, key, None)
-            value_changed = False
-            value_to_set = new_value  # Default to new_value
+    person_data_for_update: Dict[str, Any] = {
+        "_operation": "update",
+        "_existing_person_id": existing_person.id,
+        "uuid": match_uuid.upper(),  # Keep UUID for identification
+    }
+    person_fields_changed = False
+    for key, new_value in incoming_person_data.items():
+        if key == "uuid":  # UUID should not be changed for existing records
+            continue
+        current_value = getattr(existing_person, key, None)
+        value_changed = False
+        value_to_set = new_value  # Default to new_value
 
-            # Specific comparisons and transformations
-            if key == "last_logged_in":
-                # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
-                current_dt_utc = (
-                    current_value.astimezone(timezone.utc).replace(microsecond=0)
-                    if isinstance(current_value, datetime) and current_value.tzinfo
-                    else (
-                        current_value.replace(tzinfo=timezone.utc, microsecond=0)
-                        if isinstance(current_value, datetime)
-                        else None
-                    )
+        # Specific comparisons and transformations
+        if key == "last_logged_in":
+            # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
+            current_dt_utc = (
+                current_value.astimezone(timezone.utc).replace(microsecond=0)
+                if isinstance(current_value, datetime) and current_value.tzinfo
+                else (
+                    current_value.replace(tzinfo=timezone.utc, microsecond=0)
+                    if isinstance(current_value, datetime)
+                    else None
                 )
-                new_dt_utc = (
-                    new_value.astimezone(timezone.utc).replace(microsecond=0)
-                    if isinstance(new_value, datetime) and new_value.tzinfo
-                    else (
-                        new_value.replace(tzinfo=timezone.utc, microsecond=0)
-                        if isinstance(new_value, datetime)
-                        else None
-                    )
+            )
+            new_dt_utc = (
+                new_value.astimezone(timezone.utc).replace(microsecond=0)
+                if isinstance(new_value, datetime) and new_value.tzinfo
+                else (
+                    new_value.replace(tzinfo=timezone.utc, microsecond=0)
+                    if isinstance(new_value, datetime)
+                    else None
                 )
-                if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
-                    value_changed = True
-                    # value_to_set is already new_value (potentially a datetime obj)
-            elif key == "status":
-                # Ensure comparison is between Enum types or their values
-                current_enum_val = (
-                    current_value.value
-                    if isinstance(current_value, PersonStatusEnum)
-                    else current_value
-                )
-                new_enum_val = (
-                    new_value.value
-                    if isinstance(new_value, PersonStatusEnum)
-                    else new_value
-                )
-                if new_enum_val != current_enum_val:
-                    value_changed = True
-                    value_to_set = new_value  # Store the Enum object
-            elif key == "birth_year":  # Update only if new is valid and current is None
-                if new_value is not None and current_value is None:
-                    try:
-                        value_to_set_int = int(new_value)
-                        value_changed = True
-                        value_to_set = value_to_set_int
-                    except (ValueError, TypeError):
-                        logger_instance.warning(
-                            f"Invalid birth_year '{new_value}' for update {log_ref_short}"
-                        )
-                        continue  # Skip this field
-                # No change if new_value is None or current_value exists
-            elif (
-                key == "gender"
-            ):  # Update only if new is valid ('f'/'m') and current is None
-                if (
-                    new_value is not None
-                    and current_value is None
-                    and isinstance(new_value, str)
-                    and new_value.lower() in ("f", "m")
-                ):
-                    value_to_set = new_value.lower()
-                    value_changed = True
-            elif key in ("profile_id", "administrator_profile_id"):
-                # Ensure comparison of uppercase strings, handle None
-                current_str_upper = (
-                    str(current_value).upper() if current_value is not None else None
-                )
-                new_str_upper = (
-                    str(new_value).upper() if new_value is not None else None
-                )
-                if new_str_upper != current_str_upper:
-                    value_changed = True
-                    value_to_set = new_str_upper  # Store uppercase
-            elif isinstance(current_value, bool) or isinstance(
-                new_value, bool
-            ):  # For boolean fields
-                if bool(current_value) != bool(new_value):
-                    value_changed = True
-                    value_to_set = bool(new_value)
-            # General comparison for other fields
-            elif current_value != new_value:
+            )
+            if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
                 value_changed = True
+                # value_to_set is already new_value (potentially a datetime obj)
+        elif key == "status":
+            # Ensure comparison is between Enum types or their values
+            current_enum_val = (
+                current_value.value
+                if isinstance(current_value, PersonStatusEnum)
+                else current_value
+            )
+            new_enum_val = (
+                new_value.value
+                if isinstance(new_value, PersonStatusEnum)
+                else new_value
+            )
+            if new_enum_val != current_enum_val:
+                value_changed = True
+                value_to_set = new_value  # Store the Enum object
+        elif key == "birth_year":  # Update only if new is valid and current is None
+            if new_value is not None and current_value is None:
+                try:
+                    value_to_set_int = int(new_value)
+                    value_changed = True
+                    value_to_set = value_to_set_int
+                except (ValueError, TypeError):
+                    logger_instance.warning(
+                        f"Invalid birth_year '{new_value}' for update {log_ref_short}"
+                    )
+                    continue  # Skip this field
+            # No change if new_value is None or current_value exists
+        elif (
+            key == "gender"
+        ):  # Update only if new is valid ('f'/'m') and current is None
+            if (
+                new_value is not None
+                and current_value is None
+                and isinstance(new_value, str)
+                and new_value.lower() in ("f", "m")
+            ):
+                value_to_set = new_value.lower()
+                value_changed = True
+        elif key in ("profile_id", "administrator_profile_id"):
+            # Ensure comparison of uppercase strings, handle None
+            current_str_upper = (
+                str(current_value).upper() if current_value is not None else None
+            )
+            new_str_upper = (
+                str(new_value).upper() if new_value is not None else None
+            )
+            if new_str_upper != current_str_upper:
+                value_changed = True
+                value_to_set = new_str_upper  # Store uppercase
+        elif isinstance(current_value, bool) or isinstance(
+            new_value, bool
+        ):  # For boolean fields
+            if bool(current_value) != bool(new_value):
+                value_changed = True
+                value_to_set = bool(new_value)
+        # General comparison for other fields
+        elif current_value != new_value:
+            value_changed = True
 
-            if value_changed:
-                person_data_for_update[key] = value_to_set
-                person_fields_changed = True
-                logger_instance.debug(
-                    f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
-                )
+        if value_changed:
+            person_data_for_update[key] = value_to_set
+            person_fields_changed = True
+            logger_instance.debug(
+                f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
+            )
 
-        return (
-            person_data_for_update if person_fields_changed else None
-        ), person_fields_changed
+    return (
+        person_data_for_update if person_fields_changed else None
+    ), person_fields_changed
 
 
 # End of _prepare_person_operation_data
@@ -4079,11 +4066,10 @@ def _prepare_family_tree_operation_data(
                 or k in ["_operation", "_existing_tree_id", "uuid"]  # Keep uuid
             }
             return incoming_tree_data, tree_operation
-        else:
-            logger_instance.warning(
-                f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
-            )
-            tree_operation = "none"
+        logger_instance.warning(
+            f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
+        )
+        tree_operation = "none"
 
     return None, tree_operation
 
@@ -4096,7 +4082,7 @@ def _prepare_family_tree_operation_data(
 
 
 def _do_match(
-    session: SqlAlchemySession,  # Required by signature but not used in current implementation  # noqa: ARG001
+    session: SqlAlchemySession,  # Required by signature but not used in current implementation
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
@@ -4304,7 +4290,7 @@ def _do_match(
 
 def get_matches(
     session_manager: SessionManager,
-    db_session: SqlAlchemySession,  # Required by interface but not used in this function  # noqa: ARG001
+    db_session: SqlAlchemySession,  # Required by interface but not used in this function
     current_page: int = 1,
 ) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
     """
@@ -4373,15 +4359,14 @@ def get_matches(
         if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
             # Track the sync time
-            setattr(session_manager, '_last_cookie_sync_time', current_time)
+            session_manager._last_cookie_sync_time = current_time
             if _AUTH_DEBUG_VERBOSE:
                 logger.debug("Smart cookie sync performed (cookies were stale)")
         elif not cookie_sync_needed:
             if _AUTH_DEBUG_VERBOSE:
                 logger.debug("Skipping cookie sync - cookies are fresh")
-        else:
-            if _AUTH_DEBUG_VERBOSE:
-                logger.debug("Cookie sync method not available")
+        elif _AUTH_DEBUG_VERBOSE:
+            logger.debug("Cookie sync method not available")
 
     except Exception as session_validation_error:
         logger.error(f"Session validation error: {session_validation_error}")
@@ -4415,8 +4400,8 @@ def get_matches(
                         if _AUTH_DEBUG_VERBOSE:
                             logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
                         # Cache the token for future use
-                        setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
-                        setattr(session_manager, '_cached_csrf_time', time_module.time())
+                        session_manager._cached_csrf_token = specific_csrf_token
+                        session_manager._cached_csrf_time = time_module.time()
                         break
                 except NoSuchCookieException:
                     continue
@@ -4447,16 +4432,15 @@ def get_matches(
                                         f"Read CSRF token via fallback from '{cookie_name}'."
                                     )
                                 # Cache the token for future use
-                                setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
-                                setattr(session_manager, '_cached_csrf_time', time_module.time())
+                                session_manager._cached_csrf_token = specific_csrf_token
+                                session_manager._cached_csrf_time = time_module.time()
                                 break
                         if specific_csrf_token:
                             break
-                else:
-                    if _AUTH_DEBUG_VERBOSE:
-                        logger.warning(
-                            "Fallback get_driver_cookies also failed to retrieve cookies."
-                        )
+                elif _AUTH_DEBUG_VERBOSE:
+                    logger.warning(
+                        "Fallback get_driver_cookies also failed to retrieve cookies."
+                    )
         except Exception as csrf_err:
             logger.error(
                 f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
@@ -4468,9 +4452,8 @@ def get_matches(
             "Failed to obtain specific CSRF token required for Match List API."
         )
         return None
-    else:
-        if _AUTH_DEBUG_VERBOSE:
-            logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+    if _AUTH_DEBUG_VERBOSE:
+        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
     # Warm-up: visit the UI list page to ensure match-list CSRF is set in browser, then sync cookies + refresh CSRF
     try:
@@ -5333,16 +5316,15 @@ def _fetch_batch_badge_details(
                     logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
 
             return result_data
-        elif isinstance(badge_response, requests.Response):
+        if isinstance(badge_response, requests.Response):
             logger.warning(
                 f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
             )
             return None
-        else:
-            logger.warning(
-                f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
-            )
-            return None
+        logger.warning(
+            f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
+        )
+        return None
 
     except ConnectionError as conn_err:
         logger.error(
@@ -5474,10 +5456,10 @@ def _fetch_batch_ladder_legacy(
                 f"Get Ladder API call failed for CFPID {cfpid} (Status: {api_result.status_code})."
             )
             return None
-        elif api_result is None:
+        if api_result is None:
             logger.warning(f"Get Ladder API call returned None for CFPID {cfpid}.")
             return None
-        elif not isinstance(api_result, str):
+        if not isinstance(api_result, str):
             logger.warning(
                 f"_api_req returned unexpected type '{type(api_result).__name__}' for Get Ladder API (CFPID {cfpid})."
             )
@@ -5572,22 +5554,20 @@ def _fetch_batch_ladder_legacy(
                         or ladder_data["relationship_path"]
                     ):
                         return ladder_data
-                    else:  # No data found after parsing
-                        logger.warning(
-                            f"No actual_relationship or path found for CFPID {cfpid} after parsing."
-                        )
-                        return None
-
-                else:
+                    # No data found after parsing
                     logger.warning(
-                        f"Empty HTML in getladder response for CFPID {cfpid}."
+                        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
                     )
                     return None
-            else:
+
                 logger.warning(
-                    f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+                    f"Empty HTML in getladder response for CFPID {cfpid}."
                 )
                 return None
+            logger.warning(
+                f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+            )
+            return None
         except json.JSONDecodeError as inner_json_err:
             logger.error(
                 f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
@@ -5857,7 +5837,7 @@ def action6_gather_module_tests() -> bool:
                 matches_expected = result == expected
 
                 status = "✅" if matches_expected else "❌"
-                print(f"   {status} {description}: {repr(input_val)} → {result}")
+                print(f"   {status} {description}: {input_val!r} → {result}")
 
                 results.append(matches_expected)
                 assert (

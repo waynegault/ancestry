@@ -139,12 +139,11 @@ def verify_health_monitoring_active(session_manager) -> bool:
     if passed_checks == total_checks:
         logger.debug("🎉 ALL HEALTH MONITORING CHECKS PASSED - System is ready!")
         return True
-    else:
-        logger.error("❌ SOME HEALTH MONITORING CHECKS FAILED - System may not be protected!")
-        for check_name, result in verification_results.items():
-            status = "✅" if result else "❌"
-            logger.error(f"   {status} {check_name.replace('_', ' ').title()}")
-        return False
+    logger.error("❌ SOME HEALTH MONITORING CHECKS FAILED - System may not be protected!")
+    for check_name, result in verification_results.items():
+        status = "✅" if result else "❌"
+        logger.error(f"   {status} {check_name.replace('_', ' ').title()}")
+    return False
 
 
 def log_health_status_for_verification(session_manager, page_number: int):
@@ -183,9 +182,8 @@ def log_health_status_for_verification(session_manager, page_number: int):
                 logger.info(f"⚠️ VERIFICATION: MODERATE RISK at page {page_number}")
 
             return True
-        else:
-            logger.error(f"❌ VERIFICATION FAILED: Health monitor not available at page {page_number}")
-            return False
+        logger.error(f"❌ VERIFICATION FAILED: Health monitor not available at page {page_number}")
+        return False
 
     except Exception as e:
         logger.error(f"❌ Health status verification failed at page {page_number}: {e}")

@@ -175,11 +175,7 @@ def should_exclude_message(message_content: str) -> bool:
     message_lower = message_content.lower()
 
     # Check for exclusion keywords
-    for keyword in EXCLUSION_KEYWORDS:
-        if keyword.lower() in message_lower:
-            return True
-
-    return False
+    return any(keyword.lower() in message_lower for keyword in EXCLUSION_KEYWORDS)
 
 
 # AI Prompt for generating genealogical replies
@@ -769,7 +765,7 @@ class PersonProcessor:
 
         except Exception as e:
             logger.error(f"Error processing {log_prefix}: {e}", exc_info=True)
-            return False, f"error: {str(e)}"
+            return False, f"error: {e!s}"
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
@@ -893,7 +889,7 @@ class PersonProcessor:
 
         # Store extracted data on person object for message personalization
         try:
-            setattr(person, 'extracted_genealogical_data', extracted_data)
+            person.extracted_genealogical_data = extracted_data
             logger.debug(f"Stored extracted genealogical data on person object for {person.username}")
         except Exception as e:
             logger.warning(f"Failed to store extracted data on person object: {e}")
@@ -1157,7 +1153,7 @@ class PersonProcessor:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
-                setattr(message, "custom_reply_sent_at", datetime.now(timezone.utc))
+                message.custom_reply_sent_at = datetime.now(timezone.utc)
                 self.db_state.session.add(message)
                 self.db_state.session.flush()
         except Exception as e:
@@ -1389,7 +1385,7 @@ class PersonProcessor:
         if app_mode == "testing":
             if not testing_profile_id:
                 return False, "skipped (config_error)"
-            elif current_profile_id != str(testing_profile_id):
+            if current_profile_id != str(testing_profile_id):
                 return False, f"skipped (testing_mode_filter: not {testing_profile_id})"
         elif (
             app_mode == "production"
@@ -1475,11 +1471,7 @@ class PersonProcessor:
                 ):
                     try:
                         if self.db_state.session:
-                            setattr(
-                                latest_message,
-                                "custom_reply_sent_at",
-                                datetime.now(timezone.utc),
-                            )
+                            latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
                             self.db_state.session.add(latest_message)
                             self.db_state.session.flush()
                             logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
@@ -1872,12 +1864,11 @@ def _process_candidates(
                     # Note: tasks_created_count is updated in the person processor
                 else:
                     state.skipped_count += 1
+            elif status.startswith("error"):
+                state.error_count += 1
+                state.overall_success = False
             else:
-                if status.startswith("error"):
-                    state.error_count += 1
-                    state.overall_success = False
-                else:
-                    state.skipped_count += 1
+                state.skipped_count += 1
 
             # Check for batch commit
             if commit_manager.should_commit():
@@ -2002,8 +1993,7 @@ def _normalize_task_text(task: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
     t = re.sub(r"[\s\-_,.;:!]+$", "", t)  # strip trailing punctuation clusters
     t = re.sub(r"^[\s\-_,.;:!]+", "", t)  # strip leading punctuation clusters
-    t = re.sub(r"[!?.]{2,}", ".", t)
-    return t
+    return re.sub(r"[!?.]{2,}", ".", t)
 
 
 def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dict[str, Any], log_prefix: str) -> None:
@@ -2142,10 +2132,9 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
 
     if not isinstance(ai_response, dict):
         logger.warning(f"{log_prefix}: AI response is not a dict; applying defaults.")
-        normalized = (
+        return (
             normalize_ai_response({}) if callable(normalize_ai_response) else result
         )
-        return normalized
 
     logger.debug(f"{log_prefix}: Processing AI response...")
 
@@ -2242,10 +2231,7 @@ def _format_context_for_ai_extraction(
 
         # Step 3c: Truncate content by word count if necessary
         words = content.split()
-        if len(words) > max_words:
-            truncated_content = " ".join(words[:max_words]) + "..."
-        else:
-            truncated_content = content
+        truncated_content = " ".join(words[:max_words]) + "..." if len(words) > max_words else content
 
         # Step 3d: Append formatted line to the list
         context_lines.append(
@@ -2440,7 +2426,7 @@ def generate_genealogical_reply(
         )
 
     except Exception as e:
-        logger.error(f"{log_prefix}: Error generating genealogical reply: {str(e)}")
+        logger.error(f"{log_prefix}: Error generating genealogical reply: {e!s}")
         return None
 
 
@@ -2467,8 +2453,7 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 
         if summary_parts:
             return "; ".join(summary_parts)
-        else:
-            return "your family history research"
+        return "your family history research"
     except Exception as e:
         logger.error(f"Error generating acknowledgment summary: {e}")
         return "your genealogy information"
@@ -2806,9 +2791,8 @@ def _calculate_task_data_integration_score(task: Dict[str, Any], extracted_data:
         if any(term in task_desc for term in ['family', 'parent', 'child', 'spouse', 'relationship']):
             score += 0.2
 
-    if extracted_data.get('dna_information'):
-        if any(term in task_desc for term in ['dna', 'match', 'genetic']):
-            score += 0.35
+    if extracted_data.get('dna_information') and any(term in task_desc for term in ['dna', 'match', 'genetic']):
+        score += 0.35
 
     if extracted_data.get('occupations'):
         if any(term in task_desc for term in ['occupation', 'work', 'job', 'career']):

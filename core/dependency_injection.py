@@ -12,11 +12,12 @@ This module provides a comprehensive dependency injection system to:
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -28,12 +29,11 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import inspect
-import os
 import sys
 import threading
 import unittest
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, TypeVar, Union
 
 T = TypeVar("T")
 
@@ -352,9 +352,9 @@ class ServiceRegistry:
     Global service registry for managing DI container instances.
     """
 
-    _containers: Dict[str, DIContainer] = {}
-    _default_container: Optional[DIContainer] = None
-    _lock = threading.RLock()
+    _containers: ClassVar[Dict[str, DIContainer]] = {}
+    _default_container: ClassVar[Optional[DIContainer]] = None
+    _lock: ClassVar[threading.RLock] = threading.RLock()
 
     @classmethod
     def get_container(cls, name: str = "default") -> DIContainer:
@@ -799,10 +799,9 @@ def run_comprehensive_tests():
 
 if __name__ == "__main__":
     # Use centralized path management
-    import os
     import sys
-
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    from pathlib import Path
+    project_root = str(Path(__file__).resolve().parent.parent)
     try:
         sys.path.insert(0, project_root)
         from core_imports import ensure_imports

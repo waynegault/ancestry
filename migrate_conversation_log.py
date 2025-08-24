@@ -4,7 +4,6 @@ Migration script to update ConversationLog table schema.
 Changes composite primary key to auto-incrementing ID to allow message history.
 """
 
-import os
 import sqlite3
 from datetime import datetime
 
@@ -15,7 +14,8 @@ def migrate_conversation_log():
     db_path = 'data/ancestry.db'
     backup_path = f'data/ancestry_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.db'
 
-    if not os.path.exists(db_path):
+    from pathlib import Path
+    if not Path(db_path).exists():
         print(f"Database file {db_path} does not exist.")
         return False
 
@@ -129,7 +129,8 @@ def migrate_conversation_log():
 
     except Exception as e:
         print(f"Migration failed: {e}")
-        if os.path.exists(backup_path):
+        from pathlib import Path
+        if Path(backup_path).exists():
             print("Restoring from backup...")
             shutil.copy2(backup_path, db_path)
             print("Database restored from backup.")
