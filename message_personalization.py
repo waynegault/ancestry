@@ -36,23 +36,38 @@ class MessagePersonalizer:
         self.personalization_functions_registry = self._build_personalization_registry()
 
     def _load_message_templates(self) -> Dict[str, str]:
-        """Load message templates from messages.json."""
+        """Load message templates from database MessageTemplate table."""
         try:
-            script_dir = Path(__file__).resolve().parent
-            messages_path = script_dir / "messages.json"
+            from core.session_manager import SessionManager
+            from database import MessageTemplate
 
-            if not messages_path.exists():
-                logger.error(f"messages.json not found at {messages_path}")
-                return {}
+            session_manager = SessionManager()
+            with session_manager.get_db_conn_context() as session:
+                if not session:
+                    logger.error("Could not get database session for template loading")
+                    return {}
 
-            with messages_path.open("r", encoding="utf-8") as f:
-                templates = json.load(f)
+                # Fetch all templates from database
+                templates_query = session.query(MessageTemplate).all()
 
-            logger.debug(f"Loaded {len(templates)} message templates")
-            return templates
+                # Build dictionary with full message content (subject + body)
+                templates = {}
+                for template in templates_query:
+                    # Reconstruct full message content with subject line
+                    if template.subject_line and template.message_content:
+                        full_content = f"Subject: {template.subject_line}\n\n{template.message_content}"
+                    elif template.message_content:
+                        full_content = template.message_content
+                    else:
+                        continue
+
+                    templates[template.template_key] = full_content
+
+                logger.debug(f"Loaded {len(templates)} message templates from database")
+                return templates
 
         except Exception as e:
-            logger.error(f"Error loading message templates: {e}")
+            logger.error(f"Error loading message templates from database: {e}")
             return {}
 
     def _load_personalization_config(self) -> Dict[str, Any]:

@@ -101,7 +101,7 @@ from core.system_cache import (
 from database import (
     ConversationLog,
     MessageDirectionEnum,
-    MessageType,
+    MessageTemplate,
     Person,
     PersonStatusEnum,
     commit_bulk_data,
@@ -120,9 +120,9 @@ OTHER_SENTIMENT = (
     "OTHER"  # Sentiment string for messages that don't fit other categories
 )
 ACKNOWLEDGEMENT_MESSAGE_TYPE = (
-    "Productive_Reply_Acknowledgement"  # Key in messages.json
+    "Productive_Reply_Acknowledgement"  # Key in MessageTemplate table
 )
-CUSTOM_RESPONSE_MESSAGE_TYPE = "Automated_Genealogy_Response"  # Key in messages.json
+CUSTOM_RESPONSE_MESSAGE_TYPE = "Automated_Genealogy_Response"  # Key in MessageTemplate table
 
 # Keywords that indicate no response should be sent
 EXCLUSION_KEYWORDS = [
@@ -1138,7 +1138,7 @@ class PersonProcessor:
         )
 
         # Format message (custom or standard acknowledgment)
-        message_text, message_type_id = self._format_message(
+        message_text, message_template_id = self._format_message(
             person, extracted_data, custom_reply, log_prefix
         )
         # Apply filtering and send message
@@ -1146,7 +1146,7 @@ class PersonProcessor:
             person,
             context_logs,
             message_text,
-            message_type_id,
+            message_template_id,
             custom_reply,
             latest_message,
             log_prefix,
@@ -1250,7 +1250,7 @@ class PersonProcessor:
                 location_part = f"\n{user_location}" if user_location else ""
                 signature = f"\n\nBest regards,\n{user_name}{location_part}"
                 message_text = custom_reply + signature
-                message_type_id = self.msg_config.custom_reply_msg_type_id
+                message_template_id = self.msg_config.custom_reply_msg_type_id
                 logger.info(
                     f"{log_prefix}: Using custom genealogical reply with signature."
                 )
@@ -1306,9 +1306,9 @@ class PersonProcessor:
                         message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
                     logger.info(f"{log_prefix}: Using standard acknowledgement template.")
 
-                message_type_id = self.msg_config.ack_msg_type_id
+                message_template_id = self.msg_config.ack_msg_type_id
 
-            return message_text, message_type_id or 1  # Provide default
+            return message_text, message_template_id or 1  # Provide default
 
         except Exception as e:
             logger.error(
@@ -1317,15 +1317,15 @@ class PersonProcessor:
             safe_username = safe_column_value(person, "username", "User")
             user_name = getattr(config_schema, "user_name", "Tree Owner")
             message_text = f"Dear {format_name(safe_username)},\n\nThank you for your message!\n\n{user_name}"
-            message_type_id = self.msg_config.ack_msg_type_id or 1  # Provide default
-            return message_text, message_type_id
+            message_template_id = self.msg_config.ack_msg_type_id or 1  # Provide default
+            return message_text, message_template_id
 
     def _send_message(
         self,
         person: Person,
         context_logs: List[ConversationLog],
         message_text: str,
-        message_type_id: int,
+        message_template_id: int,
         custom_reply: Optional[str],
         latest_message: ConversationLog,
         log_prefix: str,
@@ -1370,7 +1370,7 @@ class PersonProcessor:
         return self._stage_database_updates(
             person,
             message_text,
-            message_type_id,
+            message_template_id,
             send_status,
             effective_conv_id or "",
             custom_reply,
@@ -1427,7 +1427,7 @@ class PersonProcessor:
         self,
         person: Person,
         message_text: str,
-        message_type_id: int,
+        message_template_id: int,
         send_status: str,
         effective_conv_id: str,
         custom_reply: Optional[str],
@@ -1459,7 +1459,7 @@ class PersonProcessor:
                         : config_schema.message_truncation_length
                     ],
                     "latest_timestamp": datetime.now(timezone.utc),
-                    "message_type_id": message_type_id,
+                    "message_template_id": message_template_id,
                     "script_message_status": send_status,
                     "ai_sentiment": None,
                 }
@@ -1471,7 +1471,7 @@ class PersonProcessor:
                 if (
                     custom_reply
                     and latest_message
-                    and message_type_id == self.msg_config.custom_reply_msg_type_id
+                    and message_template_id == self.msg_config.custom_reply_msg_type_id
                 ):
                     try:
                         if self.db_state.session:
@@ -1716,28 +1716,28 @@ def _setup_configuration(
         return False
 
     ack_msg_type_obj = (
-        db_state.session.query(MessageType.id)
-        .filter(MessageType.type_name == ACKNOWLEDGEMENT_MESSAGE_TYPE)
+        db_state.session.query(MessageTemplate.id)
+        .filter(MessageTemplate.template_key == ACKNOWLEDGEMENT_MESSAGE_TYPE)
         .scalar()
     )
     if not ack_msg_type_obj:
         logger.critical(
-            f"Action 9: MessageType '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
+            f"Action 9: MessageTemplate '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
         )
         return False
     msg_config.ack_msg_type_id = ack_msg_type_obj
 
-    # Get custom reply message type ID (optional)
+    # Get custom reply message template ID (optional)
     custom_reply_msg_type_obj = (
-        db_state.session.query(MessageType.id)
-        .filter(MessageType.type_name == CUSTOM_RESPONSE_MESSAGE_TYPE)
+        db_state.session.query(MessageTemplate.id)
+        .filter(MessageTemplate.template_key == CUSTOM_RESPONSE_MESSAGE_TYPE)
         .scalar()
     )
     if custom_reply_msg_type_obj:
         msg_config.custom_reply_msg_type_id = custom_reply_msg_type_obj
     else:
         logger.warning(
-            f"Action 9: MessageType '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
+            f"Action 9: MessageTemplate '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
         )
 
     return True
@@ -1774,7 +1774,7 @@ def _query_candidates(
         )
         .filter(
             ConversationLog.direction == MessageDirectionEnum.OUT,
-            ConversationLog.message_type_id == msg_config.ack_msg_type_id,
+            ConversationLog.message_template_id == msg_config.ack_msg_type_id,
         )
         .group_by(ConversationLog.people_id)
         .subquery("latest_ack_out_sub")

@@ -326,13 +326,12 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Set, Tuple
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
-import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
 
 # from requests.cookies import RequestsCookieJar  # Unused - removed
-from requests.exceptions import ConnectionError, RequestException
+from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
@@ -1702,7 +1701,7 @@ def _perform_api_prefetches(
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
     futures: Dict[Any, Tuple[str, str]] = {}
-    fetch_start_time = time.time()
+    time.time()
     num_candidates = len(fetch_candidates_uuid)
     my_tree_id = session_manager.my_tree_id
 
@@ -1867,7 +1866,6 @@ def _perform_api_prefetches(
             logger.debug(f"Submitted {len(combined_details_futures)} combined details API calls")
 
         # Group 2: Relationship probability now derived from details endpoint; skip legacy endpoint
-        relationship_futures = []
         logger.debug("Skipping legacy matchProbabilityData calls; deriving predicted relationship from /details response.")
 
         # Group 3: Submit badge details calls last (tree-related)
@@ -2051,7 +2049,6 @@ def _perform_api_prefetches(
                 )
                 temp_ladder_results[uuid_for_ladder] = None
 
-    fetch_duration = time.time() - fetch_start_time
     # Finished parallel API pre-fetch (removed verbose debug)
 
     for uuid_val, badge_result in temp_badge_results.items():

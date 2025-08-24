@@ -1106,6 +1106,56 @@ def analyze_top_match(
             logger.warning("Cannot calculate relationship path: Invalid IDs")
 
 
+def _initialize_analysis() -> tuple[argparse.Namespace, tuple[Any, ...]]:
+    """Initialize analysis by parsing arguments and validating configuration."""
+    logger.debug("Starting Action 10 - GEDCOM Analysis")
+    args = parse_command_line_args()
+
+    config_data = validate_config()
+    return args, config_data
+
+
+def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
+    """Load and validate GEDCOM data."""
+    if not gedcom_file_path:
+        return None
+
+    gedcom_data = load_gedcom_data(Path(gedcom_file_path))
+    if not gedcom_data:
+        logger.warning("No GEDCOM data loaded")
+        return None
+
+    return gedcom_data
+
+
+def _process_matches(
+    gedcom_data: Any,
+    args: argparse.Namespace,
+    date_flex: Dict[str, Any],
+    scoring_weights: Dict[str, int],
+    max_display_results: int
+) -> Optional[Any]:
+    """Process matches by getting criteria, filtering, and scoring."""
+    # Get user criteria
+    scoring_criteria, filter_criteria = get_user_criteria(args)
+    log_criteria_summary(scoring_criteria, date_flex)
+
+    # Filter and score individuals
+    scored_matches = filter_and_score_individuals(
+        gedcom_data,
+        filter_criteria,
+        scoring_criteria,
+        scoring_weights,
+        date_flex,
+    )
+
+    if not scored_matches:
+        return None
+
+    # Display top matches
+    return display_top_matches(scored_matches, max_display_results)
+
+
 @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better error handling
 @circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=1200)  # 20 minutes for GEDCOM analysis
@@ -1120,17 +1170,15 @@ def main() -> bool:
     Includes robust error handling, performance monitoring, and user interaction.
 
     Returns:
-        None: Prints analysis results to console and logs detailed information.
+        bool: True if analysis completed successfully, False otherwise.
 
     Example:
         >>> main()  # Executes complete GEDCOM analysis workflow
         # Prompts for search criteria and displays top matches with relationships
     """
-    logger.debug("Starting Action 10 - GEDCOM Analysis")
-    args = parse_command_line_args()
-
     try:
-        # Validate configuration
+        # Initialize analysis
+        args, config_data = _initialize_analysis()
         (
             gedcom_file_path,
             reference_person_id_raw,
@@ -1138,38 +1186,19 @@ def main() -> bool:
             date_flex,
             scoring_weights,
             max_display_results,
-        ) = validate_config()
+        ) = config_data
 
-        if not gedcom_file_path:
-
-            return False
-
-        # Load GEDCOM data
-        gedcom_data = load_gedcom_data(Path(gedcom_file_path))
+        # Load and validate GEDCOM data
+        gedcom_data = _load_and_validate_gedcom(gedcom_file_path)
         if not gedcom_data:
-
-            logger.warning("No GEDCOM data loaded")
             return False
 
-        # Get user criteria
-        scoring_criteria, filter_criteria = get_user_criteria(args)
-        log_criteria_summary(scoring_criteria, date_flex)
-
-        # Filter and score individuals
-        scored_matches = filter_and_score_individuals(
-            gedcom_data,
-            filter_criteria,
-            scoring_criteria,
-            scoring_weights,
-            date_flex,
+        # Process matches
+        top_match = _process_matches(
+            gedcom_data, args, date_flex, scoring_weights, max_display_results
         )
-
-        if not scored_matches:
-
+        if not top_match:
             return False
-
-        # Display top matches
-        top_match = display_top_matches(scored_matches, max_display_results)
 
         # Analyze top match
         if top_match:

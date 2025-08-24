@@ -22,7 +22,6 @@ logger = setup_module(globals(), __name__)
 import contextlib
 import enum
 import gc
-import json
 import logging
 import os
 import shutil
@@ -31,7 +30,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
 # === THIRD-PARTY IMPORTS ===
@@ -51,7 +50,6 @@ from sqlalchemy import (
     func,
     select,
     text,
-    tuple_,
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import (
@@ -59,7 +57,6 @@ from sqlalchemy.orm import (
     declarative_base,
     joinedload,
     relationship,
-    sessionmaker,
 )
 
 # === LOCAL IMPORTS ===
@@ -135,24 +132,19 @@ class PersonStatusEnum(enum.Enum):
 
 class ConversationLog(Base):
     """
-    Represents a log entry for a conversation, storing the latest details
+    Represents a log entry for a conversation, storing message history
     for either incoming (IN) or outgoing (OUT) messages within that conversation.
-    Uses a composite primary key (conversation_id, direction).
+    Uses an auto-incrementing ID as primary key to allow multiple messages per conversation.
     """
 
     __tablename__ = "conversation_log"
 
     # --- Columns ---
-    conversation_id = Column(
-        String,
+    id = Column(
+        Integer,
         primary_key=True,
-        index=True,
-        comment="Unique identifier for the conversation thread.",
-    )
-    direction = Column(
-        SQLEnum(MessageDirectionEnum),
-        primary_key=True,
-        comment="Direction of the latest message logged (IN or OUT).",
+        autoincrement=True,
+        comment="Auto-incrementing primary key for message history.",
     )
     people_id = Column(
         Integer,
@@ -161,33 +153,45 @@ class ConversationLog(Base):
         index=True,
         comment="Foreign key linking to the Person involved in the conversation.",
     )
+    direction = Column(
+        SQLEnum(MessageDirectionEnum),
+        nullable=False,
+        index=True,
+        comment="Direction of the message (IN or OUT).",
+    )
+    script_message_status = Column(
+        String,
+        nullable=True,
+        comment="Status of OUT messages sent by the script (e.g., delivered OK, typed (dry_run)).",
+    )
     latest_message_content = Column(
         Text,
         nullable=True,
-        comment="Truncated content of the latest message in this direction.",
+        comment="Truncated content of the message.",
+    )
+    conversation_id = Column(
+        String,
+        nullable=False,
+        index=True,
+        comment="Unique identifier for the conversation thread.",
     )
     latest_timestamp = Column(
         DateTime(timezone=True),
         nullable=False,
         index=True,
-        comment="Timestamp (UTC) of the latest message in this direction.",
+        comment="Timestamp (UTC) of the message.",
     )
     ai_sentiment = Column(
         String,
         nullable=True,
         index=True,
-        comment="AI-determined sentiment/intent (e.g., PRODUCTIVE, DESIST) of the latest IN message.",
+        comment="AI-determined sentiment/intent (e.g., PRODUCTIVE, DESIST) for IN messages.",
     )
-    message_type_id = Column(
+    message_template_id = Column(
         Integer,
-        ForeignKey("message_types.id"),
+        ForeignKey("message_templates.id"),
         nullable=True,
-        comment="Foreign key linking to the type of the latest OUT message sent by the script.",
-    )
-    script_message_status = Column(
-        String,
-        nullable=True,
-        comment="Status of the latest OUT message sent by the script (e.g., delivered OK, typed (dry_run)).",
+        comment="Foreign key linking to the template used for OUT messages sent by the script.",
     )
     updated_at = Column(
         DateTime(timezone=True),
@@ -200,8 +204,8 @@ class ConversationLog(Base):
     # --- Relationships ---
     # Defines the link back to the Person object. 'back_populates' ensures bidirectional linking.
     person = relationship("Person", back_populates="conversation_log_entries")
-    # Defines the link to the MessageType object for outgoing messages.
-    message_type = relationship("MessageType")
+    # Defines the link to the MessageTemplate object for outgoing messages.
+    message_template = relationship("MessageTemplate")
 
     # New column for tracking custom genealogical replies
     custom_reply_sent_at = Column(
@@ -213,6 +217,12 @@ class ConversationLog(Base):
 
     # --- Table Arguments (Indexes) ---
     __table_args__ = (
+        # Composite index for efficient lookup by conversation and direction
+        Index(
+            "ix_conversation_log_conv_direction",
+            "conversation_id",
+            "direction",
+        ),
         # Composite index for efficient lookup by person, direction, and timestamp.
         Index(
             "ix_conversation_log_people_id_direction_ts",
@@ -224,37 +234,86 @@ class ConversationLog(Base):
         Index("ix_conversation_log_timestamp", "latest_timestamp"),
         # Index for custom reply timestamp
         Index("ix_conversation_log_custom_reply_sent_at", "custom_reply_sent_at"),
-        # Note: PrimaryKeyConstraint is implicitly created by primary_key=True on two columns.
     )
 
 
 # End of ConversationLog class
 
 
-class MessageType(Base):
+# MessageType class removed - consolidated into MessageTemplate
+
+
+class MessageTemplate(Base):
     """
-    Represents the different types of predefined messages the script can send
-    (e.g., initial contact, follow-up). Links message keys from messages.json
-    to database IDs.
+    Consolidated message template storage - replaces both MessageType and MessageTemplate.
+    Stores all message templates with their metadata and content.
     """
 
-    __tablename__ = "message_types"
+    __tablename__ = "message_templates"
 
     # --- Columns ---
     id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the message type."
+        Integer, primary_key=True, comment="Unique identifier for the message template."
     )
-    type_name = Column(
+    template_key = Column(
         String,
         unique=True,
         nullable=False,
-        index=True,  # Added index
-        comment="Unique name identifying the message template (matches keys in messages.json).",
+        index=True,
+        comment="Unique key identifying the template (e.g., 'In_Tree-Initial').",
     )
-    # Note: 'messages' relationship removed as MessageHistory table was removed.
+# template_name removed - can be generated from template_key as needed
+    subject_line = Column(
+        String,
+        nullable=True,
+        comment="Email subject line extracted from template content.",
+    )
+    message_content = Column(
+        Text,
+        nullable=False,
+        comment="Full message template content with placeholders.",
+    )
+    template_category = Column(
+        String,
+        nullable=False,
+        index=True,
+        comment="Category: 'initial', 'follow_up', 'reminder', 'acknowledgement', etc.",
+    )
+    tree_status = Column(
+        String,
+        nullable=False,
+        index=True,
+        comment="Tree status: 'in_tree', 'out_tree', 'universal', etc.",
+    )
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False,
+        index=True,
+        comment="Whether this template is currently active for use.",
+    )
+    version = Column(
+        Integer,
+        default=1,
+        nullable=False,
+        comment="Template version for tracking changes.",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        default=func.now(),
+        nullable=False,
+        comment="Timestamp when template was created.",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Timestamp when template was last updated.",
+    )
 
 
-# End of MessageType class
+# End of MessageTemplate class
 
 
 class DnaMatch(Base):
@@ -557,13 +616,13 @@ CREATE_VIEW_SQL = text(
         cl.latest_message_content,
         cl.script_message_status,
         cl.updated_at,
-        cl.message_type_id,
+        cl.message_template_id,
         cl.conversation_id,
         cl.people_id
     FROM
         conversation_log cl
     LEFT JOIN
-        message_types mt ON cl.message_type_id = mt.id
+        message_templates mt ON cl.message_template_id = mt.id
     LEFT JOIN
         people p ON cl.people_id = p.id
     WHERE
@@ -1752,10 +1811,9 @@ def commit_bulk_data(
     context: str = "Bulk Commit",  # Optional context for logging
 ) -> Tuple[int, int]:
     """
-    Commits a batch of ConversationLog upserts and Person status updates to the database
-    using bulk operations where feasible (bulk insert logs, bulk update persons).
-    Existing ConversationLog records are updated individually due to composite key constraints
-    with standard bulk update mechanisms.
+    Commits a batch of ConversationLog inserts and Person status updates to the database
+    using bulk operations. ConversationLog entries are always inserted as new records
+    to maintain message history.
 
     Args:
         session: The active SQLAlchemy database session.
@@ -1767,14 +1825,13 @@ def commit_bulk_data(
 
     Returns:
         A tuple containing:
-        - Number of log entries successfully processed (inserted or updated).
+        - Number of log entries successfully inserted.
         - Number of Person records successfully updated.
     """
     # Step 1: Initialization
     processed_logs_count = 0
     updated_person_count = 0
     log_inserts_mappings = []  # For bulk insert
-    log_updates_to_process = []  # List of tuples: (existing_log_obj, new_data_dict)
 
     # Step 2: Check if there's data to commit
     if not log_upserts and not person_updates:
@@ -1792,16 +1849,11 @@ def commit_bulk_data(
         with db_transn(session) as sess:
             logger.debug(f"{log_prefix}Entered transaction block.")
 
-            # --- Step 3a: Prepare ConversationLog Data ---
+            # --- Step 3a: Prepare ConversationLog Data for Insert ---
             if log_upserts:
                 logger.debug(
-                    f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries..."
+                    f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for insert..."
                 )
-                # Extract unique composite keys for querying existing logs
-                log_keys_to_check: Set[Tuple[str, MessageDirectionEnum]] = set()
-                valid_log_data_list = (
-                    []
-                )  # Store data dicts that pass initial validation
 
                 for data in log_upserts:
                     conv_id = data.get("conversation_id")
@@ -1844,212 +1896,29 @@ def commit_bulk_data(
                             if hasattr(ts_val, "tzinfo") and ts_val.tzinfo
                             else ts_val.replace(tzinfo=timezone.utc)
                         )
-                        data["latest_timestamp"] = (
-                            aware_timestamp  # Update dict with normalized ts
-                        )
+                        data["latest_timestamp"] = aware_timestamp
                     else:
                         # Use current time if timestamp is None
                         data["latest_timestamp"] = datetime.now(timezone.utc)
 
-                    # Ensure conv_id is a string before adding to set
-                    conv_id_str = str(conv_id) if conv_id is not None else ""
-                    log_keys_to_check.add((conv_id_str, direction_enum))
-                    data["direction"] = (
-                        direction_enum  # Update dict with normalized enum
-                    )
-                    valid_log_data_list.append(data)
+                    # Update dict with normalized enum
+                    data["direction"] = direction_enum
 
-                # Query for existing logs matching the keys in this batch
-                # Use a different name to avoid shadowing the previous declaration
-                # Initialize the map that will be used later
-                existing_logs_map: Dict[str, ConversationLog] = {}
-                if log_keys_to_check:
-                    existing_logs = (
-                        sess.query(ConversationLog)
-                        .filter(
-                            tuple_(
-                                ConversationLog.conversation_id,
-                                ConversationLog.direction,
-                            ).in_([(cid, denum) for cid, denum in log_keys_to_check])
-                        )
-                        .all()
-                    )
-                    # Populate the existing_logs_map that was initialized earlier
-                    for log in existing_logs:
-                        # Convert SQLAlchemy Column objects to Python types
-                        conv_id = (
-                            str(log.conversation_id)
-                            if log.conversation_id is not None
-                            else ""
-                        )
-                        # Get direction enum value safely
-                        if hasattr(log.direction, "value"):
-                            direction = log.direction  # It's already an enum
-                        else:
-                            # Try to convert string to enum
-                            try:
-                                direction = MessageDirectionEnum(str(log.direction))
-                            except (ValueError, TypeError):
-                                # Skip invalid direction values
-                                logger.warning(
-                                    f"{log_prefix}Invalid direction value in log: {log.direction}"
-                                )
-                                continue
+                    # Add to insert list (no need to check for existing records)
+                    log_inserts_mappings.append(data)
 
-                        # Add to map with proper types - use a string key to avoid type issues
-                        try:
-                            direction_value = (
-                                direction.value
-                                if hasattr(direction, "value")
-                                else str(direction)
-                            )
-                        except (AttributeError, TypeError):
-                            logger.warning(f"{log_prefix}Could not extract direction value from {direction}")
-                            continue
-                        key = f"{conv_id}:{direction_value}"
-                        existing_logs_map[key] = log
-                    logger.debug(
-                        f"{log_prefix}Prefetched {len(existing_logs_map)} existing ConversationLog entries."
-                    )
-
-                # Process each valid log data dictionary: separate inserts/updates
-                for data in valid_log_data_list:
-                    conv_id = data["conversation_id"]  # Known to exist from validation
-                    direction_enum = data["direction"]  # Known to be Enum
-                    # Create string key to match our map
-                    direction_value = (
-                        direction_enum.value
-                        if hasattr(direction_enum, "value")
-                        else str(direction_enum)
-                    )
-                    log_key = f"{conv_id}:{direction_value}"
-                    existing_log = existing_logs_map.get(log_key)
-
-                    # Prepare data dictionary for insert/update (excluding keys handled separately)
-                    map_data = {
-                        k: v
-                        for k, v in data.items()
-                        if k
-                        not in [
-                            "conversation_id",
-                            "direction",
-                            "created_at",
-                            "updated_at",
-                        ]
-                        # Allow specific None values if needed by model/logic
-                        and (
-                            v is not None
-                            or k
-                            in [
-                                "ai_sentiment",
-                                "message_type_id",
-                                "script_message_status",
-                            ]
-                        )
-                    }
-                    # Ensure timestamp is set (already normalized)
-                    map_data["latest_timestamp"] = data["latest_timestamp"]
-
-                    if existing_log:
-                        # Prepare for individual update
-                        log_updates_to_process.append((existing_log, map_data))
-                    else:
-                        # Prepare for bulk insert
-                        insert_map = map_data.copy()
-                        insert_map["conversation_id"] = conv_id
-                        # Map Enum to its value for bulk insertion if ORM doesn't handle it automatically
-                        insert_map["direction"] = direction_enum.value
-                        log_inserts_mappings.append(insert_map)
-
-                # --- Execute Bulk Insert for ConversationLog ---
+                # --- Step 3b: Bulk Insert ConversationLog Records ---
                 if log_inserts_mappings:
                     logger.debug(
-                        f"{log_prefix}Attempting bulk insert for {len(log_inserts_mappings)} ConversationLog entries..."
+                        f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries..."
                     )
-                    try:
-                        from sqlalchemy import inspect
-
-                        sess.bulk_insert_mappings(
-                            inspect(ConversationLog), log_inserts_mappings
-                        )
-                        processed_logs_count += len(log_inserts_mappings)
-                        logger.debug(
-                            f"{log_prefix}Bulk insert successful for {len(log_inserts_mappings)} logs."
-                        )
-                    except IntegrityError as ie:
-                        logger.warning(
-                            f"{log_prefix}IntegrityError during bulk insert (likely duplicate): {ie}. Some logs may not have inserted."
-                        )
-                    except Exception as bulk_insert_err:
-                        logger.error(
-                            f"{log_prefix}Error during ConversationLog bulk insert: {bulk_insert_err}",
-                            exc_info=True,
-                        )
-                        raise  # Re-raise to trigger transaction rollback
-
-                # --- Perform Individual Updates for ConversationLog ---
-                # Rationale: bulk_update_mappings requires the single primary key 'id',
-                # which we don't have readily available for the composite key based input data.
-                updated_individually_count = 0
-                if log_updates_to_process:
+                    sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)
+                    processed_logs_count = len(log_inserts_mappings)
                     logger.debug(
-                        f"{log_prefix}Processing {len(log_updates_to_process)} individual ConversationLog updates..."
-                    )
-                    for existing_log, update_data_dict in log_updates_to_process:
-                        try:
-                            has_changes = False
-                            # Compare relevant fields from the new data dict against the existing obj
-                            for field, new_value in update_data_dict.items():
-                                # Skip people_id as it shouldn't change for an existing log
-                                if field == "people_id":
-                                    continue
-                                old_value = getattr(existing_log, field, None)
-                                # Handle timestamp comparison (already aware UTC)
-                                if field == "latest_timestamp":
-                                    if new_value != old_value:
-                                        has_changes = True
-                                # Compare other fields
-                                elif new_value != old_value:
-                                    has_changes = True
-                                # Update attribute if changed
-                                if has_changes:
-                                    setattr(existing_log, field, new_value)
-                                    # Reset flag for next field check
-                                    # This needs correction: only set has_changes=True ONCE if any field changes.
-                                    # Correct logic: Keep track if *any* change happened
-                            # Check if *any* change was detected across all fields
-                            any_field_changed = False
-                            for field, new_value in update_data_dict.items():
-                                if field == "people_id":
-                                    continue
-                                old_value = getattr(existing_log, field, None)
-                                if field == "latest_timestamp":
-                                    if new_value != old_value:
-                                        any_field_changed = True
-                                        break
-                                elif new_value != old_value:
-                                    any_field_changed = True
-                                    break
-
-                            if any_field_changed:
-                                setattr(
-                                    existing_log,
-                                    "updated_at",
-                                    datetime.now(timezone.utc),
-                                )
-                                updated_individually_count += 1
-                                # logger.debug(f"{log_prefix} Updated log {existing_log.conversation_id}/{existing_log.direction.name}")
-                        except Exception as update_err:
-                            logger.error(
-                                f"{log_prefix}Error updating individual log {existing_log.conversation_id}/{existing_log.direction.name}: {update_err}",
-                                exc_info=True,
-                            )
-                    processed_logs_count += updated_individually_count
-                    logger.debug(
-                        f"{log_prefix}Finished {updated_individually_count} individual log updates."
+                        f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries."
                     )
 
-            # --- Step 3b: Person Update Logic (Bulk Update) ---
+            # --- Step 3c: Person Update Logic (Bulk Update) ---
             if person_updates:
                 person_update_mappings = []
                 logger.debug(
@@ -2971,6 +2840,186 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
 # It needs to close the main SessionManager pool *before* overwriting the file.
 
 
+def _get_default_message_templates() -> List[Dict[str, Any]]:
+    """
+    Returns the default message templates to seed the database.
+    This contains the current production templates as of the latest update.
+    """
+    return [
+        {
+            "template_key": "Automated_Genealogy_Response",
+            "subject_line": "TBC",
+            "message_content": "This is a placeholder template for AI-generated genealogical responses. The actual message content is generated dynamically by the AI system based on the conversation context and genealogical data.",
+            "template_category": "other",
+            "tree_status": "universal",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "DNA_Match_Specific",
+            "subject_line": "Our DNA Match - {estimated_relationship} Connection",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm excited to connect with you as a DNA match on Ancestry!\n\nOur DNA results show we share {shared_dna_amount} and are estimated to be {estimated_relationship}. {dna_context}\n\n{shared_ancestor_information}\n\n{research_collaboration_request}\n\nMy family tree is well developed. Please feel free to check it out and see if you can find our connection.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "other",
+            "tree_status": "universal",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Enhanced_In_Tree-Initial",
+            "subject_line": "Exciting Discovery: Our Family Connection Through {shared_ancestors}",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm thrilled to connect with you as a DNA match on Ancestry! I believe I've discovered our family connection.\n\nI've been researching my family tree for some time and have successfully connected {total_rows} DNA matches to my tree so far. Based on my research, I believe you are my {actual_relationship} through our shared ancestors{ancestors_details}.\n\nOur connection appears to be:\n{relationship_path}\n\n{genealogical_context}\n\nI'd love to hear if this aligns with your research, or if you have additional information about{research_focus}. {specific_questions}\n\nIf you have siblings or children who would like to be added to my tree, I'd be happy to include them as well. Together, we can refine and confirm the accuracy of both of our trees.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Enhanced_Out_Tree-Initial",
+            "subject_line": "Exploring Our DNA Connection - {geographic_context}",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm excited to connect with you as a DNA match on Ancestry!\n\nI've been researching my family tree for some time and have successfully connected {total_rows} DNA matches to my tree so far. While I haven't been able to place you on my tree yet, Ancestry predicts you are my {predicted_relationship}.\n\nMy ancestors came from Scotland and Galicia (south-east Poland and south-west Ukraine){location_context}. {research_suggestions}\n\nI'd love to know if you recognize any names or places from my tree that might connect to your family{specific_research_questions}. Alternatively, if you have a private tree, I'd be grateful if you could share it with me.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "out_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Enhanced_Productive_Reply",
+            "subject_line": "Thank You - {research_topic}",
+            "message_content": "Dear {name},\n\nThank you so much for sharing information about {mentioned_people}! Your message about {research_context} is incredibly helpful for my genealogical research.\n\n{personalized_response}\n\n{research_insights}\n\n{follow_up_questions}\n\nI really appreciate you taking the time to connect and share your family history. This kind of collaboration is what makes genealogical research so rewarding!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "other",
+            "tree_status": "universal",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "In_Tree-Final_Reminder",
+            "subject_line": "Quick Reminder: Our Family DNA Connection",
+            "message_content": "Dear {name},\n\nI hope you're doing well! I just wanted to send a quick reminder about our DNA match on Ancestry. I'm still very interested in exploring our connection as my {actual_relationship} and would love to hear from you if you have any updates or insights to share.\n\nIf you're not interested, no worries—just let me know! Thank you for your time.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "reminder",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "In_Tree-Follow_Up",
+            "subject_line": "Following Up on Our Family DNA Connection",
+            "message_content": "Dear {name},\n\nI hope this message finds you well. I'm following up on my previous message about our DNA match on Ancestry. Have you had a chance to investigate our connection?\n\nI believe you are my {actual_relationship} and our connection could be:\n\n{relationship_path}\n\nIf you have any updates or would like to discuss further; I'd love to hear from you. Thank you for your time!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "follow_up",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "In_Tree-Initial",
+            "subject_line": "Exploring Our Family DNA Connection",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm excited to connect with you as a DNA match on Ancestry!\n\nI've been researching my family tree for some time and have successfully connected {total_rows} DNA matches to my tree so far. Each connection has helped corroborate and improve the accuracy of my tree. Ancestry thinks you are my {predicted_relationship}. I've added you because I think you are my {actual_relationship}. I believe our connection to be:\n\n{relationship_path}\n\nDoes this align with your research, or do you see another connection? If I've made a mistake, please let me know! I'd also love to hear if you have any information about our shared ancestors that could help fill in gaps in our family histories.\n\nIf you have siblings or children who would like to be added to my tree, I'd be happy to include them as well. Alternatively, if you have a private tree, I'd be grateful if you could share it with me. Together, we can refine and confirm the accuracy of both of our trees.\n\nI'd love to hear from you, even if it's just to compare notes or find out where in the world you live. If we already know one another or have spoken before, I apologize for this impersonal automated mailing. Thank you for your time and consideration!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "In_Tree-Initial_Confident",
+            "subject_line": "Exciting Discovery: Our Family Connection",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm excited to connect with you as a DNA match on Ancestry!\n\nI've successfully connected {total_rows} DNA matches to my tree, and I'm confident I've found our connection. You appear to be my {actual_relationship}:\n\n{relationship_path}\n\nDoes this align with your research? I'd love to hear from you and compare our family trees to confirm this connection.\n\nIf you have siblings or children who would like to be added to my tree, I'd be happy to include them as well.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "In_Tree-Initial_Short",
+            "subject_line": "DNA Match - Family Connection",
+            "message_content": "Hi {name},\n\nI'm Wayne from Aberdeen, Scotland. Ancestry shows we're DNA matches and I believe you're my {actual_relationship}.\n\nOur connection appears to be:\n{relationship_path}\n\nI'd love to connect and compare family trees. Are you interested in exploring our connection?\n\nBest regards,\nWayne\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "In_Tree-Initial_for_was_Out_Tree",
+            "subject_line": "Exciting Update: Our Family DNA Connection",
+            "message_content": "Dear {name},\n\nI'm thrilled to share that I think I've found our connection! After some research, I believe I've been able to place you in my family tree. So far, I've successfully connected {total_rows} DNA matches to my tree, and each one has helped corroborate and improve the accuracy of my tree.\n\nAncestry thinks you are my {predicted_relationship}. I've added you because I think you are my {actual_relationship}. I believe our connection to be:\n\n{relationship_path}\n\nDoes this make sense to you, or do you see another link? If I've made a mistake, please let me know! I'd also love to hear if you have any information about our shared ancestors that could help fill in gaps in our family histories.\n\nIf you have siblings or children who would like to be added to my tree, I'd be happy to include them as well. Alternatively, if you have a private tree, I'd be grateful if you could share it with me. Together, we can refine and confirm the accuracy of both of our trees.\n\nThank you for your time and consideration!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "initial",
+            "tree_status": "in_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Out_Tree-Final_Reminder",
+            "subject_line": "Quick Reminder: Our DNA Connection",
+            "message_content": "Dear {name},\n\nI hope you're doing well! I just wanted to send a quick reminder about our DNA match on Ancestry. I'm still very interested in exploring your potential connection as my {predicted_relationship} and would love to hear from you if you have any updates or insights to share.\n\nIf you're not interested, no worries—just let me know! Thank you for your time.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "reminder",
+            "tree_status": "out_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Out_Tree-Follow_Up",
+            "subject_line": "Following Up on Our DNA Connection",
+            "message_content": "Dear {name},\n\nI hope this message finds you well. I'm following up on my previous message about our DNA match on Ancestry and you possibly being my {predicted_relationship}. Have you had a chance to look at my tree to see if there are any connections to your family?\n\nIf you have any updates or would like to discuss further, I'd love to hear from you. Thank you for your time!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "follow_up",
+            "tree_status": "out_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Out_Tree-Initial",
+            "subject_line": "Exploring Our DNA Connection",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm excited to connect with you as a DNA match on Ancestry!\n\nI've been researching my family tree for some time and have successfully connected {total_rows} DNA matches to my tree so far. Each connection has helped corroborate and improve the accuracy of my tree. Unfortunately, I haven't been able to place you on my tree yet even though Ancestry predicts you are my {predicted_relationship}.\n\nMy ancestors came from Scotland and Galicia (south-east Poland and south-west Ukraine). I'd love to know if you recognize any names or places from my tree that might connect to your family. Alternatively, if you have a private tree, I'd be grateful if you could share it with me.\nIf we already know one another or have spoken before, I apologize for this impersonal automated mailing. Thank you for your time and consideration!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "out_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Out_Tree-Initial_Exploratory",
+            "subject_line": "DNA Match - Let's Explore Our Connection",
+            "message_content": "Dear {name},\n\nI'm Wayne from Aberdeen, Scotland, and I'm excited to connect with you as a DNA match on Ancestry!\n\nWhile I haven't been able to place you on my tree yet, Ancestry suggests we might be {predicted_relationship}. My ancestors came from Scotland and Galicia (south-east Poland and south-west Ukraine).\n\nI'd love to explore our potential connection. Do you recognize any Scottish or Eastern European heritage in your family?\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "out_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Out_Tree-Initial_Short",
+            "subject_line": "DNA Match - Exploring Connection",
+            "message_content": "Hi {name},\n\nI'm Wayne from Aberdeen, Scotland. We're DNA matches on Ancestry (predicted {predicted_relationship}).\n\nI haven't placed you on my tree yet, but my ancestors came from Scotland and Galicia. Would you be interested in comparing family histories to find our connection?\n\nBest regards,\nWayne\n\nPS, Here's a picture of my family: <a href=\"https://www.ancestry.co.uk/mediaui-viewer/collection/1030/tree/175946702/person/102634239156/media/b096f631-1c84-4656-bb76-12d58d688e9b\">Family Picture</a>.",
+            "template_category": "initial",
+            "tree_status": "out_tree",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Productive_Reply_Acknowledgement",
+            "subject_line": "Thank You for Your Response!",
+            "message_content": "Dear {name},\n\nThank you so much for your message about our DNA connection! I really appreciate you taking the time to respond and share information about our family connection.\n\nI'll review the information you've provided and get back to you if I have any questions or updates. Thanks again for connecting!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "acknowledgement",
+            "tree_status": "universal",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "Record_Research_Collaboration",
+            "subject_line": "Genealogical Research Collaboration - {research_focus}",
+            "message_content": "Dear {name},\n\nI'm Wayne, and I'm reaching out because of our shared interest in {research_topic}.\n\n{research_context}\n\n{specific_research_needs}\n\n{collaboration_proposal}\n\nI'd love to collaborate on this research and share any findings that might help both of our family histories!\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland",
+            "template_category": "other",
+            "tree_status": "universal",
+            "is_active": True,
+            "version": 1
+        },
+        {
+            "template_key": "User_Requested_Desist",
+            "subject_line": "Sorry to bother you",
+            "message_content": "Thank you for your message. I understand and will not contact you again regarding DNA matches. I wish you all the best!\n\nWarmest regards,\n\nWayne",
+            "template_category": "desist",
+            "tree_status": "universal",
+            "is_active": True,
+            "version": 1
+        }
+    ]
+
+
 # ----------------------------------------------------------------------
 # Standalone Execution & Setup (for testing/initialization)
 # ----------------------------------------------------------------------
@@ -3069,57 +3118,38 @@ if __name__ == "__main__":
             # Optionally exit if schema creation fails critically
             # sys.exit(1)
 
-        # Step 5: Seed/Verify MessageType table
-        standalone_logger.info("Seeding/Verifying MessageType table...")
-        SessionSeed = sessionmaker(bind=engine)
-        seed_session: Optional[Session] = None
+        # Step 5: Seed MessageTemplate table with current templates
+        standalone_logger.info("Seeding MessageTemplate table...")
+        seed_session = None
         try:
-            seed_session = SessionSeed()
-            script_dir = Path(__file__).resolve().parent
-            messages_file = script_dir / "messages.json"
-            if messages_file.exists():
-                with messages_file.open("r", encoding="utf-8") as f:
-                    messages_data = json.load(f)
-                if isinstance(messages_data, dict):
-                    required_types = set(messages_data.keys())
-                    # Use transaction context manager for seeding
-                    with db_transn(seed_session) as sess:
-                        # Find existing types in the database
-                        existing_types_query = sess.query(MessageType.type_name).all()
-                        existing_types = {name for (name,) in existing_types_query}
-                        # Determine which types are missing
-                        types_to_add = []
-                        for name in required_types:
-                            if name not in existing_types:
-                                types_to_add.append(MessageType(type_name=name))
-                        # Add missing types
-                        if types_to_add:
-                            sess.add_all(types_to_add)
-                            standalone_logger.info(
-                                f"Added {len(types_to_add)} new message types to the database."
-                            )
-                        else:
-                            standalone_logger.debug(
-                                "All required message types already exist in the database."
-                            )
-                    # Verify final count after potential commit
-                    final_count = (
-                        seed_session.query(func.count(MessageType.id)).scalar() or 0
-                    )
-                    standalone_logger.info(
-                        f"MessageType seeding complete. Total types in DB: {final_count}"
-                    )
-                else:
-                    standalone_logger.error(
-                        "Format error in 'messages.json'. Cannot seed MessageTypes."
-                    )
+            from sqlalchemy.orm import sessionmaker
+            SessionLocal = sessionmaker(bind=engine)
+            seed_session = SessionLocal()
+
+            # Check if templates already exist
+            existing_count = seed_session.query(func.count(MessageTemplate.id)).scalar() or 0
+
+            if existing_count == 0:
+                # Seed with current template data
+                templates_data = _get_default_message_templates()
+
+                for template_data in templates_data:
+                    new_template = MessageTemplate(**template_data)
+                    seed_session.add(new_template)
+
+                seed_session.commit()
+                final_count = seed_session.query(func.count(MessageTemplate.id)).scalar() or 0
+                standalone_logger.info(f"MessageTemplate seeding complete. Added {final_count} templates to database")
             else:
-                standalone_logger.warning(
-                    f"'messages.json' not found at {messages_file}. Cannot seed MessageTypes."
-                )
+                standalone_logger.info(f"MessageTemplate table already populated: {existing_count} templates found")
+
+            # Legacy code (disabled)
+            if False:  # Disabled JSON seeding
+                pass  # Legacy code removed
+            # Legacy code removed due to undefined variables
         except Exception as seed_err:
             standalone_logger.error(
-                f"Error during MessageType seeding: {seed_err}", exc_info=True
+                f"Error during MessageTemplate seeding: {seed_err}", exc_info=True
             )
         finally:
             # Ensure seed session is closed
@@ -3217,7 +3247,7 @@ def database_module_tests() -> bool:
             (Person, "Person", "Main DNA match person record"),
             (DnaMatch, "DnaMatch", "DNA match details and relationships"),
             (FamilyTree, "FamilyTree", "Family tree position and genealogy"),
-            (MessageType, "MessageType", "Message template types"),
+            (MessageTemplate, "MessageTemplate", "Message templates"),
             (ConversationLog, "ConversationLog", "Conversation history tracking"),
         ]
 
@@ -3269,9 +3299,9 @@ def database_module_tests() -> bool:
         suite.run_test(
             "Database Model Definitions",
             test_database_model_definitions,
-            "5 database models tested: Person, DnaMatch, FamilyTree, MessageType, ConversationLog - all exist, instantiable, with table definitions.",
+            "5 database models tested: Person, DnaMatch, FamilyTree, MessageTemplate, ConversationLog - all exist, instantiable, with table definitions.",
             "Test that all required ORM models exist and can be instantiated with detailed verification.",
-            "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageType→message_types, ConversationLog→conversation_log tables.",
+            "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageTemplate→message_templates, ConversationLog→conversation_log tables.",
         )
 
         def test_enum_definitions():

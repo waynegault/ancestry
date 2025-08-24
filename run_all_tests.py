@@ -187,6 +187,58 @@ def run_linter() -> bool:
         return True
 
 
+def run_quality_checks() -> bool:
+    """
+    Run Python best practices quality checks.
+
+    Returns:
+        bool: True if quality checks pass, False otherwise
+    """
+    try:
+        print("🔍 QUALITY: Running Python best practices checks...")
+
+        # Import and run quality checker
+        from code_quality_checker import CodeQualityChecker
+
+        checker = CodeQualityChecker()
+        current_dir = Path(".")
+
+        # Check key files for quality
+        key_files = [
+            "action10.py", "action11.py", "utils.py", "main.py",
+            "python_best_practices.py", "code_quality_checker.py"
+        ]
+
+        total_score = 0
+        files_checked = 0
+
+        for file_name in key_files:
+            file_path = current_dir / file_name
+            if file_path.exists():
+                metrics = checker.check_file(file_path)
+                total_score += metrics.quality_score
+                files_checked += 1
+
+                if metrics.quality_score < 70:
+                    print(f"⚠️  {file_name}: Quality score {metrics.quality_score:.1f}/100 (below threshold)")
+                else:
+                    print(f"✅ {file_name}: Quality score {metrics.quality_score:.1f}/100")
+
+        if files_checked > 0:
+            avg_score = total_score / files_checked
+            print(f"📊 Average quality score: {avg_score:.1f}/100")
+
+            if avg_score < 70:
+                print("⚠️  Quality score below recommended threshold (70)")
+                return False
+
+        return True
+
+    except Exception as e:
+        print(f"⚠️ QUALITY checks skipped due to error: {e}")
+        return True
+
+
 def discover_test_modules():
     """
     Discover all Python modules that contain tests by scanning the project directory.
@@ -794,6 +846,10 @@ def main():
     # Run linter first for hygiene; fail fast only on safe subset
     if not run_linter():
         return False
+
+    # Run quality checks for Python best practices
+    if not run_quality_checks():
+        print("⚠️  Quality checks failed - continuing with tests but consider improvements")
 
     # Auto-discover all test modules with the standardized test function
     discovered_modules = discover_test_modules()

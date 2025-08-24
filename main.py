@@ -20,7 +20,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import gc
 import inspect
-import json
 import logging
 import os
 import shutil
@@ -101,7 +100,7 @@ from database import (
     ConversationLog,
     DnaMatch,
     FamilyTree,
-    MessageType,
+    MessageTemplate,
     Person,
     backup_database,
     db_transn,
@@ -896,6 +895,50 @@ def run_core_workflow_action(session_manager, *_):
 # End Action 1
 
 
+def _create_message_template(template_key: str, template_content: str) -> MessageTemplate:
+    """Create a MessageTemplate object with proper categorization."""
+    # Extract subject line from content
+    subject_line = None
+    if template_content.startswith("Subject: "):
+        lines = template_content.split("\n", 1)
+        if len(lines) >= 1:
+            subject_line = lines[0].replace("Subject: ", "").strip()
+
+    # Determine template category and tree status
+    template_category = "other"
+    tree_status = "universal"
+
+    if "Initial" in template_key:
+        template_category = "initial"
+    elif "Follow_Up" in template_key:
+        template_category = "follow_up"
+    elif "Reminder" in template_key:
+        template_category = "reminder"
+    elif "Acknowledgement" in template_key:
+        template_category = "acknowledgement"
+    elif "Desist" in template_key:
+        template_category = "desist"
+
+    if template_key.startswith("In_Tree"):
+        tree_status = "in_tree"
+    elif template_key.startswith("Out_Tree"):
+        tree_status = "out_tree"
+
+    # Create human-readable name
+    template_name = template_key.replace("_", " ").replace("-", " - ")
+
+    return MessageTemplate(
+        template_key=template_key,
+        template_name=template_name,
+        subject_line=subject_line,
+        message_content=template_content,
+        template_category=template_category,
+        tree_status=tree_status,
+        is_active=True,
+        version=1
+    )
+
+
 # Action 2 (reset_db_actn)
 def reset_db_actn(session_manager: SessionManager, *_):
     """
@@ -903,7 +946,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
     - Closes main pool.
     - Truncates all tables (safer than file deletion).
     - Recreates schema from scratch.
-    - Seeds the MessageType table.
+    - Seeds the MessageTemplate table.
     """
     db_path = config.database.database_file
     reset_successful = False
@@ -966,7 +1009,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
                     # Clear message_types too for complete reset
                     if 'message_types' in existing_tables:
-                        sess.query(MessageType).delete(synchronize_session=False)
+                        sess.query(MessageTemplate).delete(synchronize_session=False)
                         logger.debug("Truncated message_types table")
 
                 temp_manager.return_session(truncate_session)
@@ -987,55 +1030,17 @@ def reset_db_actn(session_manager: SessionManager, *_):
             Base.metadata.create_all(temp_manager.db_manager.engine)
             logger.debug("Database schema ensured successfully.")
 
-            # --- Seed MessageType Table ---
+            # --- Seed MessageTemplate Table (handled by database.py) ---
+            # Note: MessageTemplate seeding is now handled by database.py during create_all()
+            # The following code is kept for reference but should not be needed
             recreation_session = temp_manager.get_db_conn()
             if not recreation_session:
-                raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
+                raise SQLAlchemyError("Failed to get session for seeding MessageTemplates!")
 
-            logger.debug("Seeding message_types table...")
-            script_dir = Path(__file__).resolve().parent
-            messages_file = script_dir / "messages.json"
-            if messages_file.exists():
-                with messages_file.open("r", encoding="utf-8") as f:
-                    messages_data = json.load(f)
-                if isinstance(messages_data, dict):
-                    # Use the session from the temporary manager
-                    with db_transn(recreation_session) as sess:
-                        # First check if there are any existing message types
-                        existing_count = (
-                            sess.query(func.count(MessageType.id)).scalar() or 0
-                        )
-
-                        if existing_count > 0:
-                            logger.debug(
-                                f"Found {existing_count} existing message types. Skipping seeding."
-                            )
-                        else:
-                            # Only add message types if none exist
-                            types_to_add = [
-                                MessageType(type_name=name) for name in messages_data
-                            ]
-                            if types_to_add:
-                                sess.add_all(types_to_add)
-                                logger.debug(
-                                    f"Added {len(types_to_add)} message types."
-                                )
-                            else:
-                                logger.warning(
-                                    "No message types found in messages.json to seed."
-                                )
-
-                    count = (
-                        recreation_session.query(func.count(MessageType.id)).scalar()
-                        or 0
-                    )
-                    logger.debug(
-                        f"MessageType seeding complete. Total types in DB: {count}"
-                    )
-                else:
-                    logger.error("'messages.json' has incorrect format. Cannot seed.")
-            else:
-                logger.warning("'messages.json' not found. Cannot seed MessageTypes.")
+            # MessageTemplate verification (templates managed in database)
+            with db_transn(recreation_session) as sess:
+                template_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
+                logger.debug(f"MessageTemplate verification: {template_count} templates found in database")
             # --- End Seeding ---
 
             reset_successful = True
@@ -1371,7 +1376,7 @@ def send_messages_action(session_manager, *_):
             logger.error("Message sending reported failure.")
             return False
         else:
-            logger.info("Messages sent OK.")
+            logger.debug("Messages sent OK.")
             return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
