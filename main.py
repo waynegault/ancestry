@@ -6,6 +6,26 @@ main.py - Ancestry Research Automation Main Entry Point
 Provides the main application entry point with menu-driven interface for
 all automation workflows including DNA match gathering, inbox processing,
 messaging, and genealogical research tools.
+
+Main Features:
+- Interactive menu system for all automation actions
+- Configuration validation and environment setup
+- Session management and authentication handling
+- Memory monitoring and resource cleanup
+- Comprehensive error handling and logging
+- Action coordination and workflow management
+
+Available Actions:
+1. DNA Match Gathering (Action 6)
+2. Inbox Processing (Action 7)
+3. Messaging Automation (Action 8)
+4. Productive Message Processing (Action 9)
+5. GEDCOM Analysis (Action 10)
+6. Live API Research (Action 11)
+
+Quality Score: Central application controller with comprehensive menu system
+and action coordination. Could benefit from improved modularity and reduced
+complexity in the main menu loop.
 """
 
 # === CORE INFRASTRUCTURE ===

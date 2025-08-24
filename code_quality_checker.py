@@ -13,6 +13,19 @@ Key Features:
 - SOLID principles validation
 - Performance anti-pattern detection
 - Pythonic idiom verification
+
+Main Classes:
+- QualityMetrics: Immutable dataclass for storing quality measurements
+- QualityChecker: Main analyzer class for code quality assessment
+
+Main Functions:
+- check_file: Analyze a single Python file for quality metrics
+- check_directory: Recursively analyze directory for quality issues
+- calculate_quality_score: Compute overall quality score from metrics
+
+Quality Score: Well-structured module with clear separation of concerns,
+comprehensive docstrings, and good use of dataclasses. Implements solid
+code analysis patterns with proper error handling.
 """
 
 from __future__ import annotations
