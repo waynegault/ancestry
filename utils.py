@@ -1869,12 +1869,10 @@ def _process_api_response(
                 logger.error(
                     f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
                 )
-                try:
+                with contextlib.suppress(Exception):
                     logger.debug(
                         f"   << Response Text (JSON Error): {response.text[:500]}..."
                     )
-                except Exception:
-                    pass
                 # End of try/except
                 # Return None because caller expected JSON but didn't get it
                 return None
@@ -2020,12 +2018,10 @@ def _api_req(
                     logger.error(
                         f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Returning Response object."
                     )
-                    try:
+                    with contextlib.suppress(Exception):
                         logger.debug(
                             f"   << Final Response Text (Retry Fail): {response.text[:500]}..."
                         )
-                    except Exception:
-                        pass
                     # End of try/except
                     return response
                 sleep_time = min(
@@ -2059,12 +2055,10 @@ def _api_req(
                 logger.warning(
                     f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
                 )
-                try:
+                with contextlib.suppress(Exception):
                     logger.debug(
                         f"   << Response Text (Retry): {response.text[:500]}..."
                     )
-                except Exception:
-                    pass
                 # End of try/except
                 time.sleep(sleep_time)
                 current_delay *= backoff_factor
@@ -3728,10 +3722,8 @@ def nav_to_page(
             except TimeoutException:  # type: ignore
                 # Correct URL, but target element didn't appear
                 current_url_on_timeout = "Unknown"
-                try:
+                with contextlib.suppress(Exception):
                     current_url_on_timeout = driver.current_url
-                except Exception:
-                    pass
                 # End of try/except
                 logger.warning(
                     f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout} (URL base was correct)."

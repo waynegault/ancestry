@@ -20,6 +20,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import re
 from typing import Any, Optional, Union
 
@@ -254,16 +255,12 @@ def search_api_for_criteria(
 
             # New API format has direct BirthYear/DeathYear fields
             if suggestion.get("BirthYear"):
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     birth_year = int(suggestion["BirthYear"])
-                except (ValueError, TypeError):
-                    pass
 
             if suggestion.get("DeathYear"):
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     death_year = int(suggestion["DeathYear"])
-                except (ValueError, TypeError):
-                    pass
 
             # Fallback to old lifespan parsing if needed
             if birth_year is None or death_year is None:
@@ -282,17 +279,13 @@ def search_api_for_criteria(
                     elif "b." in lifespan.lower():
                         match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
                         if match and birth_year is None:
-                            try:
+                            with contextlib.suppress(ValueError):
                                 birth_year = int(match.group(1))
-                            except ValueError:
-                                pass
                     elif "d." in lifespan.lower():
                         match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
                         if match and death_year is None:
-                            try:
+                            with contextlib.suppress(ValueError):
                                 death_year = int(match.group(1))
-                            except ValueError:
-                                pass
 
             # Extract location information
             location = suggestion.get("location", "")
@@ -651,17 +644,13 @@ def get_api_family_details(
             # Extract birth/death years if available
             birth_year_str = parent.get("birthYear")
             if birth_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     parent_info["birth_year"] = int(birth_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             death_year_str = parent.get("deathYear")
             if death_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     parent_info["death_year"] = int(death_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             result["parents"].append(parent_info)
 
@@ -686,17 +675,13 @@ def get_api_family_details(
             # Extract birth/death years if available
             birth_year_str = spouse.get("birthYear")
             if birth_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     spouse_info["birth_year"] = int(birth_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             death_year_str = spouse.get("deathYear")
             if death_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     spouse_info["death_year"] = int(death_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             # Extract marriage information if available
             marriage_facts = [
@@ -737,17 +722,13 @@ def get_api_family_details(
             # Extract birth/death years if available
             birth_year_str = child.get("birthYear")
             if birth_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     child_info["birth_year"] = int(birth_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             death_year_str = child.get("deathYear")
             if death_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     child_info["death_year"] = int(death_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             result["children"].append(child_info)
 
@@ -772,17 +753,13 @@ def get_api_family_details(
             # Extract birth/death years if available
             birth_year_str = sibling.get("birthYear")
             if birth_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     sibling_info["birth_year"] = int(birth_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             death_year_str = sibling.get("deathYear")
             if death_year_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     sibling_info["death_year"] = int(death_year_str)
-                except (ValueError, TypeError):
-                    pass
 
             result["siblings"].append(sibling_info)
     except Exception as e:

@@ -93,6 +93,8 @@ except ImportError:
     NoSuchWindowException = Exception
 
 # === LOCAL IMPORTS ===
+import contextlib
+
 from config import config_schema
 from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
@@ -1394,10 +1396,8 @@ class SessionManager:
                 self._restore_session_state(backup_session_state)
 
                 # Clean up new browser if something went wrong
-                try:
+                with contextlib.suppress(Exception):
                     new_browser_manager.close_browser()
-                except Exception:
-                    pass
                 return False
 
     def _capture_session_state(self) -> dict:
@@ -3015,10 +3015,8 @@ def _test_initialization_performance():
         total_time < max_time
     ), f"3 optimized initializations took {total_time:.3f}s, should be under {max_time}s"
     for sm in session_managers:
-        try:
+        with contextlib.suppress(Exception):
             sm.close_sess(keep_db=True)
-        except Exception:
-            pass
     return True
 
 

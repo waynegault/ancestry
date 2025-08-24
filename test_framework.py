@@ -17,7 +17,7 @@ logger = setup_module(globals(), __name__)
 import logging
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
@@ -416,10 +416,8 @@ def cleanup_test_environment(env):
 
     # Run cleanup functions
     for cleanup_func in env.get("cleanup_functions", []):
-        try:
+        with suppress(Exception):
             cleanup_func()
-        except Exception:
-            pass
 
 
 def assert_valid_config(config: Any, required_attrs: list[str]):

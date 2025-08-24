@@ -1397,10 +1397,8 @@ def create_or_update_person(
                 f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report."
             )
             # Rollback might be needed if state is inconsistent
-            try:
+            with contextlib.suppress(Exception):
                 session.rollback()
-            except Exception:
-                pass
             return None, "error"
         # create_person already logged the error
         logger.error(f"create_person helper failed for {log_ref}.")
@@ -2485,19 +2483,15 @@ def cleanup_soft_deleted_records(
 
     except SQLAlchemyError as e:
         logger.error(f"DB error cleaning up soft-deleted records: {e}", exc_info=True)
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()
-        except Exception:
-            pass
         return deleted_counts
     except Exception as e:
         logger.critical(
             f"Unexpected error cleaning up soft-deleted records: {e}", exc_info=True
         )
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()
-        except Exception:
-            pass
         return deleted_counts
 
 

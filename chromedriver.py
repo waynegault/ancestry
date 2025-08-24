@@ -23,6 +23,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 # === THIRD-PARTY IMPORTS ===
+import contextlib
 import json
 import os
 import random
@@ -328,10 +329,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         except TimeoutException as e:
             logger.warning(f"Timeout during WebDriver init attempt {attempt_num}: {e}")
             if driver:
-                try:
+                with contextlib.suppress(Exception):
                     driver.quit()
-                except Exception:
-                    pass
             driver = None
         except WebDriverException as e:  # Catches errors before/during webdriver.Chrome call
             err_str = str(e).lower()
@@ -352,10 +351,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                     f"WebDriverException during init attempt {attempt_num}: {e}"
                 )
             if driver:
-                try:
+                with contextlib.suppress(Exception):
                     driver.quit()
-                except Exception:
-                    pass
             driver = None
         except Exception as e:  # Catch-all for other unexpected errors
             logger.error(
@@ -363,10 +360,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
                 exc_info=True,
             )
             if driver:
-                try:
+                with contextlib.suppress(Exception):
                     driver.quit()
-                except Exception:
-                    pass
             driver = None
 
         # --- Wait Before Retrying ---
