@@ -796,10 +796,10 @@ def fast_bidirectional_bfs(
     end_id: str,
     id_to_parents: Dict[str, Set[str]],
     id_to_children: Dict[str, Set[str]],
-    max_depth=25,
-    node_limit=150000,
-    timeout_sec=45,
-    log_progress=False,
+    max_depth: int = 25,
+    node_limit: int = 150000,
+    timeout_sec: int = 45,
+    log_progress: bool = False,
 ) -> List[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
