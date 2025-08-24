@@ -42,7 +42,7 @@ class ObjectPool(Generic[T]):
     put = release
 
 
-class lazy_property:  # noqa: N801 - keep legacy name for compatibility
+class LazyProperty:
     """Descriptor that computes once per-instance and caches the result.
 
     Usage:

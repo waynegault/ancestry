@@ -156,7 +156,6 @@ def test_halt_signal_integration():
 def test_real_database_integration():
     """Test real database operations without mocks."""
     try:
-        import os
         import tempfile
 
         from action8_messaging import _safe_commit_with_rollback
@@ -225,7 +224,8 @@ def test_real_database_integration():
         finally:
             # Cleanup temporary database
             try:
-                os.unlink(tmp_db_path)
+                from pathlib import Path
+                Path(tmp_db_path).unlink(missing_ok=True)
             except OSError:
                 pass
 
@@ -440,9 +440,8 @@ def main():
     if passed == total:
         logger.info("🎉 ALL HARDENING TESTS PASSED - Action 8 is ready for production!")
         return True
-    else:
-        logger.error("⚠️ Some hardening tests failed - review before production deployment")
-        return False
+    logger.error("⚠️ Some hardening tests failed - review before production deployment")
+    return False
 
 if __name__ == "__main__":
     success = main()

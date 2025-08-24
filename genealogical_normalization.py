@@ -302,15 +302,15 @@ def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
         for record in vital_records:
             if isinstance(record, dict):
                 # Normalize dates
-                if "date" in record and record["date"]:
+                if record.get("date"):
                     record["date"] = _validate_and_normalize_date(str(record["date"]))
 
                 # Normalize locations
-                if "place" in record and record["place"]:
+                if record.get("place"):
                     record["place"] = _validate_location(str(record["place"]))
 
                 # Validate event types
-                if "event_type" in record and record["event_type"]:
+                if record.get("event_type"):
                     event_type = str(record["event_type"]).lower().strip()
                     valid_events = ["birth", "death", "marriage", "baptism", "burial", "christening", "divorce"]
                     if event_type in valid_events:
@@ -322,12 +322,12 @@ def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
         for relationship in relationships:
             if isinstance(relationship, dict):
                 # Normalize relationship type
-                if "relationship" in relationship and relationship["relationship"]:
+                if relationship.get("relationship"):
                     relationship["relationship"] = _validate_relationship(str(relationship["relationship"]))
 
                 # Ensure person names are properly formatted
                 for person_key in ["person1", "person2"]:
-                    if person_key in relationship and relationship[person_key]:
+                    if relationship.get(person_key):
                         name = str(relationship[person_key]).strip()
                         # Basic name validation - ensure it's not just whitespace or numbers
                         if name and not name.isdigit() and len(name) > 1:
@@ -341,11 +341,11 @@ def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
         for location in locations:
             if isinstance(location, dict):
                 # Normalize place names
-                if "place" in location and location["place"]:
+                if location.get("place"):
                     location["place"] = _validate_location(str(location["place"]))
 
                 # Normalize time periods
-                if "time_period" in location and location["time_period"]:
+                if location.get("time_period"):
                     location["time_period"] = _validate_and_normalize_date(str(location["time_period"]))
 
     # Validate and normalize structured names
@@ -354,7 +354,7 @@ def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
         for name_entry in structured_names:
             if isinstance(name_entry, dict):
                 # Ensure full_name is properly formatted
-                if "full_name" in name_entry and name_entry["full_name"]:
+                if name_entry.get("full_name"):
                     full_name = str(name_entry["full_name"]).strip()
                     # Basic name validation
                     if full_name and not full_name.isdigit() and len(full_name) > 1:

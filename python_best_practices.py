@@ -185,8 +185,7 @@ def monitor_performance(threshold_seconds: float = 1.0) -> Callable[[F], F]:
             start_time = time.perf_counter()
 
             try:
-                result = func(*args, **kwargs)
-                return result
+                return func(*args, **kwargs)
             finally:
                 execution_time = time.perf_counter() - start_time
 
@@ -260,8 +259,8 @@ def temporary_config(config_updates: Dict[str, Any]):
     Args:
         config_updates: Dictionary of configuration updates to apply temporarily
     """
-    # Store original values
-    original_values = {}
+    # Store original values (placeholder retained for future use)
+    _original_values: Dict[str, Any] = {}
 
     try:
         # Apply temporary updates (implementation would depend on config system)
@@ -287,12 +286,11 @@ def ensure_immutable(data: Any) -> Any:
     """
     if isinstance(data, dict):
         return tuple(sorted(data.items()))
-    elif isinstance(data, list):
+    if isinstance(data, list):
         return tuple(data)
-    elif isinstance(data, set):
+    if isinstance(data, set):
         return frozenset(data)
-    else:
-        return data
+    return data
 
 
 def safe_get(container: Dict[str, Any], key: str, default: T = None) -> Union[Any, T]:
@@ -358,15 +356,14 @@ def curry(func: Callable[..., Any]) -> Callable[..., Any]:
     def curried(*args: Any, **kwargs: Any) -> Any:
         if len(args) + len(kwargs) >= param_count:
             return func(*args, **kwargs)
-        else:
-            return lambda *more_args, **more_kwargs: curried(
-                *(args + more_args), **{**kwargs, **more_kwargs}
-            )
+        return lambda *more_args, **more_kwargs: curried(
+            *(args + more_args), **{**kwargs, **more_kwargs}
+        )
 
     return curried
 
 
-def maybe(value: Optional[T]) -> 'Maybe[T]':
+def maybe(value: Optional[T]) -> Maybe[T]:
     """
     Create a Maybe monad for safe null handling.
 
@@ -385,7 +382,7 @@ class Maybe:
     def __init__(self, value: Optional[T]):
         self._value = value
 
-    def map(self, func: Callable[[T], Any]) -> 'Maybe':
+    def map(self, func: Callable[[T], Any]) -> Maybe:
         """Apply function if value is not None."""
         if self._value is not None:
             try:
@@ -395,7 +392,7 @@ class Maybe:
                 return Maybe(None)
         return Maybe(None)
 
-    def flat_map(self, func: Callable[[T], 'Maybe']) -> 'Maybe':
+    def flat_map(self, func: Callable[[T], Maybe]) -> Maybe:
         """Apply function that returns Maybe if value is not None."""
         if self._value is not None:
             try:

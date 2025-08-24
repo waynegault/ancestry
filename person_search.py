@@ -23,7 +23,7 @@ from error_handling import (
     graceful_degradation,
     retry_on_failure,
     timeout_protection,
-)  # noqa: F401
+)
 
 # Reference imported error-handling symbols so they are part of the module API and not unused
 _ensure_error_handling_symbols = (

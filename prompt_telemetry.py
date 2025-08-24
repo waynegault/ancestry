@@ -24,11 +24,12 @@ import hashlib
 import json
 import os
 import statistics
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
-LOGS_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "Logs"
+LOGS_DIR = Path(__file__).resolve().parent / "Logs"
 LOGS_DIR.mkdir(exist_ok=True)
 TELEMETRY_FILE = LOGS_DIR / "prompt_experiments.jsonl"
 ALERTS_FILE = LOGS_DIR / "prompt_experiment_alerts.jsonl"
@@ -70,13 +71,12 @@ def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, p
             "component_coverage": round(float(component_coverage), 3) if isinstance(component_coverage, (int, float)) else None,
             "anomaly_summary": anomaly_summary or None,
         }
-        with open(TELEMETRY_FILE, "a", encoding="utf-8") as fh:
+        with Path(TELEMETRY_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")
         # Lightweight auto-alert hook (Phase 11.2 item 2)
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             _auto_analyze_and_alert()
-        except Exception:
-            pass
     except Exception:
         pass
 
@@ -89,7 +89,7 @@ def summarize_experiments(last_n: int = 1000) -> Dict[str, Any]:
         return {"events": 0, "variants": {}, "success_rate": 0.0}
     try:
         lines: list[str] = []
-        with open(TELEMETRY_FILE, "r", encoding="utf-8") as fh:
+        with Path(TELEMETRY_FILE).open(encoding="utf-8") as fh:
             for line in fh:
                 if line.strip():
                     lines.append(line)
@@ -147,7 +147,7 @@ def _load_recent_events(window: int = 500) -> list[Dict[str, Any]]:
         return []
     events: list[Dict[str, Any]] = []
     try:
-        with open(TELEMETRY_FILE, "r", encoding="utf-8") as fh:
+        with Path(TELEMETRY_FILE).open(encoding="utf-8") as fh:
             lines = fh.readlines()
         if window > 0:
             lines = lines[-window:]
@@ -218,7 +218,7 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
 
 def _write_alert(alert: Dict[str, Any]) -> None:
     try:
-        with open(ALERTS_FILE, "a", encoding="utf-8") as fh:
+        with Path(ALERTS_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(alert, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -227,7 +227,7 @@ def _already_alerted(signature: str) -> bool:
     if not ALERTS_FILE.exists():
         return False
     try:
-        with open(ALERTS_FILE, "r", encoding="utf-8") as fh:
+        with Path(ALERTS_FILE).open(encoding="utf-8") as fh:
             for line in fh:
                 if signature in line:
                     return True
@@ -279,7 +279,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         "created_utc": datetime.utcnow().isoformat(timespec="seconds"),
     }
     try:
-        with open(QUALITY_BASELINE_FILE, "w", encoding="utf-8") as fh:
+        with Path(QUALITY_BASELINE_FILE).open("w", encoding="utf-8") as fh:
             json.dump(baseline, fh, indent=2)
     except Exception:
         pass
@@ -289,7 +289,7 @@ def load_quality_baseline() -> Optional[Dict[str, Any]]:
     if not QUALITY_BASELINE_FILE.exists():
         return None
     try:
-        with open(QUALITY_BASELINE_FILE, "r", encoding="utf-8") as fh:
+        with Path(QUALITY_BASELINE_FILE).open(encoding="utf-8") as fh:
             return json.load(fh)
     except Exception:
         return None
@@ -437,9 +437,8 @@ if __name__ == "__main__":
         ran_action = True
 
     if args.self_test or (not ran_action) or os.environ.get("RUN_INTERNAL_TESTS"):
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             prompt_telemetry_module_tests()
-        except Exception:
-            pass
     elif not ran_action:
         parser.print_help()

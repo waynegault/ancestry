@@ -22,7 +22,6 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
-import os
 import shutil
 import sys
 import time
@@ -257,7 +256,7 @@ def cache_result(
                 # Complex objects might require custom serialization for reliable keys.
                 try:
                     arg_key_part = (
-                        f"_args{str(args)}_kwargs{str(sorted(kwargs.items()))}"
+                        f"_args{args!s}_kwargs{sorted(kwargs.items())!s}"
                     )
                     final_cache_key = (
                         f"{cache_key_prefix}_{func.__name__}{arg_key_part}"
@@ -281,10 +280,9 @@ def cache_result(
                     get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=True)
                     return cached_value
                 # Step 3b: Cache Miss - Log and proceed to function execution
-                else:
-                    logger.debug(f"Cache MISS for key: '{final_cache_key}'")
-                    # === PHASE 12.4.1: RECORD CACHE ACCESS PATTERNS ===
-                    get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=False)
+                logger.debug(f"Cache MISS for key: '{final_cache_key}'")
+                # === PHASE 12.4.1: RECORD CACHE ACCESS PATTERNS ===
+                get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=False)
 
             except Exception as e:
                 # Log errors during cache read but treat as cache miss
@@ -446,9 +444,7 @@ def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
 
     # Add positional arguments
     for arg in args:
-        if isinstance(arg, (str, int, float)):
-            key_parts.append(str(arg))
-        elif hasattr(arg, "__str__"):
+        if isinstance(arg, (str, int, float)) or hasattr(arg, "__str__"):
             key_parts.append(str(arg))
 
     # Add keyword arguments in sorted order for consistency
@@ -655,9 +651,8 @@ def enforce_cache_size_limit() -> Dict[str, Any]:
             key_count = 0
 
             # Collect keys to remove (oldest first)
-            for key in cache:
+            for key_count, key in enumerate(cache, start=1):
                 keys_to_remove.append(key)
-                key_count += 1
                 if key_count >= entries_to_remove:
                     break
 
@@ -739,8 +734,7 @@ def get_cache_entry_count() -> int:
             # Use len() which works correctly with diskcache
             # Type ignore for diskcache compatibility
             return len(cache)  # type: ignore
-        else:
-            return 0
+        return 0
     except Exception as e:
         logger.warning(f"Error getting cache entry count: {e}")
         # Fallback: try to count by iterating (slower but reliable)
@@ -841,7 +835,8 @@ def cache_file_based_on_mtime(
 
             try:
                 # Get file modification time
-                file_mtime = os.path.getmtime(file_path)
+                from pathlib import Path
+                file_mtime = Path(file_path).stat().st_mtime
 
                 # Create cache key that includes file mtime
                 mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
@@ -855,8 +850,7 @@ def cache_file_based_on_mtime(
                 if cached_value is not ENOVAL:
                     logger.debug(f"Cache HIT for file-based key: '{final_cache_key}'")
                     return cached_value
-                else:
-                    logger.debug(f"Cache MISS for file-based key: '{final_cache_key}'")
+                logger.debug(f"Cache MISS for file-based key: '{final_cache_key}'")
 
                 # Execute function and cache result
                 result = func(*args, **kwargs)
@@ -1013,10 +1007,7 @@ class IntelligentCacheWarmer:
 
         # Check usage patterns
         pattern = self.usage_patterns.get(cache_key, {})
-        if pattern.get("access_frequency", 0) > 1.0:  # More than 1 access per hour
-            return True
-
-        return False
+        return pattern.get("access_frequency", 0) > 1.0  # More than 1 access per hour
 
     def _regenerate_cache_data(self, cache_key: str, session_manager=None) -> bool:
         """Regenerate cache data for a specific key."""
@@ -1024,13 +1015,12 @@ class IntelligentCacheWarmer:
             # For genealogical data keys, try to regenerate
             if "gedcom" in cache_key.lower():
                 return self._warm_gedcom_data(cache_key)
-            elif "api" in cache_key.lower():
+            if "api" in cache_key.lower():
                 return self._warm_api_data(cache_key, session_manager)
-            elif "profile" in cache_key.lower():
+            if "profile" in cache_key.lower():
                 return self._warm_profile_data(cache_key, session_manager)
-            else:
-                # Generic warming with placeholder data
-                return warm_cache_with_data(cache_key, {"warmed_at": time.time()})
+            # Generic warming with placeholder data
+            return warm_cache_with_data(cache_key, {"warmed_at": time.time()})
         except Exception as e:
             logger.warning(f"Failed to regenerate cache data for {cache_key}: {e}")
             return False

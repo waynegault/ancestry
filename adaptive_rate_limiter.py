@@ -335,11 +335,11 @@ Overall Statistics:
         """
         try:
             import json
-            import os
+            from pathlib import Path
 
-            cache_file = "Cache/adaptive_rate_cache.json"
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
+            cache_file = Path("Cache/adaptive_rate_cache.json")
+            if cache_file.exists():
+                with cache_file.open(encoding="utf-8") as f:
                     cached_settings = json.load(f)
 
                 # Use cached optimal settings if they're reasonable
@@ -362,14 +362,14 @@ Overall Statistics:
         """
         try:
             import json
-            import os
+            from pathlib import Path
 
             # Only save if we have good performance metrics
             if len(self.response_history) >= 10:
                 success_rate = sum(1 for r in self.response_history if r.success) / len(self.response_history)
                 if success_rate >= 0.9:  # Only cache if 90%+ success rate
-                    cache_dir = "Cache"
-                    os.makedirs(cache_dir, exist_ok=True)
+                    cache_dir = Path("Cache")
+                    cache_dir.mkdir(parents=True, exist_ok=True)
 
                     cache_data = {
                         'optimal_rps': self.current_rps,
@@ -377,7 +377,7 @@ Overall Statistics:
                         'timestamp': time.time()
                     }
 
-                    with open(f"{cache_dir}/adaptive_rate_cache.json", 'w') as f:
+                    with (cache_dir / "adaptive_rate_cache.json").open('w', encoding='utf-8') as f:
                         json.dump(cache_data, f)
 
                     logger.debug(f"⚡ Saved optimal RPS to cache: {self.current_rps:.2f} (success: {success_rate:.2%})")
@@ -991,9 +991,9 @@ def test_regression_prevention_rate_limiter_caching():
                 results.append(False)
 
             # Test that Cache directory exists or can be created
-            import os
-            cache_dir = "Cache"
-            if os.path.exists(cache_dir) or True:  # Directory can be created if needed
+            from pathlib import Path
+            cache_dir = Path("Cache")
+            if cache_dir.exists() or True:  # Directory can be created if needed
                 print("   ✅ Cache directory accessible for rate limiter cache")
                 results.append(True)
             else:

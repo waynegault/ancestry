@@ -152,10 +152,9 @@ class SafeTestingProtocol:
             if frances and self.is_safe_test_recipient(frances):
                 logger.info(f"Found approved test recipient: {frances.username}")
                 return frances
-            else:
-                if total_people_count > 0:
-                    logger.warning(f"Frances McHardy not found among {total_people_count} people in database or not approved")
-                return None
+            if total_people_count > 0:
+                logger.warning(f"Frances McHardy not found among {total_people_count} people in database or not approved")
+            return None
 
         except Exception as e:
             logger.error(f"Error finding Frances McHardy: {e}")
@@ -535,7 +534,7 @@ class SafeTestingProtocol:
         }
 
         # Generate report
-        report = f"""
+        return f"""
 # ANCESTRY AUTOMATION TESTING REPORT
 Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
@@ -588,7 +587,6 @@ Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 ]) else '⚠️ ISSUES DETECTED - REVIEW REQUIRED'}
 """
 
-        return report
 
 
 def run_comprehensive_tests() -> bool:

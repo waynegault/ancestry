@@ -8,11 +8,12 @@ inconsistent logging patterns across the codebase.
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -57,9 +58,8 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         # If no specific name requested, return the central logger
         if name is None:
             return central_logger
-        else:
-            # Return a child logger that inherits from central config
-            return central_logger.getChild(name)
+        # Return a child logger that inherits from central config
+        return central_logger.getChild(name)
 
     except ImportError:
         # Fallback to standard logging if logging_config is not available
@@ -67,10 +67,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
             import inspect
 
             frame = inspect.currentframe()
-            if frame and frame.f_back:
-                name = frame.f_back.f_globals.get("__name__", "unknown")
-            else:
-                name = "unknown"
+            name = frame.f_back.f_globals.get("__name__", "unknown") if frame and frame.f_back else "unknown"
 
         return logging.getLogger(name)
 

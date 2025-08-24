@@ -4,10 +4,10 @@ Action 6 Health Monitoring Script
 Monitors the running Action 6 process and provides health status updates.
 """
 
-import os
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import psutil
 
@@ -96,15 +96,19 @@ def check_log_files():
 
     # Check current directory for log files
     try:
-        for file in os.listdir("."):
-            if file.endswith(".log") or "log" in file.lower():
-                for pattern in log_patterns:
-                    if pattern in file.lower():
-                        stat = os.stat(file)
-                        mod_time = stat.st_mtime
-                        if time.time() - mod_time < 3600:  # Modified in last hour
-                            recent_logs.append((file, mod_time))
-                        break
+        for path in Path().iterdir():
+            try:
+                if path.is_file():
+                    name = path.name
+                    lower = name.lower()
+                    if name.endswith(".log") or "log" in lower:
+                        if any(p in lower for p in log_patterns):
+                            stat = path.stat()
+                            mod_time = stat.st_mtime
+                            if time.time() - mod_time < 3600:  # Modified in last hour
+                                recent_logs.append((name, mod_time))
+            except Exception:
+                continue
 
         if recent_logs:
             print("Recent log files found:")

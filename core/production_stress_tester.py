@@ -36,15 +36,13 @@ import psutil
 try:
     from core.session_manager import (
         CriticalError,
-        ResourceNotReadyError,  # noqa: F401
         SessionManager as ReliableSessionManager,
-        SystemHealthError,  # noqa: F401
     )
 except ImportError:
     # Handle import when running from project root
-    import os
     import sys
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from core.session_manager import (
         CriticalError,
         SessionManager as ReliableSessionManager,
@@ -471,8 +469,7 @@ class ProductionStressTester:
                     'timestamp': time.time(),
                     'simulated': True
                 }
-            else:
-                raise
+            raise
 
     def _simulate_memory_pressure(self):
         """Simulate temporary memory pressure."""
@@ -520,10 +517,7 @@ class ProductionStressTester:
             return True
 
         # Terminate if no progress in last 50 attempts
-        if results.pages_failed > 50 and results.pages_processed == 0:
-            return True
-
-        return False
+        return bool(results.pages_failed > 50 and results.pages_processed == 0)
 
     def _log_test_summary(self, results: StressTestResults):
         """Log comprehensive test summary."""
@@ -582,7 +576,7 @@ class ProductionStressTester:
             except Exception as e:
                 logger.error(f"❌ Scenario {scenario_name} failed with exception: {e}")
                 suite_results['overall_success'] = False
-                suite_results['recommendations'].append(f"Exception in {scenario_name}: {str(e)}")
+                suite_results['recommendations'].append(f"Exception in {scenario_name}: {e!s}")
                 break
 
         suite_results['end_time'] = time.time()
@@ -847,9 +841,8 @@ def run_embedded_tests():
     if failed == 0:
         print("🎉 All embedded tests passed!")
         return True
-    else:
-        print(f"❌ {failed} tests failed!")
-        return False
+    print(f"❌ {failed} tests failed!")
+    return False
 
 
 if __name__ == "__main__":

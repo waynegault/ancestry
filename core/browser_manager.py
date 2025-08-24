@@ -8,11 +8,12 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -109,13 +110,12 @@ class BrowserManager:
                     base = (config_schema.api.base_url or "").rstrip("/")
                     if current.startswith(base):
                         logger.debug("Already at base URL; skipping stabilization navigation")
-                    else:
-                        if not nav_to_page(self.driver, config_schema.api.base_url):
-                            logger.error(
-                                f"Failed to navigate to base URL: {config_schema.api.base_url}"
-                            )
-                            self.close_browser()
-                            return False
+                    elif not nav_to_page(self.driver, config_schema.api.base_url):
+                        logger.error(
+                            f"Failed to navigate to base URL: {config_schema.api.base_url}"
+                        )
+                        self.close_browser()
+                        return False
                 except Exception:
                     if not nav_to_page(self.driver, config_schema.api.base_url):
                         logger.error(
@@ -302,9 +302,8 @@ class BrowserManager:
                 self.driver.switch_to.window(new_handle)
                 logger.debug(f"Created and switched to new tab: {new_handle}")
                 return new_handle
-            else:
-                logger.error("Failed to find new tab handle")
-                return None
+            logger.error("Failed to find new tab handle")
+            return None
 
         except Exception as e:
             logger.error(f"Error creating new tab: {e}", exc_info=True)

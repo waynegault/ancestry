@@ -87,7 +87,6 @@ logger = setup_module(globals(), __name__)
 import base64
 import getpass
 import json
-import os
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -172,11 +171,12 @@ class SecurityManager:
             encrypted_data = fernet.encrypt(json_data)
 
             # Write to encrypted file
-            with open(self.credentials_file, "wb") as f:
+            from pathlib import Path
+            with self.credentials_file.open("wb") as f:
                 f.write(encrypted_data)
 
             # Set restrictive file permissions
-            os.chmod(self.credentials_file, 0o600)
+            Path(self.credentials_file).chmod(0o600)
 
             logger.info(f"Encrypted {len(credentials)} credentials successfully")
             return True
@@ -200,7 +200,7 @@ class SecurityManager:
             fernet = self._get_fernet()
 
             # Read and decrypt file
-            with open(self.credentials_file, "rb") as f:
+            with self.credentials_file.open("rb") as f:
                 encrypted_data = f.read()
 
             decrypted_data = fernet.decrypt(encrypted_data)
@@ -239,7 +239,7 @@ class SecurityManager:
 
         try:
             # Read .env file and extract sensitive credentials
-            with open(env_path, "r") as f:
+            with Path(env_path).open() as f:
                 for line in f:
                     line = line.strip()
                     if "=" in line and not line.startswith("#"):
@@ -304,7 +304,7 @@ class SecurityManager:
         self, env_path: Path, backup_path: Path, sensitive_keys: list
     ):
         """Create new .env file with sensitive credentials removed."""
-        with open(backup_path, "r") as backup_f, open(env_path, "w") as new_f:
+        with Path(backup_path).open() as backup_f, Path(env_path).open("w") as new_f:
             new_f.write("# Ancestry app settings\n")
             new_f.write("# Sensitive credentials moved to encrypted storage\n\n")
 
@@ -401,9 +401,8 @@ class SecurityManager:
                 "Credentials are now stored securely and will be loaded automatically."
             )
             return True
-        else:
-            print("\n✗ Failed to encrypt credentials")
-            return False
+        print("\n✗ Failed to encrypt credentials")
+        return False
 
     def delete_credentials(self) -> bool:
         """

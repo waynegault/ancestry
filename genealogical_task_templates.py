@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 # Import standard modules
 from standard_imports import *
-from standard_imports import get_logger  # noqa: F401
+from standard_imports import get_logger
 
 # Set up logging
 logger = get_logger(__name__)
@@ -107,30 +107,29 @@ class GenealogicalTaskGenerator:
             return "Focus on Old Parish Registers (OPR) pre-1855 and statutory records post-1855. Check National Records of Scotland online. Review kirk session records and heritors' records. Consider Highland Clearances impact if applicable."
 
         # Ireland-specific strategies
-        elif any(term in location_lower for term in ['ireland', 'irish', 'dublin', 'cork', 'belfast', 'galway']):
+        if any(term in location_lower for term in ['ireland', 'irish', 'dublin', 'cork', 'belfast', 'galway']):
             return "Search civil registration from 1864 (births/deaths) and 1845 (marriages). Check Catholic parish records and Church of Ireland registers. Review Griffith's Valuation and Tithe Applotment Books. Consider Famine emigration records."
 
         # England-specific strategies
-        elif any(term in location_lower for term in ['england', 'english', 'london', 'manchester', 'birmingham', 'liverpool']):
+        if any(term in location_lower for term in ['england', 'english', 'london', 'manchester', 'birmingham', 'liverpool']):
             return "Search parish registers and Bishop's Transcripts. Check Probate Court of Canterbury (PCC) wills. Review Quarter Sessions and Manorial records. Consider Industrial Revolution migration patterns."
 
         # Wales-specific strategies
-        elif any(term in location_lower for term in ['wales', 'welsh', 'cardiff', 'swansea', 'newport']):
+        if any(term in location_lower for term in ['wales', 'welsh', 'cardiff', 'swansea', 'newport']):
             return "Focus on Welsh parish registers and Nonconformist records. Check National Library of Wales collections. Review tithe maps and schedules. Consider Welsh language variations in records."
 
         # US state-specific strategies
-        elif any(term in location_lower for term in ['massachusetts', 'boston', 'ma']):
+        if any(term in location_lower for term in ['massachusetts', 'boston', 'ma']):
             return "Check Massachusetts Vital Records to 1850. Review Mayflower descendant records if applicable. Search Boston immigration records and ship manifests. Check town clerk records."
 
-        elif any(term in location_lower for term in ['new york', 'ny', 'manhattan', 'brooklyn']):
+        if any(term in location_lower for term in ['new york', 'ny', 'manhattan', 'brooklyn']):
             return "Search Ellis Island and Castle Garden immigration records. Check NYC Municipal Archives. Review tenement records and city directories. Consider ethnic neighborhood concentrations."
 
-        elif any(term in location_lower for term in ['pennsylvania', 'philadelphia', 'pa']):
+        if any(term in location_lower for term in ['pennsylvania', 'philadelphia', 'pa']):
             return "Check Pennsylvania German records if applicable. Search Quaker meeting records. Review Philadelphia port records. Check county courthouse records."
 
         # Generic strategies for other locations
-        else:
-            return "Research local archives and historical societies. Check county courthouse records. Review local newspapers and obituaries. Consider regional migration patterns and historical events."
+        return "Research local archives and historical societies. Check county courthouse records. Review local newspapers and obituaries. Consider regional migration patterns and historical events."
 
     def _generate_name_variations(self, name: str) -> str:
         """Generate common name variations for genealogical research."""
@@ -161,8 +160,7 @@ class GenealogicalTaskGenerator:
 
         if variations:
             return f"Try variations: {', '.join(set(variations[:5]))}"
-        else:
-            return "Check phonetic spellings and transcription errors"
+        return "Check phonetic spellings and transcription errors"
 
     def _load_task_configuration(self) -> Dict[str, Any]:
         """Load task generation configuration."""
@@ -711,7 +709,7 @@ def genealogical_task_templates_module_tests() -> bool:
         assert invalid_task is None, "Should return None for invalid template"
 
         # Test with empty task data
-        valid_template = list(generator.task_templates.keys())[0]
+        valid_template = next(iter(generator.task_templates.keys()))
         empty_task = generator._create_task_from_template(valid_template, {})
         # Should handle empty data gracefully (may return task or None)
         assert empty_task is None or isinstance(empty_task, dict), "Should handle empty data gracefully"

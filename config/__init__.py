@@ -10,11 +10,12 @@ Main components:
 - CredentialManager: Secure credential management integration
 """
 
-import os
 import sys
 
 # Add parent directory to path for core_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 

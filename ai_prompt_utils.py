@@ -19,7 +19,6 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -40,15 +39,15 @@ except Exception:  # pragma: no cover - environment may not have config
     _CONFIG_AVAILABLE = False
 
 # Path to the AI prompts JSON file
-PROMPTS_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "ai_prompts.json"
+PROMPTS_FILE = Path(__file__).resolve().parent / "ai_prompts.json"
 
 # Path to the improved prompts directory
 IMPROVED_PROMPTS_DIR = (
-    Path(os.path.dirname(os.path.abspath(__file__))) / "improved_prompts"
+    Path(__file__).resolve().parent / "improved_prompts"
 )
 
 # Path to prompt version changelog file
-CHANGELOG_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "AI_PROMPT_CHANGELOG.md"
+CHANGELOG_FILE = Path(__file__).resolve().parent / "AI_PROMPT_CHANGELOG.md"
 SEMVER_PATTERN = r"^\d+\.\d+\.\d+$"
 _DIFF_THRESHOLD_CHARS = 80  # Minimum absolute character delta to include diff snippet in changelog
 
@@ -71,7 +70,7 @@ def load_prompts() -> Dict[str, Any]:
             logger.warning(f"AI prompts file not found at {PROMPTS_FILE}")
             return default_data
 
-        with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+        with PROMPTS_FILE.open(encoding="utf-8") as f:
             prompts_data = json.load(f)
 
             # Validate loaded data structure
@@ -126,7 +125,7 @@ def save_prompts(prompts_data: Dict[str, Any]) -> bool:
         prompts_data["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
         # Save the prompts to the JSON file
-        with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
+        with PROMPTS_FILE.open("w", encoding="utf-8") as f:
             json.dump(prompts_data, indent=2, ensure_ascii=False, fp=f)
             logger.info(f"Saved AI prompts to {PROMPTS_FILE}")
         return True
@@ -315,7 +314,7 @@ def _append_changelog_entry(
             )
             # Truncate very large diffs to first 120 lines
             if len(diff) > 120:
-                diff = diff[:120] + ["... (diff truncated)"]
+                diff = [*diff[:120], "... (diff truncated)"]
             if diff:
                 diff_text = "\n".join(diff)
                 diff_block = f"```diff\n{diff_text}\n```\n"
@@ -323,7 +322,7 @@ def _append_changelog_entry(
         diff_block = ""  # Fail silent; diff non-critical
 
     if header_needed:
-        with open(CHANGELOG_FILE, "w", encoding="utf-8") as fh:
+        with CHANGELOG_FILE.open("w", encoding="utf-8") as fh:
             fh.write("# AI Prompt Version Changelog\n\n")
             fh.write(
                 "This file is auto-generated when prompt versions change via set_prompt_version(). Do not edit entries manually.\n\n"
@@ -338,7 +337,7 @@ def _append_changelog_entry(
             if diff_block:
                 fh.write(diff_block)
     else:
-        with open(CHANGELOG_FILE, "a", encoding="utf-8") as fh:
+        with CHANGELOG_FILE.open("a", encoding="utf-8") as fh:
             fh.write(line)
             if diff_block:
                 fh.write(diff_block)
@@ -398,7 +397,7 @@ def import_improved_prompts() -> Tuple[int, List[str]]:
             prompt_file = IMPROVED_PROMPTS_DIR / filename
             if prompt_file.exists():
                 try:
-                    with open(prompt_file, "r", encoding="utf-8") as f:
+                    with prompt_file.open(encoding="utf-8") as f:
                         improved_prompt = f.read().strip()
 
                     if improved_prompt and update_prompt(
@@ -660,7 +659,7 @@ def ai_prompt_utils_module_tests() -> bool:
             size2 = CHANGELOG_FILE.stat().st_size
             assert size2 > size1, "Changelog file did not grow after version change"
             # Check last line contains new version
-            with open(CHANGELOG_FILE, "r", encoding="utf-8") as fh:
+            with CHANGELOG_FILE.open(encoding="utf-8") as fh:
                 tail = fh.readlines()[-5:]
             assert any("0.2.0" in line and key in line for line in tail), "New version entry missing"
             return True
@@ -752,7 +751,7 @@ def ai_prompt_utils_module_tests() -> bool:
             assert set_prompt_version(key, "0.2.0")
             # Inspect tail of changelog for a diff fence
             if CHANGELOG_FILE.exists():
-                with open(CHANGELOG_FILE, "r", encoding="utf-8") as fh:
+                with CHANGELOG_FILE.open(encoding="utf-8") as fh:
                     tail = fh.readlines()[-200:]
                 joined_tail = "".join(tail)
                 assert "```diff" in joined_tail, "Missing diff fenced block for large change"
@@ -1076,7 +1075,7 @@ def _parse_changelog_last_changes() -> Dict[str, str]:
 
     changes: Dict[str, str] = {}
     try:
-        with open(CHANGELOG_FILE, "r", encoding="utf-8") as fh:
+        with CHANGELOG_FILE.open(encoding="utf-8") as fh:
             for line in fh:
                 if not line.startswith("| "):
                     continue
@@ -1123,7 +1122,7 @@ def get_prompts_summary(include_test_artifacts: bool = False) -> Dict[str, Any]:
                     "last_change_utc": last_changes.get(k),
                 }
 
-        summary = {
+        return {
             "total_prompts": len(filtered),
             "version": prompts_data.get("version", "unknown"),
             "last_updated": prompts_data.get("last_updated", "unknown"),
@@ -1135,7 +1134,6 @@ def get_prompts_summary(include_test_artifacts: bool = False) -> Dict[str, Any]:
             "unversioned_prompts": [k for k, m in meta.items() if not m.get("has_version")],
             "excluded_test_prompts": excluded,
         }
-        return summary
     except Exception as e:
         logger.error(f"Error generating prompts summary: {e}")
         return {
@@ -1194,7 +1192,7 @@ def quick_test() -> Dict[str, Any]:
 
     except Exception as e:
         results["failed"] += 1
-        results["errors"].append(f"Unexpected error: {str(e)}")
+        results["errors"].append(f"Unexpected error: {e!s}")
 
     results["total"] = results["passed"] + results["failed"]
     results["success_rate"] = (
@@ -1301,16 +1299,15 @@ def select_prompt_variant(base_key: str, variants: Dict[str, str],
 
     if sticky and user_id:
         import hashlib
-        bucket = int(hashlib.sha256(f"{user_id}:{base_key}".encode("utf-8")).hexdigest(), 16)
+        bucket = int(hashlib.sha256(f"{user_id}:{base_key}".encode()).hexdigest(), 16)
         keys = sorted(variants.keys())
         idx = bucket % len(keys)
         chosen_variant_label = keys[idx]
         return variants[chosen_variant_label]
-    else:
-        # Random selection (non-sticky)
-        import random
-        chosen_variant_label = random.choice(list(variants.keys()))  # pragma: no cover (non-deterministic branch)
-        return variants[chosen_variant_label]
+    # Random selection (non-sticky)
+    import random
+    chosen_variant_label = random.choice(list(variants.keys()))  # pragma: no cover (non-deterministic branch)
+    return variants[chosen_variant_label]
 
 
 def get_prompt_with_experiment(base_key: str,
@@ -1408,7 +1405,7 @@ if __name__ == "__main__":
             if target_path.is_dir():
                 target_path = target_path / "prompts_report.json"
             target_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(target_path, "w", encoding="utf-8") as fh:
+        with target_path.open("w", encoding="utf-8") as fh:
             _json.dump(report, fh, indent=2, ensure_ascii=False)
         print(f"📝 Wrote prompts report to {target_path}")
         did_output = True

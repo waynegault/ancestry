@@ -12,7 +12,9 @@ import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -23,7 +25,6 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-import os
 from typing import Any, Dict, Optional
 
 
@@ -157,9 +158,8 @@ class CredentialManager:
                     self._credentials_cache = None
                     logger.info(f"Stored {len(credentials)} credentials securely")
                     return True
-                else:
-                    logger.error("Failed to encrypt and store credentials")
-                    return False
+                logger.error("Failed to encrypt and store credentials")
+                return False
             except Exception as e:
                 logger.error(f"Failed to store credentials: {e}")
                 return False
@@ -188,14 +188,12 @@ class CredentialManager:
                         self._credentials_cache = None
                         logger.info(f"Removed credential: {key}")
                         return True
-                    else:
-                        logger.error(
-                            f"Failed to encrypt credentials after removing {key}"
-                        )
-                        return False
-                else:
-                    logger.warning(f"Credential not found: {key}")
+                    logger.error(
+                        f"Failed to encrypt credentials after removing {key}"
+                    )
                     return False
+                logger.warning(f"Credential not found: {key}")
+                return False
             except Exception as e:
                 logger.error(f"Failed to remove credential {key}: {e}")
                 return False
@@ -244,9 +242,8 @@ class CredentialManager:
                 f"Migrated {len(valid_credentials)} credentials from environment"
             )
             return True
-        else:
-            logger.error("Failed to migrate credentials from environment")
-            return False
+        logger.error("Failed to migrate credentials from environment")
+        return False
 
     def get_ancestry_credentials(self) -> tuple[Optional[str], Optional[str]]:
         """
@@ -351,16 +348,15 @@ class CredentialManager:
                 "credential_count": len(credentials),
                 "app_name": self.app_name,
             }
-        else:
-            return {
-                "credential_keys": list(credentials.keys()),
-                "credential_count": len(credentials),
-                "app_name": self.app_name,
-                "has_ancestry_credentials": all(
-                    key in credentials
-                    for key in ["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD"]
-                ),
-            }
+        return {
+            "credential_keys": list(credentials.keys()),
+            "credential_count": len(credentials),
+            "app_name": self.app_name,
+            "has_ancestry_credentials": all(
+                key in credentials
+                for key in ["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD"]
+            ),
+        }
 
 
 def run_comprehensive_tests():
@@ -412,7 +408,7 @@ def run_comprehensive_tests():
             def run_all_tests(self) -> bool:
                 return self.tests_failed == 0
 
-        class suppress_logging:
+        class SuppressLogging:
             def __enter__(self):
                 return self
 
@@ -451,9 +447,9 @@ def run_comprehensive_tests():
             return True
         except Exception as e:
             test_results["failed"] += 1
-            error_msg = f"✗ FAILED: {test_name} - {str(e)}"
+            error_msg = f"✗ FAILED: {test_name} - {e!s}"
             test_results["errors"].append(error_msg)
-            print(f"Outcome: Test failed with error: {str(e)}")
+            print(f"Outcome: Test failed with error: {e!s}")
             print("Conclusion: ❌ FAILED")
             print(traceback.format_exc())
             return False

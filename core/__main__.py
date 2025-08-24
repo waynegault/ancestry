@@ -1,17 +1,19 @@
 # Allows running `python -m core` without error.
 # You can add test or main logic here if needed.
 
-import os
 import sys
 
 # Add parent directory to path for core_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 if __name__ == "__main__":
     try:
         # Import the core package modules
+        # Import the core package modules (for availability check)
         from core.api_manager import APIManager  # noqa: F401
         from core.browser_manager import BrowserManager  # noqa: F401
         from core.database_manager import DatabaseManager  # noqa: F401

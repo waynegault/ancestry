@@ -179,8 +179,7 @@ def menu():
     print("c. Clear Screen")
     print("q. Exit")
     print("settings. Review/Edit .env Settings")
-    choice = input("\nEnter choice: ").strip().lower()
-    return choice
+    return input("\nEnter choice: ").strip().lower()
 
 
 # End of menu
@@ -204,15 +203,15 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
             # Step 3: Close the handler (releases resources)
             log_file_handler.close()  # type: ignore[union-attr]
             # Step 4: Clear the log file contents
-            with open(log_file_path, "w", encoding="utf-8"):
-                pass
+            from pathlib import Path
+            Path(log_file_path).open("w", encoding="utf-8").close()
             cleared = True
     except PermissionError as permission_error:
         # Handle permission errors when attempting to open the log file
         logger.warning(
             f"Permission denied clearing log '{log_file_path}': {permission_error}"
         )
-    except IOError as io_error:
+    except OSError as io_error:
         # Handle I/O errors when attempting to open the log file
         logger.warning(f"IOError clearing log '{log_file_path}': {io_error}")
     except Exception as error:
@@ -270,9 +269,8 @@ def ensure_caching_initialized():
                 "Some caching systems failed to initialize, continuing with reduced performance"
             )
         return cache_init_success
-    else:
-        logger.debug("Caching systems already initialized")
-        return True
+    logger.debug("Caching systems already initialized")
+    return True
 
 
 # End of ensure_caching_initialized
@@ -340,12 +338,10 @@ def ensure_gedcom_loaded_and_cached():
                 print("✅ GEDCOM file loaded and cached successfully!")
                 print(f"   📊 Individuals: {len(getattr(gedcom_data, 'indi_index', {}))}")
                 return True
-            else:
-                print("❌ Failed to load GEDCOM data from file.")
-                return False
-        else:
-            print("❌ Phase 12 components not available for GEDCOM loading.")
+            print("❌ Failed to load GEDCOM data from file.")
             return False
+        print("❌ Phase 12 components not available for GEDCOM loading.")
+        return False
 
     except Exception as e:
         logger.error(f"Error ensuring GEDCOM loaded and cached: {e}")
@@ -408,10 +404,7 @@ def exec_actn(
 
     if requires_browser:
         # Special case for check_login_actn: only needs driver, not full session
-        if action_name == "check_login_actn":
-            required_state = "driver_ready"  # Browser started, but no login required
-        else:
-            required_state = "session_ready"  # Full session with browser
+        required_state = "driver_ready" if action_name == "check_login_actn" else "session_ready"
     else:
         required_state = "db_ready"  # Database-only session
 
@@ -745,8 +738,7 @@ def run_core_workflow_action(session_manager, *_):
                 logger.error("Action 6 FAILED.")
                 # Match gathering failure logged above
                 return False
-            else:
-                logger.info("Action 6 OK.")
+            logger.info("Action 6 OK.")
 
         # --- Action 7 ---
         logger.info("--- Running Action 7: Search Inbox ---")
@@ -780,8 +772,7 @@ def run_core_workflow_action(session_manager, *_):
                 logger.error("Action 7 FAILED - Inbox search returned failure.")
                 # Inbox search failure logged above
                 return False
-            else:
-                logger.info("Action 7 OK.")
+            logger.info("Action 7 OK.")
                 # Inbox search completed successfully
         except Exception as inbox_error:
             logger.error(
@@ -823,8 +814,7 @@ def run_core_workflow_action(session_manager, *_):
                     "ERROR: Productive message processing failed. Check logs for details."
                 )
                 return False
-            else:
-                logger.info("Action 9 OK.")
+            logger.info("Action 9 OK.")
                 # Productive message processing completed successfully
         except Exception as process_error:
             logger.error(
@@ -862,8 +852,7 @@ def run_core_workflow_action(session_manager, *_):
                 logger.error("Action 8 FAILED - Message sending returned failure.")
                 # Message sending failure logged above
                 return False
-            else:
-                logger.info("Action 8 OK.")
+            logger.info("Action 8 OK.")
                 # Message sending completed successfully
         except Exception as message_error:
             logger.error(
@@ -1086,9 +1075,8 @@ def backup_db_actn(
         if result:
             logger.info("DB backup OK.")
             return True
-        else:
-            logger.error("DB backup failed.")
-            return False
+        logger.error("DB backup failed.")
+        return False
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
@@ -1145,7 +1133,7 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
         success = True
     except FileNotFoundError:
         logger.error(f"Backup not found during copy: {backup_path}")
-    except (OSError, IOError, shutil.Error) as e:
+    except (OSError, shutil.Error) as e:
         logger.error(f"Error restoring DB: {e}", exc_info=True)
     except Exception as e:
         logger.critical(f"Unexpected restore error: {e}", exc_info=True)
@@ -1196,7 +1184,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
             if session_manager.tree_owner_name:
                 print(f"  Account: {session_manager.tree_owner_name}")
             return True
-        elif status is False:
+        if status is False:
             print("\n✗ You are NOT currently logged in to Ancestry.")
             print("  Attempting to log in with stored credentials...")
 
@@ -1216,13 +1204,11 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
                         if session_manager.tree_owner_name:
                             print(f"  Account: {session_manager.tree_owner_name}")
                         return True
-                    else:
-                        print("⚠️  Login appeared successful but verification failed.")
-                        return False
-                else:
-                    print("✗ Login failed. Please check your credentials.")
-                    print("  You can update credentials using the 'sec' option in the main menu.")
+                    print("⚠️  Login appeared successful but verification failed.")
                     return False
+                print("✗ Login failed. Please check your credentials.")
+                print("  You can update credentials using the 'sec' option in the main menu.")
+                return False
 
             except Exception as login_e:
                 logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
@@ -1273,9 +1259,8 @@ def coord_action(session_manager, config_schema=None, start=1):
         if result is False:
             logger.error("Match gathering reported failure.")
             return False
-        else:
-            logger.debug("Gathering matches OK.")
-            return True
+        logger.debug("Gathering matches OK.")
+        return True
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         return False
@@ -1318,9 +1303,8 @@ def srch_inbox_actn(session_manager, *_):
         if result is False:
             logger.error("Inbox search reported failure.")
             return False
-        else:
-            logger.info("Inbox search OK.")
-            return True  # Use INFO
+        logger.info("Inbox search OK.")
+        return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
@@ -1375,9 +1359,8 @@ def send_messages_action(session_manager, *_):
         if result is False:
             logger.error("Message sending reported failure.")
             return False
-        else:
-            logger.debug("Messages sent OK.")
-            return True  # Use INFO
+        logger.debug("Messages sent OK.")
+        return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
@@ -1420,9 +1403,8 @@ def process_productive_messages_action(session_manager, *_):
         if result is False:
             logger.error("Productive message processing reported failure.")
             return False
-        else:
-            logger.info("Productive message processing OK.")
-            return True
+        logger.info("Productive message processing OK.")
+        return True
     except Exception as e:
         logger.error(f"Error during productive message processing: {e}", exc_info=True)
         return False
@@ -1441,9 +1423,8 @@ def run_action11_wrapper(session_manager, *_):
         if result is False:
             logger.error("API Report reported failure.")
             return False
-        else:
-            logger.debug("API Report OK.")
-            return True
+        logger.debug("API Report OK.")
+        return True
     except Exception as e:
         logger.error(f"Error during API Report: {e}", exc_info=True)
         return False
@@ -1563,8 +1544,7 @@ def main():
                 if confirm not in ["yes", "y"]:
                     print("Action cancelled.\n")
                     continue
-                else:
-                    print(" ")  # Newline after confirmation
+                print(" ")  # Newline after confirmation
 
             # --- Action Dispatching ---
             # Note: Removed most close_sess_after=False as the default is now to keep open.
@@ -1642,10 +1622,10 @@ def main():
                     if ensure_gedcom_loaded_and_cached():
                         print("✅ GEDCOM data cached successfully! Phase 12 AI analysis now available.")
                     else:
-                        print("ℹ️  GEDCOM data not cached. Phase 12 AI analysis may require manual loading.")
+                        print("INFO: GEDCOM data not cached. Phase 12 AI analysis may require manual loading.")
                 except Exception as e:
                     logger.debug(f"Error caching GEDCOM data after action 10: {e}")
-                    print("ℹ️  GEDCOM data caching skipped. Phase 12 AI analysis may require manual loading.")
+                    print("INFO: GEDCOM data caching skipped. Phase 12 AI analysis may require manual loading.")
             elif choice == "11":
                 # Initialize caching for GEDCOM operations
                 ensure_caching_initialized()
@@ -1694,7 +1674,7 @@ def main():
                     print("=" * 60)
                     result = subprocess.run(
                         [sys.executable, "run_all_tests.py"],
-                        capture_output=False,
+                        check=False, capture_output=False,
                         text=True,
                     )
                     if result.returncode == 0:
@@ -1767,7 +1747,7 @@ def main():
                         input("Press Enter to continue...")
                         continue
                     # Read .env file
-                    with open(env_path, "r", encoding="utf-8") as f:
+                    with env_path.open(encoding="utf-8") as f:
                         lines = f.readlines()
                     # Filter out comments and blank lines
                     # Build a list of (line_index, setting_line) for settings only
@@ -1804,7 +1784,7 @@ def main():
                     # Update the line in the original lines list
                     lines[line_idx] = f"{key}={new_value}\n"
                     # Write back to .env
-                    with open(env_path, "w", encoding="utf-8") as f:
+                    with env_path.open("w", encoding="utf-8") as f:
                         f.writelines(lines)
                     print(f"Updated {key} in .env.")
                 except Exception as e:
@@ -1859,10 +1839,9 @@ def main():
                 os.system("cls" if os.name == "nt" else "clear")
                 print("Exiting.")
                 break
-            else:
-                # Handle invalid choices
-                if choice not in confirm_actions:  # Avoid double 'invalid' message
-                    print("Invalid choice.\n")
+            # Handle invalid choices
+            elif choice not in confirm_actions:  # Avoid double 'invalid' message
+                print("Invalid choice.\n")
 
             # No need to track if driver became live anymore
 
@@ -1995,7 +1974,7 @@ def run_dna_gedcom_crossref():
         try:
             if not session:
                 print("❌ Could not get database session for DNA match data.")
-                print("ℹ️  DNA cross-reference will proceed without DNA match data.")
+                print("INFO: DNA cross-reference will proceed without DNA match data.")
                 dna_matches = []
             else:
                 dna_matches_db = session.query(DnaMatch).limit(10).all()
@@ -2191,7 +2170,7 @@ def run_comprehensive_gedcom_ai():
         try:
             if not session:
                 print("❌ Could not get database session for DNA match data.")
-                print("ℹ️  Comprehensive analysis will proceed without DNA match data.")
+                print("INFO: Comprehensive analysis will proceed without DNA match data.")
             else:
                 dna_matches_db = session.query(DnaMatch).limit(10).all()
                 for match in dna_matches_db:

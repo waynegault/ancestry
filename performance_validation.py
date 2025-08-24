@@ -100,9 +100,8 @@ def test_rate_limiter_caching():
         speedup = uncached_time / cached_time
         logger.info(f"   ✅ Rate limiter caching: {speedup:.1f}x faster ({cached_time:.3f}s vs {uncached_time:.3f}s)")
         return speedup > 1.5
-    else:
-        logger.info("   ✅ Rate limiter caching: Tests completed successfully")
-        return True
+    logger.info("   ✅ Rate limiter caching: Tests completed successfully")
+    return True
 
 
 def test_database_session_reuse():
@@ -177,9 +176,8 @@ def test_logging_optimization():
         log_reduction = (1 - (optimized_time / verbose_time)) * 100 if verbose_time > 0 else 0
         logger.info(f"   ✅ Logging optimization: {speedup:.1f}x faster, {log_reduction:.0f}% less overhead")
         return speedup > 2  # Should be significantly faster
-    else:
-        logger.info("   ✅ Logging optimization: Completed successfully")
-        return True
+    logger.info("   ✅ Logging optimization: Completed successfully")
+    return True
 
 
 def validate_all_optimizations():
@@ -233,9 +231,8 @@ def validate_all_optimizations():
         logger.info("   • Reduce logging verbosity by ~70%")
         logger.info("   • Enable true parallel API processing")
         return True
-    else:
-        logger.warning(f"⚠️  {len(tests) - passed} optimization(s) may need attention")
-        return False
+    logger.warning(f"⚠️  {len(tests) - passed} optimization(s) may need attention")
+    return False
 
 
 # ===== COMPREHENSIVE TEST SUITE =====
@@ -334,7 +331,7 @@ def test_database_session_simulation():
 
         return True
     except Exception as e:
-        logger.error(f"Database session simulation test failed: {str(e)}")
+        logger.error(f"Database session simulation test failed: {e!s}")
         return False
 
 def test_logging_optimization_measurement():

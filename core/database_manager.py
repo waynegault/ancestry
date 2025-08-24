@@ -8,11 +8,12 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -29,11 +30,11 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import asyncio
 import contextlib
-import os
 import sqlite3
 import sys
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
+from typing import Any, Dict, List, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool, text
@@ -84,14 +85,13 @@ class DatabaseManager:
         # Database configuration
         if db_path:
             self.db_path = db_path
+        elif config_schema and config_schema.database.database_file:
+            self.db_path = str(config_schema.database.database_file.resolve())
         else:
-            if config_schema and config_schema.database.database_file:
-                self.db_path = str(config_schema.database.database_file.resolve())
-            else:
-                # Ensure fallback also uses Data folder
-                fallback_path = Path("Data/ancestry.db")
-                fallback_path.parent.mkdir(parents=True, exist_ok=True)
-                self.db_path = str(fallback_path)  # Default fallback to Data folder
+            # Ensure fallback also uses Data folder
+            fallback_path = Path("Data/ancestry.db")
+            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db_path = str(fallback_path)  # Default fallback to Data folder
 
         # SQLAlchemy components
         self.engine = None
@@ -143,10 +143,10 @@ class DatabaseManager:
         if success_rate < self._connection_health_threshold:
             # Poor success rate - increase pool size
             return min(base_size + 5, self._max_pool_size)
-        elif overflow_rate > 0.1:  # More than 10% overflow
+        if overflow_rate > 0.1:  # More than 10% overflow
             # High overflow - increase pool size
             return min(base_size + 3, self._max_pool_size)
-        elif overflow_rate < 0.01 and success_rate > 0.95:
+        if overflow_rate < 0.01 and success_rate > 0.95:
             # Very low overflow and high success - can reduce pool size
             return max(base_size - 2, self._base_pool_size)
 
@@ -267,10 +267,7 @@ class DatabaseManager:
         start_time = time.time()
 
         try:
-            if params:
-                result = session.execute(query, params)
-            else:
-                result = session.execute(query)
+            result = session.execute(query, params) if params else session.execute(query)
 
             query_time = time.time() - start_time
             self._update_connection_stats("query", success=True, query_time=query_time)
@@ -368,10 +365,7 @@ class DatabaseManager:
                 # Convert string query to SQLAlchemy text object
                 sql_query = text(query) if isinstance(query, str) else query
 
-                if params:
-                    result = session.execute(sql_query, params)
-                else:
-                    result = session.execute(sql_query)
+                result = session.execute(sql_query, params) if params else session.execute(sql_query)
 
                 if fetch_results:
                     # Convert result to list of dictionaries
@@ -380,8 +374,7 @@ class DatabaseManager:
                         columns = result.keys()
                         return [dict(zip(columns, row)) for row in rows]
                     return []
-                else:
-                    return None
+                return None
 
             except Exception as e:
                 logger.error(f"Async query execution failed: {e}")
@@ -545,15 +538,14 @@ class DatabaseManager:
 
             if existing_tables:
                 logger.debug(f"Database already exists with tables: {existing_tables}")
+            # Create tables only if the database is empty
+            elif HAS_DATABASE_BASE and Base is not None:
+                Base.metadata.create_all(self.engine)
+                logger.debug("DB tables created successfully.")
             else:
-                # Create tables only if the database is empty
-                if HAS_DATABASE_BASE and Base is not None:
-                    Base.metadata.create_all(self.engine)
-                    logger.debug("DB tables created successfully.")
-                else:
-                    logger.warning(
-                        "Cannot create tables - Base not available from database module"
-                    )
+                logger.warning(
+                    "Cannot create tables - Base not available from database module"
+                )
         except SQLAlchemyError as table_create_e:
             logger.warning(
                 f"Non-critical error during DB table check/creation: {table_create_e}"

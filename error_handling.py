@@ -133,7 +133,7 @@ class IntelligentRetryHandler:
         if self.config.strategy == RetryStrategy.IMMEDIATE:
             return 0.0
 
-        elif self.config.strategy == RetryStrategy.FIXED_DELAY:
+        if self.config.strategy == RetryStrategy.FIXED_DELAY:
             delay = self.config.base_delay
 
         elif self.config.strategy == RetryStrategy.LINEAR_BACKOFF:
@@ -227,8 +227,7 @@ class CircuitBreaker:
         # Execute with retry if configured
         if self.retry_handler:
             return self._execute_with_retry(func, *args, **kwargs)
-        else:
-            return self._execute_once(func, *args, **kwargs)
+        return self._execute_once(func, *args, **kwargs)
 
     def _execute_with_retry(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function with intelligent retry logic."""
@@ -262,13 +261,13 @@ class CircuitBreaker:
                 ):
                     delay = self.retry_handler.calculate_delay(attempt)
                     logger.warning(
-                        f"Function {func.__name__} failed (attempt {attempt}), retrying in {delay:.2f}s: {str(e)}"
+                        f"Function {func.__name__} failed (attempt {attempt}), retrying in {delay:.2f}s: {e!s}"
                     )
                     time.sleep(delay)
                 else:
                     self.retry_handler.record_attempt(e, False)
                     logger.error(
-                        f"Function {func.__name__} failed after {attempt} attempts: {str(e)}"
+                        f"Function {func.__name__} failed after {attempt} attempts: {e!s}"
                     )
                     raise
 
@@ -454,11 +453,13 @@ class CircuitBreakerOpenError(Exception):
 
     pass
 
-
 # === PHASE 4.1: ENHANCED EXCEPTION HIERARCHY ===
+# Backward-compatibility alias for older code/tests is defined after AncestryError class
 
 
-class AncestryException(Exception):
+
+
+class AncestryError(Exception):
     """
     Base exception class for all Ancestry project errors.
     Provides structured error context and recovery guidance.
@@ -496,7 +497,7 @@ class AncestryException(Exception):
         }
 
 
-class RetryableError(AncestryException):
+class RetryableError(AncestryError):
     """Error that can be retried with appropriate strategy."""
 
     def __init__(self, message: str, **kwargs):
@@ -505,7 +506,7 @@ class RetryableError(AncestryException):
         super().__init__(message, **kwargs)
 
 
-class FatalError(AncestryException):
+class FatalError(AncestryError):
     """Error that cannot be recovered from automatically."""
 
     def __init__(self, message: str, **kwargs):
@@ -514,7 +515,7 @@ class FatalError(AncestryException):
         super().__init__(message, **kwargs)
 
 
-class ConfigurationError(AncestryException):
+class ConfigurationError(AncestryError):
     """Configuration-related errors."""
 
     def __init__(self, message: str, **kwargs):
@@ -532,6 +533,9 @@ class DatabaseConnectionError(RetryableError):
         kwargs.setdefault("error_code", "DB_CONNECTION_FAILED")
         kwargs.setdefault("recovery_hint", "Check database connectivity and retry")
         super().__init__(message, **kwargs)
+
+# Backward-compatibility alias for older code/tests
+AncestryException = AncestryError
 
 
 class BrowserSessionError(RetryableError):
@@ -572,7 +576,7 @@ class AuthenticationExpiredError(RetryableError):
         super().__init__(message, **kwargs)
 
 
-class MaxApiFailuresExceededError(AncestryException):
+class MaxApiFailuresExceededError(AncestryError):
     """Raised when maximum API failures threshold is exceeded."""
 
     def __init__(self, message: str, action_name: str = "Unknown", **kwargs):
@@ -831,7 +835,7 @@ def retry_on_failure(
                             f"{func.__name__} failed with non-retryable error: {e}"
                         )
                         context.stack_trace = traceback.format_exc()
-                        if isinstance(e, AncestryException):
+                        if isinstance(e, AncestryError):
                             e.context.update(context.to_dict())
                         raise
 
@@ -867,7 +871,7 @@ def retry_on_failure(
                 f"{func.__name__} failed after {max_attempts} attempts in {total_time:.2f}s: {last_exception}"
             )
             context.stack_trace = traceback.format_exc()
-            if isinstance(last_exception, AncestryException):
+            if isinstance(last_exception, AncestryError):
                 last_exception.context.update(context.to_dict())
             raise last_exception
 
@@ -1033,8 +1037,8 @@ def error_context(operation: str):
                 context.timing["execution_time"] = execution_time
                 context.stack_trace = traceback.format_exc()
 
-                # Enhance exception with context if it's an AncestryException
-                if isinstance(e, AncestryException):
+                # Enhance exception with context if it's an AncestryError
+                if isinstance(e, AncestryError):
                     e.context.update(context.to_dict())
 
                 logger.error(

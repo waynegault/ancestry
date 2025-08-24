@@ -87,7 +87,7 @@ def safe_column_value(obj, attr_name, default=None):
             if isinstance(value, PersonStatusEnum):
                 return value
             # If it's a string, try to convert to enum
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 try:
                     return PersonStatusEnum(value)
                 except ValueError:
@@ -103,14 +103,13 @@ def safe_column_value(obj, attr_name, default=None):
         # For different types of attributes
         if isinstance(value, bool) or value is True or value is False:
             return bool(value)
-        elif isinstance(value, int) or str(value).isdigit():
+        if isinstance(value, int) or str(value).isdigit():
             return int(value)
-        elif isinstance(value, float) or str(value).replace(".", "", 1).isdigit():
+        if isinstance(value, float) or str(value).replace(".", "", 1).isdigit():
             return float(value)
-        elif hasattr(value, "isoformat"):  # datetime-like
+        if hasattr(value, "isoformat"):  # datetime-like
             return value
-        else:
-            return str(value)
+        return str(value)
     except (ValueError, TypeError, AttributeError):
         return default
 
@@ -544,26 +543,25 @@ def determine_next_message_type(
             reason = f"Standard transition from '{last_message_type or 'None'}' with in_tree={is_in_family_tree}"
         else:
             reason = f"End of sequence for '{last_message_type}' with in_tree={is_in_family_tree}"
-    else:
-        # Handle unexpected previous message type
-        if last_message_type:
-            tree_status = "In_Tree" if is_in_family_tree else "Out_Tree"
-            reason = f"Unexpected previous {tree_status} type: '{last_message_type}'"
-            logger.warning(f"  Decision: Skip ({reason})")
+    # Handle unexpected previous message type
+    elif last_message_type:
+        tree_status = "In_Tree" if is_in_family_tree else "Out_Tree"
+        reason = f"Unexpected previous {tree_status} type: '{last_message_type}'"
+        logger.warning(f"  Decision: Skip ({reason})")
 
-            # CRITICAL FIX: Instead of skipping, treat unknown types as if no previous message
-            # This allows the system to recover from corrupted/unknown message types
-            logger.info(f"  Recovery: Treating unknown type '{last_message_type}' as initial message")
-            next_type = (
-                "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
-            )
-            reason = f"Recovery from unknown type '{last_message_type}' - treating as initial"
-        else:
-            # Fallback for initial message if somehow not in transition table
-            next_type = (
-                "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
-            )
-            reason = "Fallback for initial message (no prior message)"
+        # CRITICAL FIX: Instead of skipping, treat unknown types as if no previous message
+        # This allows the system to recover from corrupted/unknown message types
+        logger.info(f"  Recovery: Treating unknown type '{last_message_type}' as initial message")
+        next_type = (
+            "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
+        )
+        reason = f"Recovery from unknown type '{last_message_type}' - treating as initial"
+    else:
+        # Fallback for initial message if somehow not in transition table
+        next_type = (
+            "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
+        )
+        reason = "Fallback for initial message (no prior message)"
 
     # Step 4: Convert next_type string to actual message type from MESSAGE_TYPES_ACTION8
     if next_type:
@@ -626,12 +624,10 @@ def get_safe_relationship_path(family_tree) -> str:
 
                 if person_name and actual_rel:
                     return f"Wayne Gault -> {person_name} ({actual_rel})"
-                elif person_name:
+                if person_name:
                     return f"Wayne Gault -> {person_name} ({relationship_type})"
-                else:
-                    return f"Wayne Gault -> [Person] ({relationship_type})"
-            else:
-                return path
+                return f"Wayne Gault -> [Person] ({relationship_type})"
+            return path
 
     return "our shared family line (details to be determined)"
 
@@ -1473,7 +1469,7 @@ class ErrorCategorizer:
         # Successful outcomes
         if status_lower in ['sent', 'delivered ok']:
             return 'sent', 'success'
-        elif status_lower in ['acked', 'acknowledged']:
+        if status_lower in ['acked', 'acknowledged']:
             return 'acked', 'success'
 
         # Business logic skips (not errors)
@@ -1501,19 +1497,19 @@ class ErrorCategorizer:
                 if 'auth' in error_detail or 'login' in error_detail:
                     self.error_counts['authentication_errors'] += 1
                     return 'error', 'authentication_failure'
-                elif 'rate' in error_detail or '429' in error_detail:
+                if 'rate' in error_detail or '429' in error_detail:
                     self.error_counts['rate_limit_errors'] += 1
                     return 'error', 'rate_limit_exceeded'
-                elif 'cascade' in error_detail:
+                if 'cascade' in error_detail:
                     self.error_counts['cascade_errors'] += 1
                     return 'error', 'session_cascade'
-                elif 'template' in error_detail:
+                if 'template' in error_detail:
                     self.error_counts['template_errors'] += 1
                     return 'error', 'template_failure'
-                elif 'database' in error_detail or 'db' in error_detail:
+                if 'database' in error_detail or 'db' in error_detail:
                     self.error_counts['database_errors'] += 1
                     return 'error', 'database_failure'
-                elif 'api' in error_detail:
+                if 'api' in error_detail:
                     self.error_counts['api_failures'] += 1
                     return 'error', 'api_failure'
 
@@ -1762,7 +1758,7 @@ class ProactiveApiManager:
                 if status and "delivered OK" in status:
                     logger.debug(f"✅ API validation passed for {operation}: {status}")
                     return True
-                elif status and "error" in status.lower():
+                if status and "error" in status.lower():
                     logger.warning(f"❌ API validation failed for {operation}: {status}")
                     return False
 
@@ -1860,10 +1856,9 @@ def _safe_api_call_with_validation(
     api_manager = ProactiveApiManager(session_manager)
 
     # Step 1: Check authentication proactively
-    if not api_manager.check_authentication():
-        if not api_manager.attempt_reauthentication():
-            logger.error(f"🔐 Cannot proceed with {operation_name} - authentication failed")
-            return False, None
+    if not api_manager.check_authentication() and not api_manager.attempt_reauthentication():
+        logger.error(f"🔐 Cannot proceed with {operation_name} - authentication failed")
+        return False, None
 
     # Step 2: Check for cascade before API call
     session_manager.check_cascade_before_operation("Action 8", f"API call {operation_name}")
@@ -1946,10 +1941,7 @@ def _process_single_person(
 
     # For nested attributes like person.status.name, we need to be more careful
     status = safe_column_value(person, "status", None)
-    if status is not None:
-        status_name = getattr(status, "name", "Unknown")
-    else:
-        status_name = "Unknown"
+    status_name = getattr(status, "name", "Unknown") if status is not None else "Unknown"
 
     log_prefix = f"{username} #{person_id} (Status: {status_name})"
     message_to_send_key: Optional[str] = None  # Key from MESSAGE_TEMPLATES
@@ -2022,11 +2014,10 @@ def _process_single_person(
                 )
                 # If ACK sent but status still DESIST, could change to ARCHIVE here or Action 9
                 raise StopIteration("skipped (ack_sent)")
-            else:
-                # ACK needs to be sent
-                message_to_send_key = "User_Requested_Desist"
-                send_reason = "DESIST Acknowledgment"
-                logger.debug(f"Action needed for {log_prefix}: Send Desist ACK.")
+            # ACK needs to be sent
+            message_to_send_key = "User_Requested_Desist"
+            send_reason = "DESIST Acknowledgment"
+            logger.debug(f"Action needed for {log_prefix}: Send Desist ACK.")
 
         elif person_status == PersonStatusEnum.ACTIVE:
             # Handle ACTIVE status: Check rules for sending standard messages
@@ -2258,7 +2249,7 @@ def _process_single_person(
                         return re.sub(
                             r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str
                         )
-                    elif percentage < 1.0:
+                    if percentage < 1.0:
                         # Values like 0.99% should be 99.0%
                         corrected_percentage = percentage * 100.0
                         return re.sub(
@@ -2746,9 +2737,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                             logger.debug(
                                 f"Message sending limit ({max_messages_to_send_this_run}) reached. Skipping remaining."
                             )
-                            setattr(
-                                progress_bar, "limit_logged", True
-                            )  # Mark as logged
+                            progress_bar.limit_logged = True  # Mark as logged
                         # Increment skipped count for this specific skipped item
                         skipped_count += 1
                         # Update description and bar, then continue to next person
@@ -3166,7 +3155,7 @@ def action8_messaging_tests():
                 status = "✅" if test_passed else "❌"
                 print(f"   {status} {description}")
                 print(
-                    f"      Input: obj={type(obj).__name__}, attr='{attr_name}', default='{default}' → Result: {repr(result)}"
+                    f"      Input: obj={type(obj).__name__}, attr='{attr_name}', default='{default}' → Result: {result!r}"
                 )
 
                 results.append(test_passed)

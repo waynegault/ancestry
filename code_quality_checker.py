@@ -82,7 +82,8 @@ class CodeQualityChecker:
             QualityMetrics object with analysis results
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            from pathlib import Path
+            with Path(file_path).open(encoding='utf-8') as f:
                 content = f.read()
 
             tree = ast.parse(content)
@@ -158,21 +159,17 @@ class CodeQualityChecker:
         complexity = 1  # Base complexity
 
         for node in ast.walk(func):
-            if isinstance(node, (ast.If, ast.While, ast.For, ast.AsyncFor)):
-                complexity += 1
-            elif isinstance(node, ast.ExceptHandler):
-                complexity += 1
-            elif isinstance(node, (ast.And, ast.Or)):
+            if isinstance(node, (ast.If, ast.While, ast.For, ast.AsyncFor)) or isinstance(node, ast.ExceptHandler) or isinstance(node, (ast.And, ast.Or)):
                 complexity += 1
 
         return complexity
 
     def _has_mutable_defaults(self, func: ast.FunctionDef) -> bool:
         """Check for mutable default arguments."""
-        for default in func.args.defaults:
-            if isinstance(default, (ast.List, ast.Dict, ast.Set)):
-                return True
-        return False
+        return any(
+            isinstance(default, (ast.List, ast.Dict, ast.Set))
+            for default in func.args.defaults
+        )
 
     def check_directory(self, directory: Path, exclude_patterns: Optional[List[str]] = None) -> Dict[str, QualityMetrics]:
         """
@@ -309,7 +306,7 @@ if __name__ == "__main__":
 
     # Run quality check on current directory if called directly
     checker = CodeQualityChecker()
-    current_dir = Path(".")
+    current_dir = Path()
 
     print("🔍 Running code quality check...")
     metrics = checker.check_directory(current_dir)

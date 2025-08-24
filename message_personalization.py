@@ -395,12 +395,11 @@ class MessagePersonalizer:
 
         if not ancestor_names:
             return "our shared family line"
-        elif len(ancestor_names) == 1:
+        if len(ancestor_names) == 1:
             return ancestor_names[0]
-        elif len(ancestor_names) == 2:
+        if len(ancestor_names) == 2:
             return f"{ancestor_names[0]} and {ancestor_names[1]}"
-        else:
-            return f"{', '.join(ancestor_names[:-1])}, and {ancestor_names[-1]}"
+        return f"{', '.join(ancestor_names[:-1])}, and {ancestor_names[-1]}"
 
     def _format_ancestor_details(self, extracted_data: Dict[str, Any]) -> str:
         """Format detailed ancestor information."""
@@ -530,8 +529,7 @@ class MessagePersonalizer:
         if location_names:
             if len(location_names) == 1:
                 return f" {location_names[0]}"
-            else:
-                return f" {', '.join(location_names[:-1])}, and {location_names[-1]}"
+            return f" {', '.join(location_names[:-1])}, and {location_names[-1]}"
         return ""
 
     def _create_research_suggestions(self, extracted_data: Dict[str, Any]) -> str:
@@ -563,12 +561,11 @@ class MessagePersonalizer:
         """Get a fallback template key based on the original key."""
         if "In_Tree" in original_key:
             return "In_Tree-Initial"
-        elif "Out_Tree" in original_key:
+        if "Out_Tree" in original_key:
             return "Out_Tree-Initial"
-        elif "Productive" in original_key:
+        if "Productive" in original_key:
             return "Productive_Reply_Acknowledgement"
-        else:
-            return "In_Tree-Initial"  # Default fallback
+        return "In_Tree-Initial"  # Default fallback
 
     def _create_fallback_message(self, _person_data: Dict[str, Any], base_format_data: Dict[str, str]) -> str:
         """Create a simple fallback message when template processing fails."""
@@ -592,10 +589,9 @@ class MessagePersonalizer:
         if names:
             if len(names) == 1:
                 return names[0]
-            elif len(names) == 2:
+            if len(names) == 2:
                 return f"{names[0]} and {names[1]}"
-            else:
-                return f"{', '.join(names[:-1])}, and {names[-1]}"
+            return f"{', '.join(names[:-1])}, and {names[-1]}"
         return "your family history"
 
     def _create_research_context(self, extracted_data: Dict[str, Any]) -> str:
@@ -760,11 +756,11 @@ class MessagePersonalizer:
 
                 if "Scotland" in place:
                     return "Scottish records are generally well-preserved, especially civil registration after 1855 and parish records."
-                elif "Ireland" in place:
+                if "Ireland" in place:
                     return "Irish records can be challenging due to the 1922 Public Record Office fire, but many alternatives exist."
-                elif "England" in place:
+                if "England" in place:
                     return "English records are extensive, with civil registration from 1837 and excellent parish records."
-                elif "Poland" in place or "Ukraine" in place:
+                if "Poland" in place or "Ukraine" in place:
                     return "Eastern European records require specialized research due to border changes and wartime losses."
 
         return "Record availability varies by location and time period - I can help identify the best sources for our research."
@@ -832,13 +828,13 @@ class MessagePersonalizer:
 
                 if "farmer" in occupation or "agricultural" in occupation:
                     return f"{person}'s agricultural work suggests rural family roots, which often means strong community ties and local records."
-                elif "miner" in occupation or "mining" in occupation:
+                if "miner" in occupation or "mining" in occupation:
                     return f"{person}'s mining work indicates industrial family history, often with company records and mining community connections."
-                elif "fisherman" in occupation or "fishing" in occupation:
+                if "fisherman" in occupation or "fishing" in occupation:
                     return f"{person}'s fishing occupation suggests coastal family traditions and maritime community connections."
-                elif "teacher" in occupation or "educator" in occupation:
+                if "teacher" in occupation or "educator" in occupation:
                     return f"{person}'s teaching profession indicates educated family background with potential school and community records."
-                elif "merchant" in occupation or "trader" in occupation:
+                if "merchant" in occupation or "trader" in occupation:
                     return f"{person}'s merchant work suggests business connections and potential commercial records."
 
         return "Family occupations provide insights into social status, community connections, and available records."
@@ -860,9 +856,9 @@ class MessagePersonalizer:
 
         if children_count >= 6:
             return f"Large families of {children_count}+ children were common in that era and often indicate strong family traditions and extensive cousin networks."
-        elif children_count >= 3:
+        if children_count >= 3:
             return f"The family size of {children_count} children suggests good survival rates and potential for extensive descendant research."
-        elif siblings_count >= 4:
+        if siblings_count >= 4:
             return f"Large sibling groups of {siblings_count}+ often mean multiple family lines to research and potential DNA matches through various branches."
 
         return "Family size patterns help predict the scope of potential DNA matches and research opportunities."
@@ -894,7 +890,7 @@ class MessagePersonalizer:
             gap = abs(birth_years[0] - birth_years[1])
             if gap >= 25:
                 return f"The {gap}-year generational gap suggests we may be looking at parent-child relationships, which helps narrow our connection."
-            elif gap <= 10:
+            if gap <= 10:
                 return f"The {gap}-year age gap suggests sibling or cousin relationships, indicating we share more recent common ancestors."
 
         return "Analyzing generational gaps helps estimate relationship distances and common ancestor timeframes."
@@ -910,9 +906,9 @@ class MessagePersonalizer:
 
                 if "church" in context.lower() or "parish" in context.lower():
                     return f"Church connections in {place} suggest good preservation of parish records and potential for baptism, marriage, and burial documentation."
-                elif "military" in context.lower():
+                if "military" in context.lower():
                     return f"Military service records from {place} are often well-preserved and can provide detailed family information."
-                elif "immigration" in context.lower() or "emigration" in context.lower():
+                if "immigration" in context.lower() or "emigration" in context.lower():
                     return f"Immigration records for {place} often include family details and can help trace origins and destinations."
 
         return "Document preservation varies by location and institution - I can help identify the most promising record sources."

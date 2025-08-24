@@ -854,13 +854,12 @@ def get_api_relationship_path(
 
     try:
         # Format the relationship path directly using the API formatter
-        relationship_path = format_api_relationship_path(
+        return format_api_relationship_path(
             ladder_data, reference_name or "Reference Person", "Individual"
         )
-        return relationship_path
     except Exception as e:
         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
-        return f"(Error formatting relationship path: {str(e)})"
+        return f"(Error formatting relationship path: {e!s})"
 
 
 def api_search_utils_module_tests() -> bool:

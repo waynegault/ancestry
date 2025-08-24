@@ -73,7 +73,8 @@ def reset_preferences_file():
     """Replace Chrome Preferences file with controlled configuration."""
     try:
         # Create the directory if it does not exist
-        os.makedirs(DEFAULT_PROFILE_PATH, exist_ok=True)
+        from pathlib import Path
+        Path(DEFAULT_PROFILE_PATH).mkdir(parents=True, exist_ok=True)
         minimal_preferences = {
             "profile": {"exit_type": "Normal", "exited_cleanly": True},
             "browser": {
@@ -104,9 +105,9 @@ def reset_preferences_file():
             "session": {"restore_on_startup": 4, "startup_urls": []},
         }
         try:
-            with open(PREFERENCES_FILE, "w", encoding="utf-8") as f:
-                json.dump(minimal_preferences, f, indent=2)
-        except IOError as e:
+            from pathlib import Path
+            Path(PREFERENCES_FILE).open("w", encoding="utf-8").write(json.dumps(minimal_preferences, indent=2))
+        except OSError as e:
             logger.error(f"IOError writing Preferences file: {e}", exc_info=True)
             raise
     except OSError as e:
@@ -210,7 +211,8 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
         browser_path_obj = config.chrome_browser_path
         if browser_path_obj:
             browser_path_str = str(browser_path_obj.resolve())
-            if os.path.exists(browser_path_str):
+            from pathlib import Path
+            if Path(browser_path_str).exists():
                 options.binary_location = browser_path_str
                 logger.debug(f"Using browser executable:\n{browser_path_str}")
             else:
@@ -400,7 +402,7 @@ def cleanup_webdrv():
                 capture_output=True,
             )
             process = subprocess.run(
-                ["taskkill", "/f", "/im", "chrome.exe"], capture_output=True, text=True
+                ["taskkill", "/f", "/im", "chrome.exe"], check=False, capture_output=True, text=True
             )
             if process.returncode == 0:
                 logger.debug(
@@ -428,10 +430,12 @@ def test_preferences_file():
     print("\n=== Testing Preferences File Reset ===")
     try:
         reset_preferences_file()
-        if os.path.exists(PREFERENCES_FILE):
+        from pathlib import Path
+        if Path(PREFERENCES_FILE).exists():
             print(f"✓ Preferences file created successfully at: {PREFERENCES_FILE}")
             # Verify the file contains valid JSON
-            with open(PREFERENCES_FILE, "r", encoding="utf-8") as f:
+            from pathlib import Path
+            with Path(PREFERENCES_FILE).open(encoding="utf-8") as f:
                 prefs = json.load(f)
                 if isinstance(prefs, dict) and "profile" in prefs:
                     print(
@@ -562,10 +566,9 @@ def test_driver_initialization(headless=True):
             print("✓ WebDriver closed successfully")
             # Note: Cannot restore original headless mode as config is immutable
             return True
-        else:
-            print("✗ WebDriver initialization failed")
-            # Note: Cannot restore original headless mode as config is immutable
-            return False
+        print("✗ WebDriver initialization failed")
+        # Note: Cannot restore original headless mode as config is immutable
+        return False
     except Exception as e:
         print(f"✗ Error in test_driver_initialization: {e}")
         if driver:
@@ -653,9 +656,8 @@ def main():
         if success:
             print("\nAll tests passed successfully!")
             return 0
-        else:
-            print("\nSome tests failed. See details above.")
-            return 1
+        print("\nSome tests failed. See details above.")
+        return 1
     except Exception as e:
         print(f"\nCritical error during testing: {e}")
         logger.error(f"Critical error during testing: {e}", exc_info=True)
@@ -724,8 +726,7 @@ def test_chrome_options_creation():
     except NameError as e:
         if "'uc' is not defined" in str(e):
             raise AssertionError(f"NameError indicates missing undetected_chromedriver import: {e}")
-        else:
-            raise AssertionError(f"Unexpected NameError: {e}")
+        raise AssertionError(f"Unexpected NameError: {e}")
     except Exception as e:
         raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}")
 

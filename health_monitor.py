@@ -65,14 +65,13 @@ class HealthMetric:
         """Get health status based on thresholds."""
         if self.value >= self.threshold_critical:
             return HealthStatus.CRITICAL
-        elif self.value >= self.threshold_warning:
+        if self.value >= self.threshold_warning:
             return HealthStatus.POOR
-        elif self.value >= self.threshold_warning * 0.8:
+        if self.value >= self.threshold_warning * 0.8:
             return HealthStatus.FAIR
-        elif self.value >= self.threshold_warning * 0.6:
+        if self.value >= self.threshold_warning * 0.6:
             return HealthStatus.GOOD
-        else:
-            return HealthStatus.EXCELLENT
+        return HealthStatus.EXCELLENT
 
 
 @dataclass
@@ -259,7 +258,7 @@ class SessionHealthMonitor:
         elif level == AlertLevel.WARNING:
             logger.warning(f"{test_prefix}⚠️ WARNING: {message}")
         else:
-            logger.info(f"{test_prefix}ℹ️ INFO: {message}")
+            logger.info(f"{test_prefix}INFO: {message}")
 
     def calculate_health_score(self) -> float:
         """
@@ -290,10 +289,7 @@ class SessionHealthMonitor:
                 total_weight += metric.weight
 
             # Calculate final weighted score
-            if total_weight > 0:
-                final_score = total_score / total_weight
-            else:
-                final_score = 0.0
+            final_score = total_score / total_weight if total_weight > 0 else 0.0
 
             # Store in history
             self.health_score_history.append((time.time(), final_score))
@@ -306,14 +302,13 @@ class SessionHealthMonitor:
 
         if score >= 80:
             return HealthStatus.EXCELLENT
-        elif score >= 60:
+        if score >= 60:
             return HealthStatus.GOOD
-        elif score >= 40:
+        if score >= 40:
             return HealthStatus.FAIR
-        elif score >= 20:
+        if score >= 20:
             return HealthStatus.POOR
-        else:
-            return HealthStatus.CRITICAL
+        return HealthStatus.CRITICAL
 
     def predict_session_death_risk(self) -> float:
         """
@@ -910,14 +905,13 @@ class SessionHealthMonitor:
         """Convert risk score to human-readable level."""
         if risk_score > 0.8:
             return "EMERGENCY"
-        elif risk_score > 0.6:
+        if risk_score > 0.6:
             return "CRITICAL"
-        elif risk_score > 0.4:
+        if risk_score > 0.4:
             return "WARNING"
-        elif risk_score > 0.2:
+        if risk_score > 0.2:
             return "CAUTION"
-        else:
-            return "SAFE"
+        return "SAFE"
 
     def log_health_summary(self):
         """Log a comprehensive health summary."""
@@ -988,7 +982,7 @@ class SessionHealthMonitor:
 
             # Save checkpoint to file
             checkpoint_file = checkpoint_dir / f"{checkpoint_name}.json"
-            with open(checkpoint_file, 'w') as f:
+            with checkpoint_file.open('w', encoding='utf-8') as f:
                 json.dump(session_state, f, indent=2, default=str)
 
             logger.info(f"📁 Session checkpoint created: {checkpoint_name}")
@@ -1007,7 +1001,7 @@ class SessionHealthMonitor:
                 return False
 
             # Load checkpoint data
-            with open(checkpoint_file, 'r') as f:
+            with checkpoint_file.open(encoding='utf-8') as f:
                 session_state = json.load(f)
 
             # Restore session state
@@ -1135,7 +1129,7 @@ class SessionHealthMonitor:
                     stat = checkpoint_file.stat()
 
                     # Try to read checkpoint metadata
-                    with open(checkpoint_file, 'r') as f:
+                    with checkpoint_file.open(encoding='utf-8') as f:
                         data = json.load(f)
 
                     checkpoints.append({
@@ -1189,7 +1183,7 @@ class SessionHealthMonitor:
 
             # Save to persistent state file
             state_file = state_dir / "current_session.json"
-            with open(state_file, 'w') as f:
+            with state_file.open('w', encoding='utf-8') as f:
                 json.dump(session_data, f, indent=2, default=str)
 
             logger.debug(f"Session state persisted to disk: {state_file}")
@@ -1208,7 +1202,7 @@ class SessionHealthMonitor:
                 return None
 
             # Load session state
-            with open(state_file, 'r') as f:
+            with state_file.open(encoding='utf-8') as f:
                 session_data = json.load(f)
 
             # Check if state is recent (within last 24 hours)
@@ -1281,7 +1275,7 @@ def integrate_with_session_manager(session_manager):
 def integrate_with_action6(action6_module):
     """Integrate health monitoring with Action 6."""
     _ = action6_module  # Unused parameter for future integration
-    monitor = get_health_monitor()
+    return get_health_monitor()
 
     # TODO: Hook into API response time tracking (for future use)
     # def track_api_call(original_func):
@@ -1298,7 +1292,6 @@ def integrate_with_action6(action6_module):
     #     return wrapper
 
     # Return monitor with tracking capability
-    return monitor
 
 
 def get_performance_recommendations(health_score: float, risk_score: float) -> Dict[str, Any]:

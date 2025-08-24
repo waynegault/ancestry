@@ -103,7 +103,6 @@ def set_cached_gedcom_data(gedcom_data):
 
 def get_cached_gedcom_data():
     """Return the currently cached GEDCOM data."""
-    global _CACHED_GEDCOM_DATA
     return _CACHED_GEDCOM_DATA
 
 
@@ -146,9 +145,8 @@ def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
                 logger.warning("GedcomData does not have build_caches method")
 
             return gedcom_data
-        else:
-            logger.error("GedcomData instance is None")
-            return None
+        logger.error("GedcomData instance is None")
+        return None
     except Exception as e:
         logger.error(f"Error loading GEDCOM file: {e}", exc_info=True)
         # Use exception chaining for better error context
@@ -288,7 +286,6 @@ def search_gedcom_for_criteria(
     # Step 1: Ensure we have GEDCOM data
     if not gedcom_data:
         # Try to use the cached GEDCOM data first
-        global _CACHED_GEDCOM_DATA
         if _CACHED_GEDCOM_DATA is not None:
             logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
             gedcom_data = _CACHED_GEDCOM_DATA
@@ -337,8 +334,7 @@ def search_gedcom_for_criteria(
                 key
             ]  # Step 3: Get configuration values    if config_schema:
         scoring_weights = dict(config_schema.common_scoring_weights)
-    else:
-        scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+    scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
     date_flex_value = (
         config_schema.date_flexibility
         if config_schema
@@ -474,7 +470,6 @@ def get_gedcom_family_details(
     # Step 1: Ensure we have GEDCOM data
     if not gedcom_data:
         # Try to use the cached GEDCOM data first
-        global _CACHED_GEDCOM_DATA
         if _CACHED_GEDCOM_DATA is not None:
             logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
             gedcom_data = _CACHED_GEDCOM_DATA
@@ -714,7 +709,6 @@ def get_gedcom_relationship_path(
     # Step 1: Ensure we have GEDCOM data
     if not gedcom_data:
         # Try to use the cached GEDCOM data first
-        global _CACHED_GEDCOM_DATA
         if _CACHED_GEDCOM_DATA is not None:
             logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
             gedcom_data = _CACHED_GEDCOM_DATA
@@ -782,11 +776,10 @@ def get_gedcom_relationship_path(
     )
 
     # Format the relationship path
-    relationship_path = format_relationship_path_unified(
+    return format_relationship_path_unified(
         unified_path, individual_name, reference_name or "Reference Person", None
     )
 
-    return relationship_path
 
 
 def gedcom_search_module_tests() -> bool:
@@ -1139,7 +1132,7 @@ def search_frances_milne_demo():
                 print("No matches found even for broader 'Frances Milne' search.")
 
     except Exception as e:
-        print(f"Error during Frances Milne search: {str(e)}")
+        print(f"Error during Frances Milne search: {e!s}")
         logger.error(f"Frances Milne search error: {e}", exc_info=True)
 
 

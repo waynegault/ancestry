@@ -13,7 +13,9 @@ import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -24,7 +26,6 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -332,8 +333,7 @@ class DatabaseConfig:
 
         if params:
             return f"sqlite:///{self.database_file}?{'&'.join(params)}"
-        else:
-            return f"sqlite:///{self.database_file}"
+        return f"sqlite:///{self.database_file}"
 
 
 @dataclass
@@ -1238,8 +1238,7 @@ def run_comprehensive_tests() -> bool:
             for issue in issues:
                 print(f"      - {issue}")
             raise AssertionError(f"Rate limiting configuration issues: {issues}")
-        else:
-            print("   ✅ All rate limiting settings are properly conservative")
+        print("   ✅ All rate limiting settings are properly conservative")
 
     def test_max_pages_configuration():
         """Test MAX_PAGES configuration loading and validation."""

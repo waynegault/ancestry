@@ -198,10 +198,9 @@ def acquire_token_device_flow() -> Optional[str]:
         if result and "access_token" in result:
             logger.info("Access token acquired silently from cache.")
             return result["access_token"]  # Return cached token
-        else:
-            logger.info(
-                "Silent token acquisition failed (likely expired or needs refresh)."
-            )
+        logger.info(
+            "Silent token acquisition failed (likely expired or needs refresh)."
+        )
             # Optional: Could remove account if silent fails: app.remove_account(account)
 
     # Step 3: Fallback to Interactive Device Code Flow
@@ -257,18 +256,17 @@ def acquire_token_device_flow() -> Optional[str]:
             persistent_cache.has_state_changed = True
         logger.debug("Marked persistent token cache as changed.")
         return result["access_token"]  # Return the newly acquired token
-    elif result and "error_description" in result:
+    if result and "error_description" in result:
         # Log specific error message from MS identity platform
         logger.error(
             f"Failed to acquire token via device flow: {result.get('error_description', 'No description provided')}"
         )
         return None
-    else:
-        # Handle timeout or other unexpected failures
-        logger.error(
-            f"Device flow failed, timed out, or returned unexpected result: {result}"
-        )
-        return None
+    # Handle timeout or other unexpected failures
+    logger.error(
+        f"Device flow failed, timed out, or returned unexpected result: {result}"
+    )
+    return None
 
 
 # End of acquire_token_device_flow
@@ -319,15 +317,13 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
             if list_id:
                 logger.info(f"Found To-Do list '{list_name}' with ID: {list_id}")
                 return list_id
-            else:
-                logger.error(
-                    f"List '{list_name}' found, but 'id' field missing: {first_match}"
-                )
-                return None
-        else:
-            logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
-            logger.debug(f"API response for list query: {lists_data}")
+            logger.error(
+                f"List '{list_name}' found, but 'id' field missing: {first_match}"
+            )
             return None
+        logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
+        logger.debug(f"API response for list query: {lists_data}")
+        return None
 
     # --- Step 6: Handle potential errors (REVISED) ---
     except requests.exceptions.HTTPError as http_err:
@@ -468,7 +464,7 @@ def test_initialization():
     # Test that required configuration is accessible
     assert hasattr(config.database, "data_dir"), "Config should have database.data_dir"
     # Test token cache directory creation capability
-    cache_dir = config.database.data_dir or Path(".")
+    cache_dir = config.database.data_dir or Path()
     assert (
         cache_dir.exists() or cache_dir.parent.exists()
     ), "Cache directory or parent should be accessible"
@@ -536,7 +532,8 @@ def test_edge_cases():
     with patch("builtins.open", side_effect=PermissionError("Test permission error")):
         try:
             # Test that permission errors are handled
-            with open("test_file", "w") as f:
+            from pathlib import Path
+            with Path("test_file").open("w", encoding="utf-8") as f:
                 f.write("test")
         except PermissionError:
             pass  # Expected behavior

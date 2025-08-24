@@ -17,7 +17,9 @@ import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -37,7 +39,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import copy
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -223,8 +224,7 @@ class ConfigManager:
                 self.load_config()
             if self._config_cache is not None:
                 return self._config_cache.validate()
-            else:
-                return ["Configuration cache is not available"]
+            return ["Configuration cache is not available"]
 
         try:
             config = ConfigSchema.from_dict(config_data)
@@ -272,7 +272,7 @@ class ConfigManager:
             output_path = Path(output_file)
 
             if format.lower() == "json":
-                with open(output_path, "w") as f:
+                with output_path.open("w", encoding="utf-8") as f:
                     json.dump(config_dict, f, indent=2, default=str)
             else:
                 logger.error(f"Unsupported export format: {format}")
@@ -554,7 +554,7 @@ class ConfigManager:
 
             if interactive:
                 response = input("\n✨ Use auto-detected settings? (Y/n): ").strip().lower()
-                if response and response != 'y' and response != 'yes':
+                if response and response not in {"y", "yes"}:
                     print("Manual configuration not implemented yet. Using auto-detected settings.")
 
             print("\n🎯 Setup completed successfully!")
@@ -576,7 +576,7 @@ class ConfigManager:
             suffix = self.config_file.suffix.lower()
 
             if suffix == ".json":
-                with open(self.config_file, "r") as f:
+                with self.config_file.open(encoding="utf-8") as f:
                     return json.load(f)
             else:
                 logger.warning(f"Unsupported config file format: {suffix}")
@@ -1106,10 +1106,10 @@ def run_comprehensive_tests() -> bool:
         except Exception:
             pass
         finally:
-            import os
+            from pathlib import Path
 
             try:
-                os.unlink(config_path)
+                Path(config_path).unlink(missing_ok=True)
             except Exception:
                 pass
 

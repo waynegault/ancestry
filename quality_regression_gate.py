@@ -9,7 +9,7 @@ Purpose:
 Usage:
   1. Build (or refresh) a baseline after you are satisfied with current quality:
        python prompt_telemetry.py --build-baseline --variant control --window 300 --min-events 8
-  2. (CI) Run this gate to ensure no regression (returns non‑zero on regression):
+  2. (CI) Run this gate to ensure no regression (returns non-zero on regression):
        python quality_regression_gate.py
 
 Environment Variables (override defaults):
@@ -70,15 +70,14 @@ def main() -> int:
 
     if verbose:
         print(json.dumps({"gate_result": result, "variant": variant, "drop_threshold": drop_threshold}, indent=2))
+    # Concise line
+    elif status == "ok":
+        drop = result.get("drop")
+        med_now = result.get("median_now")
+        med_then = result.get("baseline_median")
+        print(f"QualityGate status=ok variant={variant} median_now={med_now} baseline_median={med_then} drop={drop} threshold={drop_threshold} regression={regression}")
     else:
-        # Concise line
-        if status == "ok":
-            drop = result.get("drop")
-            med_now = result.get("median_now")
-            med_then = result.get("baseline_median")
-            print(f"QualityGate status=ok variant={variant} median_now={med_now} baseline_median={med_then} drop={drop} threshold={drop_threshold} regression={regression}")
-        else:
-            print(f"QualityGate status={status} variant={variant} (no enforcement)")
+        print(f"QualityGate status={status} variant={variant} (no enforcement)")
 
     # Enforcement logic
     if status == "ok" and regression:
@@ -93,10 +92,9 @@ def _test_no_baseline_pass():
     from pathlib import Path
     baseline = Path(__file__).parent / 'Logs' / 'prompt_quality_baseline.json'
     if baseline.exists():
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             baseline.unlink()
-        except Exception:
-            pass
     rc = main()  # Should return 0 (no baseline)
     assert rc == 0
 
@@ -132,8 +130,7 @@ if __name__ == "__main__":
     run_internal = (len(sys.argv) == 1) or os.environ.get("RUN_INTERNAL_TESTS")
     exit_code = main()
     if run_internal:
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             quality_regression_gate_module_tests()
-        except Exception:
-            pass
     sys.exit(exit_code)

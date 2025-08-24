@@ -23,7 +23,6 @@ logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
 import hashlib
-import os
 import sys
 import time
 from pathlib import Path
@@ -58,7 +57,7 @@ _CACHE_MAX_AGE = 3600  # 1 hour default for memory cache
 _GEDCOM_CACHE_PREFIX = "gedcom_data"
 
 # --- Memory-Efficient Object Pool for GEDCOM Data ---
-from memory_utils import ObjectPool, lazy_property
+from memory_utils import ObjectPool
 
 # Pool for GedcomReader objects (if available)
 try:
@@ -74,7 +73,7 @@ class LazyGedcomData:
         self.gedcom_path = gedcom_path
         self._data = None
 
-    @lazy_property
+    @property
     def data(self):
         # Only load GEDCOM data when accessed
         try:
@@ -131,7 +130,7 @@ class GedcomCacheModule(BaseCacheModule):
             gedcom_stats["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (
                 1024 * 1024
             )
-            gedcom_stats["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
+            gedcom_stats["gedcom_file_mtime"] = Path(gedcom_path).stat().st_mtime
 
         # Merge with base statistics
         return {**base_stats, **gedcom_stats}
@@ -140,7 +139,6 @@ class GedcomCacheModule(BaseCacheModule):
         """Clear all GEDCOM caches (memory and disk)."""
         try:
             # Clear memory cache
-            global _MEMORY_CACHE
             cleared_memory = len(_MEMORY_CACHE)
             _MEMORY_CACHE.clear()
 
@@ -262,8 +260,9 @@ _gedcom_cache_module = GedcomCacheModule()
 def _get_memory_cache_key(file_path: str, operation: str) -> str:
     """Generate a consistent cache key for memory cache using unified system."""
     # Use the unified cache key generation for consistency
+    from pathlib import Path
     return get_unified_cache_key(
-        "gedcom_memory", operation, file_path, os.path.getmtime(file_path)
+        "gedcom_memory", operation, file_path, Path(file_path).stat().st_mtime
     )
 
 
@@ -282,12 +281,10 @@ def _get_from_memory_cache(cache_key: str) -> Optional[Any]:
         data, _ = _MEMORY_CACHE[cache_key]
         logger.debug(f"Memory cache HIT for key: {cache_key}")
         return data
-    else:
-        # Clean up expired entry
-        if cache_key in _MEMORY_CACHE:
-            del _MEMORY_CACHE[cache_key]
-        logger.debug(f"Memory cache MISS for key: {cache_key}")
-        return None
+    # Clean up expired entry
+    _MEMORY_CACHE.pop(cache_key, None)
+    logger.debug(f"Memory cache MISS for key: {cache_key}")
+    return None
 
 
 def _store_in_memory_cache(cache_key: str, data: Any) -> None:
@@ -332,7 +329,8 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
 
     # Check disk cache
     try:
-        file_mtime = os.path.getmtime(gedcom_path)
+        from pathlib import Path
+        file_mtime = Path(gedcom_path).stat().st_mtime
         mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
         disk_cache_key = f"gedcom_load_mtime_{mtime_hash}"
 
@@ -392,9 +390,8 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
                 logger.debug(f"Cache stats after GEDCOM load: {stats}")
 
             return gedcom_data
-        else:
-            logger.error("Failed to create GedcomData instance")
-            return None
+        logger.error("Failed to create GedcomData instance")
+        return None
 
     except Exception as e:
         logger.error(f"Error loading GEDCOM file {gedcom_path}: {e}", exc_info=True)
@@ -418,7 +415,8 @@ def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
 
     try:
         # Create cache key based on file path and modification time
-        file_mtime = os.path.getmtime(gedcom_path)
+        from pathlib import Path
+        file_mtime = Path(gedcom_path).stat().st_mtime
         path_hash = hashlib.md5(str(gedcom_path).encode()).hexdigest()[:8]
         mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
 
@@ -552,9 +550,8 @@ def preload_gedcom_cache() -> bool:
             preload_time = time.time() - start_time
             logger.info(f"GEDCOM cache preloaded successfully in {preload_time:.2f}s")
             return True
-        else:
-            logger.warning("Failed to preload GEDCOM cache")
-            return False
+        logger.warning("Failed to preload GEDCOM cache")
+        return False
 
     except Exception as e:
         logger.error(f"Error preloading GEDCOM cache: {e}", exc_info=True)
@@ -582,7 +579,7 @@ def get_gedcom_cache_info() -> Dict[str, Any]:
             info["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (
                 1024 * 1024
             )
-            info["gedcom_file_mtime"] = os.path.getmtime(gedcom_path)
+            info["gedcom_file_mtime"] = Path(gedcom_path).stat().st_mtime
 
     return info
 
@@ -678,8 +675,7 @@ def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
                 )
 
                 # Clean up demo data
-                if cache_key in _MEMORY_CACHE:
-                    del _MEMORY_CACHE[cache_key]
+                _MEMORY_CACHE.pop(cache_key, None)
 
         # Demo 4: Cache Coordination
         coordination_stats = get_unified_cache_key(
@@ -698,7 +694,7 @@ def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
         demo_results["demonstrations"].append(
             {
                 "name": "Error in Demonstration",
-                "description": f"Error occurred: {str(e)}",
+                "description": f"Error occurred: {e!s}",
                 "status": "error",
             }
         )
@@ -758,8 +754,7 @@ def test_memory_cache_operations():
         retrieved = _get_from_memory_cache(test_key)
 
         # Clean up
-        if test_key in _MEMORY_CACHE:
-            del _MEMORY_CACHE[test_key]
+        _MEMORY_CACHE.pop(test_key, None)
 
         return retrieved == test_data
     except Exception:
@@ -829,8 +824,7 @@ def test_memory_cache_expiration():
         is_valid = _is_memory_cache_valid(test_key)
 
         # Clean up
-        if test_key in _MEMORY_CACHE:
-            del _MEMORY_CACHE[test_key]
+        _MEMORY_CACHE.pop(test_key, None)
 
         return not is_valid  # Should be invalid (expired)
     except Exception:
@@ -905,8 +899,7 @@ def test_multifile_cache_management():
         # Clean up
         for file_path in test_files:
             test_key = _get_memory_cache_key(file_path, "test_operation")
-            if test_key in _MEMORY_CACHE:
-                del _MEMORY_CACHE[test_key]
+            _MEMORY_CACHE.pop(test_key, None)
 
         return True
     except Exception:

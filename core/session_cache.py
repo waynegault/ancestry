@@ -11,11 +11,12 @@ Extends the existing cache.py infrastructure rather than duplicating functionali
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -115,10 +116,9 @@ class SessionComponentCache(BaseCacheModule):
                 if age < CACHE_CONFIG.component_ttl_seconds:
                     logger.debug(f"Cache HIT for {component_type} (age: {age:.1f}s)")
                     return cached_data.get("component")
-                else:
-                    logger.debug(
-                        f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
-                    )
+                logger.debug(
+                    f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
+                )
                     # Let existing cache eviction handle cleanup
 
             logger.debug(f"Cache MISS for {component_type}")

@@ -239,7 +239,7 @@ class UnifiedCredentialManager:
             choice = input("\nChoice (a/r/c): ").strip().lower()
             if choice == "c":
                 return
-            elif choice == "r":
+            if choice == "r":
                 if not self._confirm_action("replace ALL credentials"):
                     return
                 existing_creds = {}
@@ -406,7 +406,7 @@ class UnifiedCredentialManager:
             print(f"📂 Using .env file: {env_file_path}")
             # Read and parse .env file
             env_credentials = {}
-            with open(env_file_path, "r", encoding="utf-8") as f:
+            with env_file_path.open(encoding="utf-8") as f:
                 for line_num, line in enumerate(f, 1):
                     line = line.strip()
 
@@ -460,7 +460,7 @@ class UnifiedCredentialManager:
                 choice = input("Choice (m/o/r/c): ").strip().lower()
                 if choice == "c":
                     return
-                elif choice == "m":
+                if choice == "m":
                     # Merge: existing credentials take precedence
                     final_creds = env_credentials.copy()
                     final_creds.update(existing_creds)  # existing wins on conflicts
@@ -547,8 +547,8 @@ class UnifiedCredentialManager:
 
             try:
                 import json
-
-                with open(filename, "w") as f:
+                from pathlib import Path
+                with Path(filename).open("w", encoding="utf-8") as f:
                     json.dump(credentials, f, indent=2)
                 print(f"✅ Credentials exported to '{filename}'")
                 print("⚠️ This file contains unencrypted credentials - handle securely!")
@@ -646,7 +646,7 @@ class UnifiedCredentialManager:
 
             # Check for required credentials
             missing = [
-                cred for cred in required_creds.keys() if cred not in credentials
+                cred for cred in required_creds if cred not in credentials
             ]
 
             if missing:
@@ -657,17 +657,17 @@ class UnifiedCredentialManager:
 
             # Check for optional credentials
             present_optional = [
-                cred for cred in optional_creds.keys() if cred in credentials
+                cred for cred in optional_creds if cred in credentials
             ]
             if present_optional:
                 print(f"🔹 Optional Credentials: {', '.join(present_optional)}")
 
             # Check for credentials not in configuration
             unknown_creds = [
-                cred for cred in credentials.keys() if cred not in all_configured_creds
+                cred for cred in credentials if cred not in all_configured_creds
             ]
             if unknown_creds:
-                print(f"ℹ️  Additional Credentials: {', '.join(unknown_creds)}")
+                print(f"i  Additional Credentials: {', '.join(unknown_creds)}")
         else:
             print("🗝️  Stored Credentials: ❌ None found")
             security_ok = False
@@ -697,7 +697,7 @@ class UnifiedCredentialManager:
         # Load current configuration
         if cred_types_file.exists():
             try:
-                with open(cred_types_file, "r") as f:
+                with cred_types_file.open(encoding="utf-8") as f:
                     cred_types = json.load(f)
                 required_creds = cred_types.get("required_credentials", {})
                 optional_creds = cred_types.get("optional_credentials", {})
@@ -830,7 +830,7 @@ class UnifiedCredentialManager:
                     }
 
                     # Save to file
-                    with open(cred_types_file, "w") as f:
+                    with cred_types_file.open("w", encoding="utf-8") as f:
                         json.dump(updated_config, f, indent=4)
 
                     print(
@@ -864,7 +864,7 @@ class UnifiedCredentialManager:
                 if choice == "0":
                     print("👋 Goodbye!")
                     break
-                elif choice == "1":
+                if choice == "1":
                     self.view_credentials()
                 elif choice == "2":
                     self.setup_credentials()
@@ -905,26 +905,25 @@ class UnifiedCredentialManager:
         cred_types_file = Path(__file__).parent / "credential_types.json"
         try:
             if cred_types_file.exists():
-                with open(cred_types_file, "r") as f:
+                with cred_types_file.open(encoding="utf-8") as f:
                     cred_types = json.load(f)
                 required_creds = cred_types.get("required_credentials", {})
                 optional_creds = cred_types.get("optional_credentials", {})
                 return required_creds, optional_creds
-            else:
-                # Fallback to default credential types if file doesn't exist
-                print(
-                    "⚠️ Credential types configuration file not found, using defaults"
-                )
-                return (
-                    {
-                        "ANCESTRY_USERNAME": "Ancestry.com username/email",
-                        "ANCESTRY_PASSWORD": "Ancestry.com password",
-                    },
-                    {
-                        "DEEPSEEK_API_KEY": "DeepSeek AI API key (optional)",
-                        "OPENAI_API_KEY": "OpenAI API key (optional)",
-                    },
-                )
+            # Fallback to default credential types if file doesn't exist
+            print(
+                "⚠️ Credential types configuration file not found, using defaults"
+            )
+            return (
+                {
+                    "ANCESTRY_USERNAME": "Ancestry.com username/email",
+                    "ANCESTRY_PASSWORD": "Ancestry.com password",
+                },
+                {
+                    "DEEPSEEK_API_KEY": "DeepSeek AI API key (optional)",
+                    "OPENAI_API_KEY": "OpenAI API key (optional)",
+                },
+            )
         except Exception as e:
             print(f"⚠️ Error loading credential types: {e}, using defaults")
             # Fallback to default credential types if there's an error
@@ -985,11 +984,17 @@ class UnifiedCredentialManager:
                 "optional_credentials": optional_creds,
             }
 
-            with open(cred_types_file, "w") as f:
-                json.dump(cred_types, f, indent=4)
+            try:
+                import builtins
+                # Use builtins.open so tests that patch builtins.open can simulate failures
+                with builtins.open(cred_types_file, "w", encoding="utf-8") as f:  # noqa: PTH123
+                    json.dump(cred_types, f, indent=4)
+            except Exception as e:
+                print(f"❌ Error saving credential types: {e}")
+                return False
             return True
         except Exception as e:
-            print(f"❌ Error saving credential types: {e}")
+            print(f"❌ Error preparing credential types for save: {e}")
             return False
 
 
@@ -1023,7 +1028,7 @@ def credentials_module_tests() -> bool:
             # Invalid JSON structure
             content = {"invalid_structure": {"TEST_BAD": "Test bad credential"}}
 
-        with open(file_path, "w") as f:
+        with Path(file_path).open("w", encoding="utf-8") as f:
             json.dump(content, f)
         return file_path
 
@@ -1128,14 +1133,14 @@ def credentials_module_tests() -> bool:
 
             # Create an invalid test credential file
             test_file = test_dir_path / "invalid.json"
-            with open(test_file, "w") as f:
+            with test_file.open("w", encoding="utf-8") as f:
                 f.write("{invalid json")
 
             # Mock file operations
             with patch(
                 "pathlib.Path.open",
-                side_effect=lambda *args, **kwargs: open(
-                    test_file, *args[1:], **kwargs
+                side_effect=lambda *args, **kwargs: Path(test_file).open(
+                    *args[1:], **kwargs
                 ),
             ), patch("pathlib.Path.exists", return_value=True):
 
@@ -1161,8 +1166,8 @@ def credentials_module_tests() -> bool:
             # Mock file operations
             with patch(
                 "pathlib.Path.open",
-                side_effect=lambda *args, **kwargs: open(
-                    test_file, *args[1:], **kwargs
+                side_effect=lambda *args, **kwargs: Path(test_file).open(
+                    *args[1:], **kwargs
                 ),
             ), patch("pathlib.Path.exists", return_value=True):
 
@@ -1369,7 +1374,8 @@ def main():
         return run_comprehensive_tests()
 
     # Time-based auto-test detection (add a short timeout to avoid hanging in test suites)
-    if time.time() > 0 and os.path.basename(sys.argv[0]) == "credentials.py":
+    from pathlib import Path
+    if time.time() > 0 and Path(sys.argv[0]).name == "credentials.py":
         if not sys.stdin.isatty() or os.environ.get("CI") == "true":
             print("🔐 Auto-detected non-interactive environment, running tests...")
             return run_comprehensive_tests()
@@ -1404,8 +1410,5 @@ def main():
 if __name__ == "__main__":
     # Run tests when executed directly (for test suite compatibility)
     # Use main() for interactive credential setup: python credentials.py --interactive
-    if len(sys.argv) > 1 and sys.argv[1] == "--interactive":
-        success = main()
-    else:
-        success = run_comprehensive_tests()
+    success = main() if len(sys.argv) > 1 and sys.argv[1] == "--interactive" else run_comprehensive_tests()
     sys.exit(0 if success else 1)

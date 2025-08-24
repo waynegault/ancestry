@@ -15,11 +15,12 @@ Building on Phase 5.1 success (1,281x session manager improvement), Phase 5.2 ta
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -319,8 +320,7 @@ class MemoryOptimizer(BaseCacheModule):
 
             with self._lock:
                 self._memory_stats["current_memory_mb"] = memory_mb
-                if memory_mb > self._memory_stats["peak_memory_mb"]:
-                    self._memory_stats["peak_memory_mb"] = memory_mb
+                self._memory_stats["peak_memory_mb"] = max(self._memory_stats["peak_memory_mb"], memory_mb)
 
             return memory_mb
         except ImportError:
@@ -728,8 +728,7 @@ def warm_system_caches_intelligent(
         warming_thread.start()
         logger.debug("Started background cache warming")
         return True
-    else:
-        return _warm_caches()
+    return _warm_caches()
 
 
 # === TESTING FUNCTIONS ===
