@@ -67,6 +67,8 @@ except ImportError:
     )
 
 # === LOCAL IMPORTS ===
+import contextlib
+
 from config.config_manager import ConfigManager
 from core.session_manager import SessionManager
 
@@ -555,10 +557,8 @@ def extract_genealogical_entities(
                         component_coverage = (non_empty / total_keys) if total_keys else 0.0
                     except Exception:
                         component_coverage = None
-                    try:
+                    with contextlib.suppress(Exception):
                         parsed_json["quality_score"] = quality_score
-                    except Exception:
-                        pass
                     anomaly_summary = None
                     try:
                         anomaly_summary = compute_anomaly_summary(parsed_json)
@@ -656,10 +656,8 @@ def extract_genealogical_entities(
                     component_coverage = (non_empty / total_keys) if total_keys else 0.0
                 except Exception:
                     component_coverage = None
-                try:
+                with contextlib.suppress(Exception):
                     salvaged["quality_score"] = quality_score
-                except Exception:
-                    pass
                 anomaly_summary = None
                 try:
                     anomaly_summary = compute_anomaly_summary(salvaged)

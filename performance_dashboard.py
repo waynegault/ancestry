@@ -9,6 +9,7 @@ Created: August 6, 2025
 Phase: 11.1 - Configuration Optimization & Adaptive Processing
 """
 
+import contextlib
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -409,10 +410,8 @@ def test_export_and_cleanup():
     assert after < before
     # Cleanup files
     for fn in ["temp_perf_data.json", "temp_perf_export.json"]:
-        try:
+        with contextlib.suppress(Exception):
             Path(fn).unlink()
-        except Exception:
-            pass
 
 
 def performance_dashboard_module_tests() -> bool:

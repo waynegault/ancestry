@@ -59,6 +59,7 @@ if USE_MOCK_AI:
         }
 else:
     from ai_interface import classify_message_intent, extract_genealogical_entities
+import contextlib
 from typing import Any
 
 from person_search import search_gedcom_persons
@@ -653,10 +654,8 @@ def run_comprehensive_tests() -> bool:
         return False
     finally:
         if session_manager is not None:
-            try:
+            with contextlib.suppress(Exception):
                 session_manager.close_sess()
-            except Exception:
-                pass
 
 
 if __name__ == "__main__":

@@ -35,6 +35,8 @@ config_manager = ConfigManager()
 config = config_manager.get_config()
 
 # --- Test framework imports ---
+import contextlib
+
 from test_framework import MagicMock, TestSuite, patch, suppress_logging
 
 # --- Initial Setup ---
@@ -341,10 +343,8 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
         else:  # Log other HTTP errors
             logger.error(f"HTTP error querying To-Do lists: {http_err}", exc_info=False)
         # Log response body for debugging
-        try:
+        with contextlib.suppress(Exception):
             logger.debug(f"Error response content: {http_err.response.text[:500]}")
-        except Exception:
-            pass
         return None
     except requests.exceptions.RequestException as req_err:
         # Network errors, timeouts, etc.
@@ -440,10 +440,8 @@ def create_todo_task(
         else:
             logger.error(f"HTTP error creating To-Do task: {http_err}", exc_info=False)
         # Log response body for debugging
-        try:
+        with contextlib.suppress(Exception):
             logger.error(f"Error response content: {http_err.response.text[:500]}")
-        except Exception:
-            pass
         return False
     except requests.exceptions.RequestException as req_err:
         logger.error(f"Network error creating To-Do task: {req_err}", exc_info=False)

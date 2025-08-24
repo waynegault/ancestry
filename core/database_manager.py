@@ -601,10 +601,8 @@ class DatabaseManager:
 
             # Attempt to recover by disposing engine and resetting flags
             if self.engine:
-                try:
+                with contextlib.suppress(Exception):
                     self.engine.dispose()
-                except Exception:
-                    pass
             self.engine = None
             self.Session = None
             self._db_init_attempted = False

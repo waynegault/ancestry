@@ -37,6 +37,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import copy
 import json
 from pathlib import Path
@@ -1108,10 +1109,8 @@ def run_comprehensive_tests() -> bool:
         finally:
             from pathlib import Path
 
-            try:
+            with contextlib.suppress(Exception):
                 Path(config_path).unlink(missing_ok=True)
-            except Exception:
-                pass
 
     def test_environment_integration():
         """Test integration with environment variables."""

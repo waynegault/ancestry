@@ -39,6 +39,7 @@ assert _ensure_error_handling_symbols is not None  # make linter consider usage
 
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 from typing import Any, Optional
 
 # Import from local modules
@@ -237,10 +238,8 @@ def unified_person_search(
             all_results.append(result)
 
     # Sort by score if available
-    try:
+    with contextlib.suppress(KeyError, TypeError):
         all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
-    except (KeyError, TypeError):
-        pass
 
     return all_results[: max_results * 2]  # Return up to double max_results
 
