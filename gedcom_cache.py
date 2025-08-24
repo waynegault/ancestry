@@ -26,7 +26,7 @@ import hashlib
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 # --- Local application imports ---
 from cache import (
@@ -52,7 +52,7 @@ from test_framework import (
 )
 
 # --- Global Variables ---
-_MEMORY_CACHE: Dict[str, Tuple[Any, float]] = {}  # In-memory cache with timestamps
+_MEMORY_CACHE: dict[str, tuple[Any, float]] = {}  # In-memory cache with timestamps
 _CACHE_MAX_AGE = 3600  # 1 hour default for memory cache
 _GEDCOM_CACHE_PREFIX = "gedcom_data"
 
@@ -101,7 +101,7 @@ class GedcomCacheModule(BaseCacheModule):
     def get_module_name(self) -> str:
         return self.module_name
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get comprehensive GEDCOM cache statistics."""
         base_stats = super().get_stats()
 
@@ -187,7 +187,7 @@ class GedcomCacheModule(BaseCacheModule):
             logger.error(f"Error warming GEDCOM cache: {e}")
             return False
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get detailed health status of GEDCOM cache system."""
         base_health = super().get_health_status()
 
@@ -558,7 +558,7 @@ def preload_gedcom_cache() -> bool:
         return False
 
 
-def get_gedcom_cache_info() -> Dict[str, Any]:
+def get_gedcom_cache_info() -> dict[str, Any]:
     """
     Get information about GEDCOM cache status and statistics.
 
@@ -587,7 +587,7 @@ def get_gedcom_cache_info() -> Dict[str, Any]:
 # --- Public Interface Functions for GEDCOM Cache Module ---
 
 
-def get_gedcom_cache_stats() -> Dict[str, Any]:
+def get_gedcom_cache_stats() -> dict[str, Any]:
     """Get comprehensive GEDCOM cache statistics."""
     return _gedcom_cache_module.get_stats()
 
@@ -602,7 +602,7 @@ def warm_gedcom_cache() -> bool:
     return _gedcom_cache_module.warm()
 
 
-def get_gedcom_cache_health() -> Dict[str, Any]:
+def get_gedcom_cache_health() -> dict[str, Any]:
     """Get GEDCOM cache health status."""
     return _gedcom_cache_module.get_health_status()
 
@@ -610,7 +610,7 @@ def get_gedcom_cache_health() -> Dict[str, Any]:
 # --- GEDCOM Cache Demo Functions ---
 
 
-def demonstrate_gedcom_cache_usage() -> Dict[str, Any]:
+def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
     """
     Demonstrate practical GEDCOM cache usage with examples.
     Returns demonstration results and performance data.

@@ -6,7 +6,7 @@ Provides a simple ObjectPool and a lazy_property descriptor.
 
 from functools import wraps
 from threading import Lock
-from typing import Callable, Generic, List, TypeVar
+from typing import Callable, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -20,7 +20,7 @@ class ObjectPool(Generic[T]):
 
     def __init__(self, factory: Callable[[], T], max_size: int = 10):
         self._factory = factory
-        self._pool: List[T] = []
+        self._pool: list[T] = []
         self._max_size = max(0, int(max_size))
         self._lock = Lock()
 

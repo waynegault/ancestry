@@ -45,7 +45,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from string import Formatter
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import (
@@ -180,7 +180,7 @@ MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
 # Using minimum message interval (removed verbose debug logging)
 
 # Define standard message type keys (must match database MessageTemplate table)
-MESSAGE_TYPES_ACTION8: Dict[str, str] = {
+MESSAGE_TYPES_ACTION8: dict[str, str] = {
     "In_Tree-Initial": "In_Tree-Initial",
     "In_Tree-Follow_Up": "In_Tree-Follow_Up",
     "In_Tree-Final_Reminder": "In_Tree-Final_Reminder",
@@ -200,7 +200,7 @@ MESSAGE_TYPES_ACTION8: Dict[str, str] = {
 
 
 @cache_result("message_templates")  # Cache the loaded templates
-def load_message_templates() -> Dict[str, str]:
+def load_message_templates() -> dict[str, str]:
     """
     Loads message templates from the database MessageTemplate table.
     Validates that all required template keys for Action 8 are present.
@@ -260,7 +260,7 @@ def load_message_templates() -> Dict[str, str]:
 # End of load_message_templates
 
 # Load templates into a global variable for easy access
-MESSAGE_TEMPLATES: Dict[str, str] = load_message_templates()
+MESSAGE_TEMPLATES: dict[str, str] = load_message_templates()
 # Critical check: exit if essential templates failed to load
 # Check against core required keys only (variants are optional)
 core_required_check_keys = {
@@ -282,7 +282,7 @@ if not MESSAGE_TEMPLATES or not all(
 # Log-only: Audit template placeholders to ensure safe coverage of Enhanced_* keys
 # ------------------------------------------------------------------------------
 
-def _audit_template_placeholders(templates: Dict[str, str]) -> None:
+def _audit_template_placeholders(templates: dict[str, str]) -> None:
     """Log-only audit: warn if templates contain unknown placeholders."""
     try:
         formatter = Formatter()
@@ -365,7 +365,7 @@ if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
 def _log_personalization_sanity_for_template(
     template_key: str,
     template_str: str,
-    extracted_data: Dict[str, Any],
+    extracted_data: dict[str, Any],
     log_prefix: str,
 ) -> None:
     """
@@ -381,7 +381,7 @@ def _log_personalization_sanity_for_template(
         fields_used = {fname for (_, fname, _, _) in formatter.parse(template_str) if fname}
 
         # Map of placeholder -> function that checks if data likely exists
-        def has_list(d: Dict[str, Any], key: str) -> bool:
+        def has_list(d: dict[str, Any], key: str) -> bool:
             v = d.get(key)
             return isinstance(v, list) and len(v) > 0
 
@@ -497,7 +497,7 @@ MESSAGE_TRANSITION_TABLE = {
 
 def determine_next_message_type(
     last_message_details: Optional[
-        Tuple[str, datetime, str]
+        tuple[str, datetime, str]
     ],  # (type_name, sent_at_utc, status)
     is_in_family_tree: bool,
 ) -> Optional[str]:
@@ -746,7 +746,7 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # Response Rate Tracking and Analysis
 # ------------------------------------------------------------------------------
 
-def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> Dict[str, Any]:
+def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> dict[str, Any]:
     """
     Analyze template effectiveness by measuring response rates.
 
@@ -945,8 +945,8 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
 
 def _commit_messaging_batch(
     session: Session,
-    logs_to_add: List[ConversationLog],  # List of ConversationLog OBJECTS
-    person_updates: Dict[int, PersonStatusEnum],  # Dict of {person_id: new_status_enum}
+    logs_to_add: list[ConversationLog],  # List of ConversationLog OBJECTS
+    person_updates: dict[int, PersonStatusEnum],  # Dict of {person_id: new_status_enum}
     batch_num: int,
 ) -> bool:
     """
@@ -997,8 +997,8 @@ def _commit_messaging_batch(
                         )
 
                 # Query for existing logs matching the keys in this batch
-                existing_logs_map: Dict[
-                    Tuple[str, MessageDirectionEnum], ConversationLog
+                existing_logs_map: dict[
+                    tuple[str, MessageDirectionEnum], ConversationLog
                 ] = {}
                 if log_keys_to_check:
                     existing_logs = (
@@ -1203,7 +1203,7 @@ def _commit_messaging_batch(
 def _get_simple_messaging_data(
     db_session: Session,
     session_manager: Optional[SessionManager] = None,
-) -> Tuple[Optional[Dict[str, int]], Optional[List[Person]]]:
+) -> tuple[Optional[dict[str, int]], Optional[list[Person]]]:
     """
     Simplified data fetching for messaging process.
     - Fetches MessageTemplate key-to-ID mapping.
@@ -1280,7 +1280,7 @@ def _get_simple_messaging_data(
         return None, None
 
 
-def _get_person_message_history(db_session: Session, person_id: int) -> Tuple[Optional[ConversationLog], Optional[ConversationLog], Optional[str]]:
+def _get_person_message_history(db_session: Session, person_id: int) -> tuple[Optional[ConversationLog], Optional[ConversationLog], Optional[str]]:
     """
     Get the latest IN and OUT message history for a specific person.
 
@@ -1376,11 +1376,11 @@ def _validate_system_health(session_manager: SessionManager) -> bool:
 
 def _safe_commit_with_rollback(
     session: Session,
-    log_upserts: List[Dict[str, Any]],
-    person_updates: Dict[int, PersonStatusEnum],
+    log_upserts: list[dict[str, Any]],
+    person_updates: dict[int, PersonStatusEnum],
     context: str,
     session_manager: SessionManager
-) -> Tuple[bool, int, int]:
+) -> tuple[bool, int, int]:
     """
     Safely commit batch data with comprehensive rollback on failure.
 
@@ -1449,7 +1449,7 @@ class ErrorCategorizer:
         }
         self.monitoring_hooks = []
 
-    def categorize_status(self, status: str) -> Tuple[str, str]:
+    def categorize_status(self, status: str) -> tuple[str, str]:
         """
         Categorize a status string into proper category and type.
 
@@ -1539,7 +1539,7 @@ class ErrorCategorizer:
             except Exception as hook_err:
                 logger.warning(f"Monitoring hook failed: {hook_err}")
 
-    def get_error_summary(self) -> Dict[str, Any]:
+    def get_error_summary(self) -> dict[str, Any]:
         """Get comprehensive error summary for reporting."""
         total_errors = sum(count for key, count in self.error_counts.items() if 'error' in key)
         total_skips = self.error_counts['business_logic_skips']
@@ -1568,7 +1568,7 @@ class ResourceManager:
         """Track a resource for cleanup."""
         self.allocated_resources.append((resource_name, resource_obj))
 
-    def check_memory_usage(self) -> Tuple[float, bool]:
+    def check_memory_usage(self) -> tuple[float, bool]:
         """
         Check current memory usage.
 
@@ -1835,7 +1835,7 @@ def _safe_api_call_with_validation(
     operation_name: str,
     *args,
     **kwargs
-) -> Tuple[bool, Any]:
+) -> tuple[bool, Any]:
     """
     Safely call API with proactive rate limiting, authentication, and validation.
 
@@ -1897,8 +1897,8 @@ def _process_single_person(
     latest_in_log: Optional[ConversationLog],
     latest_out_log: Optional[ConversationLog],
     latest_out_template_key: Optional[str],  # Template key from latest OUT message
-    message_type_map: Dict[str, int],
-) -> Tuple[Optional[ConversationLog], Optional[Tuple[int, PersonStatusEnum]], str]:
+    message_type_map: dict[str, int],
+) -> tuple[Optional[ConversationLog], Optional[tuple[int, PersonStatusEnum]], str]:
     """
     Processes a single person to determine if a message should be sent,
     formats the message, sends/simulates it, and prepares database updates.
@@ -1951,7 +1951,7 @@ def _process_single_person(
     family_tree = None
     dna_match = None
     new_log_entry: Optional[ConversationLog] = None  # Prepared log object
-    person_update: Optional[Tuple[int, PersonStatusEnum]] = None  # Staged status update
+    person_update: Optional[tuple[int, PersonStatusEnum]] = None  # Staged status update
     now_utc = datetime.now(timezone.utc)  # Consistent timestamp for checks
     min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
 
@@ -2094,7 +2094,7 @@ def _process_single_person(
             # else: logger.debug(f"No previous OUT message for {log_prefix}, interval check skipped.")
 
             # Rule 3: Determine next message type in sequence
-            last_script_message_details: Optional[Tuple[str, datetime, str]] = None
+            last_script_message_details: Optional[tuple[str, datetime, str]] = None
             if latest_out_log:
                 # Use our safe helper to get the timestamp
                 out_timestamp = safe_column_value(
@@ -2587,8 +2587,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     sent_count, acked_count, skipped_count, error_count = 0, 0, 0, 0
     processed_in_loop = 0
     # Lists for batch DB operations
-    db_logs_to_add_dicts: List[Dict[str, Any]] = []  # Store prepared Log DICTIONARIES
-    person_updates: Dict[int, PersonStatusEnum] = (
+    db_logs_to_add_dicts: list[dict[str, Any]] = []  # Store prepared Log DICTIONARIES
+    person_updates: dict[int, PersonStatusEnum] = (
         {}
     )  # Store {person_id: new_status_enum}
     # Configuration
@@ -2809,7 +2809,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                     _update_messaging_performance(session_manager, person_duration)
 
                     # --- Tally Results & Collect DB Updates ---
-                    log_dict_to_add: Optional[Dict[str, Any]] = None
+                    log_dict_to_add: Optional[dict[str, Any]] = None
                     if new_log_object:
                         try:
                             # Convert the SQLAlchemy object attributes to a dictionary

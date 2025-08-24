@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 # === LOCAL IMPORTS ===
@@ -60,11 +60,11 @@ class ErrorStats:
     failure_rate: float = 0.0
     consecutive_failures: int = 0
     consecutive_successes: int = 0
-    error_types: Dict[str, int] = field(default_factory=dict)
+    error_types: dict[str, int] = field(default_factory=dict)
     recovery_attempts: int = 0
     last_recovery_time: Optional[datetime] = None
     avg_response_time: float = 0.0
-    error_patterns: List[str] = field(default_factory=list)
+    error_patterns: list[str] = field(default_factory=list)
 
 
 class RetryStrategy(Enum):
@@ -87,8 +87,8 @@ class RetryConfig:
     max_delay: float = 60.0
     exponential_base: float = 2.0
     jitter: bool = True  # Add randomization to prevent thundering herd
-    retry_on: List[Type[Exception]] = field(default_factory=lambda: [Exception])
-    stop_on: List[Type[Exception]] = field(default_factory=list)
+    retry_on: list[type[Exception]] = field(default_factory=lambda: [Exception])
+    stop_on: list[type[Exception]] = field(default_factory=list)
 
 
 class IntelligentRetryHandler:
@@ -97,8 +97,8 @@ class IntelligentRetryHandler:
     def __init__(self, name: str, config: Optional[RetryConfig] = None):
         self.name = name
         self.config = config or RetryConfig()
-        self._error_history: List[Tuple[Exception, datetime]] = []
-        self._success_patterns: Dict[str, int] = {}
+        self._error_history: list[tuple[Exception, datetime]] = []
+        self._success_patterns: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def should_retry(self, exception: Exception, attempt: int) -> bool:
@@ -420,7 +420,7 @@ class CircuitBreaker:
                 self.stats.failed_requests / self.stats.total_requests
             )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get circuit breaker statistics."""
         with self._lock:
             return {
@@ -469,7 +469,7 @@ class AncestryError(Exception):
         self,
         message: str,
         error_code: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
         severity: str = "ERROR",
         recovery_hint: Optional[str] = None,
         cause: Optional[Exception] = None,
@@ -483,7 +483,7 @@ class AncestryError(Exception):
         self.cause = cause
         self.timestamp = datetime.now()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert exception to dictionary for logging/debugging."""
         return {
             "type": self.__class__.__name__,
@@ -617,9 +617,9 @@ class ErrorContext:
     operation: str
     module: str
     function: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    environment: Dict[str, Any] = field(default_factory=dict)
-    timing: Dict[str, float] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    environment: dict[str, Any] = field(default_factory=dict)
+    timing: dict[str, float] = field(default_factory=dict)
     stack_trace: Optional[str] = None
     error_id: str = field(default_factory=lambda: f"err_{int(time.time())}")
 
@@ -636,7 +636,7 @@ class ErrorContext:
             }
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging."""
         return {
             "operation": self.operation,
@@ -656,8 +656,8 @@ class ErrorRecoveryManager:
     """
 
     def __init__(self):
-        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
-        self.recovery_strategies: Dict[str, Callable] = {}
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
+        self.recovery_strategies: dict[str, Callable] = {}
 
     def get_circuit_breaker(
         self, name: str, config: Optional[CircuitBreakerConfig] = None
@@ -707,11 +707,11 @@ class ErrorRecoveryManager:
         else:
             raise error  # No recovery strategy, re-raise original error
 
-    def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_stats(self) -> dict[str, dict[str, Any]]:
         """Get statistics for all circuit breakers."""
         return {name: cb.get_stats() for name, cb in self.circuit_breakers.items()}
 
-    def check_failure_patterns(self) -> Dict[str, str]:
+    def check_failure_patterns(self) -> dict[str, str]:
         """
         Monitor circuit breakers for concerning failure patterns.
         Returns warnings for actions that may be approaching failure thresholds.
@@ -778,8 +778,8 @@ def with_circuit_breaker(
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
-    retry_on: Optional[List[Type[Exception]]] = None,
-    stop_on: Optional[List[Type[Exception]]] = None,
+    retry_on: Optional[list[type[Exception]]] = None,
+    stop_on: Optional[list[type[Exception]]] = None,
     jitter: bool = True,
 ):
     """
@@ -921,8 +921,8 @@ def timeout_protection(timeout: int = 30):
             # Use threading approach for cross-platform compatibility
             import threading
 
-            result: List[Any] = [None]
-            exception: List[Optional[Exception]] = [None]
+            result: list[Any] = [None]
+            exception: list[Optional[Exception]] = [None]
 
             def target():
                 try:

@@ -28,7 +28,7 @@ import time
 from collections import deque
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Optional
 
 # --- Third-party imports ---
 from diskcache import Cache
@@ -102,7 +102,7 @@ class CacheInterface:
     Provides common methods and expected behavior across cache types.
     """
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics for this cache module."""
         raise NotImplementedError("Subclasses must implement get_stats()")
 
@@ -118,7 +118,7 @@ class CacheInterface:
         """Get the name of this cache module."""
         raise NotImplementedError("Subclasses must implement get_module_name()")
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get health status of this cache module."""
         raise NotImplementedError("Subclasses must implement get_health_status()")
 
@@ -128,7 +128,7 @@ class BaseCacheModule(CacheInterface):
     Implementation of the standard cache interface for the base cache module.
     """
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get base cache statistics."""
         return get_cache_stats()
 
@@ -161,7 +161,7 @@ class BaseCacheModule(CacheInterface):
         """Get module name."""
         return "base_cache"
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get health status of base cache."""
         try:
             stats = self.get_stats()
@@ -463,8 +463,8 @@ def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
 
 
 def invalidate_related_caches(
-    pattern: str, exclude_modules: Optional[List[str]] = None
-) -> Dict[str, int]:
+    pattern: str, exclude_modules: Optional[list[str]] = None
+) -> dict[str, int]:
     """
     Invalidate caches across multiple modules based on pattern.
 
@@ -514,7 +514,7 @@ def invalidate_related_caches(
     return results
 
 
-def get_cache_coordination_stats() -> Dict[str, Any]:
+def get_cache_coordination_stats() -> dict[str, Any]:
     """
     Get comprehensive statistics for cache coordination across modules.
 
@@ -614,7 +614,7 @@ def get_cache_coordination_stats() -> Dict[str, Any]:
 # --- Enhanced Cache Management Functions ---
 
 
-def enforce_cache_size_limit() -> Dict[str, Any]:
+def enforce_cache_size_limit() -> dict[str, Any]:
     """
     Enforce cache size limits based on configuration.
 
@@ -748,7 +748,7 @@ def get_cache_entry_count() -> int:
             return 0
 
 
-def get_cache_stats() -> Dict[str, Any]:
+def get_cache_stats() -> dict[str, Any]:
     """
     Returns cache statistics including hits, misses, size, and evictions.
 
@@ -907,10 +907,10 @@ class IntelligentCacheWarmer:
     """
 
     def __init__(self):
-        self.usage_patterns: Dict[str, Dict[str, Any]] = {}
-        self.warming_history: List[Dict[str, Any]] = []
-        self.predictive_cache_keys: Set[str] = set()
-        self.dependency_graph: Dict[str, List[str]] = {}
+        self.usage_patterns: dict[str, dict[str, Any]] = {}
+        self.warming_history: list[dict[str, Any]] = []
+        self.predictive_cache_keys: set[str] = set()
+        self.dependency_graph: dict[str, list[str]] = {}
 
     def record_cache_access(self, cache_key: str, hit: bool, access_time: Optional[float] = None):
         """Record cache access patterns for learning."""
@@ -943,7 +943,7 @@ class IntelligentCacheWarmer:
             if time_span > 0:
                 pattern["access_frequency"] = len(pattern["access_times"]) / (time_span / 3600)
 
-    def get_warming_candidates(self, max_candidates: int = 20) -> List[str]:
+    def get_warming_candidates(self, max_candidates: int = 20) -> list[str]:
         """Get cache keys that should be warmed based on usage patterns."""
         candidates = []
 
@@ -1080,8 +1080,8 @@ class CacheDependencyTracker:
     """
 
     def __init__(self):
-        self.dependencies: Dict[str, Set[str]] = {}  # key -> set of dependent keys
-        self.reverse_dependencies: Dict[str, Set[str]] = {}  # key -> set of keys it depends on
+        self.dependencies: dict[str, set[str]] = {}  # key -> set of dependent keys
+        self.reverse_dependencies: dict[str, set[str]] = {}  # key -> set of keys it depends on
 
     def add_dependency(self, parent_key: str, dependent_key: str):
         """Add a dependency relationship."""
@@ -1121,7 +1121,7 @@ class CacheDependencyTracker:
 
         return invalidated_count
 
-    def get_dependency_chain(self, cache_key: str) -> List[str]:
+    def get_dependency_chain(self, cache_key: str) -> list[str]:
         """Get the full dependency chain for a cache key."""
         chain = []
         visited = set()

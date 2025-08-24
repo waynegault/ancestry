@@ -34,7 +34,7 @@ import sqlite3
 import sys
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool, text
@@ -336,9 +336,9 @@ class DatabaseManager:
         self,
         session: Session,
         query: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
         fetch_results: bool = True
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[list[dict[str, Any]]]:
         """
         Execute a database query asynchronously.
 

@@ -25,7 +25,7 @@ logger = setup_module(globals(), __name__)
 import inspect
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple, cast
+from typing import Any, Literal, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -234,7 +234,7 @@ class InboxProcessor:
     @retry_api()  # Apply retry decorator for resilience
     def _get_all_conversations_api(
         self, session_manager: SessionManager, limit: int, cursor: Optional[str] = None
-    ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str]]:
         """
         Fetches a single batch of conversation overview data from the Ancestry API.
 
@@ -298,7 +298,7 @@ class InboxProcessor:
 
             # Step 5: Extract conversation data and pagination cursor
             conversations_raw = response_data.get("conversations", [])
-            all_conversations_processed: List[Dict[str, Any]] = []
+            all_conversations_processed: list[dict[str, Any]] = []
             if isinstance(conversations_raw, list):
                 for conv_data in conversations_raw:
                     # Extract and process info for each conversation
@@ -330,8 +330,8 @@ class InboxProcessor:
     # End of _get_all_conversations_api
 
     def _extract_conversation_info(
-        self, conv_data: Dict[str, Any], my_profile_id: str
-    ) -> Optional[Dict[str, Any]]:
+        self, conv_data: dict[str, Any], my_profile_id: str
+    ) -> Optional[dict[str, Any]]:
         """
         Extracts and formats key information from a single conversation overview dictionary.
 
@@ -437,7 +437,7 @@ class InboxProcessor:
     @retry_api(max_retries=2)  # Allow retries for fetching context
     def _fetch_conversation_context(
         self, conversation_id: str
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[list[dict[str, Any]]]:
         """
         Fetches the last N messages (defined by config) for a specific conversation ID
         to provide context for AI classification.
@@ -471,7 +471,7 @@ class InboxProcessor:
             )
 
         # Step 2: Construct API URL and Headers
-        context_messages: List[Dict[str, Any]] = []
+        context_messages: list[dict[str, Any]] = []
         api_base = urljoin(
             getattr(config_schema.api, "base_url", ""), "/app-api/express/v2/"
         )
@@ -580,7 +580,7 @@ class InboxProcessor:
     # End of _fetch_conversation_context
 
     def _format_context_for_ai(
-        self, context_messages: List[Dict], my_pid_lower: str
+        self, context_messages: list[dict], my_pid_lower: str
     ) -> str:
         """
         Formats a list of message dictionaries (sorted oldest to newest) into a
@@ -625,7 +625,7 @@ class InboxProcessor:
         username: str,
         conversation_id: Optional[str],
         existing_person_arg: Optional[Person] = None,
-    ) -> Tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
+    ) -> tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
         """
         Looks up a Person by profile_id. If found, checks for updates (username,
         message_link). If not found, creates a new Person record, fetching additional
@@ -795,7 +795,7 @@ class InboxProcessor:
 
     # End of _lookup_or_create_person
 
-    def _create_comparator(self, session: DbSession) -> Optional[Dict[str, Any]]:
+    def _create_comparator(self, session: DbSession) -> Optional[dict[str, Any]]:
         """
         Finds the most recent ConversationLog entry (highest timestamp) in the database
         to use as a comparison point for stopping inbox processing early.
@@ -808,7 +808,7 @@ class InboxProcessor:
             representing the comparator entry, or None if the table is empty or an error occurs.
             Timestamp is guaranteed to be timezone-aware (UTC).
         """
-        latest_log_entry_info: Optional[Dict[str, Any]] = None
+        latest_log_entry_info: Optional[dict[str, Any]] = None
         # Creating comparator by finding latest ConversationLog entry (removed verbose debug)
         try:
             # Step 1: Query for the entry with the maximum timestamp
@@ -1048,7 +1048,7 @@ class InboxProcessor:
         return overall_success
         # End of search_inbox
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Return processing statistics for monitoring and debugging."""
         stats = self.stats.copy()
         if stats["start_time"] and stats["end_time"]:
@@ -1064,7 +1064,7 @@ class InboxProcessor:
         comp_ts: Optional[datetime],  # Aware datetime
         my_pid_lower: str,
         progress_bar: Optional[tqdm],  # Accept progress bar instance
-    ) -> Tuple[Optional[str], int, int, int, int]:  # <-- Removed logs_processed_count
+    ) -> tuple[Optional[str], int, int, int, int]:  # <-- Removed logs_processed_count
         """
         Internal helper: Contains the main loop for fetching and processing inbox batches.
 
@@ -1091,8 +1091,8 @@ class InboxProcessor:
         next_cursor: Optional[str] = None
         current_batch_num = 0
         # Lists to accumulate data for batch commits
-        conv_log_upserts_dicts: List[Dict[str, Any]] = []  # <-- Store dicts now
-        person_updates: Dict[int, PersonStatusEnum] = {}
+        conv_log_upserts_dicts: list[dict[str, Any]] = []  # <-- Store dicts now
+        person_updates: dict[int, PersonStatusEnum] = {}
         stop_processing = False
         min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -1195,8 +1195,8 @@ class InboxProcessor:
                     for c in all_conversations_batch
                     if c.get("profile_id") and c.get("profile_id") != "UNKNOWN"
                 }
-                existing_persons_map: Dict[str, Person] = {}
-                existing_conv_logs: Dict[Tuple[str, str], ConversationLog] = (
+                existing_persons_map: dict[str, Person] = {}
+                existing_conv_logs: dict[tuple[str, str], ConversationLog] = (
                     {}
                 )  # Key: (conv_id, direction_enum.name)
                 try:
@@ -1438,8 +1438,8 @@ class InboxProcessor:
                         pass
 
                     # --- Process Fetched Context Messages ---
-                    latest_ctx_in: Optional[Dict] = None
-                    latest_ctx_out: Optional[Dict] = None
+                    latest_ctx_in: Optional[dict] = None
+                    latest_ctx_out: Optional[dict] = None
                     # Find the latest IN and OUT message from the fetched context
                     for msg in reversed(context_messages):  # Iterate newest first
                         author_lower = msg.get("author", "")

@@ -29,7 +29,7 @@ logger = setup_module(globals(), __name__)
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 
 class ConfigValidationError(Exception):
@@ -60,8 +60,8 @@ class ConfigValidator:
     """Advanced configuration validator with custom rules."""
 
     def __init__(self):
-        self.rules: List[ValidationRule] = []
-        self.environment_rules: Dict[EnvironmentType, List[ValidationRule]] = {}
+        self.rules: list[ValidationRule] = []
+        self.environment_rules: dict[EnvironmentType, list[ValidationRule]] = {}
 
     def add_rule(self, rule: ValidationRule) -> None:
         """Add a validation rule."""
@@ -75,7 +75,7 @@ class ConfigValidator:
 
     def validate(
         self, config: Any, environment: EnvironmentType = EnvironmentType.DEVELOPMENT
-    ) -> List[str]:
+    ) -> list[str]:
         """Validate configuration and return list of errors."""
         errors = []
 
@@ -117,7 +117,7 @@ def validate_path_exists(path: Union[str, Path]) -> bool:
 
 
 def validate_file_extension(
-    extensions: List[str],
+    extensions: list[str],
 ) -> Callable[[Union[str, Path]], bool]:
     """Create validator for file extensions."""
 
@@ -427,7 +427,7 @@ class APIConfig:
 
     # Fields with default_factory must come last
     # User agents list for rotation
-    user_agents: List[str] = field(
+    user_agents: list[str] = field(
         default_factory=lambda: [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
@@ -437,12 +437,12 @@ class APIConfig:
     )
 
     # Retry settings
-    retry_status_codes: List[int] = field(
+    retry_status_codes: list[int] = field(
         default_factory=lambda: [429, 500, 502, 503, 504]
     )
 
     # API Headers
-    api_contextual_headers: Dict[str, Dict[str, Optional[str]]] = field(
+    api_contextual_headers: dict[str, dict[str, Optional[str]]] = field(
         default_factory=dict
     )
 
@@ -649,7 +649,7 @@ class ConfigSchema:
     reference_person_id: Optional[str] = (
         None  # Fields with complex defaults (must come last)
     )
-    common_scoring_weights: Dict[str, float] = field(
+    common_scoring_weights: dict[str, float] = field(
         default_factory=lambda: {
             # --- Name Weights ---
             "contains_first_name": 25.0,  # if the input first name is in the candidate first name
@@ -692,7 +692,7 @@ class ConfigSchema:
         if self.environment not in valid_environments:
             raise ValueError(f"environment must be one of: {valid_environments}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary."""
         result = {}
 
@@ -711,7 +711,7 @@ class ConfigSchema:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConfigSchema":
+    def from_dict(cls, data: dict[str, Any]) -> "ConfigSchema":
         """Create configuration from dictionary."""  # Extract sub-config data
         database_data = data.get("database", {})
         selenium_data = data.get("selenium", {})
@@ -755,7 +755,7 @@ class ConfigSchema:
             **main_data,
         )
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """
         Validate the entire configuration.
 

@@ -71,7 +71,7 @@ logger = setup_module(globals(), __name__)
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -149,7 +149,7 @@ class SessionManager:
 
         # PHASE 5.1: Session state caching for performance
         self._last_readiness_check: Optional[float] = None
-        self._cached_session_state: Dict[str, Any] = {}
+        self._cached_session_state: dict[str, Any] = {}
 
         # ⚡ OPTIMIZATION 1: Pre-cached CSRF token for Action 6 performance
         self._cached_csrf_token: Optional[str] = None
@@ -1738,7 +1738,7 @@ class SessionManager:
             logger.error(f"Failed to retrieve tree owner due to import error: {owner_imp_err}")
             return False
 
-    def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
+    def get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
         """
         Advanced cookie management with timeout and session validation.
 
@@ -1928,7 +1928,7 @@ class SessionManager:
 
 
 
-    def check_js_errors(self) -> List[Dict[str, Any]]:
+    def check_js_errors(self) -> list[dict[str, Any]]:
         """
         Check for JavaScript errors in the browser console.
 
@@ -2509,7 +2509,7 @@ class SessionManager:
         return None
 
     # PHASE 5.1: Session cache management methods
-    def get_session_performance_stats(self) -> Dict[str, Any]:
+    def get_session_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for this session"""
         stats = get_session_cache_stats()
         stats.update(
@@ -2609,13 +2609,13 @@ class SessionManager:
             duration = time.time() - start_ts
             logger.info(f"📊 Page processing finished in {duration:.1f}s")
 
-    def _process_single_page(self, page_num: int) -> Dict[str, Any]:
+    def _process_single_page(self, page_num: int) -> dict[str, Any]:
         """Default single-page processing; should be overridden by caller/demo.
         We keep this stub to match ReliableSessionManager integration patterns.
         """
         raise NotImplementedError("_process_single_page must be provided by caller")
 
-    def get_session_summary(self) -> Dict[str, Any]:
+    def get_session_summary(self) -> dict[str, Any]:
         """Return a summary compatible with ReliableSessionManager.get_session_summary()."""
         # Memory/process health via existing methods
         self.check_browser_health()
@@ -2646,7 +2646,7 @@ class SessionManager:
             cutoff = now - window['window_sec']
             window['events'] = [e for e in window['events'] if e['timestamp'] >= cutoff]
 
-    def _p2_error_rates(self) -> Dict[str, float]:
+    def _p2_error_rates(self) -> dict[str, float]:
         now = time.time()
         rates = {}
         for name, window in self._p2_error_windows.items():

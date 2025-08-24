@@ -57,7 +57,7 @@ def get_standard_logger(module_name: str) -> logging.Logger:
 
 
 # === AUTO-REGISTRATION HELPER ===
-def setup_module(module_globals: Dict[str, Any], module_name: str) -> logging.Logger:
+def setup_module(module_globals: dict[str, Any], module_name: str) -> logging.Logger:
     """
     One-line module setup that handles everything:
     - Auto-registration

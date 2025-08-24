@@ -11,7 +11,7 @@ Phase: 12 - Advanced GEDCOM Integration & Family Tree Intelligence
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -72,9 +72,9 @@ class GedcomAIIntegrator:
     def perform_comprehensive_analysis(
         self,
         gedcom_data: Any,
-        dna_matches_data: Optional[List[Dict[str, Any]]] = None,
-        tree_owner_info: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        dna_matches_data: Optional[list[dict[str, Any]]] = None,
+        tree_owner_info: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
         """
         Perform comprehensive GEDCOM AI analysis including intelligence, cross-referencing, and prioritization.
 
@@ -143,10 +143,10 @@ class GedcomAIIntegrator:
 
     def generate_enhanced_research_tasks(
         self,
-        person_data: Dict[str, Any],
-        extracted_genealogical_data: Dict[str, Any],
+        person_data: dict[str, Any],
+        extracted_genealogical_data: dict[str, Any],
         gedcom_data: Any = None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Generate enhanced research tasks using GEDCOM AI analysis.
         This method can be called by existing action modules.
@@ -205,7 +205,7 @@ class GedcomAIIntegrator:
         self,
         person_identifier: str,
         gedcom_data: Any
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get GEDCOM AI insights for a specific person.
 
@@ -240,7 +240,7 @@ class GedcomAIIntegrator:
             logger.error(f"Error getting GEDCOM insights for person {person_identifier}: {e}")
             return {"error": f"Failed to get insights: {e}"}
 
-    def _convert_to_dna_matches(self, dna_matches_data: List[Dict[str, Any]]) -> List[Any]:
+    def _convert_to_dna_matches(self, dna_matches_data: list[dict[str, Any]]) -> list[Any]:
         """Convert DNA match data to DNAMatch objects."""
         dna_matches = []
 
@@ -266,10 +266,10 @@ class GedcomAIIntegrator:
 
     def _generate_integrated_insights(
         self,
-        gedcom_analysis: Dict[str, Any],
-        dna_analysis: Dict[str, Any],
-        prioritization_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        gedcom_analysis: dict[str, Any],
+        dna_analysis: dict[str, Any],
+        prioritization_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
         """Generate integrated insights from all analyses."""
         return {
             "tree_health_score": self._calculate_tree_health_score(gedcom_analysis),
@@ -282,10 +282,10 @@ class GedcomAIIntegrator:
 
     def _generate_actionable_recommendations(
         self,
-        gedcom_analysis: Dict[str, Any],
-        dna_analysis: Dict[str, Any],
-        prioritization_analysis: Dict[str, Any]
-    ) -> List[str]:
+        gedcom_analysis: dict[str, Any],
+        dna_analysis: dict[str, Any],
+        prioritization_analysis: dict[str, Any]
+    ) -> list[str]:
         """Generate actionable recommendations from all analyses."""
         recommendations = []
 
@@ -309,10 +309,10 @@ class GedcomAIIntegrator:
 
     def _generate_comprehensive_summary(
         self,
-        gedcom_analysis: Dict[str, Any],
-        dna_analysis: Dict[str, Any],
-        prioritization_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        gedcom_analysis: dict[str, Any],
+        dna_analysis: dict[str, Any],
+        prioritization_analysis: dict[str, Any]
+    ) -> dict[str, Any]:
         """Generate comprehensive summary of all analyses."""
         summary = {
             "gedcom_individuals_analyzed": gedcom_analysis.get("individuals_analyzed", 0),
@@ -330,7 +330,7 @@ class GedcomAIIntegrator:
 
         return summary
 
-    def _format_enhanced_task_description(self, task: Dict[str, Any]) -> str:
+    def _format_enhanced_task_description(self, task: dict[str, Any]) -> str:
         """Format enhanced task description with AI insights."""
         description = task.get("description", "")
         priority_score = task.get("priority_score", 0)
@@ -353,7 +353,7 @@ class GedcomAIIntegrator:
 
         return enhanced_description
 
-    def _generate_ai_enhanced_tasks_from_data(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_ai_enhanced_tasks_from_data(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate AI-enhanced tasks from extracted genealogical data."""
         tasks = []
 
@@ -383,7 +383,7 @@ class GedcomAIIntegrator:
 
         return tasks
 
-    def _fallback_research_tasks(self, person_data: Dict[str, Any], extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _fallback_research_tasks(self, person_data: dict[str, Any], extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate fallback research tasks when GEDCOM AI is not available."""
         return [
             {
@@ -396,27 +396,27 @@ class GedcomAIIntegrator:
         ]
 
     # Helper methods for person-specific insights
-    def _find_person_relevant_gaps(self, person_identifier: str, analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _find_person_relevant_gaps(self, person_identifier: str, analysis: dict[str, Any]) -> list[dict[str, Any]]:
         """Find gaps relevant to a specific person."""
         gaps = analysis.get("gaps_identified", [])
         return [gap for gap in gaps if person_identifier.lower() in gap.get("person_name", "").lower()]
 
-    def _find_person_relevant_conflicts(self, person_identifier: str, analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _find_person_relevant_conflicts(self, person_identifier: str, analysis: dict[str, Any]) -> list[dict[str, Any]]:
         """Find conflicts relevant to a specific person."""
         conflicts = analysis.get("conflicts_identified", [])
         return [conflict for conflict in conflicts if person_identifier in conflict.get("people_involved", [])]
 
-    def _find_person_research_opportunities(self, person_identifier: str, analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _find_person_research_opportunities(self, person_identifier: str, analysis: dict[str, Any]) -> list[dict[str, Any]]:
         """Find research opportunities relevant to a specific person."""
         opportunities = analysis.get("research_opportunities", [])
         return [opp for opp in opportunities if person_identifier in opp.get("target_people", [])]
 
-    def _get_person_family_context(self, person_identifier: str, gedcom_data: Any) -> Dict[str, Any]:
+    def _get_person_family_context(self, person_identifier: str, gedcom_data: Any) -> dict[str, Any]:
         """Get family context for a specific person."""
         # This would extract family relationships and context
         return {"family_context": "Analysis not yet implemented"}
 
-    def _get_person_ai_recommendations(self, person_identifier: str, analysis: Dict[str, Any]) -> List[str]:
+    def _get_person_ai_recommendations(self, person_identifier: str, analysis: dict[str, Any]) -> list[str]:
         """Get AI recommendations for a specific person."""
         return [
             f"Focus on high-priority research for {person_identifier}",
@@ -425,7 +425,7 @@ class GedcomAIIntegrator:
         ]
 
     # Helper methods for integrated insights
-    def _calculate_tree_health_score(self, gedcom_analysis: Dict[str, Any]) -> float:
+    def _calculate_tree_health_score(self, gedcom_analysis: dict[str, Any]) -> float:
         """Calculate overall tree health score."""
         summary = gedcom_analysis.get("summary", {})
         total_gaps = summary.get("total_gaps", 0)
@@ -438,7 +438,7 @@ class GedcomAIIntegrator:
 
         return round(health_score, 1)
 
-    def _identify_efficiency_opportunities(self, prioritization_analysis: Dict[str, Any]) -> List[str]:
+    def _identify_efficiency_opportunities(self, prioritization_analysis: dict[str, Any]) -> list[str]:
         """Identify research efficiency opportunities."""
         efficiency = prioritization_analysis.get("efficiency_analysis", {})
         opportunities = []
@@ -453,7 +453,7 @@ class GedcomAIIntegrator:
 
         return opportunities
 
-    def _assess_dna_verification_potential(self, dna_analysis: Dict[str, Any]) -> str:
+    def _assess_dna_verification_potential(self, dna_analysis: dict[str, Any]) -> str:
         """Assess DNA verification potential."""
         if not dna_analysis:
             return "No DNA data available"
@@ -465,7 +465,7 @@ class GedcomAIIntegrator:
             return "Moderate DNA verification potential"
         return "Limited DNA verification potential"
 
-    def _identify_priority_research_areas(self, prioritization_analysis: Dict[str, Any]) -> List[str]:
+    def _identify_priority_research_areas(self, prioritization_analysis: dict[str, Any]) -> list[str]:
         """Identify priority research areas."""
         prioritized_tasks = prioritization_analysis.get("prioritized_tasks", [])
 
@@ -479,7 +479,7 @@ class GedcomAIIntegrator:
         sorted_types = sorted(task_types.items(), key=lambda x: x[1], reverse=True)
         return [task_type for task_type, count in sorted_types[:3]]
 
-    def _assess_data_quality(self, gedcom_analysis: Dict[str, Any]) -> str:
+    def _assess_data_quality(self, gedcom_analysis: dict[str, Any]) -> str:
         """Assess overall data quality."""
         summary = gedcom_analysis.get("summary", {})
         total_conflicts = summary.get("total_conflicts", 0)
@@ -495,7 +495,7 @@ class GedcomAIIntegrator:
             return "Fair data quality"
         return "Poor data quality - needs attention"
 
-    def _unavailable_analysis_result(self) -> Dict[str, Any]:
+    def _unavailable_analysis_result(self) -> dict[str, Any]:
         """Return result when GEDCOM AI is not available."""
         return {
             "analysis_timestamp": datetime.now().isoformat(),
@@ -509,7 +509,7 @@ class GedcomAIIntegrator:
             "summary": {"status": "unavailable"}
         }
 
-    def _error_analysis_result(self, error_message: str) -> Dict[str, Any]:
+    def _error_analysis_result(self, error_message: str) -> dict[str, Any]:
         """Return error result."""
         return {
             "analysis_timestamp": datetime.now().isoformat(),

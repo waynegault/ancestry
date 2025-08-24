@@ -88,7 +88,7 @@ import base64
 import getpass
 import json
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import keyring
 
@@ -153,7 +153,7 @@ class SecurityManager:
             self._fernet = Fernet(key)
         return self._fernet
 
-    def encrypt_credentials(self, credentials: Dict[str, str]) -> bool:
+    def encrypt_credentials(self, credentials: dict[str, str]) -> bool:
         """
         Encrypt and store credentials securely.
 
@@ -185,7 +185,7 @@ class SecurityManager:
             logger.error(f"Failed to encrypt credentials: {e}")
             return False
 
-    def decrypt_credentials(self) -> Optional[Dict[str, str]]:
+    def decrypt_credentials(self) -> Optional[dict[str, str]]:
         """
         Decrypt and retrieve stored credentials.
 
@@ -334,7 +334,7 @@ class SecurityManager:
             return credentials.get(key)
         return None
 
-    def prompt_for_credentials(self) -> Dict[str, str]:
+    def prompt_for_credentials(self) -> dict[str, str]:
         """
         Prompt user for credentials interactively.
 
@@ -429,7 +429,7 @@ class SecurityManager:
             logger.error(f"Failed to delete credentials: {e}")
             return False
 
-    def validate_credentials(self, credentials: Dict[str, str]) -> bool:
+    def validate_credentials(self, credentials: dict[str, str]) -> bool:
         """
         Validate that required credentials are present.
 

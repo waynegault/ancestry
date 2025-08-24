@@ -40,7 +40,7 @@ logger = setup_module(globals(), __name__)
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 try:
@@ -208,8 +208,8 @@ class ConfigManager:
         return self.load_config()
 
     def validate_config(
-        self, config_data: Optional[Dict[str, Any]] = None
-    ) -> List[str]:
+        self, config_data: Optional[dict[str, Any]] = None
+    ) -> list[str]:
         """
         Validate configuration data.
 
@@ -232,7 +232,7 @@ class ConfigManager:
         except Exception as e:
             return [f"Configuration validation error: {e}"]
 
-    def get_environment_config(self, env_name: str) -> Dict[str, Any]:
+    def get_environment_config(self, env_name: str) -> dict[str, Any]:
         """
         Get configuration for a specific environment.
 
@@ -285,7 +285,7 @@ class ConfigManager:
             logger.error(f"Failed to export configuration: {e}")
             return False
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration values with auto-detection."""
         # PHASE 2 ENHANCEMENT: Auto-detect optimal settings (simplified for now)
         base_config = {
@@ -311,7 +311,7 @@ class ConfigManager:
 
         return base_config
 
-    def _auto_detect_optimal_settings(self) -> Dict[str, Any]:
+    def _auto_detect_optimal_settings(self) -> dict[str, Any]:
         """
         Auto-detect optimal configuration settings based on system capabilities.
 
@@ -408,7 +408,7 @@ class ConfigManager:
             logger.warning(f"Auto-detection failed, using defaults: {e}")
             return {}
 
-    def validate_system_requirements(self) -> Dict[str, Any]:
+    def validate_system_requirements(self) -> dict[str, Any]:
         """
         Validate system requirements and provide recommendations.
 
@@ -567,7 +567,7 @@ class ConfigManager:
             print(f"\n❌ Setup wizard failed: {e}")
             return False
 
-    def _load_config_file(self) -> Dict[str, Any]:
+    def _load_config_file(self) -> dict[str, Any]:
         """Load configuration from file."""
         if not self.config_file or not self.config_file.exists():
             return {}
@@ -585,7 +585,7 @@ class ConfigManager:
             logger.error(f"Failed to load config file {self.config_file}: {e}")
             return {}
 
-    def _load_environment_variables(self) -> Dict[str, Any]:
+    def _load_environment_variables(self) -> dict[str, Any]:
         """Load configuration from environment variables."""
         config = {}  # Load main configuration
         env_value = os.getenv("ENVIRONMENT")
@@ -934,8 +934,8 @@ class ConfigManager:
         return config
 
     def _merge_configs(
-        self, base: Dict[str, Any], override: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, base: dict[str, Any], override: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Merge two configuration dictionaries.
 

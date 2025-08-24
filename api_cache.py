@@ -20,7 +20,7 @@ import hashlib
 import json
 import sys
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 # === LOCAL IMPORTS ===
 from cache import (
@@ -49,7 +49,7 @@ AI_CACHE_EXPIRE = 86400  # 24 hours for AI responses (they're expensive!)
 # --- API Response Caching ---
 
 
-def create_api_cache_key(endpoint: str, params: Dict[str, Any]) -> str:
+def create_api_cache_key(endpoint: str, params: dict[str, Any]) -> str:
     """
     Create a consistent cache key for API responses.
 
@@ -69,7 +69,7 @@ def create_api_cache_key(endpoint: str, params: Dict[str, Any]) -> str:
 @cache_result("ancestry_profile_details", expire=API_CACHE_EXPIRE)
 def cache_profile_details_api(
     session_manager, profile_id: str, *args, **kwargs
-) -> Optional[Dict]:
+) -> Optional[dict]:
     """
     Cached wrapper for profile details API calls.
 
@@ -101,7 +101,7 @@ def cache_facts_api(
     base_url: str,
     *args,
     **kwargs,
-) -> Optional[Dict]:
+) -> Optional[dict]:
     """
     Cached wrapper for facts API calls.
 
@@ -140,10 +140,10 @@ def cache_suggest_api(
     owner_tree_id: str,
     owner_profile_id: Optional[str],
     base_url: str,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     *args,
     **kwargs,
-) -> Optional[List[Dict]]:
+) -> Optional[list[dict]]:
     """
     Cached wrapper for suggest API calls.
 
@@ -226,7 +226,7 @@ def cache_ai_classify_intent(
 @cache_result("ai_extract_tasks", expire=AI_CACHE_EXPIRE)
 def cache_ai_extract_tasks(
     context_history: str, session_manager, *args, **kwargs
-) -> Optional[Dict]:
+) -> Optional[dict]:
     """
     Cached wrapper for AI task extraction.
 
@@ -321,7 +321,7 @@ def cache_person_by_profile_id(
 
 
 @cache_result("db_conversation_logs", expire=DB_CACHE_EXPIRE)
-def cache_conversation_logs(session, person_id: int, limit: int = 10) -> List[Any]:
+def cache_conversation_logs(session, person_id: int, limit: int = 10) -> list[Any]:
     """
     Cached wrapper for conversation logs lookup.
 
@@ -352,7 +352,7 @@ def cache_conversation_logs(session, person_id: int, limit: int = 10) -> List[An
 # --- Cache Management Functions ---
 
 
-def warm_api_caches(common_profile_ids: List[str]) -> int:
+def warm_api_caches(common_profile_ids: list[str]) -> int:
     """
     Warm API caches with commonly accessed profile IDs.
 
@@ -378,7 +378,7 @@ def warm_api_caches(common_profile_ids: List[str]) -> int:
     return warmed
 
 
-def get_api_cache_stats() -> Dict[str, Any]:
+def get_api_cache_stats() -> dict[str, Any]:
     """
     Get statistics about API and database caching.
 
@@ -432,7 +432,7 @@ class ApiCacheModule(BaseCacheModule):
     def get_module_name(self) -> str:
         return self.module_name
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get comprehensive API cache statistics."""
         base_stats = super().get_stats()
 
@@ -505,7 +505,7 @@ class ApiCacheModule(BaseCacheModule):
             logger.error(f"Error warming API cache: {e}")
             return False
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get detailed health status of API cache system."""
         base_health = super().get_health_status()
 
@@ -586,7 +586,7 @@ _api_cache_module = ApiCacheModule()
 # --- Public Interface Functions for API Cache Module ---
 
 
-def get_api_cache_module_stats() -> Dict[str, Any]:
+def get_api_cache_module_stats() -> dict[str, Any]:
     """Get comprehensive API cache statistics from the cache module."""
     return _api_cache_module.get_stats()
 
@@ -601,7 +601,7 @@ def warm_api_cache() -> bool:
     return _api_cache_module.warm()
 
 
-def get_api_cache_health() -> Dict[str, Any]:
+def get_api_cache_health() -> dict[str, Any]:
     """Get API cache health status."""
     return _api_cache_module.get_health_status()
 
@@ -609,7 +609,7 @@ def get_api_cache_health() -> Dict[str, Any]:
 # --- Enhanced API Cache Functions ---
 
 
-def create_unified_api_cache_key(endpoint: str, params: Dict[str, Any]) -> str:
+def create_unified_api_cache_key(endpoint: str, params: dict[str, Any]) -> str:
     """
     Create a unified cache key for API responses using the standardized system.
 
@@ -641,7 +641,7 @@ def create_unified_ai_cache_key(model: str, prompt: str, **kwargs) -> str:
 # --- API Cache Testing Suite ---
 
 
-def run_api_cache_tests() -> Dict[str, Any]:
+def run_api_cache_tests() -> dict[str, Any]:
     """
     Run comprehensive tests for API cache functionality.
     Returns test results with pass/fail status and performance metrics.
@@ -791,7 +791,7 @@ def run_api_cache_tests() -> Dict[str, Any]:
 # --- API Cache Demo Functions ---
 
 
-def demonstrate_api_cache_usage() -> Dict[str, Any]:
+def demonstrate_api_cache_usage() -> dict[str, Any]:
     """
     Demonstrate practical API cache usage with examples.
     Returns demonstration results and performance data.

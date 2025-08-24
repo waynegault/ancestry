@@ -32,7 +32,7 @@ import threading
 import time
 import weakref
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
@@ -70,7 +70,7 @@ class SessionComponentCache(BaseCacheModule):
 
     def __init__(self):
         self._active_sessions = weakref.WeakSet()
-        self._session_timestamps: Dict[str, float] = {}
+        self._session_timestamps: dict[str, float] = {}
         self._lock = threading.Lock()
         logger.debug("SessionComponentCache initialized")
 
@@ -159,7 +159,7 @@ class SessionComponentCache(BaseCacheModule):
             logger.warning(f"Error caching component {component_type}: {e}")
             return False
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get session cache statistics"""
         base_stats = get_cache_stats()
 
@@ -222,7 +222,7 @@ class SessionComponentCache(BaseCacheModule):
         """Get module name"""
         return "session_cache"
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get health status of session cache"""
         try:
             stats = self.get_stats()
@@ -324,7 +324,7 @@ class OptimizedSessionState:
     Reduces session validation overhead.
     """
 
-    def get_cached_session_state(self, session_id: str) -> Optional[Dict]:
+    def get_cached_session_state(self, session_id: str) -> Optional[dict]:
         """Get cached session state if valid"""
         if not cache:
             return None
@@ -344,7 +344,7 @@ class OptimizedSessionState:
             logger.debug(f"Error retrieving session state for {session_id}: {e}")
             return None
 
-    def cache_session_state(self, session_id: str, state: Dict):
+    def cache_session_state(self, session_id: str, state: dict):
         """Cache session state using existing infrastructure"""
         if not cache:
             return
@@ -371,7 +371,7 @@ class OptimizedSessionState:
 # === CACHE MANAGEMENT FUNCTIONS ===
 
 
-def get_session_cache_stats() -> Dict[str, Any]:
+def get_session_cache_stats() -> dict[str, Any]:
     """Get comprehensive session cache statistics"""
     return _session_cache.get_stats()
 

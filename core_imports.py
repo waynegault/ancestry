@@ -14,7 +14,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 # Thread-safe locks for concurrent access
 _lock = threading.RLock()
@@ -22,9 +22,9 @@ _lock = threading.RLock()
 # Global state tracking with enhanced metrics
 _initialized = False
 _project_root: Optional[Path] = None
-_registry: Dict[str, Any] = {}
-_import_cache: Dict[str, bool] = {}
-_error_log: List[Dict[str, Any]] = []
+_registry: dict[str, Any] = {}
+_import_cache: dict[str, bool] = {}
+_error_log: list[dict[str, Any]] = []
 _stats = {
     "functions_registered": 0,
     "imports_resolved": 0,
@@ -36,7 +36,7 @@ _stats = {
 }
 
 
-def get_import_stats() -> Dict[str, Any]:
+def get_import_stats() -> dict[str, Any]:
     """Get comprehensive import system statistics."""
     with _lock:
         return {
@@ -196,12 +196,12 @@ def call_function(name: str, *args, **kwargs) -> Any:
     raise ValueError(f"Function '{name}' not available in registry")
 
 
-def get_available_functions() -> List[str]:
+def get_available_functions() -> list[str]:
     """Get list of all available function names."""
     return [name for name in _registry if callable(_registry[name])]
 
 
-def auto_register_module(module_globals: Dict[str, Any], module_name: str) -> None:
+def auto_register_module(module_globals: dict[str, Any], module_name: str) -> None:
     """
     Automatically register all callable objects from a module.
     Consolidates the functionality from core.registry_utils.auto_register_module.
@@ -255,7 +255,7 @@ def standardize_module_imports() -> bool:
         return False
 
 
-def get_stats() -> Dict[str, Any]:
+def get_stats() -> dict[str, Any]:
     """Get performance statistics for the unified system."""
     return {
         **_stats,

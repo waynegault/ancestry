@@ -39,11 +39,7 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -489,7 +485,7 @@ def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementati
 
 def _get_event_info(
     individual: GedcomIndividualType, event_tag: str
-) -> Tuple[Optional[datetime], str, str]:  # ... implementation ...
+) -> tuple[Optional[datetime], str, str]:  # ... implementation ...
     date_obj: Optional[datetime] = None
     date_str: str = "N/A"
     place_str: str = "N/A"
@@ -569,7 +565,7 @@ def format_life_dates(indi: GedcomIndividualType) -> str:  # ... implementation 
 
 def format_full_life_details(
     indi: GedcomIndividualType,
-) -> Tuple[str, str]:  # ... implementation ...
+) -> tuple[str, str]:  # ... implementation ...
     if not _is_individual(indi):
         logger.warning(
             f"format_full_life_details called with non-Individual type: {type(indi)}"
@@ -612,16 +608,16 @@ def _reconstruct_path(
     start_id: str,
     end_id: str,
     meeting_id: str,
-    visited_fwd: Dict[str, Optional[str]],  # {node: predecessor_from_start}
-    visited_bwd: Dict[str, Optional[str]],  # {node: predecessor_from_end}
-) -> List[str]:
+    visited_fwd: dict[str, Optional[str]],  # {node: predecessor_from_start}
+    visited_bwd: dict[str, Optional[str]],  # {node: predecessor_from_end}
+) -> list[str]:
     """
     Enhanced helper function for BFS to reconstruct the path from visited dictionaries.
     This version attempts to find more complete paths through family trees.
     V4 - Improved to handle complex family relationships
     """
     # Standard path reconstruction
-    path: List[str] = []
+    path: list[str] = []
     # Trace back from meeting point to start_id
     curr = meeting_id
     while curr is not None:
@@ -633,7 +629,7 @@ def _reconstruct_path(
     curr = visited_bwd.get(
         meeting_id
     )  # Start from predecessor of meeting_id in backward search
-    path_end: List[str] = []
+    path_end: list[str] = []
     while curr is not None:
         path_end.append(curr)
         curr = visited_bwd.get(curr)
@@ -699,7 +695,7 @@ def _reconstruct_path(
     return full_path
 
 
-def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Dict, id_to_children: Dict) -> bool:
+def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: dict, id_to_children: dict) -> bool:
     """Validate inputs for bidirectional BFS search."""
     if start_id == end_id:
         return True
@@ -727,9 +723,9 @@ def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple:
     return queue_fwd, queue_bwd, visited_fwd, visited_bwd
 
 
-def _expand_forward_node(current_id: str, depth: int, path: List[str],
-                        visited_fwd: Dict, queue_fwd: deque,
-                        id_to_parents: Dict, id_to_children: Dict, max_depth: int):
+def _expand_forward_node(current_id: str, depth: int, path: list[str],
+                        visited_fwd: dict, queue_fwd: deque,
+                        id_to_parents: dict, id_to_children: dict, max_depth: int):
     """Expand a node in the forward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
@@ -759,9 +755,9 @@ def _expand_forward_node(current_id: str, depth: int, path: List[str],
                 queue_fwd.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_backward_node(current_id: str, depth: int, path: List[str],
-                         visited_bwd: Dict, queue_bwd: deque,
-                         id_to_parents: Dict, id_to_children: Dict, max_depth: int):
+def _expand_backward_node(current_id: str, depth: int, path: list[str],
+                         visited_bwd: dict, queue_bwd: deque,
+                         id_to_parents: dict, id_to_children: dict, max_depth: int):
     """Expand a node in the backward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
@@ -794,13 +790,13 @@ def _expand_backward_node(current_id: str, depth: int, path: List[str],
 def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
     max_depth: int = 25,
     node_limit: int = 150000,
     timeout_sec: int = 45,
     log_progress: bool = False,
-) -> List[str]:
+) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
 
@@ -892,8 +888,8 @@ def fast_bidirectional_bfs(
     return _select_best_path(all_paths, start_id, end_id, id_to_parents, id_to_children)
 
 
-def _select_best_path(all_paths: List[List[str]], start_id: str, end_id: str,
-                     id_to_parents: Dict, id_to_children: Dict) -> List[str]:
+def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
+                     id_to_parents: dict, id_to_children: dict) -> list[str]:
     """Select the best path from a list of found paths based on relationship directness."""
     # If we found paths, select the best one
     if all_paths:
@@ -937,8 +933,8 @@ def _select_best_path(all_paths: List[List[str]], start_id: str, end_id: str,
 def _has_direct_relationship(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
 ) -> bool:
     """
     Check if two individuals have a direct relationship (parent-child, siblings, or spouses).
@@ -977,9 +973,9 @@ def _has_direct_relationship(
 def _find_direct_relationship(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
-) -> List[str]:
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> list[str]:
     """
     Find a direct relationship between two individuals.
 
@@ -1016,8 +1012,8 @@ def _find_direct_relationship(
 def _are_directly_related(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
 ) -> bool:
     """
     Check if two individuals are directly related (parent-child or siblings).
@@ -1042,11 +1038,11 @@ def _are_directly_related(
 
 
 def explain_relationship_path(
-    path_ids: List[str],
+    path_ids: list[str],
     reader: GedcomReaderType,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
-    indi_index: Dict[str, GedcomIndividualType],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+    indi_index: dict[str, GedcomIndividualType],
 ) -> str:
     """
     Generates a human-readable explanation of the relationship path.
@@ -1061,7 +1057,7 @@ def explain_relationship_path(
     if id_to_parents is None or id_to_children is None or indi_index is None:
         return "(Error: Data maps or index unavailable)"
 
-    steps: List[str] = []
+    steps: list[str] = []
     start_person_indi = indi_index.get(path_ids[0])
 
     # Get birth year for the first person
@@ -1245,7 +1241,7 @@ def explain_relationship_path(
     return full_start_name + "\n" + "\n".join(steps)
 
 
-def _are_siblings(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
+def _are_siblings(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if two individuals are siblings (share at least one parent)."""
     parents_1 = id_to_parents.get(id1, set())
     parents_2 = id_to_parents.get(id2, set())
@@ -1291,8 +1287,8 @@ def _are_spouses(id1: str, id2: str, reader: GedcomReaderType) -> bool:
 def _is_aunt_or_uncle(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
 ) -> bool:
     """Check if id2 is an aunt or uncle of id1."""
     # Get parents of id1
@@ -1317,8 +1313,8 @@ def _is_aunt_or_uncle(
 def _is_niece_or_nephew(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
 ) -> bool:
     """Check if id2 is a niece or nephew of id1."""
     # This is the reverse of aunt/uncle relationship
@@ -1328,8 +1324,8 @@ def _is_niece_or_nephew(
 def _are_cousins(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
 ) -> bool:
     """Check if id1 and id2 are cousins (children of siblings)."""
     # Get parents of id1 and id2
@@ -1358,7 +1354,7 @@ def _are_cousins(
     return False
 
 
-def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> bool:
+def _is_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if id2 is a grandparent of id1."""
     # Get parents of id1
     parents = id_to_parents.get(id1, set())
@@ -1372,7 +1368,7 @@ def _is_grandparent(id1: str, id2: str, id_to_parents: Dict[str, Set[str]]) -> b
     return False
 
 
-def _is_grandchild(id1: str, id2: str, id_to_children: Dict[str, Set[str]]) -> bool:
+def _is_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
     """Check if id2 is a grandchild of id1."""
     # Get children of id1
     children = id_to_children.get(id1, set())
@@ -1387,7 +1383,7 @@ def _is_grandchild(id1: str, id2: str, id_to_children: Dict[str, Set[str]]) -> b
 
 
 def _is_great_grandparent(
-    id1: str, id2: str, id_to_parents: Dict[str, Set[str]]
+    id1: str, id2: str, id_to_parents: dict[str, set[str]]
 ) -> bool:
     """Check if id2 is a great-grandparent of id1."""
     # Get parents of id1
@@ -1405,7 +1401,7 @@ def _is_great_grandparent(
 
 
 def _is_great_grandchild(
-    id1: str, id2: str, id_to_children: Dict[str, Set[str]]
+    id1: str, id2: str, id_to_children: dict[str, set[str]]
 ) -> bool:
     """Check if id2 is a great-grandchild of id1."""
     # Get children of id1
@@ -1426,19 +1422,19 @@ def _is_great_grandchild(
 # Scoring Function (V18 - Corrected Syntax)
 # ==============================================
 def calculate_match_score(
-    search_criteria: Dict,
-    candidate_processed_data: Dict[str, Any],  # Expects pre-processed data
+    search_criteria: dict,
+    candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    name_flexibility: Optional[Dict] = None,
-    date_flexibility: Optional[Dict] = None,
-) -> Tuple[float, Dict[str, int], List[str]]:
+    name_flexibility: Optional[dict] = None,
+    date_flexibility: Optional[dict] = None,
+) -> tuple[float, dict[str, int], list[str]]:
     """
     Calculates match score using pre-processed candidate data.
     Handles OR logic for death place matching (contains OR both absent).
     Prioritizes exact date > exact year > approx year for date scoring.
     V18.PreProcess compatible - Syntax Fixed.
     """
-    match_reasons: List[str] = []
+    match_reasons: list[str] = []
     field_scores = {
         "givn": 0,
         "surn": 0,
@@ -1746,12 +1742,12 @@ class GedcomData:
     def __init__(self, gedcom_path: Union[str, Path]):
         self.path = Path(gedcom_path).resolve()
         self.reader: Optional[GedcomReaderType] = None
-        self.indi_index: Dict[str, GedcomIndividualType] = {}  # Index of INDI records
-        self.processed_data_cache: Dict[str, Dict[str, Any]] = (
+        self.indi_index: dict[str, GedcomIndividualType] = {}  # Index of INDI records
+        self.processed_data_cache: dict[str, dict[str, Any]] = (
             {}
         )  # NEW: Cache for processed data
-        self.id_to_parents: Dict[str, Set[str]] = {}
-        self.id_to_children: Dict[str, Set[str]] = {}
+        self.id_to_parents: dict[str, set[str]] = {}
+        self.id_to_children: dict[str, set[str]] = {}
         self.indi_index_build_time: float = 0
         self.family_maps_build_time: float = 0
         self.data_processing_time: float = 0  # NEW: Time for pre-processing
@@ -1895,7 +1891,7 @@ class GedcomData:
                     logger.debug(f"Skipping non-record FAM entry: {type(fam)}")
                     continue
                 fam_id_log = getattr(fam, "xref_id", "N/A_FAM")
-                parents: Set[str] = set()
+                parents: set[str] = set()
                 for parent_tag in [TAG_HUSBAND, TAG_WIFE]:
                     parent_ref = fam.sub_tag(parent_tag)
                     if parent_ref and hasattr(parent_ref, "xref_id"):
@@ -2045,7 +2041,7 @@ class GedcomData:
                 "[Pre-Process] Processed data cache is EMPTY after build attempt."
             )
 
-    def get_processed_indi_data(self, norm_id: str) -> Optional[Dict[str, Any]]:
+    def get_processed_indi_data(self, norm_id: str) -> Optional[dict[str, Any]]:
         """Retrieves pre-processed data for an individual from the cache."""
         if not self.processed_data_cache:
             logger.warning(
@@ -2076,9 +2072,9 @@ class GedcomData:
 
     def get_related_individuals(
         self, individual: GedcomIndividualType, relationship_type: str
-    ) -> List[GedcomIndividualType]:
+    ) -> list[GedcomIndividualType]:
         """Gets parents, children, siblings, or spouses using cached maps."""
-        related_individuals: List[GedcomIndividualType] = []
+        related_individuals: list[GedcomIndividualType] = []
         if not _is_individual(individual) or not hasattr(individual, "xref_id"):
             logger.warning(
                 f"get_related_individuals: Invalid input individual object: {type(individual)}"
@@ -2101,7 +2097,7 @@ class GedcomData:
             )
             return related_individuals
         try:
-            related_ids: Set[str] = set()
+            related_ids: set[str] = set()
             if relationship_type == "parents":
                 related_ids = self.id_to_parents.get(target_id, set())
             elif relationship_type == "children":
@@ -2157,9 +2153,9 @@ class GedcomData:
 
     def _find_family_records(
         self, target_id: str, role_tag: str
-    ) -> List[GedcomRecordType]:
+    ) -> list[GedcomRecordType]:
         """Helper to find FAM records where target_id plays the specified role (HUSB, WIFE, CHIL). Less efficient scan."""
-        matching_families: List[GedcomRecordType] = []
+        matching_families: list[GedcomRecordType] = []
         if not self.reader or not target_id or not role_tag:
             return matching_families
         try:
@@ -2185,9 +2181,9 @@ class GedcomData:
 
     def _find_family_records_where_individual_is_parent(
         self, target_id: str
-    ) -> List[Tuple[GedcomRecordType, bool, bool]]:
+    ) -> list[tuple[GedcomRecordType, bool, bool]]:
         """Finds FAM records where target_id is HUSB or WIFE using scan (less efficient than maps)."""
-        matching_families_with_role: List[Tuple[GedcomRecordType, bool, bool]] = []
+        matching_families_with_role: list[tuple[GedcomRecordType, bool, bool]] = []
         husband_families = self._find_family_records(target_id, TAG_HUSBAND)
         wife_families = self._find_family_records(target_id, TAG_WIFE)
         processed_fam_ids = set()
@@ -2281,7 +2277,7 @@ class GedcomData:
         logger.debug(profile_info)
         return f"{explanation_str}\n{profile_info}"
 
-    def _find_direct_relationship(self, id1: str, id2: str) -> List[str]:
+    def _find_direct_relationship(self, id1: str, id2: str) -> list[str]:
         """
         Find a direct relationship between two individuals.
 

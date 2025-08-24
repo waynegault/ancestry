@@ -27,7 +27,7 @@ import statistics
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 LOGS_DIR = Path(__file__).resolve().parent / "Logs"
 LOGS_DIR.mkdir(exist_ok=True)
@@ -41,7 +41,7 @@ def _stable_hash(value: str | None) -> str | None:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
-def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: str | None, parse_success: bool, extracted_data: Dict[str, Any] | None = None, suggested_tasks: Iterable[Any] | None = None, raw_response_text: str | None = None, user_id: str | None = None, error: str | None = None, quality_score: float | None = None, component_coverage: float | None = None, anomaly_summary: str | None = None) -> None:
+def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: str | None, parse_success: bool, extracted_data: dict[str, Any] | None = None, suggested_tasks: Iterable[Any] | None = None, raw_response_text: str | None = None, user_id: str | None = None, error: str | None = None, quality_score: float | None = None, component_coverage: float | None = None, anomaly_summary: str | None = None) -> None:
     """Append a single telemetry event (best effort).
 
     Added (Phase 1 - 2025-08-11): component_coverage → proportion (0-1) of
@@ -51,7 +51,7 @@ def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, p
     unknown keys.
     """
     try:
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         if isinstance(extracted_data, dict):
             for k, v in extracted_data.items():
                 if isinstance(v, list):
@@ -80,7 +80,7 @@ def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, p
     except Exception:
         pass
 
-def summarize_experiments(last_n: int = 1000) -> Dict[str, Any]:
+def summarize_experiments(last_n: int = 1000) -> dict[str, Any]:
     """Return summary of last N telemetry events (or all if smaller).
 
     Adds per-variant success_rate, avg_tasks, and average_quality (if any events include quality_score).
@@ -104,7 +104,7 @@ def summarize_experiments(last_n: int = 1000) -> Dict[str, Any]:
         total = len(events)
         if not total:
             return {"events": 0, "variants": {}, "success_rate": 0.0}
-        variant_stats: Dict[str, Dict[str, Any]] = {}
+        variant_stats: dict[str, dict[str, Any]] = {}
         success = 0
         quality_accumulator_overall = 0.0
         quality_events_overall = 0
@@ -133,7 +133,7 @@ def summarize_experiments(last_n: int = 1000) -> Dict[str, Any]:
             # Remove internal accumulators
             st.pop("_quality_sum", None)
             st.pop("_quality_count", None)
-        summary: Dict[str, Any] = {"events": total, "success_rate": round(overall_success_rate, 3), "variants": variant_stats}
+        summary: dict[str, Any] = {"events": total, "success_rate": round(overall_success_rate, 3), "variants": variant_stats}
         if quality_events_overall:
             summary["average_quality"] = round(quality_accumulator_overall / quality_events_overall, 2)
         return summary
@@ -142,10 +142,10 @@ def summarize_experiments(last_n: int = 1000) -> Dict[str, Any]:
 
 
 # === Analysis & Alerting (Phase 11.2 Items 1 & 2) ===
-def _load_recent_events(window: int = 500) -> list[Dict[str, Any]]:
+def _load_recent_events(window: int = 500) -> list[dict[str, Any]]:
     if not TELEMETRY_FILE.exists():
         return []
-    events: list[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     try:
         with Path(TELEMETRY_FILE).open(encoding="utf-8") as fh:
             lines = fh.readlines()
@@ -164,7 +164,7 @@ def _load_recent_events(window: int = 500) -> list[Dict[str, Any]]:
     return events
 
 def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
-                        quality_margin: float = 5.0, success_margin: float = 0.05) -> Dict[str, Any]:
+                        quality_margin: float = 5.0, success_margin: float = 0.05) -> dict[str, Any]:
     """Compute comparative statistics for variants.
 
     Returns dict with per-variant metrics and potential improvement flags.
@@ -173,7 +173,7 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
     events = _load_recent_events(window)
     if not events:
         return {"events": 0, "variants": {}, "analysis": "no_data"}
-    variants: Dict[str, Dict[str, Any]] = {}
+    variants: dict[str, dict[str, Any]] = {}
     for ev in events:
         v = ev.get("variant_label") or "unknown"
         data = variants.setdefault(v, {"quality_scores": [], "successes": 0, "count": 0, "tasks": []})
@@ -187,7 +187,7 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
         if isinstance(tasks, int):
             data["tasks"].append(tasks)
     # Compute aggregates
-    result_variants: Dict[str, Any] = {}
+    result_variants: dict[str, Any] = {}
     for v, d in variants.items():
         count = max(d["count"], 1)
         qs_list = d["quality_scores"]
@@ -205,7 +205,7 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
     # Identify control vs alt (heuristic)
     control = result_variants.get("control")
     alt = result_variants.get("alt")
-    improvement: Dict[str, Any] = {}
+    improvement: dict[str, Any] = {}
     if control and alt and control["events"] >= min_events_per_variant and alt["events"] >= min_events_per_variant:
         quality_delta = (alt.get("median_quality") or 0) - (control.get("median_quality") or 0)
         success_delta = alt.get("success_rate", 0) - control.get("success_rate", 0)
@@ -216,7 +216,7 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
         improvement["promote_recommendation"] = bool(improvement["improved_quality"] or improvement["improved_success"])
     return {"events": len(events), "variants": result_variants, "improvement": improvement}
 
-def _write_alert(alert: Dict[str, Any]) -> None:
+def _write_alert(alert: dict[str, Any]) -> None:
     try:
         with Path(ALERTS_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(alert, ensure_ascii=False) + "\n")
@@ -256,7 +256,7 @@ def _auto_analyze_and_alert() -> None:
 
 
 # === Quality Baseline & Regression Detection (Phase 11.2 Item 3) ===
-def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8) -> Dict[str, Any] | None:
+def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8) -> dict[str, Any] | None:
     events = _load_recent_events(window)
     scores: list[float] = []
     for e in events:
@@ -285,7 +285,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         pass
     return baseline
 
-def load_quality_baseline() -> Dict[str, Any] | None:
+def load_quality_baseline() -> dict[str, Any] | None:
     if not QUALITY_BASELINE_FILE.exists():
         return None
     try:
@@ -294,7 +294,7 @@ def load_quality_baseline() -> Dict[str, Any] | None:
     except Exception:
         return None
 
-def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control") -> Dict[str, Any]:
+def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control") -> dict[str, Any]:
     baseline = load_quality_baseline()
     if not baseline or baseline.get("variant") != variant:
         return {"status": "no_baseline"}

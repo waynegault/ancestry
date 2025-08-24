@@ -39,7 +39,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -61,7 +61,7 @@ class PerformanceMetric:
     value: float
     timestamp: datetime
     category: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -88,7 +88,7 @@ class FunctionProfile:
     max_time: float = 0.0
     avg_time: float = 0.0
     recent_times: deque = field(default_factory=lambda: deque(maxlen=100))
-    memory_usage: List[float] = field(default_factory=list)
+    memory_usage: list[float] = field(default_factory=list)
     error_count: int = 0
     last_called: Optional[datetime] = None
 
@@ -99,12 +99,12 @@ class PerformanceMonitor:
     def __init__(
         self,
         max_history: int = 10000,
-        alert_thresholds: Optional[Dict[str, float]] = None,
+        alert_thresholds: Optional[dict[str, float]] = None,
     ):
         self.max_history = max_history
         self.metrics: deque = deque(maxlen=max_history)
-        self.function_profiles: Dict[str, FunctionProfile] = {}
-        self.alerts: List[PerformanceAlert] = []
+        self.function_profiles: dict[str, FunctionProfile] = {}
+        self.alerts: list[PerformanceAlert] = []
         self.alert_thresholds = alert_thresholds or self._default_thresholds()
         self._lock = threading.RLock()
         self._start_time = time.time()
@@ -119,7 +119,7 @@ class PerformanceMonitor:
 
         logger.debug("Performance monitor initialized")
 
-    def _default_thresholds(self) -> Dict[str, float]:
+    def _default_thresholds(self) -> dict[str, float]:
         """Default performance alert thresholds."""
         return {
             "memory_usage_mb": 1024,  # 1GB
@@ -191,7 +191,7 @@ class PerformanceMonitor:
         name: str,
         value: float,
         category: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Record a performance metric."""
         if not self.enabled:
@@ -368,7 +368,7 @@ class PerformanceMonitor:
             metric_name, f"Performance issue detected with {metric_name}: {value}"
         )
 
-    def get_report(self, hours: int = 24) -> Dict[str, Any]:
+    def get_report(self, hours: int = 24) -> dict[str, Any]:
         """Generate comprehensive performance report."""
         cutoff_time = datetime.now() - timedelta(hours=hours)
         recent_metrics = [m for m in self.metrics if m.timestamp >= cutoff_time]
@@ -457,8 +457,8 @@ class PerformanceMonitor:
         }
 
     def _generate_recommendations(
-        self, stats_summary: Dict, function_summary: Dict
-    ) -> List[str]:
+        self, stats_summary: dict, function_summary: dict
+    ) -> list[str]:
         """Generate performance recommendations based on collected data."""
         recommendations = []
 
@@ -539,8 +539,8 @@ class AdvancedPerformanceMonitor:
 
     def __init__(self, config_path: Optional[str] = None):
         self.config_path = config_path or "config/config.json"
-        self.performance_history: List[Dict[str, Any]] = []
-        self.optimization_recommendations: List[Dict[str, Any]] = []
+        self.performance_history: list[dict[str, Any]] = []
+        self.optimization_recommendations: list[dict[str, Any]] = []
         self.system_health_score: float = 100.0
         self.monitoring_active = False
         self._monitor_thread: Optional[threading.Thread] = None
@@ -576,7 +576,7 @@ class AdvancedPerformanceMonitor:
             self.monitoring_active = False
             return False
 
-    def stop_advanced_monitoring(self) -> Dict[str, Any]:
+    def stop_advanced_monitoring(self) -> dict[str, Any]:
         """Stop advanced monitoring and return final analysis."""
         self.monitoring_active = False
 
@@ -614,7 +614,7 @@ class AdvancedPerformanceMonitor:
                 logger.error(f"Error in advanced monitoring loop: {e}")
                 time.sleep(60)  # Wait longer on error
 
-    def _collect_comprehensive_metrics(self) -> Dict[str, Any]:
+    def _collect_comprehensive_metrics(self) -> dict[str, Any]:
         """Collect comprehensive system and application metrics."""
         try:
             # System metrics
@@ -714,7 +714,7 @@ class AdvancedPerformanceMonitor:
 
         self.system_health_score = max(0.0, score)
 
-    def _add_recommendation(self, recommendation: Dict[str, Any]) -> None:
+    def _add_recommendation(self, recommendation: dict[str, Any]) -> None:
         """Add optimization recommendation, avoiding duplicates."""
         # Check for existing similar recommendation
         for existing in self.optimization_recommendations:
@@ -729,7 +729,7 @@ class AdvancedPerformanceMonitor:
         if len(self.optimization_recommendations) > 50:
             self.optimization_recommendations = self.optimization_recommendations[-50:]
 
-    def _get_cache_statistics(self) -> Dict[str, Any]:
+    def _get_cache_statistics(self) -> dict[str, Any]:
         """Get cache performance statistics."""
         try:
             # Try to get cache stats from cache module
@@ -748,7 +748,7 @@ class AdvancedPerformanceMonitor:
         except Exception:
             return 0
 
-    def _get_api_statistics(self) -> Dict[str, Any]:
+    def _get_api_statistics(self) -> dict[str, Any]:
         """Get API performance statistics."""
         try:
             # This would integrate with actual API monitoring
@@ -836,7 +836,7 @@ class AdvancedPerformanceMonitor:
 
         return "\n".join(trend_lines)
 
-    def validate_configuration(self) -> Dict[str, Any]:
+    def validate_configuration(self) -> dict[str, Any]:
         """Validate current configuration and suggest optimizations."""
         validation_results = {
             "status": "valid",
@@ -932,7 +932,7 @@ def start_advanced_monitoring() -> bool:
     """Start global advanced performance monitoring."""
     return _advanced_monitor.start_advanced_monitoring()
 
-def stop_advanced_monitoring() -> Dict[str, Any]:
+def stop_advanced_monitoring() -> dict[str, Any]:
     """Stop global advanced performance monitoring."""
     return _advanced_monitor.stop_advanced_monitoring()
 
@@ -940,7 +940,7 @@ def get_performance_dashboard() -> str:
     """Get current performance dashboard."""
     return _advanced_monitor.generate_performance_dashboard()
 
-def validate_system_configuration() -> Dict[str, Any]:
+def validate_system_configuration() -> dict[str, Any]:
     """Validate system configuration and get optimization recommendations."""
     return _advanced_monitor.validate_configuration()
 

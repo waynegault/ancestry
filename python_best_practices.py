@@ -20,7 +20,7 @@ import functools
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, TypeVar, Union
+from typing import Any, Callable, TypeVar, Union
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -61,7 +61,7 @@ class ImmutableConfig:
     name: str
     version: str = "1.0.0"
     debug: bool = False
-    settings: Dict[str, Any] = field(default_factory=dict)
+    settings: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -106,7 +106,7 @@ def validate_types(**type_hints: type) -> Callable[[F], F]:
     return decorator
 
 
-def require_non_empty(param_names: List[str]) -> Callable[[F], F]:
+def require_non_empty(param_names: list[str]) -> Callable[[F], F]:
     """
     Decorator to ensure specified parameters are not empty.
 
@@ -252,7 +252,7 @@ def database_transaction(session_manager, operation_name: str = "database_operat
 
 
 @contextmanager
-def temporary_config(config_updates: Dict[str, Any]):
+def temporary_config(config_updates: dict[str, Any]):
     """
     Context manager for temporary configuration changes.
 
@@ -260,7 +260,7 @@ def temporary_config(config_updates: Dict[str, Any]):
         config_updates: Dictionary of configuration updates to apply temporarily
     """
     # Store original values (placeholder retained for future use)
-    _original_values: Dict[str, Any] = {}
+    _original_values: dict[str, Any] = {}
 
     try:
         # Apply temporary updates (implementation would depend on config system)
@@ -293,7 +293,7 @@ def ensure_immutable(data: Any) -> Any:
     return data
 
 
-def safe_get(container: Dict[str, Any], key: str, default: T = None) -> Union[Any, T]:
+def safe_get(container: dict[str, Any], key: str, default: T = None) -> Union[Any, T]:
     """
     Safely get value from container with type-safe default.
 

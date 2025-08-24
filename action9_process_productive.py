@@ -43,7 +43,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -211,7 +211,7 @@ class NameData(BaseModel):
     """Model for structured name information."""
 
     full_name: str
-    nicknames: List[str] = Field(default_factory=list)
+    nicknames: list[str] = Field(default_factory=list)
     maiden_name: Optional[str] = None
     generational_suffix: Optional[str] = None
 
@@ -256,15 +256,15 @@ class ExtractedData(BaseModel):
     """Enhanced Pydantic model for validating the extracted_data structure in AI responses."""
 
     # Enhanced structured fields
-    structured_names: List[NameData] = Field(default_factory=list)
-    vital_records: List[VitalRecord] = Field(default_factory=list)
-    relationships: List[Relationship] = Field(default_factory=list)
-    locations: List[Location] = Field(default_factory=list)
-    occupations: List[Occupation] = Field(default_factory=list)
-    research_questions: List[str] = Field(default_factory=list)
-    documents_mentioned: List[str] = Field(default_factory=list)
-    dna_information: List[str] = Field(default_factory=list)
-    suggested_tasks: List[str] = Field(default_factory=list)
+    structured_names: list[NameData] = Field(default_factory=list)
+    vital_records: list[VitalRecord] = Field(default_factory=list)
+    relationships: list[Relationship] = Field(default_factory=list)
+    locations: list[Location] = Field(default_factory=list)
+    occupations: list[Occupation] = Field(default_factory=list)
+    research_questions: list[str] = Field(default_factory=list)
+    documents_mentioned: list[str] = Field(default_factory=list)
+    dna_information: list[str] = Field(default_factory=list)
+    suggested_tasks: list[str] = Field(default_factory=list)
 
     @field_validator(
         "research_questions",
@@ -282,7 +282,7 @@ class ExtractedData(BaseModel):
             return []
         return [str(item) for item in v if item is not None]
 
-    def get_all_names(self) -> List[str]:
+    def get_all_names(self) -> list[str]:
         """Get all names from structured fields."""
         names = []
         for name_data in self.structured_names:
@@ -290,7 +290,7 @@ class ExtractedData(BaseModel):
             names.extend(name_data.nicknames)
         return list(set(names))
 
-    def get_all_locations(self) -> List[str]:
+    def get_all_locations(self) -> list[str]:
         """Get all locations from structured fields."""
         locations = []
         for vital_record in self.vital_records:
@@ -303,7 +303,7 @@ class AIResponse(BaseModel):
     """Pydantic model for validating the complete AI response structure."""
 
     extracted_data: ExtractedData = Field(default_factory=ExtractedData)
-    suggested_tasks: List[str] = Field(default_factory=list)
+    suggested_tasks: list[str] = Field(default_factory=list)
 
     @field_validator("suggested_tasks", mode="before")
     @classmethod
@@ -380,8 +380,8 @@ from gedcom_utils import (
 
 
 def _search_gedcom_for_names(
-    names: List[str], gedcom_data: Optional[Any] = None
-) -> List[Dict[str, Any]]:
+    names: list[str], gedcom_data: Optional[Any] = None
+) -> list[dict[str, Any]]:
     """
     Searches the configured GEDCOM file for names and returns matching individuals.
     Uses the cached GEDCOM data to avoid loading the file multiple times.
@@ -520,8 +520,8 @@ def _search_gedcom_for_names(
 
 def _search_api_for_names(
     session_manager: Optional[SessionManager] = None,
-    names: Optional[List[str]] = None,
-) -> List[Dict[str, Any]]:
+    names: Optional[list[str]] = None,
+) -> list[dict[str, Any]]:
     """
     Searches Ancestry API for names and returns matching individuals.
 
@@ -660,8 +660,8 @@ class DatabaseState:
     """Manages database session and batch operations."""
 
     session: Optional[DbSession] = None
-    logs_to_add: Optional[List[Dict[str, Any]]] = None
-    person_updates: Optional[Dict[int, PersonStatusEnum]] = None
+    logs_to_add: Optional[list[dict[str, Any]]] = None
+    person_updates: Optional[dict[int, PersonStatusEnum]] = None
     batch_size: int = 10
     commit_threshold: int = 10
 
@@ -676,7 +676,7 @@ class DatabaseState:
 class MessageConfig:
     """Manages message types and templates."""
 
-    templates: Optional[Dict[str, str]] = None
+    templates: Optional[dict[str, str]] = None
     ack_msg_type_id: Optional[int] = None
     custom_reply_msg_type_id: Optional[int] = None
 
@@ -710,7 +710,7 @@ class PersonProcessor:
             else ""
         )
 
-    def process_person(self, person: Person, progress_bar=None) -> Tuple[bool, str]:
+    def process_person(self, person: Person, progress_bar=None) -> tuple[bool, str]:
         """
         Process a single person and return (success, status_message).
 
@@ -769,7 +769,7 @@ class PersonProcessor:
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
-    ) -> Optional[List[ConversationLog]]:
+    ) -> Optional[list[ConversationLog]]:
         """Get message context for the person."""
         if self.db_state.session is None:
             logger.error(f"Database session is None for {log_prefix}")
@@ -782,7 +782,7 @@ class PersonProcessor:
         return context_logs
 
     def _should_skip_person(
-        self, person: Person, context_logs: List[ConversationLog], log_prefix: str
+        self, person: Person, context_logs: list[ConversationLog], log_prefix: str
     ) -> bool:
         """Check if person should be skipped based on various criteria."""
 
@@ -827,7 +827,7 @@ class PersonProcessor:
         return False
 
     def _get_latest_incoming_message(
-        self, context_logs: List[ConversationLog]
+        self, context_logs: list[ConversationLog]
     ) -> Optional[ConversationLog]:
         """Get the latest incoming message from context logs."""
         for log in reversed(context_logs):
@@ -837,8 +837,8 @@ class PersonProcessor:
         return None
 
     def _process_with_ai(
-        self, person: Person, context_logs: List[ConversationLog], progress_bar=None
-    ) -> Optional[Tuple[Dict[str, Any], List[str]]]:
+        self, person: Person, context_logs: list[ConversationLog], progress_bar=None
+    ) -> Optional[tuple[dict[str, Any], list[str]]]:
         """Process message content with AI and return extracted data and tasks."""
         if progress_bar:
             progress_bar.set_description(
@@ -899,7 +899,7 @@ class PersonProcessor:
     def _create_ms_tasks(
         self,
         person: Person,
-        suggested_tasks: List[str],
+        suggested_tasks: list[str],
         log_prefix: str,
         progress_bar=None,
     ):
@@ -1101,8 +1101,8 @@ class PersonProcessor:
     def _handle_message_response(
         self,
         person: Person,
-        context_logs: List[ConversationLog],
-        extracted_data: Dict[str, Any],
+        context_logs: list[ConversationLog],
+        extracted_data: dict[str, Any],
         log_prefix: str,
         progress_bar=None,
     ) -> bool:
@@ -1162,8 +1162,8 @@ class PersonProcessor:
     def _generate_custom_reply(
         self,
         person: Person,
-        context_logs: List[ConversationLog],
-        extracted_data: Dict[str, Any],
+        context_logs: list[ConversationLog],
+        extracted_data: dict[str, Any],
         latest_message: ConversationLog,
         log_prefix: str,
         progress_bar=None,
@@ -1232,10 +1232,10 @@ class PersonProcessor:
     def _format_message(
         self,
         person: Person,
-        extracted_data: Dict[str, Any],
+        extracted_data: dict[str, Any],
         custom_reply: Optional[str],
         log_prefix: str,
-    ) -> Tuple[str, int]:
+    ) -> tuple[str, int]:
         """Format the message text and determine message type ID."""
 
         try:
@@ -1319,7 +1319,7 @@ class PersonProcessor:
     def _send_message(
         self,
         person: Person,
-        context_logs: List[ConversationLog],
+        context_logs: list[ConversationLog],
         message_text: str,
         message_template_id: int,
         custom_reply: Optional[str],
@@ -1374,7 +1374,7 @@ class PersonProcessor:
             log_prefix,
         )
 
-    def _should_send_message(self, person: Person, log_prefix: str) -> Tuple[bool, str]:
+    def _should_send_message(self, person: Person, log_prefix: str) -> tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
         app_mode = config_schema.app_mode
@@ -1397,7 +1397,7 @@ class PersonProcessor:
         return True, ""
 
     def _get_conversation_id(
-        self, context_logs: List[ConversationLog], log_prefix: str
+        self, context_logs: list[ConversationLog], log_prefix: str
     ) -> Optional[str]:
         """Get conversation ID from context logs."""
         if not context_logs:
@@ -1514,7 +1514,7 @@ class BatchCommitManager:
         total_pending = logs_count + updates_count
         return total_pending >= self.db_state.commit_threshold
 
-    def commit_batch(self, batch_num: int) -> Tuple[bool, int, int]:
+    def commit_batch(self, batch_num: int) -> tuple[bool, int, int]:
         """
         Commit current batch to database.
 
@@ -1738,7 +1738,7 @@ def _setup_configuration(
 @cached_database_query(ttl=300)  # 5-minute cache for candidate queries
 def _query_candidates(
     db_state: DatabaseState, msg_config: MessageConfig, limit: int
-) -> List[Person]:
+) -> list[Person]:
     """Query for candidate persons to process."""
 
     if not db_state.session:
@@ -1815,7 +1815,7 @@ def _query_candidates(
 
 def _process_candidates(
     session_manager: SessionManager,
-    candidates: List[Person],
+    candidates: list[Person],
     state: ProcessingState,
     ms_state: MSGraphState,
     db_state: DatabaseState,
@@ -1996,7 +1996,7 @@ def _normalize_task_text(task: str) -> str:
     return re.sub(r"[!?.]{2,}", ".", t)
 
 
-def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dict[str, Any], log_prefix: str) -> None:
+def _log_suggested_tasks_quality(suggested_tasks: list[str], extracted_data: dict[str, Any], log_prefix: str) -> None:
     """Log-only audit of suggested task quality; does not modify behavior.
 
     Metrics logged:
@@ -2066,7 +2066,7 @@ def _log_suggested_tasks_quality(suggested_tasks: List[str], extracted_data: Dic
         logger.debug(f"{log_prefix}: Task audit failed: {e}")
 
 
-def _log_task_dedup_preview(suggested_tasks: List[str], log_prefix: str) -> None:
+def _log_task_dedup_preview(suggested_tasks: list[str], log_prefix: str) -> None:
         """Phase 4.2 (log-only): Preview potential task de-duplication impact.
 
         Groups tasks by normalized core text (after stripping trailing qualifiers).
@@ -2077,7 +2077,7 @@ def _log_task_dedup_preview(suggested_tasks: List[str], log_prefix: str) -> None
             if len(tasks) < 2:
                 return
             # Lightweight normalization reuse
-            core_map: Dict[str, List[int]] = {}
+            core_map: dict[str, list[int]] = {}
             for idx, raw in enumerate(tasks):
                 if not isinstance(raw, str) or not raw.strip():
                     continue
@@ -2111,7 +2111,7 @@ def _log_task_dedup_preview(suggested_tasks: List[str], log_prefix: str) -> None
             logger.debug(f"{log_prefix}: De-dup preview failed: {e}")
 
 
-def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
+def _process_ai_response(ai_response: Any, log_prefix: str) -> dict[str, Any]:
     """
     Processes and validates the AI response using Pydantic models for robust parsing,
     then normalizes the structure to the enriched schema used downstream.
@@ -2125,7 +2125,7 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
         normalize_ai_response = None  # type: ignore
 
     # Default minimal fallback
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "extracted_data": {},
         "suggested_tasks": [],
     }
@@ -2170,7 +2170,7 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
 
 
 def _format_context_for_ai_extraction(
-    context_logs: List[ConversationLog],
+    context_logs: list[ConversationLog],
     # my_pid_lower parameter is kept for compatibility but not used
     # pylint: disable=unused-argument
     _: str = "",  # Renamed to underscore to indicate unused parameter
@@ -2244,7 +2244,7 @@ def _get_message_context(
     db_session: DbSession,
     person_id: Union[int, Any],  # Accept SQLAlchemy Column type or int
     limit: int = config_schema.ai_context_messages_count,
-) -> List[ConversationLog]:
+) -> list[ConversationLog]:
     """
     Fetches the last 'limit' ConversationLog entries for a given person_id,
     ordered by timestamp ascending (oldest first).
@@ -2295,7 +2295,7 @@ def _get_message_context(
         return []
 
 
-def _load_templates_for_action9() -> Dict[str, str]:
+def _load_templates_for_action9() -> dict[str, str]:
     """
     Loads message templates for Action 9 from action8_messaging.
 
@@ -2323,8 +2323,8 @@ def _load_templates_for_action9() -> Dict[str, str]:
 
 
 def _search_ancestry_tree(
-    _session_manager: SessionManager, extracted_data: Union[ExtractedData, List[str]]
-) -> Dict[str, Any]:
+    _session_manager: SessionManager, extracted_data: Union[ExtractedData, list[str]]
+) -> dict[str, Any]:
     """
     Searches the user's tree (GEDCOM or API) for names extracted by the AI.
 
@@ -2373,8 +2373,8 @@ def _search_ancestry_tree(
 
 
 def _identify_and_get_person_details(
-    _session_manager: SessionManager, extracted_data: Dict[str, Any], log_prefix: str
-) -> Optional[Dict[str, Any]]:
+    _session_manager: SessionManager, extracted_data: dict[str, Any], log_prefix: str
+) -> Optional[dict[str, Any]]:
     """
     Simplified version that returns None (no person details found).
     """
@@ -2385,7 +2385,7 @@ def _identify_and_get_person_details(
 
 
 def _format_genealogical_data_for_ai(
-    genealogical_data: Dict[str, Any], log_prefix: str
+    genealogical_data: dict[str, Any], log_prefix: str
 ) -> str:
     """
     Simplified version that formats genealogical data for AI consumption.
@@ -2430,7 +2430,7 @@ def generate_genealogical_reply(
         return None
 
 
-def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
+def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
     """
     Generates a summary from extracted data for acknowledgment messages.
     """
@@ -2730,11 +2730,11 @@ def action9_process_productive_module_tests() -> bool:
 # === PHASE 12.3: ENHANCED DATA INTEGRATION FUNCTIONS ===
 
 def _apply_intelligent_task_selection(
-    tasks: List[Dict[str, Any]],
-    extracted_data: Dict[str, Any],
-    person_data: Dict[str, Any],
+    tasks: list[dict[str, Any]],
+    extracted_data: dict[str, Any],
+    person_data: dict[str, Any],
     log_prefix: str
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Apply intelligent task selection based on data completeness and quality.
     Prioritizes tasks that make best use of available extracted data.
@@ -2770,7 +2770,7 @@ def _apply_intelligent_task_selection(
         logger.warning(f"{log_prefix}: Error in intelligent task selection: {e}")
         return tasks[:5]  # Fallback to first 5 tasks
 
-def _calculate_task_data_integration_score(task: Dict[str, Any], extracted_data: Dict[str, Any]) -> float:
+def _calculate_task_data_integration_score(task: dict[str, Any], extracted_data: dict[str, Any]) -> float:
     """Calculate how well a task integrates with available extracted data."""
     score = 0.0
 
@@ -2819,10 +2819,10 @@ def _calculate_task_data_integration_score(task: Dict[str, Any], extracted_data:
     return min(1.0, score)
 
 def _validate_and_score_tasks(
-    tasks: List[Dict[str, Any]],
-    extracted_data: Dict[str, Any],
+    tasks: list[dict[str, Any]],
+    extracted_data: dict[str, Any],
     log_prefix: str
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Validate task quality and add quality scores for better task management.
     """
@@ -2851,7 +2851,7 @@ def _validate_and_score_tasks(
         logger.warning(f"{log_prefix}: Error in task validation: {e}")
         return tasks
 
-def _calculate_task_quality_score(task: Dict[str, Any], extracted_data: Dict[str, Any]) -> float:
+def _calculate_task_quality_score(task: dict[str, Any], extracted_data: dict[str, Any]) -> float:
     """Calculate overall quality score for a research task."""
     score = 0.0
 

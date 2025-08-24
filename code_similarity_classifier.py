@@ -29,7 +29,7 @@ import tokenize
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 # ----------------------------- Data Structures -----------------------------
 
@@ -48,7 +48,7 @@ class FunctionInfo:
     yield_count: int
     complexity: int  # rough cyclomatic proxy
     loc: int
-    tags: List[str]
+    tags: list[str]
     signature: str
     fingerprint: str  # sha1 of normalized token stream
     simhash64: int
@@ -109,8 +109,8 @@ def _rough_complexity(node: ast.AST) -> int:
     return count
 
 
-def _collect_tags(src: str, node: ast.AST, is_async: bool) -> List[str]:
-    tags: List[str] = []
+def _collect_tags(src: str, node: ast.AST, is_async: bool) -> list[str]:
+    tags: list[str] = []
     if is_async:
         tags.append("async")
     # purity / effects
@@ -158,7 +158,7 @@ def _collect_tags(src: str, node: ast.AST, is_async: bool) -> List[str]:
 
 def _normalize_tokens(code: str) -> str:
     # Replace identifiers and literals with placeholders; keep punctuation/operators/keywords
-    out: List[str] = []
+    out: list[str] = []
     kw = set(keyword.kwlist)
     try:
         reader = io.StringIO(code).readline
@@ -202,7 +202,7 @@ def _hamming(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
-def _signature_from_node(node: ast.AST) -> Tuple[str, int, bool, bool]:
+def _signature_from_node(node: ast.AST) -> tuple[str, int, bool, bool]:
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return "()", 0, False, False
     a = node.args
@@ -221,8 +221,8 @@ class _FuncVisitor(ast.NodeVisitor):
     def __init__(self, module_path: str, source: str) -> None:
         self.module_path = module_path
         self.source = source
-        self.stack: List[str] = []
-        self.items: List[FunctionInfo] = []
+        self.stack: list[str] = []
+        self.items: list[FunctionInfo] = []
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:  # type: ignore[override]
         self.stack.append(node.name)
@@ -280,8 +280,8 @@ class _FuncVisitor(ast.NodeVisitor):
 class CodeSimilarityClassifier:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or Path()
-        self.functions: List[FunctionInfo] = []
-        self.similar_pairs: List[SimilarityPair] = []
+        self.functions: list[FunctionInfo] = []
+        self.similar_pairs: list[SimilarityPair] = []
 
     def _iter_py_files(self) -> Iterable[Path]:
         for p in self.root.rglob("*.py"):
@@ -292,8 +292,8 @@ class CodeSimilarityClassifier:
                 continue
             yield p
 
-    def scan(self) -> List[FunctionInfo]:
-        items: List[FunctionInfo] = []
+    def scan(self) -> list[FunctionInfo]:
+        items: list[FunctionInfo] = []
         for path in self._iter_py_files():
             text = _safe_read(path)
             if not text:
@@ -309,7 +309,7 @@ class CodeSimilarityClassifier:
         return items
 
     @staticmethod
-    def _bin_key(fi: FunctionInfo) -> Tuple[str, str, bool]:
+    def _bin_key(fi: FunctionInfo) -> tuple[str, str, bool]:
         # group by async + size + coarse purity bucket
         size = next((t for t in fi.tags if t.startswith("size:")), "size:unknown")
         purity = "impure" if "impure" in fi.tags else "pure"
@@ -326,12 +326,12 @@ class CodeSimilarityClassifier:
         # Avoid comparing a method to a top-level function unless sizes are tiny
         return not (a.is_method != b.is_method and not (a.loc < 15 and b.loc < 15))
 
-    def find_similar(self, min_ratio: float = 0.88, max_hamming: int = 6) -> List[SimilarityPair]:
-        pairs: List[SimilarityPair] = []
+    def find_similar(self, min_ratio: float = 0.88, max_hamming: int = 6) -> list[SimilarityPair]:
+        pairs: list[SimilarityPair] = []
         if not self.functions:
             return pairs
         # index by bins
-        bins: Dict[Tuple[str, str, bool], List[int]] = {}
+        bins: dict[tuple[str, str, bool], list[int]] = {}
         for i, f in enumerate(self.functions):
             bins.setdefault(self._bin_key(f), []).append(i)
         for _, idxs in bins.items():
@@ -363,9 +363,9 @@ class CodeSimilarityClassifier:
         self.similar_pairs = pairs
         return pairs
 
-    def clusters(self) -> List[List[int]]:
+    def clusters(self) -> list[list[int]]:
         # Build components over function indices using current similar_pairs
-        parent: Dict[int, int] = {}
+        parent: dict[int, int] = {}
 
         def find(x: int) -> int:
             parent.setdefault(x, x)
@@ -380,13 +380,13 @@ class CodeSimilarityClassifier:
 
         for sp in self.similar_pairs:
             union(sp.a_idx, sp.b_idx)
-        groups: Dict[int, List[int]] = {}
+        groups: dict[int, list[int]] = {}
         for idx in set([sp.a_idx for sp in self.similar_pairs] + [sp.b_idx for sp in self.similar_pairs]):
             r = find(idx)
             groups.setdefault(r, []).append(idx)
         return list(groups.values())
 
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "functions": [asdict(f) for f in self.functions],
             "similar_pairs": [asdict(p) for p in self.similar_pairs],
@@ -399,7 +399,7 @@ class CodeSimilarityClassifier:
 def _print_summary(clsfr: CodeSimilarityClassifier, top_n: int = 30) -> None:
     print("=== FUNCTION CLASSIFICATION REPORT START ===")
     print(f"Total functions/methods analyzed: {len(clsfr.functions)}")
-    by_tag: Dict[str, int] = {}
+    by_tag: dict[str, int] = {}
     for f in clsfr.functions:
         for t in f.tags:
             by_tag[t] = by_tag.get(t, 0) + 1
@@ -420,7 +420,7 @@ def _print_summary(clsfr: CodeSimilarityClassifier, top_n: int = 30) -> None:
     print("=== FUNCTION CLASSIFICATION REPORT END ===")
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="Classify functions/methods and detect near-duplicates")
     ap.add_argument("--root", default=".", help="Root directory to scan")

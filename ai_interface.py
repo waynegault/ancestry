@@ -23,7 +23,7 @@ import json
 import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -252,7 +252,7 @@ def _call_ai_model(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ]
-            request_params: Dict[str, Any] = {
+            request_params: dict[str, Any] = {
                 "model": model_name,
                 "messages": messages,
                 "max_tokens": max_tokens,
@@ -461,7 +461,7 @@ def classify_message_intent(
 
 def extract_genealogical_entities(
     context_history: str, session_manager: SessionManager
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Extracts genealogical entities and suggests follow-up tasks.
     Expects AI to return JSON: {"extracted_data": {...}, "suggested_tasks": [...]}.
@@ -808,7 +808,7 @@ def generate_genealogical_reply(
 
 def extract_with_custom_prompt(
     context_history: str, custom_prompt: str, session_manager: SessionManager
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Extracts data using a custom prompt. Attempts JSON parsing, falls back to text.
     """
@@ -926,7 +926,7 @@ def generate_with_custom_prompt(
 
 def analyze_dna_match_conversation(
     context_history: str, session_manager: SessionManager
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Analyzes conversations about DNA matches using specialized DNA analysis prompt.
     Returns structured data focused on DNA match information and genetic genealogy.
@@ -987,7 +987,7 @@ def analyze_dna_match_conversation(
 
 def verify_family_tree_connections(
     context_history: str, session_manager: SessionManager
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Analyzes conversations for family tree verification needs and conflicts.
     Returns structured data focused on verification requirements and conflict resolution.
@@ -1048,7 +1048,7 @@ def verify_family_tree_connections(
 
 def generate_record_research_strategy(
     context_history: str, session_manager: SessionManager
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Analyzes conversations to suggest specific genealogical record research strategies.
     Returns structured data focused on record search opportunities and research plans.
@@ -1476,7 +1476,7 @@ def run_comprehensive_tests() -> bool:
     return ai_interface_tests()
 
 
-def quick_health_check(session_manager: SessionManager) -> Dict[str, Any]:
+def quick_health_check(session_manager: SessionManager) -> dict[str, Any]:
     """
     Performs a quick health check of the AI interface.
     Returns a dictionary with health status information.

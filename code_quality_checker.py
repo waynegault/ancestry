@@ -20,7 +20,6 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -38,7 +37,7 @@ class QualityMetrics:
     functions_with_type_hints: int
     long_functions: int  # Functions > 50 lines
     complex_functions: int  # Functions with high cyclomatic complexity
-    violations: List[str] = field(default_factory=list)
+    violations: list[str] = field(default_factory=list)
 
     @property
     def type_hint_coverage(self) -> float:
@@ -68,8 +67,8 @@ class CodeQualityChecker:
 
     def __init__(self):
         """Initialize the code quality checker."""
-        self.violations: List[str] = []
-        self.metrics: Dict[str, QualityMetrics] = {}
+        self.violations: list[str] = []
+        self.metrics: dict[str, QualityMetrics] = {}
 
     def check_file(self, file_path: Path) -> QualityMetrics:
         """
@@ -171,7 +170,7 @@ class CodeQualityChecker:
             for default in func.args.defaults
         )
 
-    def check_directory(self, directory: Path, exclude_patterns: List[str] | None = None) -> Dict[str, QualityMetrics]:
+    def check_directory(self, directory: Path, exclude_patterns: list[str] | None = None) -> dict[str, QualityMetrics]:
         """
         Check all Python files in a directory.
 
@@ -206,7 +205,7 @@ class CodeQualityChecker:
 
         return results
 
-    def generate_report(self, metrics: Dict[str, QualityMetrics]) -> str:
+    def generate_report(self, metrics: dict[str, QualityMetrics]) -> str:
         """Generate a quality report from metrics."""
         if not metrics:
             return "No files analyzed."

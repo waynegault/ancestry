@@ -47,11 +47,7 @@ from typing import (
     IO,
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -193,7 +189,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 # === TYPE ALIASES ===
 # Define type aliases
 RequestsResponseTypeOptional = Optional[RequestsResponse]
-ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
+ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
 DriverType = Optional[WebDriver]
 SessionManagerType = Optional[
     "SessionManager"
@@ -324,7 +320,7 @@ def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool =
 # Helper functions (General Utilities)
 # ------------------------------------------------------------------------------------
 
-def parse_cookie(cookie_string: str) -> Dict[str, str]:
+def parse_cookie(cookie_string: str) -> dict[str, str]:
     """
     Parse a raw HTTP cookie string into a dictionary of key-value pairs.
 
@@ -348,7 +344,7 @@ def parse_cookie(cookie_string: str) -> Dict[str, str]:
         >>> parse_cookie("malformed=part=again")
         {'malformed': 'part=again'}
     """
-    cookies: Dict[str, str] = {}
+    cookies: dict[str, str] = {}
     if not isinstance(cookie_string, str):
         logger.warning("parse_cookie received non-string input, returning empty dict.")
         return cookies
@@ -702,12 +698,12 @@ def retry_api(
     max_retries: Optional[int] = None,
     initial_delay: Optional[float] = None,
     backoff_factor: Optional[float] = None,
-    retry_on_exceptions: Tuple[Type[Exception], ...] = (
+    retry_on_exceptions: tuple[type[Exception], ...] = (
         requests.exceptions.RequestException,  # type: ignore # Assume imported
         ConnectionError,
         TimeoutError,
     ),
-    retry_on_status_codes: Optional[List[int]] = None,
+    retry_on_status_codes: Optional[list[int]] = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator factory for retrying API calls with exponential backoff.
@@ -1123,8 +1119,8 @@ def _prepare_base_headers(
     method: str,
     api_description: str,
     referer_url: Optional[str] = None,
-    headers: Optional[Dict[str, str]] = None,
-) -> Dict[str, str]:
+    headers: Optional[dict[str, str]] = None,
+) -> dict[str, str]:
     """
     Prepares the base headers for an API request.
 
@@ -1140,7 +1136,7 @@ def _prepare_base_headers(
     cfg = config_schema  # Use new config system
 
     # Create base headers
-    base_headers: Dict[str, str] = {
+    base_headers: dict[str, str] = {
         "Accept": "application/json, text/plain, */*",
         "Referer": referer_url or cfg.api.base_url,
         "Cache-Control": "no-cache",
@@ -1176,14 +1172,14 @@ def _prepare_api_headers(
     session_manager: SessionManager,  # Assume available
     driver: DriverType,
     api_description: str,
-    base_headers: Dict[str, str],
+    base_headers: dict[str, str],
     use_csrf_token: bool,
     add_default_origin: bool,
     use_enhanced_headers: bool = False,
     tree_id: Optional[str] = None,
     person_id: Optional[str] = None,
     referer_url: Optional[str] = None,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Generates the final headers for an API request."""
     final_headers = base_headers.copy()
     cfg = config_schema  # Use new config system
@@ -1464,9 +1460,9 @@ def _log_request_details(
     attempt: int,
     http_method: str,
     url: str,
-    headers: Dict[str, str],
-    data: Optional[Dict] = None,
-    _json_data: Optional[Dict] = None,
+    headers: dict[str, str],
+    data: Optional[dict] = None,
+    _json_data: Optional[dict] = None,
 ) -> None:
     """
     Logs the details of the API request.
@@ -1556,12 +1552,12 @@ def _generate_ancestry_context_ube(session_manager: 'SessionManager', tree_id: s
 # End of _generate_ancestry_context_ube
 
 def _add_enhanced_browser_headers(
-    headers: Dict[str, str],
+    headers: dict[str, str],
     session_manager: 'SessionManager',
     tree_id: Optional[str] = None,
     person_id: Optional[str] = None,
     referer_url: Optional[str] = None
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Add enhanced browser-like headers for better API compatibility.
 
@@ -1656,17 +1652,17 @@ def _prepare_api_request(
     method: str,
     api_description: str,
     attempt: int,
-    headers: Optional[Dict[str, str]] = None,
+    headers: Optional[dict[str, str]] = None,
     referer_url: Optional[str] = None,
     use_csrf_token: bool = True,
     add_default_origin: bool = True,
     timeout: Optional[int] = None,
     cookie_jar: Optional[RequestsCookieJar] = None,  # type: ignore
     allow_redirects: bool = True,
-    data: Optional[Dict] = None,
-    json_data: Optional[Dict] = None,
-    json: Optional[Dict] = None,
-) -> Dict[str, Any]:
+    data: Optional[dict] = None,
+    json_data: Optional[dict] = None,
+    json: Optional[dict] = None,
+) -> dict[str, Any]:
     """
     Prepares all aspects of an API request including headers, cookies, and rate limiting.
 
@@ -1786,7 +1782,7 @@ def _prepare_api_request(
 def _execute_api_request(
     session_manager: SessionManager,
     api_description: str,
-    request_params: Dict[str, Any],
+    request_params: dict[str, Any],
     attempt: int = 1,
 ) -> RequestsResponseTypeOptional:
     """
@@ -1908,11 +1904,11 @@ def _api_req(
     driver: DriverType,
     session_manager: SessionManager,  # type: ignore
     method: str = "GET",
-    data: Optional[Dict] = None,
-    json_data: Optional[Dict] = None,
-    json: Optional[Dict] = None,
+    data: Optional[dict] = None,
+    json_data: Optional[dict] = None,
+    json: Optional[dict] = None,
     use_csrf_token: bool = True,
-    headers: Optional[Dict[str, str]] = None,
+    headers: Optional[dict[str, str]] = None,
     referer_url: Optional[str] = None,
     api_description: str = "API Call",
     timeout: Optional[int] = None,
@@ -3837,8 +3833,8 @@ def nav_to_page(
 # End of nav_to_page
 
 def _check_for_unavailability(
-    driver: WebDriver, selectors: Dict[str, Tuple[str, int]]  # type: ignore
-) -> Tuple[Optional[str], int]:
+    driver: WebDriver, selectors: dict[str, tuple[str, int]]  # type: ignore
+) -> tuple[Optional[str], int]:
     """Checks if known 'page unavailable' messages are present using provided selectors."""
     # Check if driver is usable
     if not is_browser_open(driver):
@@ -4399,14 +4395,14 @@ async def async_api_request(
     url: str,
     method: str = "GET",
     session_manager: Optional['SessionManager'] = None,
-    headers: Optional[Dict[str, str]] = None,
-    data: Optional[Dict] = None,
-    json_data: Optional[Dict] = None,
+    headers: Optional[dict[str, str]] = None,
+    data: Optional[dict] = None,
+    json_data: Optional[dict] = None,
     timeout: Optional[int] = None,
     api_description: str = "Async API Call",
     max_retries: int = 3,
     backoff_factor: float = 1.0
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Make an async HTTP request with retry logic and error handling.
 
@@ -4507,11 +4503,11 @@ async def async_api_request(
 
 
 async def async_batch_api_requests(
-    requests: List[Dict[str, Any]],
+    requests: list[dict[str, Any]],
     session_manager: Optional['SessionManager'] = None,
     max_concurrent: Optional[int] = None,  # PHASE 1: Allow None to use configured value
     progress_callback: Optional[Callable[[int, int], None]] = None
-) -> List[Optional[Dict[str, Any]]]:
+) -> list[Optional[dict[str, Any]]]:
     """
     Execute multiple API requests concurrently with controlled concurrency.
 
@@ -4537,7 +4533,7 @@ async def async_batch_api_requests(
 
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def bounded_request(request_data: Dict[str, Any], index: int) -> Tuple[int, Optional[Dict[str, Any]]]:
+    async def bounded_request(request_data: dict[str, Any], index: int) -> tuple[int, Optional[dict[str, Any]]]:
         async with semaphore:
             result = await async_api_request(session_manager=session_manager, **request_data)
             if progress_callback:
@@ -4555,7 +4551,7 @@ async def async_batch_api_requests(
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Sort results by original index and extract values
-    sorted_results: List[Optional[Dict[str, Any]]] = [None] * len(requests)
+    sorted_results: list[Optional[dict[str, Any]]] = [None] * len(requests)
     for result in results:
         if isinstance(result, Exception):
             logger.error(f"Async batch request failed: {result}")
@@ -4653,7 +4649,7 @@ async def async_file_context(
             await loop.run_in_executor(None, file_handle.close)
 
 
-async def async_read_json_file(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+async def async_read_json_file(file_path: Union[str, Path]) -> Optional[dict[str, Any]]:
     """
     Read and parse a JSON file asynchronously.
 
@@ -4685,7 +4681,7 @@ async def async_read_json_file(file_path: Union[str, Path]) -> Optional[Dict[str
 
 async def async_write_json_file(
     file_path: Union[str, Path],
-    data: Dict[str, Any],
+    data: dict[str, Any],
     indent: int = 2,
     ensure_ascii: bool = False
 ) -> bool:
@@ -4770,10 +4766,10 @@ async def async_write_text_file(file_path: Union[str, Path], content: str) -> bo
 
 
 async def async_batch_file_operations(
-    operations: List[Dict[str, Any]],
+    operations: list[dict[str, Any]],
     max_concurrent: Optional[int] = None,  # PHASE 1: Allow None to use configured value
     progress_callback: Optional[Callable[[int, int], None]] = None
-) -> List[bool]:
+) -> list[bool]:
     """
     Execute multiple file operations concurrently.
 
@@ -4798,7 +4794,7 @@ async def async_batch_file_operations(
 
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def bounded_operation(operation: Dict[str, Any], index: int) -> Tuple[int, bool]:
+    async def bounded_operation(operation: dict[str, Any], index: int) -> tuple[int, bool]:
         async with semaphore:
             try:
                 op_type = operation["type"]

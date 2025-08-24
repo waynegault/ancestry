@@ -13,7 +13,7 @@ Phase: 12.2 - Smart DNA-GEDCOM Cross-Reference
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -32,7 +32,7 @@ class DNAMatch:
     shared_dna_cm: Optional[float] = None
     testing_company: str = "Ancestry"
     confidence_level: str = "medium"
-    shared_ancestors: List[str] = field(default_factory=list)
+    shared_ancestors: list[str] = field(default_factory=list)
     tree_size: Optional[int] = None
     last_login: Optional[str] = None
 
@@ -47,9 +47,9 @@ class GedcomPerson:
     death_year: Optional[int] = None
     birth_place: Optional[str] = None
     death_place: Optional[str] = None
-    parents: List[str] = field(default_factory=list)
-    children: List[str] = field(default_factory=list)
-    spouses: List[str] = field(default_factory=list)
+    parents: list[str] = field(default_factory=list)
+    children: list[str] = field(default_factory=list)
+    spouses: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -58,11 +58,11 @@ class CrossReferenceMatch:
 
     match_id: str
     dna_match: DNAMatch
-    potential_gedcom_matches: List[GedcomPerson]
+    potential_gedcom_matches: list[GedcomPerson]
     confidence_score: float  # 0.0 to 1.0
     match_type: str  # 'name_match', 'relationship_match', 'location_match', 'timeline_match'
-    verification_needed: List[str] = field(default_factory=list)
-    research_suggestions: List[str] = field(default_factory=list)
+    verification_needed: list[str] = field(default_factory=list)
+    research_suggestions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -75,7 +75,7 @@ class ConflictIdentification:
     dna_evidence: str
     gedcom_evidence: str
     severity: str  # 'critical', 'major', 'minor'
-    resolution_steps: List[str] = field(default_factory=list)
+    resolution_steps: list[str] = field(default_factory=list)
 
 
 class DNAGedcomCrossReferencer:
@@ -85,16 +85,16 @@ class DNAGedcomCrossReferencer:
 
     def __init__(self):
         """Initialize the DNA-GEDCOM cross-referencer."""
-        self.cross_reference_matches: List[CrossReferenceMatch] = []
-        self.conflicts_identified: List[ConflictIdentification] = []
-        self.verification_opportunities: List[Dict[str, Any]] = []
+        self.cross_reference_matches: list[CrossReferenceMatch] = []
+        self.conflicts_identified: list[ConflictIdentification] = []
+        self.verification_opportunities: list[dict[str, Any]] = []
 
     def analyze_dna_gedcom_connections(
         self,
-        dna_matches: List[DNAMatch],
+        dna_matches: list[DNAMatch],
         gedcom_data: Any,
-        tree_owner_info: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        tree_owner_info: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
         """
         Analyze connections between DNA matches and GEDCOM family tree data.
 
@@ -145,7 +145,7 @@ class DNAGedcomCrossReferencer:
             logger.error(f"Error during DNA-GEDCOM cross-reference analysis: {e}")
             return self._empty_crossref_result()
 
-    def _extract_gedcom_people(self, gedcom_data: Any) -> List[GedcomPerson]:
+    def _extract_gedcom_people(self, gedcom_data: Any) -> list[GedcomPerson]:
         """Extract people data from GEDCOM for cross-referencing."""
         gedcom_people = []
 
@@ -191,8 +191,8 @@ class DNAGedcomCrossReferencer:
     def _analyze_single_dna_match(
         self,
         dna_match: DNAMatch,
-        gedcom_people: List[GedcomPerson],
-        tree_owner_info: Optional[Dict[str, Any]]
+        gedcom_people: list[GedcomPerson],
+        tree_owner_info: Optional[dict[str, Any]]
     ):
         """Analyze a single DNA match against GEDCOM data."""
         try:
@@ -233,7 +233,7 @@ class DNAGedcomCrossReferencer:
         except Exception as e:
             logger.debug(f"Error analyzing DNA match {dna_match.match_id}: {e}")
 
-    def _find_name_matches(self, dna_match: DNAMatch, gedcom_people: List[GedcomPerson]) -> List[Dict[str, Any]]:
+    def _find_name_matches(self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
         """Find potential matches based on name similarity."""
         name_matches = []
 
@@ -259,9 +259,9 @@ class DNAGedcomCrossReferencer:
     def _find_relationship_matches(
         self,
         dna_match: DNAMatch,
-        gedcom_people: List[GedcomPerson],
-        tree_owner_info: Optional[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        gedcom_people: list[GedcomPerson],
+        tree_owner_info: Optional[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Find potential matches based on estimated relationship."""
         relationship_matches = []
 
@@ -289,7 +289,7 @@ class DNAGedcomCrossReferencer:
 
         return relationship_matches
 
-    def _find_context_matches(self, dna_match: DNAMatch, gedcom_people: List[GedcomPerson]) -> List[Dict[str, Any]]:
+    def _find_context_matches(self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
         """Find potential matches based on geographic and temporal context."""
         context_matches = []
 
@@ -308,7 +308,7 @@ class DNAGedcomCrossReferencer:
 
         return context_matches
 
-    def _deduplicate_and_score_matches(self, potential_matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _deduplicate_and_score_matches(self, potential_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Remove duplicate matches and calculate final scores."""
         # Group by GEDCOM person
         person_matches = {}
@@ -334,7 +334,7 @@ class DNAGedcomCrossReferencer:
 
         return unique_matches
 
-    def _generate_verification_tasks(self, dna_match: DNAMatch, matches: List[Dict[str, Any]]) -> List[str]:
+    def _generate_verification_tasks(self, dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
         """Generate verification tasks for cross-reference matches."""
         tasks = []
 
@@ -351,7 +351,7 @@ class DNAGedcomCrossReferencer:
 
         return tasks[:5]  # Limit to top 5 tasks
 
-    def _generate_research_suggestions(self, dna_match: DNAMatch, matches: List[Dict[str, Any]]) -> List[str]:
+    def _generate_research_suggestions(self, dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
         """Generate research suggestions for cross-reference matches."""
         suggestions = []
 
@@ -368,7 +368,7 @@ class DNAGedcomCrossReferencer:
 
         return suggestions[:5]  # Limit to top 5 suggestions
 
-    def _identify_relationship_conflicts(self, dna_matches: List[DNAMatch], gedcom_people: List[GedcomPerson]):
+    def _identify_relationship_conflicts(self, dna_matches: list[DNAMatch], gedcom_people: list[GedcomPerson]):
         """Identify conflicts between DNA evidence and GEDCOM relationships."""
         # This would implement conflict detection logic
         # For now, providing framework
@@ -465,7 +465,7 @@ class DNAGedcomCrossReferencer:
         # Placeholder implementation
         return True
 
-    def _get_expected_cm_range(self, relationship: str) -> Optional[Tuple[float, float]]:
+    def _get_expected_cm_range(self, relationship: str) -> Optional[tuple[float, float]]:
         """Get expected centimorgan range for a relationship."""
         # Simplified ranges for common relationships
         cm_ranges = {
@@ -485,14 +485,14 @@ class DNAGedcomCrossReferencer:
 
         return None
 
-    def _is_cm_in_range(self, actual_cm: float, expected_range: Tuple[float, float]) -> bool:
+    def _is_cm_in_range(self, actual_cm: float, expected_range: tuple[float, float]) -> bool:
         """Check if actual cM is within expected range (with some tolerance)."""
         min_cm, max_cm = expected_range
         # Allow 20% tolerance outside the range
         tolerance = (max_cm - min_cm) * 0.2
         return (min_cm - tolerance) <= actual_cm <= (max_cm + tolerance)
 
-    def _generate_crossref_summary(self) -> Dict[str, Any]:
+    def _generate_crossref_summary(self) -> dict[str, Any]:
         """Generate summary of cross-reference analysis."""
         return {
             "total_cross_references": len(self.cross_reference_matches),
@@ -501,7 +501,7 @@ class DNAGedcomCrossReferencer:
             "verification_opportunities": len(self.verification_opportunities)
         }
 
-    def _generate_crossref_recommendations(self) -> List[str]:
+    def _generate_crossref_recommendations(self) -> list[str]:
         """Generate recommendations based on cross-reference analysis."""
         recommendations = []
 
@@ -520,7 +520,7 @@ class DNAGedcomCrossReferencer:
 
         return recommendations
 
-    def _empty_crossref_result(self) -> Dict[str, Any]:
+    def _empty_crossref_result(self) -> dict[str, Any]:
         """Return empty cross-reference result for error cases."""
         return {
             "analysis_timestamp": datetime.now().isoformat(),
@@ -534,7 +534,7 @@ class DNAGedcomCrossReferencer:
             "error": "Cross-reference analysis failed"
         }
 
-    def _crossref_to_dict(self, crossref_match: CrossReferenceMatch) -> Dict[str, Any]:
+    def _crossref_to_dict(self, crossref_match: CrossReferenceMatch) -> dict[str, Any]:
         """Convert CrossReferenceMatch to dictionary."""
         return {
             "match_id": crossref_match.match_id,
@@ -556,7 +556,7 @@ class DNAGedcomCrossReferencer:
             "research_suggestions": crossref_match.research_suggestions
         }
 
-    def _conflict_to_dict(self, conflict: ConflictIdentification) -> Dict[str, Any]:
+    def _conflict_to_dict(self, conflict: ConflictIdentification) -> dict[str, Any]:
         """Convert ConflictIdentification to dictionary."""
         return {
             "conflict_id": conflict.conflict_id,

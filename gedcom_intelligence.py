@@ -12,7 +12,7 @@ Phase: 12.1 - Advanced GEDCOM Integration & Family Tree Intelligence
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -30,8 +30,8 @@ class GedcomGap:
     gap_type: str  # 'missing_parent', 'missing_spouse', 'missing_child', 'missing_dates', 'missing_places'
     description: str
     priority: str  # 'high', 'medium', 'low'
-    research_suggestions: List[str] = field(default_factory=list)
-    related_people: List[str] = field(default_factory=list)
+    research_suggestions: list[str] = field(default_factory=list)
+    related_people: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -41,9 +41,9 @@ class GedcomConflict:
     conflict_id: str
     conflict_type: str  # 'date_conflict', 'location_conflict', 'relationship_conflict', 'duplicate_person'
     description: str
-    people_involved: List[str]
+    people_involved: list[str]
     severity: str  # 'critical', 'major', 'minor'
-    resolution_suggestions: List[str] = field(default_factory=list)
+    resolution_suggestions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -53,10 +53,10 @@ class ResearchOpportunity:
     opportunity_id: str
     opportunity_type: str  # 'record_search', 'dna_analysis', 'location_research', 'timeline_analysis'
     description: str
-    target_people: List[str]
+    target_people: list[str]
     expected_outcome: str
     priority: str  # 'high', 'medium', 'low'
-    research_steps: List[str] = field(default_factory=list)
+    research_steps: list[str] = field(default_factory=list)
 
 
 class GedcomIntelligenceAnalyzer:
@@ -67,11 +67,11 @@ class GedcomIntelligenceAnalyzer:
 
     def __init__(self):
         """Initialize the GEDCOM intelligence analyzer."""
-        self.gaps_identified: List[GedcomGap] = []
-        self.conflicts_identified: List[GedcomConflict] = []
-        self.opportunities_identified: List[ResearchOpportunity] = []
+        self.gaps_identified: list[GedcomGap] = []
+        self.conflicts_identified: list[GedcomConflict] = []
+        self.opportunities_identified: list[ResearchOpportunity] = []
 
-    def analyze_gedcom_data(self, gedcom_data: Any) -> Dict[str, Any]:
+    def analyze_gedcom_data(self, gedcom_data: Any) -> dict[str, Any]:
         """
         Perform comprehensive AI-enhanced analysis of GEDCOM data.
 
@@ -345,7 +345,7 @@ class GedcomIntelligenceAnalyzer:
                 )
                 self.opportunities_identified.append(opportunity)
 
-    def _generate_ai_insights(self, gedcom_data: Any) -> Dict[str, Any]:
+    def _generate_ai_insights(self, gedcom_data: Any) -> dict[str, Any]:
         """Generate AI-powered insights about the family tree."""
         try:
             # This would integrate with the AI interface to generate insights
@@ -374,7 +374,7 @@ class GedcomIntelligenceAnalyzer:
             logger.error(f"Error generating AI insights: {e}")
             return {"error": "Failed to generate AI insights"}
 
-    def _generate_research_priorities(self) -> List[str]:
+    def _generate_research_priorities(self) -> list[str]:
         """Generate prioritized research recommendations."""
         priorities = []
 
@@ -393,7 +393,7 @@ class GedcomIntelligenceAnalyzer:
 
         return priorities[:5]  # Top 5 priorities
 
-    def _analyze_family_patterns(self, gedcom_data: Any) -> Dict[str, Any]:
+    def _analyze_family_patterns(self, gedcom_data: Any) -> dict[str, Any]:
         """Analyze patterns in the family tree."""
         return {
             "common_surnames": self._find_common_surnames(gedcom_data),
@@ -401,7 +401,7 @@ class GedcomIntelligenceAnalyzer:
             "time_period_coverage": self._analyze_time_coverage(gedcom_data)
         }
 
-    def _generate_ai_recommendations(self) -> List[str]:
+    def _generate_ai_recommendations(self) -> list[str]:
         """Generate AI-powered recommendations for research."""
         recommendations = []
 
@@ -484,7 +484,7 @@ class GedcomIntelligenceAnalyzer:
                     return country.title()
         return None
 
-    def _find_location_clusters(self, gedcom_data: Any) -> Dict[str, List[str]]:
+    def _find_location_clusters(self, gedcom_data: Any) -> dict[str, list[str]]:
         """Find clusters of people in same locations."""
         location_clusters = {}
 
@@ -498,7 +498,7 @@ class GedcomIntelligenceAnalyzer:
         # Only return clusters with multiple people
         return {loc: people for loc, people in location_clusters.items() if len(people) > 1}
 
-    def _find_common_surnames(self, gedcom_data: Any) -> List[str]:
+    def _find_common_surnames(self, gedcom_data: Any) -> list[str]:
         """Find most common surnames in the tree."""
         surname_counts = {}
 
@@ -512,17 +512,17 @@ class GedcomIntelligenceAnalyzer:
         sorted_surnames = sorted(surname_counts.items(), key=lambda x: x[1], reverse=True)
         return [surname for surname, count in sorted_surnames[:5]]
 
-    def _find_geographic_patterns(self, gedcom_data: Any) -> List[str]:
+    def _find_geographic_patterns(self, gedcom_data: Any) -> list[str]:
         """Find geographic patterns in the family tree."""
         # Placeholder implementation
         return ["Pattern analysis not yet implemented"]
 
-    def _analyze_time_coverage(self, gedcom_data: Any) -> Dict[str, Any]:
+    def _analyze_time_coverage(self, gedcom_data: Any) -> dict[str, Any]:
         """Analyze time period coverage of the family tree."""
         # Placeholder implementation
         return {"earliest_date": "Unknown", "latest_date": "Unknown", "coverage_span": "Unknown"}
 
-    def _generate_analysis_summary(self) -> Dict[str, Any]:
+    def _generate_analysis_summary(self) -> dict[str, Any]:
         """Generate summary of the analysis."""
         return {
             "total_gaps": len(self.gaps_identified),
@@ -533,7 +533,7 @@ class GedcomIntelligenceAnalyzer:
                                   len([item for item in self.opportunities_identified if item.priority == "high"])
         }
 
-    def _empty_analysis_result(self) -> Dict[str, Any]:
+    def _empty_analysis_result(self) -> dict[str, Any]:
         """Return empty analysis result for error cases."""
         return {
             "analysis_timestamp": datetime.now().isoformat(),
@@ -546,7 +546,7 @@ class GedcomIntelligenceAnalyzer:
             "error": "Analysis failed"
         }
 
-    def _gap_to_dict(self, gap: GedcomGap) -> Dict[str, Any]:
+    def _gap_to_dict(self, gap: GedcomGap) -> dict[str, Any]:
         """Convert GedcomGap to dictionary."""
         return {
             "person_id": gap.person_id,
@@ -558,7 +558,7 @@ class GedcomIntelligenceAnalyzer:
             "related_people": gap.related_people
         }
 
-    def _conflict_to_dict(self, conflict: GedcomConflict) -> Dict[str, Any]:
+    def _conflict_to_dict(self, conflict: GedcomConflict) -> dict[str, Any]:
         """Convert GedcomConflict to dictionary."""
         return {
             "conflict_id": conflict.conflict_id,
@@ -569,7 +569,7 @@ class GedcomIntelligenceAnalyzer:
             "resolution_suggestions": conflict.resolution_suggestions
         }
 
-    def _opportunity_to_dict(self, opportunity: ResearchOpportunity) -> Dict[str, Any]:
+    def _opportunity_to_dict(self, opportunity: ResearchOpportunity) -> dict[str, Any]:
         """Convert ResearchOpportunity to dictionary."""
         return {
             "opportunity_id": opportunity.opportunity_id,

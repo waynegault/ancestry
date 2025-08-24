@@ -26,7 +26,7 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from sqlalchemy import text
 
@@ -47,7 +47,7 @@ if USE_MOCK_AI:
         """Mock classify_message_intent for fast testing."""
         return 'general_inquiry'
 
-    def extract_genealogical_entities(context_history: str, _session_manager) -> Optional[Dict[str, Any]]:
+    def extract_genealogical_entities(context_history: str, _session_manager) -> Optional[dict[str, Any]]:
         """Mock extract_genealogical_entities for fast testing."""
         return {
             'extracted_data': {
@@ -162,7 +162,7 @@ class SafeTestingProtocol:
         finally:
             self.session_manager.return_session(session)
 
-    def analyze_current_state(self) -> Dict[str, Any]:
+    def analyze_current_state(self) -> dict[str, Any]:
         """Phase 1: Analyze current database state."""
         logger.info("🔍 Phase 1: Analyzing current database state...")
 
@@ -293,7 +293,7 @@ class SafeTestingProtocol:
         finally:
             self.session_manager.return_session(session)
 
-    def test_ai_processing(self) -> Dict[str, Any]:
+    def test_ai_processing(self) -> dict[str, Any]:
         """Phase 2: Test AI processing capabilities."""
         logger.info("🤖 Phase 2: Testing AI processing...")
 
@@ -386,7 +386,7 @@ class SafeTestingProtocol:
             "test_context": "synthetic_messages" if database_empty else "synthetic_messages_with_populated_db",
         }
 
-    def test_tree_integration(self) -> Dict[str, Any]:
+    def test_tree_integration(self) -> dict[str, Any]:
         """Phase 3: Test tree integration capabilities."""
         logger.info("🌳 Phase 3: Testing tree integration...")
 
@@ -426,7 +426,7 @@ class SafeTestingProtocol:
             logger.error(f"Error testing tree integration: {e}")
             return {"success": False, "error": str(e)}
 
-    def validate_safety_guards(self) -> Dict[str, Any]:
+    def validate_safety_guards(self) -> dict[str, Any]:
         """Phase 4: Validate safety guards are working."""
         logger.info("🛡️ Phase 4: Validating safety guards...")
 

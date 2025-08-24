@@ -22,7 +22,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 # --- Test framework imports ---
 from test_framework import (
@@ -52,7 +52,7 @@ SEMVER_PATTERN = r"^\d+\.\d+\.\d+$"
 _DIFF_THRESHOLD_CHARS = 80  # Minimum absolute character delta to include diff snippet in changelog
 
 
-def load_prompts() -> Dict[str, Any]:
+def load_prompts() -> dict[str, Any]:
     """
     Load AI prompts from the JSON file.
 
@@ -101,7 +101,7 @@ def load_prompts() -> Dict[str, Any]:
         return default_data
 
 
-def save_prompts(prompts_data: Dict[str, Any]) -> bool:
+def save_prompts(prompts_data: dict[str, Any]) -> bool:
     """
     Save AI prompts to the JSON file.
 
@@ -360,7 +360,7 @@ def _compare_semver(a: str, b: str) -> int:
         return 0
 
 
-def import_improved_prompts() -> Tuple[int, List[str]]:
+def import_improved_prompts() -> tuple[int, list[str]]:
     """
     Import improved prompts from the improved_prompts directory.
 
@@ -419,7 +419,7 @@ def import_improved_prompts() -> Tuple[int, List[str]]:
         return 0, []
 
 
-def validate_prompt_structure(prompts_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+def validate_prompt_structure(prompts_data: dict[str, Any]) -> tuple[bool, list[str]]:
     """
     Validate the structure of prompts data.
 
@@ -1048,7 +1048,7 @@ def run_comprehensive_tests() -> bool:
     return ai_prompt_utils_module_tests()
 
 
-def _parse_changelog_last_changes() -> Dict[str, str]:
+def _parse_changelog_last_changes() -> dict[str, str]:
     """Parse AI_PROMPT_CHANGELOG to map prompt_key -> last timestamp (UTC) with mtime caching.
 
     Avoids re-reading large changelog on every summary/report call.
@@ -1073,7 +1073,7 @@ def _parse_changelog_last_changes() -> Dict[str, str]:
         # Return cached copy (shallow copy to prevent external mutation)
         return dict(_CHANGELOG_CACHE.get("data", {}))  # type: ignore
 
-    changes: Dict[str, str] = {}
+    changes: dict[str, str] = {}
     try:
         with CHANGELOG_FILE.open(encoding="utf-8") as fh:
             for line in fh:
@@ -1094,7 +1094,7 @@ def _parse_changelog_last_changes() -> Dict[str, str]:
     return changes
 
 
-def get_prompts_summary(include_test_artifacts: bool = False) -> Dict[str, Any]:
+def get_prompts_summary(include_test_artifacts: bool = False) -> dict[str, Any]:
     """Return summary of prompts, excluding *_test unless requested.
 
     Adds last_change_utc per prompt from changelog.
@@ -1104,15 +1104,15 @@ def get_prompts_summary(include_test_artifacts: bool = False) -> Dict[str, Any]:
         all_prompts = prompts_data.get("prompts", {})
         last_changes = _parse_changelog_last_changes()
 
-        filtered: Dict[str, Any] = {}
-        excluded: List[str] = []
+        filtered: dict[str, Any] = {}
+        excluded: list[str] = []
         for k, v in all_prompts.items():
             if (not include_test_artifacts) and k.endswith("_test"):
                 excluded.append(k)
                 continue
             filtered[k] = v
 
-        meta: Dict[str, Dict[str, Any]] = {}
+        meta: dict[str, dict[str, Any]] = {}
         for k, v in filtered.items():
             if isinstance(v, dict):
                 meta[k] = {
@@ -1148,7 +1148,7 @@ def get_prompts_summary(include_test_artifacts: bool = False) -> Dict[str, Any]:
         }
 
 
-def quick_test() -> Dict[str, Any]:
+def quick_test() -> dict[str, Any]:
     """
     Perform a quick test of the AI prompt utilities.
 
@@ -1231,7 +1231,7 @@ def assert_extraction_schema_consistency() -> bool:
         return False
 
 
-def generate_prompts_report(include_test_artifacts: bool = False) -> Dict[str, Any]:
+def generate_prompts_report(include_test_artifacts: bool = False) -> dict[str, Any]:
     """Produce enriched prompts report with aggregate stats & version distribution.
 
     Args:
@@ -1242,7 +1242,7 @@ def generate_prompts_report(include_test_artifacts: bool = False) -> Dict[str, A
     lengths = [m.get("chars", 0) for m in summary.get("prompt_metadata", {}).values()]
     distinct_versions = sorted(set(versions))
     avg_len = int(sum(lengths) / len(lengths)) if lengths else 0
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for v in versions:
         counts[v] = counts.get(v, 0) + 1
     missing_version_keys = [k for k, meta in summary.get("prompt_metadata", {}).items() if not meta.get("has_version")]
@@ -1277,7 +1277,7 @@ def is_prompt_experiments_enabled() -> bool:
     return _get_config_flag("enable_prompt_experiments", False)
 
 
-def select_prompt_variant(base_key: str, variants: Dict[str, str],
+def select_prompt_variant(base_key: str, variants: dict[str, str],
                           user_id: Optional[str] = None,
                           sticky: bool = True) -> str:
     """Deterministically (or randomly) select a prompt variant.
@@ -1311,7 +1311,7 @@ def select_prompt_variant(base_key: str, variants: Dict[str, str],
 
 
 def get_prompt_with_experiment(base_key: str,
-                               variants: Optional[Dict[str, str]] = None,
+                               variants: Optional[dict[str, str]] = None,
                                user_id: Optional[str] = None) -> Optional[str]:
     """Fetch a prompt considering experimentation variants.
 

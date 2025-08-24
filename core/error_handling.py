@@ -28,7 +28,7 @@ import traceback
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Optional
 
 
 # Simple CircuitBreaker implementation for error handling tests
@@ -112,7 +112,7 @@ class AppError(Exception):
         user_message: Optional[str] = None,
         technical_details: Optional[str] = None,
         recovery_suggestion: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
         original_exception: Optional[Exception] = None,
     ):
         super().__init__(message)
@@ -140,7 +140,7 @@ class AppError(Exception):
         }
         return category_messages.get(self.category, "An unexpected error occurred.")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert error to dictionary for serialization."""
         return {
             "message": self.message,
@@ -267,7 +267,7 @@ class ErrorHandler(ABC):
 
     @abstractmethod
     def handle(
-        self, error: Exception, context: Optional[Dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         """Handle the error and return a standardized AppError."""
         pass
@@ -283,7 +283,7 @@ class DatabaseErrorHandler(ErrorHandler):
         return any(k in error_type or k in error_msg for k in keywords)
 
     def handle(
-        self, error: Exception, context: Optional[Dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
 
@@ -322,7 +322,7 @@ class NetworkErrorHandler(ErrorHandler):
         )
 
     def handle(
-        self, error: Exception, context: Optional[Dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
 
@@ -361,7 +361,7 @@ class BrowserErrorHandler(ErrorHandler):
         )
 
     def handle(
-        self, error: Exception, context: Optional[Dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
 
@@ -397,7 +397,7 @@ class ErrorHandlerRegistry:
     """
 
     def __init__(self):
-        self.handlers: List[ErrorHandler] = []
+        self.handlers: list[ErrorHandler] = []
         self._register_default_handlers()
 
     def _register_default_handlers(self):
@@ -414,7 +414,7 @@ class ErrorHandlerRegistry:
     def handle_error(
         self,
         error: Exception,
-        context: Optional[Dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
         fallback_category: ErrorCategory = ErrorCategory.SYSTEM,
     ) -> AppError:
         """
@@ -469,7 +469,7 @@ _error_registry = ErrorHandlerRegistry()
 
 def handle_error(
     error: Exception,
-    context: Optional[Dict[str, Any]] = None,
+    context: Optional[dict[str, Any]] = None,
     fallback_category: ErrorCategory = ErrorCategory.SYSTEM,
 ) -> AppError:
     """
@@ -546,7 +546,7 @@ def safe_execute(
     func: Callable,
     *args,
     default_return: Any = None,
-    context: Optional[Dict[str, Any]] = None,
+    context: Optional[dict[str, Any]] = None,
     **kwargs,
 ) -> Any:
     """
@@ -613,7 +613,7 @@ class ErrorContext:
         return True
 
 
-def get_error_handler(error_type: Type[Exception]) -> ErrorHandler:
+def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
     """
     Get the appropriate error handler for a specific exception type.
 
@@ -630,7 +630,7 @@ def get_error_handler(error_type: Type[Exception]) -> ErrorHandler:
             return True  # Catch-all for unknown errors
 
         def handle(
-            self, error: Exception, context: Optional[Dict[str, Any]] = None
+            self, error: Exception, context: Optional[dict[str, Any]] = None
         ) -> AppError:
             return AppError(
                 str(error),
