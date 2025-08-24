@@ -1347,7 +1347,7 @@ def coord(
             logger.debug(f"Health monitoring presence check failed (non-fatal): {verification_exc}")
     except Exception as e:
         logger.critical(f"🚨 CRITICAL: Session validation failed: {e}")
-        raise Exception(f"Cannot proceed with invalid session: {e}")
+        raise RuntimeError(f"Cannot proceed with invalid session: {e}") from e
 
     try:
         # Step 3: Initial Navigation and Total Pages Fetch
@@ -6000,7 +6000,7 @@ def action6_gather_module_tests() -> bool:
             print("     ✅ RetryableError constructor handles conflicting parameters correctly")
         except TypeError as e:
             if "got multiple values for keyword argument" in str(e):
-                raise AssertionError(f"CRITICAL: RetryableError constructor bug still exists: {e}")
+                raise AssertionError(f"CRITICAL: RetryableError constructor bug still exists: {e}") from e
             raise
 
         # Test 2: DatabaseConnectionError constructor

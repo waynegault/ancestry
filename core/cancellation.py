@@ -10,13 +10,12 @@ inside their main loops and exit cleanly when True.
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 _cancel_event = threading.Event()
-_cancel_scope: Optional[str] = None
+_cancel_scope: str | None = None
 
 
-def request_cancel(scope: Optional[str] = None) -> None:
+def request_cancel(scope: str | None = None) -> None:
     """Signal that current long-running operation should cancel ASAP."""
     global _cancel_scope
     _cancel_scope = scope
@@ -35,7 +34,7 @@ def is_cancel_requested() -> bool:
     return _cancel_event.is_set()
 
 
-def cancel_scope() -> Optional[str]:
+def cancel_scope() -> str | None:
     """Optional string describing who requested cancel (for diagnostics)."""
     return _cancel_scope
 

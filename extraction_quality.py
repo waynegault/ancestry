@@ -9,7 +9,7 @@ extracted_data. Designed for debug-level logging without changing runtime behavi
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def summarize_extracted_data(extracted_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -56,7 +56,7 @@ ACTION_VERBS = {
 _YEAR_RE = re.compile(r"\b(17|18|19|20)\d{2}\b")
 _SPECIFIC_PATTERN_RE = re.compile(r"\b(census|manifest|marriage|birth|death|baptism|immigration|naturalization|military|obituary|probate|newspaper|ship|passenger|DNA|chromosome)\b", re.IGNORECASE)
 
-def compute_task_quality(tasks: Optional[List[Any]]) -> int:
+def compute_task_quality(tasks: List[Any] | None) -> int:
     """Score the quality of suggested research tasks (0-30).
 
     Heuristics per task (capped when summing):

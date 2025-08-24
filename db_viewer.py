@@ -408,7 +408,7 @@ def run_comprehensive_tests() -> bool:
             # Test querying non-existent table should not crash
             try:
                 cursor.execute("SELECT * FROM nonexistent_table")
-                assert False, "Should have raised an exception"
+                raise AssertionError("Should have raised an exception")
             except sqlite3.OperationalError:
                 pass  # Expected
 

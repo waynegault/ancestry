@@ -1307,7 +1307,7 @@ def error_handling_module_tests() -> bool:
         try:
             logger.info("Test error handling log message")
         except Exception as e:
-            assert False, f"Logging should work without errors: {e}"
+            raise AssertionError(f"Logging should work without errors: {e}")
 
     def test_config_integration():
         """Test integration with configuration management."""
@@ -1320,7 +1320,7 @@ def error_handling_module_tests() -> bool:
                 config.recovery_timeout == 120
             ), "Should accept custom recovery timeout"
         except Exception as e:
-            assert False, f"Config integration should work: {e}"
+            raise AssertionError(f"Config integration should work: {e}")
 
     def test_threading_integration():
         """Test thread safety of error handling components."""

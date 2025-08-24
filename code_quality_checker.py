@@ -20,7 +20,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -171,7 +171,7 @@ class CodeQualityChecker:
             for default in func.args.defaults
         )
 
-    def check_directory(self, directory: Path, exclude_patterns: Optional[List[str]] = None) -> Dict[str, QualityMetrics]:
+    def check_directory(self, directory: Path, exclude_patterns: List[str] | None = None) -> Dict[str, QualityMetrics]:
         """
         Check all Python files in a directory.
 

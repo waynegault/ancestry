@@ -824,17 +824,13 @@ def run_comprehensive_tests() -> bool:
         assert custom_config.journal_mode == "DELETE"  # Test validation errors
         try:
             DatabaseConfig(pool_size=-1)
-            assert (
-                False
-            ), "Should have raised ConfigValidationError for negative pool_size"
+            raise AssertionError("Should have raised ConfigValidationError for negative pool_size")
         except ConfigValidationError:
             pass  # Expected
 
         try:
             DatabaseConfig(journal_mode="INVALID")
-            assert (
-                False
-            ), "Should have raised ConfigValidationError for invalid journal_mode"
+            raise AssertionError("Should have raised ConfigValidationError for invalid journal_mode")
         except ConfigValidationError:
             pass  # Expected
 
@@ -896,9 +892,7 @@ def run_comprehensive_tests() -> bool:
 
             try:
                 APIConfig(request_timeout=-1)
-                assert (
-                    False
-                ), "Should have raised ValueError for negative request_timeout"
+                raise AssertionError("Should have raised ValueError for negative request_timeout")
             except ValueError:
                 pass  # Expected
 
@@ -928,9 +922,7 @@ def run_comprehensive_tests() -> bool:
 
             try:
                 LoggingConfig(max_log_size_mb=-1)
-                assert (
-                    False
-                ), "Should have raised ValueError for negative max_log_size_mb"
+                raise AssertionError("Should have raised ValueError for negative max_log_size_mb")
             except ValueError:
                 pass  # Expected
 
@@ -956,9 +948,7 @@ def run_comprehensive_tests() -> bool:
             # Test validation errors
             try:
                 CacheConfig(memory_cache_size=-1)
-                assert (
-                    False
-                ), "Should have raised ValueError for negative memory_cache_size"
+                raise AssertionError("Should have raised ValueError for negative memory_cache_size")
             except ValueError:
                 pass  # Expected
 
@@ -980,9 +970,7 @@ def run_comprehensive_tests() -> bool:
             # Test validation errors
             try:
                 SecurityConfig(session_timeout_minutes=-1)
-                assert (
-                    False
-                ), "Should have raised ValueError for negative session_timeout_minutes"
+                raise AssertionError("Should have raised ValueError for negative session_timeout_minutes")
             except ValueError:
                 pass  # Expected
 

@@ -3031,7 +3031,7 @@ def _test_error_handling():
         _ = session_manager.session_ready
         _ = session_manager.is_ready
     except Exception as e:
-        assert False, f"SessionManager should handle operations gracefully: {e}"
+        raise AssertionError(f"SessionManager should handle operations gracefully: {e}")
     return True
 
 

@@ -20,7 +20,7 @@ import functools
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, List, TypeVar, Union
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -363,7 +363,7 @@ def curry(func: Callable[..., Any]) -> Callable[..., Any]:
     return curried
 
 
-def maybe(value: Optional[T]) -> Maybe[T]:
+def maybe(value: T | None) -> Maybe[T]:
     """
     Create a Maybe monad for safe null handling.
 
@@ -379,7 +379,7 @@ def maybe(value: Optional[T]) -> Maybe[T]:
 class Maybe:
     """Maybe monad for safe null handling."""
 
-    def __init__(self, value: Optional[T]):
+    def __init__(self, value: T | None):
         self._value = value
 
     def map(self, func: Callable[[T], Any]) -> Maybe:
