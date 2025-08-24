@@ -76,7 +76,7 @@ class ImmutableConfig:
 def validate_types(**type_hints: type) -> Callable[[F], F]:
     """
     Decorator to validate function argument types at runtime.
-    
+
     Example:
         @validate_types(name=str, age=int)
         def create_person(name: str, age: int) -> Person:
@@ -109,7 +109,7 @@ def validate_types(**type_hints: type) -> Callable[[F], F]:
 def require_non_empty(param_names: List[str]) -> Callable[[F], F]:
     """
     Decorator to ensure specified parameters are not empty.
-    
+
     Example:
         @require_non_empty(['name', 'email'])
         def create_user(name: str, email: str) -> User:
@@ -137,7 +137,7 @@ def require_non_empty(param_names: List[str]) -> Callable[[F], F]:
 def fail_fast(condition: Callable[..., bool], message: str = "Precondition failed") -> Callable[[F], F]:
     """
     Decorator to implement fail-fast principle with custom validation.
-    
+
     Example:
         @fail_fast(lambda self: self.is_initialized, "Object must be initialized")
         def process_data(self) -> None:
@@ -175,7 +175,7 @@ class PerformanceMetrics:
 def monitor_performance(threshold_seconds: float = 1.0) -> Callable[[F], F]:
     """
     Decorator to monitor function performance and log slow operations.
-    
+
     Args:
         threshold_seconds: Log warning if execution exceeds this threshold
     """
@@ -277,10 +277,10 @@ def temporary_config(config_updates: Dict[str, Any]):
 def ensure_immutable(data: Any) -> Any:
     """
     Convert mutable data structures to immutable equivalents.
-    
+
     Args:
         data: Data to make immutable
-        
+
     Returns:
         Immutable version of the data
     """

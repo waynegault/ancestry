@@ -74,10 +74,10 @@ class CodeQualityChecker:
     def check_file(self, file_path: Path) -> QualityMetrics:
         """
         Check a Python file for quality violations.
-        
+
         Args:
             file_path: Path to the Python file to check
-            
+
         Returns:
             QualityMetrics object with analysis results
         """
