@@ -25,7 +25,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 class CredentialManager:
@@ -50,7 +50,7 @@ class CredentialManager:
         """
         self.app_name = app_name
         self._security_manager = None
-        self._credentials_cache: Optional[Dict[str, str]] = None
+        self._credentials_cache: Optional[dict[str, str]] = None
 
     def _get_security_manager(self):
         """Get SecurityManager instance, importing only when needed."""
@@ -65,7 +65,7 @@ class CredentialManager:
                 self._security_manager = None
         return self._security_manager
 
-    def load_credentials(self, force_reload: bool = False) -> Dict[str, str]:
+    def load_credentials(self, force_reload: bool = False) -> dict[str, str]:
         """
         Load credentials from secure storage or environment variables.
 
@@ -130,7 +130,7 @@ class CredentialManager:
         return self.get_credential(key) is not None
 
     def store_credentials(
-        self, credentials: Dict[str, str], validate: bool = True
+        self, credentials: dict[str, str], validate: bool = True
     ) -> bool:
         """
         Store credentials securely.
@@ -201,7 +201,7 @@ class CredentialManager:
             logger.error("SecurityManager not available for credential removal")
             return False
 
-    def validate_credentials(self, credentials: Dict[str, str]) -> bool:
+    def validate_credentials(self, credentials: dict[str, str]) -> bool:
         """
         Validate credentials.
 
@@ -269,7 +269,7 @@ class CredentialManager:
         key_name = f"{provider.upper()}_API_KEY"
         return self.get_credential(key_name)
 
-    def _load_from_environment(self) -> Dict[str, str]:
+    def _load_from_environment(self) -> dict[str, str]:
         """
         Load credentials from environment variables.
 
@@ -297,7 +297,7 @@ class CredentialManager:
         self._credentials_cache = None
         logger.debug("Credentials cache cleared")
 
-    def get_credential_status(self) -> Dict[str, Any]:
+    def get_credential_status(self) -> dict[str, Any]:
         """
         Get status information about credentials.
 
@@ -327,7 +327,7 @@ class CredentialManager:
 
         return status
 
-    def export_for_backup(self, include_sensitive: bool = False) -> Dict[str, Any]:
+    def export_for_backup(self, include_sensitive: bool = False) -> dict[str, Any]:
         """
         Export credentials for backup purposes.
 
@@ -383,7 +383,7 @@ def run_comprehensive_tests():
 
         # Define minimal fallback classes that match expected interface
         from types import TracebackType
-        from typing import Any, Callable, Optional, Type
+        from typing import Any, Callable, Optional
 
         class TestSuite:
             def __init__(self, name: str, module: Any = None):
@@ -414,7 +414,7 @@ def run_comprehensive_tests():
 
             def __exit__(
                 self,
-                exc_type: Optional[Type[BaseException]],
+                exc_type: Optional[type[BaseException]],
                 exc_val: Optional[BaseException],
                 exc_tb: Optional[TracebackType],
             ) -> None:

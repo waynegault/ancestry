@@ -4,7 +4,6 @@ Debug script to analyze duplicate detection issues in Action 6.
 """
 
 import sqlite3
-from typing import Dict, List
 
 
 def analyze_duplicates():
@@ -93,7 +92,7 @@ def analyze_duplicates():
     recent_records = cursor.fetchall()
 
     # Group by creation time to see batches
-    creation_times: Dict[str, List] = {}
+    creation_times: dict[str, list] = {}
     for record in recent_records:
         created_time = record[4][:16]  # Group by minute
         if created_time not in creation_times:

@@ -17,7 +17,7 @@ standard library modules for safety.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 # Minimal constants for expected keys used across the codebase
 STRUCTURED_KEYS = [
@@ -40,10 +40,10 @@ LEGACY_TO_STRUCTURED_MAP = {
 }
 
 
-def _dedupe_list_str(items: Any) -> List[str]:
+def _dedupe_list_str(items: Any) -> list[str]:
     if not isinstance(items, list):
         return []
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
     for it in items:
         if it is None:
@@ -228,7 +228,7 @@ def _validate_location(location: str) -> str:
     return loc
 
 
-def _ensure_extracted_data_container(resp: Dict[str, Any]) -> Dict[str, Any]:
+def _ensure_extracted_data_container(resp: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(resp, dict):
         resp = {}
     extracted = resp.get("extracted_data")
@@ -245,7 +245,7 @@ def _ensure_extracted_data_container(resp: Dict[str, Any]) -> Dict[str, Any]:
     return resp
 
 
-def _promote_legacy_fields(extracted: Dict[str, Any]) -> None:
+def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
     """
     Promote simple legacy flat fields to structured containers conservatively.
     - mentioned_names -> structured_names[{full_name}]
@@ -278,7 +278,7 @@ def _promote_legacy_fields(extracted: Dict[str, Any]) -> None:
         extracted[struct_key] = struct_list
 
 
-def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_extracted_data(extracted: dict[str, Any]) -> dict[str, Any]:
     """
     Enhanced Phase 12.1: Normalize extracted_data dict with genealogical validation.
     Ensures keys exist, promotes legacy fields, and validates genealogical data.
@@ -369,7 +369,7 @@ def normalize_extracted_data(extracted: Dict[str, Any]) -> Dict[str, Any]:
     return extracted
 
 
-def normalize_ai_response(ai_resp: Any) -> Dict[str, Any]:
+def normalize_ai_response(ai_resp: Any) -> dict[str, Any]:
     """
     Normalize a raw AI response into a safe dict with required shape:
     { "extracted_data": {...}, "suggested_tasks": [...] }

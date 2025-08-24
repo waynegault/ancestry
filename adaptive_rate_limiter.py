@@ -15,7 +15,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -255,7 +255,7 @@ class AdaptiveRateLimiter:
             logger.debug(f"⚡ Adaptive rate limiting: RPS={self.current_rps:.2f}, Delay={self.current_delay:.2f}s, "
                         f"Success={success_rate:.2%}, RateLimit={rate_limit_rate:.2%}")
 
-    def get_current_settings(self) -> Dict[str, float]:
+    def get_current_settings(self) -> dict[str, float]:
         """Get current rate limiting settings."""
         return {
             "rps": self.current_rps,
@@ -478,7 +478,7 @@ class SmartBatchProcessor:
         if adaptation_made:
             self.last_adaptation_time = time.time()
 
-    def get_performance_summary(self) -> Dict[str, Any]:
+    def get_performance_summary(self) -> dict[str, Any]:
         """Get performance summary for batch processing."""
         if not self.processing_history:
             return {"status": "No data available"}
@@ -502,8 +502,8 @@ class MLBasedOptimizer:
     """
 
     def __init__(self):
-        self.training_data: List[Dict[str, Any]] = []
-        self.model_weights: Dict[str, float] = {
+        self.training_data: list[dict[str, Any]] = []
+        self.model_weights: dict[str, float] = {
             "success_rate": 0.4,
             "response_time": 0.3,
             "rate_limit_errors": 0.2,
@@ -589,9 +589,9 @@ class PredictiveProcessor:
     """
 
     def __init__(self):
-        self.processing_patterns: Dict[str, List[Dict[str, Any]]] = {}
-        self.time_based_predictions: Dict[int, Dict[str, float]] = {}  # hour -> predictions
-        self.load_predictions: Dict[str, float] = {}  # load_level -> optimal_rps
+        self.processing_patterns: dict[str, list[dict[str, Any]]] = {}
+        self.time_based_predictions: dict[int, dict[str, float]] = {}  # hour -> predictions
+        self.load_predictions: dict[str, float] = {}  # load_level -> optimal_rps
 
     def record_processing_pattern(self,
                                 pattern_type: str,
@@ -627,9 +627,9 @@ class SystemHealthMonitor:
     """
 
     def __init__(self):
-        self.health_metrics: Dict[str, Any] = {}
-        self.health_history: List[Dict[str, Any]] = []
-        self.alert_thresholds: Dict[str, Dict[str, float]] = {
+        self.health_metrics: dict[str, Any] = {}
+        self.health_history: list[dict[str, Any]] = []
+        self.alert_thresholds: dict[str, dict[str, float]] = {
             "cpu_usage": {"warning": 70.0, "critical": 85.0},
             "memory_usage": {"warning": 75.0, "critical": 90.0},
             "error_rate": {"warning": 0.05, "critical": 0.10},
@@ -748,14 +748,14 @@ class ConfigurationOptimizer:
     def __init__(self):
         """Initialize configuration optimizer."""
         self.performance_history: deque = deque(maxlen=100)
-        self.optimization_recommendations: List[Dict[str, Any]] = []
+        self.optimization_recommendations: list[dict[str, Any]] = []
 
     def analyze_performance(
         self,
         rate_limiter_stats: RateLimitingStats,
-        batch_processor_summary: Dict[str, Any],
-        system_metrics: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        batch_processor_summary: dict[str, Any],
+        system_metrics: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
         """
         Analyze system performance and generate optimization recommendations.
 
@@ -817,7 +817,7 @@ class ConfigurationOptimizer:
 
         return analysis
 
-    def _analyze_rate_limiting(self, stats: RateLimitingStats) -> Dict[str, Any]:
+    def _analyze_rate_limiting(self, stats: RateLimitingStats) -> dict[str, Any]:
         """Analyze rate limiting performance."""
         if stats.total_requests == 0:
             return {"status": "insufficient_data"}
@@ -834,7 +834,7 @@ class ConfigurationOptimizer:
             "status": "healthy" if success_rate > 0.95 and error_rate < 0.02 else "needs_attention"
         }
 
-    def _analyze_batch_processing(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_batch_processing(self, summary: dict[str, Any]) -> dict[str, Any]:
         """Analyze batch processing performance."""
         if not summary or summary.get("batches_processed", 0) == 0:
             return {"status": "insufficient_data"}

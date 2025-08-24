@@ -18,7 +18,7 @@ logger = setup_module(globals(), __name__)
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from config.config_manager import ConfigManager
 from gedcom_utils import GedcomData, _normalize_id, calculate_match_score
@@ -233,7 +233,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     return _CACHED_GEDCOM_DATA
 
 
-def matches_criterion(key: str, criteria: Dict[str, Any], value: Any) -> bool:
+def matches_criterion(key: str, criteria: dict[str, Any], value: Any) -> bool:
     """Check if a value matches a criterion."""
     if key not in criteria or criteria[key] is None:
         return False
@@ -249,7 +249,7 @@ def matches_criterion(key: str, criteria: Dict[str, Any], value: Any) -> bool:
 
 
 def matches_year_criterion(
-    key: str, criteria: Dict[str, Any], value: Any, year_range: int
+    key: str, criteria: dict[str, Any], value: Any, year_range: int
 ) -> bool:
     """Check if a year value matches a criterion within a specified range."""
     if key not in criteria or criteria[key] is None or value is None:
@@ -266,11 +266,11 @@ def matches_year_criterion(
 
 
 def search_gedcom_for_criteria(
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     max_results: int = 10,
     gedcom_data: Optional[GedcomData] = None,
     gedcom_path: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search GEDCOM data for individuals matching the given criteria.
 
@@ -455,7 +455,7 @@ def get_gedcom_family_details(
     individual_id: str,
     gedcom_data: Optional[GedcomData] = None,
     gedcom_path: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get family details for a specific individual from GEDCOM data.
 

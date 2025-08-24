@@ -21,7 +21,7 @@ import json
 import os
 import sys  # Used for sys.exit in main block
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 # --- Third-party imports ---
 import msal  # MSAL library for authentication
@@ -398,7 +398,7 @@ def create_todo_task(
     task_create_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists/{list_id}/tasks"
 
     # Step 3: Construct the task data payload (Unchanged)
-    task_data: Dict[str, Any] = {"title": task_title}
+    task_data: dict[str, Any] = {"title": task_title}
     if task_body:
         task_data["body"] = {"content": task_body, "contentType": "text"}
 

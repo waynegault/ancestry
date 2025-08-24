@@ -16,7 +16,7 @@ import html
 import re
 import time
 from collections import deque
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup, Tag
@@ -124,9 +124,9 @@ GEDCOM_UTILS_AVAILABLE = True
 def _find_direct_relationship(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
-) -> List[str]:
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> list[str]:
     """
     Find a direct relationship between two individuals.
 
@@ -163,8 +163,8 @@ def _find_direct_relationship(
 def _has_direct_relationship(
     id1: str,
     id2: str,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
 ) -> bool:
     """
     Check if two individuals have a direct relationship (parent-child, siblings, or spouses).
@@ -206,12 +206,12 @@ def _has_direct_relationship(
 def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
-    id_to_parents: Optional[Dict[str, Set[str]]],
-    id_to_children: Optional[Dict[str, Set[str]]],
+    id_to_parents: Optional[dict[str, set[str]]],
+    id_to_children: Optional[dict[str, set[str]]],
     max_depth=25,
     node_limit=150000,
     timeout_sec=45,
-) -> List[str]:
+) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
 
@@ -399,11 +399,11 @@ def fast_bidirectional_bfs(
 
 
 def explain_relationship_path(
-    path_ids: List[str],
+    path_ids: list[str],
     reader: Any,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
-    indi_index: Dict[str, Any],
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+    indi_index: dict[str, Any],
     owner_name: str = "Reference Person",
     relationship_type: str = "relative",
 ) -> str:
@@ -453,7 +453,7 @@ def explain_relationship_path(
 
 
 def format_api_relationship_path(
-    api_response_data: Union[str, Dict, None],
+    api_response_data: Union[str, dict, None],
     owner_name: str,
     target_name: str,
     relationship_type: str = "relative",
@@ -479,7 +479,7 @@ def format_api_relationship_path(
         return "(No relationship data received from API)"
 
     html_content_raw: Optional[str] = None
-    json_data: Optional[Dict] = None
+    json_data: Optional[dict] = None
 
     # Extract HTML content from API response
     if isinstance(api_response_data, str):
@@ -675,12 +675,12 @@ def format_api_relationship_path(
 
 
 def convert_gedcom_path_to_unified_format(
-    path_ids: List[str],
+    path_ids: list[str],
     reader: Any,
-    id_to_parents: Dict[str, Set[str]],
-    id_to_children: Dict[str, Set[str]],
-    indi_index: Dict[str, Any],
-) -> List[Dict[str, Optional[str]]]:  # Value type changed to Optional[str]
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+    indi_index: dict[str, Any],
+) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert a GEDCOM relationship path to the unified format for relationship_path_unified.
 
@@ -697,7 +697,7 @@ def convert_gedcom_path_to_unified_format(
     if not path_ids or len(path_ids) < 2:
         return []
 
-    result: List[Dict[str, Optional[str]]] = []  # Ensure list type
+    result: list[dict[str, Optional[str]]] = []  # Ensure list type
 
     # Process the first person (no relationship)
     first_id = path_ids[0]
@@ -874,8 +874,8 @@ def convert_gedcom_path_to_unified_format(
 
 
 def convert_discovery_api_path_to_unified_format(
-    discovery_data: Dict, target_name: str
-) -> List[Dict[str, Optional[str]]]:  # Value type changed to Optional[str]
+    discovery_data: dict, target_name: str
+) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert Discovery API relationship data to the unified format for relationship_path_unified.
 
@@ -899,7 +899,7 @@ def convert_discovery_api_path_to_unified_format(
         logger.warning("Discovery API path is not a valid list or is empty")
         return []
 
-    result: List[Dict[str, Optional[str]]] = []  # Ensure list type
+    result: list[dict[str, Optional[str]]] = []  # Ensure list type
 
     # Process the first person (target)
     # The Discovery API doesn't include the target person in the path, so we add them manually
@@ -982,8 +982,8 @@ def convert_discovery_api_path_to_unified_format(
 
 
 def convert_api_path_to_unified_format(
-    relationship_data: List[Dict], target_name: str
-) -> List[Dict[str, Optional[str]]]:  # Value type changed to Optional[str]
+    relationship_data: list[dict], target_name: str
+) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert API relationship data to the unified format for relationship_path_unified.
 
@@ -997,7 +997,7 @@ def convert_api_path_to_unified_format(
     if not relationship_data:
         return []
 
-    result: List[Dict[str, Optional[str]]] = []  # Ensure list type
+    result: list[dict[str, Optional[str]]] = []  # Ensure list type
 
     # Process the first person (target)
     first_person = relationship_data[0]
@@ -1302,7 +1302,7 @@ def convert_api_path_to_unified_format(
 
 
 def format_relationship_path_unified(
-    path_data: List[Dict[str, Optional[str]]],  # Value type changed to Optional[str]
+    path_data: list[dict[str, Optional[str]]],  # Value type changed to Optional[str]
     target_name: str,
     owner_name: str,
     relationship_type: Optional[str] = None,

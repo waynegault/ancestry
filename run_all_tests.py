@@ -34,7 +34,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import psutil
 
@@ -65,7 +65,7 @@ class TestSuitePerformance:
     avg_cpu_usage: float
     peak_cpu_usage: float
     parallel_efficiency: float
-    optimization_suggestions: List[str]
+    optimization_suggestions: list[str]
 
 
 class PerformanceMonitor:
@@ -84,7 +84,7 @@ class PerformanceMonitor:
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
 
-    def stop_monitoring(self) -> Dict[str, float]:
+    def stop_monitoring(self) -> dict[str, float]:
         """Stop monitoring and return aggregated metrics."""
         self.monitoring = False
         if self.monitor_thread:
@@ -385,7 +385,7 @@ def extract_module_description(module_path: str) -> str | None:
 
 def run_module_tests(
     module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
-) -> Tuple[bool, int, Optional[TestExecutionMetrics]]:
+) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
     """Run tests for a specific module with optional performance monitoring."""
     import re  # Ensure re is available in function scope
 
@@ -719,7 +719,7 @@ def run_module_tests(
         return False, 0, error_metrics
 
 
-def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False) -> Tuple[List[TestExecutionMetrics], int, int]:
+def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False) -> tuple[list[TestExecutionMetrics], int, int]:
     """Run tests in parallel for improved performance."""
     all_metrics = []
     passed_count = 0
@@ -759,7 +759,7 @@ def run_tests_parallel(modules_with_descriptions: List[Tuple[str, str]], enable_
     return all_metrics, passed_count, total_test_count
 
 
-def save_performance_metrics(metrics: List[TestExecutionMetrics], suite_performance: TestSuitePerformance):
+def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performance: TestSuitePerformance):
     """Save performance metrics to file for trend analysis."""
     try:
         metrics_file = Path("test_performance_metrics.json")
@@ -795,7 +795,7 @@ def save_performance_metrics(metrics: List[TestExecutionMetrics], suite_performa
         print(f"⚠️  Failed to save performance metrics: {e}")
 
 
-def analyze_performance_trends(metrics: List[TestExecutionMetrics]) -> List[str]:
+def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]:
     """Analyze performance metrics and provide optimization suggestions."""
     suggestions = []
 

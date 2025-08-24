@@ -24,7 +24,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import psutil
 
@@ -93,9 +93,9 @@ class SessionHealthMonitor:
     """
 
     def __init__(self):
-        self.metrics_history: Dict[str, deque] = {}
-        self.current_metrics: Dict[str, HealthMetric] = {}
-        self.alerts: List[HealthAlert] = []
+        self.metrics_history: dict[str, deque] = {}
+        self.current_metrics: dict[str, HealthMetric] = {}
+        self.alerts: list[HealthAlert] = []
         self.health_score_history: deque = deque(maxlen=100)
         self.session_start_time = time.time()
         self.last_health_check = time.time()
@@ -104,18 +104,18 @@ class SessionHealthMonitor:
 
         # Performance tracking
         self.api_response_times: deque = deque(maxlen=50)
-        self.error_counts: Dict[str, int] = {}
+        self.error_counts: dict[str, int] = {}
         self.page_processing_times: deque = deque(maxlen=20)
         self.memory_usage_history: deque = deque(maxlen=30)
 
         # Enhanced error rate monitoring - PERFORMANCE OPTIMIZED
         self.error_timestamps: deque = deque(maxlen=2000)  # Increased for 20+ hour sessions
-        self.error_rate_warnings_sent: Dict[str, float] = {}  # Track when warnings were sent
+        self.error_rate_warnings_sent: dict[str, float] = {}  # Track when warnings were sent
         self.last_error_rate_check: float = time.time()
 
         # Metric alert de-duplication (prevents alert spam on repeated updates)
-        self._last_metric_alert_level: Dict[str, AlertLevel] = {}
-        self._last_metric_alert_time: Dict[str, float] = {}
+        self._last_metric_alert_level: dict[str, AlertLevel] = {}
+        self._last_metric_alert_time: dict[str, float] = {}
         self._metric_alert_cooldown_seconds: float = 60.0  # Only re-log after 60s unless level escalates
 
         # Performance optimization for long sessions
@@ -136,8 +136,8 @@ class SessionHealthMonitor:
         self._enhanced_monitoring_timestamp: float = 0.0
 
         # Predictive analytics
-        self.failure_patterns: List[Dict[str, Any]] = []
-        self.success_patterns: List[Dict[str, Any]] = []
+        self.failure_patterns: list[dict[str, Any]] = []
+        self.success_patterns: list[dict[str, Any]] = []
         # Safety test mode flag to standardize alert prefixes
         self._safety_test_mode: bool = False
 
@@ -360,7 +360,7 @@ class SessionHealthMonitor:
 
         return min(1.0, risk_score)
 
-    def get_recommended_actions(self) -> List[str]:
+    def get_recommended_actions(self) -> list[str]:
         """Get recommended actions based on current health status."""
         actions = []
         health_score = self.calculate_health_score()
@@ -479,7 +479,7 @@ class SessionHealthMonitor:
                         logger.warning(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
                         self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", errors_in_window, window_name)
 
-    def get_error_rate_statistics(self) -> Dict[str, Any]:
+    def get_error_rate_statistics(self) -> dict[str, Any]:
         """
         Get comprehensive error rate statistics for monitoring and analysis.
 
@@ -645,7 +645,7 @@ class SessionHealthMonitor:
         """Check if enhanced monitoring is active."""
         return self._enhanced_monitoring_active
 
-    def get_intervention_status(self) -> Dict[str, Any]:
+    def get_intervention_status(self) -> dict[str, Any]:
         """Get current intervention status."""
         return {
             "emergency_halt": {
@@ -772,7 +772,7 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.warning(f"Failed to optimize for long session: {e}")
 
-    def get_performance_stats(self) -> Dict[str, Any]:
+    def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for monitoring overhead analysis."""
         try:
             current_time = time.time()
@@ -866,7 +866,7 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.warning(f"Error updating session metrics: {e}")
 
-    def get_health_dashboard(self) -> Dict[str, Any]:
+    def get_health_dashboard(self) -> dict[str, Any]:
         """Get comprehensive health dashboard data."""
         health_score = self.calculate_health_score()
         health_status = self.get_health_status()
@@ -1115,7 +1115,7 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.debug(f"Checkpoint cleanup failed: {e}")
 
-    def list_available_checkpoints(self) -> List[Dict[str, Any]]:
+    def list_available_checkpoints(self) -> list[dict[str, Any]]:
         """List all available checkpoint files with metadata."""
         try:
             checkpoint_dir = Path("Cache/session_checkpoints")
@@ -1153,7 +1153,7 @@ class SessionHealthMonitor:
             logger.error(f"Failed to list checkpoints: {e}")
             return []
 
-    def persist_session_state_to_disk(self, session_data: Optional[Dict[str, Any]] = None) -> str:
+    def persist_session_state_to_disk(self, session_data: Optional[dict[str, Any]] = None) -> str:
         """Persist current session state to disk for crash recovery."""
         try:
             # Create persistent state directory
@@ -1193,7 +1193,7 @@ class SessionHealthMonitor:
             logger.error(f"Failed to persist session state: {e}")
             return ""
 
-    def recover_session_state_from_disk(self) -> Optional[Dict[str, Any]]:
+    def recover_session_state_from_disk(self) -> Optional[dict[str, Any]]:
         """Recover session state from disk after a crash."""
         try:
             state_file = Path("Cache/session_state/current_session.json")
@@ -1294,7 +1294,7 @@ def integrate_with_action6(action6_module):
     # Return monitor with tracking capability
 
 
-def get_performance_recommendations(health_score: float, risk_score: float) -> Dict[str, Any]:
+def get_performance_recommendations(health_score: float, risk_score: float) -> dict[str, Any]:
     """Get specific performance setting recommendations based on health."""
     recommendations = {
         "max_concurrency": 3,
@@ -1423,7 +1423,7 @@ def create_recovery_checkpoint(session_manager=None, checkpoint_name: str = "rec
         return ""
 
 
-def get_session_recovery_status() -> Dict[str, Any]:
+def get_session_recovery_status() -> dict[str, Any]:
     """Get session recovery status and available checkpoints."""
     monitor = get_health_monitor()
 
@@ -1453,7 +1453,7 @@ def get_session_recovery_status() -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-def _get_recovery_recommendations(checkpoints: List[Dict], crash_recovery: bool) -> List[str]:
+def _get_recovery_recommendations(checkpoints: list[dict], crash_recovery: bool) -> list[str]:
     """Get recovery recommendations based on available data."""
     recommendations = []
 

@@ -26,7 +26,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List
 
 # --- Third-party imports ---
 from dotenv import load_dotenv
@@ -124,7 +123,7 @@ from test_framework import (
 class NameFilter(logging.Filter):
     """Filters log records based on logger name starting with excluded prefixes."""
 
-    def __init__(self, excluded_names: List[str]):
+    def __init__(self, excluded_names: list[str]):
         super().__init__()
         self.excluded_names = excluded_names
 

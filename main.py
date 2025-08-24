@@ -26,7 +26,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -185,7 +185,7 @@ def menu():
 # End of menu
 
 
-def clear_log_file() -> Tuple[bool, Optional[str]]:
+def clear_log_file() -> tuple[bool, Optional[str]]:
     """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
     cleared = False
     log_file_handler: Optional[logging.FileHandler] = None

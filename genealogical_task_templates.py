@@ -13,7 +13,7 @@ Phase: 10.1 - Task Management & Actionability Enhancement
 # Ensure standard imports available for test expectations
 import datetime  # noqa: F401
 import json  # noqa: F401
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -45,7 +45,7 @@ class GenealogicalTaskGenerator:
             self.gedcom_ai_integrator = None
             self.gedcom_ai_available = False
 
-    def _load_task_templates(self) -> Dict[str, Dict[str, str]]:
+    def _load_task_templates(self) -> dict[str, dict[str, str]]:
         """Load enhanced genealogical research task templates with specific methodologies."""
         return {
             "vital_records_search": {
@@ -162,7 +162,7 @@ class GenealogicalTaskGenerator:
             return f"Try variations: {', '.join(set(variations[:5]))}"
         return "Check phonetic spellings and transcription errors"
 
-    def _load_task_configuration(self) -> Dict[str, Any]:
+    def _load_task_configuration(self) -> dict[str, Any]:
         """Load task generation configuration."""
         return {
             "max_tasks_per_person": 5,
@@ -185,11 +185,11 @@ class GenealogicalTaskGenerator:
 
     def generate_research_tasks(
         self,
-        person_data: Dict[str, Any],
-        extracted_data: Dict[str, Any],
-        suggested_tasks: List[str],
+        person_data: dict[str, Any],
+        extracted_data: dict[str, Any],
+        suggested_tasks: list[str],
         gedcom_data: Any = None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Generate specialized research tasks based on extracted genealogical data.
 
@@ -249,7 +249,7 @@ class GenealogicalTaskGenerator:
             logger.error(f"Error generating research tasks: {e}")
             return self._create_fallback_tasks(person_data, suggested_tasks)
 
-    def _generate_vital_records_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_vital_records_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate enhanced vital records search tasks with location-specific strategies."""
         tasks = []
         vital_records = extracted_data.get("vital_records", [])
@@ -280,7 +280,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_dna_analysis_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_dna_analysis_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate DNA match analysis tasks."""
         tasks = []
         dna_info = extracted_data.get("dna_information", [])
@@ -302,7 +302,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_verification_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_verification_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate family tree verification tasks."""
         tasks = []
         relationships = extracted_data.get("relationships", [])
@@ -328,7 +328,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_immigration_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_immigration_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate immigration research tasks."""
         tasks = []
         locations = extracted_data.get("locations", [])
@@ -362,7 +362,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_census_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_census_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate census research tasks."""
         tasks = []
         structured_names = extracted_data.get("structured_names", [])
@@ -390,7 +390,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_military_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_military_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate military research tasks."""
         tasks = []
         # Look for military-related information in research questions or documents
@@ -414,7 +414,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_occupation_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_occupation_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate occupation research tasks."""
         tasks = []
         occupations = extracted_data.get("occupations", [])
@@ -441,7 +441,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _generate_location_tasks(self, extracted_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _generate_location_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate location research tasks."""
         tasks = []
         locations = extracted_data.get("locations", [])
@@ -467,7 +467,7 @@ class GenealogicalTaskGenerator:
 
         return tasks
 
-    def _create_task_from_template(self, template_key: str, task_data: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    def _create_task_from_template(self, template_key: str, task_data: dict[str, str]) -> Optional[dict[str, Any]]:
         """Create a task from a template with provided data."""
         try:
             template = self.task_templates.get(template_key)
@@ -493,7 +493,7 @@ class GenealogicalTaskGenerator:
             logger.error(f"Error creating task from template {template_key}: {e}")
             return None
 
-    def _create_fallback_tasks(self, person_data: Dict[str, Any], suggested_tasks: List[str]) -> List[Dict[str, Any]]:
+    def _create_fallback_tasks(self, person_data: dict[str, Any], suggested_tasks: list[str]) -> list[dict[str, Any]]:
         """Create fallback tasks from AI suggestions."""
         fallback_tasks = []
         username = person_data.get("username", "Unknown")
@@ -509,7 +509,7 @@ class GenealogicalTaskGenerator:
 
         return fallback_tasks
 
-    def _prioritize_and_limit_tasks(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _prioritize_and_limit_tasks(self, tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Prioritize tasks and limit to maximum number."""
         if not tasks:
             return []

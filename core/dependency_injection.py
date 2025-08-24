@@ -33,7 +33,7 @@ import sys
 import threading
 import unittest
 from functools import wraps
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Callable, ClassVar, Optional, TypeVar, Union
 
 T = TypeVar("T")
 
@@ -51,17 +51,17 @@ class DIContainer:
     """
 
     def __init__(self):
-        self._services: Dict[str, Any] = {}
-        self._factories: Dict[str, Callable] = {}
-        self._singletons: Dict[str, Any] = {}
-        self._interfaces: Dict[Type, Type] = {}
+        self._services: dict[str, Any] = {}
+        self._factories: dict[str, Callable] = {}
+        self._singletons: dict[str, Any] = {}
+        self._interfaces: dict[type, type] = {}
         self._lock = threading.RLock()
-        self._initialization_order: List[str] = []
+        self._initialization_order: list[str] = []
 
     def register_singleton(
         self,
-        interface: Type[T],
-        implementation: Union[Type[T], T],
+        interface: type[T],
+        implementation: Union[type[T], T],
         name: Optional[str] = None,
     ) -> None:
         """
@@ -87,7 +87,7 @@ class DIContainer:
                 logger.debug(f"Registered singleton instance: {service_name}")
 
     def register_transient(
-        self, interface: Type[T], implementation: Type[T], name: Optional[str] = None
+        self, interface: type[T], implementation: type[T], name: Optional[str] = None
     ) -> None:
         """
         Register a transient service (new instance each time).
@@ -108,7 +108,7 @@ class DIContainer:
             logger.debug(f"Registered transient service: {service_name}")
 
     def register_factory(
-        self, interface: Type[T], factory: Callable[[], T], name: Optional[str] = None
+        self, interface: type[T], factory: Callable[[], T], name: Optional[str] = None
     ) -> None:
         """
         Register a factory function.
@@ -124,7 +124,7 @@ class DIContainer:
             logger.debug(f"Registered factory: {service_name}")
 
     def register_instance(
-        self, interface: Type[T], instance: T, name: Optional[str] = None
+        self, interface: type[T], instance: T, name: Optional[str] = None
     ) -> None:
         """
         Register a specific instance.
@@ -140,7 +140,7 @@ class DIContainer:
             self._interfaces[interface] = type(instance)
             logger.debug(f"Registered instance: {service_name}")
 
-    def resolve(self, interface: Type[T], name: Optional[str] = None) -> T:
+    def resolve(self, interface: type[T], name: Optional[str] = None) -> T:
         """
         Resolve a service instance.
 
@@ -186,7 +186,7 @@ class DIContainer:
                 f"Cannot resolve service: {service_name} ({interface})"
             )
 
-    def is_registered(self, interface: Type, name: Optional[str] = None) -> bool:
+    def is_registered(self, interface: type, name: Optional[str] = None) -> bool:
         """
         Check if a service is registered.
 
@@ -216,7 +216,7 @@ class DIContainer:
             self._initialization_order.clear()
             logger.debug("DI container cleared")
 
-    def get_registration_info(self) -> Dict[str, Any]:
+    def get_registration_info(self) -> dict[str, Any]:
         """
         Get information about registered services.
 
@@ -237,11 +237,11 @@ class DIContainer:
                 + len(self._singletons),
             }
 
-    def _get_service_name(self, service_type: Type) -> str:
+    def _get_service_name(self, service_type: type) -> str:
         """Get service name from type."""
         return f"{service_type.__module__}.{service_type.__name__}"
 
-    def _create_instance(self, implementation: Type) -> Any:
+    def _create_instance(self, implementation: type) -> Any:
         """
         Create an instance with dependency injection.
 
@@ -317,7 +317,7 @@ class Injectable:
         logger.debug(f"Injectable subclass defined: {cls.__name__}")
 
 
-def inject(service_type: Type[T], name: Optional[str] = None) -> Callable:
+def inject(service_type: type[T], name: Optional[str] = None) -> Callable:
     """
     Decorator for dependency injection.
 
@@ -352,7 +352,7 @@ class ServiceRegistry:
     Global service registry for managing DI container instances.
     """
 
-    _containers: ClassVar[Dict[str, DIContainer]] = {}
+    _containers: ClassVar[dict[str, DIContainer]] = {}
     _default_container: ClassVar[Optional[DIContainer]] = None
     _lock: ClassVar[threading.RLock] = threading.RLock()
 
@@ -475,7 +475,7 @@ def configure_dependencies():
     logger.info("Dependency injection configuration completed")
 
 
-def get_service(service_type: Type[T], name: Optional[str] = None) -> T:
+def get_service(service_type: type[T], name: Optional[str] = None) -> T:
     """
     Convenience function to get a service from the default container.
 

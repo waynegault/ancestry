@@ -21,7 +21,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -35,7 +35,7 @@ from urllib3.util.retry import Retry
 from config import config_schema
 
 # === TYPE ALIASES ===
-ApiResponseType = Union[Dict[str, Any], List[Any], str, bytes, None, RequestsResponse]
+ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
 
 # === API CONSTANTS ===
 API_PATH_CSRF_TOKEN = "discoveryui-matches/parents/api/csrfToken"
@@ -140,9 +140,9 @@ class APIManager:
         url: str,
         method: str = "GET",
         use_csrf_token: bool = True,
-        data: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        data: Optional[dict[str, Any]] = None,
+        json_data: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
         timeout: int = 30,
         api_description: str = "API Request",
     ) -> ApiResponseType:

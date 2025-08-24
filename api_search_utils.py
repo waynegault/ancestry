@@ -21,7 +21,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 # === LOCAL IMPORTS ===
 from api_utils import (
@@ -62,11 +62,11 @@ def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
 
 
 def _run_simple_suggestion_scoring(
-    search_criteria: Dict[str, Any],
-    candidate: Dict[str, Any],
-    weights: Optional[Dict[str, Union[int, float]]] = None,
-    date_flex: Optional[Dict[str, Any]] = None,
-) -> Tuple[int, Dict[str, int], List[str]]:
+    search_criteria: dict[str, Any],
+    candidate: dict[str, Any],
+    weights: Optional[dict[str, Union[int, float]]] = None,
+    date_flex: Optional[dict[str, Any]] = None,
+) -> tuple[int, dict[str, int], list[str]]:
     """
     Use the main scoring function from gedcom_utils for consistency.
     This ensures all scoring uses the same logic and calculations.
@@ -102,7 +102,7 @@ def _run_simple_suggestion_scoring(
 
 
 
-def process_and_score_suggestions(api_results: List[Dict[str, Any]], search_criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
+def process_and_score_suggestions(api_results: list[dict[str, Any]], search_criteria: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Processes API results and scores them using the main scoring logic. Returns a list of scored suggestions sorted by score (descending).
 
@@ -133,9 +133,9 @@ def process_and_score_suggestions(api_results: List[Dict[str, Any]], search_crit
 
 def search_api_for_criteria(
     session_manager: SessionManager,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     max_results: int = 10,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search Ancestry API for individuals matching the given criteria.
 
@@ -499,7 +499,7 @@ def get_api_family_details(
     session_manager: SessionManager,
     person_id: str,
     tree_id: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get family details for a specific individual from Ancestry API.
 

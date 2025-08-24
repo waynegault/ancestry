@@ -14,7 +14,7 @@ Phase: 12.3 - Intelligent Research Prioritization
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -30,12 +30,12 @@ class ResearchPriority:
     priority_id: str
     task_type: str  # 'vital_records', 'census', 'immigration', 'dna_verification', 'conflict_resolution'
     description: str
-    target_people: List[str]
+    target_people: list[str]
     priority_score: float  # 0.0 to 100.0
     urgency: str  # 'critical', 'high', 'medium', 'low'
-    research_context: Dict[str, Any] = field(default_factory=dict)
-    expected_outcomes: List[str] = field(default_factory=list)
-    research_steps: List[str] = field(default_factory=list)
+    research_context: dict[str, Any] = field(default_factory=dict)
+    expected_outcomes: list[str] = field(default_factory=list)
+    research_steps: list[str] = field(default_factory=list)
     estimated_effort: str = "medium"  # 'low', 'medium', 'high'
     success_probability: float = 0.5  # 0.0 to 1.0
 
@@ -49,9 +49,9 @@ class FamilyLineStatus:
     surname: str
     generations_back: int
     completeness_percentage: float
-    missing_generations: List[int]
-    research_bottlenecks: List[str]
-    priority_research_targets: List[str]
+    missing_generations: list[int]
+    research_bottlenecks: list[str]
+    priority_research_targets: list[str]
 
 
 @dataclass
@@ -62,10 +62,10 @@ class LocationResearchCluster:
     location: str
     time_period: str
     people_count: int
-    target_people: List[str]
-    available_records: List[str]
+    target_people: list[str]
+    available_records: list[str]
     research_efficiency_score: float
-    cluster_research_plan: List[str] = field(default_factory=list)
+    cluster_research_plan: list[str] = field(default_factory=list)
 
 
 class IntelligentResearchPrioritizer:
@@ -75,16 +75,16 @@ class IntelligentResearchPrioritizer:
 
     def __init__(self):
         """Initialize the research prioritizer."""
-        self.research_priorities: List[ResearchPriority] = []
-        self.family_line_status: List[FamilyLineStatus] = []
-        self.location_clusters: List[LocationResearchCluster] = []
+        self.research_priorities: list[ResearchPriority] = []
+        self.family_line_status: list[FamilyLineStatus] = []
+        self.location_clusters: list[LocationResearchCluster] = []
 
     def prioritize_research_tasks(
         self,
-        gedcom_analysis: Dict[str, Any],
-        dna_crossref_analysis: Dict[str, Any],
-        _existing_tasks: Optional[List[Dict[str, Any]]] = None
-    ) -> Dict[str, Any]:
+        gedcom_analysis: dict[str, Any],
+        dna_crossref_analysis: dict[str, Any],
+        _existing_tasks: Optional[list[dict[str, Any]]] = None
+    ) -> dict[str, Any]:
         """
         Generate intelligent research prioritization based on multiple data sources.
 
@@ -138,7 +138,7 @@ class IntelligentResearchPrioritizer:
             logger.error(f"Error during research prioritization: {e}")
             return self._empty_prioritization_result()
 
-    def _analyze_family_line_completeness(self, gedcom_analysis: Dict[str, Any]):
+    def _analyze_family_line_completeness(self, gedcom_analysis: dict[str, Any]):
         """Analyze completeness of different family lines."""
         try:
             # Extract family patterns from GEDCOM analysis
@@ -164,7 +164,7 @@ class IntelligentResearchPrioritizer:
         except Exception as e:
             logger.debug(f"Error analyzing family line completeness: {e}")
 
-    def _create_location_research_clusters(self, gedcom_analysis: Dict[str, Any]):
+    def _create_location_research_clusters(self, gedcom_analysis: dict[str, Any]):
         """Create location-based research clusters for efficiency."""
         try:
             # Group research opportunities by location
@@ -212,7 +212,7 @@ class IntelligentResearchPrioritizer:
         except Exception as e:
             logger.debug(f"Error creating location research clusters: {e}")
 
-    def _generate_priority_tasks_from_gaps(self, gedcom_analysis: Dict[str, Any]):
+    def _generate_priority_tasks_from_gaps(self, gedcom_analysis: dict[str, Any]):
         """Generate priority tasks from identified gaps."""
         gaps = gedcom_analysis.get("gaps_identified", [])
 
@@ -239,7 +239,7 @@ class IntelligentResearchPrioritizer:
 
             self.research_priorities.append(priority)
 
-    def _generate_priority_tasks_from_conflicts(self, gedcom_analysis: Dict[str, Any]):
+    def _generate_priority_tasks_from_conflicts(self, gedcom_analysis: dict[str, Any]):
         """Generate priority tasks from identified conflicts."""
         conflicts = gedcom_analysis.get("conflicts_identified", [])
 
@@ -266,7 +266,7 @@ class IntelligentResearchPrioritizer:
 
             self.research_priorities.append(priority)
 
-    def _generate_priority_tasks_from_dna(self, dna_crossref_analysis: Dict[str, Any]):
+    def _generate_priority_tasks_from_dna(self, dna_crossref_analysis: dict[str, Any]):
         """Generate priority tasks from DNA cross-reference analysis."""
         if not dna_crossref_analysis:
             return
@@ -419,7 +419,7 @@ class IntelligentResearchPrioritizer:
 
         return False
 
-    def _extract_location_from_context(self, context: Dict[str, Any]) -> str:
+    def _extract_location_from_context(self, context: dict[str, Any]) -> str:
         """Extract location information from research context."""
         # Look for location indicators in context
         for key in ['location', 'place', 'county', 'state', 'country']:
@@ -428,22 +428,22 @@ class IntelligentResearchPrioritizer:
         return ""
 
     # Helper methods for calculations and analysis
-    def _estimate_generations_back(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> int:
+    def _estimate_generations_back(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> int:
         """Estimate how many generations back this surname line goes."""
         # Placeholder implementation
         return 4
 
-    def _calculate_line_completeness(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> float:
+    def _calculate_line_completeness(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> float:
         """Calculate completeness percentage for a family line."""
         # Placeholder implementation
         return 65.0
 
-    def _identify_missing_generations(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> List[int]:
+    def _identify_missing_generations(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> list[int]:
         """Identify which generations are missing for this line."""
         # Placeholder implementation
         return [3, 4]
 
-    def _identify_research_bottlenecks(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> List[str]:
+    def _identify_research_bottlenecks(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> list[str]:
         """Identify research bottlenecks for this family line."""
         return [
             f"Missing parents for {surname} ancestors",
@@ -451,7 +451,7 @@ class IntelligentResearchPrioritizer:
             f"Birth records unavailable for early {surname} generations"
         ]
 
-    def _identify_priority_targets(self, surname: str, gedcom_analysis: Dict[str, Any]) -> List[str]:
+    def _identify_priority_targets(self, surname: str, gedcom_analysis: dict[str, Any]) -> list[str]:
         """Identify priority research targets for this family line."""
         return [
             f"Research {surname} family immigration",
@@ -459,7 +459,7 @@ class IntelligentResearchPrioritizer:
             f"Locate {surname} family in census records"
         ]
 
-    def _extract_location_context(self, gap: Dict[str, Any]) -> Optional[str]:
+    def _extract_location_context(self, gap: dict[str, Any]) -> Optional[str]:
         """Extract location context from a gap."""
         # This would analyze the gap description for location clues
         description = gap.get("description", "")
@@ -472,7 +472,7 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _extract_opportunity_location(self, opportunity: Dict[str, Any]) -> Optional[str]:
+    def _extract_opportunity_location(self, opportunity: dict[str, Any]) -> Optional[str]:
         """Extract location from research opportunity."""
         description = opportunity.get("description", "")
         # Simple implementation
@@ -484,11 +484,11 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _estimate_time_period_for_location(self, _location: str, _items: List[Dict[str, Any]]) -> str:
+    def _estimate_time_period_for_location(self, _location: str, _items: list[dict[str, Any]]) -> str:
         """Estimate time period for location cluster."""
         return "1800-1900"  # Placeholder
 
-    def _identify_available_records_for_location(self, _location: str) -> List[str]:
+    def _identify_available_records_for_location(self, _location: str) -> list[str]:
         """Identify available record types for a location."""
         record_types = {
             "Scotland": ["Birth certificates", "Death certificates", "Census records", "Parish registers"],
@@ -497,7 +497,7 @@ class IntelligentResearchPrioritizer:
         }
         return record_types.get(location, ["General records"])
 
-    def _calculate_cluster_efficiency(self, location: str, items: List[Dict[str, Any]]) -> float:
+    def _calculate_cluster_efficiency(self, location: str, items: list[dict[str, Any]]) -> float:
         """Calculate research efficiency score for a location cluster."""
         # Base efficiency on number of people and available records
         people_count = len(items)
@@ -508,7 +508,7 @@ class IntelligentResearchPrioritizer:
 
         return min(1.0, base_score + location_bonus)
 
-    def _generate_cluster_research_plan(self, location: str, items: List[Dict[str, Any]]) -> List[str]:
+    def _generate_cluster_research_plan(self, location: str, items: list[dict[str, Any]]) -> list[str]:
         """Generate research plan for a location cluster."""
         return [
             f"Research {location} records for multiple family members",
@@ -517,7 +517,7 @@ class IntelligentResearchPrioritizer:
             f"Cross-reference multiple sources for {location}"
         ]
 
-    def _calculate_gap_priority_score(self, gap: Dict[str, Any]) -> float:
+    def _calculate_gap_priority_score(self, gap: dict[str, Any]) -> float:
         """Calculate enhanced priority score for a gap using genealogical research best practices."""
         base_score = 50.0
 
@@ -571,7 +571,7 @@ class IntelligentResearchPrioritizer:
 
         return min(100.0, max(0.0, base_score))
 
-    def _calculate_conflict_priority_score(self, conflict: Dict[str, Any]) -> float:
+    def _calculate_conflict_priority_score(self, conflict: dict[str, Any]) -> float:
         """Calculate enhanced priority score for a conflict using genealogical accuracy principles."""
         base_score = 60.0
 
@@ -663,7 +663,7 @@ class IntelligentResearchPrioritizer:
         }
         return mapping.get(severity, "low")
 
-    def _estimate_research_effort(self, gap: Dict[str, Any]) -> str:
+    def _estimate_research_effort(self, gap: dict[str, Any]) -> str:
         """Estimate research effort required for a gap."""
         gap_type = gap.get("gap_type", "")
         if gap_type in ["missing_dates", "missing_places"]:
@@ -672,7 +672,7 @@ class IntelligentResearchPrioritizer:
             return "high"
         return "medium"
 
-    def _estimate_success_probability(self, gap: Dict[str, Any]) -> float:
+    def _estimate_success_probability(self, gap: dict[str, Any]) -> float:
         """Estimate probability of successfully filling a gap using genealogical research factors."""
         gap_type = gap.get("gap_type", "")
         priority = gap.get("priority", "low")
@@ -751,7 +751,7 @@ class IntelligentResearchPrioritizer:
 
         return min(1.0, max(0.1, base_probability))  # Keep between 10% and 100%
 
-    def _generate_research_recommendations(self) -> List[str]:
+    def _generate_research_recommendations(self) -> list[str]:
         """Generate overall research recommendations."""
         recommendations = []
 
@@ -772,7 +772,7 @@ class IntelligentResearchPrioritizer:
 
         return recommendations
 
-    def _analyze_research_efficiency(self) -> Dict[str, Any]:
+    def _analyze_research_efficiency(self) -> dict[str, Any]:
         """Analyze overall research efficiency opportunities."""
         total_tasks = len(self.research_priorities)
         low_effort_tasks = len([p for p in self.research_priorities if p.estimated_effort == "low"])
@@ -786,7 +786,7 @@ class IntelligentResearchPrioritizer:
             "cluster_opportunities": len(self.location_clusters)
         }
 
-    def _generate_next_steps(self) -> List[str]:
+    def _generate_next_steps(self) -> list[str]:
         """Generate immediate next steps."""
         if not self.research_priorities:
             return ["No research priorities identified"]
@@ -802,7 +802,7 @@ class IntelligentResearchPrioritizer:
 
         return next_steps
 
-    def _empty_prioritization_result(self) -> Dict[str, Any]:
+    def _empty_prioritization_result(self) -> dict[str, Any]:
         """Return empty prioritization result for error cases."""
         return {
             "prioritization_timestamp": datetime.now().isoformat(),
@@ -816,7 +816,7 @@ class IntelligentResearchPrioritizer:
             "error": "Research prioritization failed"
         }
 
-    def _priority_to_dict(self, priority: ResearchPriority) -> Dict[str, Any]:
+    def _priority_to_dict(self, priority: ResearchPriority) -> dict[str, Any]:
         """Convert ResearchPriority to dictionary."""
         return {
             "priority_id": priority.priority_id,
@@ -832,7 +832,7 @@ class IntelligentResearchPrioritizer:
             "success_probability": priority.success_probability
         }
 
-    def _family_line_to_dict(self, family_line: FamilyLineStatus) -> Dict[str, Any]:
+    def _family_line_to_dict(self, family_line: FamilyLineStatus) -> dict[str, Any]:
         """Convert FamilyLineStatus to dictionary."""
         return {
             "line_id": family_line.line_id,
@@ -845,7 +845,7 @@ class IntelligentResearchPrioritizer:
             "priority_research_targets": family_line.priority_research_targets
         }
 
-    def _location_cluster_to_dict(self, cluster: LocationResearchCluster) -> Dict[str, Any]:
+    def _location_cluster_to_dict(self, cluster: LocationResearchCluster) -> dict[str, Any]:
         """Convert LocationResearchCluster to dictionary."""
         return {
             "cluster_id": cluster.cluster_id,

@@ -39,7 +39,7 @@ assert _ensure_error_handling_symbols is not None  # make linter consider usage
 
 
 # === STANDARD LIBRARY IMPORTS ===
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import from local modules
 from utils import SessionManager
@@ -49,10 +49,10 @@ from utils import SessionManager
 
 @safe_execute(default_return=[], log_errors=True)
 def search_gedcom_persons(
-    search_criteria: Optional[Dict[str, Any]],
+    search_criteria: Optional[dict[str, Any]],
     max_results: int = 10,
     gedcom_path: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search for persons in GEDCOM data based on criteria.
 
@@ -86,9 +86,9 @@ def search_gedcom_persons(
 @safe_execute(default_return=[], log_errors=True)
 def search_ancestry_api_persons(
     session_manager: Optional[SessionManager],
-    search_criteria: Optional[Dict[str, Any]],
+    search_criteria: Optional[dict[str, Any]],
     max_results: int = 10,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search for persons using Ancestry API.
 
@@ -126,7 +126,7 @@ def get_person_family_details(
     source: str = "auto",
     session_manager: Optional[SessionManager] = None,
     gedcom_path: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get family details for a person from GEDCOM or API.
 
@@ -191,13 +191,13 @@ def get_person_relationship_path(
 
 @safe_execute(default_return=[], log_errors=True)
 def unified_person_search(
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     max_results: int = 10,
     include_gedcom: bool = True,
     include_api: bool = True,
     session_manager: Optional[SessionManager] = None,
     gedcom_path: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Unified search across both GEDCOM and API sources.
 
@@ -246,7 +246,7 @@ def unified_person_search(
 
 
 @safe_execute(default_return={}, log_errors=True)
-def parse_person_name(name: str) -> Dict[str, str]:
+def parse_person_name(name: str) -> dict[str, str]:
     """
     Parse a person name into components.
 

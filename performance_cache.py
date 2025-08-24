@@ -22,7 +22,7 @@ import pickle
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
 from memory_utils import ObjectPool
@@ -53,12 +53,12 @@ class PerformanceCache:
     """
 
     def __init__(self, max_memory_cache_size: int = 500):  # Increased cache size for better performance
-        self._memory_cache: Dict[str, Dict[str, Any]] = {}
-        self._cache_timestamps: Dict[str, float] = {}
-        self._cache_hit_counts: Dict[str, int] = {}  # Track cache hit frequency
-        self._cache_access_times: Dict[str, float] = {}  # Track access times for LRU
-        self._cache_dependencies: Dict[str, List[str]] = {}  # Track cache dependencies
-        self._cache_sizes: Dict[str, int] = {}  # Track individual cache entry sizes
+        self._memory_cache: dict[str, dict[str, Any]] = {}
+        self._cache_timestamps: dict[str, float] = {}
+        self._cache_hit_counts: dict[str, int] = {}  # Track cache hit frequency
+        self._cache_access_times: dict[str, float] = {}  # Track access times for LRU
+        self._cache_dependencies: dict[str, list[str]] = {}  # Track cache dependencies
+        self._cache_sizes: dict[str, int] = {}  # Track individual cache entry sizes
         self._max_size = max_memory_cache_size
         self._adaptive_sizing = True  # Enable adaptive cache sizing
         self._memory_pressure_threshold = 0.8  # Trigger cleanup at 80% capacity
@@ -252,7 +252,7 @@ class PerformanceCache:
         logger.debug(f"Cache MISS: {cache_key[:12]}...")
         return None
 
-    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: Optional[List[str]] = None):
+    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: Optional[list[str]] = None):
         """Store item in cache with optional dependency tracking"""
         # Calculate and store entry size
         try:
@@ -444,7 +444,7 @@ def clear_performance_cache():
     logger.info("Performance cache cleared")
 
 
-def warm_performance_cache(gedcom_paths: Optional[List[str]] = None, warm_strategies: Optional[List[str]] = None):
+def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None):
     """
     Intelligent cache warming with multiple strategies.
 
@@ -545,7 +545,7 @@ def _warm_relationships_cache(gedcom_path: str):
     logger.debug(f"Warmed relationships cache for {gedcom_path}")
 
 
-def get_cache_stats() -> Dict[str, Any]:
+def get_cache_stats() -> dict[str, Any]:
     """Get comprehensive cache statistics for monitoring and optimization"""
     stats = {
         "memory_entries": len(_performance_cache._memory_cache),
@@ -595,7 +595,7 @@ def get_cache_stats() -> Dict[str, Any]:
     return stats
 
 
-def _calculate_cache_health(stats: Dict[str, Any]) -> Dict[str, Any]:
+def _calculate_cache_health(stats: dict[str, Any]) -> dict[str, Any]:
     """Calculate cache health indicators."""
     health = {
         "overall_score": 0.0,

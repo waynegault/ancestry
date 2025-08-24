@@ -29,7 +29,7 @@ import time
 import traceback
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Optional
 from urllib.parse import quote, urlencode, urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -173,11 +173,11 @@ class PersonSuggestResponse:
     IsLiving: Optional[bool] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PersonSuggestResponse':
+    def from_dict(cls, data: dict[str, Any]) -> 'PersonSuggestResponse':
         """Create instance from dictionary data."""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
-    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
         result = asdict(self)
@@ -212,15 +212,15 @@ class ProfileDetailsResponse:
 class TreeOwnerResponse:
     """Dataclass model for validating Tree Owner API responses."""
 
-    owner: Optional[Dict[str, Any]] = None
+    owner: Optional[dict[str, Any]] = None
     displayName: Optional[str] = None
     id: Optional[str] = None  # Add missing 'id' field
     peopleCount: Optional[int] = None  # Add missing 'peopleCount' field
     photoCount: Optional[int] = None  # Add missing 'photoCount' field
-    membership: Optional[Dict[str, Any]] = None  # Add missing 'membership' field
+    membership: Optional[dict[str, Any]] = None  # Add missing 'membership' field
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TreeOwnerResponse':
+    def from_dict(cls, data: dict[str, Any]) -> 'TreeOwnerResponse':
         """Create instance from dictionary data, safely handling aliases and extras.
         - Maps legacy 'treeMembersCount' to 'peopleCount' if present.
         - Ignores unknown fields to avoid constructor errors.
@@ -239,7 +239,7 @@ class TreeOwnerResponse:
         filtered = {k: normalized[k] for k in cls.__dataclass_fields__ if k in normalized}
         return cls(**filtered)
 
-    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
         result = asdict(self)
@@ -252,19 +252,19 @@ class TreeOwnerResponse:
 class PersonFactsResponse:
     """Dataclass model for validating Person Facts API responses."""
 
-    data: Optional[Dict[str, Any]] = None
-    personResearch: Optional[Dict[str, Any]] = None
-    PersonFacts: Optional[List[Dict[str, Any]]] = None
+    data: Optional[dict[str, Any]] = None
+    personResearch: Optional[dict[str, Any]] = None
+    PersonFacts: Optional[list[dict[str, Any]]] = None
     PersonFullName: Optional[str] = None
     FirstName: Optional[str] = None
     LastName: Optional[str] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PersonFactsResponse':
+    def from_dict(cls, data: dict[str, Any]) -> 'PersonFactsResponse':
         """Create instance from dictionary data."""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
-    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
         result = asdict(self)
@@ -277,16 +277,16 @@ class PersonFactsResponse:
 class GetLadderResponse:
     """Dataclass model for validating GetLadder API responses."""
 
-    data: Optional[Dict[str, Any]] = None
-    relationship: Optional[Dict[str, Any]] = None
-    paths: Optional[List[Dict[str, Any]]] = None
+    data: Optional[dict[str, Any]] = None
+    relationship: Optional[dict[str, Any]] = None
+    paths: Optional[list[dict[str, Any]]] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'GetLadderResponse':
+    def from_dict(cls, data: dict[str, Any]) -> 'GetLadderResponse':
         """Create instance from dictionary data."""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
-    def dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
         result = asdict(self)
@@ -300,7 +300,7 @@ class DiscoveryRelationshipResponse:
 
     def __init__(self, **kwargs):
         self.relationship: Optional[str] = kwargs.get("relationship")
-        self.paths: Optional[List[Dict[str, Any]]] = kwargs.get("paths")
+        self.paths: Optional[list[dict[str, Any]]] = kwargs.get("paths")
         self.confidence: Optional[str] = kwargs.get("confidence")
 
     def dict(self, exclude_none=False):
@@ -319,7 +319,7 @@ class HeaderTreesResponse:
     """Model for validating Header Trees API responses."""
 
     def __init__(self, **kwargs):
-        self.menuitems: Optional[List[Dict[str, Any]]] = kwargs.get("menuitems")
+        self.menuitems: Optional[list[dict[str, Any]]] = kwargs.get("menuitems")
         self.url: Optional[str] = kwargs.get("url")
         self.text: Optional[str] = kwargs.get("text")
 
@@ -416,7 +416,7 @@ api_rate_limiter = ApiRateLimiter()
 
 # --- Helper Functions for parse_ancestry_person_details ---
 def _extract_name_from_api_details(
-    person_card: Dict, facts_data: Optional[Dict]
+    person_card: dict, facts_data: Optional[dict]
 ) -> str:
     """
     Extract and format a person's name from Ancestry API response data.
@@ -506,7 +506,7 @@ def _extract_name_from_api_details(
 
 
 def _extract_gender_from_api_details(
-    person_card: Dict, facts_data: Optional[Dict]
+    person_card: dict, facts_data: Optional[dict]
 ) -> Optional[str]:
     """
     Extract and normalize gender information from Ancestry API response data.
@@ -582,7 +582,7 @@ def _extract_gender_from_api_details(
 
 
 def _extract_living_status_from_api_details(
-    person_card: Dict, facts_data: Optional[Dict]
+    person_card: dict, facts_data: Optional[dict]
 ) -> Optional[bool]:
     """
     Extract living status information from Ancestry API response data.
@@ -628,8 +628,8 @@ def _extract_living_status_from_api_details(
 
 
 def _extract_event_from_api_details(
-    event_type: str, person_card: Dict, facts_data: Optional[Dict]
-) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
+    event_type: str, person_card: dict, facts_data: Optional[dict]
+) -> tuple[Optional[str], Optional[str], Optional[datetime]]:
     """
     Extract event information (date, place, parsed date object) from Ancestry API data.
 
@@ -825,9 +825,9 @@ def _generate_person_link(
 
 
 def parse_ancestry_person_details(
-    person_card: Dict, facts_data: Optional[Dict] = None
-) -> Dict[str, Any]:
-    details: Dict[str, Any] = {
+    person_card: dict, facts_data: Optional[dict] = None
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
         "name": "Unknown",
         "birth_date": "N/A",
         "birth_place": None,
@@ -907,7 +907,7 @@ def parse_ancestry_person_details(
 # Import it from there instead of defining it here
 
 
-def print_group(label: str, items: List[Dict]):
+def print_group(label: str, items: list[dict]):
     print(f"\n{label}:")
     if items:
         formatter = format_name
@@ -1001,9 +1001,9 @@ def call_suggest_api(
     owner_tree_id: str,
     owner_profile_id: Optional[str],
     base_url: str,
-    search_criteria: Dict[str, Any],
-    timeouts: Optional[List[int]] = None,
-) -> Optional[List[Dict]]:
+    search_criteria: dict[str, Any],
+    timeouts: Optional[list[int]] = None,
+) -> Optional[list[dict]]:
     # Validate inputs and raise appropriate exceptions
     if not callable(_api_req):
         logger.critical(
@@ -1276,8 +1276,8 @@ def call_facts_user_api(
     api_person_id: str,
     api_tree_id: str,
     base_url: str,
-    timeouts: Optional[List[int]] = None,
-) -> Optional[Dict]:
+    timeouts: Optional[list[int]] = None,
+) -> Optional[dict]:
     if not callable(_api_req):
         logger.critical(
             "Facts API call failed: _api_req function unavailable (Import Failed?)."
@@ -1589,7 +1589,7 @@ def call_discovery_relationship_api(
     owner_profile_id: str,
     base_url: str,
     timeout: Optional[int] = None,
-) -> Optional[Dict]:
+) -> Optional[dict]:
     """
     Makes an API call to get relationship data from the Discovery API.
 
@@ -1730,9 +1730,9 @@ def call_treesui_list_api(
     owner_tree_id: str,
     owner_profile_id: Optional[str],
     base_url: str,
-    search_criteria: Dict[str, Any],
-    timeouts: Optional[List[int]] = None,
-) -> Optional[List[Dict]]:
+    search_criteria: dict[str, Any],
+    timeouts: Optional[list[int]] = None,
+) -> Optional[list[dict]]:
     if not callable(_api_req):
         logger.critical(
             "TreesUI List API call failed: _api_req function unavailable (Import Failed?)."
@@ -1856,7 +1856,7 @@ def call_send_message_api(
     message_text: str,
     existing_conv_id: Optional[str],
     log_prefix: str,
-) -> Tuple[str, Optional[str]]:
+) -> tuple[str, Optional[str]]:
     if not session_manager or not session_manager.my_profile_id:
         logger.error(
             f"{log_prefix}: Cannot send message - SessionManager or own profile ID missing."
@@ -1898,9 +1898,9 @@ def call_send_message_api(
 
     is_initial = not existing_conv_id
     send_api_url: str = ""
-    payload: Dict[str, Any] = {}
+    payload: dict[str, Any] = {}
     send_api_desc: str = ""
-    api_headers: Dict[str, Any] = {}
+    api_headers: dict[str, Any] = {}
 
     try:
         base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
@@ -2050,7 +2050,7 @@ def call_send_message_api(
 
 def call_profile_details_api(
     session_manager: "SessionManager", profile_id: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     if not profile_id or not isinstance(profile_id, str):
         logger.warning("call_profile_details_api: Profile ID missing or invalid.")
         return None
@@ -2118,7 +2118,7 @@ def call_profile_details_api(
                     )
 
             logger.debug(f"Successfully fetched profile details for {profile_id}.")
-            result_data: Dict[str, Any] = {
+            result_data: dict[str, Any] = {
                 "first_name": None,
                 "last_logged_in_dt": None,
                 "contactable": False,
@@ -2440,11 +2440,11 @@ def call_tree_owner_api(
 def _sc_run_test(
     test_name: str,
     test_func: Callable,
-    test_results_list: List[Tuple[str, str, str]],
+    test_results_list: list[tuple[str, str, str]],
     logger_instance: logging.Logger,
     *args,
     **kwargs,
-) -> Tuple[str, str, str]:
+) -> tuple[str, str, str]:
     logger_instance.debug(f"[ RUNNING SC ] {test_name}")
     status = "FAIL"
     message = kwargs.pop("message", "")
@@ -2564,7 +2564,7 @@ def _sc_run_test(
 
 
 def _sc_print_summary(
-    test_results_list: List[Tuple[str, str, str]],
+    test_results_list: list[tuple[str, str, str]],
     overall_status: bool,
     logger_instance: logging.Logger,
 ):
@@ -2633,9 +2633,9 @@ async def async_call_suggest_api(
     owner_tree_id: str,
     owner_profile_id: Optional[str],
     base_url: str,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     timeout: Optional[int] = None,
-) -> Optional[List[PersonSuggestResponse]]:
+) -> Optional[list[PersonSuggestResponse]]:
     """
     Async version of call_suggest_api for concurrent person suggestions.
 
@@ -2704,12 +2704,12 @@ async def async_call_suggest_api(
 
 async def async_batch_person_lookup(
     session_manager: "SessionManager",
-    person_ids: List[str],
+    person_ids: list[str],
     tree_id: str,
     base_url: str,
     max_concurrent: int = 5,
     progress_callback: Optional[Callable[[int, int], None]] = None
-) -> Dict[str, Optional[PersonFactsResponse]]:
+) -> dict[str, Optional[PersonFactsResponse]]:
     """
     Perform concurrent person fact lookups for multiple persons.
 
@@ -2779,10 +2779,10 @@ def call_enhanced_api(
     tree_id: str,
     person_id: str,
     method: str = "GET",
-    data: Optional[Dict[str, Any]] = None,
+    data: Optional[dict[str, Any]] = None,
     api_description: str = "Enhanced API Call",
     use_csrf_token: bool = True
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Call an enhanced API endpoint with full browser-like authentication.
 
@@ -2866,7 +2866,7 @@ def call_edit_relationships_api(
     user_id: str,
     tree_id: str,
     person_id: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Call the edit relationships API endpoint to get family relationship data.
 
@@ -2896,7 +2896,7 @@ def call_relationship_ladder_api(
     user_id: str,
     tree_id: str,
     person_id: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Call the enhanced relationship ladder API endpoint to get kinship relationship data.
 
@@ -2928,7 +2928,7 @@ def get_relationship_path_data(
     session_manager: "SessionManager",
     person_id: str,
     reference_person_id: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Get comprehensive relationship path data for a person using the enhanced API.
 

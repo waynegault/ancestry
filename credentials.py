@@ -23,7 +23,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict
 
 # === LOCAL IMPORTS ===
 # Import SecurityManager
@@ -896,7 +895,7 @@ class UnifiedCredentialManager:
 
         return True
 
-    def _load_credential_types(self) -> tuple[Dict[str, str], Dict[str, str]]:
+    def _load_credential_types(self) -> tuple[dict[str, str], dict[str, str]]:
         """Load credential types from configuration file.
 
         Returns:
@@ -966,7 +965,7 @@ class UnifiedCredentialManager:
             return False
 
     def _save_credential_types(
-        self, required_creds: Dict[str, str], optional_creds: Dict[str, str]
+        self, required_creds: dict[str, str], optional_creds: dict[str, str]
     ) -> bool:
         """Save credential types to configuration file.
 

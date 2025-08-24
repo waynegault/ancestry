@@ -28,7 +28,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from functools import lru_cache, wraps
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -41,7 +41,7 @@ class PerformanceMetric:
     value: float
     timestamp: float
     category: str = "general"
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -81,7 +81,7 @@ class SmartQueryOptimizer:
                     "timestamp": time.time()
                 })
 
-    def get_optimization_suggestions(self) -> List[Dict[str, Any]]:
+    def get_optimization_suggestions(self) -> list[dict[str, Any]]:
         """Get query optimization suggestions."""
         suggestions = []
 
@@ -138,7 +138,7 @@ class MemoryPressureMonitor:
         self.optimization_history = []
         self._lock = threading.Lock()
 
-    def get_memory_info(self) -> Dict[str, float]:
+    def get_memory_info(self) -> dict[str, float]:
         """Get current memory information."""
         process = psutil.Process()
         memory_info = process.memory_info()
@@ -215,7 +215,7 @@ class APIBatchCoordinator:
         self.batch_stats = {"total_batches": 0, "total_requests": 0, "time_saved_ms": 0}
         self._lock = threading.Lock()
 
-    def add_to_batch(self, request_type: str, request_data: Dict[str, Any]) -> str:
+    def add_to_batch(self, request_type: str, request_data: dict[str, Any]) -> str:
         """Add request to batch queue."""
         with self._lock:
             # Use high precision timestamp to ensure unique batch IDs
@@ -242,7 +242,7 @@ class APIBatchCoordinator:
             oldest_time = requests[0]["timestamp"]
             return time.time() - oldest_time >= self.batch_timeout
 
-    def get_batch_for_execution(self, request_type: str) -> List[Dict[str, Any]]:
+    def get_batch_for_execution(self, request_type: str) -> list[dict[str, Any]]:
         """Get batch of requests for execution."""
         with self._lock:
             requests = self.pending_requests[request_type][:self.batch_size]
@@ -358,7 +358,7 @@ class PerformanceOptimizer:
 
         logger.info("Performance Optimizer initialized")
 
-    def run_comprehensive_optimization(self) -> List[OptimizationResult]:
+    def run_comprehensive_optimization(self) -> list[OptimizationResult]:
         """Run all available optimizations."""
         results = []
 
@@ -469,7 +469,7 @@ def get_global_optimizer() -> PerformanceOptimizer:
 
     return _global_optimizer
 
-def optimize_performance() -> List[OptimizationResult]:
+def optimize_performance() -> list[OptimizationResult]:
     """Run comprehensive performance optimization."""
     optimizer = get_global_optimizer()
     return optimizer.run_comprehensive_optimization()

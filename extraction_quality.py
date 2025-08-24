@@ -9,10 +9,10 @@ extracted_data. Designed for debug-level logging without changing runtime behavi
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 
-def summarize_extracted_data(extracted_data: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_extracted_data(extracted_data: dict[str, Any]) -> dict[str, Any]:
     """
     Returns a small summary dict with counts and basic flags. Safe defaults.
     Expected extracted_data keys (from normalization):
@@ -56,7 +56,7 @@ ACTION_VERBS = {
 _YEAR_RE = re.compile(r"\b(17|18|19|20)\d{2}\b")
 _SPECIFIC_PATTERN_RE = re.compile(r"\b(census|manifest|marriage|birth|death|baptism|immigration|naturalization|military|obituary|probate|newspaper|ship|passenger|DNA|chromosome)\b", re.IGNORECASE)
 
-def compute_task_quality(tasks: List[Any] | None) -> int:
+def compute_task_quality(tasks: list[Any] | None) -> int:
     """Score the quality of suggested research tasks (0-30).
 
     Heuristics per task (capped when summing):
@@ -117,7 +117,7 @@ def compute_task_quality(tasks: List[Any] | None) -> int:
     return round(scaled)
 
 
-def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
+def compute_extraction_quality(extraction: dict[str, Any]) -> int:
     """Compute a heuristic overall quality score (0-100) for an extraction result.
 
     Enhanced Phase 12.1 version with sophisticated genealogical data scoring:
@@ -129,7 +129,7 @@ def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
     if not isinstance(extraction, dict):
         return 0
     raw_extracted = extraction.get("extracted_data")
-    extracted_data: Dict[str, Any] = raw_extracted if isinstance(raw_extracted, dict) else {}
+    extracted_data: dict[str, Any] = raw_extracted if isinstance(raw_extracted, dict) else {}
     raw_tasks = extraction.get("suggested_tasks")
     suggested_tasks: list[Any] = raw_tasks if isinstance(raw_tasks, list) else []
 
@@ -233,7 +233,7 @@ def compute_extraction_quality(extraction: Dict[str, Any]) -> int:
 
 
 # === Phase 2 (2025-08-11): Anomaly & Consistency Summary (debug / telemetry only) ===
-def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
+def compute_anomaly_summary(extraction: dict[str, Any]) -> str:
     """Return a concise anomaly summary string or "" if no notable issues.
 
     Non-invasive heuristic checks (no exceptions raised):
@@ -249,15 +249,15 @@ def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
         if not isinstance(extraction, dict):
             return ""
         raw_extracted = extraction.get("extracted_data")
-        extracted_data: Dict[str, Any] = raw_extracted if isinstance(raw_extracted, dict) else {}
+        extracted_data: dict[str, Any] = raw_extracted if isinstance(raw_extracted, dict) else {}
         raw_tasks = extraction.get("suggested_tasks")
-        suggested_tasks: List[Any] = raw_tasks if isinstance(raw_tasks, list) else []
-        issues: Dict[str, int] = {}
+        suggested_tasks: list[Any] = raw_tasks if isinstance(raw_tasks, list) else []
+        issues: dict[str, int] = {}
 
         # Vital record date anomalies
         invalid_years = 0
         vitals_raw = extracted_data.get("vital_records")
-        vitals: List[Any] = vitals_raw if isinstance(vitals_raw, list) else []
+        vitals: list[Any] = vitals_raw if isinstance(vitals_raw, list) else []
         for rec in vitals:
             if isinstance(rec, dict):
                 date = str(rec.get("date", "")).strip()
@@ -272,7 +272,7 @@ def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
         # Relationships missing one side
         rel_missing = 0
         rels_raw = extracted_data.get("relationships")
-        rels: List[Any] = rels_raw if isinstance(rels_raw, list) else []
+        rels: list[Any] = rels_raw if isinstance(rels_raw, list) else []
         for rel in rels:
             if isinstance(rel, dict):
                 p1 = str(rel.get("person1", "")).strip()
@@ -285,7 +285,7 @@ def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
         # Incomplete locations
         loc_incomplete = 0
         locs_raw = extracted_data.get("locations")
-        locs: List[Any] = locs_raw if isinstance(locs_raw, list) else []
+        locs: list[Any] = locs_raw if isinstance(locs_raw, list) else []
         for loc in locs:
             if isinstance(loc, dict):
                 place = str(loc.get("place", "")).strip()
@@ -298,7 +298,7 @@ def compute_anomaly_summary(extraction: Dict[str, Any]) -> str:
 
         # Duplicate names
         names_raw = extracted_data.get("structured_names")
-        names: List[Any] = names_raw if isinstance(names_raw, list) else []
+        names: list[Any] = names_raw if isinstance(names_raw, list) else []
         seen_lower: set[str] = set()
         dups_lower: set[str] = set()
         for n in names:

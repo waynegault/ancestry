@@ -29,7 +29,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 import psutil
 
@@ -74,9 +74,9 @@ class StressTestResults:
     end_time: Optional[float] = None
     pages_processed: int = 0
     pages_failed: int = 0
-    errors_encountered: List[Dict[str, Any]] = field(default_factory=list)
-    performance_metrics: List[Dict[str, Any]] = field(default_factory=list)
-    resource_usage: List[Dict[str, Any]] = field(default_factory=list)
+    errors_encountered: list[dict[str, Any]] = field(default_factory=list)
+    performance_metrics: list[dict[str, Any]] = field(default_factory=list)
+    resource_usage: list[dict[str, Any]] = field(default_factory=list)
     session_restarts: int = 0
     critical_failures: int = 0
     success: bool = False
@@ -180,7 +180,7 @@ class ResourceMonitor:
                 logger.error(f"❌ Resource monitoring error: {e}")
                 time.sleep(self.monitoring_interval)
 
-    def _collect_resource_data(self) -> Dict[str, Any]:
+    def _collect_resource_data(self) -> dict[str, Any]:
         """Collect current resource usage data."""
         memory = psutil.virtual_memory()
         cpu_percent = psutil.cpu_percent(interval=1)
@@ -209,7 +209,7 @@ class ResourceMonitor:
             'browser_memory_total_mb': sum(p['memory_mb'] for p in browser_processes)
         }
 
-    def get_resource_summary(self) -> Dict[str, Any]:
+    def get_resource_summary(self) -> dict[str, Any]:
         """Get summary of resource usage during monitoring."""
         if not self.resource_history:
             return {'status': 'no_data'}
@@ -249,7 +249,7 @@ class ProductionStressTester:
     def __init__(self):
         self.failure_injector = FailureInjector()
         self.resource_monitor = ResourceMonitor()
-        self.test_results: List[StressTestResults] = []
+        self.test_results: list[StressTestResults] = []
 
         # Predefined stress test scenarios
         self.stress_scenarios = {
@@ -438,7 +438,7 @@ class ProductionStressTester:
             session_manager.cleanup()
 
     def _stress_test_page_processor(self, original_processor: Callable, page_num: int,
-                                  config: StressTestConfig, results: StressTestResults) -> Dict[str, Any]:
+                                  config: StressTestConfig, results: StressTestResults) -> dict[str, Any]:
         """Enhanced page processor with stress test conditions."""
 
         # Inject failures based on configuration
@@ -537,7 +537,7 @@ class ProductionStressTester:
             logger.info(f"   CPU Usage: {resource_summary['cpu_usage']['avg_percent']:.1f}% avg")
             logger.info(f"   Browser Processes: {resource_summary['browser_processes']['avg_count']:.1f} avg")
 
-    def run_production_validation_suite(self) -> Dict[str, Any]:
+    def run_production_validation_suite(self) -> dict[str, Any]:
         """
         Run comprehensive production validation test suite.
 
@@ -593,7 +593,7 @@ class ProductionStressTester:
         self._log_suite_summary(suite_results)
         return suite_results
 
-    def _log_suite_summary(self, suite_results: Dict[str, Any]):
+    def _log_suite_summary(self, suite_results: dict[str, Any]):
         """Log production validation suite summary."""
         logger.info("=" * 60)
         logger.info("📊 PRODUCTION VALIDATION SUITE SUMMARY")

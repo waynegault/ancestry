@@ -18,7 +18,7 @@ import logging
 import sys
 import time
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from unittest.mock import MagicMock, patch
@@ -85,7 +85,7 @@ class TestSuite:
         self.tests_passed = 0
         self.tests_failed = 0
         self.warnings = 0
-        self.test_results: List[Dict[str, Any]] = []
+        self.test_results: list[dict[str, Any]] = []
 
     def start_suite(self):
         """Initialize the test suite with formatted header."""
@@ -422,7 +422,7 @@ def cleanup_test_environment(env):
             pass
 
 
-def assert_valid_config(config: Any, required_attrs: List[str]):
+def assert_valid_config(config: Any, required_attrs: list[str]):
     """Assert that a config object has required attributes."""
     for attr in required_attrs:
         assert hasattr(config, attr), f"Config should have attribute {attr}"
@@ -610,7 +610,7 @@ class MockLogger:
         self.lines.append(msg)
         self.messages["critical"].append(msg)
 
-    def get_messages(self, level: Optional[str] = None) -> List[str]:
+    def get_messages(self, level: Optional[str] = None) -> list[str]:
         """Get messages by level, or all messages if level is None"""
         if level:
             return self.messages.get(level, [])
@@ -785,8 +785,8 @@ def clean_test_output():
     return _clean_output()
 
 
-def test_function_availability(required_functions: List[str], globals_dict: Dict[str, Any],
-                             module_name: str = "Module") -> List[bool]:
+def test_function_availability(required_functions: list[str], globals_dict: dict[str, Any],
+                             module_name: str = "Module") -> list[bool]:
     """
     Universal function availability testing pattern.
     Consolidates identical testing code from multiple modules.

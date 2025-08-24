@@ -12,7 +12,7 @@ Phase: 11.1 - Configuration Optimization & Adaptive Processing
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -34,10 +34,10 @@ class PerformanceDashboard:
             data_file: Optional file path to store performance data
         """
         self.data_file = data_file or "performance_data.json"
-        self.performance_data: Dict[str, Any] = self._load_performance_data()
+        self.performance_data: dict[str, Any] = self._load_performance_data()
         self.session_start_time = datetime.now()
 
-    def _load_performance_data(self) -> Dict[str, Any]:
+    def _load_performance_data(self) -> dict[str, Any]:
         """Load existing performance data from file."""
         try:
             data_path = Path(self.data_file)
@@ -68,7 +68,7 @@ class PerformanceDashboard:
         except Exception as e:
             logger.error(f"Could not save performance data: {e}")
 
-    def record_session_start(self, session_info: Dict[str, Any]):
+    def record_session_start(self, session_info: dict[str, Any]):
         """Record the start of a new session."""
         session_data = {
             "session_id": f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -81,7 +81,7 @@ class PerformanceDashboard:
         self.current_session = session_data
         logger.info(f"Started performance monitoring session: {session_data['session_id']}")
 
-    def record_rate_limiting_metrics(self, metrics: Dict[str, Any]):
+    def record_rate_limiting_metrics(self, metrics: dict[str, Any]):
         """Record rate limiting performance metrics."""
         metric_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -95,7 +95,7 @@ class PerformanceDashboard:
         if hasattr(self, 'current_session'):
             self.current_session["metrics"].append(metric_entry)
 
-    def record_batch_processing_metrics(self, metrics: Dict[str, Any]):
+    def record_batch_processing_metrics(self, metrics: dict[str, Any]):
         """Record batch processing performance metrics."""
         metric_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -109,7 +109,7 @@ class PerformanceDashboard:
         if hasattr(self, 'current_session'):
             self.current_session["metrics"].append(metric_entry)
 
-    def record_optimization_event(self, optimization_data: Dict[str, Any]):
+    def record_optimization_event(self, optimization_data: dict[str, Any]):
         """Record configuration optimization events."""
         optimization_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -123,7 +123,7 @@ class PerformanceDashboard:
         if hasattr(self, 'current_session'):
             self.current_session["metrics"].append(optimization_entry)
 
-    def record_system_metrics(self, system_data: Dict[str, Any]):
+    def record_system_metrics(self, system_data: dict[str, Any]):
         """Record general system performance metrics."""
         system_entry = {
             "timestamp": datetime.now().isoformat(),
@@ -187,7 +187,7 @@ RECOMMENDATIONS:
 
         return report.strip()
 
-    def _generate_rate_limiting_summary(self, rate_limiting_data: List[Dict]) -> str:
+    def _generate_rate_limiting_summary(self, rate_limiting_data: list[dict]) -> str:
         """Generate rate limiting performance summary."""
         if not rate_limiting_data:
             return "No rate limiting data available"
@@ -205,7 +205,7 @@ RECOMMENDATIONS:
 
         return summary.strip()
 
-    def _generate_batch_processing_summary(self, batch_data: List[Dict]) -> str:
+    def _generate_batch_processing_summary(self, batch_data: list[dict]) -> str:
         """Generate batch processing performance summary."""
         if not batch_data:
             return "No batch processing data available"
@@ -223,7 +223,7 @@ RECOMMENDATIONS:
 
         return summary.strip()
 
-    def _generate_optimization_summary(self, optimization_data: List[Dict]) -> str:
+    def _generate_optimization_summary(self, optimization_data: list[dict]) -> str:
         """Generate optimization events summary."""
         if not optimization_data:
             return "No optimization events recorded"
@@ -245,7 +245,7 @@ RECOMMENDATIONS:
 
         return summary.strip()
 
-    def _generate_recommendations(self, rate_data: List[Dict], batch_data: List[Dict]) -> str:
+    def _generate_recommendations(self, rate_data: list[dict], batch_data: list[dict]) -> str:
         """Generate performance recommendations."""
         recommendations = []
 
@@ -275,7 +275,7 @@ RECOMMENDATIONS:
 
         return "\n  ".join(["", *recommendations])
 
-    def get_current_session_summary(self) -> Dict[str, Any]:
+    def get_current_session_summary(self) -> dict[str, Any]:
         """Get summary of current session performance."""
         if not hasattr(self, 'current_session'):
             return {"status": "No active session"}

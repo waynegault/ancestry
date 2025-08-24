@@ -32,7 +32,7 @@ import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 from error_handling import (
     circuit_breaker,
@@ -142,13 +142,13 @@ def is_mock_mode() -> bool:
 
 def detailed_scoring_breakdown(
     test_name: str,
-    search_criteria: Dict[str, Any],
-    candidate_data: Dict[str, Any],
-    scoring_weights: Dict[str, Any],
-    date_flex: Dict[str, Any],
+    search_criteria: dict[str, Any],
+    candidate_data: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: dict[str, Any],
     total_score: float,
-    field_scores: Dict[str, int],
-    reasons: List[str],
+    field_scores: dict[str, int],
+    reasons: list[str],
 ) -> str:
     """Generate detailed scoring breakdown for test reporting"""
 
@@ -211,7 +211,8 @@ def detailed_scoring_breakdown(
     breakdown.append(f"   Sum of Field Scores: {total_calculated}")
     breakdown.append(f"   Difference: {abs(total_score - total_calculated)}")
 
-    if abs(total_score - total_calculated) > 0.1:
+    SCORE_TOLERANCE = 0.1
+    if abs(total_score - total_calculated) > SCORE_TOLERANCE:
         breakdown.append("   ⚠️ WARNING: Score mismatch detected!")
     else:
         breakdown.append("   ✅ Score calculation verified")
@@ -338,12 +339,12 @@ def parse_command_line_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_config() -> Tuple[
+def validate_config() -> tuple[
     Optional[Path],
     Optional[str],
     Optional[str],
-    Dict[str, Any],
-    Dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
     int,
 ]:
     """Validate configuration and return essential values."""
@@ -470,7 +471,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
 
 def get_user_criteria(
     args: Optional[argparse.Namespace] = None,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Get search criteria from user input or automated input args."""
     logger.info("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
 
@@ -556,7 +557,7 @@ def get_user_criteria(
 
 
 def log_criteria_summary(
-    scoring_criteria: Dict[str, Any], date_flex: Dict[str, Any]
+    scoring_criteria: dict[str, Any], date_flex: dict[str, Any]
 ) -> None:
     """Log summary of criteria to be used."""
     logger.debug("--- Final Scoring Criteria Used ---")
@@ -572,7 +573,7 @@ def log_criteria_summary(
 
 
 def matches_criterion(
-    criterion_name: str, filter_criteria: Dict[str, Any], candidate_value: Any
+    criterion_name: str, filter_criteria: dict[str, Any], candidate_value: Any
 ) -> bool:
     """Check if a candidate value matches a criterion."""
     criterion = filter_criteria.get(criterion_name)
@@ -581,7 +582,7 @@ def matches_criterion(
 
 def matches_year_criterion(
     criterion_name: str,
-    filter_criteria: Dict[str, Any],
+    filter_criteria: dict[str, Any],
     candidate_value: Optional[int],
     year_range: int,
 ) -> bool:
@@ -593,12 +594,12 @@ def matches_year_criterion(
 
 
 def calculate_match_score_cached(
-    search_criteria: Dict[str, Any],
-    candidate_data: Dict[str, Any],
-    scoring_weights: Mapping[str, Union[int, float]],
-    date_flex: Dict[str, Any],
-    cache: Optional[Dict[Tuple, Any]] = None,
-) -> Tuple[float, Dict[str, int], List[str]]:
+    search_criteria: dict[str, Any],
+    candidate_data: dict[str, Any],
+    scoring_weights: Mapping[str, int | float],
+    date_flex: dict[str, Any],
+    cache: Optional[dict[tuple, Any]] = None,
+) -> tuple[float, dict[str, int], list[str]]:
     """Calculate match score with caching for performance."""
     if cache is None:
         cache = {}
@@ -630,11 +631,11 @@ def calculate_match_score_cached(
 @error_context("filter_and_score_individuals")
 def filter_and_score_individuals(
     gedcom_data: GedcomData,
-    filter_criteria: Dict[str, Any],
-    scoring_criteria: Dict[str, Any],
-    scoring_weights: Dict[str, Any],
-    date_flex: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    filter_criteria: dict[str, Any],
+    scoring_criteria: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Filter and score individuals based on criteria."""
 
     # PHASE 4.2: Ultra-fast mock mode for testing
@@ -660,7 +661,7 @@ def filter_and_score_individuals(
 
     # For caching match scores
     score_cache = {}
-    scored_matches: List[Dict[str, Any]] = []
+    scored_matches: list[dict[str, Any]] = []
 
     # For progress tracking
     total_records = len(gedcom_data.processed_data_cache)
@@ -802,8 +803,8 @@ def format_display_value(value: Any, max_width: int) -> str:
 
 
 def display_top_matches(
-    scored_matches: List[Dict[str, Any]], max_results: int
-) -> Optional[Dict[str, Any]]:
+    scored_matches: list[dict[str, Any]], max_results: int
+) -> Optional[dict[str, Any]]:
     """Display top matching results and return the top match."""
     logger.info(f"\n=== SEARCH RESULTS (Top {max_results} Matches) ===")
 
@@ -993,7 +994,7 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
 @error_context("analyze_top_match")
 def analyze_top_match(
     gedcom_data: GedcomData,
-    top_match: Dict[str, Any],
+    top_match: dict[str, Any],
     reference_person_id_norm: Optional[str],
     reference_person_name: str,
 ) -> None:
@@ -1133,8 +1134,8 @@ def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
 def _process_matches(
     gedcom_data: Any,
     args: argparse.Namespace,
-    date_flex: Dict[str, Any],
-    scoring_weights: Dict[str, int],
+    date_flex: dict[str, Any],
+    scoring_weights: dict[str, int],
     max_display_results: int
 ) -> Optional[Any]:
     """Process matches by getting criteria, filtering, and scoring."""
@@ -2200,7 +2201,7 @@ def action10_module_tests() -> bool:
 # === PHASE 4.2: PERFORMANCE VALIDATION FUNCTIONS ===
 
 
-def compare_action10_performance() -> Dict[str, Any]:
+def compare_action10_performance() -> dict[str, Any]:
     """
     Compare original vs optimized action10 performance in realistic conditions.
 

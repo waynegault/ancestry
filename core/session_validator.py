@@ -25,7 +25,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -162,7 +162,7 @@ class SessionValidator:
 
     def _check_login_and_attempt_relogin(
         self, browser_manager, session_manager, attempt: int
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, Optional[str]]:
         """
         Check login status and attempt relogin if needed.
 
@@ -294,7 +294,7 @@ class SessionValidator:
             logger.error(f"Unexpected error checking URL: {e}", exc_info=True)
             return False
 
-    def _check_essential_cookies(self, browser_manager, action_name: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+    def _check_essential_cookies(self, browser_manager, action_name: Optional[str] = None) -> tuple[bool, Optional[str]]:
         """
         Check for essential cookies.
 
@@ -364,7 +364,7 @@ class SessionValidator:
 
     def _sync_cookies_to_requests(
         self, browser_manager, api_manager
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, Optional[str]]:
         """
         Sync cookies from browser to API requests session.
 
@@ -390,7 +390,7 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _check_csrf_token(self, api_manager) -> Tuple[bool, Optional[str]]:
+    def _check_csrf_token(self, api_manager) -> tuple[bool, Optional[str]]:
         """
         Check and retrieve CSRF token if needed.
         Uses smart caching to avoid repeated fetches.
@@ -423,7 +423,7 @@ class SessionValidator:
             return True, None
 
     def validate_session_cookies(
-        self, browser_manager, required_cookies: List[str]
+        self, browser_manager, required_cookies: list[str]
     ) -> bool:
         """
         Validate that required cookies are present.

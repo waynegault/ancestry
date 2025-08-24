@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,9 @@ class ErrorContext:
     attempt_number: int = 1
     max_attempts: int = 3
     last_error: Optional[Exception] = None
-    error_history: List[Exception] = field(default_factory=list)
+    error_history: list[Exception] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
-    partial_results: List[Any] = field(default_factory=list)
+    partial_results: list[Any] = field(default_factory=list)
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF
 
     def add_error(self, error: Exception):
@@ -78,10 +78,10 @@ class EnhancedErrorRecovery:
     """
 
     def __init__(self):
-        self.recovery_stats: Dict[str, Dict[str, int]] = {}
-        self.circuit_breakers: Dict[str, Dict[str, Any]] = {}
+        self.recovery_stats: dict[str, dict[str, int]] = {}
+        self.circuit_breakers: dict[str, dict[str, Any]] = {}
 
-    def get_recovery_stats(self, operation: str) -> Dict[str, int]:
+    def get_recovery_stats(self, operation: str) -> dict[str, int]:
         """Get recovery statistics for an operation"""
         return self.recovery_stats.get(operation, {
             'total_attempts': 0,
@@ -150,9 +150,9 @@ def with_enhanced_recovery(
     base_delay: float = 1.0,
     max_delay: float = 60.0,
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
-    retryable_exceptions: Tuple[Type[Exception], ...] = (Exception,),
+    retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
     partial_success_handler: Optional[Callable] = None,
-    user_guidance: Optional[Dict[Type[Exception], str]] = None
+    user_guidance: Optional[dict[type[Exception], str]] = None
 ):
     """
     Decorator for enhanced error recovery with multiple strategies.
@@ -247,7 +247,7 @@ def with_enhanced_recovery(
         return wrapper
     return decorator
 
-def create_user_guidance() -> Dict[Type[Exception], str]:
+def create_user_guidance() -> dict[type[Exception], str]:
     """Create default user guidance messages for common exceptions"""
     return {
         ConnectionError: "Check your internet connection and try again",
@@ -259,7 +259,7 @@ def create_user_guidance() -> Dict[Type[Exception], str]:
         ImportError: "Install missing dependencies or check Python environment",
     }
 
-def handle_partial_success(partial_results: List[Any], error: Exception) -> Any:
+def handle_partial_success(partial_results: list[Any], error: Exception) -> Any:
     """Default partial success handler"""
     if not partial_results:
         raise error

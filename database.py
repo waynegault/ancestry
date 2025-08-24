@@ -30,7 +30,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Literal, Optional, Union
 from uuid import uuid4
 
 # === THIRD-PARTY IMPORTS ===
@@ -788,7 +788,7 @@ def db_transn(session: Session):
 # --- Create ---
 
 
-def create_person(session: Session, person_data: Dict[str, Any]) -> int:
+def create_person(session: Session, person_data: dict[str, Any]) -> int:
     """
     Creates a new Person record in the database.
     Performs pre-checks for existing UUID or Profile ID to provide clearer logs,
@@ -942,7 +942,7 @@ def create_person(session: Session, person_data: Dict[str, Any]) -> int:
 
 
 def create_or_update_dna_match(
-    session: Session, match_data: Dict[str, Any]
+    session: Session, match_data: dict[str, Any]
 ) -> Literal["created", "updated", "skipped", "error"]:
     """
     Creates a new DnaMatch record or updates an existing one for a given Person ID.
@@ -966,7 +966,7 @@ def create_or_update_dna_match(
         return "error"
 
     # Step 2: Validate and prepare incoming data
-    validated_data: Dict[str, Any] = {"people_id": people_id}
+    validated_data: dict[str, Any] = {"people_id": people_id}
     try:
         # Required fields
         validated_data["compare_link"] = match_data["compare_link"]
@@ -1103,7 +1103,7 @@ def create_or_update_dna_match(
 
 
 def create_or_update_family_tree(
-    session: Session, tree_data: Dict[str, Any]
+    session: Session, tree_data: dict[str, Any]
 ) -> Literal["created", "updated", "skipped", "error"]:
     """
     Creates or updates a FamilyTree record for a given Person ID.
@@ -1203,8 +1203,8 @@ def create_or_update_family_tree(
 
 
 def create_or_update_person(
-    session: Session, person_data: Dict[str, Any]
-) -> Tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
+    session: Session, person_data: dict[str, Any]
+) -> tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
     """
     Creates a new Person or updates an existing one based primarily on UUID.
     Handles data preparation, status enum conversion, and timezone awareness for dates.
@@ -1543,8 +1543,8 @@ def get_person_by_profile_id(
 
 
 def get_person_and_dna_match(
-    session: Session, match_data: Dict[str, Any], include_deleted: bool = False
-) -> Tuple[Optional[Person], Optional[DnaMatch]]:
+    session: Session, match_data: dict[str, Any], include_deleted: bool = False
+) -> tuple[Optional[Person], Optional[DnaMatch]]:
     """
     Retrieves a Person and their associated DnaMatch record using profile_id
     (case-insensitive) and exact username. Eager loads the DnaMatch data.
@@ -1620,7 +1620,7 @@ def exclude_deleted_persons(query):
 
 
 def find_existing_person(
-    session: Session, identifier_data: Dict[str, Any], include_deleted: bool = False
+    session: Session, identifier_data: dict[str, Any], include_deleted: bool = False
 ) -> Optional[Person]:
     """
     Attempts to find an existing Person record based on available identifiers
@@ -1789,10 +1789,10 @@ def get_person_by_uuid(
 
 def commit_bulk_data(
     session: Session,
-    log_upserts: List[Dict[str, Any]],  # List of dicts for ConversationLog
-    person_updates: Dict[int, PersonStatusEnum],  # Dict of {person_id: status_enum}
+    log_upserts: list[dict[str, Any]],  # List of dicts for ConversationLog
+    person_updates: dict[int, PersonStatusEnum],  # Dict of {person_id: status_enum}
     context: str = "Bulk Commit",  # Optional context for logging
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Commits a batch of ConversationLog inserts and Person status updates to the database
     using bulk operations. ConversationLog entries are always inserted as new records
@@ -2427,7 +2427,7 @@ def backup_database(_session_manager=None):
 
 def cleanup_soft_deleted_records(
     session: Session, older_than_days: int = 30
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """
     Permanently deletes Person records (and their related records through cascade)
     that were soft-deleted more than the specified number of days ago.
@@ -2811,7 +2811,7 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
 # It needs to close the main SessionManager pool *before* overwriting the file.
 
 
-def _get_default_message_templates() -> List[Dict[str, Any]]:
+def _get_default_message_templates() -> list[dict[str, Any]]:
     """
     Returns the default message templates to seed the database.
     This contains the current production templates as of the latest update.

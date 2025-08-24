@@ -24,7 +24,7 @@ import sys
 
 # Add current directory to path for imports
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 current_dir = str(Path(__file__).resolve().parent)
 if current_dir not in sys.path:
@@ -54,9 +54,9 @@ _cached_fraser_name = None
 
 def enhanced_treesui_search(
     session_manager: SessionManager,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     max_results: int = 10
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Enhanced TreesUI search with API-level filtering and universal scoring.
 
@@ -150,7 +150,7 @@ def enhanced_treesui_search(
 
         # Process persons (limit to reasonable number for performance)
         from typing import cast
-        persons_list = cast(List[Dict[str, Any]], persons)
+        persons_list = cast(list[dict[str, Any]], persons)
 
         # Debug logging for development (can be removed in production)
         if len(persons_list) > 0:
@@ -237,7 +237,7 @@ def enhanced_treesui_search(
         return []
 
 
-def extract_person_data_for_scoring(person: Dict[str, Any]) -> Dict[str, Any]:
+def extract_person_data_for_scoring(person: dict[str, Any]) -> dict[str, Any]:
     """
     Extract person data from TreesUI API response for universal scoring.
 
@@ -327,7 +327,7 @@ def extract_person_data_for_scoring(person: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def extract_year_from_event(event: Dict[str, Any]) -> Optional[int]:
+def extract_year_from_event(event: dict[str, Any]) -> Optional[int]:
     """Extract year from an event's date information."""
     try:
         # Try various date fields from the API response
