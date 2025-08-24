@@ -43,11 +43,11 @@ USE_MOCK_AI = os.environ.get('FAST_TEST', '').lower() in ('true', '1', 'yes')
 if USE_MOCK_AI:
     logger.info("🚀 Fast testing mode enabled - using mock AI functions")
 
-    def classify_message_intent(context_history: str, session_manager) -> Optional[str]:
+    def classify_message_intent(context_history: str, _session_manager) -> Optional[str]:
         """Mock classify_message_intent for fast testing."""
         return 'general_inquiry'
 
-    def extract_genealogical_entities(context_history: str, session_manager) -> Optional[Dict[str, Any]]:
+    def extract_genealogical_entities(context_history: str, _session_manager) -> Optional[Dict[str, Any]]:
         """Mock extract_genealogical_entities for fast testing."""
         return {
             'extracted_data': {

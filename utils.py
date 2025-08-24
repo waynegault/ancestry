@@ -1466,7 +1466,7 @@ def _log_request_details(
     url: str,
     headers: Dict[str, str],
     data: Optional[Dict] = None,
-    json_data: Optional[Dict] = None,
+    _json_data: Optional[Dict] = None,
 ) -> None:
     """
     Logs the details of the API request.
@@ -2330,7 +2330,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
 
 # End of make_ube
 
-def make_newrelic(driver: DriverType) -> Optional[str]:
+def make_newrelic(_driver: DriverType) -> Optional[str]:
     # This function generates a plausible NewRelic header structure.
     # Exact values might vary, but the format is generally consistent.
     # The driver argument is kept for potential future use but isn't strictly needed now.
@@ -2366,7 +2366,7 @@ def make_newrelic(driver: DriverType) -> Optional[str]:
 
 # End of make_newrelic
 
-def make_traceparent(driver: DriverType) -> Optional[str]:
+def make_traceparent(_driver: DriverType) -> Optional[str]:
     # Generates a W3C Trace Context traceparent header.
     # Driver argument kept for consistency, not currently used.
     try:
@@ -2382,7 +2382,7 @@ def make_traceparent(driver: DriverType) -> Optional[str]:
 
 # End of make_traceparent
 
-def make_tracestate(driver: DriverType) -> Optional[str]:
+def make_tracestate(_driver: DriverType) -> Optional[str]:
     # Generates a tracestate header, often including NewRelic state.
     # Driver argument kept for consistency, not currently used.
     try:

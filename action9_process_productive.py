@@ -2323,7 +2323,7 @@ def _load_templates_for_action9() -> Dict[str, str]:
 
 
 def _search_ancestry_tree(
-    session_manager: SessionManager, extracted_data: Union[ExtractedData, List[str]]
+    _session_manager: SessionManager, extracted_data: Union[ExtractedData, List[str]]
 ) -> Dict[str, Any]:
     """
     Searches the user's tree (GEDCOM or API) for names extracted by the AI.
@@ -2373,7 +2373,7 @@ def _search_ancestry_tree(
 
 
 def _identify_and_get_person_details(
-    session_manager: SessionManager, extracted_data: Dict[str, Any], log_prefix: str
+    _session_manager: SessionManager, extracted_data: Dict[str, Any], log_prefix: str
 ) -> Optional[Dict[str, Any]]:
     """
     Simplified version that returns None (no person details found).

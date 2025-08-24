@@ -590,23 +590,23 @@ class MockLogger:
             "critical": [],
         }
 
-    def debug(self, msg, **kwargs):
+    def debug(self, msg, **_kwargs):
         self.lines.append(msg)
         self.messages["debug"].append(msg)
 
-    def info(self, msg, **kwargs):
+    def info(self, msg, **_kwargs):
         self.lines.append(msg)
         self.messages["info"].append(msg)
 
-    def warning(self, msg, **kwargs):
+    def warning(self, msg, **_kwargs):
         self.lines.append(msg)
         self.messages["warning"].append(msg)
 
-    def error(self, msg, **kwargs):
+    def error(self, msg, **_kwargs):
         self.lines.append(msg)
         self.messages["error"].append(msg)
 
-    def critical(self, msg, **kwargs):
+    def critical(self, msg, **_kwargs):
         self.lines.append(msg)
         self.messages["critical"].append(msg)
 

@@ -1833,6 +1833,8 @@ class InboxProcessor:
         def g(msg: str) -> str:
             return f"{green}{msg}{reset}"
         logger.info(g("------ Inbox Search Summary ------"))
+        # Mark unused parameters to satisfy linter without changing signature
+        _ = new_logs
         # Step 2: Log key metrics
         logger.info(g(f"  API Conversations Fetched:    {total_api_items}"))
         logger.info(g(f"  Conversations Processed:      {items_processed}"))
