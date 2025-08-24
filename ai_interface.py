@@ -91,7 +91,7 @@ except ImportError:
     USE_JSON_PROMPTS = False
     # Provide minimal fallback stubs so later references are defined
     from typing import Optional as _Optional
-    def get_prompt(prompt_key: str) -> _Optional[str]:  # type: ignore
+    def get_prompt(_prompt_key: str) -> _Optional[str]:  # type: ignore
         return None
     def load_prompts():  # type: ignore
         return {"prompts": {}}

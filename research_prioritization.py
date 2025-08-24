@@ -83,7 +83,7 @@ class IntelligentResearchPrioritizer:
         self,
         gedcom_analysis: Dict[str, Any],
         dna_crossref_analysis: Dict[str, Any],
-        existing_tasks: Optional[List[Dict[str, Any]]] = None
+        _existing_tasks: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Generate intelligent research prioritization based on multiple data sources.
@@ -428,22 +428,22 @@ class IntelligentResearchPrioritizer:
         return ""
 
     # Helper methods for calculations and analysis
-    def _estimate_generations_back(self, surname: str, gedcom_analysis: Dict[str, Any]) -> int:
+    def _estimate_generations_back(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> int:
         """Estimate how many generations back this surname line goes."""
         # Placeholder implementation
         return 4
 
-    def _calculate_line_completeness(self, surname: str, gedcom_analysis: Dict[str, Any]) -> float:
+    def _calculate_line_completeness(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> float:
         """Calculate completeness percentage for a family line."""
         # Placeholder implementation
         return 65.0
 
-    def _identify_missing_generations(self, surname: str, gedcom_analysis: Dict[str, Any]) -> List[int]:
+    def _identify_missing_generations(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> List[int]:
         """Identify which generations are missing for this line."""
         # Placeholder implementation
         return [3, 4]
 
-    def _identify_research_bottlenecks(self, surname: str, gedcom_analysis: Dict[str, Any]) -> List[str]:
+    def _identify_research_bottlenecks(self, _surname: str, _gedcom_analysis: Dict[str, Any]) -> List[str]:
         """Identify research bottlenecks for this family line."""
         return [
             f"Missing parents for {surname} ancestors",
@@ -484,11 +484,11 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _estimate_time_period_for_location(self, location: str, items: List[Dict[str, Any]]) -> str:
+    def _estimate_time_period_for_location(self, _location: str, _items: List[Dict[str, Any]]) -> str:
         """Estimate time period for location cluster."""
         return "1800-1900"  # Placeholder
 
-    def _identify_available_records_for_location(self, location: str) -> List[str]:
+    def _identify_available_records_for_location(self, _location: str) -> List[str]:
         """Identify available record types for a location."""
         record_types = {
             "Scotland": ["Birth certificates", "Death certificates", "Census records", "Parish registers"],
