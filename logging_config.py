@@ -261,7 +261,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     Returns:
         The configured 'logger' instance.
     """
-    global _logging_initialized
+    global _logging_initialized  # noqa: PLW0603 - module-scoped init guard
 
     # Validate log level
     log_level_upper = log_level.upper()
@@ -537,7 +537,7 @@ def test_directory_creation():
     import tempfile
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        global LOG_DIRECTORY, _logging_initialized
+        global LOG_DIRECTORY, _logging_initialized  # noqa: PLW0603 - test temp override
         original_dir = LOG_DIRECTORY
         original_init_state = _logging_initialized
         _logging_initialized = False  # Reset to allow fresh setup
@@ -575,7 +575,7 @@ def test_log_level_setting():
 
 def test_handler_configuration():
     """Test that handlers are properly configured."""
-    global _logging_initialized
+    global _logging_initialized  # noqa: PLW0603 - test init control
     original_init_state = _logging_initialized
     _logging_initialized = False  # Reset to allow fresh setup
 
@@ -616,7 +616,7 @@ def test_missing_directory():
     import tempfile
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        global LOG_DIRECTORY, _logging_initialized
+        global LOG_DIRECTORY, _logging_initialized  # noqa: PLW0603 - test temp override
         original_dir = LOG_DIRECTORY
         original_init_state = _logging_initialized
         _logging_initialized = False  # Reset to allow fresh setup
@@ -639,7 +639,7 @@ def test_missing_directory():
 
 def test_reinitialize_logging():
     """Test that reinitialization updates existing handlers."""
-    global _logging_initialized
+    global _logging_initialized  # noqa: PLW0603 - test reinit control
     original_state = _logging_initialized
     _logging_initialized = True
 
@@ -655,7 +655,7 @@ def test_reinitialize_logging():
 
 def test_multiple_handlers():
     """Test that multiple handlers work correctly."""
-    global _logging_initialized
+    global _logging_initialized  # noqa: PLW0603 - test init control
     original_init_state = _logging_initialized
     _logging_initialized = False  # Reset to allow fresh setup
 
