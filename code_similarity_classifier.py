@@ -2,18 +2,41 @@
 """
 Function & Method Classifier + Similarity Detector
 
-Purpose:
-- Scan every .py file in this repo
-- Extract every function and method with metadata
-- Classify by behavior (pure vs I/O kinds), size, async, regex/json usage, etc.
-- Compute normalized fingerprints and detect near-duplicates (candidates to merge)
-- Emit a concise text summary and optionally write a JSON report
+Advanced code analysis tool for identifying function similarity and potential DRY violations.
+Scans the entire codebase to classify functions by behavior patterns and detect candidates
+for consolidation based on structural and semantic similarity.
 
-Testing:
-- Provides run_comprehensive_tests() so run_all_tests.py will pick it up
-- Tests assert that we discover functions and produce basic similarity candidates
+Core Features:
+- Comprehensive function/method extraction with detailed metadata
+- Multi-dimensional classification: I/O patterns, complexity, async usage, data processing
+- Normalized fingerprinting for similarity detection using AST analysis
+- Hamming distance calculation for near-duplicate identification
+- Detailed similarity scoring with configurable thresholds
+- JSON export for integration with refactoring tools
 
-No third-party deps. Pure stdlib.
+Classification Categories:
+- Pure functions vs I/O-bound operations
+- Data processing patterns (validation, formatting, transformation)
+- API interaction patterns (requests, authentication, error handling)
+- Database operations (queries, transactions, caching)
+- File system operations (reading, writing, path manipulation)
+- Configuration and setup functions
+- Test and validation functions
+
+Similarity Detection:
+- AST-based normalization removes variable names and literals
+- SimHash algorithm for efficient similarity comparison
+- Configurable similarity thresholds for different refactoring scenarios
+- Detailed reporting of potential merge candidates with rationale
+
+Usage:
+- Run standalone: python code_similarity_classifier.py
+- Integrated testing: Provides run_comprehensive_tests() for test suite
+- JSON output: --json flag for machine-readable results
+
+Quality Score: Comprehensive analysis tool with robust AST processing,
+efficient similarity algorithms, and detailed classification taxonomy.
+Implements best practices for code analysis and refactoring support.
 """
 from __future__ import annotations
 
@@ -278,7 +301,21 @@ class _FuncVisitor(ast.NodeVisitor):
 
 
 class CodeSimilarityClassifier:
+    """
+    Main classifier for analyzing function similarity across a codebase.
+
+    Provides comprehensive analysis of function patterns, similarity detection,
+    and clustering for DRY principle enforcement. Uses AST analysis combined
+    with normalized fingerprinting for accurate similarity assessment.
+
+    Attributes:
+        root: Root directory for analysis (defaults to current directory)
+        functions: List of all discovered functions with metadata
+        similar_pairs: List of similar function pairs with scores
+    """
+
     def __init__(self, root: Path | None = None) -> None:
+        """Initialize classifier with optional root directory."""
         self.root = root or Path()
         self.functions: list[FunctionInfo] = []
         self.similar_pairs: list[SimilarityPair] = []
@@ -293,6 +330,12 @@ class CodeSimilarityClassifier:
             yield p
 
     def scan(self) -> list[FunctionInfo]:
+        """
+        Scan all Python files in the root directory and extract function metadata.
+
+        Returns:
+            List of FunctionInfo objects with detailed metadata for each function
+        """
         items: list[FunctionInfo] = []
         for path in self._iter_py_files():
             text = _safe_read(path)
@@ -327,6 +370,16 @@ class CodeSimilarityClassifier:
         return not (a.is_method != b.is_method and not (a.loc < 15 and b.loc < 15))
 
     def find_similar(self, min_ratio: float = 0.88, max_hamming: int = 6) -> list[SimilarityPair]:
+        """
+        Find similar function pairs using normalized AST comparison and SimHash.
+
+        Args:
+            min_ratio: Minimum similarity ratio for sequence matching (0.0-1.0)
+            max_hamming: Maximum Hamming distance for SimHash comparison
+
+        Returns:
+            List of SimilarityPair objects sorted by similarity score (highest first)
+        """
         pairs: list[SimilarityPair] = []
         if not self.functions:
             return pairs

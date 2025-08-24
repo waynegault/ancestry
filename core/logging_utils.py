@@ -44,7 +44,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     Returns:
         Configured logger instance
     """
-    global _centralized_logging_setup  # noqa: PLW0603 - module-scoped init guard
+    global _centralized_logging_setup
 
     # Try to use centralized logging config first
     try:

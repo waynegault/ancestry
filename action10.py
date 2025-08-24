@@ -91,7 +91,7 @@ _gedcom_cache = None
 
 def get_cached_gedcom():
     """Load GEDCOM data once and cache it for all tests"""
-    global _gedcom_cache  # noqa: PLW0603 - intentional module-level cache
+    global _gedcom_cache
     if _gedcom_cache is None:
         gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
         if gedcom_path and Path(gedcom_path).exists():
@@ -121,7 +121,7 @@ def enable_mock_mode() -> None:
         >>> enable_mock_mode()
         >>> print("Mock mode enabled for fast testing")
     """
-    global _MOCK_MODE_ENABLED  # noqa: PLW0603 - intentional module-level switch
+    global _MOCK_MODE_ENABLED
     _MOCK_MODE_ENABLED = True
     logger.info("🚀 Mock mode enabled for ultra-fast testing")
 
@@ -141,7 +141,7 @@ def disable_mock_mode() -> None:
         >>> disable_mock_mode()
         >>> print("Mock mode disabled - using real data")
     """
-    global _MOCK_MODE_ENABLED  # noqa: PLW0603 - intentional module-level switch
+    global _MOCK_MODE_ENABLED
     _MOCK_MODE_ENABLED = False
 
 

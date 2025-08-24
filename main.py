@@ -276,7 +276,7 @@ def initialize_aggressive_caching():
 
 def ensure_caching_initialized():
     """Initialize aggressive caching systems if not already done."""
-    global _caching_initialized  # noqa: PLW0603 - module-level init guard
+    global _caching_initialized
 
     if not _caching_initialized:
         logger.debug("Initializing caching systems on-demand...")
@@ -1454,7 +1454,7 @@ def run_action11_wrapper(session_manager, *_):
 
 
 def main():
-    global logger, session_manager  # noqa: PLW0603 - CLI modifies module globals intentionally
+    global logger, session_manager
     session_manager = None  # Initialize session_manager
 
     # Ensure terminal window has focus (Windows & VS Code)

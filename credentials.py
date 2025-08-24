@@ -986,7 +986,7 @@ class UnifiedCredentialManager:
             try:
                 import builtins
                 # Use builtins.open so tests that patch builtins.open can simulate failures
-                with builtins.open(cred_types_file, "w", encoding="utf-8") as f:  # noqa: PTH123
+                with builtins.open(cred_types_file, "w", encoding="utf-8") as f:
                     json.dump(cred_types, f, indent=4)
             except Exception as e:
                 print(f"❌ Error saving credential types: {e}")

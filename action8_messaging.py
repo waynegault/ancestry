@@ -2298,7 +2298,7 @@ def _process_single_person(
                             log_prefix,
                         )
                     except Exception:
-                        pass  # noqa: SIM105 - log-only helper; failure is intentionally ignored
+                        pass
 
                     message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
                         enhanced_template_key,
