@@ -572,6 +572,17 @@ class AuthenticationExpiredError(RetryableError):
         super().__init__(message, **kwargs)
 
 
+class MaxApiFailuresExceededError(AncestryException):
+    """Raised when maximum API failures threshold is exceeded."""
+
+    def __init__(self, message: str, action_name: str = "Unknown", **kwargs):
+        kwargs.setdefault("error_code", "MAX_API_FAILURES")
+        kwargs.setdefault("severity", "CRITICAL")
+        kwargs.setdefault("context", {})
+        kwargs["context"]["action_name"] = action_name
+        super().__init__(message, **kwargs)
+
+
 class NetworkTimeoutError(RetryableError):
     """Network timeout that can be retried."""
 

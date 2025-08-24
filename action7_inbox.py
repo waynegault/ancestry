@@ -39,6 +39,13 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from ai_interface import classify_message_intent
 from config import config_schema
 from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
+
+# === ACTION 7 ERROR CLASSES (Action 8 Pattern) ===
+from core.error_handling import (
+    APIError,
+    AuthenticationError,
+    BrowserError,
+)
 from core.progress_indicators import create_progress_indicator
 from core.session_manager import SessionManager
 
@@ -54,12 +61,6 @@ from database import (
     commit_bulk_data,
 )
 
-# === ACTION 7 ERROR CLASSES (Action 8 Pattern) ===
-from core.error_handling import (
-    AuthenticationError,
-    BrowserError,
-    APIError,
-)
 
 # Define Action 6/8-style error types for inbox processing
 class MaxApiFailuresExceededError(Exception):
@@ -86,7 +87,6 @@ from error_handling import (
     retry_on_failure,
     timeout_protection,
 )
-from extraction_quality import summarize_extracted_data  # Debug-only QA summaries
 from utils import (
     _api_req,
     format_name,
@@ -925,9 +925,6 @@ class InboxProcessor:
             # --- End Get Comparator ---
 
             # --- Step 3: Setup and Run Main Loop ---
-            max_inbox_str = (
-                str(self.max_inbox_limit) if self.max_inbox_limit > 0 else "Unlimited"
-            )
             # Starting inbox search (removed verbose debug)
 
             # Use a progress bar with dynamic total that gets updated as we discover the actual number of conversations
@@ -1162,10 +1159,10 @@ class InboxProcessor:
                 current_batch_num += 1
                 # Processing batch (removed verbose debug)
                 # Log progress every 5 batches or when significant progress is made
-                if current_batch_num % 5 == 0 or items_processed >= 100:
+                if current_batch_num % 5 == 0 or total_processed_api_items >= 100:
                     logger.info(f"Action 7 Progress: Batch {current_batch_num} "
-                              f"(Processed={items_processed}, AI={ai_classified}, "
-                              f"StatusUpdates={status_updates}, Errors={error_count_this_loop})")
+                              f"(Processed={total_processed_api_items}, AI={ai_classified_count}, "
+                              f"StatusUpdates={status_updated_count}, Errors={error_count_this_loop})")
 
                 # Handle empty batch result
                 if batch_api_item_count == 0:
@@ -1443,10 +1440,9 @@ class InboxProcessor:
                     # --- Debug-only: log quality summary of any extracted genealogical data on the person ---
                     try:
                         if hasattr(person, 'extracted_genealogical_data'):
-                            extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
-                            summary = summarize_extracted_data(extracted_data)
+                            getattr(person, 'extracted_genealogical_data', {}) or {}
                             # Quality summary (removed verbose debug)
-                    except Exception as qa_log_err:
+                    except Exception:
                         # Skipped quality summary logging (removed verbose debug)
                         pass
 
@@ -1562,7 +1558,7 @@ class InboxProcessor:
                                 ],
                                 "latest_timestamp": ctx_ts_in_aware,  # Already aware UTC
                                 "ai_sentiment": ai_sentiment_result,  # Store AI result
-                                "message_type_id": None,
+                                "message_template_id": None,
                                 "script_message_status": None,
                             }
                             # Add dict to list for batch commit
@@ -1614,7 +1610,7 @@ class InboxProcessor:
                                 ],
                                 "latest_timestamp": ctx_ts_out_aware,  # Already aware UTC
                                 "ai_sentiment": None,
-                                "message_type_id": None,  # Should be updated by Action 8 if script sent last
+                                "message_template_id": None,  # Should be updated by Action 8 if script sent last
                                 "script_message_status": None,  # Should be updated by Action 8
                             }
                             # Add dict to list for batch commit
@@ -1884,9 +1880,10 @@ class InboxProcessor:
 
 def action7_inbox_module_tests() -> bool:
     """Comprehensive test suite for action7_inbox.py using the unified TestSuite."""
-    from test_framework import TestSuite, suppress_logging, mock_logger_context
     from unittest.mock import MagicMock
+
     from core.progress_indicators import create_progress_indicator
+    from test_framework import TestSuite, mock_logger_context, suppress_logging
 
     suite = TestSuite("Action 7 - Inbox Processor", "action7_inbox.py")
     suite.start_suite()

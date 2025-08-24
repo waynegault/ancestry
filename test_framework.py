@@ -43,6 +43,7 @@ __all__ = [
     "suppress_debug_logging",
     "restore_debug_logging",
     "clean_test_output",
+    "test_function_availability",
 ]
 
 
@@ -781,3 +782,55 @@ def clean_test_output():
             restore_debug_logging()
 
     return _clean_output()
+
+
+def test_function_availability(required_functions: List[str], globals_dict: Dict[str, Any],
+                             module_name: str = "Module") -> List[bool]:
+    """
+    Universal function availability testing pattern.
+    Consolidates identical testing code from multiple modules.
+
+    Args:
+        required_functions: List of function names to test
+        globals_dict: globals() dictionary from the calling module
+        module_name: Name of the module being tested (for display)
+
+    Returns:
+        List of boolean results for each function test
+    """
+    results = []
+    print(f"\n🔍 Testing {module_name} Function Availability:")
+
+    for func_name in required_functions:
+        try:
+            # Check if function exists in globals
+            if func_name not in globals_dict:
+                print(f"   ❌ {func_name}: Not found in globals")
+                results.append(False)
+                continue
+
+            # Check if it's callable
+            func_obj = globals_dict[func_name]
+            if not callable(func_obj):
+                print(f"   ❌ {func_name}: Found but not callable")
+                results.append(False)
+                continue
+
+            # Function exists and is callable
+            print(f"   ✅ {func_name}: Available and callable")
+            results.append(True)
+
+        except Exception as e:
+            print(f"   ❌ {func_name}: Error during test - {e}")
+            results.append(False)
+
+    # Summary
+    passed = sum(results)
+    total = len(results)
+    print(f"\n📊 Function Availability Summary: {passed}/{total} functions available")
+
+    # Assert all functions are available
+    for i, (func_name, available) in enumerate(zip(required_functions, results)):
+        assert available, f"Required function '{func_name}' is not available"
+
+    return results

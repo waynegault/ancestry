@@ -2491,59 +2491,15 @@ def test_function_availability() -> bool:
         ...     print("All GEDCOM functions available")
     """
     required_functions = [
-        ("_is_individual", "Individual record detection"),
-        ("_is_record", "General record validation"),
-        ("_normalize_id", "ID normalization and cleanup"),
-        ("extract_and_fix_id", "ID extraction and fixing"),
-        ("_get_full_name", "Full name extraction from records"),
-        ("_parse_date", "Date parsing and conversion"),
-        ("_clean_display_date", "Date display formatting"),
-        ("_get_event_info", "Event information extraction"),
-        ("format_life_dates", "Life dates formatting"),
-        ("format_full_life_details", "Complete life details formatting"),
-        ("format_relative_info", "Relative information formatting"),
-        ("fast_bidirectional_bfs", "Bidirectional pathfinding algorithm"),
-        ("explain_relationship_path", "Relationship path explanation"),
-        ("_are_siblings", "Sibling relationship detection"),
+        '_is_individual', '_is_record', '_normalize_id', 'extract_and_fix_id',
+        '_get_full_name', '_parse_date', '_clean_display_date', '_get_event_info',
+        'format_life_dates', 'format_full_life_details', 'format_relative_info',
+        'fast_bidirectional_bfs', 'explain_relationship_path', '_are_siblings'
     ]
 
-    print("📋 Testing GEDCOM utility function availability:")
-    results = []
-    available_count = 0
-
-    for func_name, description in required_functions:
-        # Test function existence
-        func_exists = func_name in globals()
-
-        # Test function callability
-        func_callable = False
-        if func_exists:
-            try:
-                func_callable = callable(globals()[func_name])
-                available_count += 1
-            except Exception:
-                func_callable = False
-
-        # Test function type
-        func_type = type(globals().get(func_name, None)).__name__
-
-        status = "✅" if func_exists and func_callable else "❌"
-        print(f"   {status} {func_name}: {description}")
-        print(
-            f"      Exists: {func_exists}, Callable: {func_callable}, Type: {func_type}"
-        )
-
-        test_passed = func_exists and func_callable
-        results.append(test_passed)
-
-    availability_rate = available_count / len(required_functions)
-    print(
-        f"📊 Results: {available_count}/{len(required_functions)} GEDCOM functions available ({availability_rate:.1%})"
-    )
-
-    assert (
-        available_count >= len(required_functions) * 0.8
-    ), f"At least 80% of functions should be available, got {availability_rate:.1%}"
+    from test_framework import test_function_availability
+    results = test_function_availability(required_functions, globals(), "GEDCOM Utils")
+    return all(results)
 
 
 def test_id_normalization():

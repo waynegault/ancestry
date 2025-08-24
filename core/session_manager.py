@@ -739,6 +739,83 @@ class SessionManager:
         """Check if we're in a session death cascade scenario."""
         return self.session_health_monitor['death_detected'].is_set()
 
+    # === UNIVERSAL SESSION HEALTH VALIDATION ===
+    def validate_system_health(self, action_name: str = "Unknown") -> bool:
+        """
+        Comprehensive system health validation before starting operations.
+        Consolidates health check patterns from Actions 6, 7, 8.
+
+        Args:
+            action_name: Name of the action performing the check
+
+        Returns:
+            True if system is healthy and ready for operations, False otherwise
+        """
+        try:
+            # Check 1: Session death cascade detection
+            if self.should_halt_operations():
+                cascade_count = self.session_health_monitor.get('death_cascade_count', 0)
+                logger.critical(
+                    f"🚨 {action_name}: Session death cascade detected (#{cascade_count}). "
+                    f"System is not safe for operations."
+                )
+                return False
+
+            # Check 2: Database connectivity
+            try:
+                with self.get_db_conn_context() as db_session:
+                    if not db_session:
+                        logger.critical(f"🚨 {action_name}: Failed to get database session")
+                        return False
+
+                    # Test database connectivity with timeout
+                    from sqlalchemy import text
+                    result = db_session.execute(text("SELECT 1")).scalar()
+                    if result != 1:
+                        logger.critical(f"🚨 {action_name}: Database query returned unexpected result")
+                        return False
+
+            except Exception as db_err:
+                logger.critical(f"🚨 {action_name}: Database connectivity error: {db_err}")
+                return False
+
+            # Check 3: Browser session validity (if available)
+            try:
+                if hasattr(self, 'is_sess_valid') and not self.is_sess_valid():
+                    logger.warning(f"⚠️ {action_name}: Browser session invalid - may affect operations")
+                    # Don't fail hard on browser issues for API-only operations
+
+            except Exception as browser_check_err:
+                logger.debug(f"{action_name}: Browser health check failed (non-critical): {browser_check_err}")
+
+            logger.debug(f"✅ {action_name}: System health check passed - all components validated")
+            return True
+
+        except Exception as health_err:
+            logger.critical(f"🚨 {action_name}: System health validation failed: {health_err}")
+            return False
+
+    def check_cascade_before_operation(self, action_name: str, operation_name: str) -> None:
+        """
+        Check for session death cascade before starting an operation.
+
+        Args:
+            action_name: Name of the action performing the check
+            operation_name: Name of the operation about to be performed
+
+        Raises:
+            Exception: If cascade detected
+        """
+        if self.should_halt_operations():
+            cascade_count = self.session_health_monitor.get('death_cascade_count', 0)
+            logger.critical(
+                f"🚨 {action_name}: CASCADE DETECTED before {operation_name}: "
+                f"Session death cascade #{cascade_count} - halting operation"
+            )
+            raise Exception(
+                f"Session death cascade detected before {operation_name} (#{cascade_count})"
+            )
+
     def should_halt_operations(self) -> bool:
         """
         Simplified halt logic - immediate shutdown on session death.

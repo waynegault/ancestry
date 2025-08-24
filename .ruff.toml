@@ -1,11 +1,35 @@
 line-length = 120
 
 [lint]
-select = ["E", "F", "W", "I"]
+# Enhanced rule set for Python best practices
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "PL",   # pylint
+    "RUF",  # ruff-specific rules
+]
+
 # Project-wide intentional patterns:
 # - E402: imports after module setup (setup_module) by design
 # - F403/F405: controlled star imports for CSS selectors/constants
-ignore = ["E501", "E402", "F403", "F405"]
+# - PLR0913: many arguments in config classes by design
+# - PLR0915: many statements in main functions by design
+ignore = [
+    "E501", "E402", "F403", "F405",
+    "PLR0913", "PLR0915", "PLR0912",
+    "N806",  # variable names in functions (for compatibility)
+    "UP007", # Union syntax (for Python 3.9 compatibility)
+]
 
 [lint.isort]
 combine-as-imports = true

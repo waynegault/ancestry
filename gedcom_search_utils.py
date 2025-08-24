@@ -915,18 +915,12 @@ def run_comprehensive_tests() -> bool:
 def test_function_availability():
     """Test that all required GEDCOM search functions are available."""
     required_functions = [
-        "search_gedcom_for_criteria",
-        "matches_criterion",
-        "matches_year_criterion",
-        "get_gedcom_family_details",
-        "get_gedcom_relationship_path",
-        "load_gedcom_data",
+        "search_gedcom_for_criteria", "matches_criterion", "matches_year_criterion",
+        "get_gedcom_family_details", "get_gedcom_relationship_path", "load_gedcom_data"
     ]
-    for func_name in required_functions:
-        assert func_name in globals(), f"Function {func_name} should be available"
-        assert callable(
-            globals()[func_name]
-        ), f"Function {func_name} should be callable"
+
+    from test_framework import test_function_availability
+    test_function_availability(required_functions, globals(), "GEDCOM Search Utils")
 
 
 def test_criterion_matching():

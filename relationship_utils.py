@@ -1631,54 +1631,13 @@ def relationship_module_tests():
     def test_function_availability():
         """Test all essential relationship utility functions are available with detailed verification."""
         required_functions = [
-            ("format_name", "Name formatting and cleanup"),
-            (
-                "fast_bidirectional_bfs",
-                "Bidirectional breadth-first search pathfinding",
-            ),
-            ("_get_relationship_term", "Relationship term mapping and gender handling"),
-            ("format_api_relationship_path", "API relationship path formatting"),
-            (
-                "format_relationship_path_unified",
-                "Unified relationship path formatting",
-            ),
-            ("explain_relationship_path", "Relationship path explanation generation"),
-            ("convert_api_path_to_unified_format", "API path conversion utilities"),
+            'format_name', 'fast_bidirectional_bfs', '_get_relationship_term',
+            'format_api_relationship_path', 'format_relationship_path_unified',
+            'explain_relationship_path', 'convert_api_path_to_unified_format'
         ]
 
-        print("📋 Testing relationship utility function availability:")
-        results = []
-
-        for func_name, description in required_functions:
-            # Test function existence
-            func_exists = func_name in globals()
-
-            # Test function callability
-            func_callable = False
-            if func_exists:
-                try:
-                    func_callable = callable(globals()[func_name])
-                except Exception:
-                    func_callable = False
-
-            # Test function type
-            func_type = type(globals().get(func_name, None)).__name__
-
-            status = "✅" if func_exists and func_callable else "❌"
-            print(f"   {status} {func_name}: {description}")
-            print(
-                f"      Exists: {func_exists}, Callable: {func_callable}, Type: {func_type}"
-            )
-
-            test_passed = func_exists and func_callable
-            results.append(test_passed)
-
-            assert func_exists, f"Function {func_name} should be available"
-            assert func_callable, f"Function {func_name} should be callable"
-
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} relationship utility functions available"
-        )
+        from test_framework import test_function_availability
+        return test_function_availability(required_functions, globals(), "Relationship Utils")
 
     tests.append(("Function Availability", test_function_availability))
 
@@ -2045,21 +2004,14 @@ def run_comprehensive_tests() -> bool:
     def test_function_availability():
         # Verify all major functions are available
         required_functions = [
-            "format_name",
-            "fast_bidirectional_bfs",
-            "explain_relationship_path",
-            "format_api_relationship_path",
-            "convert_gedcom_path_to_unified_format",
-            "convert_discovery_api_path_to_unified_format",
-            "convert_api_path_to_unified_format",
-            "format_relationship_path_unified",
+            "format_name", "fast_bidirectional_bfs", "explain_relationship_path",
+            "format_api_relationship_path", "convert_gedcom_path_to_unified_format",
+            "convert_discovery_api_path_to_unified_format", "convert_api_path_to_unified_format",
+            "format_relationship_path_unified"
         ]
 
-        for func_name in required_functions:
-            assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(
-                globals()[func_name]
-            ), f"Function {func_name} should be callable"
+        from test_framework import test_function_availability
+        test_function_availability(required_functions, globals(), "Relationship Utils")
 
     # Run all tests
     with suppress_logging():

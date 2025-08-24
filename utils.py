@@ -689,10 +689,22 @@ def retry_api(
         TimeoutError,
     ),
     retry_on_status_codes: Optional[List[int]] = None,
-):
-    """Decorator factory for retrying API calls with exponential backoff, logging, etc."""
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """
+    Decorator factory for retrying API calls with exponential backoff.
 
-    def decorator(func: Callable) -> Callable:
+    Args:
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay between retries in seconds
+        backoff_factor: Multiplier for delay between retries
+        retry_on_exceptions: Tuple of exception types to retry on
+        retry_on_status_codes: List of HTTP status codes to retry on
+
+    Returns:
+        Decorator function that adds retry logic to the wrapped function
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             cfg = config_schema  # Use new config system

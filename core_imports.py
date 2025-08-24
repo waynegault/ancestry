@@ -575,21 +575,13 @@ def run_comprehensive_tests() -> bool:
     def test_function_availability():
         """Test that all required functions are available"""
         required_functions = [
-            "ensure_imports",
-            "register_function",
-            "get_function",
-            "is_function_available",
-            "call_function",
-            "auto_register_module",
-            "get_logger",
-            "get_project_root",
-            "safe_execute",
-            "cleanup_registry"
+            "ensure_imports", "register_function", "get_function", "is_function_available",
+            "call_function", "auto_register_module", "get_logger", "get_project_root",
+            "safe_execute", "cleanup_registry"
         ]
 
-        for func_name in required_functions:
-            assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(globals()[func_name]), f"Function {func_name} should be callable"
+        from test_framework import test_function_availability
+        test_function_availability(required_functions, globals(), "Core Imports")
 
     # Run all tests
     suite.run_test(
