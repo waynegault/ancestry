@@ -1702,7 +1702,7 @@ class InboxProcessor:
                         )
                         raise MaxApiFailuresExceededError(
                             "Session death cascade detected in Action 7 WebDriverException save"
-                        )
+                        ) from None
                     logger.error(f"ConnectionError during Action 7 WebDriverException save: {conn_err}")
                     final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
@@ -1731,7 +1731,7 @@ class InboxProcessor:
                         )
                         raise MaxApiFailuresExceededError(
                             "Session death cascade detected in Action 7 KeyboardInterrupt save"
-                        )
+                        ) from None
                     logger.error(f"ConnectionError during Action 7 KeyboardInterrupt save: {conn_err}")
                     final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated

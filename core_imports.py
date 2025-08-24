@@ -558,7 +558,7 @@ def run_comprehensive_tests() -> bool:
         # Test that call_function raises ValueError for non-existent function
         try:
             call_function("nonexistent_function")
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "not available in registry" in str(e)
 
@@ -567,7 +567,7 @@ def run_comprehensive_tests() -> bool:
             auto_register_module({}, "empty_module")
             # Should handle gracefully without error
         except Exception:
-            assert False, "Should handle empty module gracefully"
+            raise AssertionError("Should handle empty module gracefully")
 
     def test_function_availability():
         """Test that all required functions are available"""

@@ -27,7 +27,7 @@ import statistics
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 LOGS_DIR = Path(__file__).resolve().parent / "Logs"
 LOGS_DIR.mkdir(exist_ok=True)
@@ -36,12 +36,12 @@ ALERTS_FILE = LOGS_DIR / "prompt_experiment_alerts.jsonl"
 QUALITY_BASELINE_FILE = LOGS_DIR / "prompt_quality_baseline.json"
 MAX_ERROR_LEN = 240
 
-def _stable_hash(value: Optional[str]) -> Optional[str]:
+def _stable_hash(value: str | None) -> str | None:
     if not value:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
-def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: Optional[str], parse_success: bool, extracted_data: Optional[Dict[str, Any]] = None, suggested_tasks: Optional[Iterable[Any]] = None, raw_response_text: Optional[str] = None, user_id: Optional[str] = None, error: Optional[str] = None, quality_score: Optional[float] = None, component_coverage: Optional[float] = None, anomaly_summary: Optional[str] = None) -> None:
+def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: str | None, parse_success: bool, extracted_data: Dict[str, Any] | None = None, suggested_tasks: Iterable[Any] | None = None, raw_response_text: str | None = None, user_id: str | None = None, error: str | None = None, quality_score: float | None = None, component_coverage: float | None = None, anomaly_summary: str | None = None) -> None:
     """Append a single telemetry event (best effort).
 
     Added (Phase 1 - 2025-08-11): component_coverage → proportion (0-1) of
@@ -256,7 +256,7 @@ def _auto_analyze_and_alert() -> None:
 
 
 # === Quality Baseline & Regression Detection (Phase 11.2 Item 3) ===
-def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8) -> Optional[Dict[str, Any]]:
+def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8) -> Dict[str, Any] | None:
     events = _load_recent_events(window)
     scores: list[float] = []
     for e in events:
@@ -285,7 +285,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         pass
     return baseline
 
-def load_quality_baseline() -> Optional[Dict[str, Any]]:
+def load_quality_baseline() -> Dict[str, Any] | None:
     if not QUALITY_BASELINE_FILE.exists():
         return None
     try:

@@ -29,7 +29,7 @@ import tokenize
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 # ----------------------------- Data Structures -----------------------------
 
@@ -89,7 +89,7 @@ IO_KEYWORDS = {
 }
 
 
-def _safe_read(path: Path) -> Optional[str]:
+def _safe_read(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8")
     except Exception:
@@ -420,7 +420,7 @@ def _print_summary(clsfr: CodeSimilarityClassifier, top_n: int = 30) -> None:
     print("=== FUNCTION CLASSIFICATION REPORT END ===")
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: List[str] | None = None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="Classify functions/methods and detect near-duplicates")
     ap.add_argument("--root", default=".", help="Root directory to scan")
