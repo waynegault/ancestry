@@ -951,10 +951,9 @@ class InboxProcessor:
 
                 with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
                     # Link enhanced progress to tqdm for updates (avoid pylance attr warnings)
-                    try:
+                    from contextlib import suppress
+                    with suppress(Exception):
                         progress_bar._enhanced_progress = enhanced_progress
-                    except Exception:
-                        pass
                     (
                         stop_reason,
                         total_processed_api_items,

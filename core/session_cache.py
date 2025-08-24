@@ -801,4 +801,5 @@ if __name__ == "__main__":
     # Use comprehensive TestSuite framework
     success = run_comprehensive_tests()
     print(f"\n🎯 Session Cache Test Results: {'✅ PASSED' if success else '❌ FAILED'}")
-    exit(0 if success else 1)
+    import sys
+    sys.exit(0 if success else 1)
