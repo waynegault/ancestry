@@ -14,12 +14,12 @@ if __name__ == "__main__":
     try:
         # Import the core package modules
         # Import the core package modules (for availability check)
-        from core.api_manager import APIManager
-        from core.browser_manager import BrowserManager
-        from core.database_manager import DatabaseManager
-        from core.dependency_injection import DIContainer
-        from core.error_handling import ErrorHandler
-        from core.session_manager import SessionManager
+        # import core.api_manager  # Available but not used in demo
+        # import core.browser_manager  # Available but not used in demo
+        # import core.database_manager  # Available but not used in demo
+        # import core.dependency_injection  # Available but not used in demo
+        # import core.error_handling  # Available but not used in demo
+        # import core.session_manager  # Available but not used in demo
 
         print("Core Package - Modular Session Management Architecture")
         print("Version: 2.0.0")

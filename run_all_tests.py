@@ -38,6 +38,9 @@ from typing import Optional
 
 import psutil
 
+# Import code quality checker
+from code_quality_checker import CodeQualityChecker, QualityMetrics
+
 
 @dataclass
 class TestExecutionMetrics:
@@ -51,6 +54,7 @@ class TestExecutionMetrics:
     start_time: str
     end_time: str
     error_message: Optional[str] = None
+    quality_metrics: Optional[QualityMetrics] = None
 
 
 @dataclass
@@ -464,6 +468,17 @@ def run_module_tests(
         # Stop monitoring and collect metrics
         perf_metrics = monitor.stop_monitoring() if monitor else {}
 
+        # Run quality analysis on the module
+        quality_metrics = None
+        try:
+            module_path = Path(module_name)
+            if module_path.exists() and module_path.suffix == '.py':
+                quality_checker = CodeQualityChecker()
+                quality_metrics = quality_checker.check_file(module_path)
+        except Exception:
+            # Quality check failed, continue without it
+            pass
+
         # Check for success based on return code AND output content
         success = result.returncode == 0
 
@@ -652,8 +667,16 @@ def run_module_tests(
 
         status = "✅ PASSED" if success else "❌ FAILED"
 
-        # Show concise summary with test count instead of return code
-        print(f"   {status} | Duration: {duration:.2f}s | {test_count}")
+        # Show concise summary with test count and quality score
+        quality_info = ""
+        if quality_metrics:
+            score = quality_metrics.quality_score
+            if score < 70:
+                quality_info = f" | Quality: {score:.1f}/100 ⚠️"
+            else:
+                quality_info = f" | Quality: {score:.1f}/100 ✅"
+
+        print(f"   {status} | Duration: {duration:.2f}s | {test_count}{quality_info}")
 
         # Extract numeric test count for summary
         numeric_test_count = 0
@@ -696,7 +719,8 @@ def run_module_tests(
                 cpu_usage_percent=perf_metrics.get("cpu_percent", 0.0),
                 start_time=start_datetime,
                 end_time=end_datetime,
-                error_message=result.stderr if not success and result.stderr else None
+                error_message=result.stderr if not success and result.stderr else None,
+                quality_metrics=quality_metrics
             )
 
         return success, numeric_test_count, metrics
@@ -921,6 +945,16 @@ def main():
     print(f"✅ Passed: {passed_count}")
     print(f"❌ Failed: {failed_count}")
     print(f"📈 Success Rate: {success_rate:.1f}%")
+
+    # Quality summary
+    if all_metrics and any(m.quality_metrics for m in all_metrics):
+        quality_scores = [m.quality_metrics.quality_score for m in all_metrics if m.quality_metrics]
+        if quality_scores:
+            avg_quality = sum(quality_scores) / len(quality_scores)
+            low_quality_count = sum(1 for score in quality_scores if score < 70)
+            print(f"🔍 Quality Score: {avg_quality:.1f}/100 avg")
+            if low_quality_count > 0:
+                print(f"⚠️  {low_quality_count} modules below 70 quality threshold")
 
     # Performance metrics and analysis
     if enable_monitoring and all_metrics:
