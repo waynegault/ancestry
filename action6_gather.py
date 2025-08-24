@@ -167,10 +167,9 @@ def _a6_acquire_single_instance_lock() -> bool:
             stale = True
 
             if stale:
-                try:
+                from contextlib import suppress
+                with suppress(Exception):
                     _A6_LOCK_FILE.unlink(missing_ok=True)
-                except Exception:
-                    pass
 
         # Create new lock file with PID|RUN_ID|timestamp
         payload = f"{os.getpid()}|{_A6_RUN_ID}|{time.time()}\n"
@@ -856,8 +855,7 @@ def _main_page_processing_loop(
                 # Skip health halt while a refresh is in progress; block earlier until it's done
                 refresh_event = session_manager.session_health_monitor.get('refresh_in_progress')
                 refresh_active = bool(getattr(refresh_event, 'is_set', lambda: False)())
-                if not refresh_active:
-                    if not session_manager.check_session_health():
+                if not refresh_active and not session_manager.check_session_health():
                         logger.critical(
                             f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
                             f"Immediately halting processing to prevent cascade failures."
@@ -911,8 +909,7 @@ def _main_page_processing_loop(
 
                 # EMERGENCY FIX: Check for 303 redirect pattern (indicates dead session)
                 # If we get multiple 303s in a row, the session is dead
-                if hasattr(session_manager, '_consecutive_303_count'):
-                    if session_manager._consecutive_303_count >= 3:
+                if hasattr(session_manager, '_consecutive_303_count') and session_manager._consecutive_303_count >= 3:
                         logger.critical(
                             f"🚨 DEAD SESSION DETECTED: {session_manager._consecutive_303_count} consecutive 303 redirects at page {current_page_num}. "
                             f"Session is completely invalid. Halting immediately."
@@ -1247,10 +1244,9 @@ def _main_page_processing_loop(
             # Finalization handled by ProgressIndicator context manager; ensure stats reflect any remaining errors
             remaining_to_mark_error = int(progress.stats.total_items or 0) - progress.stats.items_processed
             if remaining_to_mark_error > 0 and not loop_final_success:
-                try:
+                from contextlib import suppress
+                with suppress(Exception):
                     progress.update(remaining_to_mark_error)
-                except Exception:
-                    pass
 
     return loop_final_success
 
@@ -1930,7 +1926,7 @@ def _perform_api_prefetches(
                     # Raise exception to halt batch processing
                     raise MaxApiFailuresExceededError(
                         "Session death cascade detected in batch processing - halting to prevent infinite loop"
-                    )
+                    ) from None
 
                 logger.error(
                     f"ConnErr prefetch '{task_type}' {identifier_uuid}: {conn_err}",
@@ -3068,10 +3064,9 @@ def _execute_bulk_db_operations(
             return False  # Other integrity errors should still fail
     except SQLAlchemyError as bulk_db_err:
         logger.error(f"Bulk DB operation FAILED: {bulk_db_err}", exc_info=True)
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             session.rollback()
-        except Exception:
-            pass
         return False  # Indicate failure (rollback handled by db_transn)
     except Exception as e:
         logger.error(f"Unexpected error during bulk DB operations: {e}", exc_info=True)
@@ -3478,10 +3473,9 @@ def _process_page_matches(
                 0, num_matches_on_page - items_already_accounted_for_in_bar
             )
             if remaining_in_batch > 0:
-                try:
+                from contextlib import suppress
+                with suppress(Exception):
                     progress.update(remaining_in_batch)
-                except Exception:
-                    pass  # Ignore progress update errors during exception handling
         # All remaining items in the batch are considered errors
         final_error_count_for_page = num_matches_on_page - (
             page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
@@ -3653,10 +3647,9 @@ def _prepare_person_operation_data(
 
     birth_year_val: Optional[int] = None
     if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
-        try:
-            birth_year_val = int(prefetched_tree_data["their_birth_year"])
-        except (ValueError, TypeError):
-            pass
+        from contextlib import suppress
+        with suppress(ValueError, TypeError):
+            birth_year_val = int(prefetched_tree_data["their_birth_year"])  # type: ignore[assignment]
 
     last_logged_in_val: Optional[datetime] = profile_part.get("last_logged_in_dt")
     if isinstance(last_logged_in_val, datetime):
@@ -4632,10 +4625,9 @@ def get_matches(
     else:
         logger.warning("Total pages missing from match list response.")
     # EMERGENCY FIX: Reset 303 counter on successful API response
-    if hasattr(session_manager, '_consecutive_303_count'):
-        if session_manager._consecutive_303_count > 0:
-            logger.debug(f"✅ Successful API response - resetting 303 counter (was {session_manager._consecutive_303_count})")
-            session_manager._consecutive_303_count = 0
+    if hasattr(session_manager, '_consecutive_303_count') and session_manager._consecutive_303_count > 0:
+        logger.debug(f"✅ Successful API response - resetting 303 counter (was {session_manager._consecutive_303_count})")
+        session_manager._consecutive_303_count = 0
 
     match_data_list = api_response.get("matchList", [])
     if not match_data_list:
@@ -4708,10 +4700,9 @@ def get_matches(
             origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
             ua_in_tree = None
             if driver and session_manager.is_sess_valid():
-                try:
+                from contextlib import suppress
+                with suppress(Exception):
                     ua_in_tree = driver.execute_script("return navigator.userAgent;")
-                except Exception:
-                    pass
             ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
             in_tree_headers = {
                 "x-csrf-token": specific_csrf_token,  # CRITICAL FIX: Use lowercase header
@@ -6010,8 +6001,7 @@ def action6_gather_module_tests() -> bool:
         except TypeError as e:
             if "got multiple values for keyword argument" in str(e):
                 raise AssertionError(f"CRITICAL: RetryableError constructor bug still exists: {e}")
-            else:
-                raise
+            raise
 
         # Test 2: DatabaseConnectionError constructor
         print("   • Test 2: DatabaseConnectionError constructor")
@@ -6092,8 +6082,7 @@ def action6_gather_module_tests() -> bool:
             except TypeError as e:
                 if "got multiple values for keyword argument" in str(e):
                     raise AssertionError(f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}")
-                else:
-                    raise
+                raise
 
         # Test 5: Legacy function error handling
         print("   • Test 5: Legacy function error handling")

@@ -378,9 +378,7 @@ def _log_personalization_sanity_for_template(
     try:
         # Collect placeholders used by this template
         formatter = Formatter()
-        fields_used = set(
-            fname for (_, fname, _, _) in formatter.parse(template_str) if fname
-        )
+        fields_used = {fname for (_, fname, _, _) in formatter.parse(template_str) if fname}
 
         # Map of placeholder -> function that checks if data likely exists
         def has_list(d: Dict[str, Any], key: str) -> bool:
@@ -407,21 +405,21 @@ def _log_personalization_sanity_for_template(
             "estimated_relationship": lambda d: has_list(d, "dna_information"),
             "shared_dna_amount": lambda d: has_list(d, "dna_information"),
             # Often defaulted; considered neutral
-            "dna_context": lambda d: True,
-            "shared_ancestor_information": lambda d: True,
-            "research_collaboration_request": lambda d: True,
-            "personalized_response": lambda d: True,
+            "dna_context": lambda _d: True,
+            "shared_ancestor_information": lambda _d: True,
+            "research_collaboration_request": lambda _d: True,
+            "personalized_response": lambda _d: True,
             "research_insights": lambda d: has_list(d, "vital_records") or has_list(d, "relationships"),
             "follow_up_questions": lambda d: has_list(d, "research_questions"),
             "research_topic": lambda d: has_list(d, "research_questions"),
-            "specific_research_needs": lambda d: True,
-            "collaboration_proposal": lambda d: True,
+            "specific_research_needs": lambda _d: True,
+            "collaboration_proposal": lambda _d: True,
             # Standard/base placeholders are handled elsewhere; ignore here
-            "name": lambda d: True,
-            "predicted_relationship": lambda d: True,
-            "actual_relationship": lambda d: True,
-            "relationship_path": lambda d: True,
-            "total_rows": lambda d: True,
+            "name": lambda _d: True,
+            "predicted_relationship": lambda _d: True,
+            "actual_relationship": lambda _d: True,
+            "relationship_path": lambda _d: True,
+            "total_rows": lambda _d: True,
         }
 
         scored_fields = [f for f in fields_used if f in checks]
@@ -821,7 +819,7 @@ def analyze_template_effectiveness(session_manager=None, days_back: int = 30) ->
                         template_stats[template_name]["avg_response_time_hours"] = new_avg
 
             # Calculate response rates
-            for template_name, stats in template_stats.items():
+            for _template_name, stats in template_stats.items():
                 if stats["sent"] > 0:
                     stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 
@@ -1752,8 +1750,7 @@ class ProactiveApiManager:
             return False
 
         # For message sending, check for specific success indicators
-        if operation.startswith("send_message"):
-            if isinstance(response_data, tuple) and len(response_data) >= 2:
+        if operation.startswith("send_message") and isinstance(response_data, tuple) and len(response_data) >= 2:
                 status = response_data[0]
                 if status and "delivered OK" in status:
                     logger.debug(f"✅ API validation passed for {operation}: {status}")
@@ -1763,9 +1760,8 @@ class ProactiveApiManager:
                     return False
 
         # Generic validation for other responses
-        if isinstance(response_data, dict):
+        if isinstance(response_data, dict) and ("error" in response_data or "errors" in response_data):
             # Check for common error indicators
-            if "error" in response_data or "errors" in response_data:
                 logger.warning(f"❌ API validation failed for {operation}: Response contains errors")
                 return False
 
@@ -2093,7 +2089,7 @@ def _process_single_person(
                             f"out_timestamp={out_timestamp} (tzinfo={getattr(out_timestamp, 'tzinfo', 'N/A')})"
                         )
                         # Skip this person due to datetime error
-                        raise StopIteration("skipped (datetime_error)")
+                        raise StopIteration("skipped (datetime_error)") from None
                     # else: logger.debug(f"Interval met for {log_prefix}.")
             # else: logger.debug(f"No previous OUT message for {log_prefix}, interval check skipped.")
 
@@ -2302,7 +2298,7 @@ def _process_single_person(
                             log_prefix,
                         )
                     except Exception:
-                        pass
+                        pass  # noqa: SIM105 - log-only helper; failure is intentionally ignored
 
                     message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
                         enhanced_template_key,
@@ -2325,13 +2321,13 @@ def _process_single_person(
                 logger.error(
                     f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}"
                 )
-                raise StopIteration("error (template_format)")
+                raise StopIteration("error (template_format)") from None
             except Exception as e:
                 logger.error(
                     f"Unexpected template formatting error for {log_prefix}: {e}",
                     exc_info=True,
                 )
-                raise StopIteration("error (template_format)")
+                raise StopIteration("error (template_format)") from None
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
         app_mode = getattr(config_schema, 'app_mode', 'production')
@@ -2361,12 +2357,9 @@ def _process_single_person(
                 )
 
         # Production mode checks
-        elif app_mode == "production":
-            # Check if testing profile ID is configured and matches current profile
-            if (
-                testing_profile_id_config
-                and current_profile_id == testing_profile_id_config
-            ):
+        elif app_mode == "production" and (
+            testing_profile_id_config and current_profile_id == testing_profile_id_config
+        ):
                 send_message_flag = False
                 skip_log_reason = (
                     f"skipped (production_mode_filter: is {testing_profile_id_config})"
@@ -2554,10 +2547,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     start_advanced_monitoring()
 
     # Visibility of mode and interval
-    try:
+    from contextlib import suppress
+    with suppress(Exception):
         logger.info(f"Action 8: APP_MODE={getattr(config_schema, 'app_mode', 'production')}, MIN_MESSAGE_INTERVAL={MIN_MESSAGE_INTERVAL}")
-    except Exception:
-        pass
 
     # CRITICAL FIX: Comprehensive system health validation before proceeding
     if not _validate_system_health(session_manager):
@@ -2702,8 +2694,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
                     # --- BROWSER HEALTH MONITORING (Action 6 Pattern) ---
                     # Check browser health periodically during message processing
-                    if processed_in_loop % 5 == 0:  # Check every 5 messages (improved from 10)
-                        if not session_manager.check_browser_health():
+                    if processed_in_loop % 5 == 0 and not session_manager.check_browser_health():  # Check every 5 messages (improved from 10)
                             logger.warning(f"🚨 BROWSER DEATH DETECTED during message processing at person {processed_in_loop}")
                             # Attempt browser recovery
                             if session_manager.attempt_browser_recovery():
@@ -3511,8 +3502,11 @@ def action8_messaging_tests():
 
         def test_confidence_scoring_hardening():
             from unittest.mock import Mock
-            family = Mock(); family.actual_relationship = "6th cousin"; family.relationship_path = "Some path"
-            dna = Mock(); dna.predicted_relationship = "Distant cousin"
+            family = Mock()
+            family.actual_relationship = "6th cousin"
+            family.relationship_path = "Some path"
+            dna = Mock()
+            dna.predicted_relationship = "Distant cousin"
             key = select_template_by_confidence("In_Tree-Initial", family, dna)
             assert isinstance(key, str) and key.startswith("In_Tree-Initial")
 
@@ -3536,7 +3530,8 @@ def action8_messaging_tests():
                 def my_profile_id(self):
                     return self._my_profile_id
             api = ProactiveApiManager(MockSessionManager())
-            delay = api.calculate_delay(); assert isinstance(delay, (int, float)) and delay >= 0
+            delay = api.calculate_delay()
+            assert isinstance(delay, (int, float)) and delay >= 0
             assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True
 
         def test_error_categorization_integration_minimal():
