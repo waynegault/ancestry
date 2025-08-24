@@ -14,9 +14,9 @@ if __name__ == "__main__":
     try:
         # Import the config package modules
         # Import the config package modules (for availability check)
-        from config.config_manager import ConfigManager
-        from config.config_schema import ConfigSchema
-        from config.credential_manager import CredentialManager
+        # import config.config_manager  # Available but not used in demo
+        # import config.config_schema  # Available but not used in demo
+        # import config.credential_manager  # Available but not used in demo
 
         print("Configuration Package - Enhanced Credential and Config Management")
         print("Version: 2.0.0")
