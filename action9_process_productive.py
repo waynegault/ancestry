@@ -330,7 +330,7 @@ def get_gedcom_data():
     Returns:
         GedcomData instance or None if loading fails
     """
-    global _CACHED_GEDCOM_DATA
+    global _CACHED_GEDCOM_DATA  # noqa: PLW0603 - intentional module-level cache
 
     # Return cached data if already loaded
     if _CACHED_GEDCOM_DATA is not None:
@@ -2569,7 +2569,7 @@ def action9_process_productive_module_tests() -> bool:
         with patch("gedcom_cache.load_gedcom_with_aggressive_caching") as mock_loader:
             mock_loader.return_value = {"test": "data_12345"}
             # Set global to None to force reload
-            global _CACHED_GEDCOM_DATA
+            global _CACHED_GEDCOM_DATA  # noqa: PLW0603 - test resets cache intentionally
             original_cache = _CACHED_GEDCOM_DATA
             _CACHED_GEDCOM_DATA = None
             try:

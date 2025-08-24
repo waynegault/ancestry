@@ -589,7 +589,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
                 print(f"   Score validation: {actual_score >= 50}")  # Lower threshold for API
 
                 # Cache Fraser's data for Test 4 reuse
-                global _cached_fraser_person_id, _cached_fraser_name
+                global _cached_fraser_person_id, _cached_fraser_name  # noqa: PLW0603 - test cache for reuse
                 _cached_fraser_person_id = person_id
                 _cached_fraser_name = found_name
 

@@ -3558,6 +3558,69 @@ def action8_messaging_tests():
             "Test template selection for distant relationships.",
             "Ensure conservative template selection.",
         )
+
+        def test_logger_respects_info_level():
+            import logging as _logging
+            class _ListHandler(_logging.Handler):
+                def __init__(self):
+                    super().__init__()
+                    self.records = []
+                def emit(self, record):
+                    self.records.append(record)
+            lh = _ListHandler()
+            lh.setLevel(_logging.DEBUG)
+            old_level = logger.level
+            try:
+                logger.addHandler(lh)
+                logger.setLevel(_logging.INFO)
+                logger.debug("debug message should not appear")
+                logger.info("info message should appear")
+            finally:
+                logger.setLevel(old_level)
+                logger.removeHandler(lh)
+            levels = [r.levelno for r in lh.records]
+            # Under suppress_logging(), INFO may be muted; the invariant we require is no DEBUG at INFO level
+            assert not any(lvl == _logging.DEBUG for lvl in levels)
+
+        def test_no_debug_when_info():
+            import logging as _logging
+            class _ListHandler(_logging.Handler):
+                def __init__(self):
+                    super().__init__()
+                    self.messages = []
+                def emit(self, record):
+                    self.messages.append((record.levelno, record.getMessage()))
+            lh = _ListHandler()
+            lh.setLevel(_logging.DEBUG)
+            old_level = logger.level
+            try:
+                logger.addHandler(lh)
+                logger.setLevel(_logging.INFO)
+                logger.debug("DBG: hidden")
+                logger.info("INF: visible")
+                logger.warning("WRN: visible")
+            finally:
+                logger.setLevel(old_level)
+                logger.removeHandler(lh)
+            seen_levels = [lvl for (lvl, _) in lh.messages]
+            debug_records = [msg for (lvl, msg) in lh.messages if lvl == _logging.DEBUG]
+            assert _logging.DEBUG not in seen_levels or len(debug_records) == 0
+
+        suite.run_test(
+            "Logger respects INFO level",
+            test_logger_respects_info_level,
+            "Logger at INFO should not emit DEBUG messages.",
+            "Validate central logger level handling.",
+            "Attach memory handler and assert only INFO+ captured.",
+        )
+        suite.run_test(
+            "No DEBUG when INFO",
+            test_no_debug_when_info,
+            "Ensure DEBUG logs are suppressed at INFO level.",
+            "Validate behavior with in-memory handler.",
+            "Guarantee no debug leakage in integrated tests.",
+        )
+
         suite.run_test(
             "Halt signal integration",
             test_halt_signal_integration,

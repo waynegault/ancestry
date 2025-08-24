@@ -85,7 +85,7 @@ def set_cached_gedcom_data(gedcom_data):
     Returns:
         None
     """
-    global _CACHED_GEDCOM_DATA
+    global _CACHED_GEDCOM_DATA  # noqa: PLW0603 - intentional module-level cache setter
     _CACHED_GEDCOM_DATA = gedcom_data
     logger.info(f"Set cached GEDCOM data directly: {gedcom_data is not None}")
 
@@ -163,7 +163,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     Returns:
         GedcomData instance or None if loading fails
     """
-    global _CACHED_GEDCOM_DATA
+    global _CACHED_GEDCOM_DATA  # noqa: PLW0603 - intentional module-level cache
 
     # Return cached data if already loaded
     if _CACHED_GEDCOM_DATA is not None:
