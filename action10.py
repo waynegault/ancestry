@@ -465,7 +465,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         )
         raise MissingConfigError(
             f"Failed to load or process GEDCOM file {gedcom_path.name}: {e}"
-        )
+        ) from e
 
 
 def get_user_criteria(
@@ -1431,7 +1431,7 @@ def action10_module_tests() -> bool:
         try:
             for input_val, expected, description in test_inputs:
                 try:
-                    builtins.input = lambda _: input_val
+                    builtins.input = (lambda val: (lambda _prompt: val))(input_val)
                     actual = get_validated_year_input("Enter year: ")
                     passed = actual == expected
                     status = "✅" if passed else "❌"
