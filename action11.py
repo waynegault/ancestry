@@ -17,6 +17,17 @@ Performance Optimizations:
 - Test 3: Reduced timeouts and result limits for faster search
 - Test 4: Reuses cached Fraser data from Test 3, no re-search needed
 - Test 5: Reuses cached Fraser data from Test 3, no re-search needed
+
+Main Functions:
+- search_ancestry_tree_api: Search for individuals using TreesUI API
+- extract_person_data: Extract structured data from API responses
+- calculate_match_score_api: Score matches using Action 10 algorithms
+- get_family_relationships: Analyze family connections via API
+- format_relationship_path: Display relationship paths between individuals
+
+Quality Score: Well-documented module with comprehensive API integration,
+error handling, caching optimization, and extensive test coverage for
+genealogical research workflows.
 """
 
 import os

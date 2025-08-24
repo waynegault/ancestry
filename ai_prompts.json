@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "last_updated": "2025-08-24",
+  "last_updated": "2025-08-25",
   "prompts": {
     "intent_classification": {
       "name": "Intent Classification",

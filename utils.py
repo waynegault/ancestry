@@ -6,6 +6,19 @@ utils.py - Core Session Management, API Requests, General Utilities
 Manages Selenium/Requests sessions, handles core API interaction (_api_req),
 provides general utilities (decorators, formatting, rate limiting),
 and includes login/session verification logic closely tied to SessionManager.
+
+Core Functions:
+- _api_req: Primary API request handler with authentication and error handling
+- rate_limit: Decorator for API rate limiting and throttling
+- format_duration: Human-readable time formatting
+- sanitize_filename: Safe filename generation
+- retry_with_backoff: Exponential backoff retry mechanism
+- validate_session: Session state validation
+- extract_csrf_token: CSRF token extraction from responses
+
+Quality Score: Large utility module with extensive functionality. Contains
+comprehensive error handling, logging, and session management. Could benefit
+from modularization to improve maintainability and reduce complexity.
 """
 
 # === CORE INFRASTRUCTURE ===

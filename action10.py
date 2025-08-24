@@ -14,6 +14,16 @@ and analyze family relationships. Features include:
 
 Uses cached GEDCOM data for fast processing and provides detailed scoring
 breakdowns for genealogical research accuracy.
+
+This module provides the following main functions:
+- search_gedcom_for_person: Search GEDCOM data for matching individuals
+- display_relatives: Show family relationships for a person
+- analyze_top_match: Detailed analysis of best match
+- calculate_relationship_path: Find relationship between two people
+
+Quality Score: Comprehensive module with extensive documentation, error handling,
+and test coverage. Implements genealogical best practices with performance
+optimization and detailed logging.
 """
 
 # === CORE INFRASTRUCTURE ===
