@@ -292,9 +292,9 @@ from typing import Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
+import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-import requests
 from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
