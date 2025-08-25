@@ -96,6 +96,49 @@ from utils import (
 
 
 # --- Helper function for SQLAlchemy Column conversion ---
+def _handle_direction_enum(value: Any, default: Any) -> Any:
+    """Handle direction enum conversion."""
+    if isinstance(value, MessageDirectionEnum):
+        return value
+    if isinstance(value, str):
+        try:
+            return MessageDirectionEnum(value)
+        except ValueError:
+            logger.warning(f"Invalid direction string '{value}'")
+            return default
+    else:
+        logger.warning(f"Unexpected direction type: {type(value)}")
+        return default
+
+
+def _handle_status_enum(value: Any, default: Any) -> Any:
+    """Handle status enum conversion."""
+    if isinstance(value, PersonStatusEnum):
+        return value
+    if isinstance(value, str):
+        try:
+            return PersonStatusEnum(value)
+        except ValueError:
+            logger.warning(f"Invalid status string '{value}'")
+            return default
+    else:
+        logger.warning(f"Unexpected status type: {type(value)}")
+        return default
+
+
+def _convert_to_primitive(value: Any) -> Any:
+    """Convert value to Python primitive type."""
+    if isinstance(value, (bool, bool, bool)):
+        return bool(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return float(value)
+    if hasattr(value, "isoformat"):  # datetime-like
+        return value
+    return str(value)
+
+
 def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
     """
     Safely extract a value from a SQLAlchemy model attribute, handling Column objects.
@@ -117,44 +160,16 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
 
     # Try to convert to Python primitive
     try:
-        # Special handling for direction enum
+        # Special handling for enums
         if attr_name == "direction":
-            if isinstance(value, MessageDirectionEnum):
-                return value
-            if isinstance(value, str):
-                try:
-                    return MessageDirectionEnum(value)
-                except ValueError:
-                    logger.warning(f"Invalid direction string '{value}'")
-                    return default
-            else:
-                logger.warning(f"Unexpected direction type: {type(value)}")
-                return default
+            return _handle_direction_enum(value, default)
 
-        # Special handling for status enum
         if attr_name == "status":
-            if isinstance(value, PersonStatusEnum):
-                return value
-            if isinstance(value, str):
-                try:
-                    return PersonStatusEnum(value)
-                except ValueError:
-                    logger.warning(f"Invalid status string '{value}'")
-                    return default
-            else:
-                logger.warning(f"Unexpected status type: {type(value)}")
-                return default
+            return _handle_status_enum(value, default)
 
         # For different types of attributes
-        if isinstance(value, (bool, bool, bool)):
-            return bool(value)
-        if isinstance(value, int):
-            return int(value)
-        if isinstance(value, float):
-            return float(value)
-        if hasattr(value, "isoformat"):  # datetime-like
-            return value
-        return str(value)
+        return _convert_to_primitive(value)
+
     except (ValueError, TypeError, AttributeError):
         return default
 
@@ -871,14 +886,8 @@ class InboxProcessor:
     @timeout_protection(timeout=600)  # 10 minutes for inbox processing
     @graceful_degradation(fallback_value=False)
     @error_context("Action 7: Search Inbox")
-    def search_inbox(self) -> bool:
-        """
-        Main method to search the Ancestry inbox with enhanced error handling and statistics.
-
-        Returns:
-            True if the process completed without critical errors, False otherwise.
-        """
-        # Initialize statistics
+    def _initialize_search_stats(self) -> None:
+        """Initialize search statistics and clear cancellation signals."""
         self.stats["start_time"] = datetime.now(timezone.utc)
         # Clear any prior cancellation signals at the start of a new run
         try:
@@ -887,98 +896,134 @@ class InboxProcessor:
         except Exception:
             pass
 
-        # --- Step 1: Initialization ---
-        # Starting Action 7: Search Inbox (removed verbose debug)
-        # Counters and state for this run
-        ai_classified_count = 0
-        status_updated_count = 0  # Person status updates (e.g., to DESIST)
-        total_processed_api_items = 0  # Conversations returned by API
-        items_processed_before_stop = 0  # Conversations actually processed in loop
-        stop_reason: Optional[str] = None  # Reason for stopping early
-        overall_success = True  # Assume success until error
-
-        # Validate session manager state
+    def _validate_session_state(self) -> Optional[str]:
+        """Validate session manager state and return profile ID."""
         if not self.session_manager or not self.session_manager.my_profile_id:
             logger.error("search_inbox: Session manager or profile ID missing.")
-            return False
-        my_pid_lower = self.session_manager.my_profile_id.lower()
+            return None
+        return self.session_manager.my_profile_id.lower()
 
+    def _setup_progress_tracking(self) -> dict[str, Any]:
+        """Setup progress tracking configuration."""
+        tqdm_args = {
+            "total": None,  # Start with unknown total
+            "desc": "Processing",
+            "unit": " conv",
+            "dynamic_ncols": True,
+            "leave": True,
+            "bar_format": "{desc} |{bar}| {n_fmt} conversations processed",
+            "file": sys.stderr,
+        }
+
+        logger.info(
+            f"Processing inbox items (limit: {self.max_inbox_limit if self.max_inbox_limit > 0 else 'unlimited'})..."
+        )
+
+        return tqdm_args
+
+    def search_inbox(self) -> bool:
+        """
+        Main method to search the Ancestry inbox with enhanced error handling and statistics.
+
+        Returns:
+            True if the process completed without critical errors, False otherwise.
+        """
+        # Initialize statistics and state
+        self._initialize_search_stats()
+
+        # Counters and state for this run
+
+        # Validate session manager state
+        my_pid_lower = self._validate_session_state()
+        if not my_pid_lower:
+            return False
+        return None
+
+    def _get_database_session_and_comparator(self) -> tuple[Optional[DbSession], Optional[str], Optional[datetime]]:
+        """Get database session and create comparator for inbox processing."""
+        session = self.session_manager.get_db_conn()
+        if not session:
+            logger.critical("search_inbox: Failed to get DB session. Aborting.")
+            return None, None, None
+
+        # Get the comparator (latest message in DB)
+        comparator_info = self._create_comparator(session)
+        comp_conv_id: Optional[str] = None
+        comp_ts: Optional[datetime] = None  # Comparator timestamp (aware)
+        if comparator_info:
+            comp_conv_id = comparator_info.get("conversation_id")
+            comp_ts = comparator_info.get("latest_timestamp")
+
+        return session, comp_conv_id, comp_ts
+
+    def _run_inbox_processing_loop(
+        self,
+        session: DbSession,
+        comp_conv_id: Optional[str],
+        comp_ts: Optional[datetime],
+        my_pid_lower: str
+    ) -> tuple[Optional[str], int, int, int, int]:
+        """Run the main inbox processing loop with progress tracking."""
+        tqdm_args = self._setup_progress_tracking()
+
+        # PHASE 1 OPTIMIZATION: Enhanced progress tracking for inbox processing
+        dynamic_total = self.max_inbox_limit if self.max_inbox_limit > 0 else 0
+        with create_progress_indicator(
+            description="Inbox Message Processing",
+            total=dynamic_total if dynamic_total > 0 else None,
+            unit="conversations",
+            show_memory=True,
+            show_rate=True,
+            log_finish=False,
+            leave=False,
+        ) as enhanced_progress:
+
+            with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
+                # Link enhanced progress to tqdm for updates (avoid pylance attr warnings)
+                from contextlib import suppress
+                with suppress(Exception):
+                    progress_bar._enhanced_progress = enhanced_progress
+
+                result = self._process_inbox_loop(
+                    session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+                )
+
+                # Ensure a newline after the progress bar completes to avoid inline log overlap
+                try:
+                    progress_bar.close()
+                finally:
+                    sys.stderr.write("\n")
+                    sys.stderr.flush()
+
+            # Update the progress bar to show completion - only set total if needed
+            if progress_bar.total is None:
+                progress_bar.total = max(result[4], 1)  # items_processed_before_stop
+                progress_bar.refresh()
+            # Don't manually set progress_bar.n here since it's already updated in the loop
+            progress_bar.set_description("Completed")
+            progress_bar.refresh()
+
+            return result
+
+        # Continue with the main search_inbox method
         # --- Step 2: Get DB Session and Comparator ---
         session: Optional[DbSession] = None
         try:
-            session = self.session_manager.get_db_conn()
+            session, comp_conv_id, comp_ts = self._get_database_session_and_comparator()
             if not session:
-                logger.critical("search_inbox: Failed to get DB session. Aborting.")
                 return False
 
-            # Get the comparator (latest message in DB)
-            comparator_info = self._create_comparator(session)
-            comp_conv_id: Optional[str] = None
-            comp_ts: Optional[datetime] = None  # Comparator timestamp (aware)
-            if comparator_info:
-                comp_conv_id = comparator_info.get("conversation_id")
-                comp_ts = comparator_info.get("latest_timestamp")
-            # --- End Get Comparator ---
-
             # --- Step 3: Setup and Run Main Loop ---
-            # Starting inbox search (removed verbose debug)
-
-            # Use a progress bar with dynamic total that gets updated as we discover the actual number of conversations
-            tqdm_args = {
-                "total": None,  # Start with unknown total
-                "desc": "Processing",
-                "unit": " conv",
-                "dynamic_ncols": True,
-                "leave": True,
-                "bar_format": "{desc} |{bar}| {n_fmt} conversations processed",
-                "file": sys.stderr,
-            }
-            logger.info(
-                f"Processing inbox items (limit: {self.max_inbox_limit if self.max_inbox_limit > 0 else 'unlimited'})..."
-            )
-
-            # PHASE 1 OPTIMIZATION: Enhanced progress tracking for inbox processing
-            dynamic_total = self.max_inbox_limit if self.max_inbox_limit > 0 else 0
-            with create_progress_indicator(
-                description="Inbox Message Processing",
-                total=dynamic_total if dynamic_total > 0 else None,
-                unit="conversations",
-                show_memory=True,
-                show_rate=True,
-                log_finish=False,
-                leave=False,
-            ) as enhanced_progress:
-
-                with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-                    # Link enhanced progress to tqdm for updates (avoid pylance attr warnings)
-                    from contextlib import suppress
-                    with suppress(Exception):
-                        progress_bar._enhanced_progress = enhanced_progress
-                    (
-                        stop_reason,
-                        total_processed_api_items,
-                        ai_classified_count,
-                        status_updated_count,
-                        items_processed_before_stop,
-                    ) = self._process_inbox_loop(
-                        session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
-                    )
-                    # Ensure a newline after the progress bar completes to avoid inline log overlap
-                    try:
-                        progress_bar.close()
-                    finally:
-                        sys.stderr.write("\n")
-                        sys.stderr.flush()
-
-                # Update the progress bar to show completion - only set total if needed
-                if progress_bar.total is None:
-                    progress_bar.total = max(items_processed_before_stop, 1)
-                    progress_bar.refresh()
-                # Don't manually set progress_bar.n here since it's already updated in the loop
-                progress_bar.set_description("Completed")
-                progress_bar.refresh()
+            (
+                stop_reason,
+                total_processed_api_items,
+                ai_classified_count,
+                status_updated_count,
+                items_processed_before_stop,
+            ) = self._run_inbox_processing_loop(session, comp_conv_id, comp_ts, my_pid_lower)
 
             # Check if loop stopped due to an error state
+            overall_success = True
             if stop_reason and "error" in stop_reason.lower():
                 overall_success = False
 
@@ -1057,6 +1102,52 @@ class InboxProcessor:
             ).total_seconds()
         return stats
 
+    def _initialize_loop_state(self) -> dict[str, Any]:
+        """Initialize state variables for the inbox processing loop."""
+        return {
+            "ai_classified_count": 0,
+            "status_updated_count": 0,
+            "total_processed_api_items": 0,
+            "items_processed_before_stop": 0,
+            "logs_processed_in_run": 0,
+            "skipped_count_this_loop": 0,
+            "error_count_this_loop": 0,
+            "stop_reason": None,
+            "next_cursor": None,
+            "current_batch_num": 0,
+            "conv_log_upserts_dicts": [],
+            "person_updates": {},
+            "stop_processing": False,
+            "min_aware_dt": datetime.min.replace(tzinfo=timezone.utc),
+            "conversations_needing_processing": 0,
+        }
+
+    def _check_browser_health(self, current_batch_num: int) -> Optional[str]:
+        """Check browser health and attempt recovery if needed."""
+        if current_batch_num % 5 == 0:  # Check every 5 batches
+            if not self.session_manager.check_browser_health():
+                logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
+                if not self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
+                    logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
+                    return "Browser Recovery Failed"
+        return None
+
+    def _validate_session(self) -> None:
+        """Validate session before API call."""
+        if not self.session_manager.is_sess_valid():
+            logger.error("Session became invalid during inbox processing loop.")
+            raise WebDriverException("Session invalid before overview batch fetch")
+
+    def _calculate_api_limit(self, items_processed_before_stop: int) -> tuple[int, Optional[str]]:
+        """Calculate API limit for current batch considering overall limit."""
+        current_limit = self.api_batch_size
+        if self.max_inbox_limit > 0:
+            remaining_allowed = self.max_inbox_limit - items_processed_before_stop
+            if remaining_allowed <= 0:
+                return 0, f"Inbox Limit ({self.max_inbox_limit})"
+            current_limit = min(self.api_batch_size, remaining_allowed)
+        return current_limit, None
+
     def _process_inbox_loop(
         self,
         session: DbSession,
@@ -1064,40 +1155,29 @@ class InboxProcessor:
         comp_ts: Optional[datetime],  # Aware datetime
         my_pid_lower: str,
         progress_bar: Optional[tqdm],  # Accept progress bar instance
-    ) -> tuple[Optional[str], int, int, int, int]:  # <-- Removed logs_processed_count
+    ) -> tuple[Optional[str], int, int, int, int]:
         """
         Internal helper: Contains the main loop for fetching and processing inbox batches.
-
-        Args:
-            session: The active SQLAlchemy database session.
-            comp_conv_id: Conversation ID of the comparator message.
-            comp_ts: Timestamp of the comparator message (UTC aware).
-            my_pid_lower: Lowercase profile ID of the script user.
-            progress_bar: Optional tqdm instance to update.
-
-        Returns:
-            Tuple: (stop_reason, total_api_items, ai_classified_count,
-                    status_updated_count, items_processed_before_stop)
         """
-        # Step 1: Initialize loop-specific state
-        ai_classified_count = 0
-        status_updated_count = 0  # Tracks Person updates
-        total_processed_api_items = 0
-        items_processed_before_stop = 0
-        logs_processed_in_run = 0
-        skipped_count_this_loop = 0
-        error_count_this_loop = 0
-        stop_reason: Optional[str] = None
-        next_cursor: Optional[str] = None
-        current_batch_num = 0
-        # Lists to accumulate data for batch commits
-        conv_log_upserts_dicts: list[dict[str, Any]] = []  # <-- Store dicts now
-        person_updates: dict[int, PersonStatusEnum] = {}
-        stop_processing = False
-        min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
+        # Initialize loop state
+        state = self._initialize_loop_state()
 
-        # Track conversations that need processing for progress bar
-        conversations_needing_processing = 0
+        # Extract variables from state for easier access
+        ai_classified_count = state["ai_classified_count"]
+        status_updated_count = state["status_updated_count"]
+        total_processed_api_items = state["total_processed_api_items"]
+        items_processed_before_stop = state["items_processed_before_stop"]
+        logs_processed_in_run = state["logs_processed_in_run"]
+        skipped_count_this_loop = state["skipped_count_this_loop"]
+        error_count_this_loop = state["error_count_this_loop"]
+        stop_reason = state["stop_reason"]
+        next_cursor = state["next_cursor"]
+        current_batch_num = state["current_batch_num"]
+        conv_log_upserts_dicts = state["conv_log_upserts_dicts"]
+        person_updates = state["person_updates"]
+        stop_processing = state["stop_processing"]
+        min_aware_dt = state["min_aware_dt"]
+        conversations_needing_processing = state["conversations_needing_processing"]
 
         # Step 2: Main loop - continues until stop condition met
         while not stop_processing:
@@ -1483,7 +1563,7 @@ class InboxProcessor:
                                 )
                             # PHASE 1 OPTIMIZATION: Enhanced error recovery for AI calls
                             @with_api_recovery(max_attempts=3, base_delay=2.0)
-                            def _classify_with_recovery():
+                            def _classify_with_recovery() -> Optional[str]:
                                 return classify_message_intent(
                                     formatted_context, self.session_manager
                                 )
@@ -1779,6 +1859,24 @@ class InboxProcessor:
 
         # --- End Main Loop (while not stop_processing) ---
 
+        # Update state dictionary with final values
+        state.update({
+            "ai_classified_count": ai_classified_count,
+            "status_updated_count": status_updated_count,
+            "total_processed_api_items": total_processed_api_items,
+            "items_processed_before_stop": items_processed_before_stop,
+            "logs_processed_in_run": logs_processed_in_run,
+            "skipped_count_this_loop": skipped_count_this_loop,
+            "error_count_this_loop": error_count_this_loop,
+            "stop_reason": stop_reason,
+            "next_cursor": next_cursor,
+            "current_batch_num": current_batch_num,
+            "conv_log_upserts_dicts": conv_log_upserts_dicts,
+            "person_updates": person_updates,
+            "stop_processing": stop_processing,
+            "conversations_needing_processing": conversations_needing_processing,
+        })
+
         # Step 4: Perform final commit if loop finished normally or stopped early
         if (
             not stop_reason
@@ -1878,7 +1976,7 @@ def action7_inbox_module_tests() -> bool:
     suite = TestSuite("Action 7 - Inbox Processor", "action7_inbox.py")
     suite.start_suite()
 
-    def test_class_and_methods_available():
+    def test_class_and_methods_available() -> None:
         """Ensure core classes and methods exist and are callable."""
         # InboxProcessor exists
         assert 'InboxProcessor' in globals(), "InboxProcessor class should exist"
@@ -1892,7 +1990,7 @@ def action7_inbox_module_tests() -> bool:
         assert hasattr(processor, '_log_unified_summary'), "_log_unified_summary should exist"
         return True
 
-    def test_circuit_breaker_config():
+    def test_circuit_breaker_config() -> None:
         """Verify search_inbox bears expected signature/decorators."""
         try:
             search_method = getattr(InboxProcessor, 'search_inbox', None)
@@ -1903,7 +2001,7 @@ def action7_inbox_module_tests() -> bool:
         except Exception:
             return False
 
-    def test_progress_indicator_smoke():
+    def test_progress_indicator_smoke() -> None:
         """Progress indicator can be created (smoke)."""
         with create_progress_indicator(
             description="TEST",
@@ -1918,7 +2016,7 @@ def action7_inbox_module_tests() -> bool:
             pb.update(1)
         return True
 
-    def test_summary_logging_structure():
+    def test_summary_logging_structure() -> None:
         """_log_unified_summary emits the expected lines to logger (captured)."""
         sm = MagicMock()
         processor = InboxProcessor(sm)

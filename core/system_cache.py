@@ -39,7 +39,7 @@ import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, Union, cast
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
@@ -89,6 +89,9 @@ SYSTEM_CACHE_CONFIG = SystemCacheConfig()
 
 # === API RESPONSE CACHING SYSTEM ===
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
 
 class APIResponseCache(BaseCacheModule):
     """
@@ -96,7 +99,7 @@ class APIResponseCache(BaseCacheModule):
     Optimizes external API calls with intelligent TTL management.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._api_stats = {
             "ai_requests": 0,
             "ai_cache_hits": 0,
@@ -216,7 +219,7 @@ class DatabaseQueryCache(BaseCacheModule):
     Optimizes database operations with intelligent invalidation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._query_stats = {
             "total_queries": 0,
             "cache_hits": 0,
@@ -300,7 +303,7 @@ class MemoryOptimizer(BaseCacheModule):
     Intelligent memory optimization and garbage collection management.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._memory_stats = {
             "gc_collections": 0,
             "memory_freed_mb": 0.0,
@@ -387,7 +390,7 @@ _memory_optimizer = MemoryOptimizer()
 # === CACHING DECORATORS ===
 
 
-def cached_api_call(service: str, ttl: Optional[int] = None):
+def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator for caching API calls with intelligent TTL management.
 
@@ -397,9 +400,9 @@ def cached_api_call(service: str, ttl: Optional[int] = None):
         return ai_service.analyze(message_content)
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Create cache key from function name and parameters
             method = func.__name__
             params = {"args": args, "kwargs": kwargs}
@@ -427,14 +430,14 @@ def cached_api_call(service: str, ttl: Optional[int] = None):
                     _api_cache._api_stats["ancestry_requests"] += 1
                 _api_cache._api_stats["total_time_saved"] += call_time
 
-            return result
+            return cast(R, result)
 
         return wrapper
 
     return decorator
 
 
-def cached_database_query(ttl: Optional[int] = None):
+def cached_database_query(ttl: Optional[int] = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator for caching database query results.
 
@@ -444,9 +447,9 @@ def cached_database_query(ttl: Optional[int] = None):
         return session.query(ConversationLog).filter_by(people_id=person_id).all()
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Create cache key from function and parameters
             cache_key_data = f"{func.__name__}|{args}|{sorted(kwargs.items())}"
 
@@ -469,7 +472,7 @@ def cached_database_query(ttl: Optional[int] = None):
     return decorator
 
 
-def memory_optimized(gc_threshold: Optional[float] = None):
+def memory_optimized(gc_threshold: Optional[float] = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator for functions that should trigger memory optimization.
 
@@ -480,9 +483,9 @@ def memory_optimized(gc_threshold: Optional[float] = None):
         return result
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Check memory before execution
             _memory_optimizer.get_memory_usage_mb()
 
@@ -642,7 +645,7 @@ def warm_system_caches_intelligent(
     if strategies is None:
         strategies = ['config', 'api_templates', 'common_queries']
 
-    def _warm_caches():
+    def _warm_caches() -> int:
         try:
             warmed_items = 0
 
@@ -734,7 +737,7 @@ def warm_system_caches_intelligent(
 # === TESTING FUNCTIONS ===
 
 
-def test_system_cache_performance():
+def test_system_cache_performance() -> bool:
     """Test Phase 5.2 system cache performance improvements"""
     logger.info("🚀 Testing Phase 5.2 System Cache Performance")
 
@@ -747,7 +750,7 @@ def test_system_cache_performance():
     try:
         # Test API caching
         @cached_api_call("test_service", ttl=60)
-        def mock_api_call(data):
+        def mock_api_call(data: Any) -> dict[str, Any]:
             time.sleep(0.1)  # Simulate API delay
             return {"processed": data, "timestamp": time.time()}
 
@@ -770,7 +773,7 @@ def test_system_cache_performance():
 
         # Test database caching
         @cached_database_query(ttl=60)
-        def mock_db_query(query_id):
+        def mock_db_query(query_id: Any) -> list[dict[str, Any]]:
             time.sleep(0.05)  # Simulate DB delay
             return [{"id": query_id, "data": "test_result"}]
 
@@ -829,7 +832,7 @@ def run_comprehensive_tests() -> bool:
         suite = TestSuite("System Cache Comprehensive Tests", __name__)
         suite.start_suite()
 
-        def test_api_response_cache_functionality():
+        def test_api_response_cache_functionality() -> bool:
             """Test API response caching system"""
             try:
                 # Test caching API response
@@ -857,7 +860,7 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_database_query_cache_functionality():
+        def test_database_query_cache_functionality() -> bool:
             """Test database query caching system"""
             try:
                 # Test caching database query result
@@ -887,7 +890,7 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_memory_optimization_functionality():
+        def test_memory_optimization_functionality() -> bool:
             """Test memory optimization system"""
             try:
                 # Test memory usage monitoring
@@ -908,14 +911,14 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_caching_decorators():
+        def test_caching_decorators() -> bool:
             """Test system caching decorators"""
             try:
                 # Test API caching decorator
                 call_count = 0
 
                 @cached_api_call("test_api", ttl=60)
-                def test_api_function(param):
+                def test_api_function(param: str) -> dict[str, Any]:
                     nonlocal call_count
                     call_count += 1
                     return {"param": param, "call_count": call_count}
@@ -930,7 +933,7 @@ def run_comprehensive_tests() -> bool:
                 db_call_count = 0
 
                 @cached_database_query(ttl=300)
-                def test_db_function(query_id):
+                def test_db_function(query_id: int) -> list[dict[str, Any]]:
                     nonlocal db_call_count
                     db_call_count += 1
                     return [{"id": query_id, "call_count": db_call_count}]
@@ -940,7 +943,7 @@ def run_comprehensive_tests() -> bool:
 
                 # Test memory optimization decorator
                 @memory_optimized(gc_threshold=0.5)
-                def test_memory_function():
+                def test_memory_function() -> int:
                     # Simulate memory intensive operation
                     data = list(range(1000))
                     return len(data)
@@ -952,7 +955,7 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_system_cache_statistics():
+        def test_system_cache_statistics() -> bool:
             """Test comprehensive system cache statistics"""
             try:
                 stats = get_system_cache_stats()
@@ -978,7 +981,7 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_cache_management_operations():
+        def test_cache_management_operations() -> bool:
             """Test system cache management"""
             try:
                 # Test cache warming
@@ -1002,7 +1005,7 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_cache_configuration():
+        def test_cache_configuration() -> bool:
             """Test system cache configuration"""
             try:
                 # Test configuration access
@@ -1025,14 +1028,14 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_performance_improvements():
+        def test_performance_improvements() -> bool:
             """Test actual performance improvements from caching"""
             try:
                 import time
 
                 # Test API caching performance
                 @cached_api_call("performance_test", ttl=30)
-                def slow_api_call():
+                def slow_api_call() -> dict[str, Any]:
                     time.sleep(0.01)  # Simulate network delay
                     return {"timestamp": time.time()}
 
@@ -1054,7 +1057,7 @@ def run_comprehensive_tests() -> bool:
 
                 # Test database caching performance
                 @cached_database_query(ttl=30)
-                def slow_db_query():
+                def slow_db_query() -> list[dict[str, str]]:
                     time.sleep(0.005)  # Simulate DB delay
                     return [{"result": "cached"}]
 
@@ -1069,7 +1072,7 @@ def run_comprehensive_tests() -> bool:
             except Exception:
                 return False
 
-        def test_error_handling_and_edge_cases():
+        def test_error_handling_and_edge_cases() -> bool:
             """Test error handling in cache operations"""
             try:
                 # Test API cache with None response

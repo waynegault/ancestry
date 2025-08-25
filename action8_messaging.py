@@ -40,6 +40,7 @@ except ImportError as e:
     MessagePersonalizer = None
 
 # === STANDARD LIBRARY IMPORTS ===
+import logging
 import sys
 import time
 import uuid
@@ -60,7 +61,40 @@ from database import PersonStatusEnum
 
 
 # --- Helper function for SQLAlchemy Column conversion ---
-def safe_column_value(obj, attr_name, default=None):
+def _handle_status_enum_conversion(value: Any, default: Any) -> Any:
+    """Handle status enum conversion."""
+    # If it's already an enum instance, return it
+    if isinstance(value, PersonStatusEnum):
+        return value
+    # If it's a string, try to convert to enum
+    if isinstance(value, str):
+        try:
+            return PersonStatusEnum(value)
+        except ValueError:
+            logger.warning(
+                f"Invalid status string '{value}', cannot convert to enum"
+            )
+            return default
+    # If it's something else, log and return default
+    else:
+        logger.warning(f"Unexpected status type: {type(value)}")
+        return default
+
+
+def _convert_value_to_primitive(value: Any) -> Any:
+    """Convert value to appropriate Python primitive type."""
+    if isinstance(value, bool) or value is True or value is False:
+        return bool(value)
+    if isinstance(value, int) or str(value).isdigit():
+        return int(value)
+    if isinstance(value, float) or str(value).replace(".", "", 1).isdigit():
+        return float(value)
+    if hasattr(value, "isoformat"):  # datetime-like
+        return value
+    return str(value)
+
+
+def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
     """
     Safely extract a value from a SQLAlchemy model attribute, handling Column objects.
 
@@ -83,33 +117,11 @@ def safe_column_value(obj, attr_name, default=None):
     try:
         # Special handling for status enum
         if attr_name == "status":
-            # If it's already an enum instance, return it
-            if isinstance(value, PersonStatusEnum):
-                return value
-            # If it's a string, try to convert to enum
-            if isinstance(value, str):
-                try:
-                    return PersonStatusEnum(value)
-                except ValueError:
-                    logger.warning(
-                        f"Invalid status string '{value}', cannot convert to enum"
-                    )
-                    return default
-            # If it's something else, log and return default
-            else:
-                logger.warning(f"Unexpected status type: {type(value)}")
-                return default
+            return _handle_status_enum_conversion(value, default)
 
         # For different types of attributes
-        if isinstance(value, bool) or value is True or value is False:
-            return bool(value)
-        if isinstance(value, int) or str(value).isdigit():
-            return int(value)
-        if isinstance(value, float) or str(value).replace(".", "", 1).isdigit():
-            return float(value)
-        if hasattr(value, "isoformat"):  # datetime-like
-            return value
-        return str(value)
+        return _convert_value_to_primitive(value)
+
     except (ValueError, TypeError, AttributeError):
         return default
 
@@ -346,6 +358,7 @@ if MESSAGE_TEMPLATES:
     _audit_template_placeholders(MESSAGE_TEMPLATES)
 
 # Initialize message personalizer
+import contextlib
 from typing import Any as _Any  # alias to avoid conflicts in type annotations
 
 MESSAGE_PERSONALIZER: Optional[_Any] = None
@@ -630,55 +643,53 @@ def get_safe_relationship_path(family_tree) -> str:
     return "our shared family line (details to be determined)"
 
 
-def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:
-    """
-    Select template variant based on relationship confidence.
+def _is_distant_relationship(actual_rel: str) -> bool:
+    """Check if relationship is distant (5th cousin and beyond)."""
+    distant_markers = ["5th cousin", "6th cousin", "7th cousin", "8th cousin", "9th cousin"]
+    return any(distant in actual_rel.lower() for distant in distant_markers)
 
-    CRITICAL FIX: Enhanced to prevent distant relationships from being marked as "confident".
 
-    Args:
-        base_template_key: Base template key (e.g., "In_Tree-Initial")
-        family_tree: FamilyTree object (may be None)
-        dna_match: DNAMatch object (may be None)
-
-    Returns:
-        Template key with confidence suffix
-    """
+def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool) -> int:
+    """Calculate confidence score from family tree data."""
     confidence_score = 0
-    is_distant_relationship = False
 
-    # CRITICAL FIX: Check for distant relationships that should never be "confident"
     if family_tree:
         actual_rel = safe_column_value(family_tree, "actual_relationship", None)
-        if actual_rel and actual_rel != "N/A" and actual_rel.strip():
-            # Check for distant relationships (5th cousin and beyond)
-            if any(distant in actual_rel.lower() for distant in ["5th cousin", "6th cousin", "7th cousin", "8th cousin", "9th cousin"]):
-                is_distant_relationship = True
-                logger.debug(f"Detected distant relationship: {actual_rel} - forcing exploratory template")
-            else:
-                confidence_score += 3
+        if actual_rel and actual_rel != "N/A" and actual_rel.strip() and not is_distant_relationship:
+            confidence_score += 3
 
         path = safe_column_value(family_tree, "relationship_path", None)
         if path and path != "N/A" and path.strip() and not is_distant_relationship:
             confidence_score += 2
 
-    # Medium confidence: predicted relationship available (but not for distant relationships)
+    return confidence_score
+
+
+def _calculate_dna_match_confidence(dna_match, is_distant_relationship: bool) -> int:
+    """Calculate confidence score from DNA match data."""
     if dna_match and not is_distant_relationship:
         predicted_rel = safe_column_value(dna_match, "predicted_relationship", None)
         if predicted_rel and predicted_rel != "N/A" and predicted_rel.strip():
-            confidence_score += 1
+            return 1
+    return 0
 
-    # CRITICAL FIX: Force distant relationships to use exploratory templates
-    if is_distant_relationship:
-        exploratory_key = f"{base_template_key}_Exploratory"
-        if exploratory_key in MESSAGE_TEMPLATES:
-            return exploratory_key
-        # Fallback to short variant for distant relationships
-        short_key = f"{base_template_key}_Short"
-        if short_key in MESSAGE_TEMPLATES:
-            return short_key
 
-    # Select template variant based on confidence
+def _get_template_for_distant_relationship(base_template_key: str) -> str:
+    """Get appropriate template for distant relationships."""
+    exploratory_key = f"{base_template_key}_Exploratory"
+    if exploratory_key in MESSAGE_TEMPLATES:
+        return exploratory_key
+
+    # Fallback to short variant for distant relationships
+    short_key = f"{base_template_key}_Short"
+    if short_key in MESSAGE_TEMPLATES:
+        return short_key
+
+    return base_template_key
+
+
+def _get_template_by_confidence_score(base_template_key: str, confidence_score: int) -> str:
+    """Get template based on confidence score."""
     if confidence_score >= 4:
         # High confidence - use confident variant if available
         confident_key = f"{base_template_key}_Confident"
@@ -697,6 +708,33 @@ def select_template_by_confidence(base_template_key: str, family_tree, dna_match
 
     # Fallback to standard template
     return base_template_key
+
+
+def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:
+    """
+    Select template variant based on relationship confidence.
+
+    CRITICAL FIX: Enhanced to prevent distant relationships from being marked as "confident".
+    """
+    # Check for distant relationships first
+    is_distant_relationship = False
+    if family_tree:
+        actual_rel = safe_column_value(family_tree, "actual_relationship", None)
+        if actual_rel and actual_rel != "N/A" and actual_rel.strip():
+            is_distant_relationship = _is_distant_relationship(actual_rel)
+            if is_distant_relationship:
+                logger.debug(f"Detected distant relationship: {actual_rel} - forcing exploratory template")
+
+    # CRITICAL FIX: Force distant relationships to use exploratory templates
+    if is_distant_relationship:
+        return _get_template_for_distant_relationship(base_template_key)
+
+    # Calculate confidence score
+    confidence_score = _calculate_family_tree_confidence(family_tree, is_distant_relationship)
+    confidence_score += _calculate_dna_match_confidence(dna_match, is_distant_relationship)
+
+    # Select template based on confidence
+    return _get_template_by_confidence_score(base_template_key, confidence_score)
 
 
 def select_template_variant_ab_testing(person_id: int, base_template_key: str) -> str:
@@ -746,6 +784,90 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # Response Rate Tracking and Analysis
 # ------------------------------------------------------------------------------
 
+def _get_session_manager(session_manager) -> Any:
+    """Get or create session manager."""
+    if not session_manager:
+        from core.session_manager import SessionManager
+        session_manager = SessionManager()
+    return session_manager
+
+
+def _get_template_selections(session, cutoff_date) -> list:
+    """Get template selections from database."""
+    return session.query(ConversationLog).filter(
+        ConversationLog.script_message_status.like("TEMPLATE_SELECTED:%"),
+        ConversationLog.timestamp_utc >= cutoff_date
+    ).all()
+
+
+def _extract_template_name(script_message_status: str) -> Optional[str]:
+    """Extract template name from script message status."""
+    status_parts = script_message_status.split(":")
+    if len(status_parts) >= 2:
+        return status_parts[1].strip().split(" ")[0]
+    return None
+
+
+def _initialize_template_stats() -> dict[str, Any]:
+    """Initialize template statistics structure."""
+    return {
+        "sent": 0,
+        "responses": 0,
+        "response_rate": 0.0,
+        "avg_response_time_hours": 0.0
+    }
+
+
+def _find_response_for_template(session, person_id: int, sent_time: datetime):
+    """Find response for a specific template sent to a person."""
+    return session.query(ConversationLog).filter(
+        ConversationLog.person_id == person_id,
+        ConversationLog.direction == MessageDirectionEnum.IN,
+        ConversationLog.timestamp_utc > sent_time,
+        ConversationLog.timestamp_utc <= sent_time + timedelta(days=30)  # Response window
+    ).first()
+
+
+def _update_response_time_average(template_stats: dict[str, Any], template_name: str, response_hours: float) -> None:
+    """Update average response time for a template."""
+    current_avg = template_stats[template_name]["avg_response_time_hours"]
+    response_count = template_stats[template_name]["responses"]
+    new_avg = ((current_avg * (response_count - 1)) + response_hours) / response_count
+    template_stats[template_name]["avg_response_time_hours"] = new_avg
+
+
+def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None:
+    """Calculate response rates for all templates."""
+    for _template_name, stats in template_stats.items():
+        if stats["sent"] > 0:
+            stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
+
+
+def _process_template_selections(session, template_selections, template_stats: dict[str, dict[str, Any]]) -> None:
+    """Process template selections and calculate statistics."""
+    for selection in template_selections:
+        template_name = _extract_template_name(selection.script_message_status)
+        if not template_name:
+            continue
+
+        if template_name not in template_stats:
+            template_stats[template_name] = _initialize_template_stats()
+
+        template_stats[template_name]["sent"] += 1
+
+        # Check for responses from this person after this template
+        person_id = selection.person_id
+        sent_time = selection.timestamp_utc
+
+        response = _find_response_for_template(session, person_id, sent_time)
+        if response:
+            template_stats[template_name]["responses"] += 1
+            # Calculate response time
+            response_time = response.timestamp_utc - sent_time
+            response_hours = response_time.total_seconds() / 3600
+            _update_response_time_average(template_stats, template_name, response_hours)
+
+
 def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> dict[str, Any]:
     """
     Analyze template effectiveness by measuring response rates.
@@ -757,9 +879,7 @@ def analyze_template_effectiveness(session_manager=None, days_back: int = 30) ->
     Returns:
         Dictionary with template effectiveness statistics
     """
-    if not session_manager:
-        from core.session_manager import SessionManager
-        session_manager = SessionManager()
+    session_manager = _get_session_manager(session_manager)
 
     try:
         with session_manager.get_db_conn_context() as session:
@@ -771,57 +891,10 @@ def analyze_template_effectiveness(session_manager=None, days_back: int = 30) ->
 
             # Query for template selections and responses
             template_stats = {}
+            template_selections = _get_template_selections(session, cutoff_date)
 
-            # Find all template selections
-            template_selections = session.query(ConversationLog).filter(
-                ConversationLog.script_message_status.like("TEMPLATE_SELECTED:%"),
-                ConversationLog.timestamp_utc >= cutoff_date
-            ).all()
-
-            for selection in template_selections:
-                # Extract template name from status
-                status_parts = selection.script_message_status.split(":")
-                if len(status_parts) >= 2:
-                    template_name = status_parts[1].strip().split(" ")[0]
-
-                    if template_name not in template_stats:
-                        template_stats[template_name] = {
-                            "sent": 0,
-                            "responses": 0,
-                            "response_rate": 0.0,
-                            "avg_response_time_hours": 0.0
-                        }
-
-                    template_stats[template_name]["sent"] += 1
-
-                    # Check for responses from this person after this template
-                    person_id = selection.person_id
-                    sent_time = selection.timestamp_utc
-
-                    # Look for incoming messages after this template was sent
-                    response = session.query(ConversationLog).filter(
-                        ConversationLog.person_id == person_id,
-                        ConversationLog.direction == MessageDirectionEnum.IN,
-                        ConversationLog.timestamp_utc > sent_time,
-                        ConversationLog.timestamp_utc <= sent_time + timedelta(days=30)  # Response window
-                    ).first()
-
-                    if response:
-                        template_stats[template_name]["responses"] += 1
-                        # Calculate response time
-                        response_time = response.timestamp_utc - sent_time
-                        response_hours = response_time.total_seconds() / 3600
-
-                        # Update average response time
-                        current_avg = template_stats[template_name]["avg_response_time_hours"]
-                        response_count = template_stats[template_name]["responses"]
-                        new_avg = ((current_avg * (response_count - 1)) + response_hours) / response_count
-                        template_stats[template_name]["avg_response_time_hours"] = new_avg
-
-            # Calculate response rates
-            for _template_name, stats in template_stats.items():
-                if stats["sent"] > 0:
-                    stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
+            _process_template_selections(session, template_selections, template_stats)
+            _calculate_response_rates(template_stats)
 
             return {
                 "analysis_period_days": days_back,
@@ -1436,7 +1509,7 @@ class ErrorCategorizer:
     Proper error categorization and monitoring for Action8.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.error_counts = {
             'business_logic_skips': 0,
             'technical_errors': 0,
@@ -1558,7 +1631,7 @@ class ResourceManager:
     Comprehensive resource management for memory, cleanup, and garbage collection.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.allocated_resources = []
         self.memory_threshold_mb = 100  # Trigger cleanup at 100MB
         self.gc_interval = 50  # Trigger GC every 50 operations
@@ -1652,7 +1725,7 @@ class ProactiveApiManager:
     Proactive API management with rate limiting, authentication monitoring, and response validation.
     """
 
-    def __init__(self, session_manager: SessionManager):
+    def __init__(self, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
         self.consecutive_failures = 0
         self.last_auth_check = 0
@@ -1806,7 +1879,7 @@ def _with_operation_timeout(operation_func: callable, timeout_seconds: int, oper
     exception = [None]
     completed = [False]
 
-    def target():
+    def target() -> None:
         try:
             result[0] = operation_func()
             completed[0] = True
@@ -1868,7 +1941,7 @@ def _safe_api_call_with_validation(
 
     # Step 4: Make the API call with timeout protection
     try:
-        def api_call():
+        def api_call() -> Any:
             return api_function(*args, **kwargs)
 
         # Use operation-level timeout (60 seconds for API calls)
@@ -2225,7 +2298,7 @@ def _process_single_person(
             logger.warning(f"Could not get FamilyTree count for formatting: {count_e}")
 
         # Helper function to format predicted relationship with correct percentage
-        def format_predicted_relationship(rel_str):
+        def format_predicted_relationship(rel_str: str) -> str:
             if not rel_str or rel_str == "N/A":
                 return "N/A"
 
@@ -2290,15 +2363,13 @@ def _process_single_person(
                     person_data = {"username": getattr(person, "username", "Unknown")}
 
                     # Log-only: estimate personalization coverage
-                    try:
+                    with contextlib.suppress(Exception):
                         _log_personalization_sanity_for_template(
                             enhanced_template_key,
                             MESSAGE_TEMPLATES[enhanced_template_key],
                             extracted_data or {},
                             log_prefix,
                         )
-                    except Exception:
-                        pass
 
                     message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
                         enhanced_template_key,
@@ -2616,7 +2687,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     error_categorizer = ErrorCategorizer()
 
     # Add monitoring hook for critical errors
-    def critical_error_hook(alert_data):
+    def critical_error_hook(alert_data: dict[str, Any]) -> None:
         if alert_data['severity'] == 'critical':
             logger.critical(f"🚨 CRITICAL ALERT: {alert_data['alert_type']} - {alert_data['message']}")
 
@@ -3101,12 +3172,12 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 # ==============================================
 # Standalone Test Block
 # ==============================================
-def action8_messaging_tests():
+def action8_messaging_tests() -> None:
     """Test suite for action8_messaging.py - Automated Messaging System with detailed reporting."""
 
     suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
 
-    def test_function_availability():
+    def test_function_availability() -> None:
         """Test messaging system functions are available with detailed verification."""
         required_functions = [
             'safe_column_value', 'load_message_templates', 'determine_next_message_type',
@@ -3117,7 +3188,7 @@ def action8_messaging_tests():
         from test_framework import test_function_availability
         return test_function_availability(required_functions, globals(), "Action 8")
 
-    def test_safe_column_value():
+    def test_safe_column_value() -> None:
         """Test safe column value extraction with detailed verification."""
         test_cases = [
             (None, "attr", "default", "None object handling"),
@@ -3161,7 +3232,7 @@ def action8_messaging_tests():
             f"📊 Results: {sum(results)}/{len(results)} safe column value tests passed"
         )
 
-    def test_message_template_loading():
+    def test_message_template_loading() -> None:
         """Test message template loading functionality."""
         print("📋 Testing message template loading:")
         results = []
@@ -3189,7 +3260,7 @@ def action8_messaging_tests():
             f"📊 Results: {sum(results)}/{len(results)} message template loading tests passed"
         )
 
-    def test_circuit_breaker_config():
+    def test_circuit_breaker_config() -> None:
         """Test circuit breaker decorator configuration reflects Action 6 lessons."""
         import inspect
 
@@ -3264,7 +3335,7 @@ def action8_messaging_tests():
             "Verify send_messages_to_matches() has failure_threshold=10, backoff_factor=4.0 for production-ready error handling.",
         )
 
-    def test_session_death_cascade_detection():
+    def test_session_death_cascade_detection() -> None:
         """Test session death cascade detection and handling."""
         print("📋 Testing session death cascade detection:")
         results = []
@@ -3297,7 +3368,7 @@ def action8_messaging_tests():
         print(f"📊 Results: {sum(results)}/{len(results)} cascade detection tests passed")
         assert all(results), "All session death cascade detection tests should pass"
 
-    def test_performance_tracking():
+    def test_performance_tracking() -> None:
         """Test performance tracking functionality."""
         print("📋 Testing performance tracking:")
         results = []
@@ -3343,7 +3414,7 @@ def action8_messaging_tests():
         print(f"📊 Results: {sum(results)}/{len(results)} performance tracking tests passed")
         assert all(results), "All performance tracking tests should pass"
 
-    def test_enhanced_error_handling():
+    def test_enhanced_error_handling() -> None:
         """Test enhanced error handling patterns."""
         print("📋 Testing enhanced error handling:")
         results = []
@@ -3410,7 +3481,7 @@ def action8_messaging_tests():
             "Verify error classes and enhanced recovery decorator availability"
         )
 
-        def test_integration_with_shared_modules():
+        def test_integration_with_shared_modules() -> None:
             """Test integration with shared modules."""
             print("📋 Testing integration with shared modules:")
             results = []
@@ -3482,7 +3553,7 @@ def action8_messaging_tests():
 
 
         # Additional hardening tests integrated from test_action8_hardening.py
-        def test_system_health_validation_hardening():
+        def test_system_health_validation_hardening() -> None:
             from unittest.mock import Mock
             # None session manager
             assert _validate_system_health(None) is False  # type: ignore[arg-type]
@@ -3500,7 +3571,7 @@ def action8_messaging_tests():
             mock_session.session_health_monitor = {'death_cascade_count': 5}
             assert _validate_system_health(mock_session) is False
 
-        def test_confidence_scoring_hardening():
+        def test_confidence_scoring_hardening() -> None:
             from unittest.mock import Mock
             family = Mock()
             family.actual_relationship = "6th cousin"
@@ -3510,7 +3581,7 @@ def action8_messaging_tests():
             key = select_template_by_confidence("In_Tree-Initial", family, dna)
             assert isinstance(key, str) and key.startswith("In_Tree-Initial")
 
-        def test_halt_signal_integration():
+        def test_halt_signal_integration() -> None:
             from unittest.mock import Mock
             mock_session = Mock()
             mock_session.should_halt_operations.return_value = True
@@ -3518,23 +3589,23 @@ def action8_messaging_tests():
             mock_session.validate_system_health.return_value = False
             assert _validate_system_health(mock_session) is False
 
-        def test_real_api_manager_integration_minimal():
+        def test_real_api_manager_integration_minimal() -> None:
             class MockSessionManager:
-                def __init__(self):
+                def __init__(self) -> None:
                     self.session_health_monitor = {'death_cascade_count': 0}
                     self.should_halt_operations = lambda: False
                     self._my_profile_id = "test_profile_123"
-                def is_sess_valid(self):
+                def is_sess_valid(self) -> bool:
                     return True
                 @property
-                def my_profile_id(self):
+                def my_profile_id(self) -> str:
                     return self._my_profile_id
             api = ProactiveApiManager(MockSessionManager())
             delay = api.calculate_delay()
             assert isinstance(delay, (int, float)) and delay >= 0
             assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True
 
-        def test_error_categorization_integration_minimal():
+        def test_error_categorization_integration_minimal() -> None:
             categorizer = ErrorCategorizer()
             category, error_type = categorizer.categorize_status("skipped (interval)")
             assert category == 'skipped' and 'interval' in error_type
@@ -3554,13 +3625,13 @@ def action8_messaging_tests():
             "Ensure conservative template selection.",
         )
 
-        def test_logger_respects_info_level():
+        def test_logger_respects_info_level() -> None:
             import logging as _logging
             class _ListHandler(_logging.Handler):
-                def __init__(self):
+                def __init__(self) -> None:
                     super().__init__()
                     self.records = []
-                def emit(self, record):
+                def emit(self, record: logging.LogRecord) -> None:
                     self.records.append(record)
             lh = _ListHandler()
             lh.setLevel(_logging.DEBUG)
@@ -3577,13 +3648,13 @@ def action8_messaging_tests():
             # Under suppress_logging(), INFO may be muted; the invariant we require is no DEBUG at INFO level
             assert not any(lvl == _logging.DEBUG for lvl in levels)
 
-        def test_no_debug_when_info():
+        def test_no_debug_when_info() -> None:
             import logging as _logging
             class _ListHandler(_logging.Handler):
-                def __init__(self):
+                def __init__(self) -> None:
                     super().__init__()
                     self.messages = []
-                def emit(self, record):
+                def emit(self, record: logging.LogRecord) -> None:
                     self.messages.append((record.levelno, record.getMessage()))
             lh = _ListHandler()
             lh.setLevel(_logging.DEBUG)

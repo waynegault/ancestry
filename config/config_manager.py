@@ -1137,7 +1137,7 @@ def run_comprehensive_tests() -> bool:
         manager = ConfigManager(auto_load=False)
 
         start_time = time.time()
-        for i in range(10):  # Reduced for reliability
+        for _i in range(10):  # Reduced for reliability
             try:
                 config = manager._get_default_config()
                 assert isinstance(config, dict), "Should return config dict"
@@ -1158,7 +1158,7 @@ def run_comprehensive_tests() -> bool:
             (None, "Should handle None inputs"),
         ]
 
-        for test_input, description in error_scenarios:
+        for test_input, _description in error_scenarios:
             try:
                 manager = ConfigManager(config_file=test_input, auto_load=False)
                 # Should handle gracefully

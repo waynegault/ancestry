@@ -145,7 +145,7 @@ def ensure_imports() -> None:
 
 
 @contextmanager
-def import_context():
+def import_context() -> Any:
     """Context manager for safe import operations."""
     original_path = sys.path.copy()
     try:
@@ -296,8 +296,8 @@ def safe_execute(
     Replaces scattered try/catch blocks throughout the codebase.
     """
 
-    def decorator(f):
-        def wrapper(*args, **kwargs):
+    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return f(*args, **kwargs)
             except Exception as e:
@@ -332,7 +332,7 @@ def core_imports_module_tests() -> bool:
     """Module-specific tests for core_imports.py functionality."""
     try:
         # Test 1: Function registration and retrieval
-        def test_func(x):
+        def test_func(x: int) -> int:
             return x * 2
 
         register_function("test_func", test_func)
@@ -397,10 +397,10 @@ def run_comprehensive_tests() -> bool:
 
     suite = TestSuite("Core Imports", "core_imports")
 
-    def test_function_registry():
+    def test_function_registry() -> None:
         """Test function registration and retrieval"""
         # Test basic registration
-        def test_func():
+        def test_func() -> str:
             return "test_result"
 
         register_function("test_func", test_func)
@@ -414,7 +414,7 @@ def run_comprehensive_tests() -> bool:
         result = call_function("test_func")
         assert result == "test_result"
 
-    def test_bulk_registration():
+    def test_bulk_registration() -> None:
         """Test bulk function registration"""
         # Test using **kwargs format
         register_many(
@@ -427,7 +427,7 @@ def run_comprehensive_tests() -> bool:
         assert call_function("bulk_test1") == "result1"
         assert call_function("bulk_test2") == "result2"
 
-    def test_module_auto_registration():
+    def test_module_auto_registration() -> None:
         """Test automatic module registration"""
         # Create mock module globals with test functions
         mock_globals = {
@@ -445,14 +445,14 @@ def run_comprehensive_tests() -> bool:
         assert is_function_available("mock_test_module.another_test_func")
         assert call_function("mock_test_module.another_test_func") == "another_result"
 
-    def test_project_root_detection():
+    def test_project_root_detection() -> None:
         """Test project root detection"""
         root = get_project_root()
         assert root is not None
         assert isinstance(root, Path)
         assert root.exists()
 
-    def test_logger_functionality():
+    def test_logger_functionality() -> None:
         """Test logger creation and functionality"""
         logger = get_logger("test_logger")
         assert logger is not None
@@ -464,7 +464,7 @@ def run_comprehensive_tests() -> bool:
         logger2 = get_logger("test.module.name")
         assert logger2 is not None
 
-    def test_import_context_manager():
+    def test_import_context_manager() -> None:
         """Test import context manager"""
         original_path = sys.path.copy()
 
@@ -474,17 +474,17 @@ def run_comprehensive_tests() -> bool:
 
         assert sys.path == original_path
 
-    def test_safe_execution():
+    def test_safe_execution() -> None:
         """Test safe function execution wrapper"""
-        def safe_func():
+        def safe_func() -> str:
             return "safe_result"
 
-        def error_func():
+        def error_func() -> None:
             raise ValueError("Test error")
 
         # Test successful execution using decorator
         @safe_execute
-        def decorated_safe_func():
+        def decorated_safe_func() -> str:
             return "safe_result"
 
         result = decorated_safe_func()
@@ -492,13 +492,13 @@ def run_comprehensive_tests() -> bool:
 
         # Test error handling using decorator with default return
         @safe_execute(default_return="default")
-        def decorated_error_func():
+        def decorated_error_func() -> None:
             raise ValueError("Test error")
 
         result = decorated_error_func()
         assert result == "default"
 
-    def test_performance_caching():
+    def test_performance_caching() -> None:
         """Test performance caching functionality"""
         # Clear cache first
         _import_cache.clear()
@@ -516,7 +516,7 @@ def run_comprehensive_tests() -> bool:
         stats = get_import_stats()
         assert stats["cache_hits"] > 0
 
-    def test_statistics_tracking():
+    def test_statistics_tracking() -> None:
         """Test import statistics tracking"""
         initial_stats = get_import_stats()
         assert isinstance(initial_stats, dict)
@@ -525,7 +525,7 @@ def run_comprehensive_tests() -> bool:
         assert "cache_hits" in initial_stats
         assert "registry_size" in initial_stats
 
-    def test_cleanup_functionality():
+    def test_cleanup_functionality() -> None:
         """Test registry cleanup functionality"""
         # Register some test functions
         register_function("cleanup_test1", lambda: "test1")
@@ -550,7 +550,7 @@ def run_comprehensive_tests() -> bool:
         register_function("post_cleanup_test", lambda: "post_cleanup")
         assert is_function_available("post_cleanup_test")
 
-    def test_error_handling():
+    def test_error_handling() -> None:
         """Test error handling and recovery"""
         # Test with non-existent function
         assert not is_function_available("nonexistent_function")
@@ -569,7 +569,7 @@ def run_comprehensive_tests() -> bool:
         except Exception:
             raise AssertionError("Should handle empty module gracefully")
 
-    def test_function_availability():
+    def test_function_availability() -> None:
         """Test that all required functions are available"""
         required_functions = [
             "ensure_imports", "register_function", "get_function", "is_function_available",

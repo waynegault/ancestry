@@ -17,10 +17,9 @@ logger = setup_module(globals(), __name__)
 import logging
 import sys
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager, suppress
-from typing import Any, Callable, Optional
-
-# === THIRD-PARTY IMPORTS ===
+from typing import Any, Callable, ContextManager, Optional
 from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities
@@ -66,7 +65,7 @@ class Icons:
 class TestSuite:
     """Standardized test suite with consistent formatting and reporting."""
 
-    def __init__(self, suite_name: str, module_name: str):
+    def __init__(self, suite_name: str, module_name: str) -> None:
         self.suite_name = suite_name
         self.module_name = module_name
         self.start_time = None
@@ -76,7 +75,7 @@ class TestSuite:
         self.warnings = 0
         self.test_results: list[dict[str, Any]] = []
 
-    def start_suite(self):
+    def start_suite(self) -> None:
         """Initialize the test suite with formatted header."""
         self.start_time = time.time()
         print(f"\n{Colors.BOLD}{Colors.CYAN}{'='*60}{Colors.RESET}")
@@ -189,7 +188,7 @@ class TestSuite:
             )
             return False
 
-    def add_warning(self, message: str):
+    def add_warning(self, message: str) -> None:
         """Add a warning message to the test output."""
         self.warnings += 1
         print(f"  {Colors.YELLOW}{Icons.WARNING} WARNING: {message}{Colors.RESET}")
@@ -246,7 +245,7 @@ class TestSuite:
 
 
 @contextmanager
-def suppress_logging():
+def suppress_logging() -> Iterator[None]:
     """Context manager to suppress logging during tests."""
     logging.disable(logging.CRITICAL)
     try:
@@ -255,7 +254,7 @@ def suppress_logging():
         logging.disable(logging.NOTSET)
 
 
-def create_mock_data():
+def create_mock_data() -> dict[str, Any]:
     """Create standard mock data for testing."""
     return {
         "mock_session_manager": MagicMock(),
@@ -271,7 +270,7 @@ def create_mock_data():
     }
 
 
-def create_standardized_test_data():
+def create_standardized_test_data() -> dict[str, Any]:
     """Create standardized test data that can be used across all modules."""
     return {
         "mock_data": create_mock_data(),
@@ -298,14 +297,14 @@ def create_standardized_test_data():
     }
 
 
-def get_test_mode():
+def get_test_mode() -> bool:
     """Determine if tests should use real data or mock data."""
     import os
     # Check environment variable or config to determine test mode
     return os.getenv("ANCESTRY_TEST_MODE", "mock").lower() in ["real", "integration"]
 
 
-def create_test_data_factory(use_real_data=None):
+def create_test_data_factory(use_real_data: Optional[bool] = None) -> dict[str, Any]:
     """Create appropriate test data based on test mode."""
     if use_real_data is None:
         use_real_data = get_test_mode()
@@ -332,15 +331,15 @@ def create_test_data_factory(use_real_data=None):
     return base_data
 
 
-def assert_valid_function(func: Any, func_name: str):
+def assert_valid_function(func: Any, func_name: str) -> None:
     """Assert that a function exists and is callable."""
     assert func is not None, f"Function {func_name} should exist"
     assert callable(func), f"Function {func_name} should be callable"
 
 
-def standardized_test_wrapper(test_func, test_name, cleanup_func=None):
+def standardized_test_wrapper(test_func: Callable[[dict[str, Any]], Any], test_name: str, cleanup_func: Optional[Callable[[], None]] = None) -> Callable[[], Any]:
     """Standardized test wrapper that provides consistent test execution patterns."""
-    def wrapper():
+    def wrapper() -> Any:
         test_data = create_test_data_factory()
 
         try:
@@ -373,7 +372,7 @@ def standardized_test_wrapper(test_func, test_name, cleanup_func=None):
     return wrapper
 
 
-def create_isolated_test_environment():
+def create_isolated_test_environment() -> dict[str, Any]:
     """Create an isolated test environment with proper resource management."""
     return {
         "temp_files": [],
@@ -383,7 +382,7 @@ def create_isolated_test_environment():
     }
 
 
-def cleanup_test_environment(env):
+def cleanup_test_environment(env: dict[str, Any]) -> None:
     """Clean up test environment and resources."""
     # Clean up temporary files
     from pathlib import Path
@@ -409,13 +408,13 @@ def cleanup_test_environment(env):
             cleanup_func()
 
 
-def assert_valid_config(config: Any, required_attrs: list[str]):
+def assert_valid_config(config: Any, required_attrs: list[str]) -> None:
     """Assert that a config object has required attributes."""
     for attr in required_attrs:
         assert hasattr(config, attr), f"Config should have attribute {attr}"
 
 
-def test_framework_module_tests():
+def test_framework_module_tests() -> bool:
     """
     Comprehensive test suite for the test framework module.
     Tests all core functionality including colors, icons, test suite operations, and mock data.
@@ -425,7 +424,7 @@ def test_framework_module_tests():
     suite = TestSuite("Test Framework Comprehensive Tests", "test_framework.py")
     suite.start_suite()
 
-    def test_colors():
+    def test_colors() -> None:
         """Test that all color constants are properly defined."""
         assert Colors.RED == "\033[91m"
         assert Colors.GREEN == "\033[92m"
@@ -440,7 +439,7 @@ def test_framework_module_tests():
         assert Colors.RESET == "\033[0m"
         assert Colors.END == "\033[0m"  # Test both naming conventions
 
-    def test_icons():
+    def test_icons() -> None:
         """Test that all icon constants are properly defined."""
         assert Icons.PASS == "✅"
         assert Icons.FAIL == "❌"
@@ -452,7 +451,7 @@ def test_framework_module_tests():
         assert Icons.CLOCK == "⏰"
         assert Icons.MAGNIFY == "🔍"
 
-    def test_mock_data(test_data):
+    def test_mock_data(test_data: Any) -> None:
         """Test mock data creation functionality."""
         data = test_data["mock_data"]
         assert isinstance(data, dict)
@@ -462,7 +461,7 @@ def test_framework_module_tests():
         assert isinstance(data["mock_session_manager"], MagicMock)
         return True
 
-    def test_standardized_data_factory(test_data):
+    def test_standardized_data_factory(test_data: Any) -> None:
         """Test standardized test data factory."""
         assert "test_person" in test_data
         assert "test_environment" in test_data
@@ -470,14 +469,14 @@ def test_framework_module_tests():
         assert isinstance(test_data["test_environment"]["use_real_data"], bool)
         return True
 
-    def test_test_suite_creation():
+    def test_test_suite_creation() -> None:
         """Test that TestSuite can be created and initialized properly."""
         test_suite = TestSuite("Test Suite", "test_module.py")
         assert test_suite.suite_name == "Test Suite"
         assert test_suite.module_name == "test_module.py"
         assert test_suite.start_time is None
 
-    def test_context_managers():
+    def test_context_managers() -> None:
         """Test that context managers work properly."""
         with suppress_logging():
             logging.critical("This logging should be suppressed")
@@ -517,28 +516,28 @@ def test_framework_module_tests():
     return suite.finish_suite()
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """Run comprehensive tests using the unified test framework."""
     return test_framework_module_tests()
 
 
 if __name__ == "__main__":
     # Test the framework itself
-    def demo_tests():
+    def demo_tests() -> bool:
         suite = TestSuite("Test Framework Demo", "test_framework.py")
         suite.start_suite()
 
-        def test_colors():
+        def test_colors() -> None:
             assert Colors.RED == "\033[91m"
             assert Colors.GREEN == "\033[92m"
             assert Colors.RESET == "\033[0m"
             assert Colors.END == "\033[0m"
 
-        def test_icons():
+        def test_icons() -> None:
             assert Icons.PASS == "✅"
             assert Icons.FAIL == "❌"
 
-        def test_mock_data():
+        def test_mock_data() -> None:
             data = create_mock_data()
             assert "mock_session_manager" in data
             assert data["sample_dna_data"]["cM_DNA"] == 85
@@ -569,7 +568,7 @@ class MockLogger:
     Eliminates the need for DummyLogger class duplication across test modules.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.lines = []
         self.messages = {
             "debug": [],
@@ -579,23 +578,23 @@ class MockLogger:
             "critical": [],
         }
 
-    def debug(self, msg, **_kwargs):
+    def debug(self, msg: str, **_kwargs: Any) -> None:
         self.lines.append(msg)
         self.messages["debug"].append(msg)
 
-    def info(self, msg, **_kwargs):
+    def info(self, msg: str, **_kwargs: Any) -> None:
         self.lines.append(msg)
         self.messages["info"].append(msg)
 
-    def warning(self, msg, **_kwargs):
+    def warning(self, msg: str, **_kwargs: Any) -> None:
         self.lines.append(msg)
         self.messages["warning"].append(msg)
 
-    def error(self, msg, **_kwargs):
+    def error(self, msg: str, **_kwargs: Any) -> None:
         self.lines.append(msg)
         self.messages["error"].append(msg)
 
-    def critical(self, msg, **_kwargs):
+    def critical(self, msg: str, **_kwargs: Any) -> None:
         self.lines.append(msg)
         self.messages["critical"].append(msg)
 
@@ -605,7 +604,7 @@ class MockLogger:
             return self.messages.get(level, [])
         return self.lines
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear all logged messages"""
         self.lines.clear()
         for level_msgs in self.messages.values():
@@ -613,7 +612,7 @@ class MockLogger:
 
 
 @contextmanager
-def mock_logger_context(module_globals: dict, logger_name: str = "logger"):
+def mock_logger_context(module_globals: dict[str, Any], logger_name: str = "logger") -> Iterator[MockLogger]:
     """
     Context manager for temporarily replacing a module's logger with MockLogger.
 
@@ -654,7 +653,7 @@ def format_test_section_header(title: str, emoji: str = "🧮") -> str:
     return header
 
 
-def format_score_breakdown_table(field_scores: dict, total_score: int) -> str:
+def format_score_breakdown_table(field_scores: dict[str, int], total_score: int) -> str:
     """
     Format scoring breakdown as a readable table with colors and descriptions.
 
@@ -694,7 +693,7 @@ def format_score_breakdown_table(field_scores: dict, total_score: int) -> str:
     return table
 
 
-def format_search_criteria(criteria: dict) -> str:
+def format_search_criteria(criteria: dict[str, Any]) -> str:
     """
     Format search criteria in a clean, readable way with bullets and colors.
 
@@ -740,19 +739,19 @@ def format_test_result(test_name: str, success: bool, duration: Optional[float] 
     return result
 
 
-def suppress_debug_logging():
+def suppress_debug_logging() -> None:
     """Temporarily suppress debug logging for cleaner test output."""
     import logging
     logging.getLogger().setLevel(logging.WARNING)
 
 
-def restore_debug_logging():
+def restore_debug_logging() -> None:
     """Restore normal logging level."""
     import logging
     logging.getLogger().setLevel(logging.INFO)
 
 
-def clean_test_output():
+def clean_test_output() -> ContextManager[None]:
     """
     Context manager for clean test output without debug noise.
 
@@ -764,7 +763,7 @@ def clean_test_output():
     from contextlib import contextmanager
 
     @contextmanager
-    def _clean_output():
+    def _clean_output() -> Any:
         suppress_debug_logging()
         try:
             yield
@@ -820,7 +819,7 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     print(f"\n📊 Function Availability Summary: {passed}/{total} functions available")
 
     # Assert all functions are available
-    for i, (func_name, available) in enumerate(zip(required_functions, results)):
+    for _i, (func_name, available) in enumerate(zip(required_functions, results)):
         assert available, f"Required function '{func_name}' is not available"
 
     return results

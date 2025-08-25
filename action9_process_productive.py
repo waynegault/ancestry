@@ -274,7 +274,7 @@ class ExtractedData(BaseModel):
         mode="before",
     )
     @classmethod
-    def ensure_list_of_strings(cls, v):
+    def ensure_list_of_strings(cls, v: Any) -> list[str]:
         """Ensures all fields are lists of strings."""
         if v is None:
             return []
@@ -307,7 +307,7 @@ class AIResponse(BaseModel):
 
     @field_validator("suggested_tasks", mode="before")
     @classmethod
-    def ensure_tasks_list(cls, v):
+    def ensure_tasks_list(cls, v: Any) -> list[str]:
         """Ensures suggested_tasks is a list of strings."""
         if v is None:
             return []
@@ -320,7 +320,7 @@ class AIResponse(BaseModel):
 _CACHED_GEDCOM_DATA = None
 
 
-def get_gedcom_data():
+def get_gedcom_data() -> Optional[Any]:
     """
     Returns the cached GEDCOM data instance, loading it if necessary.
 
@@ -379,143 +379,270 @@ from gedcom_utils import (
 )
 
 
-def _search_gedcom_for_names(
-    names: list[str], gedcom_data: Optional[Any] = None
-) -> list[dict[str, Any]]:
-    """
-    Searches the configured GEDCOM file for names and returns matching individuals.
-    Uses the cached GEDCOM data to avoid loading the file multiple times.
-
-    Args:
-        names: List of names to search for in the GEDCOM file
-        gedcom_data: Optional pre-loaded GEDCOM data instance
-
-    Returns:
-        List of dictionaries containing information about matching individuals
-
-    Raises:
-        RuntimeError: If GEDCOM utilities are not available or if the GEDCOM file is not found
-    """
-    # Get the GEDCOM data (either from parameter or from cache)
+def _get_gedcom_data_for_search(gedcom_data: Optional[Any]) -> Any:
+    """Get GEDCOM data for search, either from parameter or cache."""
     if gedcom_data is None:
         gedcom_data = get_gedcom_data()
         if not gedcom_data:
             error_msg = "Failed to load GEDCOM data from cache or file"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+    return gedcom_data
 
+
+def _parse_name_parts(name: str) -> tuple[str, str]:
+    """Parse name into first name and surname components."""
+    name_parts = name.strip().split()
+    first_name = name_parts[0] if name_parts else ""
+    surname = name_parts[-1] if len(name_parts) > 1 else ""
+    return first_name, surname
+
+
+def _create_search_criteria(first_name: str, surname: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Create filter and scoring criteria from name parts."""
+    filter_criteria = {
+        "first_name": first_name.lower() if first_name else None,
+        "surname": surname.lower() if surname else None,
+    }
+    scoring_criteria = filter_criteria.copy()
+    return filter_criteria, scoring_criteria
+
+
+def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Get scoring weights and date flexibility configuration."""
+    scoring_weights = config_schema.common_scoring_weights
+    date_flex = {
+        "year_flex": getattr(config_schema, "year_flexibility", 2),
+        "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
+    }
+    return scoring_weights, date_flex
+
+
+def _prepare_indi_index(gedcom_data: Any) -> Optional[dict[str, Any]]:
+    """Prepare individual index for iteration."""
+    if not (
+        gedcom_data
+        and hasattr(gedcom_data, "indi_index")
+        and gedcom_data.indi_index
+        and hasattr(gedcom_data.indi_index, "items")
+    ):
+        return None
+
+    # Convert to dict if it's not already to ensure it's iterable
+    return (
+        dict(gedcom_data.indi_index)
+        if not isinstance(gedcom_data.indi_index, dict)
+        else gedcom_data.indi_index
+    )
+
+
+def _matches_filter_criteria(indi_data: dict[str, Any], filter_criteria: dict[str, Any]) -> bool:
+    """Check if individual matches filter criteria."""
+    # Skip individuals with no name
+    if not indi_data.get("first_name") and not indi_data.get("surname"):
+        return False
+
+    # Simple OR filter: match on first name OR surname
+    fn_match = filter_criteria["first_name"] and indi_data.get(
+        "first_name", ""
+    ).lower().startswith(filter_criteria["first_name"])
+    sn_match = filter_criteria["surname"] and indi_data.get(
+        "surname", ""
+    ).lower().startswith(filter_criteria["surname"])
+
+    return fn_match or sn_match
+
+
+def _create_match_record(
+    indi_id: str,
+    indi_data: dict[str, Any],
+    total_score: float,
+    field_scores: dict[str, Any],
+    reasons: list[str]
+) -> dict[str, Any]:
+    """Create a match record from individual data and scores."""
+    return {
+        "id": indi_id,
+        "display_id": indi_id,
+        "first_name": indi_data.get("first_name", ""),
+        "surname": indi_data.get("surname", ""),
+        "gender": indi_data.get("gender", ""),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place": indi_data.get("birth_place", ""),
+        "death_year": indi_data.get("death_year"),
+        "death_place": indi_data.get("death_place", ""),
+        "total_score": total_score,
+        "field_scores": field_scores,
+        "reasons": reasons,
+        "source": "GEDCOM",
+    }
+
+
+def _process_individuals_for_name(
+    name: str,
+    gedcom_data: Any
+) -> list[dict[str, Any]]:
+    """Process individuals for a single name search."""
+    if not name or len(name.strip()) < 2:
+        return []
+
+    first_name, surname = _parse_name_parts(name)
+    filter_criteria, scoring_criteria = _create_search_criteria(first_name, surname)
+    scoring_weights, date_flex = _get_scoring_config()
+
+    indi_index = _prepare_indi_index(gedcom_data)
+    if not indi_index:
+        return []
+
+    scored_matches = []
+
+    for indi_id, indi_data in indi_index.items():
+        try:
+            if _matches_filter_criteria(indi_data, filter_criteria):
+                # Calculate match score
+                total_score, field_scores, reasons = calculate_match_score(
+                    search_criteria=scoring_criteria,
+                    candidate_processed_data=indi_data,
+                    scoring_weights=scoring_weights,
+                    date_flexibility=date_flex,
+                )
+
+                # Only include if score is above threshold
+                if total_score > 0:
+                    match_record = _create_match_record(
+                        indi_id, indi_data, total_score, field_scores, reasons
+                    )
+                    scored_matches.append(match_record)
+        except Exception as e:
+            logger.error(f"Error processing individual {indi_id}: {e}")
+            continue
+
+    # Sort matches by score (highest first) and take top 3
+    scored_matches.sort(key=lambda x: x["total_score"], reverse=True)
+    return scored_matches[:3]
+
+
+def _search_gedcom_for_names(
+    names: list[str], gedcom_data: Optional[Any] = None
+) -> list[dict[str, Any]]:
+    """
+    Searches the configured GEDCOM file for names and returns matching individuals.
+    Uses the cached GEDCOM data to avoid loading the file multiple times.
+    """
+    gedcom_data = _get_gedcom_data_for_search(gedcom_data)
     logger.info(f"Searching GEDCOM data for: {names}")
 
     try:
-        # Prepare search criteria
         search_results = []
 
         # For each name, create a simple search criteria and filter individuals
         for name in names:
-            if not name or len(name.strip()) < 2:
-                continue
-
-            # Split name into first name and surname if possible
-            name_parts = name.strip().split()
-            first_name = name_parts[0] if name_parts else ""
-            surname = name_parts[-1] if len(name_parts) > 1 else ""
-
-            # Create basic filter criteria (just names)
-            filter_criteria = {
-                "first_name": first_name.lower() if first_name else None,
-                "surname": surname.lower() if surname else None,
-            }
-
-            # Use the same criteria for scoring
-            scoring_criteria = filter_criteria.copy()
-
-            # Get scoring weights from config or use defaults
-            scoring_weights = config_schema.common_scoring_weights
-
-            # Date flexibility settings with defaults
-            date_flex = {
-                "year_flex": getattr(config_schema, "year_flexibility", 2),
-                "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
-            }
-
-            # Filter and score individuals
-            scored_matches = []
-
-            # Process each individual in the GEDCOM data
-            if (
-                gedcom_data
-                and hasattr(gedcom_data, "indi_index")
-                and gedcom_data.indi_index
-                and hasattr(gedcom_data.indi_index, "items")
-            ):
-                # Convert to dict if it's not already to ensure it's iterable
-                indi_index = (
-                    dict(gedcom_data.indi_index)
-                    if not isinstance(gedcom_data.indi_index, dict)
-                    else gedcom_data.indi_index
-                )
-                for indi_id, indi_data in indi_index.items():
-                    try:
-                        # Skip individuals with no name
-                        if not indi_data.get("first_name") and not indi_data.get(
-                            "surname"
-                        ):
-                            continue
-
-                        # Simple OR filter: match on first name OR surname
-                        fn_match = filter_criteria["first_name"] and indi_data.get(
-                            "first_name", ""
-                        ).lower().startswith(filter_criteria["first_name"])
-                        sn_match = filter_criteria["surname"] and indi_data.get(
-                            "surname", ""
-                        ).lower().startswith(filter_criteria["surname"])
-
-                        if fn_match or sn_match:
-                            # Calculate match score
-                            total_score, field_scores, reasons = calculate_match_score(
-                                search_criteria=scoring_criteria,
-                                candidate_processed_data=indi_data,
-                                scoring_weights=scoring_weights,
-                                date_flexibility=date_flex,
-                            )
-
-                            # Only include if score is above threshold
-                            if total_score > 0:
-                                # Create a match record
-                                match_record = {
-                                    "id": indi_id,
-                                    "display_id": indi_id,
-                                    "first_name": indi_data.get("first_name", ""),
-                                    "surname": indi_data.get("surname", ""),
-                                    "gender": indi_data.get("gender", ""),
-                                    "birth_year": indi_data.get("birth_year"),
-                                    "birth_place": indi_data.get("birth_place", ""),
-                                    "death_year": indi_data.get("death_year"),
-                                    "death_place": indi_data.get("death_place", ""),
-                                    "total_score": total_score,
-                                    "field_scores": field_scores,
-                                    "reasons": reasons,
-                                    "source": "GEDCOM",
-                                }
-                                scored_matches.append(match_record)
-                    except Exception as e:
-                        logger.error(f"Error processing individual {indi_id}: {e}")
-                        continue
-
-            # Sort matches by score (highest first) and take top 3
-            scored_matches.sort(key=lambda x: x["total_score"], reverse=True)
-            top_matches = scored_matches[:3]
-
-            # Add to overall results
+            top_matches = _process_individuals_for_name(name, gedcom_data)
             search_results.extend(top_matches)
 
-        # Return the combined results
         return search_results
 
     except Exception as e:
         error_msg = f"Error searching GEDCOM file: {e}"
         logger.error(error_msg, exc_info=True)
         raise RuntimeError(error_msg)
+
+
+def _validate_api_search_parameters(session_manager: Optional[SessionManager], names: Optional[list[str]]) -> list[str]:
+    """Validate parameters for API search."""
+    if not session_manager:
+        error_msg = "Session manager not provided. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    names = names or []
+    if not names:
+        error_msg = "No names provided for API search."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    return names
+
+
+def _validate_api_configuration(session_manager: SessionManager) -> tuple[str, str]:
+    """Validate API configuration and return tree ID and base URL."""
+    # Get owner tree ID from session manager
+    owner_tree_id = getattr(session_manager, "my_tree_id", None)
+    if not owner_tree_id:
+        error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Get base URL from config
+    base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
+    if not base_url:
+        error_msg = "Ancestry URL not configured. Base URL missing."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    return owner_tree_id, base_url
+
+
+def _create_api_search_criteria(name: str) -> Optional[dict[str, str]]:
+    """Create search criteria for API search from name."""
+    if not name or len(name.strip()) < 2:
+        return None
+
+    # Split name into first name and surname if possible
+    name_parts = name.strip().split()
+    first_name = name_parts[0] if name_parts else ""
+    surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+    # Skip if both first name and surname are empty
+    if not first_name and not surname:
+        return None
+
+    return {
+        "first_name_raw": first_name,
+        "surname_raw": surname,
+    }
+
+
+def _process_api_search_results(api_results: list[dict[str, Any]], search_criteria: dict[str, str]) -> list[dict[str, Any]]:
+    """Process and score API search results."""
+    if not api_results:
+        return []
+
+    # Process and score the API results if they exist
+    scored_suggestions = process_and_score_suggestions(api_results, search_criteria)
+
+    # Take top 3 results
+    top_matches = scored_suggestions[:3] if scored_suggestions else []
+
+    # Add source information
+    for match in top_matches:
+        match["source"] = "API"
+
+    return top_matches
+
+
+def _search_single_name_via_api(name: str) -> list[dict[str, Any]]:
+    """Search for a single name via API."""
+    search_criteria = _create_api_search_criteria(name)
+    if not search_criteria:
+        return []
+
+    # Call the API search function from action11
+    # NOTE: _search_ancestry_api function does not exist, so return empty results
+    api_results = []
+    logger.debug(f"API search functionality not available for: {name}")
+
+    if api_results is None:
+        error_msg = f"API search failed for name: {name}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Empty results are OK - just log and continue
+    if not api_results:
+        logger.info(f"API search returned no results for name: {name}")
+        return []
+
+    return _process_api_search_results(api_results, search_criteria)
 
 
 def _search_api_for_names(
@@ -535,87 +662,19 @@ def _search_api_for_names(
     Raises:
         RuntimeError: If API utilities are not available or if required parameters are missing
     """
-    # Check if session manager is provided
-    if not session_manager:
-        error_msg = "Session manager not provided. Cannot search Ancestry API."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    # Check if names are provided
-    names = names or []
-    if not names:
-        error_msg = "No names provided for API search."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
+    names = _validate_api_search_parameters(session_manager, names)
+    _validate_api_configuration(session_manager)
 
     logger.info(f"Searching Ancestry API for: {names}")
 
     try:
-        # Get owner tree ID from session manager
-        owner_tree_id = getattr(session_manager, "my_tree_id", None)
-        if not owner_tree_id:
-            error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-
-        # Get base URL from config
-        base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
-        if not base_url:
-            error_msg = "Ancestry URL not configured. Base URL missing."
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-
         search_results = []
 
         # For each name, create a search criteria and search the API
         for name in names:
-            if not name or len(name.strip()) < 2:
-                continue
+            top_matches = _search_single_name_via_api(name)
+            search_results.extend(top_matches)
 
-            # Split name into first name and surname if possible
-            name_parts = name.strip().split()
-            first_name = name_parts[0] if name_parts else ""
-            surname = name_parts[-1] if len(name_parts) > 1 else ""
-
-            # Skip if both first name and surname are empty
-            if not first_name and not surname:
-                continue
-
-            # Create search criteria
-            search_criteria = {
-                "first_name_raw": first_name,
-                "surname_raw": surname,
-            }
-
-            # Call the API search function from action11
-            # NOTE: _search_ancestry_api function does not exist, so return empty results
-            api_results = []
-            logger.debug(f"API search functionality not available for: {name}")
-
-            if api_results is None:
-                error_msg = f"API search failed for name: {name}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
-
-            # Empty results are OK - just log and continue
-            if not api_results:
-                logger.info(f"API search returned no results for name: {name}")
-                continue
-
-            # Process and score the API results if they exist
-            scored_suggestions = process_and_score_suggestions(
-                api_results, search_criteria
-            )
-
-            # Take top 3 results
-            top_matches = scored_suggestions[:3] if scored_suggestions else []
-
-            # Add source information
-            for match in top_matches:
-                match["source"] = "API"
-
-            # Add to overall results
-            search_results.extend(top_matches)  # Return the combined results
         return search_results
 
     except Exception as e:
@@ -665,7 +724,7 @@ class DatabaseState:
     batch_size: int = 10
     commit_threshold: int = 10
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.logs_to_add is None:
             self.logs_to_add = []
         if self.person_updates is None:
@@ -680,7 +739,7 @@ class MessageConfig:
     ack_msg_type_id: Optional[int] = None
     custom_reply_msg_type_id: Optional[int] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.templates is None:
             self.templates = {}
 
@@ -699,7 +758,7 @@ class PersonProcessor:
         db_state: DatabaseState,
         msg_config: MessageConfig,
         ms_state: MSGraphState,
-    ):
+    ) -> None:
         self.session_manager = session_manager
         self.db_state = db_state
         self.msg_config = msg_config
@@ -1077,7 +1136,7 @@ class PersonProcessor:
                         f"{log_prefix}: Failed to create standard MS task: '{task_desc[:100]}...'"
                     )
 
-    def _initialize_ms_graph(self):
+    def _initialize_ms_graph(self) -> None:
         """Initialize MS Graph authentication and list ID if needed."""
         if not self.ms_state.token and not self.ms_state.auth_attempted:
             logger.info("Attempting MS Graph authentication (device flow)...")
@@ -1502,7 +1561,7 @@ class PersonProcessor:
 class BatchCommitManager:
     """Manages batch commits to the database."""
 
-    def __init__(self, db_state: DatabaseState):
+    def __init__(self, db_state: DatabaseState) -> None:
         self.db_state = db_state
 
     def should_commit(self) -> bool:
@@ -1574,30 +1633,19 @@ class BatchCommitManager:
 @timeout_protection(timeout=2400)  # 40 minutes for productive message processing
 @graceful_degradation(fallback_value=False)
 @error_context("action9_process_productive")
-def process_productive_messages(session_manager: SessionManager) -> bool:
-    """
-    Simplified main function for Action 9. Processes productive messages by:
-    1. Setting up configuration and state
-    2. Querying candidates
-    3. Processing each person in batches
-    4. Committing results
-
-    Args:
-        session_manager: The active SessionManager instance.
-
-    Returns:
-        True if processing completed successfully, False otherwise.
-    """
-    logger.info("--- Starting Action 9: Process Productive Messages (Streamlined) ---")
-
-    # Initialize state objects
+def _initialize_state_objects() -> tuple[ProcessingState, MSGraphState]:
+    """Initialize processing and MS Graph state objects."""
     state = ProcessingState()
     ms_state = MSGraphState(list_name=config_schema.ms_todo_list_name)
+    return state, ms_state
 
-    # === PHASE 11.1: ADAPTIVE BATCH PROCESSING ===
+
+def _initialize_adaptive_systems() -> tuple[Optional[Any], Optional[Any], int]:
+    """Initialize adaptive batch processing systems if available."""
     adaptive_batch_size = config_schema.batch_size
-    smart_batch_processor = None  # initialize for type checkers
+    smart_batch_processor = None
     performance_dashboard = None
+
     if ADAPTIVE_SYSTEMS_AVAILABLE:
         try:
             # Initialize adaptive systems only if classes loaded
@@ -1609,6 +1657,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
                 )
                 adaptive_batch_size = smart_batch_processor.get_next_batch_size()
                 logger.debug(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
+
             if callable(PerformanceDashboard):
                 performance_dashboard = PerformanceDashboard("action9_performance.json")
                 performance_dashboard.record_session_start({
@@ -1621,19 +1670,65 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             logger.warning(f"Failed to initialize adaptive systems: {e}, using standard batch processing")
             smart_batch_processor = None
             performance_dashboard = None
-    else:
-        smart_batch_processor = None
-        performance_dashboard = None
 
+    return smart_batch_processor, performance_dashboard, adaptive_batch_size
+
+
+def _initialize_database_and_message_config(adaptive_batch_size: int) -> tuple[DatabaseState, MessageConfig]:
+    """Initialize database state and message configuration."""
     db_state = DatabaseState(
         batch_size=max(1, adaptive_batch_size),
         commit_threshold=max(1, adaptive_batch_size),
     )
     msg_config = MessageConfig()
+    return db_state, msg_config
 
-    # Validate session manager
+
+def _validate_session_manager(session_manager: SessionManager) -> bool:
+    """Validate session manager has required attributes."""
     if not session_manager or not session_manager.my_profile_id:
         logger.error("Action 9: SessionManager or Profile ID missing.")
+        return False
+    return True
+
+
+def _finalize_performance_monitoring(performance_dashboard: Optional[Any]) -> None:
+    """Finalize performance monitoring if available."""
+    if performance_dashboard:
+        try:
+            performance_dashboard.finalize_session()
+            logger.info("Performance monitoring session finalized")
+        except Exception as e:
+            logger.warning(f"Failed to finalize performance monitoring: {e}")
+
+
+def _cleanup_resources(session_manager: SessionManager, db_state: DatabaseState) -> None:
+    """Clean up database session resources."""
+    if db_state.session:
+        session_manager.return_session(db_state.session)
+
+
+def process_productive_messages(session_manager: SessionManager) -> bool:
+    """
+    Simplified main function for Action 9. Processes productive messages by:
+    1. Setting up configuration and state
+    2. Querying candidates
+    3. Processing each person in batches
+    4. Committing results
+    """
+    logger.info("--- Starting Action 9: Process Productive Messages (Streamlined) ---")
+
+    # Initialize state objects
+    state, ms_state = _initialize_state_objects()
+
+    # Initialize adaptive systems
+    smart_batch_processor, performance_dashboard, adaptive_batch_size = _initialize_adaptive_systems()
+
+    # Initialize database and message configuration
+    db_state, msg_config = _initialize_database_and_message_config(adaptive_batch_size)
+
+    # Validate session manager
+    if not _validate_session_manager(session_manager):
         return False
 
     try:
@@ -1671,17 +1766,8 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         )
         return False
     finally:
-        # === PHASE 11.1: FINALIZE PERFORMANCE MONITORING ===
-        if 'performance_dashboard' in locals() and performance_dashboard:
-            try:
-                performance_dashboard.finalize_session()
-                logger.info("Performance monitoring session finalized")
-            except Exception as e:
-                logger.warning(f"Failed to finalize performance monitoring: {e}")
-
-        # Cleanup
-        if db_state.session:
-            session_manager.return_session(db_state.session)
+        _finalize_performance_monitoring(performance_dashboard)
+        _cleanup_resources(session_manager, db_state)
 
 
 def _setup_configuration(
@@ -2269,7 +2355,7 @@ def _get_message_context(
 
         # Step 2: Sort the fetched logs by timestamp ascending (oldest first) for AI context
         # Convert SQLAlchemy Column objects to Python datetime objects for sorting
-        def get_sort_key(log):
+        def get_sort_key(log: Any) -> datetime:
             # Extract timestamp value from SQLAlchemy Column if needed
             ts = log.latest_timestamp
             # If it's already a datetime or can be used as one, use it
@@ -2476,7 +2562,7 @@ def action9_process_productive_module_tests() -> bool:
     )
     suite.start_suite()  # INITIALIZATION TESTS
 
-    def test_module_initialization():
+    def test_module_initialization() -> None:
         """Test module initialization and constants"""
         # Test constants
         assert (
@@ -2500,12 +2586,12 @@ def action9_process_productive_module_tests() -> bool:
             safe_column_value
         ), "safe_column_value should be callable"  # CORE FUNCTIONALITY TESTS
 
-    def test_core_functionality():
+    def test_core_functionality() -> None:
         """Test all core AI processing and data extraction functions"""
 
         # Test safe_column_value function with a simple object
         class TestObj:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.test_attr = "test_value_12345"
 
         test_obj = TestObj()
@@ -2522,7 +2608,7 @@ def action9_process_productive_module_tests() -> bool:
         result = should_exclude_message("test message 12345")
         assert isinstance(result, bool), "Should handle test messages"
 
-    def test_ai_processing_functions():
+    def test_ai_processing_functions() -> None:
         """Test AI processing and extraction functions"""
 
         # Test _process_ai_response function
@@ -2539,7 +2625,7 @@ def action9_process_productive_module_tests() -> bool:
         ), "Should generate meaningful summary"
 
     # EDGE CASE TESTS
-    def test_edge_cases():
+    def test_edge_cases() -> None:
         """Test edge cases and boundary conditions"""
         # Test safe_column_value with None object
         result = safe_column_value(None, "any_attr", "default_12345")
@@ -2562,7 +2648,7 @@ def action9_process_productive_module_tests() -> bool:
             result, dict
         ), "Should handle empty response"  # INTEGRATION TESTS
 
-    def test_integration():
+    def test_integration() -> None:
         """Test integration with external dependencies"""
 
         # Test get_gedcom_data integration - patch the import
@@ -2584,7 +2670,7 @@ def action9_process_productive_module_tests() -> bool:
             result, dict
         ), "Should return templates dictionary"  # PERFORMANCE TESTS
 
-    def test_performance():
+    def test_performance() -> None:
         """Test performance of processing operations"""
         import time
 
@@ -2611,20 +2697,20 @@ def action9_process_productive_module_tests() -> bool:
             duration < 0.5
         ), f"500 exclusion checks should be fast, took {duration:.3f}s"  # ERROR HANDLING TESTS
 
-    def test_error_handling():
+    def test_error_handling() -> None:
         """Test error handling scenarios"""
 
         # Test safe_column_value with attribute access exception
         class ErrorObj:
             @property
-            def test_attr(self):
+            def test_attr(self) -> None:
                 raise Exception("Test error 12345")
 
         error_obj = ErrorObj()
         result = safe_column_value(error_obj, "test_attr", "fallback_12345")
         assert result == "fallback_12345", "Should handle attribute access errors"
 
-    def test_circuit_breaker_config():
+    def test_circuit_breaker_config() -> None:
         """Test circuit breaker decorator configuration reflects Action 6 lessons."""
         import inspect
 

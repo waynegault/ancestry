@@ -59,7 +59,7 @@ class ValidationRule:
 class ConfigValidator:
     """Advanced configuration validator with custom rules."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.rules: list[ValidationRule] = []
         self.environment_rules: dict[EnvironmentType, list[ValidationRule]] = {}
 
@@ -177,7 +177,7 @@ class DatabaseConfig:
     # Field with default_factory must come last
     data_dir: Optional[Path] = field(default_factory=lambda: Path("Data"))
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Enhanced validation after initialization."""
         validator = self._get_validator()
         errors = validator.validate(self, self._get_environment())
@@ -367,7 +367,7 @@ class SeleniumConfig:
     disable_plugins: bool = True
     disable_notifications: bool = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         if self.debug_port <= 0 or self.debug_port > 65535:
             raise ValueError("debug_port must be between 1 and 65535")
@@ -446,7 +446,7 @@ class APIConfig:
         default_factory=dict
     )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         if not self.base_url:
             raise ValueError("base_url is required")
@@ -486,7 +486,7 @@ class LoggingConfig:
     enable_file_logging: bool = True
     enable_rotation: bool = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if self.log_level not in valid_levels:
@@ -521,7 +521,7 @@ class CacheConfig:
     cleanup_interval_hours: int = 24
     max_cache_age_days: int = 30
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         if self.memory_cache_size <= 0:
             raise ValueError("memory_cache_size must be positive")
@@ -553,7 +553,7 @@ class SecurityConfig:
     allow_redirects: bool = True
     max_redirects: int = 10
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         if self.session_timeout_minutes <= 0:
             raise ValueError("session_timeout_minutes must be positive")
@@ -686,7 +686,7 @@ class ConfigSchema:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     test: TestConfig = field(default_factory=TestConfig)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration after initialization."""
         valid_environments = ["development", "testing", "production"]
         if self.environment not in valid_environments:

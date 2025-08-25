@@ -25,7 +25,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
-from typing import Optional
+from typing import Any, Callable, Optional
 
 # Global flag to track if logging has been initialized
 _centralized_logging_setup = False
@@ -132,7 +132,6 @@ def get_app_logger() -> logging.Logger:
 # =============================================================================
 
 from functools import wraps
-from typing import Callable
 
 
 def debug_if_enabled(logger: logging.Logger):
@@ -140,9 +139,9 @@ def debug_if_enabled(logger: logging.Logger):
     Decorator to only execute debug logging if debug level is enabled.
     Prevents expensive f-string formatting when debug logging is disabled.
     """
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             if logger.isEnabledFor(logging.DEBUG):
                 return func(*args, **kwargs)
             return None
@@ -177,7 +176,7 @@ class OptimizedLogger:
         if self._logger.isEnabledFor(logging.DEBUG):
             self._logger.debug(msg_func())
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         """Delegate all other logger methods to the underlying logger."""
         return getattr(self._logger, name)
 

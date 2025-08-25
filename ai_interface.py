@@ -95,7 +95,7 @@ except ImportError:
     from typing import Optional as _Optional
     def get_prompt(_prompt_key: str) -> _Optional[str]:  # type: ignore
         return None
-    def load_prompts():  # type: ignore
+    def load_prompts() -> dict[str, Any]:  # type: ignore
         return {"prompts": {}}
 
 # Based on the prompt from the original ai_interface.py (and updated with more categories from ai_prompts.json example)
@@ -1441,7 +1441,7 @@ def test_ai_functionality(session_manager: SessionManager) -> bool:
         return False
 
 
-def ai_interface_tests():
+def ai_interface_tests() -> dict[str, Any]:
     """Test suite for ai_interface.py - AI Interface & Integration Layer"""
     # Test implementation moved to unified test framework
 

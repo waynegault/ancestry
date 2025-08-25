@@ -92,7 +92,7 @@ class SessionHealthMonitor:
     Comprehensive session health monitoring with predictive analytics.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.metrics_history: dict[str, deque] = {}
         self.current_metrics: dict[str, HealthMetric] = {}
         self.alerts: list[HealthAlert] = []
@@ -147,7 +147,7 @@ class SessionHealthMonitor:
 
         logger.debug("Session Health Monitor initialized")
 
-    def _initialize_metrics(self):
+    def _initialize_metrics(self) -> None:
         """Initialize health metrics with workload-appropriate thresholds for 724-page processing."""
         metrics_config = {
             "api_response_time": {"warning": 15.0, "critical": 25.0, "weight": 2.0},  # OPTIMIZATION: Less pessimistic thresholds (was 5.0/10.0)
@@ -170,11 +170,11 @@ class SessionHealthMonitor:
             )
             self.metrics_history[name] = deque(maxlen=100)
 
-    def begin_safety_test(self):
+    def begin_safety_test(self) -> None:
         """Enable safety test mode to uniformly prefix all alerts and notices."""
         self._safety_test_mode = True
 
-    def end_safety_test(self):
+    def end_safety_test(self) -> None:
         """Disable safety test mode."""
         self._safety_test_mode = False
 
@@ -195,7 +195,7 @@ class SessionHealthMonitor:
             else:
                 logger.warning(f"Unknown health metric: {name}")
 
-    def _check_metric_alerts(self, metric_name: str):
+    def _check_metric_alerts(self, metric_name: str) -> None:
         """Check if a metric triggers any alerts, with de-duplication and cooldown."""
         metric = self.current_metrics[metric_name]
 
@@ -386,7 +386,7 @@ class SessionHealthMonitor:
 
         return actions
 
-    def record_api_response_time(self, response_time: float):
+    def record_api_response_time(self, response_time: float) -> None:
         """Record API response time for monitoring."""
         self.api_response_times.append(response_time)
 
@@ -395,7 +395,7 @@ class SessionHealthMonitor:
             avg_response_time = sum(list(self.api_response_times)[-5:]) / 5
             self.update_metric("api_response_time", avg_response_time)
 
-    def record_error(self, error_type: str):
+    def record_error(self, error_type: str) -> None:
         """Record an error for monitoring with enhanced rate tracking."""
         current_time = time.time()
 
@@ -415,7 +415,7 @@ class SessionHealthMonitor:
         # Check for early warning conditions
         self._check_error_rate_early_warning(current_time)
 
-    def _check_error_rate_early_warning(self, current_time: float):
+    def _check_error_rate_early_warning(self, current_time: float) -> None:
         """
         PERFORMANCE-OPTIMIZED error rate monitoring for long sessions.
 
@@ -799,11 +799,11 @@ class SessionHealthMonitor:
             logger.debug(f"Error getting performance stats: {e}")
             return {"error": str(e)}
 
-    def record_page_processing_time(self, processing_time: float):
+    def record_page_processing_time(self, processing_time: float) -> None:
         """Record page processing time."""
         self.page_processing_times.append(processing_time)
 
-    def update_system_metrics(self):
+    def update_system_metrics(self) -> None:
         """Update system-level metrics (CPU, memory, etc.)."""
         try:
             # Memory usage
@@ -823,7 +823,7 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.warning(f"Error updating system metrics: {e}")
 
-    def update_session_metrics(self, session_manager=None):
+    def update_session_metrics(self, session_manager: Any = None) -> None:
         """Update session-specific metrics with enhanced error handling."""
         try:
             # Session age
@@ -913,7 +913,7 @@ class SessionHealthMonitor:
             return "CAUTION"
         return "SAFE"
 
-    def log_health_summary(self):
+    def log_health_summary(self) -> None:
         """Log a comprehensive health summary."""
         dashboard = self.get_health_dashboard()
 
@@ -1246,7 +1246,7 @@ def get_health_monitor() -> SessionHealthMonitor:
     return _health_monitor
 
 
-def initialize_health_monitoring():
+def initialize_health_monitoring() -> Any:
     """Initialize health monitoring system."""
     monitor = get_health_monitor()
     logger.info("Health monitoring system initialized")
@@ -1255,7 +1255,7 @@ def initialize_health_monitoring():
 
 # === INTEGRATION HELPERS ===
 
-def integrate_with_session_manager(session_manager):
+def integrate_with_session_manager(session_manager: Any) -> Any:
     """Integrate health monitoring with session manager."""
     monitor = get_health_monitor()
 
@@ -1272,7 +1272,7 @@ def integrate_with_session_manager(session_manager):
     return monitor
 
 
-def integrate_with_action6(action6_module):
+def integrate_with_action6(action6_module: Any) -> Any:
     """Integrate health monitoring with Action 6."""
     _ = action6_module  # Unused parameter for future integration
     return get_health_monitor()

@@ -33,10 +33,10 @@ def apply_universal_scoring(
 ) -> list[dict[str, Any]]:
     """
     Apply universal scoring to a list of candidates.
-    
+
     This function provides consistent scoring across Action 10 and Action 11
     by using the same underlying scoring algorithm and result formatting.
-    
+
     Args:
         candidates: List of candidate dictionaries to score
         search_criteria: Search parameters for scoring
@@ -44,7 +44,7 @@ def apply_universal_scoring(
         date_flexibility: Date matching flexibility settings
         max_results: Maximum number of results to return
         performance_timeout: Maximum time to spend scoring (seconds)
-        
+
     Returns:
         List of scored candidates sorted by score (highest first)
     """
@@ -136,12 +136,12 @@ def format_scoring_breakdown(
 ) -> str:
     """
     Format a detailed scoring breakdown for display.
-    
+
     Args:
         result: Scored result dictionary
         search_criteria: Original search criteria
         title: Title for the breakdown display
-        
+
     Returns:
         Formatted string with scoring breakdown
     """
@@ -207,10 +207,10 @@ def _get_field_description(field_key: str, score: float) -> str:
 def validate_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
     """
     Validate and normalize search criteria for consistent scoring.
-    
+
     Args:
         criteria: Raw search criteria
-        
+
     Returns:
         Normalized search criteria
     """

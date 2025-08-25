@@ -1135,7 +1135,7 @@ def run_comprehensive_tests() -> bool:
         monitor = PerformanceMonitor()
 
         # Create some objects to monitor memory
-        [i for i in range(1000)]
+        list(range(1000))
 
         # Record memory metrics
         import os

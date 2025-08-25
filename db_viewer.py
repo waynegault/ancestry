@@ -26,7 +26,7 @@ def show_tables(cursor) -> None:
     cursor.execute("SELECT name, type FROM sqlite_master WHERE type='table'")
     tables = cursor.fetchall()
     print(f"\n📋 Tables ({len(tables)}):")
-    for name, table_type in tables:
+    for name, _table_type in tables:
         cursor.execute(f"SELECT COUNT(*) FROM {name}")
         count = cursor.fetchone()[0]
         print(f"  - {name}: {count:,} records")
@@ -103,7 +103,7 @@ def show_db_stats(cursor) -> None:
     cursor.execute("PRAGMA database_list")
     db_info = cursor.fetchall()
     from pathlib import Path
-    for seq, name, file in db_info:
+    for _seq, _name, file in db_info:
         if file:
             p = Path(file)
             try:

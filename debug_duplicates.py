@@ -186,7 +186,7 @@ def analyze_duplicates() -> None:
     duplicates = _find_profile_id_duplicates(cursor)
     null_profiles = _print_null_profile_analysis(cursor)
     _print_recent_additions(cursor)
-    case_duplicates = _check_uuid_case_sensitivity(cursor)
+    _check_uuid_case_sensitivity(cursor)
     total, new_records, updated_records, avg_diff = _print_timestamp_analysis(cursor)
 
     conn.close()

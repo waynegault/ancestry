@@ -113,7 +113,7 @@ if CACHE_FILEPATH:
 
 
 # Step 8: Define function to save cache on script exit
-def save_cache_on_exit():
+def save_cache_on_exit() -> None:
     """atexit handler: Saves the MSAL token cache to file if it changed."""
     # Check if cache path is valid and cache object exists
     if not CACHE_FILEPATH or not persistent_cache:

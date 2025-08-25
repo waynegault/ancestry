@@ -42,9 +42,8 @@ def _test_metrics_updating(health_monitor) -> bool:
             hasattr(health_monitor, 'record_api_response_time')):
             logger.debug("✅ Metrics tracking is working")
             return True
-        else:
-            logger.warning("⚠️ Metrics tracking may not be fully working, but basic monitoring exists")
-            return True  # Pass if basic structure exists
+        logger.warning("⚠️ Metrics tracking may not be fully working, but basic monitoring exists")
+        return True  # Pass if basic structure exists
 
     except Exception as metrics_exc:
         logger.error(f"❌ Metrics updating failed: {metrics_exc}")
@@ -60,9 +59,8 @@ def _test_dashboard_generation(health_monitor) -> bool:
             risk_score = dashboard["risk_score"]
             logger.debug(f"✅ Dashboard working - Health: {health_score:.1f}, Risk: {risk_score:.2f}")
             return True
-        else:
-            logger.error("❌ Dashboard generation failed")
-            return False
+        logger.error("❌ Dashboard generation failed")
+        return False
     except Exception as dashboard_exc:
         logger.error(f"❌ Dashboard generation failed: {dashboard_exc}")
         return False
@@ -75,9 +73,8 @@ def _test_risk_assessment(health_monitor) -> bool:
         if 0.0 <= risk_score <= 1.0:
             logger.debug(f"✅ Risk assessment working - Current risk: {risk_score:.2f}")
             return True
-        else:
-            logger.error(f"❌ Risk assessment returned invalid score: {risk_score}")
-            return False
+        logger.error(f"❌ Risk assessment returned invalid score: {risk_score}")
+        return False
     except Exception as risk_exc:
         logger.error(f"❌ Risk assessment failed: {risk_exc}")
         return False
@@ -91,9 +88,8 @@ def _test_emergency_intervention() -> bool:
         if emergency_recs and emergency_recs.get("action_required") == "emergency_refresh":
             logger.debug("✅ Emergency intervention logic is ready")
             return True
-        else:
-            logger.error("❌ Emergency intervention logic not working")
-            return False
+        logger.error("❌ Emergency intervention logic not working")
+        return False
     except Exception as emergency_exc:
         logger.error(f"❌ Emergency intervention check failed: {emergency_exc}")
         return False
@@ -105,9 +101,8 @@ def _test_session_refresh_mechanism(session_manager) -> bool:
         if hasattr(session_manager, 'perform_proactive_refresh'):
             logger.debug("✅ Session refresh mechanism is available")
             return True
-        else:
-            logger.error("❌ Session refresh mechanism not available")
-            return False
+        logger.error("❌ Session refresh mechanism not available")
+        return False
     except Exception as refresh_exc:
         logger.error(f"❌ Session refresh check failed: {refresh_exc}")
         return False
@@ -241,7 +236,7 @@ def _setup_emergency_test(health_monitor) -> dict[str, float]:
 
     # Add many errors
     logger.info("🧪 GENERATING FAKE ERROR SEQUENCE (testing alert system)...")
-    for i in range(20):
+    for _i in range(20):
         health_monitor.record_error("test_emergency_error")
 
     return original_metrics
@@ -268,9 +263,8 @@ def _evaluate_emergency_response(health_monitor) -> bool:
             if emergency_recs.get("action_required") == "emergency_refresh":
                 logger.info("✅ SAFETY TEST PASSED: Emergency recommendations are correct")
                 return True
-            else:
-                logger.warning("⚠️ Emergency recommendations not optimal, but risk detection working")
-                return True  # Still pass if risk detection works
+            logger.warning("⚠️ Emergency recommendations not optimal, but risk detection working")
+            return True  # Still pass if risk detection works
         except ImportError:
             logger.info("✅ SAFETY TEST PASSED: Emergency risk detection working (recommendations module not available)")
             return True  # Pass if basic risk detection works

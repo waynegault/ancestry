@@ -953,7 +953,7 @@ class DynamicRateLimiter:
         decrease_factor: Optional[float] = None,
         token_capacity: Optional[float] = None,
         token_fill_rate: Optional[float] = None,
-    ):
+    ) -> None:
         cfg = config_schema  # Use new config system
         api = getattr(cfg, "api", None)
         # Use APIConfig-backed values to ensure .env is respected
@@ -3900,7 +3900,7 @@ def test_parse_cookie():
             ),
         ]
 
-        for cookie_str, expected, description in test_cases:
+        for cookie_str, expected, _description in test_cases:
             result = parse_cookie(cookie_str)
             if result != expected:
                 return False
@@ -4078,11 +4078,11 @@ def test_performance_validation():
         # New test ensuring that nav_to_page accepts subpath under the target base
         def test_nav_to_list_accepts_uuid_subpath():
             class MockDriver:
-                def __init__(self, current_url):
+                def __init__(self, current_url: str) -> None:
                     self.current_url = current_url
-                def get(self, url):
+                def get(self, url: str) -> None:
                     self.current_url = url
-                def execute_script(self, script):
+                def execute_script(self, script: str) -> str:
                     return "complete"
             # Target is /discoveryui-matches/list/ while landed has /list/<UUID>
             base = "https://www.ancestry.co.uk/discoveryui-matches/list/"
@@ -4091,7 +4091,7 @@ def test_performance_validation():
             # Monkey-patch is_browser_open to True
             from utils import is_browser_open as real_is_open
             try:
-                def is_open_mock(driver):
+                def is_open_mock(driver: Any) -> bool:
                     return True
                 globals()['is_browser_open'] = is_open_mock
                 assert _url_base_matches(base.rstrip('/'), uuid_url.rstrip('/'))
@@ -4618,7 +4618,7 @@ async def async_file_context(
         # Fallback to thread pool execution
         loop = asyncio.get_event_loop()
 
-        def _open_file():
+        def _open_file() -> IO[Any]:
             return Path(file_path).open(mode=mode, encoding=encoding, **kwargs)
 
         file_handle = await loop.run_in_executor(None, _open_file)
@@ -4628,7 +4628,7 @@ async def async_file_context(
 
             # Create async wrapper for file operations
             class AsyncFileWrapper:
-                def __init__(self, file_handle, loop):
+                def __init__(self, file_handle: IO[Any], loop: Any) -> None:
                     self._file = file_handle
                     self._loop = loop
 
@@ -4644,7 +4644,7 @@ async def async_file_context(
                 async def readlines(self):
                     return await self._loop.run_in_executor(None, self._file.readlines)
 
-                def __getattr__(self, name):
+                def __getattr__(self, name: str) -> Any:
                     # Delegate other attributes to the underlying file
                     return getattr(self._file, name)
 

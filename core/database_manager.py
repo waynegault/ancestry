@@ -220,14 +220,14 @@ class DatabaseManager:
 
             logger.debug(f"Starting batch operation with batch size: {batch_size}")
 
-            def commit_batch():
+            def commit_batch() -> None:
                 nonlocal batch_counter
                 if batch_counter > 0:
                     session.commit()
                     logger.debug(f"Committed batch of {batch_counter} operations")
                     batch_counter = 0
 
-            def add_to_batch():
+            def add_to_batch() -> None:
                 nonlocal batch_counter
                 batch_counter += 1
                 if batch_counter >= batch_size:
@@ -251,7 +251,7 @@ class DatabaseManager:
             if session:
                 self.return_session(session)
 
-    def execute_query_with_timing(self, session: Session, query, params=None):
+    def execute_query_with_timing(self, session: Session, query: Any, params: Optional[dict[str, Any]] = None) -> Any:
         """
         Execute a query with performance timing.
 
@@ -360,7 +360,7 @@ class DatabaseManager:
         """
         loop = asyncio.get_event_loop()
 
-        def _execute_query():
+        def _execute_query() -> Any:
             try:
                 # Convert string query to SQLAlchemy text object
                 sql_query = text(query) if isinstance(query, str) else query
@@ -410,7 +410,7 @@ class DatabaseManager:
             logger.debug("Database already initialized.")
             return True
 
-    def _initialize_engine_and_session(self):
+    def _initialize_engine_and_session(self) -> None:
         """Initialize SQLAlchemy engine and session factory."""
         # Prevent re-initialization if already done
         if self.engine and self.Session:
@@ -485,7 +485,7 @@ class DatabaseManager:
 
             # Attach event listener for PRAGMA settings
             @event.listens_for(self.engine, "connect")
-            def enable_sqlite_settings(dbapi_connection, connection_record):
+            def enable_sqlite_settings(dbapi_connection: Any, connection_record: Any) -> None:
                 cursor = dbapi_connection.cursor()
                 try:
                     cursor.execute("PRAGMA journal_mode=WAL;")
@@ -525,7 +525,7 @@ class DatabaseManager:
             self._db_init_attempted = False
             raise e
 
-    def _ensure_tables_created(self):
+    def _ensure_tables_created(self) -> None:
         """Ensure database tables are created if needed."""
         if not self.engine:
             logger.error("Cannot check/create tables: Engine is None")
@@ -845,7 +845,7 @@ def run_comprehensive_tests() -> bool:
 
 
 # Test functions for comprehensive testing
-def test_database_manager_initialization():
+def test_database_manager_initialization() -> None:
     """Test DatabaseManager initialization with various configurations."""
     # Test memory database initialization
     db_manager = DatabaseManager(db_path=":memory:")
@@ -859,7 +859,7 @@ def test_database_manager_initialization():
     ), "Database should not be ready before initialization"
 
 
-def test_engine_session_creation():
+def test_engine_session_creation() -> None:
     """Test SQLAlchemy engine and session factory creation."""
     db_manager = DatabaseManager(db_path=":memory:")
     try:
@@ -869,7 +869,7 @@ def test_engine_session_creation():
         pass  # Database creation might fail in test environment
 
 
-def test_session_context_management():
+def test_session_context_management() -> None:
     """Test session context manager for automatic transaction handling."""
     db_manager = DatabaseManager(db_path=":memory:")
     try:
@@ -881,7 +881,7 @@ def test_session_context_management():
         pass  # Context manager might fail without proper database setup
 
 
-def test_connection_pooling():
+def test_connection_pooling() -> None:
     """Test database connection pooling and resource management."""
     db_manager = DatabaseManager(db_path=":memory:")
     try:
@@ -893,14 +893,14 @@ def test_connection_pooling():
         pass  # Session operations might fail without proper setup
 
 
-def test_database_readiness():
+def test_database_readiness() -> None:
     """Test database readiness checks and initialization status."""
     db_manager = DatabaseManager(db_path=":memory:")
     initial_ready = db_manager.is_ready
     assert isinstance(initial_ready, bool), "is_ready should return boolean"
 
 
-def test_error_handling_recovery():
+def test_error_handling_recovery() -> None:
     """Test error handling during database operations."""
     db_manager = DatabaseManager(db_path="/invalid/path/database.db")
     try:
@@ -910,7 +910,7 @@ def test_error_handling_recovery():
         pass  # Error handling is acceptable for invalid paths
 
 
-def test_session_lifecycle():
+def test_session_lifecycle() -> None:
     """Test complete session lifecycle from creation to cleanup."""
     db_manager = DatabaseManager(db_path=":memory:")
     try:
@@ -922,14 +922,13 @@ def test_session_lifecycle():
         pass  # Session lifecycle might fail without proper setup
 
 
-def test_transaction_isolation():
+def test_transaction_isolation() -> None:
     """Test transaction isolation and concurrent session handling."""
     db_manager = DatabaseManager(db_path=":memory:")
     try:
         # Test that multiple session contexts don't interfere
-        with db_manager.get_session_context():
-            with db_manager.get_session_context():
-                assert True, "Multiple session contexts should not interfere"
+        with db_manager.get_session_context(), db_manager.get_session_context():
+            assert True, "Multiple session contexts should not interfere"
     except Exception:
         pass  # Transaction isolation testing might require specific setup
 

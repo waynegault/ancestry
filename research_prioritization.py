@@ -73,7 +73,7 @@ class IntelligentResearchPrioritizer:
     AI-powered system for prioritizing genealogical research tasks.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the research prioritizer."""
         self.research_priorities: list[ResearchPriority] = []
         self.family_line_status: list[FamilyLineStatus] = []
@@ -147,7 +147,7 @@ class IntelligentResearchPrioritizer:
             common_surnames = family_patterns.get("common_surnames", [])
 
             # Analyze each major surname line
-            for i, surname in enumerate(common_surnames[:5]):  # Top 5 surnames
+            for _i, surname in enumerate(common_surnames[:5]):  # Top 5 surnames
                 line_status = FamilyLineStatus(
                     line_id=f"line_{surname.lower()}",
                     line_name=f"{surname} Family Line",
@@ -295,7 +295,7 @@ class IntelligentResearchPrioritizer:
 
             self.research_priorities.append(priority)
 
-    def _generate_cluster_research_tasks(self):
+    def _generate_cluster_research_tasks(self) -> None:
         """Generate research tasks for location clusters."""
         for cluster in self.location_clusters:
             if cluster.research_efficiency_score > 0.7:  # High efficiency clusters
@@ -319,7 +319,7 @@ class IntelligentResearchPrioritizer:
 
                 self.research_priorities.append(priority)
 
-    def _score_and_rank_priorities(self):
+    def _score_and_rank_priorities(self) -> None:
         """Score and rank all research priorities with dependency tracking and workflow optimization."""
         # Apply dependency tracking and workflow optimization
         self._analyze_task_dependencies()
@@ -351,7 +351,7 @@ class IntelligentResearchPrioritizer:
             priority.priority_score += efficiency_bonus + success_bonus + dependency_bonus + workflow_bonus
             priority.priority_score = max(0, min(100, priority.priority_score))  # Clamp to 0-100
 
-    def _analyze_task_dependencies(self):
+    def _analyze_task_dependencies(self) -> None:
         """Analyze dependencies between research tasks and adjust priorities accordingly."""
         for priority in self.research_priorities:
             dependency_bonus = 0
@@ -376,7 +376,7 @@ class IntelligentResearchPrioritizer:
 
             priority.dependency_bonus = dependency_bonus
 
-    def _optimize_research_workflow(self):
+    def _optimize_research_workflow(self) -> None:
         """Optimize research workflow by grouping related tasks and considering efficiency."""
         # Group tasks by location for research efficiency
         location_groups = defaultdict(list)

@@ -180,7 +180,7 @@ class AdaptiveRateLimiter:
         if self.adaptation_enabled and len(self.response_history) >= 10:
             self._adapt_rate_limiting()
 
-    def _adapt_rate_limiting(self):
+    def _adapt_rate_limiting(self) -> None:
         """Adapt rate limiting based on recent response patterns."""
         current_time = time.time()
 
@@ -268,7 +268,7 @@ class AdaptiveRateLimiter:
         """Get current rate limiting statistics."""
         return self.stats
 
-    def reset_to_defaults(self):
+    def reset_to_defaults(self) -> None:
         """Reset rate limiting to initial settings."""
         self.current_rps = self.initial_rps
         self.current_delay = self.initial_delay
@@ -276,17 +276,17 @@ class AdaptiveRateLimiter:
         self.stats = RateLimitingStats()
         logger.info(f"Reset adaptive rate limiter to defaults: {self.initial_rps} RPS, {self.initial_delay}s delay")
 
-    def enable_adaptation(self):
+    def enable_adaptation(self) -> None:
         """Enable adaptive rate limiting."""
         self.adaptation_enabled = True
         logger.info("Enabled adaptive rate limiting")
 
-    def disable_adaptation(self):
+    def disable_adaptation(self) -> None:
         """Disable adaptive rate limiting."""
         self.adaptation_enabled = False
         logger.info("Disabled adaptive rate limiting")
 
-    def record_rate_limit(self):
+    def record_rate_limit(self) -> None:
         """Simple rate limit recording - just increase delay."""
         self.current_delay = min(self.max_delay, self.current_delay * 2.0)
         logger.info(f"Rate limit detected, increasing delay to {self.current_delay:.1f}s")
@@ -445,7 +445,7 @@ class SmartBatchProcessor:
             current_time - self.last_adaptation_time > self.adaptation_cooldown):
             self._adapt_batch_size()
 
-    def _adapt_batch_size(self):
+    def _adapt_batch_size(self) -> None:
         """Adapt batch size based on recent performance."""
         if len(self.processing_history) < 3:
             return
@@ -501,7 +501,7 @@ class MLBasedOptimizer:
     Uses historical patterns to predict optimal settings.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.training_data: list[dict[str, Any]] = []
         self.model_weights: dict[str, float] = {
             "success_rate": 0.4,
@@ -588,7 +588,7 @@ class PredictiveProcessor:
     Predictive processing optimization based on historical patterns.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.processing_patterns: dict[str, list[dict[str, Any]]] = {}
         self.time_based_predictions: dict[int, dict[str, float]] = {}  # hour -> predictions
         self.load_predictions: dict[str, float] = {}  # load_level -> optimal_rps
@@ -626,7 +626,7 @@ class SystemHealthMonitor:
     System health monitoring and automatic optimization.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.health_metrics: dict[str, Any] = {}
         self.health_history: list[dict[str, Any]] = []
         self.alert_thresholds: dict[str, dict[str, float]] = {
@@ -745,7 +745,7 @@ class ConfigurationOptimizer:
     Analyzes system performance and recommends configuration optimizations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize configuration optimizer."""
         self.performance_history: deque = deque(maxlen=100)
         self.optimization_recommendations: list[dict[str, Any]] = []

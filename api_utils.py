@@ -189,13 +189,13 @@ class PersonSuggestResponse:
 class ProfileDetailsResponse:
     """Model for validating Profile Details API responses."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.FirstName: Optional[str] = kwargs.get("FirstName")
         self.displayName: Optional[str] = kwargs.get("displayName")
         self.LastLoginDate: Optional[str] = kwargs.get("LastLoginDate")
         self.IsContactable: Optional[bool] = kwargs.get("IsContactable")
 
-    def dict(self, exclude_none=False):
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
         result = {
             "FirstName": self.FirstName,
@@ -298,12 +298,12 @@ class GetLadderResponse:
 class DiscoveryRelationshipResponse:
     """Model for validating Discovery Relationship API responses."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.relationship: Optional[str] = kwargs.get("relationship")
         self.paths: Optional[list[dict[str, Any]]] = kwargs.get("paths")
         self.confidence: Optional[str] = kwargs.get("confidence")
 
-    def dict(self, exclude_none=False):
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
         result = {
             "relationship": self.relationship,
@@ -318,12 +318,12 @@ class DiscoveryRelationshipResponse:
 class HeaderTreesResponse:
     """Model for validating Header Trees API responses."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.menuitems: Optional[list[dict[str, Any]]] = kwargs.get("menuitems")
         self.url: Optional[str] = kwargs.get("url")
         self.text: Optional[str] = kwargs.get("text")
 
-    def dict(self, exclude_none=False):
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
         result = {
             "menuitems": self.menuitems,
@@ -338,13 +338,13 @@ class HeaderTreesResponse:
 class SendMessageResponse:
     """Model for validating Send Message API responses."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.conversation_id: Optional[str] = kwargs.get("conversation_id")
         self.message: Optional[str] = kwargs.get("message")
         self.author: Optional[str] = kwargs.get("author")
         self.status: Optional[str] = kwargs.get("status")
 
-    def dict(self, exclude_none=False):
+    def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
         result = {
             "conversation_id": self.conversation_id,
@@ -361,7 +361,7 @@ class SendMessageResponse:
 class ApiRateLimiter:
     """Simple rate limiter for API calls to prevent overwhelming Ancestry servers."""
 
-    def __init__(self, max_calls_per_minute: int = 60, max_calls_per_hour: int = 1000):
+    def __init__(self, max_calls_per_minute: int = 60, max_calls_per_hour: int = 1000) -> None:
         self.max_calls_per_minute = max_calls_per_minute
         self.max_calls_per_hour = max_calls_per_hour
         self.minute_calls = []
@@ -2756,7 +2756,7 @@ async def async_batch_person_lookup(
 
     # Parse results into PersonFactsResponse objects
     parsed_results = {}
-    for i, (person_id, response_data) in enumerate(zip(person_ids, results)):
+    for _i, (person_id, response_data) in enumerate(zip(person_ids, results)):
         if response_data:
             try:
                 parsed_results[person_id] = PersonFactsResponse.from_dict(response_data)

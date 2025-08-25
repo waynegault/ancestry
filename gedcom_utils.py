@@ -2115,7 +2115,7 @@ class GedcomData:
                 parent_families = self._find_family_records_where_individual_is_parent(
                     target_id
                 )
-                for fam_record, is_husband, is_wife in parent_families:
+                for fam_record, is_husband, _is_wife in parent_families:
                     other_spouse_tag = TAG_WIFE if is_husband else TAG_HUSBAND
                     # Add null check before calling sub_tag
                     spouse_ref = (
@@ -2643,7 +2643,7 @@ def test_memory_optimization():
     """Test memory usage optimization."""
     # Test that functions don't create excessive memory overhead
     if "_get_full_name" in globals():
-        for i in range(100):
+        for _i in range(100):
             try:
                 _get_full_name(None)  # Should not accumulate memory
             except Exception:

@@ -46,14 +46,14 @@ def test_csrf_token_caching() -> bool:
 
     # Test cached retrieval (should be fast)
     start_time = time.time()
-    for i in range(100):
+    for _i in range(100):
         if session_manager._is_csrf_token_valid():
             pass
     cache_time = time.time() - start_time
 
     # Test mock WebDriver retrieval (slower)
     start_time = time.time()
-    for i in range(100):
+    for _i in range(100):
         # Simulate WebDriver call overhead
         time.sleep(0.001)  # 1ms overhead per call
     driver_time = time.time() - start_time
@@ -111,7 +111,7 @@ def test_database_session_reuse() -> bool:
     # Simulate old approach: create/close for each operation
     start_time = time.time()
     sessions_created = 0
-    for i in range(20):  # 20 operations per batch
+    for _i in range(20):  # 20 operations per batch
         # Simulate session creation overhead
         time.sleep(0.001)  # 1ms overhead
         sessions_created += 1
@@ -125,7 +125,7 @@ def test_database_session_reuse() -> bool:
     start_time = time.time()
     sessions_created_new = 1  # One session for whole batch
     time.sleep(0.001)  # 1ms creation
-    for i in range(20):  # Same 20 operations
+    for _i in range(20):  # Same 20 operations
         # Simulate work (no creation/close overhead)
         time.sleep(0.0005)  # 0.5ms work
     time.sleep(0.0005)  # 0.5ms final close
@@ -253,14 +253,14 @@ def test_csrf_token_performance_metrics() -> bool:
 
         # Test that cached access is faster than driver access
         start_time = time.time()
-        for i in range(10):  # Reduced iterations for test
+        for _i in range(10):  # Reduced iterations for test
             if session_manager._is_csrf_token_valid():
                 pass
         cache_time = time.time() - start_time
 
         # Simulate driver overhead
         start_time = time.time()
-        for i in range(10):
+        for _i in range(10):
             time.sleep(0.0001)  # Reduced overhead for test
         driver_time = time.time() - start_time
 
@@ -300,7 +300,7 @@ def test_database_session_simulation() -> bool:
         # Simulate session creation overhead measurement
         start_time = time.time()
         sessions_created = 0
-        for i in range(5):  # Reduced iterations for test
+        for _i in range(5):  # Reduced iterations for test
             time.sleep(0.001)  # Increased sleep for more reliable timing
             sessions_created += 1
         old_approach_time = time.time() - start_time
@@ -309,7 +309,7 @@ def test_database_session_simulation() -> bool:
         start_time = time.time()
         sessions_created_new = 1
         time.sleep(0.001)  # Only one session creation overhead
-        for i in range(5):
+        for _i in range(5):
             time.sleep(0.0001)  # Much smaller work simulation
         new_approach_time = time.time() - start_time
 
@@ -485,7 +485,7 @@ def test_timing_measurement_accuracy() -> bool:
 
         # Test multiple timing measurements
         timings = []
-        for i in range(5):
+        for _i in range(5):
             start = time.time()
             time.sleep(0.001)  # 1ms sleep
             timings.append(time.time() - start)

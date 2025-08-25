@@ -47,7 +47,7 @@ class SessionValidator:
     - Readiness checks coordination
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the SessionValidator."""
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
         logger.debug("SessionValidator initialized")
@@ -480,7 +480,7 @@ class SessionValidator:
 
 
 # === Decomposed Helper Functions ===
-def _test_session_validator_initialization():
+def _test_session_validator_initialization() -> bool:
     validator = SessionValidator()
     assert validator is not None, "SessionValidator should initialize"
     assert hasattr(
@@ -497,7 +497,7 @@ def _test_session_validator_initialization():
     return True
 
 
-def _test_readiness_checks_success():
+def _test_readiness_checks_success() -> bool:
     from unittest.mock import Mock, patch
 
     validator = SessionValidator()
@@ -523,7 +523,7 @@ def _test_readiness_checks_success():
     return True
 
 
-def _test_login_verification():
+def _test_login_verification() -> bool:
     from unittest.mock import Mock
 
     validator = SessionValidator()
@@ -535,7 +535,7 @@ def _test_login_verification():
     return True
 
 
-def _test_invalid_browser_session():
+def _test_invalid_browser_session() -> bool:
     from unittest.mock import Mock
 
     validator = SessionValidator()
@@ -546,7 +546,7 @@ def _test_invalid_browser_session():
     return True
 
 
-def _test_login_verification_failure():
+def _test_login_verification_failure() -> bool:
     from unittest.mock import Mock
 
     validator = SessionValidator()
@@ -557,7 +557,7 @@ def _test_login_verification_failure():
     return True
 
 
-def _test_full_validation_workflow():
+def _test_full_validation_workflow() -> bool:
     from unittest.mock import Mock
 
     validator = SessionValidator()
@@ -573,7 +573,7 @@ def _test_full_validation_workflow():
     return True
 
 
-def _test_initialization_performance():
+def _test_initialization_performance() -> bool:
     import time
 
     start_time = time.time()
@@ -587,7 +587,7 @@ def _test_initialization_performance():
     return True
 
 
-def _test_webdriver_exception_handling():
+def _test_webdriver_exception_handling() -> bool:
     from unittest.mock import Mock, patch
 
     from selenium.common.exceptions import WebDriverException
@@ -606,7 +606,7 @@ def _test_webdriver_exception_handling():
     return True
 
 
-def _test_general_exception_handling():
+def _test_general_exception_handling() -> bool:
     from unittest.mock import Mock
 
     validator = SessionValidator()

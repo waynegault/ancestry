@@ -80,9 +80,8 @@ def monitor_action6_health(pid: int) -> bool:
             _print_health_status(process)
             _assess_performance(runtime_minutes, memory_mb, cpu_percent)
             return True
-        else:
-            print("❌ Process Status: NOT RUNNING")
-            return False
+        print("❌ Process Status: NOT RUNNING")
+        return False
 
     except psutil.NoSuchProcess:
         print(f"❌ Process {pid} not found")

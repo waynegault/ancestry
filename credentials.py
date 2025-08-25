@@ -68,13 +68,13 @@ except ImportError as e:
 class UnifiedCredentialManager:
     """Unified interface for all credential management operations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         if not SECURITY_AVAILABLE:
             raise ImportError("Security dependencies not available")
         self.security_manager = SecurityManager()
 
     @staticmethod
-    def check_and_install_dependencies():
+    def check_and_install_dependencies() -> bool:
         """Check for security dependencies and offer to install them if missing."""
         if SECURITY_AVAILABLE:
             return True
@@ -162,7 +162,7 @@ class UnifiedCredentialManager:
 
             return False
 
-    def display_main_menu(self):
+    def display_main_menu(self) -> None:
         """Display the main credential management menu."""
         print("\n" + "=" * 60)
         print("           ANCESTRY CREDENTIAL MANAGER")
@@ -181,7 +181,7 @@ class UnifiedCredentialManager:
         print("\n  0. Exit")
         print("\n" + "=" * 60)
 
-    def view_credentials(self):
+    def view_credentials(self) -> None:
         """Display all stored credentials with masked values."""
         # Check if encrypted file exists but can't be decrypted
         if self.security_manager.credentials_file.exists():
@@ -220,7 +220,7 @@ class UnifiedCredentialManager:
 
         print("-" * 50)
 
-    def setup_credentials(self):
+    def setup_credentials(self) -> None:
         """Interactive credential setup."""
         print("\n" + "=" * 50)
         print("         CREDENTIAL SETUP")
@@ -282,7 +282,7 @@ class UnifiedCredentialManager:
         else:
             print("\n❌ Failed to save credentials")
 
-    def remove_credential(self):
+    def remove_credential(self) -> None:
         """Remove a specific credential."""
         credentials = self.security_manager.decrypt_credentials()
 
@@ -315,7 +315,7 @@ class UnifiedCredentialManager:
         except ValueError:
             print("❌ Invalid input")
 
-    def delete_all_credentials(self):
+    def delete_all_credentials(self) -> None:
         """Delete all stored credentials."""
         credentials = self.security_manager.decrypt_credentials()
 
@@ -330,7 +330,7 @@ class UnifiedCredentialManager:
             else:
                 print("❌ Failed to delete credentials")
 
-    def setup_test_credentials(self):
+    def setup_test_credentials(self) -> None:
         """Setup test credentials for development."""
         print("\n" + "=" * 50)
         print("       TEST CREDENTIAL SETUP")
@@ -357,7 +357,7 @@ class UnifiedCredentialManager:
         else:
             print("❌ Failed to save test credentials")
 
-    def import_from_env(self):
+    def import_from_env(self) -> None:
         """Import credentials from a .env file."""
         print("\n" + "=" * 50)
         print("      IMPORT FROM .ENV FILE")
@@ -510,7 +510,7 @@ class UnifiedCredentialManager:
             print(f"❌ Error reading .env file: {e}")
             print("💡 Make sure the file is readable and in KEY=VALUE format.")
 
-    def export_credentials(self):
+    def export_credentials(self) -> None:
         """Export credentials for backup."""
         print("\n" + "=" * 50)
         print("         CREDENTIAL EXPORT")
@@ -554,7 +554,7 @@ class UnifiedCredentialManager:
             except Exception as e:
                 print(f"❌ Export failed: {e}")
 
-    def check_status(self):
+    def check_status(self) -> bool:
         """Check credential and security status.
 
         Returns:
@@ -685,7 +685,7 @@ class UnifiedCredentialManager:
 
         return security_ok
 
-    def edit_credential_types(self):
+    def edit_credential_types(self) -> None:
         """Edit credential types configuration."""
         print("\n" + "=" * 50)
         print("    CREDENTIAL TYPES CONFIGURATION")
@@ -848,7 +848,7 @@ class UnifiedCredentialManager:
         )
         return response in ["yes", "y"]
 
-    def run(self):
+    def run(self) -> bool:
         """Main menu loop."""
         if not SECURITY_AVAILABLE:
             return False
@@ -1329,7 +1329,7 @@ def run_comprehensive_tests() -> bool:
     return credentials_module_tests()
 
 
-def main():
+def main() -> bool:
     """Main entry point."""
     # Support non-interactive .env import
     if len(sys.argv) > 1 and sys.argv[1] == "--import-env":

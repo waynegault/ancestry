@@ -71,7 +71,7 @@ DEFAULT_CONFIG = {
 _CACHED_GEDCOM_DATA = None
 
 
-def set_cached_gedcom_data(gedcom_data):
+def set_cached_gedcom_data(gedcom_data: Any) -> None:
     """
     Set the cached GEDCOM data directly with enhanced caching support.
 
@@ -101,7 +101,7 @@ def set_cached_gedcom_data(gedcom_data):
             logger.debug(f"Error caching processed GEDCOM data: {e}")
 
 
-def get_cached_gedcom_data():
+def get_cached_gedcom_data() -> Any:
     """Return the currently cached GEDCOM data."""
     return _CACHED_GEDCOM_DATA
 
@@ -1055,7 +1055,7 @@ def test_error_recovery():
     assert True, "Error recovery should handle exceptions gracefully"
 
 
-def search_frances_milne_demo():
+def search_frances_milne_demo() -> None:
     """
     Demonstrate searching for Frances Milne born 1947 with detailed output.
     """

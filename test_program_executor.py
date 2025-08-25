@@ -69,11 +69,11 @@ try:  # Prefer the full framework when available
     from test_framework import TestSuite, suppress_logging
 except ImportError:  # Lightweight fallback to keep tests runnable
     class DummySuite:
-        def __init__(self, *a, **k):
+        def __init__(self, *a: Any, **k: Any) -> None:
             self.failed = False
-        def start_suite(self):
+        def start_suite(self) -> None:
             print("\n==============================\nFallback Test Suite\n==============================")
-        def run_test(self, name, func, *a, **k):
+        def run_test(self, name: str, func: Any, *a: Any, **k: Any) -> None:
             try:
                 func()
                 print(f"[PASS] {name}")
@@ -86,14 +86,14 @@ except ImportError:  # Lightweight fallback to keep tests runnable
     TestSuite = DummySuite  # type: ignore
     from contextlib import contextmanager
     @contextmanager
-    def suppress_logging():  # type: ignore
+    def suppress_logging() -> Any:  # type: ignore
         yield
 
 
 class SafeTestingProtocol:
     """Implements safe testing protocol with Frances McHardy only."""
 
-    def __init__(self, session_manager: SessionManager):
+    def __init__(self, session_manager: SessionManager) -> None:
         # Use the provided SessionManager (now core.SessionManager)
         self.session_manager = session_manager
         self.test_start_time = datetime.now(timezone.utc)

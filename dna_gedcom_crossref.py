@@ -83,7 +83,7 @@ class DNAGedcomCrossReferencer:
     Intelligent system for cross-referencing DNA matches with GEDCOM family tree data.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the DNA-GEDCOM cross-referencer."""
         self.cross_reference_matches: list[CrossReferenceMatch] = []
         self.conflicts_identified: list[ConflictIdentification] = []
@@ -216,7 +216,7 @@ class DNAGedcomCrossReferencer:
             if unique_matches:
                 # Create cross-reference match
                 confidence_score = max(match['confidence'] for match in unique_matches)
-                match_types = list(set(match['type'] for match in unique_matches))
+                match_types = list({match['type'] for match in unique_matches})
 
                 crossref_match = CrossReferenceMatch(
                     match_id=f"crossref_{dna_match.match_id}",
@@ -328,7 +328,7 @@ class DNAGedcomCrossReferencer:
             # Boost confidence if multiple match types
             if len(matches) > 1:
                 best_match['confidence'] = min(1.0, best_match['confidence'] * 1.2)
-                best_match['type'] = ', '.join(set(m['type'] for m in matches))
+                best_match['type'] = ', '.join({m['type'] for m in matches})
 
             unique_matches.append(best_match)
 
@@ -396,7 +396,7 @@ class DNAGedcomCrossReferencer:
                     )
                     self.conflicts_identified.append(conflict)
 
-    def _identify_verification_opportunities(self):
+    def _identify_verification_opportunities(self) -> None:
         """Identify high-value verification opportunities."""
         for crossref_match in self.cross_reference_matches:
             if crossref_match.confidence_score > 0.7:
