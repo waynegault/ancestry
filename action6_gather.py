@@ -303,14 +303,6 @@ from selenium.common.exceptions import (
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
 
-from error_handling import (
-    AuthenticationExpiredError,
-    BrowserSessionError,
-    circuit_breaker,
-    error_context,
-    retry_on_failure,
-    timeout_protection,
-)
 
 # === LOCAL IMPORTS ===
 from cache import cache as global_cache  # Use the initialized global cache instance
@@ -322,6 +314,14 @@ from database import (
     Person,
     PersonStatusEnum,
     db_transn,
+)
+from error_handling import (
+    AuthenticationExpiredError,
+    BrowserSessionError,
+    circuit_breaker,
+    error_context,
+    retry_on_failure,
+    timeout_protection,
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
