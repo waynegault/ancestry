@@ -215,7 +215,7 @@ def run_comprehensive_tests() -> bool:
 
 
 # Test functions for comprehensive testing
-def test_selector_definitions():
+def test_selector_definitions() -> None:
     """Test that essential CSS selectors are properly defined."""
     basic_selectors = [
         "WAIT_FOR_PAGE_SELECTOR",
@@ -230,7 +230,7 @@ def test_selector_definitions():
         assert len(selector_value.strip()) > 0, f"{selector_name} should not be empty"
 
 
-def test_css_format():
+def test_css_format() -> None:
     """Test CSS selectors follow valid syntax and formatting rules."""
     import re
 
@@ -248,7 +248,7 @@ def test_css_format():
         assert selector.strip() == selector, f"Selector has whitespace: {selector}"
 
 
-def test_selector_organization():
+def test_selector_organization() -> None:
     """Test selectors are properly organized and follow naming conventions."""
     # Count selectors by category
     all_selectors = [name for name in globals() if name.endswith("_SELECTOR")]
@@ -264,7 +264,7 @@ def test_selector_organization():
         assert selector_name.isupper(), f"Selector {selector_name} should be uppercase"
 
 
-def test_placeholder_selectors():
+def test_placeholder_selectors() -> None:
     """Test placeholder selectors with template variables are properly formed."""
     placeholder_selectors = []
     for name, value in globals().items():
@@ -276,7 +276,7 @@ def test_placeholder_selectors():
         assert selector.count("{") == selector.count("}"), f"Unmatched braces in {name}"
 
 
-def test_login_selectors():
+def test_login_selectors() -> None:
     """Test login-related selectors cover essential authentication elements."""
     login_selectors = [
         "USERNAME_INPUT_SELECTOR",
@@ -296,7 +296,7 @@ def test_login_selectors():
             ), f"Login selector {selector_name} should not be empty"
 
 
-def test_error_selectors():
+def test_error_selectors() -> None:
     """Test error-related selectors handle various unavailable page scenarios."""
     error_selectors = [
         "PAGE_NO_LONGER_AVAILABLE_SELECTOR",
@@ -316,7 +316,7 @@ def test_error_selectors():
             ), f"Error selector {selector_name} should not be empty"
 
 
-def test_selector_integrity():
+def test_selector_integrity() -> None:
     """Test all selectors are non-empty strings with valid content."""
     all_selectors = [name for name in globals() if name.endswith("_SELECTOR")]
 
@@ -333,7 +333,7 @@ def test_selector_integrity():
         ), f"Selector {selector_name} should not be whitespace only"
 
 
-def test_special_characters():
+def test_special_characters() -> None:
     """Test selectors properly handle special CSS characters and escaping."""
     # Test that selectors with special characters are valid
     special_selectors = []
@@ -352,7 +352,7 @@ def test_special_characters():
         ), f"Special selector {name} should contain CSS syntax"
 
 
-def test_selector_accessibility():
+def test_selector_accessibility() -> None:
     """Test selectors are accessible and don't cause import errors."""
     all_selectors = [name for name in globals() if name.endswith("_SELECTOR")]
 
@@ -367,7 +367,7 @@ def test_selector_accessibility():
     assert accessible_count > 10, "Most selectors should be accessible"
 
 
-def test_performance():
+def test_performance() -> None:
     """Test selector access and usage maintains good performance characteristics."""
     import time
 
