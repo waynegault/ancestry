@@ -17,8 +17,8 @@ Features:
 import time
 from typing import Any, Optional
 
-from color_utils import Colors
 from standard_imports import setup_module
+from test_framework import Colors
 
 logger = setup_module(globals(), __name__)
 

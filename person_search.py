@@ -16,7 +16,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # Make error handling imports visible for tests that assert presence
 
-from error_handling import (
+from core.error_handling import (
     AncestryException,
     circuit_breaker,
     error_context,

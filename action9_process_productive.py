@@ -23,7 +23,7 @@ from standard_imports import (
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (
     circuit_breaker,
     error_context,
     graceful_degradation,
@@ -90,14 +90,22 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import ms_graph_utils
 from ai_interface import extract_genealogical_entities
 
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from cache_manager import (
+    cached_api_call,
+)
+
 # === LOCAL IMPORTS ===
 from config import config_schema
 from core.session_manager import SessionManager
 
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import (
-    cached_database_query,
-)
+
+# Legacy compatibility
+def cached_database_query(ttl: int = 300):
+    """Legacy wrapper for database query caching with TTL support"""
+    def decorator(func):
+        return cached_api_call("database", ttl=ttl)(func)
+    return decorator
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -2467,7 +2475,6 @@ def _identify_and_get_person_details(
     logger.debug(
         f"{log_prefix}: _identify_and_get_person_details - returning None (simplified version)"
     )
-    return None
 
 
 def _format_genealogical_data_for_ai(

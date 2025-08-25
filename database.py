@@ -63,7 +63,7 @@ from sqlalchemy.orm import (
 
 # === LOCAL IMPORTS ===
 from config import config_schema
-from error_handling import (
+from core.error_handling import (
     AncestryException,
     DatabaseConnectionError,
     DataValidationError,

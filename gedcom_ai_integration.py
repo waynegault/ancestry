@@ -616,7 +616,7 @@ def test_person_specific_insights_fallback() -> None:
     if not GEDCOM_AI_AVAILABLE:
         insights = integrator.get_gedcom_insights_for_person("Jane", None)
         assert "insights" in insights or "error" in insights
-        return True
+        return
     stub = type('StubGedcom', (), {
         'indi_index': {'I1': type('Person', (), {'name': ['Jane Example']})()},
         'id_to_parents': {},
@@ -625,7 +625,7 @@ def test_person_specific_insights_fallback() -> None:
     insights = integrator.get_gedcom_insights_for_person("Jane", stub)
     for key in ["relevant_gaps", "relevant_conflicts", "research_opportunities", "family_context", "ai_recommendations"]:
         assert key in insights
-    return None
+    return
 
 
 def gedcom_ai_integration_module_tests() -> bool:

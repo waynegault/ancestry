@@ -177,7 +177,7 @@ def run_linter() -> bool:
                 print(line)
             return False
 
-        # Step 3: non-blocking diagnostics
+        # Step 3: non-blocking diagnostics (excluding PLR2004 and PLC0415)
         print("🧹 LINTER: Repository diagnostics (non-blocking summary)...")
         diag_cmd = [
             sys.executable,
@@ -186,6 +186,7 @@ def run_linter() -> bool:
             "check",
             "--statistics",
             "--exit-zero",
+            "--ignore=PLR2004,PLC0415",
             ".",
         ]
         diag_res = subprocess.run(diag_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())

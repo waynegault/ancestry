@@ -37,6 +37,11 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === LOCAL IMPORTS ===
 from ai_interface import classify_message_intent
+
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from cache_manager import (
+    cached_api_call,
+)
 from config import config_schema
 from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
 
@@ -48,11 +53,6 @@ from core.error_handling import (
 )
 from core.progress_indicators import create_progress_indicator
 from core.session_manager import SessionManager
-
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import (
-    cached_api_call,
-)
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -80,7 +80,7 @@ class AuthenticationExpiredError(AuthenticationError):
     pass
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (
     circuit_breaker,
     error_context,
     graceful_degradation,

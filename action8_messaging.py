@@ -23,7 +23,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 1 OPTIMIZATIONS ===
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (
     circuit_breaker,
     error_context,
     graceful_degradation,
@@ -146,6 +146,12 @@ from api_utils import (  # API utilities
 from cache import cache_result  # Caching utility
 from config import config_schema  # Configuration singletons
 from core.enhanced_error_recovery import with_enhanced_recovery
+from core.error_handling import (
+    APIRateLimitError,
+    AuthenticationExpiredError,
+    BrowserSessionError,
+    MaxApiFailuresExceededError,
+)
 
 # Import available error types for enhanced error handling
 from core.session_manager import SessionManager
@@ -157,12 +163,6 @@ from database import (  # Database models and utilities
     Person,
     commit_bulk_data,
     db_transn,
-)
-from error_handling import (
-    APIRateLimitError,
-    AuthenticationExpiredError,
-    BrowserSessionError,
-    MaxApiFailuresExceededError,
 )
 from performance_monitor import start_advanced_monitoring, stop_advanced_monitoring
 
@@ -3355,7 +3355,7 @@ def action8_messaging_tests() -> None:
             results.append(cascade_detected)
 
             # Test error inheritance
-            cascade_error = MaxApiFailuresExceededError("Test cascade error", "Action 8")
+            cascade_error = MaxApiFailuresExceededError("Test cascade error", context={"source": "Action 8"})
             is_exception = isinstance(cascade_error, Exception)
             status = "✅" if is_exception else "❌"
             print(f"   {status} MaxApiFailuresExceededError inherits from Exception")
@@ -3432,7 +3432,7 @@ def action8_messaging_tests() -> None:
                 try:
                     # Handle different error class signatures
                     if error_class == MaxApiFailuresExceededError:
-                        test_error = error_class("Test error", "Action 8")
+                        test_error = error_class("Test error", context={"source": "Action 8"})
                     else:
                         test_error = error_class("Test error")
                     is_exception = isinstance(test_error, Exception)

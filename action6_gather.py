@@ -296,9 +296,16 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Ses
 
 # === LOCAL IMPORTS ===
 from cache import cache as global_cache  # Use the initialized global cache instance
-from color_utils import Colors
 from config import config_schema
 from core.enhanced_error_recovery import with_enhanced_recovery
+from core.error_handling import (
+    AuthenticationExpiredError,
+    BrowserSessionError,
+    circuit_breaker,
+    error_context,
+    retry_on_failure,
+    timeout_protection,
+)
 from core.session_manager import SessionManager
 from database import (
     DnaMatch,
@@ -307,17 +314,10 @@ from database import (
     PersonStatusEnum,
     db_transn,
 )
-from error_handling import (
-    AuthenticationExpiredError,
-    BrowserSessionError,
-    circuit_breaker,
-    error_context,
-    retry_on_failure,
-    timeout_protection,
-)
 from my_selectors import *  # Import CSS selectors
 from performance_cache import progressive_processing
 from selenium_utils import get_driver_cookies
+from test_framework import Colors
 from utils import (
     JSONP_PATTERN,  # JSONP detection
     _api_req,  # API request helper
@@ -6020,7 +6020,7 @@ def action6_gather_module_tests() -> bool:
         import sqlite3
         from unittest.mock import MagicMock, patch
 
-        from error_handling import DatabaseConnectionError, RetryableError
+        from core.error_handling import DatabaseConnectionError, RetryableError
 
         print("🧪 Testing error handling scenarios that previously caused Action 6 failures...")
 
@@ -6084,11 +6084,11 @@ def action6_gather_module_tests() -> bool:
                     assert retryable_error.context["error_type"] == "IntegrityError"
                     print("     ✅ Database rollback error handling works correctly")
         except Exception as e:
-            raise AssertionError(f"Database transaction rollback simulation failed: {e}")
+            raise AssertionError(f"Database transaction rollback simulation failed: {e}") from e
 
         # Test 4: Test all error class constructors to prevent future regressions
         print("   • Test 4: All error class constructors parameter validation")
-        from error_handling import (
+        from core.error_handling import (
             APIRateLimitError,
             AuthenticationExpiredError,
             BrowserSessionError,
@@ -6120,7 +6120,7 @@ def action6_gather_module_tests() -> bool:
                 print(f"     ✅ {error_class.__name__} constructor works correctly")
             except TypeError as e:
                 if "got multiple values for keyword argument" in str(e):
-                    raise AssertionError(f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}")
+                    raise AssertionError(f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}") from e
                 raise
 
         # Test 5: Legacy function error handling

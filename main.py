@@ -288,10 +288,10 @@ _caching_initialized = False
 def initialize_aggressive_caching() -> bool:
     """Initialize aggressive caching systems."""
     try:
-        from core.system_cache import warm_system_caches
-        return warm_system_caches()
+        from cache_manager import warm_all_caches
+        return warm_all_caches()
     except ImportError:
-        logger.warning("System cache module not available")
+        logger.warning("Cache manager module not available")
         return False
     except Exception as e:
         logger.error(f"Failed to initialize aggressive caching: {e}")

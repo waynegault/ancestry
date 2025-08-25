@@ -196,6 +196,7 @@ class GedcomIntelligenceAnalyzer:
                 # Check for impossible date ranges
                 if birth_year and death_year:
                     age_at_death = death_year - birth_year
+
                     if age_at_death < 0:
                         conflict = GedcomConflict(
                             conflict_id=f"date_conflict_{person_id}",

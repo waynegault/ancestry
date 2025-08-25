@@ -36,7 +36,7 @@ load_dotenv()
 # --- Define log format constants ---
 
 # === UNIVERSAL COLOR SUPPORT ===
-from color_utils import Colors
+from test_framework import Colors
 
 # --- Define log format constants ---
 LOG_FORMAT: str = (

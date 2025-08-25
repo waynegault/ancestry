@@ -69,11 +69,10 @@ except ImportError:
 # === LOCAL IMPORTS ===
 import contextlib
 
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from cache_manager import cached_api_call
 from config.config_manager import ConfigManager
 from core.session_manager import SessionManager
-
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import cached_api_call
 
 # === MODULE CONFIGURATION ===
 # Initialize config
