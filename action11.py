@@ -186,14 +186,27 @@ def enhanced_treesui_search(
                     logger.warning(f"Skipping non-dict person: {type(person)}")
                     continue
 
-                # Extract and score person data
+                # Extract and score person data using universal scoring
                 candidate = extract_person_data_for_scoring(person)
-                total_score, field_scores, reasons = calculate_match_score(
+
+                # Use universal scoring for consistency with Action 10
+                from universal_scoring import apply_universal_scoring
+                scored_candidates = apply_universal_scoring(
+                    candidates=[candidate],
                     search_criteria=search_criteria,
-                    candidate_processed_data=candidate,
                     scoring_weights=scoring_weights,
-                    date_flexibility=date_flex
+                    date_flexibility=date_flex,
+                    max_results=1,
+                    performance_timeout=1.0
                 )
+
+                if scored_candidates:
+                    scored_candidate = scored_candidates[0]
+                    total_score = scored_candidate.get('total_score', 0)
+                    field_scores = scored_candidate.get('field_scores', {})
+                    reasons = scored_candidate.get('reasons', [])
+                else:
+                    total_score, field_scores, reasons = 0, {}, []
 
                 # Add scoring results to the person data
                 result = candidate.copy()

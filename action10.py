@@ -672,7 +672,7 @@ def filter_and_score_individuals(
     scoring_weights: dict[str, Any],
     date_flex: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Filter and score individuals based on criteria."""
+    """Filter and score individuals based on criteria using universal scoring."""
 
     # PHASE 4.2: Ultra-fast mock mode for testing
     if is_mock_mode():
@@ -688,7 +688,7 @@ def filter_and_score_individuals(
         ]
 
     logger.debug(
-        "\n--- Filtering and Scoring Individuals (using pre-processed data) ---"
+        "\n--- Filtering and Scoring Individuals (using universal scoring) ---"
     )
     processing_start_time = time.time()
 
