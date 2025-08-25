@@ -287,7 +287,6 @@ import time  # Used in performance/logging timestamps below
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# import asyncio  # Removed - async functions were removed
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
@@ -297,7 +296,6 @@ import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
 
-# from requests.cookies import RequestsCookieJar  # Unused - removed
 from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -339,12 +337,6 @@ from utils import (
     retry_api,  # API retry decorator
 )
 
-# from test_framework import (  # Unused test framework imports - removed
-#     TestSuite,
-#     suppress_logging,
-#     create_mock_data,
-#     assert_valid_function,
-# )
 
 # --- Constants ---
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
@@ -3278,8 +3270,7 @@ def _process_page_matches(
                 # FINAL OPTIMIZATION 3: Advanced Async Integration for large batches
                 if len(fetch_candidates_uuid) >= 15:  # Use async orchestrator for large batches
                     try:
-                        # import asyncio  # Removed - async orchestrator was removed
-                        logger.debug(f"Batch {current_page}: Using sync API prefetches for {len(fetch_candidates_uuid)} candidates")
+                                                logger.debug(f"Batch {current_page}: Using sync API prefetches for {len(fetch_candidates_uuid)} candidates")
 
                         # Use sync method (async orchestrator was removed)
                         prefetched_data = _perform_api_prefetches(
