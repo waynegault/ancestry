@@ -15,7 +15,7 @@ Features:
 """
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from color_utils import Colors
 from standard_imports import setup_module
@@ -24,13 +24,13 @@ logger = setup_module(globals(), __name__)
 
 
 def apply_universal_scoring(
-    candidates: List[Dict[str, Any]],
-    search_criteria: Dict[str, Any],
-    scoring_weights: Optional[Dict[str, Any]] = None,
-    date_flexibility: Optional[Dict[str, Any]] = None,
+    candidates: list[dict[str, Any]],
+    search_criteria: dict[str, Any],
+    scoring_weights: Optional[dict[str, Any]] = None,
+    date_flexibility: Optional[dict[str, Any]] = None,
     max_results: int = 10,
     performance_timeout: float = 5.0
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Apply universal scoring to a list of candidates.
     
@@ -49,33 +49,33 @@ def apply_universal_scoring(
         List of scored candidates sorted by score (highest first)
     """
     try:
-        from gedcom_utils import calculate_match_score
         from config import config_schema
-        
+        from gedcom_utils import calculate_match_score
+
         # Use default weights if not provided
         if scoring_weights is None:
             scoring_weights = getattr(config_schema, 'common_scoring_weights', {})
-        
+
         # Use default date flexibility if not provided
         if date_flexibility is None:
             date_flexibility = {"year_match_range": 5.0}
-        
+
         scored_results = []
         start_time = time.time()
-        
+
         logger.debug(f"Scoring {len(candidates)} candidates with universal scoring")
-        
+
         for i, candidate in enumerate(candidates):
             # Performance timeout check
             if (time.time() - start_time) > performance_timeout:
                 logger.debug(f"Universal scoring timeout after {i} candidates")
                 break
-                
+
             # Early termination if we have enough high-quality results
             if len(scored_results) >= max_results and scored_results[-1].get('total_score', 0) > 150:
                 logger.debug(f"Early termination with {len(scored_results)} high-quality results")
                 break
-                
+
             try:
                 # Calculate score using universal algorithm
                 total_score, field_scores, reasons = calculate_match_score(
@@ -84,7 +84,7 @@ def apply_universal_scoring(
                     scoring_weights=scoring_weights,
                     date_flexibility=date_flexibility
                 )
-                
+
                 # Create standardized result format
                 result = candidate.copy()
                 result.update({
@@ -94,23 +94,23 @@ def apply_universal_scoring(
                     "full_name_disp": f"{candidate.get('first_name', '')} {candidate.get('surname', '')}".strip(),
                     "confidence": _get_confidence_level(total_score)
                 })
-                
+
                 scored_results.append(result)
-                
+
             except Exception as e:
                 candidate_id = candidate.get('id', candidate.get('person_id', 'unknown'))
                 logger.warning(f"Error scoring candidate {candidate_id}: {e}")
                 continue
-        
+
         # Sort by score (descending) and return top results
         scored_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
         final_results = scored_results[:max_results]
-        
+
         scoring_time = time.time() - start_time
         logger.debug(f"Universal scoring completed: {len(final_results)} results in {scoring_time:.3f}s")
-        
+
         return final_results
-        
+
     except Exception as e:
         logger.error(f"Universal scoring failed: {e}")
         return []
@@ -120,19 +120,18 @@ def _get_confidence_level(score: float) -> str:
     """Get confidence level based on score."""
     if score >= 200:
         return "very_high"
-    elif score >= 150:
+    if score >= 150:
         return "high"
-    elif score >= 100:
+    if score >= 100:
         return "medium"
-    elif score >= 50:
+    if score >= 50:
         return "low"
-    else:
-        return "very_low"
+    return "very_low"
 
 
 def format_scoring_breakdown(
-    result: Dict[str, Any],
-    search_criteria: Dict[str, Any],
+    result: dict[str, Any],
+    search_criteria: dict[str, Any],
     title: str = "Scoring Breakdown"
 ) -> str:
     """
@@ -150,15 +149,15 @@ def format_scoring_breakdown(
         score = result.get('total_score', 0)
         field_scores = result.get('field_scores', {})
         reasons = result.get('reasons', [])
-        
+
         output = [f"\n{Colors.cyan(f'📊 {title}:')}"]
         output.append("Field        Score  Description")
         output.append("--------------------------------------------------")
-        
+
         # Standard field mapping for consistent display
         field_mapping = {
             'givn': 'First Name Match',
-            'surn': 'Surname Match', 
+            'surn': 'Surname Match',
             'gender': 'Gender Match',
             'byear': 'Birth Year Match',
             'bdate': 'Birth Date Match',
@@ -170,23 +169,23 @@ def format_scoring_breakdown(
             'dbonus': 'Death Info Bonus',
             'bonus': 'Name Bonus'
         }
-        
+
         # Display field scores
         for field_key, field_score in field_scores.items():
             field_name = field_mapping.get(field_key, field_key.title())
             output.append(f"{field_name:<12} {field_score:>5}  {_get_field_description(field_key, field_score)}")
-        
+
         output.append("--------------------------------------------------")
         output.append(f"{'Total Score':<12} {score:>5}  {_get_confidence_level(score).replace('_', ' ').title()}")
-        
+
         # Add reasons if available
         if reasons:
             output.append(f"\n{Colors.yellow('📝 Scoring Reasons:')}")
             for reason in reasons[:5]:  # Limit to top 5 reasons
                 output.append(f"   • {reason}")
-        
+
         return "\n".join(output)
-        
+
     except Exception as e:
         logger.warning(f"Error formatting scoring breakdown: {e}")
         return f"Scoring breakdown unavailable: {e}"
@@ -196,17 +195,16 @@ def _get_field_description(field_key: str, score: float) -> str:
     """Get description for a field score."""
     if score >= 25:
         return "Excellent match"
-    elif score >= 15:
+    if score >= 15:
         return "Good match"
-    elif score >= 5:
+    if score >= 5:
         return "Partial match"
-    elif score > 0:
+    if score > 0:
         return "Weak match"
-    else:
-        return "No match"
+    return "No match"
 
 
-def validate_search_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
+def validate_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
     """
     Validate and normalize search criteria for consistent scoring.
     
@@ -217,13 +215,13 @@ def validate_search_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
         Normalized search criteria
     """
     normalized = {}
-    
+
     # Normalize names to lowercase
     if 'first_name' in criteria:
         normalized['first_name'] = str(criteria['first_name']).lower().strip()
     if 'surname' in criteria:
         normalized['surname'] = str(criteria['surname']).lower().strip()
-    
+
     # Normalize numeric fields
     for field in ['birth_year', 'death_year']:
         if field in criteria and criteria[field] is not None:
@@ -232,7 +230,7 @@ def validate_search_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
             except (ValueError, TypeError):
                 logger.warning(f"Invalid {field}: {criteria[field]}")
                 normalized[field] = None
-    
+
     # Normalize gender
     if 'gender' in criteria:
         gender = str(criteria['gender']).lower().strip()
@@ -242,12 +240,12 @@ def validate_search_criteria(criteria: Dict[str, Any]) -> Dict[str, Any]:
             normalized['gender'] = 'f'
         else:
             normalized['gender'] = gender
-    
+
     # Copy other fields as-is
     for key, value in criteria.items():
         if key not in normalized:
             normalized[key] = value
-    
+
     return normalized
 
 
@@ -265,17 +263,17 @@ def test_universal_scoring() -> bool:
                 "gender": "m"
             }
         ]
-        
+
         search_criteria = {
             "first_name": "john",
             "surname": "smith",
             "birth_year": 1950
         }
-        
+
         # This would normally call the real scoring function
         # For testing, we'll just validate the structure
         results = apply_universal_scoring(candidates, search_criteria, max_results=1)
-        
+
         # Validate result structure
         assert isinstance(results, list)
         if results:  # Only check if we got results
@@ -283,7 +281,7 @@ def test_universal_scoring() -> bool:
             assert 'total_score' in result
             assert 'confidence' in result
             assert 'full_name_disp' in result
-        
+
         return True
     except Exception as e:
         logger.error(f"Universal scoring test failed: {e}")
@@ -299,14 +297,14 @@ def test_criteria_validation() -> bool:
             "birth_year": "1950",
             "gender": "Male"
         }
-        
+
         normalized = validate_search_criteria(criteria)
-        
+
         assert normalized['first_name'] == "john"
         assert normalized['surname'] == "smith"
         assert normalized['birth_year'] == 1950
         assert normalized['gender'] == "m"
-        
+
         return True
     except Exception as e:
         logger.error(f"Criteria validation test failed: {e}")
@@ -327,7 +325,7 @@ if __name__ == "__main__":
     # Demo the universal scoring
     print("Universal Scoring Demo:")
     print(Colors.green("✅ Universal scoring module loaded successfully"))
-    
+
     # Run tests
     if run_comprehensive_tests():
         print(Colors.green("✅ All tests passed!"))
