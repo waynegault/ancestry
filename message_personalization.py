@@ -1118,7 +1118,7 @@ class MessageEffectivenessTracker:
 
 
 # Test functions
-def test_message_personalization():
+def test_message_personalization() -> bool:
     """Test the message personalization system."""
     logger.info("Testing message personalization system...")
 
@@ -1159,7 +1159,7 @@ def test_message_personalization():
     logger.info(f"Message personalization test: {'✅ PASSED' if success else '❌ FAILED'}")
     return success
 
-def test_fallback_template_path():
+def test_fallback_template_path() -> bool:
     """Ensure an unknown template key triggers safe fallback without exception."""
     personalizer = MessagePersonalizer()
     # Force empty templates to guarantee fallback path
@@ -1173,7 +1173,7 @@ def test_fallback_template_path():
     # Either fallback message or resolved fallback template must appear
     return ("UserX" in msg) and len(msg) > 10
 
-def test_shared_ancestors_formatting():
+def test_shared_ancestors_formatting() -> bool:
     """Validate proper Oxford-comma style formatting for multiple ancestors."""
     p = MessagePersonalizer()
     data = {"structured_names": [
@@ -1185,7 +1185,7 @@ def test_shared_ancestors_formatting():
     # Expect: "Alice Brown, Robert Clark, and Sarah Davis"
     return formatted.count(",") == 2 and formatted.endswith("Sarah Davis") and " and " in formatted
 
-def test_location_context_limit():
+def test_location_context_limit() -> bool:
     """Ensure location context respects max_locations_to_mention constraint."""
     p = MessagePersonalizer()
     p.personalization_config["max_locations_to_mention"] = 2

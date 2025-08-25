@@ -860,7 +860,7 @@ class IntelligentResearchPrioritizer:
 
 
 # Test functions
-def test_research_prioritization():
+def test_research_prioritization() -> bool:
     """Test the research prioritization system."""
     logger.info("Testing research prioritization system...")
 
@@ -910,7 +910,7 @@ def test_research_prioritization():
     return True
 
 
-def test_priority_scoring_and_ranking():
+def test_priority_scoring_and_ranking() -> None:
     """Ensure priority scores are computed and sorted descending with adjustments."""
     prioritizer = IntelligentResearchPrioritizer()
     gedcom = {
@@ -931,7 +931,7 @@ def test_priority_scoring_and_ranking():
     assert scores == sorted(scores, reverse=True), "Tasks should be sorted descending by score"
 
 
-def test_cluster_generation_and_efficiency():
+def test_cluster_generation_and_efficiency() -> None:
     """Location cluster with multiple items should yield cluster_research task with efficiency >0.7."""
     prioritizer = IntelligentResearchPrioritizer()
     # Provide multiple gaps referencing Scotland via description keyword extraction
@@ -953,7 +953,7 @@ def test_cluster_generation_and_efficiency():
         assert cluster_tasks[0]["priority_score"] >= 70, "Cluster task score should reflect efficiency scaling"
 
 
-def test_dna_verification_task_creation():
+def test_dna_verification_task_creation() -> None:
     """High priority verification opportunity should produce dna_verification task."""
     prioritizer = IntelligentResearchPrioritizer()
     gedcom = {"gaps_identified": [], "conflicts_identified": [], "research_opportunities": [], "ai_insights": {"family_patterns": {"common_surnames": []}}}
