@@ -41,7 +41,7 @@ class GedcomAIIntegrator:
     Integrates intelligence analysis, DNA cross-referencing, and research prioritization.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the GEDCOM AI integrator."""
         self.intelligence_analyzer = None
         self.dna_crossref = None
@@ -607,6 +607,7 @@ def test_comprehensive_analysis_structure_with_stubs() -> bool:
     for key in ["gedcom_intelligence", "dna_crossref", "research_prioritization", "integrated_insights", "summary"]:
         assert key in result, f"Comprehensive analysis missing {key}"
     assert result["summary"].get("analysis_completeness") in ["comprehensive", "gedcom_only"]
+    return None
 
 
 def test_person_specific_insights_fallback() -> None:
@@ -624,6 +625,7 @@ def test_person_specific_insights_fallback() -> None:
     insights = integrator.get_gedcom_insights_for_person("Jane", stub)
     for key in ["relevant_gaps", "relevant_conflicts", "research_opportunities", "family_context", "ai_recommendations"]:
         assert key in insights
+    return None
 
 
 def gedcom_ai_integration_module_tests() -> bool:

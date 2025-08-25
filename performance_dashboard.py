@@ -59,7 +59,7 @@ class PerformanceDashboard:
             "system_metrics": []
         }
 
-    def _save_performance_data(self):
+    def _save_performance_data(self) -> None:
         """Save performance data to file."""
         try:
             data_path = Path(self.data_file)
@@ -333,7 +333,7 @@ RECOMMENDATIONS:
 
         self._save_performance_data()
 
-    def finalize_session(self):
+    def finalize_session(self) -> None:
         """Finalize the current session and save data."""
         if hasattr(self, 'current_session'):
             self.current_session["end_time"] = datetime.now().isoformat()

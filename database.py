@@ -51,8 +51,10 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import (
+    Query,
     Session,
     declarative_base,
     joinedload,
@@ -633,7 +635,7 @@ CREATE_VIEW_SQL = text(
 
 
 @event.listens_for(Base.metadata, "after_create")
-def _create_views(_target, connection, **_kw):
+def _create_views(_target: Any, connection: Connection, **_kw: Any) -> None:
     """SQLAlchemy event listener to create the 'messages' view after tables are created."""
     logger.debug("Executing CREATE VIEW statement for 'messages' view...")
     try:
@@ -1540,6 +1542,55 @@ def get_person_by_profile_id(
 # End of get_person_by_profile_id
 
 
+def _extract_person_identifiers(match_data: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    """Extract profile_id and username from match data."""
+    profile_id = match_data.get("profile_id")
+    username = match_data.get("username")
+    return profile_id, username
+
+
+def _validate_person_identifiers(profile_id: Optional[str], username: Optional[str]) -> bool:
+    """Validate that required identifiers are present."""
+    if not profile_id or not username:
+        logger.warning("get_person_and_dna_match: profile_id and username required.")
+        return False
+    return True
+
+
+def _build_person_query(session: Session, profile_id: str, username: str, include_deleted: bool) -> Query:
+    """Build query for person with DNA match eager loading."""
+    query = (
+        session.query(Person)
+        .options(joinedload(Person.dna_match))  # Eager load DnaMatch relationship
+        .filter(
+            func.upper(Person.profile_id)
+            == profile_id.upper(),  # Case-insensitive profile ID
+            Person.username == username,  # Case-sensitive username
+        )
+    )
+
+    # Apply deleted filter unless include_deleted is True
+    if not include_deleted:
+        query = exclude_deleted_persons(query)
+
+    return query
+
+
+def _handle_person_query_error(profile_id: str, username: str, error: Exception) -> tuple[None, None]:
+    """Handle errors during person query execution."""
+    if isinstance(error, SQLAlchemyError):
+        logger.error(
+            f"DB error retrieving person/DNA match for profile {profile_id}/{username}: {error}",
+            exc_info=True,
+        )
+    else:
+        logger.error(
+            f"Unexpected error retrieving person/DNA match for profile {profile_id}/{username}: {error}",
+            exc_info=True,
+        )
+    return None, None
+
+
 def get_person_and_dna_match(
     session: Session, match_data: dict[str, Any], include_deleted: bool = False
 ) -> tuple[Optional[Person], Optional[DnaMatch]]:
@@ -1556,52 +1607,29 @@ def get_person_and_dna_match(
     Returns:
         A tuple containing (Person, DnaMatch) objects, or (None, None) if not found.
     """
-    # Step 1: Extract identifiers
-    profile_id = match_data.get("profile_id")
-    username = match_data.get("username")
-    # Step 2: Validate inputs
-    if not profile_id or not username:
-        logger.warning("get_person_and_dna_match: profile_id and username required.")
+    # Extract and validate identifiers
+    profile_id, username = _extract_person_identifiers(match_data)
+    if not _validate_person_identifiers(profile_id, username):
         return None, None
-    # Step 3: Query database with eager loading
+
+    # Query database with eager loading
     try:
-        query = (
-            session.query(Person)
-            .options(joinedload(Person.dna_match))  # Eager load DnaMatch relationship
-            .filter(
-                func.upper(Person.profile_id)
-                == profile_id.upper(),  # Case-insensitive profile ID
-                Person.username == username,  # Case-sensitive username
-            )
-        )
-
-        # Apply deleted filter unless include_deleted is True
-        if not include_deleted:
-            query = exclude_deleted_persons(query)
-
+        query = _build_person_query(session, profile_id, username, include_deleted)
         person = query.first()
-        # Step 4: Return results
+
+        # Return results
         if person:
             return person, person.dna_match  # dna_match is already loaded
         return None, None
-    except SQLAlchemyError as e:
-        logger.error(
-            f"DB error retrieving person/DNA match for profile {profile_id}/{username}: {e}",
-            exc_info=True,
-        )
-        return None, None
+
     except Exception as e:
-        logger.error(
-            f"Unexpected error retrieving person/DNA match for profile {profile_id}/{username}: {e}",
-            exc_info=True,
-        )
-        return None, None
+        return _handle_person_query_error(profile_id, username, e)
 
 
 # End of get_person_and_dna_match
 
 
-def exclude_deleted_persons(query):
+def exclude_deleted_persons(query: Query) -> Query:
     """
     Helper function to filter out soft-deleted Person records from a query.
 
@@ -2262,7 +2290,7 @@ def delete_database(
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @timeout_protection(timeout=300)  # 5 minutes for large database backups
 @error_context("Database Backup Operation")
-def backup_database(_session_manager=None):
+def backup_database(_session_manager: Optional[Any] = None) -> bool:
     """
     Creates a backup copy of the current database file.
     The backup is named 'ancestry_backup.db' and stored in the DATA_DIR.
@@ -3050,7 +3078,7 @@ if __name__ == "__main__":
 
         # Step 3: Add PRAGMA event listener for new connections
         @event.listens_for(engine, "connect")
-        def enable_sqlite_settings_standalone(dbapi_connection, _):
+        def enable_sqlite_settings_standalone(dbapi_connection: Any, _: Any) -> None:
             """Listener to set PRAGMA settings upon connection. The second parameter is unused."""
             cursor = dbapi_connection.cursor()
             try:
@@ -3206,7 +3234,7 @@ def database_module_tests() -> bool:
     suite.start_suite()
 
     # INITIALIZATION TESTS
-    def test_database_model_definitions():
+    def test_database_model_definitions() -> None:
         """Test that all required ORM models exist and can be instantiated with detailed verification."""
         model_tests = [
             (Person, "Person", "Main DNA match person record"),
@@ -3269,7 +3297,7 @@ def database_module_tests() -> bool:
             "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageTemplate→message_templates, ConversationLog→conversation_log tables.",
         )
 
-        def test_enum_definitions():
+        def test_enum_definitions() -> None:
             """Test that required enum values are properly defined."""
             # Test PersonStatusEnum
             assert hasattr(
@@ -3308,7 +3336,7 @@ def database_module_tests() -> bool:
             "Verify that enum classes have required status values and direction indicators",
         )
 
-        def test_database_base_setup():
+        def test_database_base_setup() -> None:
             """Test that SQLAlchemy base is properly configured."""
             assert Base is not None, "Base declarative model should be defined"
             assert hasattr(Base, "metadata"), "Base should have metadata attribute"
@@ -3322,7 +3350,7 @@ def database_module_tests() -> bool:
         )
 
         # CORE FUNCTIONALITY TESTS
-        def test_transaction_context_manager():
+        def test_transaction_context_manager() -> None:
             """Test the db_transn context manager functionality."""
             assert callable(db_transn), "db_transn should be a callable function"
             # Test basic structure (without actual database operations)
@@ -3335,7 +3363,7 @@ def database_module_tests() -> bool:
             "Verify that the transaction context manager function exists and can be called",
         )
 
-        def test_model_attributes():
+        def test_model_attributes() -> None:
             """Test that models have required attributes."""
             # Test Person model attributes
             person = Person()
@@ -3388,7 +3416,7 @@ def database_module_tests() -> bool:
             "Verify that Person, DnaMatch, and FamilyTree models have essential attributes",
         )
 
-        def test_database_utilities():
+        def test_database_utilities() -> None:
             """Test database utility functions."""
             # Test that utility functions exist
             assert callable(delete_database), "delete_database should be callable"
@@ -3403,7 +3431,7 @@ def database_module_tests() -> bool:
         )
 
         # EDGE CASE TESTS
-        def test_enum_edge_cases():
+        def test_enum_edge_cases() -> None:
             """Test enum edge cases and validation."""
             # Test enum value access
             assert (
@@ -3429,7 +3457,7 @@ def database_module_tests() -> bool:
             "Verify that enum values have correct string representations and comparison behavior",
         )
 
-        def test_model_instantiation_edge_cases():
+        def test_model_instantiation_edge_cases() -> None:
             """Test model instantiation with various scenarios."""
             # Test instantiation with no parameters
             person1 = Person()
@@ -3453,7 +3481,7 @@ def database_module_tests() -> bool:
         )
 
         # INTEGRATION TESTS
-        def test_model_relationships():
+        def test_model_relationships() -> None:
             """Test that models have proper relationship definitions."""
             person = Person()
 
@@ -3473,7 +3501,7 @@ def database_module_tests() -> bool:
             "Verify that models define relationships to other models correctly",
         )
 
-        def test_schema_integration():
+        def test_schema_integration() -> None:
             """Test that the database schema components work together."""
             # Test that models are registered with Base
             assert Person.__table__ is not None, "Person should have table definition"
@@ -3493,7 +3521,7 @@ def database_module_tests() -> bool:
         )
 
         # PERFORMANCE TESTS
-        def test_model_creation_performance():
+        def test_model_creation_performance() -> None:
             """Test model creation performance."""
             import time
 
@@ -3522,7 +3550,7 @@ def database_module_tests() -> bool:
         )
 
         # ERROR HANDLING TESTS
-        def test_import_error_handling():
+        def test_import_error_handling() -> None:
             """Test that module handles import errors gracefully."""
             # Test that test framework is available
             assert TestSuite is not None, "TestSuite should be available"
@@ -3536,7 +3564,7 @@ def database_module_tests() -> bool:
             "Verify that the module works with or without test framework available",
         )
 
-        def test_configuration_error_handling():
+        def test_configuration_error_handling() -> None:
             """Test handling of configuration-related errors."""
             # Test that config_schema is available
             assert config_schema is not None, "config_schema should be imported"

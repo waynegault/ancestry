@@ -32,7 +32,7 @@ from memory_utils import ObjectPool
 
 class CacheableObject:
     """Example cacheable object for pooling."""
-    def __init__(self, value=None):
+    def __init__(self, value: Any = None) -> None:
         self.value = value
 
 cacheable_pool = ObjectPool(lambda: CacheableObject(), max_size=50)
@@ -52,7 +52,7 @@ class PerformanceCache:
     - Memory pressure monitoring and automatic adjustment
     """
 
-    def __init__(self, max_memory_cache_size: int = 500):  # Increased cache size for better performance
+    def __init__(self, max_memory_cache_size: int = 500) -> None:  # Increased cache size for better performance
         self._memory_cache: dict[str, dict[str, Any]] = {}
         self._cache_timestamps: dict[str, float] = {}
         self._cache_hit_counts: dict[str, int] = {}  # Track cache hit frequency
@@ -80,7 +80,7 @@ class PerformanceCache:
         )
 
     @property
-    def cache_stats(self):
+    def cache_stats(self) -> dict[str, Any]:
         """Lazily compute cache statistics."""
         return {
             "memory_cache_size": len(self._memory_cache),
@@ -112,7 +112,7 @@ class PerformanceCache:
         pressure = self._calculate_memory_pressure()
         return pressure >= self._memory_pressure_threshold
 
-    def _adaptive_resize(self):
+    def _adaptive_resize(self) -> None:
         """Adaptively resize cache based on usage patterns."""
         if not self._adaptive_sizing:
             return
@@ -308,7 +308,7 @@ def cache_gedcom_results(ttl: int = 3600, disk_cache: bool = True):
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Generate cache key
             cache_key = _performance_cache._generate_cache_key(
                 func.__name__, *args, **kwargs
@@ -351,7 +351,7 @@ def fast_test_cache(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         # For test functions, use simple memory-only caching
         cache_key = f"test_{func.__name__}_{hash(str(args))}"
 
@@ -384,7 +384,7 @@ def progressive_processing(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # If data is large enough, process in chunks
             data = kwargs.get("data") or (args[0] if args else None)
 
@@ -424,7 +424,7 @@ def progressive_processing(
 # === CACHE MANAGEMENT FUNCTIONS ===
 
 
-def clear_performance_cache():
+def clear_performance_cache() -> None:
     """Clear all performance caches"""
     _performance_cache._memory_cache.clear()
     _performance_cache._cache_timestamps.clear()
@@ -444,7 +444,7 @@ def clear_performance_cache():
     logger.info("Performance cache cleared")
 
 
-def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None):
+def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None) -> None:
     """
     Intelligent cache warming with multiple strategies.
 
@@ -483,7 +483,7 @@ def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strate
             logger.warning(f"Failed to warm cache for {gedcom_path}: {e}")
 
 
-def _warm_metadata_cache(gedcom_path: str, path: Path):
+def _warm_metadata_cache(gedcom_path: str, path: Path) -> None:
     """Warm cache with file metadata."""
     cache_key = _performance_cache._generate_cache_key("gedcom_metadata", gedcom_path)
     if cache_key not in _performance_cache._memory_cache:
@@ -497,7 +497,7 @@ def _warm_metadata_cache(gedcom_path: str, path: Path):
         logger.debug(f"Warmed metadata cache for {gedcom_path}")
 
 
-def _warm_common_queries_cache(gedcom_path: str):
+def _warm_common_queries_cache(gedcom_path: str) -> None:
     """Warm cache with common query patterns."""
     common_patterns = [
         ("surname_index", gedcom_path),
@@ -521,7 +521,7 @@ def _warm_common_queries_cache(gedcom_path: str):
     logger.debug(f"Warmed common queries cache for {gedcom_path}")
 
 
-def _warm_relationships_cache(gedcom_path: str):
+def _warm_relationships_cache(gedcom_path: str) -> None:
     """Warm cache with relationship data patterns."""
     relationship_patterns = [
         ("parent_child_map", gedcom_path),
@@ -696,7 +696,7 @@ class FastMockDataFactory:
 
 # --- Individual Test Functions ---
 
-def test_performance_cache_initialization():
+def test_performance_cache_initialization() -> None:
     """Test PerformanceCache module initialization."""
     try:
         cache = PerformanceCache(max_memory_cache_size=10)
@@ -708,7 +708,7 @@ def test_performance_cache_initialization():
     except Exception:
         return False
 
-def test_memory_cache_operations():
+def test_memory_cache_operations() -> None:
     """Test basic memory cache operations."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
@@ -717,7 +717,7 @@ def test_memory_cache_operations():
     except Exception:
         return False
 
-def test_cache_key_generation():
+def test_cache_key_generation() -> None:
     """Test cache key generation consistency."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
@@ -727,7 +727,7 @@ def test_cache_key_generation():
     except Exception:
         return False
 
-def test_cache_expiration():
+def test_cache_expiration() -> None:
     """Test cache miss handling."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)

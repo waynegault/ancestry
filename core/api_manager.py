@@ -58,7 +58,7 @@ class APIManager:
     - API request retry logic
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the APIManager."""
         # User identifiers
         self.csrf_token: Optional[str] = None
@@ -79,7 +79,7 @@ class APIManager:
 
         logger.debug("APIManager initialized")
 
-    def _setup_requests_session(self):
+    def _setup_requests_session(self) -> None:
         """Configure the requests session with retry strategy."""
         retry_strategy = Retry(
             total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504]
@@ -396,14 +396,14 @@ class APIManager:
         logger.warning("API login verification failed (both profile ID and UUID methods failed)")
         return False
 
-    def reset_logged_flags(self):
+    def reset_logged_flags(self) -> None:
         """Reset flags used to prevent repeated logging of IDs."""
         self._profile_id_logged = False
         self._uuid_logged = False
         self._tree_id_logged = False
         self._owner_logged = False
 
-    def clear_identifiers(self):
+    def clear_identifiers(self) -> None:
         """Clear all stored identifiers."""
         self.csrf_token = None
         self.my_profile_id = None
@@ -430,7 +430,7 @@ class APIManager:
 
 
 # === Decomposed Helper Functions ===
-def _test_api_manager_initialization():
+def _test_api_manager_initialization() -> bool:
     try:
         api_manager = APIManager()
         assert hasattr(api_manager, "csrf_token"), "Should have csrf_token attribute"
@@ -447,7 +447,7 @@ def _test_api_manager_initialization():
         return False
 
 
-def _test_identifier_management():
+def _test_identifier_management() -> bool:
     try:
         api_manager = APIManager()
         assert hasattr(
@@ -466,7 +466,7 @@ def _test_identifier_management():
         return False
 
 
-def _test_api_request_methods():
+def _test_api_request_methods() -> bool:
     try:
         api_manager = APIManager()
         api_methods = [
@@ -489,7 +489,7 @@ def _test_api_request_methods():
         return False
 
 
-def _test_invalid_response_handling():
+def _test_invalid_response_handling() -> bool:
     try:
         api_manager = APIManager()
         api_manager.clear_identifiers()
@@ -501,7 +501,7 @@ def _test_invalid_response_handling():
         return False
 
 
-def _test_config_integration():
+def _test_config_integration() -> bool:
     try:
         assert config_schema is not None, "Config schema should be available"
         api_constants = ["API_PATH_CSRF_TOKEN", "API_PATH_PROFILE_ID", "API_PATH_UUID"]
@@ -517,7 +517,7 @@ def _test_config_integration():
         return False
 
 
-def _test_session_reuse_efficiency():
+def _test_session_reuse_efficiency() -> bool:
     try:
         import time
 
@@ -535,7 +535,7 @@ def _test_session_reuse_efficiency():
         return False
 
 
-def _test_connection_error_handling():
+def _test_connection_error_handling() -> bool:
     try:
         api_manager = APIManager()
         session = api_manager.requests_session

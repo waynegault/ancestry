@@ -101,7 +101,7 @@ def setup_module(module_globals: dict[str, Any], module_name: str) -> logging.Lo
 
 
 # === ERROR HANDLING UTILITIES ===
-def safe_import(module_name: str, fallback=None):
+def safe_import(module_name: str, fallback: Any = None) -> Any:
     """Safely import a module with fallback."""
     try:
         import importlib
@@ -111,7 +111,7 @@ def safe_import(module_name: str, fallback=None):
         return fallback
 
 
-def safe_import_from(module_name: str, item_name: str, fallback=None):
+def safe_import_from(module_name: str, item_name: str, fallback: Any = None) -> Any:
     """Safely import an item from a module with fallback."""
     try:
         import importlib
@@ -123,7 +123,7 @@ def safe_import_from(module_name: str, item_name: str, fallback=None):
 
 
 # === TESTING INTEGRATION ===
-def get_unified_test_framework():
+def get_unified_test_framework() -> Any:
     """Get the unified test framework, with fallback to individual tests."""
     # Using modern test_framework.py instead of deprecated test_framework_unified
     try:
@@ -265,7 +265,7 @@ def run_comprehensive_tests() -> bool:
         print("✅ Module setup test passed")
 
         # Test function registration
-        def test_func():
+        def test_func() -> str:
             return "test_result"
 
         register_function("test_standard_imports", test_func)
@@ -282,7 +282,7 @@ def run_comprehensive_tests() -> bool:
         suite.start_suite()
 
     # Module setup and initialization
-    def test_module_setup():
+    def test_module_setup() -> None:
         # Test setup_module function
         test_globals = {}
         logger = setup_module(test_globals, "test_module")
@@ -291,7 +291,7 @@ def run_comprehensive_tests() -> bool:
         assert hasattr(logger, "error"), "Logger should have error method"
 
     # Logger functionality
-    def test_logger_creation():
+    def test_logger_creation() -> None:
         logger = get_standard_logger("test_logger_module")
         assert logger is not None, "get_standard_logger should return a logger"
         assert hasattr(logger, "debug"), "Logger should have debug method"
@@ -299,7 +299,7 @@ def run_comprehensive_tests() -> bool:
 
     # Function registration
     def test_function_registration():
-        def sample_function():
+        def sample_function() -> str:
             return "sample_result"
 
         # Test registration
@@ -369,7 +369,7 @@ def run_comprehensive_tests() -> bool:
     # Module cleanup
     def test_module_cleanup():
         # Test that we can clean up registered functions
-        def temp_function():
+        def temp_function() -> str:
             return "temp"
 
         register_function("temp_test_function", temp_function)

@@ -50,7 +50,7 @@ class DIContainer:
     - Thread safety
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._services: dict[str, Any] = {}
         self._factories: dict[str, Callable] = {}
         self._singletons: dict[str, Any] = {}
@@ -100,7 +100,7 @@ class DIContainer:
         with self._lock:
             service_name = name or self._get_service_name(interface)
 
-            def factory():
+            def factory() -> T:
                 return self._create_instance(implementation)
 
             self._factories[service_name] = factory
@@ -310,14 +310,14 @@ class Injectable:
     Provides automatic registration and dependency resolution.
     """
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         """Automatically register subclasses."""
         super().__init_subclass__(**kwargs)
         # Note: Actual registration happens in the container setup
         logger.debug(f"Injectable subclass defined: {cls.__name__}")
 
 
-def inject(service_type: type[T], name: Optional[str] = None) -> Callable:
+def inject(service_type: type[T], name: Optional[str] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for dependency injection.
 
@@ -329,9 +329,9 @@ def inject(service_type: type[T], name: Optional[str] = None) -> Callable:
         Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Get container from global registry
             container = get_container()
             service_instance = container.resolve(service_type, name)
@@ -418,7 +418,7 @@ def get_container(name: str = "default") -> DIContainer:
     return ServiceRegistry.get_container(name)
 
 
-def configure_dependencies():
+def configure_dependencies() -> None:
     """
     Configure application dependencies.
 
@@ -498,7 +498,7 @@ class DIScope:
     Allows temporary service registrations within a specific scope.
     """
 
-    def __init__(self, container_name: str = "default"):
+    def __init__(self, container_name: str = "default") -> None:
         self.container_name = container_name
         self._original_registrations = None
 
@@ -515,7 +515,7 @@ class DIScope:
 
         return container
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         if self._original_registrations:
             container = get_container(self.container_name)
 
@@ -527,7 +527,7 @@ class DIScope:
 
 
 class TestDIContainer(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.container = DIContainer()
 
     def test_register_singleton(self):
@@ -550,10 +550,10 @@ class TestDIContainer(unittest.TestCase):
 
     def test_register_factory(self):
         class ServiceC:
-            def __init__(self, value):
+            def __init__(self, value: Any) -> None:
                 self.value = value
 
-        def factory():
+        def factory() -> ServiceC:
             return ServiceC("factory_value")
 
         self.container.register_factory(ServiceC, factory)
@@ -587,10 +587,10 @@ class TestDIContainer(unittest.TestCase):
 
     def test_resolve_factory(self):
         class ServiceG:
-            def __init__(self, value):
+            def __init__(self, value: Any) -> None:
                 self.value = value
 
-        def factory():
+        def factory() -> ServiceG:
             return ServiceG("factory_value")
 
         self.container.register_factory(ServiceG, factory)
@@ -634,7 +634,7 @@ class TestDIContainer(unittest.TestCase):
 
     def test_create_instance(self):
         class ServiceL:
-            def __init__(self, value):
+            def __init__(self, value: Any) -> None:
                 self.value = value
 
         self.container.register_singleton(ServiceL, ServiceL)
@@ -650,7 +650,7 @@ class TestDIContainer(unittest.TestCase):
 
     def test_injectable_class(self):
         class InjectableService(Injectable):
-            def __init__(self):
+            def __init__(self) -> None:
                 self.injected = True
 
         service = InjectableService()
@@ -659,13 +659,13 @@ class TestDIContainer(unittest.TestCase):
 
     def test_inject_decorator(self):
         class InjectedService:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.value = "injected"
 
         self.container.register_singleton(InjectedService, InjectedService)
 
         @inject(InjectedService)
-        def test_function(**kwargs):
+        def test_function(**kwargs: Any) -> str:
             service = kwargs.get("injectedservice")
             return service.value if service else "not_injected"
 
@@ -702,7 +702,7 @@ class TestDIContainer(unittest.TestCase):
 
     def test_get_service_convenience(self):
         class ConvenienceService:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.convenient = True
 
         self.container.register_singleton(ConvenienceService, ConvenienceService)
@@ -715,7 +715,7 @@ class TestDIContainer(unittest.TestCase):
         with DIScope() as container:
 
             class ScopedService:
-                def __init__(self):
+                def __init__(self) -> None:
                     self.scoped = True
 
             container.register_singleton(ScopedService, ScopedService)
@@ -728,7 +728,7 @@ class TestDIContainer(unittest.TestCase):
         container = DIContainer()
 
         class StateService:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.state = "initial"
 
         container.register_singleton(StateService, StateService)
@@ -765,7 +765,7 @@ class TestDIContainer(unittest.TestCase):
         container = get_container()
 
         class ConfigService:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.config = {"key": "value"}
 
         class LogService:
@@ -790,7 +790,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(app.log.config, app.config)  # Define all tests
 
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> None:
     suite = unittest.TestSuite()
     suite.addTest(unittest.TestLoader().loadTestsFromTestCase(TestDIContainer))
     runner = unittest.TextTestRunner()

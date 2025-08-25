@@ -68,7 +68,7 @@ class SessionComponentCache(BaseCacheModule):
     Extends the existing cache infrastructure with session-specific optimizations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._active_sessions = weakref.WeakSet()
         self._session_timestamps: dict[str, float] = {}
         self._lock = threading.Lock()
@@ -261,14 +261,18 @@ _session_cache = SessionComponentCache()
 # === CACHING DECORATORS USING EXISTING INFRASTRUCTURE ===
 
 
-def cached_session_component(component_type: str):
+from typing import Callable, TypeVar, cast
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+def cached_session_component(component_type: str) -> Callable[[F], F]:
     """
     Decorator to cache expensive session components using existing cache infrastructure.
     Dramatically reduces session manager initialization time.
     """
 
-    def decorator(creation_func):
-        def wrapper(*args, **kwargs):
+    def decorator(creation_func: F) -> F:
+        def wrapper(*args: Any, **kwargs: Any):
             # Try to get from cache first
             cached_component = _session_cache.get_cached_component(component_type)
             if cached_component is not None:
@@ -290,27 +294,27 @@ def cached_session_component(component_type: str):
 
             return component
 
-        return wrapper
+        return cast(F, wrapper)
 
     return decorator
 
 
-def cached_database_manager():
+def cached_database_manager() -> Callable[[F], F]:
     """Decorator specifically for DatabaseManager caching"""
     return cached_session_component("database_manager")
 
 
-def cached_browser_manager():
+def cached_browser_manager() -> Callable[[F], F]:
     """Decorator specifically for BrowserManager caching"""
     return cached_session_component("browser_manager")
 
 
-def cached_api_manager():
+def cached_api_manager() -> Callable[[F], F]:
     """Decorator specifically for APIManager caching"""
     return cached_session_component("api_manager")
 
 
-def cached_session_validator():
+def cached_session_validator() -> Callable[[F], F]:
     """Decorator specifically for SessionValidator caching"""
     return cached_session_component("session_validator")
 
@@ -324,7 +328,7 @@ class OptimizedSessionState:
     Reduces session validation overhead.
     """
 
-    def get_cached_session_state(self, session_id: str) -> Optional[dict]:
+    def get_cached_session_state(self, session_id: str) -> Optional[dict[str, Any]]:
         """Get cached session state if valid"""
         if not cache:
             return None
@@ -344,7 +348,7 @@ class OptimizedSessionState:
             logger.debug(f"Error retrieving session state for {session_id}: {e}")
             return None
 
-    def cache_session_state(self, session_id: str, state: dict):
+    def cache_session_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Cache session state using existing infrastructure"""
         if not cache:
             return
@@ -382,7 +386,7 @@ def clear_session_cache() -> int:
     return 1 if success else 0
 
 
-def warm_session_cache():
+def warm_session_cache() -> bool:
     """Warm up session cache with frequently used components"""
     return _session_cache.warm()
 
@@ -458,6 +462,7 @@ def warm_session_cache():
             print("✅ GOOD: Under 1s session initialization")
 
     print(f"\nDetailed Cache Stats: {stats}")
+    return None
 
 
 # =============================================================================
@@ -676,7 +681,7 @@ def run_comprehensive_tests() -> bool:
 
                 # Run multiple threads
                 threads = []
-                for i in range(3):
+                for _i in range(3):
                     t = threading.Thread(target=cache_operation)
                     threads.append(t)
                     t.start()

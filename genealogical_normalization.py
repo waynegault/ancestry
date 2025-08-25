@@ -252,7 +252,7 @@ def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
     - mentioned_locations -> locations[{place}]
     - mentioned_dates -> vital_records[{date}]
     """
-    for legacy_key, (struct_key, value_field) in LEGACY_TO_STRUCTURED_MAP.items():
+    for legacy_key, (struct_key, _value_field) in LEGACY_TO_STRUCTURED_MAP.items():
         legacy_vals = extracted.get(legacy_key)
         if not legacy_vals:
             continue

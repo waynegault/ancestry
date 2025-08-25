@@ -42,7 +42,7 @@ import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from error_handling import (
     circuit_breaker,
@@ -320,6 +320,44 @@ def sanitize_input(value: str) -> Optional[str]:
     return sanitized if sanitized else None
 
 
+def _is_valid_year(year: int) -> bool:
+    """Check if year is within valid range."""
+    return 1000 <= year <= 2100
+
+
+def _try_simple_year_parsing(value: str) -> Optional[int]:
+    """Try to parse value as a simple 4-digit year."""
+    if value.isdigit():
+        year = int(value)
+        return year if _is_valid_year(year) else None
+    return None
+
+
+def _try_dateparser_parsing(value: str) -> Optional[int]:
+    """Try to parse value using dateparser library."""
+    try:
+        import dateparser
+        parsed_date = dateparser.parse(value)
+        if parsed_date:
+            year = parsed_date.year
+            return year if _is_valid_year(year) else None
+    except ImportError:
+        logger.debug("dateparser not available, using basic date parsing")
+    except Exception as e:
+        logger.debug(f"dateparser failed to parse '{value}': {e}")
+    return None
+
+
+def _try_regex_year_extraction(value: str) -> Optional[int]:
+    """Try to extract year using regex as fallback."""
+    import re
+    year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', value)
+    if year_match:
+        year = int(year_match.group(1))
+        return year if _is_valid_year(year) else None
+    return None
+
+
 def get_validated_year_input(
     prompt: str, default: Optional[int] = None
 ) -> Optional[int]:
@@ -330,36 +368,16 @@ def get_validated_year_input(
     if not value and default:
         return default
 
-    # First try simple 4-digit year
-    if value.isdigit() and 1000 <= int(value) <= 2100:
-        return int(value)
+    if not value:
+        return None
 
-    # Try to parse complex date formats using dateparser
-    try:
-        import dateparser
-        parsed_date = dateparser.parse(value)
-        if parsed_date:
-            year = parsed_date.year
-            if 1000 <= year <= 2100:
-                return year
-    except ImportError:
-        # dateparser not available, fall back to basic parsing
-        logger.debug("dateparser not available, using basic date parsing")
-    except Exception as e:
-        # dateparser failed to parse, continue with other methods
-        logger.debug(f"dateparser failed to parse '{value}': {e}")
+    # Try different parsing methods in order of preference
+    for parser in [_try_simple_year_parsing, _try_dateparser_parsing, _try_regex_year_extraction]:
+        result = parser(value)
+        if result is not None:
+            return result
 
-    # Try to extract year using regex as fallback
-    import re
-    year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', value)
-    if year_match:
-        year = int(year_match.group(1))
-        if 1000 <= year <= 2100:
-            return year
-
-    if value:
-        logger.warning(f"Invalid year input '{value}', ignoring.")
-
+    logger.warning(f"Invalid year input '{value}', ignoring.")
     return None
 
 
@@ -375,16 +393,8 @@ def parse_command_line_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def validate_config() -> tuple[
-    Optional[Path],
-    Optional[str],
-    Optional[str],
-    dict[str, Any],
-    dict[str, Any],
-    int,
-]:
-    """Validate configuration and return essential values."""
-    # Get and validate GEDCOM file path
+def _validate_gedcom_file_path() -> Path:
+    """Validate and return GEDCOM file path."""
     gedcom_file_path_config = (
         config_schema.database.gedcom_file_path if config_schema else None
     )
@@ -401,21 +411,29 @@ def validate_config() -> tuple[
         # Create a dummy path for mock mode
         gedcom_file_path_config = Path("mock_gedcom.ged")
 
-    # Get reference person info
+    return gedcom_file_path_config
+
+
+def _get_reference_person_info() -> tuple[Optional[str], str]:
+    """Get reference person ID and name from config."""
     reference_person_id_raw = (
         config_schema.reference_person_id if config_schema else None
     )
     reference_person_name = (
         config_schema.reference_person_name if config_schema else "Reference Person"
     )
+    return reference_person_id_raw, reference_person_name
 
-    # Get scoring and date flexibility settings with defaults
+
+def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Get scoring weights, date flexibility, and max results from config."""
     date_flexibility_value = (
         config_schema.date_flexibility if config_schema else 2
     )  # Default flexibility
     date_flex = {
         "year_match_range": int(date_flexibility_value)
     }  # Convert to expected dictionary structure
+
     scoring_weights = (
         dict(config_schema.common_scoring_weights)
         if config_schema
@@ -428,17 +446,42 @@ def validate_config() -> tuple[
             "death_place_match": 15,
         }
     )
+
     max_display_results = (
         config_schema.max_candidates_to_display if config_schema else 10
     )
 
-    # Log configuration
+    return date_flex, scoring_weights, max_display_results
+
+
+def _log_configuration(
+    gedcom_file_path: Path,
+    reference_person_id: Optional[str],
+    reference_person_name: str
+) -> None:
+    """Log configuration details."""
     logger.debug(
         f"Configured TREE_OWNER_NAME: {config_schema.user_name if config_schema else 'Not Set'}"
     )
-    logger.debug(f"Configured REFERENCE_PERSON_ID: {reference_person_id_raw}")
+    logger.debug(f"Configured REFERENCE_PERSON_ID: {reference_person_id}")
     logger.debug(f"Configured REFERENCE_PERSON_NAME: {reference_person_name}")
-    logger.debug(f"Using GEDCOM file: {gedcom_file_path_config.name}")
+    logger.debug(f"Using GEDCOM file: {gedcom_file_path.name}")
+
+
+def validate_config() -> tuple[
+    Optional[Path],
+    Optional[str],
+    Optional[str],
+    dict[str, Any],
+    dict[str, Any],
+    int,
+]:
+    """Validate configuration and return essential values."""
+    gedcom_file_path_config = _validate_gedcom_file_path()
+    reference_person_id_raw, reference_person_name = _get_reference_person_info()
+    date_flex, scoring_weights, max_display_results = _get_scoring_config()
+
+    _log_configuration(gedcom_file_path_config, reference_person_id_raw, reference_person_name)
 
     return (
         gedcom_file_path_config,
@@ -505,13 +548,8 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         ) from e
 
 
-def get_user_criteria(
-    args: Optional[argparse.Namespace] = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Get search criteria from user input or automated input args."""
-    logger.info("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
-
-    # Use automated inputs if provided
+def _create_input_getter(args: Optional[argparse.Namespace]) -> callable:
+    """Create input getter function that handles automated inputs."""
     auto_inputs = getattr(args, "auto_input", None) if args else None
     auto_index = 0
 
@@ -525,7 +563,11 @@ def get_user_criteria(
             return value
         return input(prompt).strip()
 
-    # Get input with proper validation
+    return get_input
+
+
+def _collect_basic_criteria(get_input: callable) -> dict[str, Any]:
+    """Collect basic search criteria from user input."""
     input_fname = sanitize_input(get_input("  First Name Contains:"))
     input_sname = sanitize_input(get_input("  Surname Contains:"))
 
@@ -546,48 +588,65 @@ def get_user_criteria(
 
     input_dplace = sanitize_input(get_input("  Death Place Contains [Optional]:"))
 
-    # Create date objects based on year
-    birth_date_obj_crit: Optional[datetime] = None
-    if birth_year_crit:
-        try:
-            birth_date_obj_crit = datetime(birth_year_crit, 1, 1, tzinfo=timezone.utc)
-        except ValueError:
-            logger.warning(
-                f"Cannot create date object for birth year {birth_year_crit}."
-            )
-            birth_year_crit = None
-
-    death_date_obj_crit: Optional[datetime] = None
-    if death_year_crit:
-        try:
-            death_date_obj_crit = datetime(death_year_crit, 1, 1, tzinfo=timezone.utc)
-        except ValueError:
-            logger.warning(
-                f"Cannot create date object for death year {death_year_crit}."
-            )
-            death_year_crit = None
-
-    # Build criteria dictionaries
-    scoring_criteria = {
+    return {
         "first_name": input_fname,
         "surname": input_sname,
         "gender": gender_crit,
         "birth_year": birth_year_crit,
         "birth_place": input_bplace,
-        "birth_date_obj": birth_date_obj_crit,
         "death_year": death_year_crit,
         "death_place": input_dplace,
-        "death_date_obj": death_date_obj_crit,
     }
 
-    # Filter criteria often mirrors scoring, but could be different
-    filter_criteria = {
+
+def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
+    """Create date objects from year criteria."""
+    birth_date_obj_crit: Optional[datetime] = None
+    if criteria["birth_year"]:
+        try:
+            birth_date_obj_crit = datetime(criteria["birth_year"], 1, 1, tzinfo=timezone.utc)
+        except ValueError:
+            logger.warning(
+                f"Cannot create date object for birth year {criteria['birth_year']}."
+            )
+            criteria["birth_year"] = None
+
+    death_date_obj_crit: Optional[datetime] = None
+    if criteria["death_year"]:
+        try:
+            death_date_obj_crit = datetime(criteria["death_year"], 1, 1, tzinfo=timezone.utc)
+        except ValueError:
+            logger.warning(
+                f"Cannot create date object for death year {criteria['death_year']}."
+            )
+            criteria["death_year"] = None
+
+    criteria["birth_date_obj"] = birth_date_obj_crit
+    criteria["death_date_obj"] = death_date_obj_crit
+    return criteria
+
+
+def _build_filter_criteria(scoring_criteria: dict[str, Any]) -> dict[str, Any]:
+    """Build filter criteria from scoring criteria."""
+    return {
         "first_name": scoring_criteria.get("first_name"),
         "surname": scoring_criteria.get("surname"),
         "gender": scoring_criteria.get("gender"),
         "birth_year": scoring_criteria.get("birth_year"),
         "birth_place": scoring_criteria.get("birth_place"),
     }
+
+
+def get_user_criteria(
+    args: Optional[argparse.Namespace] = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Get search criteria from user input or automated input args."""
+    logger.info("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
+
+    get_input = _create_input_getter(args)
+    basic_criteria = _collect_basic_criteria(get_input)
+    scoring_criteria = _create_date_objects(basic_criteria)
+    filter_criteria = _build_filter_criteria(scoring_criteria)
 
     return scoring_criteria, filter_criteria
 
@@ -665,6 +724,134 @@ def calculate_match_score_cached(
 @cache_gedcom_results(ttl=900, disk_cache=True)
 @progressive_processing(chunk_size=500)
 @error_context("filter_and_score_individuals")
+def _get_mock_filtering_results() -> list[dict[str, Any]]:
+    """Return mock filtering results for testing."""
+    logger.debug("🚀 Using mock filtering results for ultra-fast testing")
+    return [
+        {
+            "id": "@I1@",  # Test expects "id" field
+            "score": 95.0,
+            "first_name": "John",
+            "surname": "Smith",
+            "confidence": "high",
+        }
+    ]
+
+
+def _extract_individual_data(indi_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract needed values for filtering from individual data."""
+    return {
+        "givn_lower": indi_data.get("first_name", "").lower(),
+        "surn_lower": indi_data.get("surname", "").lower(),
+        "sex_lower": indi_data.get("gender_norm"),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place_lower": (
+            indi_data.get("birth_place_disp", "").lower()
+            if indi_data.get("birth_place_disp")
+            else None
+        ),
+        "death_date_obj": indi_data.get("death_date_obj"),
+    }
+
+
+def _evaluate_filter_criteria(
+    extracted_data: dict[str, Any],
+    filter_criteria: dict[str, Any],
+    year_range: int
+) -> bool:
+    """Evaluate if individual passes OR filter criteria."""
+    fn_match_filter = matches_criterion(
+        "first_name", filter_criteria, extracted_data["givn_lower"]
+    )
+    sn_match_filter = matches_criterion(
+        "surname", filter_criteria, extracted_data["surn_lower"]
+    )
+    gender_match_filter = bool(
+        filter_criteria.get("gender")
+        and extracted_data["sex_lower"]
+        and filter_criteria["gender"] == extracted_data["sex_lower"]
+    )
+    bp_match_filter = matches_criterion(
+        "birth_place", filter_criteria, extracted_data["birth_place_lower"]
+    )
+    by_match_filter = matches_year_criterion(
+        "birth_year", filter_criteria, extracted_data["birth_year"], year_range
+    )
+    alive_match = extracted_data["death_date_obj"] is None
+
+    return (
+        fn_match_filter
+        or sn_match_filter
+        or gender_match_filter
+        or bp_match_filter
+        or by_match_filter
+        or alive_match
+    )
+
+
+def _create_match_data(
+    indi_id_norm: str,
+    indi_data: dict[str, Any],
+    total_score: float,
+    field_scores: dict[str, Any],
+    reasons: list[str],
+) -> dict[str, Any]:
+    """Create match data dictionary for display and analysis."""
+    return {
+        "id": indi_id_norm,
+        "display_id": indi_data.get("display_id", indi_id_norm),
+        "full_name_disp": indi_data.get("full_name_disp", "N/A"),
+        "total_score": total_score,
+        "field_scores": field_scores,
+        "reasons": reasons,
+        "gender": indi_data.get("gender_raw", "N/A"),
+        "birth_date": indi_data.get("birth_date_disp", "N/A"),
+        "birth_place": indi_data.get("birth_place_disp"),
+        "death_date": indi_data.get("death_date_disp"),
+        "death_place": indi_data.get("death_place_disp"),
+        "raw_data": indi_data,  # Store the raw data for detailed analysis
+    }
+
+
+def _process_individual(
+    indi_id_norm: str,
+    indi_data: dict[str, Any],
+    filter_criteria: dict[str, Any],
+    scoring_criteria: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: dict[str, Any],
+    year_range: int,
+    score_cache: dict[str, Any],
+) -> Optional[dict[str, Any]]:
+    """Process a single individual for filtering and scoring."""
+    try:
+        extracted_data = _extract_individual_data(indi_data)
+
+        if _evaluate_filter_criteria(extracted_data, filter_criteria, year_range):
+            # Calculate match score with caching for performance
+            total_score, field_scores, reasons = calculate_match_score_cached(
+                search_criteria=scoring_criteria,
+                candidate_data=indi_data,
+                scoring_weights=scoring_weights,
+                date_flex=date_flex,
+                cache=score_cache,
+            )
+
+            return _create_match_data(
+                indi_id_norm, indi_data, total_score, field_scores, reasons
+            )
+    except ValueError as ve:
+        logger.error(f"Value error processing individual {indi_id_norm}: {ve}")
+    except KeyError as ke:
+        logger.error(f"Missing key for individual {indi_id_norm}: {ke}")
+    except Exception as ex:
+        logger.error(
+            f"Error processing individual {indi_id_norm}: {ex}", exc_info=True
+        )
+
+    return None
+
+
 def filter_and_score_individuals(
     gedcom_data: GedcomData,
     filter_criteria: dict[str, Any],
@@ -676,16 +863,7 @@ def filter_and_score_individuals(
 
     # PHASE 4.2: Ultra-fast mock mode for testing
     if is_mock_mode():
-        logger.debug("🚀 Using mock filtering results for ultra-fast testing")
-        return [
-            {
-                "id": "@I1@",  # Test expects "id" field
-                "score": 95.0,
-                "first_name": "John",
-                "surname": "Smith",
-                "confidence": "high",
-            }
-        ]
+        return _get_mock_filtering_results()
 
     logger.debug(
         "\n--- Filtering and Scoring Individuals (using universal scoring) ---"
@@ -701,13 +879,11 @@ def filter_and_score_individuals(
 
     # For progress tracking
     total_records = len(gedcom_data.processed_data_cache)
-    processed = 0
     progress_interval = max(1, total_records // 10)  # Update every 10%
 
     logger.debug(f"Processing {total_records} individuals from cache...")
 
     for processed, (indi_id_norm, indi_data) in enumerate(gedcom_data.processed_data_cache.items(), start=1):
-
         # Show progress updates
         if processed % progress_interval == 0:
             percent_done = (processed / total_records) * 100
@@ -715,81 +891,19 @@ def filter_and_score_individuals(
                 f"Processing: {percent_done:.1f}% complete ({processed}/{total_records})"
             )
 
-        try:
-            # Extract needed values for filtering
-            givn_lower = indi_data.get("first_name", "").lower()
-            surn_lower = indi_data.get("surname", "").lower()
-            sex_lower = indi_data.get("gender_norm")
-            birth_year = indi_data.get("birth_year")
-            birth_place_lower = (
-                indi_data.get("birth_place_disp", "").lower()
-                if indi_data.get("birth_place_disp")
-                else None
-            )
-            death_date_obj = indi_data.get("death_date_obj")
+        match_data = _process_individual(
+            indi_id_norm,
+            indi_data,
+            filter_criteria,
+            scoring_criteria,
+            scoring_weights,
+            date_flex,
+            year_range,
+            score_cache,
+        )
 
-            # Evaluate OR Filter
-            fn_match_filter = matches_criterion(
-                "first_name", filter_criteria, givn_lower
-            )
-            sn_match_filter = matches_criterion("surname", filter_criteria, surn_lower)
-            gender_match_filter = bool(
-                filter_criteria.get("gender")
-                and sex_lower
-                and filter_criteria["gender"] == sex_lower
-            )
-            bp_match_filter = matches_criterion(
-                "birth_place", filter_criteria, birth_place_lower
-            )
-            by_match_filter = matches_year_criterion(
-                "birth_year", filter_criteria, birth_year, year_range
-            )
-            alive_match = death_date_obj is None
-
-            passes_or_filter = (
-                fn_match_filter
-                or sn_match_filter
-                or gender_match_filter
-                or bp_match_filter
-                or by_match_filter
-                or alive_match
-            )
-
-            if passes_or_filter:
-                # Calculate match score with caching for performance
-                total_score, field_scores, reasons = calculate_match_score_cached(
-                    search_criteria=scoring_criteria,
-                    candidate_data=indi_data,
-                    scoring_weights=scoring_weights,
-                    date_flex=date_flex,
-                    cache=score_cache,
-                )
-
-                # Store results needed for display and analysis
-                match_data = {
-                    "id": indi_id_norm,
-                    "display_id": indi_data.get("display_id", indi_id_norm),
-                    "full_name_disp": indi_data.get("full_name_disp", "N/A"),
-                    "total_score": total_score,
-                    "field_scores": field_scores,
-                    "reasons": reasons,
-                    "gender": indi_data.get("gender_raw", "N/A"),
-                    "birth_date": indi_data.get("birth_date_disp", "N/A"),
-                    "birth_place": indi_data.get("birth_place_disp"),
-                    "death_date": indi_data.get("death_date_disp"),
-                    "death_place": indi_data.get("death_place_disp"),
-                    "raw_data": indi_data,  # Store the raw data for detailed analysis
-                }
-                scored_matches.append(match_data)
-
-        except ValueError as ve:
-            logger.error(f"Value error processing individual {indi_id_norm}: {ve}")
-        except KeyError as ke:
-            logger.error(f"Missing key for individual {indi_id_norm}: {ke}")
-        except Exception as ex:
-            logger.error(
-                f"Error processing individual {indi_id_norm}: {ex}", exc_info=True
-            )
+        if match_data:
+            scored_matches.append(match_data)
 
     processing_duration = time.time() - processing_start_time
     logger.debug(f"Filtering & Scoring completed in {processing_duration:.2f}s.")
@@ -838,6 +952,135 @@ def format_display_value(value: Any, max_width: int) -> str:
     return display
 
 
+def _extract_field_scores(candidate: dict[str, Any]) -> dict[str, int]:
+    """Extract and organize field scores from candidate data."""
+    fs = candidate.get("field_scores", {})
+    return {
+        "givn_s": fs.get("givn", 0),
+        "surn_s": fs.get("surn", 0),
+        "name_bonus_orig": fs.get("bonus", 0),
+        "gender_s": fs.get("gender", 0),
+        "byear_s": fs.get("byear", 0),
+        "bdate_s": fs.get("bdate", 0),
+        "bplace_s": fs.get("bplace", 0),
+        "dyear_s": fs.get("dyear", 0),
+        "ddate_s": fs.get("ddate", 0),
+        "dplace_s": fs.get("dplace", 0),
+    }
+
+
+def _calculate_display_bonuses(scores: dict[str, int]) -> dict[str, int]:
+    """Calculate display bonus values for birth and death."""
+    birth_date_score_component = max(scores["byear_s"], scores["bdate_s"])
+    death_date_score_component = max(scores["dyear_s"], scores["ddate_s"])
+
+    return {
+        "birth_date_score_component": birth_date_score_component,
+        "death_date_score_component": death_date_score_component,
+        "birth_bonus_s_disp": 25 if (birth_date_score_component > 0 and scores["bplace_s"] > 0) else 0,
+        "death_bonus_s_disp": 25 if (death_date_score_component > 0 and scores["dplace_s"] > 0) else 0,
+    }
+
+
+def _format_name_display(candidate: dict[str, Any], scores: dict[str, int]) -> str:
+    """Format name with score for display."""
+    name_disp = candidate.get("full_name_disp", "N/A")
+    name_disp_short = name_disp[:30] + ("..." if len(name_disp) > 30 else "")
+    name_base_score = scores["givn_s"] + scores["surn_s"]
+    name_score_str = f"[{name_base_score}]"
+    if scores["name_bonus_orig"] > 0:
+        name_score_str += f"[+{scores['name_bonus_orig']}]"
+    return f"{name_disp_short} {name_score_str}"
+
+
+def _format_gender_display(candidate: dict[str, Any], scores: dict[str, int]) -> str:
+    """Format gender with score for display."""
+    gender_disp_val = candidate.get("gender", "N/A")
+    gender_disp_str = (
+        str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
+    )
+    return f"{gender_disp_str} [{scores['gender_s']}]"
+
+
+def _format_birth_displays(candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
+    """Format birth date and place displays with scores."""
+    # Birth date display
+    bdate_disp = str(candidate.get("birth_date", "N/A"))
+    birth_score_display = f"[{bonuses['birth_date_score_component']}]"
+    bdate_with_score = f"{bdate_disp} {birth_score_display}"
+
+    # Birth place display
+    bplace_disp_val = candidate.get("birth_place", "N/A")
+    bplace_disp_str = str(bplace_disp_val) if bplace_disp_val is not None else "N/A"
+    bplace_disp_short = bplace_disp_str[:20] + (
+        "..." if len(bplace_disp_str) > 20 else ""
+    )
+    bplace_with_score = f"{bplace_disp_short} [{scores['bplace_s']}]"
+    if bonuses["birth_bonus_s_disp"] > 0:
+        bplace_with_score += f" [+{bonuses['birth_bonus_s_disp']}]"
+
+    return bdate_with_score, bplace_with_score
+
+
+def _format_death_displays(candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
+    """Format death date and place displays with scores."""
+    # Death date display
+    ddate_disp = str(candidate.get("death_date", "N/A"))
+    death_score_display = f"[{bonuses['death_date_score_component']}]"
+    ddate_with_score = f"{ddate_disp} {death_score_display}"
+
+    # Death place display
+    dplace_disp_val = candidate.get("death_place", "N/A")
+    dplace_disp_str = str(dplace_disp_val) if dplace_disp_val is not None else "N/A"
+    dplace_disp_short = dplace_disp_str[:20] + (
+        "..." if len(dplace_disp_str) > 20 else ""
+    )
+    dplace_with_score = f"{dplace_disp_short} [{scores['dplace_s']}]"
+    if bonuses["death_bonus_s_disp"] > 0:
+        dplace_with_score += f" [+{bonuses['death_bonus_s_disp']}]"
+
+    return ddate_with_score, dplace_with_score
+
+
+def _create_table_row(candidate: dict[str, Any]) -> list[str]:
+    """Create a table row for a single candidate."""
+    scores = _extract_field_scores(candidate)
+    bonuses = _calculate_display_bonuses(scores)
+
+    name_with_score = _format_name_display(candidate, scores)
+    gender_with_score = _format_gender_display(candidate, scores)
+    bdate_with_score, bplace_with_score = _format_birth_displays(candidate, scores, bonuses)
+    ddate_with_score, dplace_with_score = _format_death_displays(candidate, scores, bonuses)
+
+    total_display_score = int(candidate.get("total_score", 0))
+
+    return [
+        str(candidate.get("display_id", "N/A")),
+        name_with_score,
+        gender_with_score,
+        bdate_with_score,
+        bplace_with_score,
+        ddate_with_score,
+        dplace_with_score,
+        str(total_display_score),
+    ]
+
+
+def _display_results_table(table_data: list[list[str]], headers: list[str]) -> None:
+    """Display the results table using tabulate or fallback formatting."""
+    if tabulate is not None:
+        # Use tabulate if available
+        table_output = tabulate(table_data, headers=headers, tablefmt="simple")
+        for line in table_output.split("\n"):
+            logger.info(line)
+    else:
+        # Fallback to simple formatting if tabulate is not available
+        logger.info(" | ".join(headers))
+        logger.info("-" * 100)
+        for row in table_data:
+            logger.info(" | ".join(row))
+
+
 def display_top_matches(
     scored_matches: list[dict[str, Any]], max_results: int
 ) -> Optional[dict[str, Any]]:
@@ -854,7 +1097,6 @@ def display_top_matches(
     )
 
     # Prepare table data
-    table_data = []
     headers = [
         "ID",
         "Name",
@@ -867,114 +1109,10 @@ def display_top_matches(
     ]
 
     # Process each match for display
-    for candidate in display_matches:
-        # Get field scores
-        fs = candidate.get("field_scores", {})
-
-        # Name scores
-        givn_s = fs.get("givn", 0)
-        surn_s = fs.get("surn", 0)
-        name_bonus_orig = fs.get("bonus", 0)
-        name_base_score = givn_s + surn_s
-
-        # Gender score
-        gender_s = fs.get("gender", 0)
-
-        # Birth scores
-        byear_s = fs.get("byear", 0)
-        bdate_s = fs.get("bdate", 0)
-        bplace_s = fs.get("bplace", 0)
-
-        # Death scores
-        dyear_s = fs.get("dyear", 0)
-        ddate_s = fs.get("ddate", 0)
-        dplace_s = fs.get("dplace", 0)
-
-        # Determine display bonus values
-        birth_date_score_component = max(byear_s, bdate_s)
-        death_date_score_component = max(dyear_s, ddate_s)
-
-        # Birth and death bonuses
-        birth_bonus_s_disp = (
-            25 if (birth_date_score_component > 0 and bplace_s > 0) else 0
-        )
-        death_bonus_s_disp = (
-            25 if (death_date_score_component > 0 and dplace_s > 0) else 0
-        )
-
-        # Format name with score
-        name_disp = candidate.get("full_name_disp", "N/A")
-        name_disp_short = name_disp[:30] + ("..." if len(name_disp) > 30 else "")
-        name_score_str = f"[{name_base_score}]"
-        if name_bonus_orig > 0:
-            name_score_str += f"[+{name_bonus_orig}]"
-        name_with_score = f"{name_disp_short} {name_score_str}"
-
-        # Gender display
-        gender_disp_val = candidate.get("gender", "N/A")
-        gender_disp_str = (
-            str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
-        )
-        gender_with_score = f"{gender_disp_str} [{gender_s}]"
-
-        # Birth date display
-        bdate_disp = str(candidate.get("birth_date", "N/A"))
-        birth_score_display = f"[{birth_date_score_component}]"
-        bdate_with_score = f"{bdate_disp} {birth_score_display}"
-
-        # Birth place display
-        bplace_disp_val = candidate.get("birth_place", "N/A")
-        bplace_disp_str = str(bplace_disp_val) if bplace_disp_val is not None else "N/A"
-        bplace_disp_short = bplace_disp_str[:20] + (
-            "..." if len(bplace_disp_str) > 20 else ""
-        )
-        bplace_with_score = f"{bplace_disp_short} [{bplace_s}]"
-        if birth_bonus_s_disp > 0:
-            bplace_with_score += f" [+{birth_bonus_s_disp}]"
-
-        # Death date display
-        ddate_disp = str(candidate.get("death_date", "N/A"))
-        death_score_display = f"[{death_date_score_component}]"
-        ddate_with_score = f"{ddate_disp} {death_score_display}"
-
-        # Death place display
-        dplace_disp_val = candidate.get("death_place", "N/A")
-        dplace_disp_str = str(dplace_disp_val) if dplace_disp_val is not None else "N/A"
-        dplace_disp_short = dplace_disp_str[:20] + (
-            "..." if len(dplace_disp_str) > 20 else ""
-        )
-        dplace_with_score = f"{dplace_disp_short} [{dplace_s}]"
-        if death_bonus_s_disp > 0:
-            dplace_with_score += f" [+{death_bonus_s_disp}]"
-
-        # Use the actual score from calculate_match_score instead of recalculating
-        total_display_score = int(candidate.get("total_score", 0))
-
-        # Create table row
-        row = [
-            str(candidate.get("display_id", "N/A")),
-            name_with_score,
-            gender_with_score,
-            bdate_with_score,
-            bplace_with_score,
-            ddate_with_score,
-            dplace_with_score,
-            str(total_display_score),
-        ]
-        table_data.append(row)
+    table_data = [_create_table_row(candidate) for candidate in display_matches]
 
     # Display table
-    if tabulate is not None:
-        # Use tabulate if available
-        table_output = tabulate(table_data, headers=headers, tablefmt="simple")
-        for line in table_output.split("\n"):
-            logger.info(line)
-    else:
-        # Fallback to simple formatting if tabulate is not available
-        logger.info(" | ".join(headers))
-        logger.info("-" * 100)
-        for row in table_data:
-            logger.info(" | ".join(row))
+    _display_results_table(table_data, headers)
 
     if len(scored_matches) > len(display_matches):
         logger.debug(
@@ -1028,36 +1166,20 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
 
 
 @error_context("analyze_top_match")
-def analyze_top_match(
-    gedcom_data: GedcomData,
-    top_match: dict[str, Any],
-    reference_person_id_norm: Optional[str],
-    reference_person_name: str,
-) -> None:
-    """Analyze top match and find relationship path."""
+def _display_mock_analysis(top_match: dict[str, Any], reference_person_name: str) -> None:
+    """Display mock analysis results for testing."""
+    logger.info(
+        f"🎯 Top Match Analysis: {top_match.get('full_name_disp', 'John Smith')}"
+    )
+    logger.info(f"Score: {top_match.get('score', 95)}/100")
+    logger.info(
+        f"Relationship Path: {reference_person_name} → Great Uncle → John Smith"
+    )
+    logger.info("✅ Mock relationship analysis completed successfully")
 
-    # PHASE 4.2: Ultra-fast mock mode
-    if is_mock_mode():
-        logger.info(
-            f"🎯 Top Match Analysis: {top_match.get('full_name_disp', 'John Smith')}"
-        )
-        logger.info(f"Score: {top_match.get('score', 95)}/100")
-        logger.info(
-            f"Relationship Path: {reference_person_name} → Great Uncle → John Smith"
-        )
-        logger.info("✅ Mock relationship analysis completed successfully")
-        return
 
-    top_match_norm_id = top_match.get("id")
-    top_match_indi = gedcom_data.find_individual_by_id(top_match_norm_id)
-
-    if not top_match_indi:
-        logger.error(
-            f"Could not retrieve Individual record for top match ID: {top_match_norm_id}"
-        )
-        return
-
-    # Get display name and score
+def _get_match_display_info(top_match: dict[str, Any]) -> tuple[str, float, str]:
+    """Extract display information from top match."""
     display_name = top_match.get("full_name_disp", "Unknown")
     score = top_match.get("total_score", 0)
 
@@ -1074,9 +1196,101 @@ def analyze_top_match(
     elif death_year:
         years_display = f" (d. {death_year})"
 
-    # Display family details header with name and years
+    return display_name, score, years_display
 
+
+def _display_match_header(display_name: str, years_display: str, score: float) -> None:
+    """Display the match analysis header."""
     logger.info(f"\n==={display_name}{years_display} (score: {score:.0f}) ===\n")
+
+
+def _handle_same_person_case(display_name: str, reference_person_name: str) -> None:
+    """Handle case where top match is the reference person."""
+    logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
+    logger.info(
+        f"{display_name} is the reference person ({reference_person_name})."
+    )
+
+
+def _calculate_relationship_path(
+    gedcom_data: GedcomData,
+    top_match_norm_id: str,
+    reference_person_id_norm: str,
+    display_name: str,
+    reference_person_name: str,
+) -> None:
+    """Calculate and display relationship path between two individuals."""
+    # Log the API URL for debugging purposes
+    tree_id = (
+        getattr(config_schema, "TESTING_PERSON_TREE_ID", "unknown_tree_id")
+        if config_schema
+        else "unknown_tree_id"
+    )
+    api_url = f"/family-tree/person/tree/{tree_id}/person/{top_match_norm_id}/getladder?callback=no"
+    logger.debug(f"API URL: {api_url}")
+
+    if isinstance(top_match_norm_id, str) and isinstance(reference_person_id_norm, str):
+        # Find the relationship path using the consolidated function
+        path_ids = fast_bidirectional_bfs(
+            top_match_norm_id,
+            reference_person_id_norm,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            max_depth=25,
+            node_limit=150000,
+            timeout_sec=45,
+        )
+
+        # Convert the GEDCOM path to the unified format
+        unified_path = convert_gedcom_path_to_unified_format(
+            path_ids,
+            gedcom_data.reader,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            gedcom_data.indi_index,
+        )
+
+        if unified_path:
+            # Format the path using the unified formatter
+            relationship_explanation = format_relationship_path_unified(
+                unified_path, display_name, reference_person_name, None
+            )
+            # Print the formatted relationship path
+            logger.info(relationship_explanation)
+        else:
+            # Just log an error message if conversion failed
+            logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
+            logger.info(
+                f"(Error: Could not determine relationship path for {display_name})"
+            )
+    else:
+        logger.warning("Cannot calculate relationship path: Invalid IDs")
+
+
+def analyze_top_match(
+    gedcom_data: GedcomData,
+    top_match: dict[str, Any],
+    reference_person_id_norm: Optional[str],
+    reference_person_name: str,
+) -> None:
+    """Analyze top match and find relationship path."""
+
+    # PHASE 4.2: Ultra-fast mock mode
+    if is_mock_mode():
+        _display_mock_analysis(top_match, reference_person_name)
+        return
+
+    top_match_norm_id = top_match.get("id")
+    top_match_indi = gedcom_data.find_individual_by_id(top_match_norm_id)
+
+    if not top_match_indi:
+        logger.error(
+            f"Could not retrieve Individual record for top match ID: {top_match_norm_id}"
+        )
+        return
+
+    display_name, score, years_display = _get_match_display_info(top_match)
+    _display_match_header(display_name, years_display, score)
 
     # Display relatives
     display_relatives(gedcom_data, top_match_indi)
@@ -1090,59 +1304,12 @@ def analyze_top_match(
 
     # Display relationship path
     if top_match_norm_id == reference_person_id_norm:
-        logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
-        logger.info(
-            f"{display_name} is the reference person ({reference_person_name})."
-        )
+        _handle_same_person_case(display_name, reference_person_name)
     elif reference_person_id_norm:
-        # Log the API URL for debugging purposes
-        tree_id = (
-            getattr(config_schema, "TESTING_PERSON_TREE_ID", "unknown_tree_id")
-            if config_schema
-            else "unknown_tree_id"
+        _calculate_relationship_path(
+            gedcom_data, top_match_norm_id, reference_person_id_norm,
+            display_name, reference_person_name
         )
-        api_url = f"/family-tree/person/tree/{tree_id}/person/{top_match_norm_id}/getladder?callback=no"
-        logger.debug(f"API URL: {api_url}")
-
-        if isinstance(top_match_norm_id, str) and isinstance(
-            reference_person_id_norm, str
-        ):
-            # Find the relationship path using the consolidated function
-            path_ids = fast_bidirectional_bfs(
-                top_match_norm_id,
-                reference_person_id_norm,
-                gedcom_data.id_to_parents,
-                gedcom_data.id_to_children,
-                max_depth=25,
-                node_limit=150000,
-                timeout_sec=45,
-            )
-
-            # Convert the GEDCOM path to the unified format
-            unified_path = convert_gedcom_path_to_unified_format(
-                path_ids,
-                gedcom_data.reader,
-                gedcom_data.id_to_parents,
-                gedcom_data.id_to_children,
-                gedcom_data.indi_index,
-            )
-
-            if unified_path:
-                # Format the path using the unified formatter
-                relationship_explanation = format_relationship_path_unified(
-                    unified_path, display_name, reference_person_name, None
-                )
-
-                # Print the formatted relationship path
-                logger.info(relationship_explanation)
-            else:
-                # Just log an error message if conversion failed
-                logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
-                logger.info(
-                    f"(Error: Could not determine relationship path for {display_name})"
-                )
-        else:
-            logger.warning("Cannot calculate relationship path: Invalid IDs")
 
 
 def _initialize_analysis() -> tuple[argparse.Namespace, tuple[Any, ...]]:
@@ -1201,20 +1368,7 @@ def _process_matches(
 @graceful_degradation(fallback_value=None)
 @error_context("action10_gedcom_analysis")
 def main() -> bool:
-    """
-    Main function for Action 10 GEDCOM analysis with comprehensive workflow.
-
-    Orchestrates the complete GEDCOM analysis process including data loading,
-    individual filtering, match scoring, and relationship path calculation.
-    Includes robust error handling, performance monitoring, and user interaction.
-
-    Returns:
-        bool: True if analysis completed successfully, False otherwise.
-
-    Example:
-        >>> main()  # Executes complete GEDCOM analysis workflow
-        # Prompts for search criteria and displays top matches with relationships
-    """
+    """Main function for Action 10 GEDCOM analysis with comprehensive workflow."""
     try:
         # Initialize analysis
         args, config_data = _initialize_analysis()
@@ -1240,27 +1394,22 @@ def main() -> bool:
             return False
 
         # Analyze top match
-        if top_match:
-            reference_person_id_norm = (
-                _normalize_id(reference_person_id_raw)
-                if reference_person_id_raw
-                else None
-            )
-            analyze_top_match(
-                gedcom_data,
-                top_match,
-                reference_person_id_norm,
-                reference_person_name or "Reference Person",
-            )
-        else:
-
-            return False
+        reference_person_id_norm = (
+            _normalize_id(reference_person_id_raw)
+            if reference_person_id_raw
+            else None
+        )
+        analyze_top_match(
+            gedcom_data,
+            top_match,
+            reference_person_id_norm,
+            reference_person_name or "Reference Person",
+        )
 
         return True
 
     except Exception as e:
         logger.error(f"Error in action10 main: {e}", exc_info=True)
-
         return False
 
 
@@ -1289,11 +1438,11 @@ def action10_module_tests() -> bool:
     suite.start_suite()
 
     # --- TESTS ---
-    def debug_wrapper(test_func):
+    def debug_wrapper(test_func) -> Callable:
         """Simple wrapper for test functions (timing removed for cleaner output)"""
         return test_func
 
-    def test_module_initialization():
+    def test_module_initialization() -> None:
         """Test that all required Action 10 functions are available and callable"""
         required_functions = [
             "main",
@@ -1357,7 +1506,7 @@ def action10_module_tests() -> bool:
             print(f"❌ Module initialization failed: {e}")
             return True  # Skip if config is missing in test env
 
-    def test_config_defaults():
+    def test_config_defaults() -> None:
         """Test that configuration defaults are loaded correctly"""
         print("📋 Testing configuration default values:")
 
@@ -1415,7 +1564,7 @@ def action10_module_tests() -> bool:
             print(f"❌ Config defaults test failed: {e}")
             return True
 
-    def test_sanitize_input():
+    def test_sanitize_input() -> None:
         """Test input sanitization with various input types"""
         test_cases = [
             ("  John  ", "John", "Whitespace trimming"),
@@ -1451,7 +1600,7 @@ def action10_module_tests() -> bool:
         print(f"📊 Results: {sum(results)}/{len(results)} test cases passed")
         return True
 
-    def test_get_validated_year_input_patch():
+    def test_get_validated_year_input_patch() -> None:
         """Test year input validation with various input formats"""
         test_inputs = [
             ("1990", 1990, "Simple year"),
@@ -1495,7 +1644,7 @@ def action10_module_tests() -> bool:
         finally:
             builtins.input = orig_input
 
-    def test_fraser_gault_scoring_algorithm():
+    def test_fraser_gault_scoring_algorithm() -> None:
         """Test match scoring algorithm with test person's real data from .env"""
         import os
 
@@ -1564,7 +1713,7 @@ def action10_module_tests() -> bool:
         print(f"{Colors.GREEN}✅ {test_first_name} {test_last_name} scoring algorithm test passed{Colors.RESET}")
         return True
 
-    def test_display_relatives_fraser():
+    def test_display_relatives_fraser() -> None:
         """Test display_relatives with real Fraser Gault data"""
         import os
 
@@ -1632,7 +1781,7 @@ def action10_module_tests() -> bool:
         )
         return True
 
-    def test_analyze_top_match_fraser():
+    def test_analyze_top_match_fraser() -> None:
         """Test analyze_top_match with real Fraser Gault data"""
         import os
 
@@ -1725,7 +1874,7 @@ def action10_module_tests() -> bool:
             print(f"❌ Test person analyze test failed: {e}")
             return True  # Don't fail the test suite
 
-    def test_real_search_performance_and_accuracy():
+    def test_real_search_performance_and_accuracy() -> None:
         """Test search performance and accuracy with real GEDCOM data"""
         import os
 
@@ -1818,7 +1967,7 @@ def action10_module_tests() -> bool:
         print(f"Conclusion: GEDCOM search functionality validated with {len(results)} matches")
         return True
 
-    def test_family_relationship_analysis():
+    def test_family_relationship_analysis() -> None:
         """Test family relationship analysis with test person from .env"""
         import os
 
@@ -1891,7 +2040,7 @@ def action10_module_tests() -> bool:
             print(f"❌ Family relationship analysis failed: {e}")
             return False
 
-    def test_relationship_path_calculation():
+    def test_relationship_path_calculation() -> None:
         """Test relationship path calculation from test person to tree owner"""
         import os
 
@@ -2012,7 +2161,7 @@ def action10_module_tests() -> bool:
             print(f"❌ Relationship path calculation failed: {e}")
             return False
 
-    def test_main_patch():
+    def test_main_patch() -> None:
         # Patch input and logger to simulate user flow
         orig_input = builtins.input
         builtins.input = lambda _: ""
@@ -2026,7 +2175,7 @@ def action10_module_tests() -> bool:
             builtins.input = orig_input
         return True
 
-    def test_fraser_gault_comprehensive():
+    def test_fraser_gault_comprehensive() -> None:
         """Test 14: Comprehensive Fraser Gault family analysis with real GEDCOM data"""
         import os
 
@@ -2420,7 +2569,7 @@ if __name__ == "__main__":
 
     # Create custom filter to block performance messages
     class PerformanceFilter(logging.Filter):
-        def filter(self, record):
+        def filter(self, record) -> bool:
             message = record.getMessage() if hasattr(record, 'getMessage') else str(record.msg)
             return not ('executed in' in message and 'wrapper' in message)
 

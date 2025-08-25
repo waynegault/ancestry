@@ -57,7 +57,7 @@ DriverType = Optional[WebDriver]
 class BrowserManager:
     """Manages browser/WebDriver operations and state."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the BrowserManager."""
         self.driver: DriverType = None
         self.driver_live: bool = False
@@ -225,7 +225,7 @@ class BrowserManager:
         # Removed duplicate logging - start_browser will log the action
         return self.start_browser(action_name)
 
-    def get_cookies(self, cookie_names: list, timeout: int = 60) -> bool:
+    def get_cookies(self, cookie_names: list[str], timeout: int = 60) -> bool:
         """
         Check if specified cookies are present in browser session.
 
@@ -311,7 +311,7 @@ class BrowserManager:
 
 
 # === Decomposed Helper Functions ===
-def _test_browser_manager_initialization():
+def _test_browser_manager_initialization() -> bool:
     manager = BrowserManager()
     assert manager is not None, "BrowserManager should initialize"
     assert not manager.driver_live, "Should start with driver_live=False"
@@ -323,7 +323,7 @@ def _test_browser_manager_initialization():
     return True
 
 
-def _test_method_availability():
+def _test_method_availability() -> bool:
     manager = BrowserManager()
     required_methods = [
         "start_browser",
@@ -340,14 +340,14 @@ def _test_method_availability():
     return True
 
 
-def _test_session_validation_no_driver():
+def _test_session_validation_no_driver() -> bool:
     manager = BrowserManager()
     result = manager.is_session_valid()
     assert not result, "Should return False when no driver exists"
     return True
 
 
-def _test_ensure_driver_not_needed():
+def _test_ensure_driver_not_needed() -> bool:
     manager = BrowserManager()
     manager.browser_needed = False
     result = manager.ensure_driver_live("test_action")
@@ -355,14 +355,14 @@ def _test_ensure_driver_not_needed():
     return True
 
 
-def _test_cookie_check_invalid_session():
+def _test_cookie_check_invalid_session() -> bool:
     manager = BrowserManager()
     result = manager.get_cookies(["test_cookie"])
     assert not result, "Should return False for invalid session"
     return True
 
 
-def _test_close_browser_no_driver():
+def _test_close_browser_no_driver() -> bool:
     manager = BrowserManager()
     manager.close_browser()
     assert manager.driver is None, "Driver should remain None"
@@ -370,7 +370,7 @@ def _test_close_browser_no_driver():
     return True
 
 
-def _test_state_management():
+def _test_state_management() -> bool:
     manager = BrowserManager()
     manager.browser_needed = True
     assert manager.browser_needed, "browser_needed should be modifiable"
@@ -379,13 +379,13 @@ def _test_state_management():
     return True
 
 
-def _test_configuration_access():
+def _test_configuration_access() -> bool:
     assert config_schema is not None, "config_schema should be available"
     assert logger is not None, "Logger should be initialized"
     return True
 
 
-def _test_initialization_performance():
+def _test_initialization_performance() -> bool:
     import time
 
     start_time = time.time()
@@ -399,7 +399,7 @@ def _test_initialization_performance():
     return True
 
 
-def _test_exception_handling():
+def _test_exception_handling() -> bool:
     manager = BrowserManager()
     try:
         manager.is_session_valid()

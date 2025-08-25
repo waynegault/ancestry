@@ -16,7 +16,7 @@ logger = setup_module(globals(), __name__)
 import json
 import sys
 import time
-from typing import Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import (
@@ -127,7 +127,7 @@ def export_cookies(driver, filepath: str) -> bool:
 
 
 @safe_execute(log_errors=False)
-def scroll_to_element(driver, element):
+def scroll_to_element(driver: Any, element: Any) -> None:
     """Scroll element into view with unified error handling."""
     if not driver or not element:
         return
@@ -138,8 +138,8 @@ def scroll_to_element(driver, element):
 
 @safe_execute(default_return=None, log_errors=False)
 def wait_for_element(
-    driver, selector: str, timeout: int = 10, by: str = By.CSS_SELECTOR
-):
+    driver: Any, selector: str, timeout: int = 10, by: str = By.CSS_SELECTOR
+) -> Any:
     """Wait for element to be present with unified error handling."""
     if not driver:
         return None
@@ -149,7 +149,7 @@ def wait_for_element(
 
 
 @safe_execute(default_return=False, log_errors=False)
-def safe_click(driver, element):
+def safe_click(driver: Any, element: Any) -> bool:
     """Safely click an element with unified error handling."""
     if not driver or not element:
         return False
@@ -177,7 +177,7 @@ def is_element_visible(element) -> bool:
     return element.is_displayed()
 
 
-def selenium_module_tests():
+def selenium_module_tests() -> None:
     """Essential selenium utilities tests for unified framework."""
     import time
     from unittest.mock import MagicMock

@@ -148,10 +148,8 @@ config_manager = ConfigManager()
 config = config_manager.get_config()
 
 
-def menu():
-    """Display the main menu and return the user's choice."""
-    print("Main Menu")
-    print("=" * 17)
+def _get_current_log_level() -> str:
+    """Get the current logging level name."""
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
@@ -170,7 +168,11 @@ def menu():
     elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
         level_name = config.logging.log_level.upper()
 
-    print(f"(Log Level: {level_name})\n")
+    return level_name
+
+
+def _display_main_menu_options() -> None:
+    """Display the main menu options."""
     print("0. Delete all rows except the first")
     print("1. Run Full Workflow (7, 9, 8)")
     print("2. Reset Database")
@@ -183,12 +185,20 @@ def menu():
     print("9. Process Productive Messages")
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
+
+
+def _display_phase12_menu_options() -> None:
+    """Display Phase 12 GEDCOM AI Intelligence menu options."""
     print("")
     print("=== PHASE 12: GEDCOM AI INTELLIGENCE ===")
     print("12. GEDCOM Intelligence Analysis")
     print("13. DNA-GEDCOM Cross-Reference")
     print("14. Research Prioritization")
     print("15. Comprehensive GEDCOM AI Analysis")
+
+
+def _display_utility_menu_options() -> None:
+    """Display utility and settings menu options."""
     print("")
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
@@ -199,6 +209,20 @@ def menu():
     print("c. Clear Screen")
     print("q. Exit")
     print("settings. Review/Edit .env Settings")
+
+
+def menu() -> str:
+    """Display the main menu and return the user's choice."""
+    print("Main Menu")
+    print("=" * 17)
+
+    level_name = _get_current_log_level()
+    print(f"(Log Level: {level_name})\n")
+
+    _display_main_menu_options()
+    _display_phase12_menu_options()
+    _display_utility_menu_options()
+
     return input("\nEnter choice: ").strip().lower()
 
 
@@ -243,7 +267,7 @@ def clear_log_file() -> tuple[bool, Optional[str]]:
 # End of clear_log_file
 
 
-def _show_platform_specific_instructions():
+def _show_platform_specific_instructions() -> None:
     """Show platform-specific installation instructions for non-Windows systems."""
     import platform
 
@@ -261,7 +285,7 @@ def _show_platform_specific_instructions():
 _caching_initialized = False
 
 
-def initialize_aggressive_caching():
+def initialize_aggressive_caching() -> bool:
     """Initialize aggressive caching systems."""
     try:
         from core.system_cache import warm_system_caches
@@ -274,7 +298,7 @@ def initialize_aggressive_caching():
         return False
 
 
-def ensure_caching_initialized():
+def ensure_caching_initialized() -> bool:
     """Initialize aggressive caching systems if not already done."""
     global _caching_initialized
 
@@ -296,7 +320,76 @@ def ensure_caching_initialized():
 # End of ensure_caching_initialized
 
 
-def ensure_gedcom_loaded_and_cached():
+def _check_cached_gedcom_data() -> bool:
+    """Check if GEDCOM data is already cached."""
+    if PHASE_12_AVAILABLE:
+        from gedcom_search_utils import get_cached_gedcom_data
+        cached_data = get_cached_gedcom_data()
+        if cached_data:
+            logger.info("GEDCOM data already cached and available")
+            return True
+    return False
+
+
+def _get_gedcom_file_path() -> Optional[str]:
+    """Get GEDCOM file path from configuration."""
+    try:
+        from config.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        config = config_manager.get_config()
+        gedcom_path = getattr(config.database, 'gedcom_file_path', None)
+
+        if not gedcom_path:
+            print("❌ GEDCOM file path not configured.")
+            print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
+            return None
+
+        return gedcom_path
+
+    except Exception as e:
+        logger.debug(f"Error getting GEDCOM path from config: {e}")
+        return None
+
+
+def _validate_gedcom_file_exists(gedcom_path: str) -> bool:
+    """Validate that GEDCOM file exists at the specified path."""
+    from pathlib import Path
+    gedcom_file = Path(gedcom_path)
+
+    if not gedcom_file.exists():
+        print(f"❌ GEDCOM file not found: {gedcom_path}")
+        print("Please check the file path or run option 10 to load a different file.")
+        return False
+
+    print(f"📂 Loading GEDCOM file: {gedcom_file.name}")
+    return True
+
+
+def _load_and_cache_gedcom_data(gedcom_path: str) -> bool:
+    """Load GEDCOM data from file and cache it."""
+    if not PHASE_12_AVAILABLE:
+        print("❌ Phase 12 components not available for GEDCOM loading.")
+        return False
+
+    from pathlib import Path
+
+    from gedcom_search_utils import load_gedcom_data, set_cached_gedcom_data
+
+    gedcom_file = Path(gedcom_path)
+    gedcom_data = load_gedcom_data(gedcom_file)
+
+    if gedcom_data:
+        # Cache the loaded data
+        set_cached_gedcom_data(gedcom_data)
+        print("✅ GEDCOM file loaded and cached successfully!")
+        print(f"   📊 Individuals: {len(getattr(gedcom_data, 'indi_index', {}))}")
+        return True
+
+    print("❌ Failed to load GEDCOM data from file.")
+    return False
+
+
+def ensure_gedcom_loaded_and_cached() -> bool:
     """
     Ensure GEDCOM file is loaded and cached before GEDCOM operations.
 
@@ -308,69 +401,34 @@ def ensure_gedcom_loaded_and_cached():
         ensure_caching_initialized()
 
         # Check if GEDCOM data is already cached
-        if PHASE_12_AVAILABLE:
-            from gedcom_search_utils import get_cached_gedcom_data
-            cached_data = get_cached_gedcom_data()
-            if cached_data:
-                logger.info("GEDCOM data already cached and available")
-                return True
+        if _check_cached_gedcom_data():
+            return True
 
         # Try to load GEDCOM data
         print("\n📁 GEDCOM data not found in cache. Loading GEDCOM file...")
 
-        # Check if GEDCOM path is configured
-        try:
-            from config.config_manager import ConfigManager
-            config_manager = ConfigManager()
-            config = config_manager.get_config()
-            gedcom_path = getattr(config.database, 'gedcom_file_path', None)
-
-            if not gedcom_path:
-                print("❌ GEDCOM file path not configured.")
-                print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
-                return False
-
-        except Exception as e:
-            logger.debug(f"Error getting GEDCOM path from config: {e}")
-            # GEDCOM file path not configured - please set GEDCOM_FILE_PATH in .env or run option 10
+        # Get GEDCOM file path from configuration
+        gedcom_path = _get_gedcom_file_path()
+        if not gedcom_path:
             return False
 
-        # Try to load the GEDCOM file
-        from pathlib import Path
-        gedcom_file = Path(gedcom_path)
-
-        if not gedcom_file.exists():
-            print(f"❌ GEDCOM file not found: {gedcom_path}")
-            print("Please check the file path or run option 10 to load a different file.")
+        # Validate file exists
+        if not _validate_gedcom_file_exists(gedcom_path):
             return False
 
-        print(f"📂 Loading GEDCOM file: {gedcom_file.name}")
-
-        if PHASE_12_AVAILABLE:
-            from gedcom_search_utils import load_gedcom_data, set_cached_gedcom_data
-
-            # Load the GEDCOM data
-            gedcom_data = load_gedcom_data(gedcom_file)
-
-            if gedcom_data:
-                # Cache the loaded data
-                set_cached_gedcom_data(gedcom_data)
-                print("✅ GEDCOM file loaded and cached successfully!")
-                print(f"   📊 Individuals: {len(getattr(gedcom_data, 'indi_index', {}))}")
-                return True
-            print("❌ Failed to load GEDCOM data from file.")
-            return False
-        print("❌ Phase 12 components not available for GEDCOM loading.")
-        return False
+        # Load and cache the GEDCOM data
+        return _load_and_cache_gedcom_data(gedcom_path)
 
     except Exception as e:
         logger.error(f"Error ensuring GEDCOM loaded and cached: {e}")
-        # Error loading GEDCOM file logged above
         return False
 
 
+from typing import Any, Callable
+
+
 def exec_actn(
-    action_func,
+    action_func: Callable[..., Any],
     session_manager: SessionManager,
     choice: str,
     close_sess_after: bool = False,
@@ -588,7 +646,7 @@ def exec_actn(
 
 
 # Action 0 (all_but_first_actn)
-def all_but_first_actn(session_manager: SessionManager, *_):
+def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
     """
     V1.2: Modified to delete records from people, conversation_log,
           dna_match, and family_tree, except for the person with a
@@ -736,7 +794,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 
 
 # Action 1
-def run_core_workflow_action(session_manager, *_):
+def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
     """
     Action to run the core workflow sequence: Action 7 (Inbox) → Action 9 (Process Productive) → Action 8 (Send Messages).
     Optionally runs Action 6 (Gather) first if configured.
@@ -949,7 +1007,7 @@ def _create_message_template(template_key: str, template_content: str) -> Messag
 
 
 # Action 2 (reset_db_actn)
-def reset_db_actn(session_manager: SessionManager, *_):
+def reset_db_actn(session_manager: SessionManager, *_) -> bool:
     """
     Action to COMPLETELY reset the database by truncating tables and recreating schema.
     - Closes main pool.
@@ -1106,7 +1164,7 @@ def backup_db_actn(
 
 
 # Action 4 (restore_db_actn)
-def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manager back
+def restore_db_actn(session_manager: SessionManager, *_) -> bool:  # Added session_manager back
     """
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.
@@ -1253,7 +1311,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_schema=None, start=1):
+def coord_action(session_manager: SessionManager, config_schema: Optional[object] = None, start: int = 1) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1290,7 +1348,7 @@ def coord_action(session_manager, config_schema=None, start=1):
 
 
 # Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager, *_):
+def srch_inbox_actn(session_manager: SessionManager, *_) -> bool:
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1334,7 +1392,7 @@ def srch_inbox_actn(session_manager, *_):
 
 
 # Action 8 (send_messages_action)
-def send_messages_action(session_manager, *_):
+def send_messages_action(session_manager: SessionManager, *_) -> bool:
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1390,7 +1448,7 @@ def send_messages_action(session_manager, *_):
 
 
 # Action 9 (process_productive_messages_action)
-def process_productive_messages_action(session_manager, *_):
+def process_productive_messages_action(session_manager: SessionManager, *_) -> bool:
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1434,7 +1492,7 @@ def process_productive_messages_action(session_manager, *_):
 
 
 # Action 11 (run_action11_wrapper)
-def run_action11_wrapper(session_manager, *_):
+def run_action11_wrapper(session_manager: SessionManager, *_) -> bool:
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
     logger.debug("Starting API Report...")
     try:
@@ -1453,7 +1511,7 @@ def run_action11_wrapper(session_manager, *_):
 # End of run_action11_wrapper
 
 
-def main():
+def main() -> None:
     global logger, session_manager
     session_manager = None  # Initialize session_manager
 
@@ -1893,7 +1951,7 @@ def main():
 
 # === PHASE 12: GEDCOM AI FUNCTIONS ===
 
-def run_gedcom_intelligence_analysis():
+def run_gedcom_intelligence_analysis() -> None:
     """Run GEDCOM Intelligence Analysis (Phase 12.1)."""
     print("\n" + "="*60)
     print("🧠 GEDCOM INTELLIGENCE ANALYSIS")
@@ -1961,7 +2019,7 @@ def run_gedcom_intelligence_analysis():
     input("\nPress Enter to continue...")
 
 
-def run_dna_gedcom_crossref():
+def run_dna_gedcom_crossref() -> None:
     """Run DNA-GEDCOM Cross-Reference Analysis (Phase 12.2)."""
     print("\n" + "="*60)
     print("🧬 DNA-GEDCOM CROSS-REFERENCE ANALYSIS")
@@ -2064,7 +2122,7 @@ def run_dna_gedcom_crossref():
     input("\nPress Enter to continue...")
 
 
-def run_research_prioritization():
+def run_research_prioritization() -> None:
     """Run Research Prioritization Analysis (Phase 12.3)."""
     print("\n" + "="*60)
     print("📊 INTELLIGENT RESEARCH PRIORITIZATION")
@@ -2159,7 +2217,7 @@ def run_research_prioritization():
     input("\nPress Enter to continue...")
 
 
-def run_comprehensive_gedcom_ai():
+def run_comprehensive_gedcom_ai() -> None:
     """Run Comprehensive GEDCOM AI Analysis (All Phase 12 components)."""
     print("\n" + "="*60)
     print("🤖 COMPREHENSIVE GEDCOM AI ANALYSIS")

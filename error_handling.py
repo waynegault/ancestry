@@ -146,7 +146,7 @@ class IntelligentRetryHandler:
 
         elif self.config.strategy == RetryStrategy.FIBONACCI_BACKOFF:
             fib_sequence = [1, 1]
-            for i in range(2, attempt + 1):
+            for _i in range(2, attempt + 1):
                 fib_sequence.append(fib_sequence[-1] + fib_sequence[-2])
             delay = (
                 self.config.base_delay
@@ -207,7 +207,7 @@ class CircuitBreaker:
         """Decorator to wrap functions with circuit breaker and intelligent retry."""
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self.call(func, *args, **kwargs)
 
         return wrapper
@@ -413,7 +413,7 @@ class CircuitBreaker:
 
             logger.warning(f"Circuit breaker {self.name} failure: {error}")
 
-    def _update_failure_rate(self):
+    def _update_failure_rate(self) -> None:
         """Update failure rate statistics."""
         if self.stats.total_requests > 0:
             self.stats.failure_rate = (
@@ -439,7 +439,7 @@ class CircuitBreaker:
                 "error_types": dict(self.stats.error_types),
             }
 
-    def reset(self):
+    def reset(self) -> None:
         """Manually reset circuit breaker to CLOSED state."""
         with self._lock:
             self.state = CircuitState.CLOSED
@@ -500,7 +500,7 @@ class AncestryError(Exception):
 class RetryableError(AncestryError):
     """Error that can be retried with appropriate strategy."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Ensure severity is "WARNING" and avoid parameter conflicts
         kwargs.setdefault("severity", "WARNING")
         super().__init__(message, **kwargs)
@@ -509,7 +509,7 @@ class RetryableError(AncestryError):
 class FatalError(AncestryError):
     """Error that cannot be recovered from automatically."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Ensure severity is "FATAL" and avoid parameter conflicts
         kwargs.setdefault("severity", "FATAL")
         super().__init__(message, **kwargs)
@@ -518,7 +518,7 @@ class FatalError(AncestryError):
 class ConfigurationError(AncestryError):
     """Configuration-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Set default recovery hint and severity, avoid parameter conflicts
         kwargs.setdefault("severity", "ERROR")
         kwargs.setdefault("recovery_hint", "Check configuration settings and retry")
@@ -528,7 +528,7 @@ class ConfigurationError(AncestryError):
 class DatabaseConnectionError(RetryableError):
     """Database connection issues that can be retried."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Set default values and avoid parameter conflicts
         kwargs.setdefault("error_code", "DB_CONNECTION_FAILED")
         kwargs.setdefault("recovery_hint", "Check database connectivity and retry")
@@ -541,7 +541,7 @@ AncestryException = AncestryError
 class BrowserSessionError(RetryableError):
     """Browser session issues that can be recovered."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Set default values and avoid parameter conflicts
         kwargs.setdefault("error_code", "BROWSER_SESSION_FAILED")
         kwargs.setdefault("recovery_hint", "Restart browser session and retry")
@@ -551,7 +551,7 @@ class BrowserSessionError(RetryableError):
 class APIRateLimitError(RetryableError):
     """API rate limiting that requires backoff."""
 
-    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs):
+    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs: Any) -> None:
         self.retry_after = retry_after
         # Set default values and avoid parameter conflicts
         kwargs.setdefault("error_code", "API_RATE_LIMIT")
@@ -569,7 +569,7 @@ class APIRateLimitError(RetryableError):
 class AuthenticationExpiredError(RetryableError):
     """Authentication token expiration."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Set default values and avoid parameter conflicts
         kwargs.setdefault("error_code", "AUTH_EXPIRED")
         kwargs.setdefault("recovery_hint", "Refresh authentication token and retry")
@@ -579,7 +579,7 @@ class AuthenticationExpiredError(RetryableError):
 class MaxApiFailuresExceededError(AncestryError):
     """Raised when maximum API failures threshold is exceeded."""
 
-    def __init__(self, message: str, action_name: str = "Unknown", **kwargs):
+    def __init__(self, message: str, action_name: str = "Unknown", **kwargs: Any) -> None:
         kwargs.setdefault("error_code", "MAX_API_FAILURES")
         kwargs.setdefault("severity", "CRITICAL")
         kwargs.setdefault("context", {})
@@ -590,7 +590,7 @@ class MaxApiFailuresExceededError(AncestryError):
 class NetworkTimeoutError(RetryableError):
     """Network timeout that can be retried."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Set default values and avoid parameter conflicts
         kwargs.setdefault("error_code", "NETWORK_TIMEOUT")
         kwargs.setdefault("recovery_hint", "Check network connectivity and retry")
@@ -600,7 +600,7 @@ class NetworkTimeoutError(RetryableError):
 class DataValidationError(FatalError):
     """Data validation errors that require manual intervention."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         # Set default values and avoid parameter conflicts
         kwargs.setdefault("error_code", "DATA_VALIDATION_FAILED")
         kwargs.setdefault("recovery_hint", "Fix data validation issues manually")
@@ -623,7 +623,7 @@ class ErrorContext:
     stack_trace: Optional[str] = None
     error_id: str = field(default_factory=lambda: f"err_{int(time.time())}")
 
-    def capture_environment(self):
+    def capture_environment(self) -> None:
         """Capture current environment state."""
         import platform
         import sys
@@ -655,7 +655,7 @@ class ErrorRecoveryManager:
     Manages error recovery strategies and graceful degradation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.circuit_breakers: dict[str, CircuitBreaker] = {}
         self.recovery_strategies: dict[str, Callable] = {}
 
@@ -737,13 +737,13 @@ class ErrorRecoveryManager:
 
         return warnings
 
-    def reset_all_circuit_breakers(self):
+    def reset_all_circuit_breakers(self) -> None:
         """Reset all circuit breakers to CLOSED state."""
         for cb in self.circuit_breakers.values():
             cb.reset()
         logger.info("All circuit breakers reset")
 
-    def log_failure_warnings(self):
+    def log_failure_warnings(self) -> None:
         """Log any concerning failure patterns for monitoring."""
         warnings = self.check_failure_patterns()
 
@@ -775,6 +775,100 @@ def with_circuit_breaker(
 # === PHASE 4.1: ENHANCED DECORATOR FRAMEWORK ===
 
 
+def _get_default_retry_exceptions() -> list[type[Exception]]:
+    """Get default list of exceptions to retry on."""
+    return [RetryableError, NetworkTimeoutError, DatabaseConnectionError]
+
+
+def _get_default_stop_exceptions() -> list[type[Exception]]:
+    """Get default list of exceptions to stop retrying on."""
+    return [FatalError, DataValidationError]
+
+
+def _create_retry_context(func: Callable, args: Any, kwargs: Any) -> ErrorContext:
+    """Create error context for retry operations."""
+    context = ErrorContext(
+        operation="retry_decorated_call",
+        module=func.__module__,
+        function=func.__name__,
+        parameters={"args": str(args)[:200], "kwargs": str(kwargs)[:200]},
+    )
+    context.capture_environment()
+    return context
+
+
+def _should_stop_retrying(exception: Exception, stop_on: list[type[Exception]]) -> bool:
+    """Check if exception should stop retry attempts."""
+    return any(isinstance(exception, stop_type) for stop_type in stop_on)
+
+
+def _should_retry_exception(exception: Exception, retry_on: list[type[Exception]]) -> bool:
+    """Check if exception should trigger a retry."""
+    return any(isinstance(exception, retry_type) for retry_type in retry_on)
+
+
+def _calculate_retry_delay(attempt: int, backoff_factor: float, jitter: bool) -> float:
+    """Calculate delay for next retry attempt."""
+    delay = backoff_factor**attempt
+    if jitter:
+        import random
+        delay *= 0.5 + random.random()
+    return delay
+
+
+def _handle_retry_exception(
+    exception: Exception,
+    func: Callable,
+    attempt: int,
+    max_attempts: int,
+    context: ErrorContext,
+    stop_on: list[type[Exception]],
+    retry_on: list[type[Exception]]
+) -> None:
+    """Handle exception during retry attempt."""
+    # Check if we should stop retrying
+    if _should_stop_retrying(exception, stop_on):
+        logger.error(f"{func.__name__} failed with non-retryable error: {exception}")
+        context.stack_trace = traceback.format_exc()
+        if isinstance(exception, AncestryError):
+            exception.context.update(context.to_dict())
+        raise
+
+    # Check if we should retry
+    if not _should_retry_exception(exception, retry_on):
+        logger.error(f"{func.__name__} failed with non-retryable error type: {exception}")
+        raise
+
+
+def _log_retry_attempt(func: Callable, attempt: int, max_attempts: int, delay: float, exception: Exception) -> None:
+    """Log retry attempt information."""
+    logger.warning(
+        f"{func.__name__} failed on attempt {attempt + 1}/{max_attempts}, "
+        f"retrying in {delay:.2f}s: {exception}"
+    )
+
+
+def _handle_retry_exhausted(
+    func: Callable,
+    max_attempts: int,
+    start_time: float,
+    last_exception: Optional[Exception],
+    context: ErrorContext
+) -> None:
+    """Handle case when all retry attempts are exhausted."""
+    total_time = time.time() - start_time
+    if last_exception is None:
+        last_exception = Exception(f"{func.__name__} failed after {max_attempts} attempts")
+
+    logger.error(
+        f"{func.__name__} failed after {max_attempts} attempts in {total_time:.2f}s: {last_exception}"
+    )
+    context.stack_trace = traceback.format_exc()
+    if isinstance(last_exception, AncestryError):
+        last_exception.context.update(context.to_dict())
+    raise last_exception
+
+
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
@@ -793,21 +887,14 @@ def retry_on_failure(
         jitter: Add randomization to prevent thundering herd
     """
     if retry_on is None:
-        retry_on = [RetryableError, NetworkTimeoutError, DatabaseConnectionError]
+        retry_on = _get_default_retry_exceptions()
     if stop_on is None:
-        stop_on = [FatalError, DataValidationError]
+        stop_on = _get_default_stop_exceptions()
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
-            context = ErrorContext(
-                operation="retry_decorated_call",
-                module=func.__module__,
-                function=func.__name__,
-                parameters={"args": str(args)[:200], "kwargs": str(kwargs)[:200]},
-            )
-            context.capture_environment()
-
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            context = _create_retry_context(func, args, kwargs)
             last_exception = None
             start_time = time.time()
 
@@ -828,52 +915,17 @@ def retry_on_failure(
 
                 except Exception as e:
                     last_exception = e
-
-                    # Check if we should stop retrying
-                    if any(isinstance(e, stop_type) for stop_type in stop_on):
-                        logger.error(
-                            f"{func.__name__} failed with non-retryable error: {e}"
-                        )
-                        context.stack_trace = traceback.format_exc()
-                        if isinstance(e, AncestryError):
-                            e.context.update(context.to_dict())
-                        raise
-
-                    # Check if we should retry
-                    if not any(isinstance(e, retry_type) for retry_type in retry_on):
-                        logger.error(
-                            f"{func.__name__} failed with non-retryable error type: {e}"
-                        )
-                        raise
+                    _handle_retry_exception(e, func, attempt, max_attempts, context, stop_on, retry_on)
 
                     # Calculate delay for next attempt
                     if attempt < max_attempts - 1:
-                        delay = backoff_factor**attempt
-                        if jitter:
-                            import random
-
-                            delay *= 0.5 + random.random()
-
-                        logger.warning(
-                            f"{func.__name__} failed on attempt {attempt + 1}/{max_attempts}, "
-                            f"retrying in {delay:.2f}s: {e}"
-                        )
+                        delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
+                        _log_retry_attempt(func, attempt, max_attempts, delay, e)
                         time.sleep(delay)
 
             # All attempts exhausted
-            total_time = time.time() - start_time
-            if last_exception is None:
-                last_exception = Exception(
-                    f"{func.__name__} failed after {max_attempts} attempts"
-                )
-
-            logger.error(
-                f"{func.__name__} failed after {max_attempts} attempts in {total_time:.2f}s: {last_exception}"
-            )
-            context.stack_trace = traceback.format_exc()
-            if isinstance(last_exception, AncestryError):
-                last_exception.context.update(context.to_dict())
-            raise last_exception
+            _handle_retry_exhausted(func, max_attempts, start_time, last_exception, context)
+            return None
 
         return wrapper
 
@@ -917,14 +969,14 @@ def timeout_protection(timeout: int = 30):
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Use threading approach for cross-platform compatibility
             import threading
 
             result: list[Any] = [None]
             exception: list[Optional[Exception]] = [None]
 
-            def target():
+            def target() -> None:
                 try:
                     result[0] = func(*args, **kwargs)
                 except Exception as e:
@@ -972,7 +1024,7 @@ def graceful_degradation(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -996,6 +1048,47 @@ def graceful_degradation(
     return decorator
 
 
+def _create_error_context(operation: str, func: Callable, args: Any, kwargs: Any) -> ErrorContext:
+    """Create error context for function execution."""
+    context = ErrorContext(
+        operation=operation,
+        module=func.__module__,
+        function=func.__name__,
+        parameters={
+            "args_count": len(args),
+            "kwargs_keys": list(kwargs.keys()),
+            "args_preview": str(args)[:100],
+            "kwargs_preview": str(kwargs)[:100],
+        },
+    )
+    context.capture_environment()
+    return context
+
+
+def _handle_successful_execution(operation: str, execution_time: float, context: ErrorContext) -> None:
+    """Handle successful function execution logging."""
+    context.timing["execution_time"] = execution_time
+    logger.debug(
+        f"{operation} completed successfully in {execution_time:.2f}s",
+        extra={"error_context": context.to_dict()},
+    )
+
+
+def _handle_failed_execution(operation: str, exception: Exception, execution_time: float, context: ErrorContext) -> None:
+    """Handle failed function execution logging and context enhancement."""
+    context.timing["execution_time"] = execution_time
+    context.stack_trace = traceback.format_exc()
+
+    # Enhance exception with context if it's an AncestryError
+    if isinstance(exception, AncestryError):
+        exception.context.update(context.to_dict())
+
+    logger.error(
+        f"{operation} failed after {execution_time:.2f}s: {exception}",
+        extra={"error_context": context.to_dict()},
+    )
+
+
 def error_context(operation: str):
     """
     Decorator to add comprehensive error context to function calls.
@@ -1006,45 +1099,19 @@ def error_context(operation: str):
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
-            context = ErrorContext(
-                operation=operation,
-                module=func.__module__,
-                function=func.__name__,
-                parameters={
-                    "args_count": len(args),
-                    "kwargs_keys": list(kwargs.keys()),
-                    "args_preview": str(args)[:100],
-                    "kwargs_preview": str(kwargs)[:100],
-                },
-            )
-            context.capture_environment()
-
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            context = _create_error_context(operation, func, args, kwargs)
             start_time = time.time()
+
             try:
                 result = func(*args, **kwargs)
                 execution_time = time.time() - start_time
-                context.timing["execution_time"] = execution_time
-
-                logger.debug(
-                    f"{operation} completed successfully in {execution_time:.2f}s",
-                    extra={"error_context": context.to_dict()},
-                )
+                _handle_successful_execution(operation, execution_time, context)
                 return result
 
             except Exception as e:
                 execution_time = time.time() - start_time
-                context.timing["execution_time"] = execution_time
-                context.stack_trace = traceback.format_exc()
-
-                # Enhance exception with context if it's an AncestryError
-                if isinstance(e, AncestryError):
-                    e.context.update(context.to_dict())
-
-                logger.error(
-                    f"{operation} failed after {execution_time:.2f}s: {e}",
-                    extra={"error_context": context.to_dict()},
-                )
+                _handle_failed_execution(operation, e, execution_time, context)
                 raise
 
         return wrapper
@@ -1057,7 +1124,7 @@ def with_recovery(service_name: str):
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return error_recovery_manager.execute_with_recovery(
                 service_name, func, *args, **kwargs
             )
@@ -1128,7 +1195,7 @@ def error_handling_module_tests() -> bool:
         suite.start_suite()
 
     # === INITIALIZATION TESTS ===
-    def test_module_imports():
+    def test_module_imports() -> None:
         """Test all required modules and dependencies are properly imported with detailed verification."""
         required_modules = [
             ("CircuitState", "Circuit breaker state enumeration"),
@@ -1157,7 +1224,7 @@ def error_handling_module_tests() -> bool:
 
         print(f"📊 Results: {sum(results)}/{len(results)} module imports available")
 
-    def test_function_availability():
+    def test_function_availability() -> None:
         """Test all essential error handling functions are available with detailed verification."""
         test_categories = [
             (
@@ -1229,7 +1296,7 @@ def error_handling_module_tests() -> bool:
 
         print(f"📊 Results: {sum(results)}/{len(results)} functions/classes available")
 
-    def test_circuit_breaker_config():
+    def test_circuit_breaker_config() -> None:
         """Test CircuitBreakerConfig initialization and default values."""
         config = CircuitBreakerConfig()
         assert config.failure_threshold == 5, "Default failure threshold should be 5"
@@ -1237,7 +1304,7 @@ def error_handling_module_tests() -> bool:
         assert config.success_threshold == 3, "Default success threshold should be 3"
 
     # === CORE FUNCTIONALITY TESTS ===
-    def test_error_handling_basics():
+    def test_error_handling_basics() -> None:
         """Test basic error handling functionality."""
         # Test CircuitBreaker initialization
         circuit_breaker = CircuitBreaker("test_service")
@@ -1248,7 +1315,7 @@ def error_handling_module_tests() -> bool:
             circuit_breaker.state == CircuitState.CLOSED
         ), "CircuitBreaker should start in CLOSED state"
 
-    def test_error_types():
+    def test_error_types() -> None:
         """Test error type creation and handling."""
         # Test CircuitBreakerOpenError
         if "CircuitBreakerOpenError" in globals():
@@ -1257,7 +1324,7 @@ def error_handling_module_tests() -> bool:
                 str(error) == "Circuit is open"
             ), "CircuitBreakerOpenError should store message"
 
-    def test_circuit_breaker_states():
+    def test_circuit_breaker_states() -> None:
         """Test circuit breaker state transitions."""
         for state in CircuitState:
             assert isinstance(
@@ -1273,13 +1340,13 @@ def error_handling_module_tests() -> bool:
         ), "HALF_OPEN state should have correct value"
 
     # === EDGE CASE TESTS ===
-    def test_error_recovery_edge_cases():
+    def test_error_recovery_edge_cases() -> None:
         """Test error recovery with edge cases."""
         # Test ErrorRecoveryManager with different services
         recovery_manager = ErrorRecoveryManager()
         assert recovery_manager is not None, "ErrorRecoveryManager should initialize"
 
-    def test_circuit_breaker_edge_cases():
+    def test_circuit_breaker_edge_cases() -> None:
         """Test circuit breaker with edge case configurations."""
         edge_config = CircuitBreakerConfig(
             failure_threshold=0, recovery_timeout=0, success_threshold=0
@@ -1292,7 +1359,7 @@ def error_handling_module_tests() -> bool:
             edge_config.success_threshold == 0
         ), "Should accept zero success threshold"
 
-    def test_error_context_edge_cases():
+    def test_error_context_edge_cases() -> None:
         """Test ErrorContext with various input types."""
         # Test retry strategies
         for strategy in RetryStrategy:
@@ -1301,7 +1368,7 @@ def error_handling_module_tests() -> bool:
             ), f"Retry strategy {strategy.name} should have string value"
 
     # === INTEGRATION TESTS ===
-    def test_logging_integration():
+    def test_logging_integration() -> None:
         """Test integration with logging system."""
         assert logger is not None, "Logger should be available"
         try:
@@ -1309,7 +1376,7 @@ def error_handling_module_tests() -> bool:
         except Exception as e:
             raise AssertionError(f"Logging should work without errors: {e}")
 
-    def test_config_integration():
+    def test_config_integration() -> None:
         """Test integration with configuration management."""
         try:
             config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=120)
@@ -1322,13 +1389,13 @@ def error_handling_module_tests() -> bool:
         except Exception as e:
             raise AssertionError(f"Config integration should work: {e}")
 
-    def test_threading_integration():
+    def test_threading_integration() -> None:
         """Test thread safety of error handling components."""
         import threading
 
         results = []
 
-        def thread_safe_test():
+        def thread_safe_test() -> None:
             try:
                 # Test circuit breaker in threaded environment
                 cb = CircuitBreaker("thread_test")
@@ -1346,7 +1413,7 @@ def error_handling_module_tests() -> bool:
         assert all(r == "thread_test" for r in results), "All threads should succeed"
 
     # === PERFORMANCE TESTS ===
-    def test_error_handling_performance():
+    def test_error_handling_performance() -> None:
         """Test performance of error handling operations."""
         start_time = time.time()
 
@@ -1361,7 +1428,7 @@ def error_handling_module_tests() -> bool:
             execution_time < 0.1
         ), f"Error handling should be fast: {execution_time:.3f}s"
 
-    def test_circuit_breaker_performance():
+    def test_circuit_breaker_performance() -> None:
         """Test circuit breaker performance under load."""
         config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=1)
 
@@ -1376,7 +1443,7 @@ def error_handling_module_tests() -> bool:
             execution_time < 0.05
         ), f"Circuit breaker operations should be fast: {execution_time:.3f}s"
 
-    def test_retry_strategy_performance():
+    def test_retry_strategy_performance() -> None:
         """Test retry strategy performance."""
         start_time = time.time()
 
@@ -1391,7 +1458,7 @@ def error_handling_module_tests() -> bool:
         ), f"Retry strategy creation should be fast: {execution_time:.3f}s"
 
     # === ERROR HANDLING TESTS ===
-    def test_recursive_error_handling():
+    def test_recursive_error_handling() -> None:
         """Test handling of recursive or nested errors."""
         # Test circuit breaker with nested failure scenarios
         cb = CircuitBreaker("nested_test")
@@ -1406,7 +1473,7 @@ def error_handling_module_tests() -> bool:
             cb.stats.consecutive_failures >= cb.config.failure_threshold
         ), "Should handle nested errors gracefully"
 
-    def test_memory_error_handling():
+    def test_memory_error_handling() -> None:
         """Test handling of memory-related errors."""
         # Test ErrorStats memory efficiency
         stats = ErrorStats()
@@ -1415,14 +1482,14 @@ def error_handling_module_tests() -> bool:
         assert stats.failed_requests >= 0, "Should handle memory tracking"
         assert stats.total_requests >= 0, "Should handle request tracking"
 
-    def test_timeout_error_handling():
+    def test_timeout_error_handling() -> None:
         """Test handling of timeout errors."""
         # Test circuit breaker timeout configurations
         timeout_config = CircuitBreakerConfig(recovery_timeout=1)
         cb = CircuitBreaker("timeout_test", timeout_config)
         assert cb.config.recovery_timeout == 1, "Should handle timeout configurations"
 
-    def test_failure_pattern_monitoring():
+    def test_failure_pattern_monitoring() -> None:
         """Test the new check_failure_patterns() monitoring function from Action 6 lessons."""
         # Test ErrorRecoveryManager failure pattern detection
         recovery_manager = ErrorRecoveryManager()
@@ -1438,7 +1505,7 @@ def error_handling_module_tests() -> bool:
         # Test with no circuit breakers (should return empty dict)
         assert len(warnings) == 0, "Should return empty warnings when no circuit breakers exist"
 
-    def test_failure_warning_logging():
+    def test_failure_warning_logging() -> None:
         """Test the new log_failure_warnings() monitoring function from Action 6 lessons."""
         # Test ErrorRecoveryManager warning logging
         recovery_manager = ErrorRecoveryManager()

@@ -29,7 +29,7 @@ def _build_treesui_url(session_manager: SessionManager) -> str | None:
     from urllib.parse import quote
     encoded_name = quote("fraser gault")
     endpoint = f"/api/treesui-list/trees/{tree_id}/persons"
-    params = "name={}&fields=EVENTS,GENDERS,KINSHIP,NAMES,RELATIONS&isGetFullPersonObject=true".format(encoded_name)
+    params = f"name={encoded_name}&fields=EVENTS,GENDERS,KINSHIP,NAMES,RELATIONS&isGetFullPersonObject=true"
     return f"{base_url}{endpoint}?{params}"
 
 

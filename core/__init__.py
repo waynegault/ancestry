@@ -22,6 +22,8 @@ The new architecture provides:
 - Dependency injection for clean component relationships
 """
 
+from typing import Any
+
 # Version information
 __version__ = "2.0.0"
 
@@ -62,13 +64,13 @@ except ImportError:
     # If relative imports fail (e.g., when running as __main__),
     # set up dummy objects for testing
     class DummyComponent:
-        def __init__(self, name):
+        def __init__(self, name: str) -> None:
             self.name = name
 
-        def __call__(self, *args, **kwargs):
+        def __call__(self, *args: Any, **kwargs: Any) -> 'DummyComponent':
             return self
 
-        def __repr__(self):
+        def __repr__(self) -> str:
             return f"<DummyComponent: {self.name}>"
 
     # Create dummy components for testing

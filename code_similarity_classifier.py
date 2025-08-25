@@ -127,7 +127,7 @@ def _rough_complexity(node: ast.AST) -> int:
     # simple proxy: 1 + decision points
     count = 1
     for sub in ast.walk(node):
-        if isinstance(sub, (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.BoolOp)) or isinstance(sub, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        if isinstance(sub, (ast.If, ast.For, ast.While, ast.With, ast.Try, ast.BoolOp, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
             count += 1
     return count
 
@@ -267,7 +267,7 @@ class _FuncVisitor(ast.NodeVisitor):
             frag = "\n".join(lines[start - 1 : end]) if 1 <= start <= len(lines) else ""
             sig, argc, varg, kwarg = _signature_from_node(node)
             returns = sum(isinstance(n, ast.Return) for n in ast.walk(node))
-            yields = sum(isinstance(n, ast.Yield) or isinstance(n, ast.YieldFrom) for n in ast.walk(node))
+            yields = sum(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in ast.walk(node))
             cx = _rough_complexity(node)
             tags = _collect_tags(frag, node, is_async)
             norm = _normalize_tokens(frag)

@@ -22,7 +22,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # === PHASE 1 OPTIMIZATIONS ===
 
@@ -141,7 +141,7 @@ def _a6_acquire_single_instance_lock() -> bool:
         _A6_LOCK_FILE.write_text(payload, encoding="utf-8")
 
         # Register cleanup
-        def _cleanup():
+        def _cleanup() -> None:
             try:
                 # Only the owner should remove its own lock
                 data = _A6_LOCK_FILE.read_text(encoding="utf-8", errors="ignore").strip()
@@ -177,28 +177,28 @@ _AUTH_DEBUG_VERBOSE = False
 class ColorLogger:
     """Enhanced logger wrapper that automatically applies colors to different log levels"""
 
-    def __init__(self, base_logger):
+    def __init__(self, base_logger: Any) -> None:
         self.base_logger = base_logger
 
-    def debug(self, message, *args, **kwargs):
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.base_logger.debug(message, *args, **kwargs)
 
-    def info(self, message, *args, **kwargs):
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.base_logger.info(message, *args, **kwargs)
 
-    def warning(self, message, *args, **kwargs):
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
         # Auto-colorize warnings in yellow unless already colored
         if '\033[' not in str(message):  # Check if already has ANSI codes
             message = Colors.yellow(str(message))
         self.base_logger.warning(message, *args, **kwargs)
 
-    def error(self, message, **kwargs):
+    def error(self, message: str, **kwargs: Any) -> None:
         # Auto-colorize errors in red unless already colored
         if '\033[' not in str(message):  # Check if already has ANSI codes
             message = Colors.red(str(message))
         self.base_logger.error(message, **kwargs)
 
-    def critical(self, message, **kwargs):
+    def critical(self, message: str, **kwargs: Any) -> None:
         # Auto-colorize critical messages in red unless already colored
         if '\033[' not in str(message):  # Check if already has ANSI codes
             message = Colors.red(str(message))
@@ -222,9 +222,9 @@ CACHE_TTL = {
 
 def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
     """Decorator for caching API responses with TTL."""
-    def decorator(func):
+    def decorator(func) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs) -> Any:
             # Create cache key from function name and arguments
             cache_args = str(args[1:]) + str(kwargs) if len(args) > 1 else str(kwargs)
             cache_key = f"{cache_key_prefix}_{hashlib.md5(cache_args.encode()).hexdigest()}"
@@ -507,7 +507,7 @@ def _validate_start_page(start_arg: Any) -> int:
 # End of _validate_start_page
 
 
-def _get_csrf_token(session_manager, force_api_refresh=False):
+def _get_csrf_token(session_manager: Any, force_api_refresh: bool = False) -> Optional[str]:
     """
     Helper function to extract CSRF token from cookies or API.
 
@@ -561,19 +561,11 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
 # These were commented out and causing pylance errors
 
 
-def _navigate_and_get_initial_page_data(
-    session_manager: SessionManager, start_page: int
-) -> tuple[Optional[list[dict[str, Any]]], Optional[int], bool]:
-    """
-    Ensures navigation to the match list and fetches initial page data.
-
-    Returns:
-        Tuple: (matches_on_page, total_pages, success_flag)
-    """
+def _check_and_navigate_to_matches_page(session_manager: SessionManager) -> bool:
+    """Check if on correct page and navigate if needed."""
     driver = session_manager.driver
     my_uuid = session_manager.my_uuid
 
-    # Detect the correct base URL from the browser's current URL
     target_matches_url_base = urljoin(
         config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
     )
@@ -585,66 +577,91 @@ def _navigate_and_get_initial_page_data(
                 logger.error(
                     "Failed to navigate to DNA match list page. Exiting initial fetch."
                 )
-                return None, None, False
+                return False
         else:
             logger.debug(f"Already on correct DNA matches page: {current_url}")
+        return True
     except WebDriverException as nav_e:
         logger.error(
             f"WebDriver error checking/navigating to match list: {nav_e}",
             exc_info=True,
         )
+        return False
+
+
+def _get_database_session_with_retry(session_manager: SessionManager) -> Optional[SqlAlchemySession]:
+    """Get database session with retry logic."""
+    for retry_attempt in range(3):  # DB connection retry
+        db_session = session_manager.get_db_conn()
+        if db_session:
+            return db_session
+        logger.warning(
+            f"DB session attempt {retry_attempt + 1}/3 failed. Retrying in 5s..."
+        )
+        time.sleep(5)
+
+    logger.critical(
+        "Could not get DB session for initial page fetch after retries."
+    )
+    return None
+
+
+def _fetch_initial_matches_data(
+    session_manager: SessionManager,
+    db_session: SqlAlchemySession,
+    start_page: int
+) -> tuple[Optional[list[dict[str, Any]]], Optional[int], bool]:
+    """Fetch initial matches data from the API."""
+    if not session_manager.is_sess_valid():
+        raise ConnectionError(
+            "WebDriver session invalid before initial get_matches."
+        )
+
+    result = get_matches(session_manager, db_session, start_page)
+    if result is None:
+        logger.error(f"Initial get_matches for page {start_page} returned None.")
+        return [], None, False
+    matches_on_page, total_pages_from_api = result
+    return matches_on_page, total_pages_from_api, True
+
+
+def _navigate_and_get_initial_page_data(
+    session_manager: SessionManager, start_page: int
+) -> tuple[Optional[list[dict[str, Any]]], Optional[int], bool]:
+    """
+    Ensures navigation to the match list and fetches initial page data.
+
+    Returns:
+        Tuple: (matches_on_page, total_pages, success_flag)
+    """
+    # Check navigation
+    if not _check_and_navigate_to_matches_page(session_manager):
         return None, None, False
 
     logger.debug(f"Fetching initial page {start_page} to determine total pages...")
-    db_session_for_page: Optional[SqlAlchemySession] = None
-    initial_fetch_success = False
-    matches_on_page: Optional[list[dict[str, Any]]] = None
-    total_pages_from_api: Optional[int] = None
+
+    # Get database session
+    db_session_for_page = _get_database_session_with_retry(session_manager)
+    if not db_session_for_page:
+        return None, None, False
 
     try:
-        for retry_attempt in range(3):  # DB connection retry
-            db_session_for_page = session_manager.get_db_conn()
-            if db_session_for_page:
-                break
-            logger.warning(
-                f"DB session attempt {retry_attempt + 1}/3 failed. Retrying in 5s..."
-            )
-            time.sleep(5)
-        if not db_session_for_page:
-            logger.critical(
-                "Could not get DB session for initial page fetch after retries."
-            )
-            return None, None, False
-
-        if not session_manager.is_sess_valid():
-            raise ConnectionError(
-                "WebDriver session invalid before initial get_matches."
-            )
-        result = get_matches(session_manager, db_session_for_page, start_page)
-        if result is None:
-            matches_on_page, total_pages_from_api = [], None
-            logger.error(f"Initial get_matches for page {start_page} returned None.")
-        else:
-            matches_on_page, total_pages_from_api = result
-            initial_fetch_success = True  # Mark success if get_matches returned data
-
+        return _fetch_initial_matches_data(session_manager, db_session_for_page, start_page)
     except ConnectionError as init_conn_e:
         logger.critical(
             f"ConnectionError during initial get_matches: {init_conn_e}.",
             exc_info=False,
         )
-        # initial_fetch_success remains False
+        return None, None, False
     except Exception as get_match_err:
         logger.error(
             f"Error during initial get_matches call on page {start_page}: {get_match_err}",
             exc_info=True,
         )
-        # initial_fetch_success remains False
+        return None, None, False
     finally:
         if db_session_for_page:
             session_manager.return_session(db_session_for_page)
-
-    return matches_on_page, total_pages_from_api, initial_fetch_success
 
 
 # End of _navigate_and_get_initial_page_data
@@ -1215,19 +1232,8 @@ def _main_page_processing_loop(
 @circuit_breaker(failure_threshold=3, recovery_timeout=60)
 @timeout_protection(timeout=getattr(config_schema, 'action6_coord_timeout_seconds', 1800))
 @error_context("DNA match gathering coordination")
-def coord(
-    session_manager: SessionManager, _config_schema: "ConfigSchema", start: int = 1
-) -> bool:  # Uses config schema
-    """
-    Orchestrates the gathering of DNA matches from Ancestry.
-    Handles pagination, fetches match data, compares with database, and processes.
-
-    Args:
-        session_manager: SessionManager for API calls and browser control
-        config_schema: Configuration schema (required by signature, not used in implementation)
-        start: Starting page number for gathering
-    """
-    # Step 1: Validate Session State
+def _validate_session_state(session_manager: SessionManager) -> None:
+    """Validate session state before starting DNA match gathering."""
     if (
         not session_manager.driver
         or not session_manager.driver_live
@@ -1246,60 +1252,98 @@ def coord(
             context={"session_state": "authenticated but no UUID"},
         )
 
-    # Step 2: Initialize state
-    _ = _config_schema  # Suppress unused parameter warning
+
+def _initialize_coord_state(start: int) -> tuple[dict[str, Any], int]:
+    """Initialize coordination state and validate start page."""
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
 
-    # Acquire single-instance lock
+    # Record coord start timestamp for summary rate/time
+    state["coord_start_ts"] = time.time()
+
+    return state, start_page
+
+
+def _acquire_instance_lock() -> bool:
+    """Acquire single-instance lock for Action 6."""
     if not _a6_acquire_single_instance_lock():
         # Graceful no-op: another run is active in this process or another.
         logger.error(_a6_log_run_id_prefix("Another Action 6 instance is running (lock present). Skipping duplicate start."))
-        return True
+        return False
+    return True
 
-    # Record coord start timestamp for summary rate/time
-    state["coord_start_ts"] = time.time()
+
+def _perform_session_recovery(session_manager: SessionManager) -> None:
+    """Perform complete session recovery and re-authentication."""
+    logger.critical("🚨 Forcing complete session refresh...")
+
+    # Force complete session refresh
+    session_manager.close_sess()
+    from core.browser_manager import BrowserManager
+    browser_manager = BrowserManager()
+    browser_manager.start_browser("session_recovery")
+
+    # Re-authenticate
+    from utils import login_status
+    if not login_status(session_manager, disable_ui_fallback=False):
+        raise Exception("Failed to re-authenticate after session refresh")
+
+    logger.debug("✅ Session refresh and re-authentication successful")
+
+
+def _verify_health_monitoring(session_manager: SessionManager) -> None:
+    """Verify health monitoring is active."""
+    try:
+        from verify_health_monitoring_active import verify_health_monitoring_active
+        if not verify_health_monitoring_active(session_manager):
+            logger.warning("Health monitor not verified; continuing without self-test.")
+    except Exception as verification_exc:
+        logger.debug(f"Health monitoring presence check failed (non-fatal): {verification_exc}")
+
+
+def _validate_api_connectivity(session_manager: SessionManager) -> None:
+    """Validate API connectivity and perform recovery if needed."""
+    logger.debug(_a6_log_run_id_prefix("🔍 Performing comprehensive session validation before starting..."))
+
+    try:
+        profile_check = session_manager.api_manager.get_profile_id()
+        if not profile_check:
+            logger.critical("🚨 CRITICAL: Session authentication failed at startup. API calls will fail.")
+            _perform_session_recovery(session_manager)
+        else:
+            logger.debug("✅ Session validation passed - API connectivity confirmed")
+
+        _verify_health_monitoring(session_manager)
+
+    except Exception as e:
+        logger.critical(f"🚨 CRITICAL: Session validation failed: {e}")
+        raise RuntimeError(f"Cannot proceed with invalid session: {e}") from e
+
+
+def coord(
+    session_manager: SessionManager, _config_schema: "ConfigSchema", start: int = 1
+) -> bool:  # Uses config schema
+    """
+    Orchestrates the gathering of DNA matches from Ancestry.
+    Handles pagination, fetches match data, compares with database, and processes.
+    """
+    # Step 1: Validate Session State
+    _validate_session_state(session_manager)
+
+    # Step 2: Initialize state
+    _ = _config_schema  # Suppress unused parameter warning
+    state, start_page = _initialize_coord_state(start)
+
+    # Acquire single-instance lock
+    if not _acquire_instance_lock():
+        return True
 
     logger.debug(_a6_log_run_id_prefix(
         f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---"
     ))
 
-    # EMERGENCY FIX: Force session validation before starting
-    logger.debug(_a6_log_run_id_prefix("🔍 Performing comprehensive session validation before starting..."))
-
-    # Test API connectivity with a simple call
-    try:
-        profile_check = session_manager.api_manager.get_profile_id()
-        if not profile_check:
-            logger.critical("🚨 CRITICAL: Session authentication failed at startup. API calls will fail.")
-            logger.critical("🚨 Forcing complete session refresh...")
-
-            # Force complete session refresh
-            session_manager.close_sess()
-            from core.browser_manager import BrowserManager
-            browser_manager = BrowserManager()
-            browser_manager.start_browser("session_recovery")
-
-            # Re-authenticate
-            from utils import login_status
-            if not login_status(session_manager, disable_ui_fallback=False):
-                raise Exception("Failed to re-authenticate after session refresh")
-
-            logger.debug("✅ Session refresh and re-authentication successful")
-        else:
-            logger.debug("✅ Session validation passed - API connectivity confirmed")
-
-        # === CRITICAL: VERIFY HEALTH MONITORING IS ACTIVE ===
-        # For Action 6 interactive runs, do NOT execute self-tests; only verify monitor is present.
-        try:
-            from verify_health_monitoring_active import verify_health_monitoring_active
-            if not verify_health_monitoring_active(session_manager):
-                logger.warning("Health monitor not verified; continuing without self-test.")
-        except Exception as verification_exc:
-            logger.debug(f"Health monitoring presence check failed (non-fatal): {verification_exc}")
-    except Exception as e:
-        logger.critical(f"🚨 CRITICAL: Session validation failed: {e}")
-        raise RuntimeError(f"Cannot proceed with invalid session: {e}") from e
+    # Step 3: Validate API connectivity
+    _validate_api_connectivity(session_manager)
 
     try:
         # Step 3: Initial Navigation and Total Pages Fetch
@@ -1405,80 +1449,198 @@ def coord(
 # ------------------------------------------------------------------------------
 
 
+def _normalize_uuids(uuids_on_page: list[str]) -> set[str]:
+    """Normalize incoming UUIDs for consistent matching."""
+    return {str(uuid_val).upper() for uuid_val in uuids_on_page}
+
+
+def _query_existing_persons(session: SqlAlchemySession, uuids_norm: set[str]) -> list[Person]:
+    """Query database for existing Person records with eager loading."""
+    return (
+        session.query(Person)
+        .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
+        .filter(Person.deleted_at.is_(None))  # Exclude soft-deleted
+        .filter(Person.uuid.in_(uuids_norm))
+        .all()
+    )
+
+
+def _create_persons_map(existing_persons: list[Person]) -> dict[str, Person]:
+    """Create a dictionary mapping UUIDs to Person objects."""
+    return {
+        str(person.uuid).upper(): person
+        for person in existing_persons
+        if person.uuid is not None
+    }
+
+
+def _handle_database_lookup_error(db_lookup_err: SQLAlchemyError) -> None:
+    """Handle database lookup errors with specific enum mismatch detection."""
+    # Check specifically for Enum mismatch errors which can be critical
+    if "is not among the defined enum values" in str(db_lookup_err):
+        logger.critical(
+            f"CRITICAL ENUM MISMATCH during Person lookup. DB schema might be outdated. Error: {db_lookup_err}"
+        )
+        # Raise a specific error to halt processing if schema mismatch detected
+        raise ValueError(
+            "Database enum mismatch detected during person lookup."
+        ) from db_lookup_err
+
+    # Log other SQLAlchemy errors and re-raise
+    logger.error(
+        f"Database lookup failed during prefetch: {db_lookup_err}",
+        exc_info=True,
+    )
+    raise  # Re-raise to be handled by the caller
+
+
 def _lookup_existing_persons(
     session: SqlAlchemySession, uuids_on_page: list[str]
 ) -> dict[str, Person]:
     """
     Queries the database for existing Person records based on a list of UUIDs.
     Eager loads related DnaMatch and FamilyTree data for efficiency.
-
-    Args:
-        session: The active SQLAlchemy database session.
-        uuids_on_page: A list of UUID strings to look up.
-
-    Returns:
-        A dictionary mapping UUIDs (uppercase) to their corresponding Person objects.
-        Returns an empty dictionary if input list is empty or an error occurs.
-
-    Raises:
-        SQLAlchemyError: If a database query error occurs.
-        ValueError: If a critical data mismatch (like Enum) is detected.
     """
-    # Step 1: Initialize result map
-    existing_persons_map: dict[str, Person] = {}
-    # Step 2: Handle empty input list
+    # Handle empty input list
     if not uuids_on_page:
-        return existing_persons_map
+        return {}
 
-    # Step 3: Query the database
     try:
-        # Querying DB for existing Person records (removed verbose debug)
-        # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
-        uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
+        uuids_norm = _normalize_uuids(uuids_on_page)
+        existing_persons = _query_existing_persons(session, uuids_norm)
+        return _create_persons_map(existing_persons)
 
-        existing_persons = (
-            session.query(Person)
-            .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .filter(Person.deleted_at.is_(None))  # Exclude soft-deleted (use SQLAlchemy is_)
-            .filter(Person.uuid.in_(uuids_norm))
-            .all()
-        )
-        # Step 4: Populate the result map (key by UUID)
-        existing_persons_map: dict[str, Person] = {
-            str(person.uuid).upper(): person
-            for person in existing_persons
-            if person.uuid is not None
-        }
-
-        # Found existing Person records for this batch (removed verbose debug)
-
-    # Step 5: Handle potential database errors
     except SQLAlchemyError as db_lookup_err:
-        # Check specifically for Enum mismatch errors which can be critical
-        if "is not among the defined enum values" in str(db_lookup_err):
-            logger.critical(
-                f"CRITICAL ENUM MISMATCH during Person lookup. DB schema might be outdated. Error: {db_lookup_err}"
-            )
-            # Raise a specific error to halt processing if schema mismatch detected
-            raise ValueError(
-                "Database enum mismatch detected during person lookup."
-            ) from db_lookup_err
-        # Log other SQLAlchemy errors and re-raise
-        logger.error(
-            f"Database lookup failed during prefetch: {db_lookup_err}",
-            exc_info=True,
-        )
-        raise  # Re-raise to be handled by the caller (_do_batch)
+        _handle_database_lookup_error(db_lookup_err)
     except Exception as e:
         # Catch any other unexpected errors
         logger.error(f"Unexpected error during Person lookup: {e}", exc_info=True)
         raise  # Re-raise to be handled by the caller
 
-    # Step 6: Return the map of found persons
-    return existing_persons_map
-
 
 # End of _lookup_existing_persons
+
+
+def _validate_match_uuid(match_api_data: dict[str, Any]) -> Optional[str]:
+    """Validate and return UUID from match data."""
+    uuid_val = match_api_data.get("uuid")
+    if not uuid_val:
+        logger.warning(f"Skipping match missing UUID: {match_api_data}")
+        return None
+    return uuid_val
+
+
+def _handle_new_person(
+    uuid_val: str,
+    match_api_data: dict[str, Any],
+    fetch_candidates_uuid: set[str],
+    matches_to_process_later: list[dict[str, Any]]
+) -> None:
+    """Handle processing for a new person not in database."""
+    fetch_candidates_uuid.add(uuid_val)
+    matches_to_process_later.append(match_api_data)
+
+
+def _check_dna_data_changes(
+    uuid_val: str,
+    match_api_data: dict[str, Any],
+    existing_dna: Any
+) -> bool:
+    """Check if DNA data has changed and needs fetching."""
+    if not existing_dna:
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): No existing DNA record.")
+        return True
+
+    try:
+        # Compare cM (integer conversion for safety)
+        api_cm = int(match_api_data.get("cM_DNA", 0))
+        db_cm = existing_dna.cM_DNA
+        if api_cm != db_cm:
+            logger.debug(
+                f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})"
+            )
+            return True
+
+        # Compare segments (integer conversion)
+        api_segments = int(match_api_data.get("numSharedSegments", 0))
+        db_segments = existing_dna.shared_segments
+        if api_segments != db_segments:
+            logger.debug(
+                f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})"
+            )
+            return True
+
+    except (ValueError, TypeError, AttributeError) as comp_err:
+        logger.warning(
+            f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed."
+        )
+        return True
+
+    return False
+
+
+def _check_tree_status_changes(
+    uuid_val: str,
+    match_api_data: dict[str, Any],
+    existing_person: Any
+) -> bool:
+    """Check if tree status has changed and needs fetching."""
+    existing_tree = existing_person.family_tree
+    db_in_tree = existing_person.in_my_tree
+    api_in_tree = match_api_data.get("in_my_tree", False)
+
+    if bool(api_in_tree) != bool(db_in_tree):
+        logger.debug(
+            f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})"
+        )
+        return True
+    if api_in_tree and not existing_tree:
+        logger.debug(
+            f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record."
+        )
+        return True
+
+    return False
+
+
+def _process_existing_person(
+    uuid_val: str,
+    match_api_data: dict[str, Any],
+    existing_person: Any,
+    fetch_candidates_uuid: set[str],
+    matches_to_process_later: list[dict[str, Any]]
+) -> bool:
+    """Process existing person and determine if fetch is needed."""
+    existing_dna = existing_person.dna_match
+
+    # Check for changes in core DNA list data
+    needs_fetch = _check_dna_data_changes(uuid_val, match_api_data, existing_dna)
+
+    # Check for changes in tree status or missing tree record
+    if not needs_fetch:
+        needs_fetch = _check_tree_status_changes(uuid_val, match_api_data, existing_person)
+
+    # Add to fetch list or return skipped status
+    if needs_fetch:
+        fetch_candidates_uuid.add(uuid_val)
+        matches_to_process_later.append(match_api_data)
+        return False  # Not skipped
+    return True  # Skipped
+
+
+def _log_identification_summary(
+    invalid_uuid_count: int,
+    fetch_candidates_count: int,
+    skipped_count: int
+) -> None:
+    """Log summary of identification process."""
+    if invalid_uuid_count > 0:
+        logger.error(
+            f"{invalid_uuid_count} matches skipped during identification due to missing UUID."
+        )
+    logger.debug(
+        f"Identified {fetch_candidates_count} candidates for API detail fetch, {skipped_count} skipped (no change detected from list view)."
+    )
 
 
 def _identify_fetch_candidates(
@@ -1488,115 +1650,39 @@ def _identify_fetch_candidates(
     Analyzes matches from a page against existing database records to determine:
     1. Which matches need detailed API data fetched (new or potentially changed).
     2. Which matches can be skipped (no apparent change based on list view data).
-
-    Args:
-        matches_on_page: List of match data dictionaries from the `get_matches` function.
-        existing_persons_map: Dictionary mapping UUIDs to existing Person objects
-                               (from `_lookup_existing_persons`).
-
-    Returns:
-        A tuple containing:
-        - fetch_candidates_uuid (Set[str]): Set of UUIDs requiring API detail fetches.
-        - matches_to_process_later (List[Dict]): List of match data dicts for candidates.
-        - skipped_count_this_batch (int): Number of matches skipped in this batch.
     """
-    # Step 1: Initialize results
+    # Initialize results
     fetch_candidates_uuid: set[str] = set()
     skipped_count_this_batch = 0
     matches_to_process_later: list[dict[str, Any]] = []
     invalid_uuid_count = 0
 
-    # Step 2: Iterate through matches fetched from the current page
+    # Iterate through matches fetched from the current page
     for match_api_data in matches_on_page:
-        # Step 2a: Validate UUID presence
-        uuid_val = match_api_data.get("uuid")
+        # Validate UUID presence
+        uuid_val = _validate_match_uuid(match_api_data)
         if not uuid_val:
-            logger.warning(f"Skipping match missing UUID: {match_api_data}")
             invalid_uuid_count += 1
             continue
 
-        # Step 2b: Check if this person exists in the database
-        existing_person = existing_persons_map.get(
-            uuid_val.upper()
-        )  # Use uppercase UUID
+        # Check if this person exists in the database
+        existing_person = existing_persons_map.get(uuid_val.upper())
 
         if not existing_person:
-            # --- Case 1: New Person ---
-            # Always fetch details for new people.
-            fetch_candidates_uuid.add(uuid_val)
-            matches_to_process_later.append(match_api_data)
+            # New Person - always fetch details
+            _handle_new_person(uuid_val, match_api_data, fetch_candidates_uuid, matches_to_process_later)
         else:
-            # --- Case 2: Existing Person ---
-            # Determine if details fetch is needed based on potential changes.
-            needs_fetch = False
-            existing_dna = existing_person.dna_match
-            existing_tree = existing_person.family_tree
-            db_in_tree = existing_person.in_my_tree
-            api_in_tree = match_api_data.get("in_my_tree", False)  # From get_matches
+            # Existing Person - determine if fetch is needed
+            was_skipped = _process_existing_person(
+                uuid_val, match_api_data, existing_person,
+                fetch_candidates_uuid, matches_to_process_later
+            )
+            if was_skipped:
+                skipped_count_this_batch += 1
 
-            # Step 2c: Check for changes in core DNA list data
-            if existing_dna:
-                try:
-                    # Compare cM (integer conversion for safety)
-                    api_cm = int(match_api_data.get("cM_DNA", 0))
-                    db_cm = existing_dna.cM_DNA
-                    if api_cm != db_cm:
-                        needs_fetch = True
-                        logger.debug(
-                            f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})"
-                        )
+    # Log summary of identification
+    _log_identification_summary(invalid_uuid_count, len(fetch_candidates_uuid), skipped_count_this_batch)
 
-                    # Compare segments (integer conversion)
-                    api_segments = int(match_api_data.get("numSharedSegments", 0))
-                    db_segments = existing_dna.shared_segments
-                    # NOTE: Use >= comparison for segments as list view might be lower than detail view sometimes? Or stick to != ? Sticking to != for now.
-                    if api_segments != db_segments:
-                        needs_fetch = True
-                        logger.debug(
-                            f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})"
-                        )
-
-                except (ValueError, TypeError, AttributeError) as comp_err:
-                    logger.warning(
-                        f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed."
-                    )
-                    needs_fetch = True
-            else:
-                # If DNA record doesn't exist, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): No existing DNA record."
-                )
-
-            # Step 2d: Check for changes in tree status or missing tree record
-            if bool(api_in_tree) != bool(db_in_tree):
-                # If tree linkage status changed, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})"
-                )
-            elif api_in_tree and not existing_tree:
-                # If marked in tree but no DB record exists, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record."
-                )
-
-            # Step 2e: Add to fetch list or increment skipped count
-            if needs_fetch:
-                fetch_candidates_uuid.add(uuid_val)
-                matches_to_process_later.append(match_api_data)
-            else:
-                skipped_count_this_batch += 1  # Step 3: Log summary of identification
-    if invalid_uuid_count > 0:
-        logger.error(
-            f"{invalid_uuid_count} matches skipped during identification due to missing UUID."
-        )
-    logger.debug(
-        f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, {skipped_count_this_batch} skipped (no change detected from list view)."
-    )
-
-    # Step 4: Return results
     return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
 
 
@@ -2276,7 +2362,7 @@ class MemoryOptimizedMatchProcessor:
     Phase 3: Memory-optimized match processing with lazy loading and cleanup.
     """
 
-    def __init__(self, max_memory_mb: int = 500):
+    def __init__(self, max_memory_mb: int = 500) -> None:
         """
         Initialize with memory limit.
 
@@ -2761,9 +2847,7 @@ def _execute_bulk_db_operations(
                     .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
                     .all()
                 )
-                existing_dna_matches_map = {
-                    pid: match_id for pid, match_id in existing_matches
-                }
+                existing_dna_matches_map = dict(existing_matches)
                 logger.debug(
                     f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
                 )
@@ -5739,7 +5823,7 @@ def action6_gather_module_tests() -> bool:
     suite = TestSuite("Action 6 - Gather DNA Matches", "action6_gather.py")
     suite.start_suite()  # INITIALIZATION TESTS
 
-    def test_module_initialization():
+    def test_module_initialization() -> None:
         """Test module initialization and state functions with detailed verification"""
         print("📋 Testing Action 6 module initialization:")
         results = []
@@ -5797,7 +5881,7 @@ def action6_gather_module_tests() -> bool:
         print(f"📊 Results: {sum(results)}/{len(results)} initialization tests passed")
 
     # CORE FUNCTIONALITY TESTS
-    def test_core_functionality():
+    def test_core_functionality() -> None:
         """Test all core DNA match gathering functions"""
         from unittest.mock import MagicMock  # patch unused in this test
 
@@ -5819,7 +5903,7 @@ def action6_gather_module_tests() -> bool:
         # Test navigation function
         assert callable(nav_to_list), "nav_to_list should be callable"
 
-    def test_data_processing_functions():
+    def test_data_processing_functions() -> None:
         """Test all data processing and preparation functions"""
         # from unittest.mock import MagicMock  # Unused in this test
 
@@ -5842,7 +5926,7 @@ def action6_gather_module_tests() -> bool:
         ), "_execute_bulk_db_operations should be callable"
 
     # EDGE CASE TESTS
-    def test_edge_cases():
+    def test_edge_cases() -> None:
         """Test edge cases and boundary conditions"""
         # Test _validate_start_page with edge cases
         result = _validate_start_page("invalid")
@@ -5868,7 +5952,7 @@ def action6_gather_module_tests() -> bool:
             len(result) == 0
         ), "Should return empty dict for empty input"  # INTEGRATION TESTS
 
-    def test_integration():
+    def test_integration() -> None:
         """Test integration with external dependencies"""
         from unittest.mock import MagicMock
 
@@ -5902,7 +5986,7 @@ def action6_gather_module_tests() -> bool:
         assert len(coord_params) > 0, "coord should accept parameters"
 
     # PERFORMANCE TESTS
-    def test_performance():
+    def test_performance() -> None:
         """Test performance of data processing operations"""
 
         # Test _initialize_gather_state performance
@@ -5928,7 +6012,7 @@ def action6_gather_module_tests() -> bool:
         ), f"1000 page validations should be fast, took {duration:.3f}s"
 
     # ERROR HANDLING TESTS
-    def test_error_handling():
+    def test_error_handling() -> None:
         """
         Test error handling scenarios including the critical RetryableError constructor bug
         that caused Action 6 database transaction failures.
@@ -6112,7 +6196,7 @@ def action6_gather_module_tests() -> bool:
         print("   - Multiple final summary reporting issues")
         print("🎉 All error handling tests passed - Action 6 database transaction bugs prevented!")
 
-    def test_regression_prevention_database_bulk_insert():
+    def test_regression_prevention_database_bulk_insert() -> None:
         """
         🛡️ REGRESSION TEST: Database bulk insert condition logic.
 
@@ -6188,7 +6272,7 @@ def action6_gather_module_tests() -> bool:
             print("🎉 All regression prevention tests passed - database bulk insert bug prevented!")
         return success
 
-    def test_regression_prevention_configuration_respect():
+    def test_regression_prevention_configuration_respect() -> None:
         """
         🛡️ REGRESSION TEST: Configuration settings respect.
 
@@ -6232,7 +6316,7 @@ def action6_gather_module_tests() -> bool:
             print("🎉 Configuration respect regression tests passed!")
         return success
 
-    def test_dynamic_api_failure_threshold():
+    def test_dynamic_api_failure_threshold() -> None:
         """
         🔧 TEST: Dynamic API failure threshold calculation.
 
@@ -6265,7 +6349,7 @@ def action6_gather_module_tests() -> bool:
             print("🎉 Dynamic API failure threshold tests passed!")
         return success
 
-    def test_regression_prevention_session_management():
+    def test_regression_prevention_session_management() -> None:
         """
         🛡️ REGRESSION TEST: Session management and stability.
 
@@ -6316,7 +6400,7 @@ def action6_gather_module_tests() -> bool:
         )
 
         # NEW: Progress bar integration correctness (would catch 0 processed bug)
-        def test_progress_integration_counts():
+        def test_progress_integration_counts() -> None:
             """Ensure ProgressIndicator stats reflect progress_bar.update increments."""
             from core.progress_indicators import create_progress_indicator
             with create_progress_indicator(
@@ -6388,7 +6472,7 @@ def action6_gather_module_tests() -> bool:
         )
 
         # 303 REDIRECT DETECTION TESTS - This would have caught the authentication issue
-        def test_303_redirect_detection():
+        def test_303_redirect_detection() -> None:
             """Test that would have detected the 303 redirect authentication issue."""
             try:
                 from unittest.mock import Mock, patch

@@ -112,7 +112,7 @@ def demo_health_monitoring() -> None:
         monitor.record_api_response_time(response_time)
 
     # Record many errors
-    for i in range(10):
+    for _i in range(10):
         monitor.record_error("SessionDeathError")
 
     dashboard = monitor.get_health_dashboard()

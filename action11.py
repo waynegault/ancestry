@@ -30,12 +30,13 @@ error handling, caching optimization, and extensive test coverage for
 genealogical research workflows.
 """
 
+import logging
 import os
 import sys
 
 # Add current directory to path for imports
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 current_dir = str(Path(__file__).resolve().parent)
 if current_dir not in sys.path:
@@ -131,23 +132,15 @@ def _format_full_name(candidate: dict[str, Any]) -> str:
     return f"{candidate.get('first_name', '')} {candidate.get('surname', '')}".strip()
 
 
-def _score_persons(
-    persons: list[dict[str, Any]],
-    search_criteria: dict[str, Any],
-    *,
-    max_results: int,
-) -> list[dict[str, Any]]:
-    """Apply universal scoring to person dicts and return enriched, sorted results.
-
-    Preserves prior behavior: early termination, defensive checks, and debug logs.
-    """
-    scored_results: list[dict[str, Any]] = []
+def _initialize_scoring_config() -> tuple[dict[str, Any], dict[str, Any]]:
+    """Initialize scoring configuration."""
     scoring_weights = config_schema.common_scoring_weights
     date_flex = {"year_match_range": config_schema.date_flexibility}
+    return scoring_weights, date_flex
 
-    persons_list = cast(list[dict[str, Any]], persons)
 
-    # Debug logging for development (kept for parity with previous behavior)
+def _log_debug_info(persons_list: list[dict[str, Any]]) -> None:
+    """Log debug information about the first person for development."""
     if len(persons_list) > 0:
         first_person = persons_list[0]
         logger.debug(f"First person structure: {first_person}")
@@ -156,6 +149,86 @@ def _score_persons(
             + (str(list(first_person.keys())) if isinstance(first_person, dict) else 'Not a dict')
         )
 
+
+def _should_terminate_early(scored_results: list[dict[str, Any]], max_results: int, start_time: float) -> bool:
+    """Check if processing should terminate early."""
+    import time as _time
+    return len(scored_results) >= max_results and (_time.time() - start_time) > 3.0
+
+
+def _score_single_person(
+    person: dict[str, Any],
+    search_criteria: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """Score a single person and return enriched result."""
+    try:
+        if not isinstance(person, dict):
+            logger.warning(f"Skipping non-dict person: {type(person)}")
+            return None
+
+        candidate = extract_person_data_for_scoring(person)
+
+        from universal_scoring import apply_universal_scoring
+        scored_candidates = apply_universal_scoring(
+            candidates=[candidate],
+            search_criteria=search_criteria,
+            scoring_weights=scoring_weights,
+            date_flexibility=date_flex,
+            max_results=1,
+            performance_timeout=1.0,
+        )
+
+        if scored_candidates:
+            scored_candidate = scored_candidates[0]
+            total_score = scored_candidate.get('total_score', 0)
+            field_scores = scored_candidate.get('field_scores', {})
+            reasons = scored_candidate.get('reasons', [])
+        else:
+            total_score, field_scores, reasons = 0, {}, []
+
+        # Assemble output
+        result = candidate.copy()
+        person_id = _extract_person_id(person)
+        result.update(
+            {
+                "total_score": int(total_score),
+                "field_scores": field_scores,
+                "reasons": reasons,
+                "full_name_disp": _format_full_name(candidate),
+                "person_id": person_id,
+                "raw_data": person,
+            }
+        )
+        return result
+
+    except Exception as e:  # defensive
+        person_id_for_log = "unknown"
+        if isinstance(person, dict):
+            person_id_for_log = person.get('personId', person.get('pid', 'unknown'))
+        logger.warning(f"Error scoring person {person_id_for_log}: {e}")
+        return None
+
+
+def _is_high_quality_match(total_score: float, scored_results: list[dict[str, Any]]) -> bool:
+    """Check if we found a high-quality match that allows early termination."""
+    return total_score >= 200 and len(scored_results) >= 1
+
+
+def _score_persons(
+    persons: list[dict[str, Any]],
+    search_criteria: dict[str, Any],
+    *,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    """Apply universal scoring to person dicts and return enriched, sorted results."""
+    scored_results: list[dict[str, Any]] = []
+    scoring_weights, date_flex = _initialize_scoring_config()
+    persons_list = cast(list[dict[str, Any]], persons)
+
+    _log_debug_info(persons_list)
+
     # Limit processing for performance
     persons_to_process = persons_list[:max_results] if len(persons_list) > max_results else persons_list
 
@@ -163,63 +236,79 @@ def _score_persons(
     start_time = _time.time()
 
     for i, person in enumerate(persons_to_process):
-        if len(scored_results) >= max_results and (_time.time() - start_time) > 3.0:
+        if _should_terminate_early(scored_results, max_results, start_time):
             logger.debug(f"Early termination after processing {i+1} persons due to time limit")
             break
-        try:
-            if not isinstance(person, dict):
-                logger.warning(f"Skipping non-dict person: {type(person)}")
-                continue
 
-            candidate = extract_person_data_for_scoring(person)
-
-            from universal_scoring import apply_universal_scoring
-            scored_candidates = apply_universal_scoring(
-                candidates=[candidate],
-                search_criteria=search_criteria,
-                scoring_weights=scoring_weights,
-                date_flexibility=date_flex,
-                max_results=1,
-                performance_timeout=1.0,
-            )
-
-            if scored_candidates:
-                scored_candidate = scored_candidates[0]
-                total_score = scored_candidate.get('total_score', 0)
-                field_scores = scored_candidate.get('field_scores', {})
-                reasons = scored_candidate.get('reasons', [])
-            else:
-                total_score, field_scores, reasons = 0, {}, []
-
-            # Assemble output
-            result = candidate.copy()
-            person_id = _extract_person_id(person)
-            result.update(
-                {
-                    "total_score": int(total_score),
-                    "field_scores": field_scores,
-                    "reasons": reasons,
-                    "full_name_disp": _format_full_name(candidate),
-                    "person_id": person_id,
-                    "raw_data": person,
-                }
-            )
+        result = _score_single_person(person, search_criteria, scoring_weights, date_flex)
+        if result:
             scored_results.append(result)
 
-            if total_score >= 200 and len(scored_results) >= 1:
+            if _is_high_quality_match(result["total_score"], scored_results):
                 logger.debug(
-                    f"Found high-quality match (score: {total_score}), stopping early for performance"
+                    f"Found high-quality match (score: {result['total_score']}), stopping early for performance"
                 )
                 break
-        except Exception as e:  # defensive
-            person_id_for_log = "unknown"
-            if isinstance(person, dict):
-                person_id_for_log = person.get('personId', person.get('pid', 'unknown'))
-            logger.warning(f"Error scoring person {person_id_for_log}: {e}")
-            continue
 
     scored_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
     return scored_results[:max_results]
+
+def _get_tree_id(session_manager: SessionManager) -> Optional[str]:
+    """Get tree ID from session manager or configuration."""
+    tree_id = session_manager.my_tree_id
+    if not tree_id:
+        from config import config_schema
+        tree_id = getattr(config_schema.test, "test_tree_id", "")
+        if not tree_id:
+            logger.error("No tree ID available for enhanced TreesUI search")
+            return None
+    return tree_id
+
+
+def _build_search_name(search_criteria: dict[str, Any]) -> str:
+    """Build full name from search criteria."""
+    first_name = search_criteria.get("first_name", "")
+    last_name = search_criteria.get("surname", "")
+    return f"{first_name} {last_name}".strip()
+
+
+def _perform_treesui_request(session_manager: SessionManager, full_name: str, tree_id: str) -> Optional[dict[str, Any]]:
+    """Perform the TreesUI API request."""
+    from utils import _api_req
+
+    url, tree_id = _build_treesui_url(session_manager, full_name)
+    return _api_req(
+        url=url,
+        driver=session_manager.driver,
+        session_manager=session_manager,
+        method="GET",
+        api_description="Enhanced TreesUI List API",
+        headers={
+            "_use_enhanced_headers": "true",
+            "_tree_id": tree_id,
+            "_person_id": "search",
+        },
+        timeout=8,  # Reduced to 8 seconds for faster response
+        use_csrf_token=False,  # Don't request CSRF token for this endpoint
+    )
+
+
+def _process_treesui_response(
+    response: dict[str, Any],
+    search_criteria: dict[str, Any],
+    max_results: int
+) -> list[dict[str, Any]]:
+    """Process TreesUI response and return scored results."""
+    persons = _parse_treesui_response(response)
+    if not persons:
+        logger.warning("Enhanced TreesUI search found no persons")
+        return []
+
+    print(f"TreesUI search found {len(persons)} raw results")
+    final_results = _score_persons(persons, search_criteria, max_results=max_results)
+    print(f"TreesUI search returning {len(final_results)} scored results")
+    return final_results
+
 
 def enhanced_treesui_search(
     session_manager: SessionManager,
@@ -231,69 +320,105 @@ def enhanced_treesui_search(
 
     Uses optimized TreesUI endpoint with consistent scoring algorithms from Action 10
     for reliable genealogical matching and performance.
-
-    Args:
-        session_manager: Valid SessionManager instance for API calls
-        search_criteria: Search parameters (first_name, surname, birth_year, gender, birth_place)
-        max_results: Maximum number of results to return
-
-    Returns:
-        List of person dictionaries with calculated scores, sorted by relevance
     """
     try:
-        from config import config_schema
-        from utils import _api_req
-
-        # Get configuration
-        tree_id = session_manager.my_tree_id
+        tree_id = _get_tree_id(session_manager)
         if not tree_id:
-            tree_id = getattr(config_schema.test, "test_tree_id", "")
-            if not tree_id:
-                logger.error("No tree ID available for enhanced TreesUI search")
-                return []
+            return []
 
-        base_url = config_schema.api.base_url.rstrip('/')
-
-        # Build the enhanced TreesUI endpoint URL
-        first_name = search_criteria.get("first_name", "")
-        last_name = search_criteria.get("surname", "")
-        full_name = f"{first_name} {last_name}".strip()
-
-        # Construct URL and perform request
-        url, tree_id = _build_treesui_url(session_manager, full_name)
-        response = _api_req(
-            url=url,
-            driver=session_manager.driver,
-            session_manager=session_manager,
-            method="GET",
-            api_description="Enhanced TreesUI List API",
-            headers={
-                "_use_enhanced_headers": "true",
-                "_tree_id": tree_id,
-                "_person_id": "search",
-            },
-            timeout=8,  # Reduced to 8 seconds for faster response
-            use_csrf_token=False,  # Don't request CSRF token for this endpoint
-        )
+        full_name = _build_search_name(search_criteria)
+        response = _perform_treesui_request(session_manager, full_name, tree_id)
 
         if not response:
             logger.warning("Enhanced TreesUI search returned no response")
             return []
 
-        # Parse/score pipeline
-        persons = _parse_treesui_response(response)
-        if not persons:
-            logger.warning("Enhanced TreesUI search found no persons")
-            return []
-
-        print(f"TreesUI search found {len(persons)} raw results")
-        final_results = _score_persons(persons, search_criteria, max_results=max_results)
-        print(f"TreesUI search returning {len(final_results)} scored results")
-        return final_results
+        return _process_treesui_response(response, search_criteria, max_results)
 
     except Exception as e:
         logger.error(f"Enhanced TreesUI search failed: {e}")
         return []
+
+
+def _extract_names_from_person(person: dict[str, Any]) -> tuple[str, str]:
+    """Extract first name and surname from person data."""
+    first_name = ""
+    surname = ""
+
+    # Try direct fields first (gname, sname)
+    if "gname" in person and "sname" in person:
+        first_name = person.get("gname", "")
+        surname = person.get("sname", "")
+    else:
+        # Fallback to Names array
+        names = person.get("Names", person.get("names", []))
+        if names and isinstance(names, list) and len(names) > 0:
+            primary_name = names[0]
+            first_name = primary_name.get("g", primary_name.get("given", primary_name.get("first", "")))
+            surname = primary_name.get("s", primary_name.get("surname", primary_name.get("last", "")))
+
+    return first_name, surname
+
+
+def _extract_place_from_event(event: dict[str, Any]) -> str:
+    """Extract place information from an event."""
+    event_place = event.get("p", event.get("place", ""))
+    if isinstance(event_place, dict):
+        event_place = event_place.get("original", "")
+    return event_place if event_place else ""
+
+
+def _extract_events_from_person(person: dict[str, Any]) -> tuple[Optional[int], Optional[int], str, str]:
+    """Extract birth and death information from person events."""
+    events = person.get("Events", person.get("events", []))
+    birth_year = None
+    death_year = None
+    birth_place = ""
+    death_place = ""
+
+    for event in events:
+        event_type = event.get("t", event.get("type", "")).lower()
+        if event_type == "birth" and birth_year is None:  # Only process first birth event
+            birth_year = extract_year_from_event(event)
+            place = _extract_place_from_event(event)
+            if place:
+                birth_place = place
+        elif event_type == "death" and death_year is None:  # Only process first death event
+            death_year = extract_year_from_event(event)
+            place = _extract_place_from_event(event)
+            if place:
+                death_place = place
+
+    return birth_year, death_year, birth_place, death_place
+
+
+def _extract_gender_from_person(person: dict[str, Any]) -> str:
+    """Extract gender information from person data."""
+    gender = ""
+    if "gender" in person:
+        gender = person.get("gender", "")
+    else:
+        genders = person.get("Genders", [])
+        if genders and isinstance(genders, list) and len(genders) > 0:
+            gender = genders[0].get("g", "")
+
+    if isinstance(gender, dict):
+        gender = gender.get("type", "")
+
+    return gender.lower() if gender else ""
+
+
+def _create_default_person_data() -> dict[str, Any]:
+    """Create default person data structure for error cases."""
+    return {
+        "first_name": "",
+        "surname": "",
+        "birth_year": None,
+        "death_year": None,
+        "birth_place": "",
+        "death_place": "",
+        "gender": ""
+    }
 
 
 def extract_person_data_for_scoring(person: dict[str, Any]) -> dict[str, Any]:
@@ -307,61 +432,9 @@ def extract_person_data_for_scoring(person: dict[str, Any]) -> dict[str, Any]:
         Dictionary formatted for universal scoring
     """
     try:
-        # Extract names - handle both direct fields and Names array
-        first_name = ""
-        surname = ""
-
-        # Try direct fields first (gname, sname)
-        if "gname" in person and "sname" in person:
-            first_name = person.get("gname", "")
-            surname = person.get("sname", "")
-        else:
-            # Fallback to Names array
-            names = person.get("Names", person.get("names", []))
-            if names and isinstance(names, list) and len(names) > 0:
-                primary_name = names[0]
-                first_name = primary_name.get("g", primary_name.get("given", primary_name.get("first", "")))
-                surname = primary_name.get("s", primary_name.get("surname", primary_name.get("last", "")))
-
-        # Extract events (birth, death) - handle both Events and events
-        events = person.get("Events", person.get("events", []))
-        birth_year = None
-        death_year = None
-        birth_place = ""
-        death_place = ""
-
-        for event in events:
-            event_type = event.get("t", event.get("type", "")).lower()
-            if event_type == "birth" and birth_year is None:  # Only process first birth event
-                birth_year = extract_year_from_event(event)
-                # Extract place from various possible fields
-                event_place = event.get("p", event.get("place", ""))
-                if isinstance(event_place, dict):
-                    event_place = event_place.get("original", "")
-                # Only update birth_place if we found a non-empty place
-                if event_place:
-                    birth_place = event_place
-            elif event_type == "death" and death_year is None:  # Only process first death event
-                death_year = extract_year_from_event(event)
-                # Extract place from various possible fields
-                event_place = event.get("p", event.get("place", ""))
-                if isinstance(event_place, dict):
-                    event_place = event_place.get("original", "")
-                # Only update death_place if we found a non-empty place
-                if event_place:
-                    death_place = event_place
-
-        # Extract gender - handle both direct field and Genders array
-        gender = ""
-        if "gender" in person:
-            gender = person.get("gender", "")
-        else:
-            genders = person.get("Genders", [])
-            if genders and isinstance(genders, list) and len(genders) > 0:
-                gender = genders[0].get("g", "")
-
-        if isinstance(gender, dict):
-            gender = gender.get("type", "")
+        first_name, surname = _extract_names_from_person(person)
+        birth_year, death_year, birth_place, death_place = _extract_events_from_person(person)
+        gender = _extract_gender_from_person(person)
 
         return {
             "first_name": first_name,
@@ -370,20 +443,12 @@ def extract_person_data_for_scoring(person: dict[str, Any]) -> dict[str, Any]:
             "death_year": death_year,
             "birth_place_disp": birth_place,  # Use birth_place_disp for scoring function
             "death_place_disp": death_place,  # Use death_place_disp for scoring function
-            "gender_norm": gender.lower() if gender else ""  # Use gender_norm and lowercase for scoring
+            "gender_norm": gender  # Use gender_norm and lowercase for scoring
         }
 
     except Exception as e:
         logger.warning(f"Error extracting person data: {e}")
-        return {
-            "first_name": "",
-            "surname": "",
-            "birth_year": None,
-            "death_year": None,
-            "birth_place": "",
-            "death_place": "",
-            "gender": ""
-        }
+        return _create_default_person_data()
 
 
 def extract_year_from_event(event: dict[str, Any]) -> Optional[int]:
@@ -430,17 +495,8 @@ def run_action11(session_manager: Optional[SessionManager] = None) -> bool:
 
 
 
-def get_api_session(session_manager: Optional[SessionManager] = None) -> Optional[SessionManager]:
-    """
-    Get a valid API session, creating one if needed and handling authentication.
-    This replaces the get_cached_gedcom() function from the GEDCOM version.
-
-    Args:
-        session_manager: Optional existing session manager
-
-    Returns:
-        SessionManager instance if valid and authenticated, None otherwise
-    """
+def _validate_existing_session(session_manager: Optional[SessionManager]) -> Optional[SessionManager]:
+    """Validate existing session manager if provided."""
     if session_manager and session_manager.is_sess_valid():
         logger.debug("Using provided valid session manager")
         return session_manager
@@ -450,34 +506,66 @@ def get_api_session(session_manager: Optional[SessionManager] = None) -> Optiona
     else:
         logger.debug("No session manager provided, creating new one for API calls")
 
-    # Create a new SessionManager for standalone execution (like Action 5 does)
+    return None
+
+
+def _create_new_session_manager() -> Optional[SessionManager]:
+    """Create and initialize a new session manager."""
+    logger.debug("Creating new SessionManager for API calls...")
+    new_session_manager = SessionManager()
+
+    # Start browser session (needed for authentication)
+    if not new_session_manager.start_browser("Action 11 - API Research"):
+        logger.error("Failed to start browser for authentication")
+        return None
+
+    return new_session_manager
+
+
+def _authenticate_session(session_manager: SessionManager) -> bool:
+    """Authenticate the session manager."""
+    from utils import log_in, login_status
+
+    logger.debug("Checking login status...")
+    login_ok = login_status(session_manager, disable_ui_fallback=False)
+
+    if login_ok is True:
+        logger.debug("Already logged in - session ready")
+        return True
+
+    if login_ok is False:
+        logger.debug("Not logged in - attempting authentication...")
+        login_result = log_in(session_manager)
+        if login_result == "LOGIN_SUCCEEDED":
+            logger.debug("Authentication successful - session ready")
+            return True
+        logger.error(f"Authentication failed: {login_result}")
+        return False
+
+    logger.error("Login status check failed critically")
+    return False
+
+
+def get_api_session(session_manager: Optional[SessionManager] = None) -> Optional[SessionManager]:
+    """
+    Get a valid API session, creating one if needed and handling authentication.
+    This replaces the get_cached_gedcom() function from the GEDCOM version.
+    """
+    # Check if existing session is valid
+    valid_session = _validate_existing_session(session_manager)
+    if valid_session:
+        return valid_session
+
+    # Create a new SessionManager for standalone execution
     try:
-        logger.debug("Creating new SessionManager for API calls...")
-        new_session_manager = SessionManager()
-
-        # Start browser session (needed for authentication)
-        if not new_session_manager.start_browser("Action 11 - API Research"):
-            logger.error("Failed to start browser for authentication")
+        new_session_manager = _create_new_session_manager()
+        if not new_session_manager:
             return None
 
-        # Check login status and authenticate if needed (like Action 5)
-        from utils import log_in, login_status
-
-        logger.debug("Checking login status...")
-        login_ok = login_status(new_session_manager, disable_ui_fallback=False)
-
-        if login_ok is True:
-            logger.debug("Already logged in - session ready")
+        # Authenticate the session
+        if _authenticate_session(new_session_manager):
             return new_session_manager
-        if login_ok is False:
-            logger.debug("Not logged in - attempting authentication...")
-            login_result = log_in(new_session_manager)
-            if login_result == "LOGIN_SUCCEEDED":
-                logger.debug("Authentication successful - session ready")
-                return new_session_manager
-            logger.error(f"Authentication failed: {login_result}")
-            return None
-        logger.error("Login status check failed critically")
+
         return None
 
     except Exception as e:
@@ -507,13 +595,13 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     suite.start_suite()
 
     # --- TESTS ---
-    def debug_wrapper(test_func):
-        def wrapped():
+    def debug_wrapper(test_func: Callable[[], Any]) -> Callable[[], Any]:
+        def wrapped() -> Any:
             return test_func()
             # Debug timing removed for cleaner output
         return wrapped
 
-    def test_input_sanitization():
+    def test_input_sanitization() -> None:
         """Test input sanitization with edge cases and real-world inputs"""
         import os
 
@@ -549,7 +637,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         print(f"📊 Results: {passed}/{len(test_cases)} test cases passed")
         return passed == len(test_cases)
 
-    def test_date_parsing():
+    def test_date_parsing() -> None:
         """Test year extraction from various date input formats"""
         print("📋 Testing year input validation with formats:")
 
@@ -578,7 +666,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
         print(f"📊 Results: {passed}/{len(test_cases)} input formats validated correctly")
         return passed == len(test_cases)
 
-    def test_api_search_functionality():
+    def test_api_search_functionality() -> None:
         """Test API search functionality with test person's data from .env"""
         import os
 
@@ -740,7 +828,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
             logger.error(f"API search test error: {e}", exc_info=True)
             return False
 
-    def test_api_family_analysis():
+    def test_api_family_analysis() -> None:
         """Test family relationship analysis via editrelationships API (uses cached Fraser data)"""
         import json
         import os
@@ -921,7 +1009,7 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
             logger.error(f"API family analysis error: {e}", exc_info=True)
             return False
 
-    def test_api_relationship_path():
+    def test_api_relationship_path() -> None:
         """Test relationship path calculation via relationladderwithlabels API (uses cached Fraser data)"""
         import os
 
@@ -1110,7 +1198,7 @@ if __name__ == "__main__":
 
     # Create custom filter to block performance messages
     class PerformanceFilter(logging.Filter):
-        def filter(self, record):
+        def filter(self, record: logging.LogRecord) -> bool:
             message = record.getMessage() if hasattr(record, 'getMessage') else str(record.msg)
             return not ('executed in' in message and 'wrapper' in message)
 

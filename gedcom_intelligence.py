@@ -65,7 +65,7 @@ class GedcomIntelligenceAnalyzer:
     Identifies gaps, conflicts, and research opportunities.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the GEDCOM intelligence analyzer."""
         self.gaps_identified: list[GedcomGap] = []
         self.conflicts_identified: list[GedcomConflict] = []
@@ -638,7 +638,7 @@ def test_ai_insights_structure() -> None:
         assert key in insights, f"ai_insights missing {key}"
 
 
-def test_recommendation_balance_logic():
+def test_recommendation_balance_logic() -> None:
     """Recommendation logic should switch message based on gaps vs conflicts count."""
     analyzer = GedcomIntelligenceAnalyzer()
     analyzer.gaps_identified = []

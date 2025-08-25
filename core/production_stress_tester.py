@@ -106,7 +106,7 @@ class StressTestResults:
 class FailureInjector:
     """Simulates various failure conditions during stress testing."""
 
-    def __init__(self, injection_rate: float = 0.05):
+    def __init__(self, injection_rate: float = 0.05) -> None:
         self.injection_rate = injection_rate
         self.failure_types = [
             'memory_pressure',
@@ -140,27 +140,27 @@ class FailureInjector:
 class ResourceMonitor:
     """Monitors system resources during stress testing."""
 
-    def __init__(self, monitoring_interval: int = 30):
+    def __init__(self, monitoring_interval: int = 30) -> None:
         self.monitoring_interval = monitoring_interval
         self.monitoring_active = False
         self.resource_history = deque(maxlen=1000)
         self.monitor_thread = None
 
-    def start_monitoring(self):
+    def start_monitoring(self) -> None:
         """Start resource monitoring in background thread."""
         self.monitoring_active = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
         logger.info(f"🔍 Resource monitoring started (interval: {self.monitoring_interval}s)")
 
-    def stop_monitoring(self):
+    def stop_monitoring(self) -> None:
         """Stop resource monitoring."""
         self.monitoring_active = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
         logger.info("🔍 Resource monitoring stopped")
 
-    def _monitor_loop(self):
+    def _monitor_loop(self) -> None:
         """Main monitoring loop."""
         while self.monitoring_active:
             try:
@@ -246,7 +246,7 @@ class ProductionStressTester:
     Phase 3: Validates system reliability under production conditions.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.failure_injector = FailureInjector()
         self.resource_monitor = ResourceMonitor()
         self.test_results: list[StressTestResults] = []
@@ -371,7 +371,7 @@ class ProductionStressTester:
             original_process_page = session_manager._process_single_page
 
             # Provide a safe default if original is a NotImplementedError stub
-            def _safe_original(page_num: int):
+            def _safe_original(page_num: int) -> dict[str, Any]:
                 try:
                     return original_process_page(page_num)
                 except NotImplementedError:
@@ -615,7 +615,7 @@ class ProductionStressTester:
 # EMBEDDED TESTS - Following user preference for tests in same file
 # ============================================================================
 
-def test_stress_test_config():
+def test_stress_test_config() -> None:
     """Test StressTestConfig dataclass functionality."""
     print("🧪 Testing StressTestConfig...")
 
@@ -637,7 +637,7 @@ def test_stress_test_config():
     return True
 
 
-def test_stress_test_results():
+def test_stress_test_results() -> None:
     """Test StressTestResults dataclass and calculations."""
     print("🧪 Testing StressTestResults...")
 
@@ -666,7 +666,7 @@ def test_stress_test_results():
     return True
 
 
-def test_failure_injector():
+def test_failure_injector() -> None:
     """Test FailureInjector functionality."""
     print("🧪 Testing FailureInjector...")
 
@@ -689,7 +689,7 @@ def test_failure_injector():
     return True
 
 
-def test_resource_monitor():
+def test_resource_monitor() -> None:
     """Test ResourceMonitor functionality."""
     print("🧪 Testing ResourceMonitor...")
 
@@ -719,7 +719,7 @@ def test_resource_monitor():
     return True
 
 
-def test_production_stress_tester_initialization():
+def test_production_stress_tester_initialization() -> None:
     """Test ProductionStressTester initialization."""
     print("🧪 Testing ProductionStressTester initialization...")
 
@@ -751,14 +751,14 @@ def test_production_stress_tester_initialization():
     return True
 
 
-def test_stress_test_page_processor():
+def test_stress_test_page_processor() -> None:
     """Test stress test page processor functionality."""
     print("🧪 Testing stress test page processor...")
 
     tester = ProductionStressTester()
 
     # Mock original processor
-    def mock_processor(page_num):
+    def mock_processor(page_num: int) -> dict[str, Any]:
         return {'page_num': page_num, 'success': True}
 
     # Test with no failure injection
@@ -803,7 +803,7 @@ def test_early_termination_logic():
     return True
 
 
-def run_embedded_tests():
+def run_embedded_tests() -> None:
     """Run all embedded tests for production stress tester."""
     print("🚀 Running Embedded Tests for Production Stress Tester...")
     print("=" * 60)

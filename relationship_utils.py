@@ -1613,7 +1613,7 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
     return relationship_code  # Return original if no match
 
 
-def relationship_module_tests():
+def relationship_module_tests() -> None:
     """Essential relationship utilities tests for unified framework."""
     import time
 
@@ -1868,7 +1868,7 @@ def run_comprehensive_tests() -> bool:
     def test_gedcom_path_conversion():
         # Create mock GEDCOM data
         class MockReader:
-            def get_element_by_id(self, id_val):
+            def get_element_by_id(self, id_val: str) -> dict[str, str]:
                 return {"name": f"Person {id_val}", "id": id_val}
 
         reader = MockReader()
