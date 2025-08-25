@@ -301,7 +301,7 @@ from selenium.common.exceptions import (
     WebDriverException,
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
+from sqlalchemy.orm import joinedload, Session as SqlAlchemySession  # Alias Session
 
 
 # === LOCAL IMPORTS ===
