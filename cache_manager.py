@@ -34,7 +34,7 @@ def cache_manager_module_tests() -> bool:
         bool: True if all tests pass, False otherwise
     """
 
-    def test_cache_manager_initialization():
+    def test_cache_manager_initialization() -> bool:
         # Test cache manager initialization
         if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
@@ -46,7 +46,7 @@ def cache_manager_module_tests() -> bool:
 
         # CORE FUNCTIONALITY TESTS
 
-    def test_cache_operations():
+    def test_cache_operations() -> bool:
         # Test basic cache operations
         if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
@@ -58,19 +58,19 @@ def cache_manager_module_tests() -> bool:
                 assert result == "test_value"
         return True
 
-    def test_cache_statistics():
+    def test_cache_statistics() -> bool:
         # Test cache statistics collection
         pass
         return True
 
-    def test_cache_invalidation():
+    def test_cache_invalidation() -> bool:
         # Test cache invalidation patterns
         pass
         return True
 
         # EDGE CASE TESTS
 
-    def test_eviction_policies():
+    def test_eviction_policies() -> bool:
         # Test cache eviction when full
         if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
@@ -84,7 +84,7 @@ def cache_manager_module_tests() -> bool:
                 assert result is None or result == "value1"
         return True
 
-    def test_performance_monitoring():
+    def test_performance_monitoring() -> bool:
         # Test performance monitoring features
         if is_function_available("CacheManager"):
             cache_manager_class = get_function("CacheManager")
@@ -95,85 +95,85 @@ def cache_manager_module_tests() -> bool:
 
         # PERFORMANCE TESTS
 
-    def test_cache_performance():
+    def test_cache_performance() -> bool:
         # Test cache performance under load
         pass
         return True
 
-    def test_concurrent_access():
+    def test_concurrent_access() -> bool:
         # Test thread-safe cache operations
         pass
         return True
 
-    def test_memory_management():
+    def test_memory_management() -> bool:
         # Test memory usage and cleanup
         pass
         return True
 
         # INTEGRATION TESTS
 
-    def test_database_integration():
+    def test_database_integration() -> bool:
         # Test cache integration with database
         pass
         return True
 
-    def test_api_integration():
+    def test_api_integration() -> bool:
         # Test cache integration with API calls
         pass
         return True
 
-    def test_session_management():
+    def test_session_management() -> bool:
         # Test cache session handling
         pass
         return True
 
         # ERROR HANDLING TESTS
 
-    def test_error_handling():
+    def test_error_handling() -> bool:
         # Test cache error scenarios
         pass
         return True
 
-    def test_recovery_mechanisms():
+    def test_recovery_mechanisms() -> bool:
         # Test cache recovery after failures
         pass
         return True
 
-    def test_data_corruption_handling():
+    def test_data_corruption_handling() -> bool:
         # Test handling of corrupted cache data
         pass
         return True
 
         # SECURITY TESTS
 
-    def test_data_encryption():
+    def test_data_encryption() -> bool:
         # Test encrypted cache storage
         pass
         return True
 
-    def test_access_control():
+    def test_access_control() -> bool:
         # Test cache access permissions
         pass
         return True
 
-    def test_audit_logging():
+    def test_audit_logging() -> bool:
         # Test cache operation logging
         pass
         return True
 
         # CONFIGURATION TESTS
 
-    def test_configuration_loading():
+    def test_configuration_loading() -> bool:
         # Test cache configuration
         pass
         return True
 
-    def test_environment_adaptation():
+    def test_environment_adaptation() -> bool:
         # Test cache behavior in different environments
         pass
         return True
 
-    def test_feature_toggles():
+    def test_feature_toggles() -> bool:
         # Test cache feature flags
         pass
         return True
