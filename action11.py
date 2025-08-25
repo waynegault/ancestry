@@ -84,7 +84,6 @@ def enhanced_treesui_search(
     """
     try:
         from config import config_schema
-        from gedcom_utils import calculate_match_score
         from utils import _api_req
 
         # Get configuration
