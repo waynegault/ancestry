@@ -261,6 +261,8 @@ def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
     return decorator
 
 # === MODULE SETUP ===
+from standard_imports import setup_module
+from core.logging_utils import OptimizedLogger
 raw_logger = setup_module(globals(), __name__)
 optimized_logger = OptimizedLogger(raw_logger)
 logger = ColorLogger(optimized_logger)
@@ -313,10 +315,8 @@ from error_handling import (
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
-from standard_imports import setup_module
 from color_utils import Colors
 from core.enhanced_error_recovery import with_enhanced_recovery
-from core.logging_utils import OptimizedLogger
 from performance_cache import progressive_processing
 from utils import (
     JSONP_PATTERN,           # JSONP detection
