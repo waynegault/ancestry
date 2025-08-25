@@ -27,7 +27,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (
     error_context,
     graceful_degradation,
     retry_on_failure,
@@ -55,14 +55,34 @@ class SystemHealthError(Exception):
     pass
 
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
-from core.session_cache import (
-    cached_api_manager,
-    cached_browser_manager,
-    cached_database_manager,
-    cached_session_validator,
-    clear_session_cache,
+from cache_manager import (
+    cached_session_component,
     get_session_cache_stats,
+    get_unified_cache_manager,
 )
+
+
+# Legacy compatibility decorators
+def cached_api_manager():
+    return cached_session_component("api_manager")
+
+def cached_browser_manager():
+    return cached_session_component("browser_manager")
+
+def cached_database_manager():
+    return cached_session_component("database_manager")
+
+def cached_session_validator():
+    return cached_session_component("session_validator")
+
+def clear_session_cache():
+    """Legacy function for clearing session cache"""
+    try:
+        manager = get_unified_cache_manager()
+        # Clear session cache by warming it (resets state)
+        return manager.session_cache.warm()
+    except Exception:
+        return False
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)

@@ -569,15 +569,15 @@ def get_cache_coordination_stats() -> dict[str, Any]:
 
     # API cache stats
     try:
-        from api_cache import get_api_cache_stats
+        from cache_manager import get_api_cache_stats
 
         api_stats = get_api_cache_stats()
         coordination_stats["modules"]["api"] = api_stats
 
         # Add to totals if available
-        api_entries = api_stats.get("api_entries", 0)
-        ai_entries = api_stats.get("ai_entries", 0)
-        db_entries = api_stats.get("db_entries", 0)
+        api_entries = api_stats.get("api_responses_cached", 0)
+        ai_entries = api_stats.get("api_cache_hits", 0)
+        db_entries = api_stats.get("api_cache_misses", 0)
         coordination_stats["total_entries"] += api_entries + ai_entries + db_entries
 
     except ImportError:

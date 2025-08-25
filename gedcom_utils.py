@@ -2628,8 +2628,6 @@ def test_invalid_data_handling():
 
 def test_large_dataset_performance():
     """Test performance with large datasets."""
-    import time
-
     # Test ID normalization performance
     if "_normalize_id" in globals():
         start_time = time.time()
@@ -2643,7 +2641,7 @@ def test_memory_optimization():
     """Test memory usage optimization."""
     # Test that functions don't create excessive memory overhead
     if "_get_full_name" in globals():
-        for _i in range(100):
+        for _ in range(100):
             try:
                 _get_full_name(None)  # Should not accumulate memory
             except Exception:

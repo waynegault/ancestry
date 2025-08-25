@@ -443,7 +443,7 @@ class IntelligentResearchPrioritizer:
         # Placeholder implementation
         return [3, 4]
 
-    def _identify_research_bottlenecks(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> list[str]:
+    def _identify_research_bottlenecks(self, surname: str, _gedcom_analysis: dict[str, Any]) -> list[str]:
         """Identify research bottlenecks for this family line."""
         return [
             f"Missing parents for {surname} ancestors",

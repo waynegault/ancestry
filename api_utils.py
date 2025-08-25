@@ -35,7 +35,7 @@ from urllib.parse import quote, urlencode, urljoin
 # === THIRD-PARTY IMPORTS ===
 import requests
 
-from error_handling import (
+from core.error_handling import (
     AncestryException,
     APIRateLimitError,
     NetworkTimeoutError,

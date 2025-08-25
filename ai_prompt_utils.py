@@ -1222,9 +1222,8 @@ def assert_extraction_schema_consistency() -> bool:
             "documents_mentioned",
             "dna_information",
         ]
-        for key in required_top:
-            if key not in prompt:
-                return False
+        if any(key not in prompt for key in required_top):
+            return False
         missing_nested = [k for k in required_nested if k not in prompt]
         return len(missing_nested) == 0
     except Exception:

@@ -44,7 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from error_handling import (
+from core.error_handling import (
     circuit_breaker,
     error_context,
     graceful_degradation,

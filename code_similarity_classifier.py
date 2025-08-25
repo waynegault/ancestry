@@ -115,7 +115,7 @@ IO_KEYWORDS = {
 def _safe_read(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8")
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -343,7 +343,7 @@ class CodeSimilarityClassifier:
                 continue
             try:
                 tree = ast.parse(text)
-            except Exception:
+            except SyntaxError:
                 continue
             vis = _FuncVisitor(str(path), text)
             vis.visit(tree)

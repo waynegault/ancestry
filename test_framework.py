@@ -36,17 +36,96 @@ __all__ = [
     "format_search_criteria",
     "format_test_result",
     "format_test_section_header",
+    "has_ansi_codes",
     "mock_logger_context",
     "patch",
     "restore_debug_logging",
+    "strip_ansi_codes",
     "suppress_debug_logging",
     "suppress_logging",
     "test_function_availability",
 ]
 
 
-# Import shared color utilities
-from color_utils import Colors
+# ANSI Color Utilities - Consolidated from color_utils.py
+class Colors:
+    """ANSI color codes for terminal output with formatting utilities."""
+
+    # Standard ANSI color codes
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    GRAY = '\033[90m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    END = '\033[0m'  # Reset to default
+    RESET = '\033[0m'  # Alternative name for compatibility
+
+    @staticmethod
+    def green(text: str) -> str:
+        """Return text in green color."""
+        return f"{Colors.GREEN}{text}{Colors.END}"
+
+    @staticmethod
+    def red(text: str) -> str:
+        """Return text in red color."""
+        return f"{Colors.RED}{text}{Colors.END}"
+
+    @staticmethod
+    def yellow(text: str) -> str:
+        """Return text in yellow color."""
+        return f"{Colors.YELLOW}{text}{Colors.END}"
+
+    @staticmethod
+    def blue(text: str) -> str:
+        """Return text in blue color."""
+        return f"{Colors.BLUE}{text}{Colors.END}"
+
+    @staticmethod
+    def magenta(text: str) -> str:
+        """Return text in magenta color."""
+        return f"{Colors.MAGENTA}{text}{Colors.END}"
+
+    @staticmethod
+    def cyan(text: str) -> str:
+        """Return text in cyan color."""
+        return f"{Colors.CYAN}{text}{Colors.END}"
+
+    @staticmethod
+    def white(text: str) -> str:
+        """Return text in white color."""
+        return f"{Colors.WHITE}{text}{Colors.END}"
+
+    @staticmethod
+    def gray(text: str) -> str:
+        """Return text in gray color."""
+        return f"{Colors.GRAY}{text}{Colors.END}"
+
+    @staticmethod
+    def bold(text: str) -> str:
+        """Return text in bold formatting."""
+        return f"{Colors.BOLD}{text}{Colors.END}"
+
+    @staticmethod
+    def underline(text: str) -> str:
+        """Return text with underline formatting."""
+        return f"{Colors.UNDERLINE}{text}{Colors.END}"
+
+
+def has_ansi_codes(text: Any) -> bool:
+    """Check if text already contains ANSI color codes."""
+    return '\033[' in str(text)
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Remove ANSI color codes from text."""
+    import re
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
 
 
 # Icons for consistent visual indicators
