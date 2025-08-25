@@ -87,7 +87,7 @@ def main() -> int:
 
 
 ## === Internal Test Suite ===
-def _test_no_baseline_pass():
+def _test_no_baseline_pass() -> None:
     # Ensure regression gate passes when no baseline file exists
     from pathlib import Path
     baseline = Path(__file__).parent / 'Logs' / 'prompt_quality_baseline.json'
@@ -98,7 +98,7 @@ def _test_no_baseline_pass():
     rc = main()  # Should return 0 (no baseline)
     assert rc == 0
 
-def _test_regression_structure():
+def _test_regression_structure() -> None:
     # Call detect directly via imported function to ensure keys
     from prompt_telemetry import detect_quality_regression
     result = detect_quality_regression(current_window=10, drop_threshold=5.0, variant='control')

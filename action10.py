@@ -89,7 +89,7 @@ from test_framework import mock_logger_context
 # --- Module-level GEDCOM cache for tests ---
 _gedcom_cache = None
 
-def get_cached_gedcom():
+def get_cached_gedcom() -> Optional[GedcomData]:
     """Load GEDCOM data once and cache it for all tests"""
     global _gedcom_cache
     if _gedcom_cache is None:
@@ -150,6 +150,67 @@ def is_mock_mode() -> bool:
     return _MOCK_MODE_ENABLED
 
 
+def _format_search_criteria(search_criteria: dict[str, Any]) -> list[str]:
+    """Format search criteria for breakdown display."""
+    lines = ["\n📋 SEARCH CRITERIA:"]
+    for key, value in search_criteria.items():
+        if value is not None:
+            lines.append(f"   {key}: {value}")
+    return lines
+
+
+def _format_candidate_data(candidate_data: dict[str, Any]) -> list[str]:
+    """Format candidate data for breakdown display."""
+    lines = ["\n👤 CANDIDATE DATA:"]
+    key_fields = [
+        "first_name", "surname", "gender_norm", "birth_year",
+        "birth_place_disp", "death_year", "death_place",
+    ]
+    for key in key_fields:
+        if key in candidate_data:
+            lines.append(f"   {key}: {candidate_data[key]}")
+    return lines
+
+
+def _format_scoring_weights(scoring_weights: dict[str, Any]) -> list[str]:
+    """Format scoring weights for breakdown display."""
+    lines = ["\n⚖️ SCORING WEIGHTS:"]
+    for key, weight in scoring_weights.items():
+        lines.append(f"   {key}: {weight}")
+    return lines
+
+
+def _format_field_analysis(field_scores: dict[str, int]) -> tuple[list[str], int]:
+    """Format field scoring analysis and return total calculated score."""
+    lines = ["\n🎯 FIELD SCORING ANALYSIS:"]
+    total_calculated = 0
+
+    for field, score in field_scores.items():
+        if score > 0:
+            lines.append(f"   ✅ {field}: {score} points")
+            total_calculated += score
+        else:
+            lines.append(f"   ❌ {field}: 0 points")
+
+    return lines, total_calculated
+
+
+def _format_score_verification(total_score: float, total_calculated: int) -> list[str]:
+    """Format score verification section."""
+    lines = ["\n📊 SCORE VERIFICATION:"]
+    lines.append(f"   Total Score Returned: {total_score}")
+    lines.append(f"   Sum of Field Scores: {total_calculated}")
+    lines.append(f"   Difference: {abs(total_score - total_calculated)}")
+
+    SCORE_TOLERANCE = 0.1
+    if abs(total_score - total_calculated) > SCORE_TOLERANCE:
+        lines.append("   ⚠️ WARNING: Score mismatch detected!")
+    else:
+        lines.append("   ✅ Score calculation verified")
+
+    return lines
+
+
 def detailed_scoring_breakdown(
     test_name: str,
     search_criteria: dict[str, Any],
@@ -160,55 +221,25 @@ def detailed_scoring_breakdown(
     field_scores: dict[str, int],
     reasons: list[str],
 ) -> str:
-    """Generate detailed scoring breakdown for test reporting"""
-
+    """Generate detailed scoring breakdown for test reporting."""
     breakdown = []
     breakdown.append(f"\n{'='*80}")
     breakdown.append(f"🔍 DETAILED SCORING BREAKDOWN: {test_name}")
     breakdown.append(f"{'='*80}")
 
-    # Search criteria
-    breakdown.append("\n📋 SEARCH CRITERIA:")
-    for key, value in search_criteria.items():
-        if value is not None:
-            breakdown.append(f"   {key}: {value}")
-
-    # Candidate data
-    breakdown.append("\n👤 CANDIDATE DATA:")
-    key_fields = [
-        "first_name",
-        "surname",
-        "gender_norm",
-        "birth_year",
-        "birth_place_disp",
-        "death_year",
-        "death_place",
-    ]
-    for key in key_fields:
-        if key in candidate_data:
-            breakdown.append(f"   {key}: {candidate_data[key]}")
-
-    # Scoring weights used
-    breakdown.append("\n⚖️ SCORING WEIGHTS:")
-    for key, weight in scoring_weights.items():
-        breakdown.append(f"   {key}: {weight}")
+    # Add formatted sections
+    breakdown.extend(_format_search_criteria(search_criteria))
+    breakdown.extend(_format_candidate_data(candidate_data))
+    breakdown.extend(_format_scoring_weights(scoring_weights))
 
     # Date flexibility
     breakdown.append("\n📅 DATE FLEXIBILITY:")
     for key, value in date_flex.items():
         breakdown.append(f"   {key}: {value}")
 
-    # Field-by-field scoring analysis
-    breakdown.append("\n🎯 FIELD SCORING ANALYSIS:")
-    total_calculated = 0
-
-    # Analyze each field score
-    for field, score in field_scores.items():
-        if score > 0:
-            breakdown.append(f"   ✅ {field}: {score} points")
-            total_calculated += score
-        else:
-            breakdown.append(f"   ❌ {field}: 0 points")
+    # Field analysis
+    field_lines, total_calculated = _format_field_analysis(field_scores)
+    breakdown.extend(field_lines)
 
     # Match reasons
     breakdown.append("\n📝 MATCH REASONS:")
@@ -216,19 +247,18 @@ def detailed_scoring_breakdown(
         breakdown.append(f"   • {reason}")
 
     # Score verification
-    breakdown.append("\n📊 SCORE VERIFICATION:")
-    breakdown.append(f"   Total Score Returned: {total_score}")
-    breakdown.append(f"   Sum of Field Scores: {total_calculated}")
-    breakdown.append(f"   Difference: {abs(total_score - total_calculated)}")
+    breakdown.extend(_format_score_verification(total_score, total_calculated))
 
-    SCORE_TOLERANCE = 0.1
-    if abs(total_score - total_calculated) > SCORE_TOLERANCE:
-        breakdown.append("   ⚠️ WARNING: Score mismatch detected!")
-    else:
-        breakdown.append("   ✅ Score calculation verified")
+    # Test person analysis
+    breakdown.extend(_format_test_person_analysis(field_scores, total_score))
 
-    # Expected vs Actual comparison for test person
-    breakdown.append("\n🎯 TEST PERSON SCORING ANALYSIS:")
+    breakdown.append(f"{'='*80}")
+    return "\n".join(breakdown)
+
+
+def _format_test_person_analysis(field_scores: dict[str, int], total_score: float) -> list[str]:
+    """Format test person scoring analysis section."""
+    lines = ["\n🎯 TEST PERSON SCORING ANALYSIS:"]
 
     # Map field codes to expected scores for test person
     expected_field_scores = {
@@ -242,24 +272,20 @@ def detailed_scoring_breakdown(
         "bonus": 25.0,  # Bonus both names contain
     }
 
-    breakdown.append("   Expected vs Actual field scores:")
+    lines.append("   Expected vs Actual field scores:")
     total_expected = 0
     for field_code, expected in expected_field_scores.items():
         actual = field_scores.get(field_code, 0)
         status = "✅" if actual > 0 else "❌"
         total_expected += expected if actual > 0 else 0
-        breakdown.append(
-            f"     {field_code}: Expected {expected}, Got {actual} {status}"
-        )
+        lines.append(f"     {field_code}: Expected {expected}, Got {actual} {status}")
 
-    breakdown.append(f"   Total Expected: {total_expected}")
-    breakdown.append(f"   Total Actual: {total_score}")
+    lines.append(f"   Total Expected: {total_expected}")
+    lines.append(f"   Total Actual: {total_score}")
     match_status = "✅" if abs(total_expected - total_score) <= 5 else "❌"
-    breakdown.append(f"   Score Match: {match_status}")
+    lines.append(f"   Score Match: {match_status}")
 
-    breakdown.append(f"{'='*80}")
-
-    return "\n".join(breakdown)
+    return lines
 
 
 # --- Helper Functions ---

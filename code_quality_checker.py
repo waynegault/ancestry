@@ -78,7 +78,7 @@ class QualityMetrics:
 class CodeQualityChecker:
     """Checker for Python best practices violations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the code quality checker."""
         self.violations: list[str] = []
         self.metrics: dict[str, QualityMetrics] = {}
@@ -270,7 +270,7 @@ def run_comprehensive_tests() -> bool:
 
         suite = TestSuite("Code Quality Checker", "code_quality_checker")
 
-        def test_quality_metrics():
+        def test_quality_metrics() -> None:
             """Test quality metrics calculation."""
             metrics = QualityMetrics(
                 file_path="test.py",
@@ -284,7 +284,7 @@ def run_comprehensive_tests() -> bool:
             assert metrics.type_hint_coverage == 80.0
             assert 0 <= metrics.quality_score <= 100
 
-        def test_checker_initialization():
+        def test_checker_initialization() -> None:
             """Test checker initialization."""
             checker = CodeQualityChecker()
             assert isinstance(checker.violations, list)
