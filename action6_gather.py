@@ -292,10 +292,9 @@ from typing import TYPE_CHECKING, Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
-import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-
+import requests
 from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -314,18 +313,15 @@ from error_handling import (
 )
 
 # === LOCAL IMPORTS ===
-if TYPE_CHECKING:
-    from config.config_schema import ConfigSchema
-
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
 from core.session_manager import SessionManager
 from database import (
-    db_transn,
     DnaMatch,
     FamilyTree,
     Person,
     PersonStatusEnum,
+    db_transn,
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
@@ -336,6 +332,9 @@ from utils import (
     ordinal_case,  # Ordinal case formatting
     retry_api,  # API retry decorator
 )
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from config.config_schema import ConfigSchema
 
 
 # --- Constants ---
