@@ -292,9 +292,9 @@ from typing import Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
-import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
+import requests
 from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -302,7 +302,6 @@ from selenium.common.exceptions import (
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload, Session as SqlAlchemySession  # Alias Session
-
 
 # === LOCAL IMPORTS ===
 from cache import cache as global_cache  # Use the initialized global cache instance
