@@ -6,7 +6,7 @@ import time
 import psutil
 
 
-def check_action6_status():
+def check_action6_status() -> None:
     print("ACTION 6 STATUS CHECK")
     print("=" * 30)
 

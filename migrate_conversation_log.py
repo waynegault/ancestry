@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime
 
 
-def migrate_conversation_log():
+def migrate_conversation_log() -> bool:
     """Migrate ConversationLog table to new schema with auto-incrementing ID."""
 
     db_path = 'data/ancestry.db'

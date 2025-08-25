@@ -11,7 +11,7 @@ from core.session_manager import SessionManager
 from database import ConversationLog, MessageDirectionEnum
 
 
-def debug_interval_check():
+def debug_interval_check() -> None:
     session_manager = SessionManager()
     session_manager.ensure_db_ready()
 

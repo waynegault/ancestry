@@ -12,7 +12,7 @@ from pathlib import Path
 import psutil
 
 
-def monitor_action6_health(pid):
+def monitor_action6_health(pid: int) -> bool:
     """Monitor Action 6 process health and performance."""
     try:
         process = psutil.Process(pid)
@@ -85,7 +85,7 @@ def monitor_action6_health(pid):
         print(f"❌ Error monitoring process: {e}")
         return False
 
-def check_log_files():
+def check_log_files() -> None:
     """Check for recent log files that might indicate Action 6 activity."""
     print("\n📋 CHECKING LOG FILES:")
     print("-" * 30)
@@ -120,7 +120,7 @@ def check_log_files():
     except Exception as e:
         print(f"Error checking log files: {e}")
 
-def main():
+def main() -> None:
     """Main monitoring function."""
     if len(sys.argv) != 2:
         print("Usage: python monitor_action6.py <PID>")

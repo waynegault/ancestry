@@ -12,7 +12,7 @@ from pathlib import Path
 import psutil
 
 
-def monitor_action6_continuous(pid, interval=30):
+def monitor_action6_continuous(pid: int, interval: int = 30) -> None:
     """Continuously monitor Action 6 process health."""
     print(f"CONTINUOUS ACTION 6 HEALTH MONITOR - PID: {pid}")
     print("=" * 70)
@@ -91,7 +91,7 @@ def monitor_action6_continuous(pid, interval=30):
     except Exception as e:
         print(f"\n❌ MONITORING FAILED: {e}")
 
-def check_action6_logs():
+def check_action6_logs() -> None:
     """Check for Action 6 log output."""
     print("\n📋 CHECKING FOR ACTION 6 LOGS:")
     print("-" * 40)
@@ -120,7 +120,7 @@ def check_action6_logs():
     else:
         print("No recent Action 6 log files found")
 
-def main():
+def main() -> None:
     """Main monitoring function."""
     if len(sys.argv) < 2:
         print("Usage: python continuous_monitor.py <PID> [interval_seconds]")

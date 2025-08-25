@@ -20,7 +20,7 @@ from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
-def debug_treesui_api():
+def debug_treesui_api() -> None:
     """Debug the TreesUI API response structure."""
     try:
         # Create session manager

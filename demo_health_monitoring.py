@@ -12,7 +12,7 @@ import time
 from health_monitor import get_health_monitor, get_performance_recommendations
 
 
-def demo_health_monitoring():
+def demo_health_monitoring() -> None:
     """Demonstrate the health monitoring system capabilities."""
     print("🚀 HEALTH MONITORING SYSTEM DEMONSTRATION")
     print("=" * 60)
