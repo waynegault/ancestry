@@ -288,7 +288,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional, TYPE_CHECKING
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -332,9 +332,6 @@ from utils import (
     ordinal_case,  # Ordinal case formatting
     retry_api,  # API retry decorator
 )
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from config.config_schema import ConfigSchema
 
 
 # --- Constants ---
