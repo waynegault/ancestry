@@ -210,7 +210,6 @@ class ColorLogger:
 import hashlib
 from functools import wraps
 
-
 # FINAL OPTIMIZATION 1: Progressive Processing Import
 
 # In-memory cache for API responses with TTL
@@ -261,8 +260,9 @@ def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
     return decorator
 
 # === MODULE SETUP ===
-from standard_imports import setup_module
 from core.logging_utils import OptimizedLogger
+from standard_imports import setup_module
+
 raw_logger = setup_module(globals(), __name__)
 optimized_logger = OptimizedLogger(raw_logger)
 logger = ColorLogger(optimized_logger)
@@ -277,22 +277,22 @@ import sys
 import time  # Used in performance/logging timestamps below
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from datetime import datetime, timezone
 from typing import Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
+import requests
+
 # === THIRD-PARTY IMPORTS ===
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-import requests
 from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import joinedload, Session as SqlAlchemySession  # Alias Session
+from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
 
 # === LOCAL IMPORTS ===
 from cache import cache as global_cache  # Use the initialized global cache instance
@@ -301,11 +301,11 @@ from config import config_schema
 from core.enhanced_error_recovery import with_enhanced_recovery
 from core.session_manager import SessionManager
 from database import (
-    db_transn,
     DnaMatch,
     FamilyTree,
     Person,
     PersonStatusEnum,
+    db_transn,
 )
 from error_handling import (
     AuthenticationExpiredError,
@@ -319,15 +319,14 @@ from my_selectors import *  # Import CSS selectors
 from performance_cache import progressive_processing
 from selenium_utils import get_driver_cookies
 from utils import (
-    _api_req,                # API request helper
-    JSONP_PATTERN,           # JSONP detection
-    fast_json_loads,         # Fast JSON loader
-    format_name,             # Name formatting utility
-    nav_to_page,             # Navigation helper
-    ordinal_case,            # Ordinal case formatting
-    retry_api,               # API retry decorator
+    JSONP_PATTERN,  # JSONP detection
+    _api_req,  # API request helper
+    fast_json_loads,  # Fast JSON loader
+    format_name,  # Name formatting utility
+    nav_to_page,  # Navigation helper
+    ordinal_case,  # Ordinal case formatting
+    retry_api,  # API retry decorator
 )
-
 
 # --- Constants ---
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
