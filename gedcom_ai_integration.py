@@ -525,7 +525,7 @@ class GedcomAIIntegrator:
 
 
 # Test functions
-def test_gedcom_ai_integration():
+def test_gedcom_ai_integration() -> bool:
     """Test the GEDCOM AI integration system."""
     try:
         # Simple test that doesn't rely on complex imports
@@ -555,7 +555,7 @@ def test_gedcom_ai_integration():
         return False
 
 
-def test_fallback_research_tasks():
+def test_fallback_research_tasks() -> None:
     """When components unavailable, fallback tasks should be returned."""
     integrator = GedcomAIIntegrator()
     # Force fallback by simulating unavailable components
@@ -573,7 +573,7 @@ def test_fallback_research_tasks():
             globals()["GEDCOM_AI_AVAILABLE"] = original_flag
 
 
-def test_enhanced_task_description_formatting():
+def test_enhanced_task_description_formatting() -> None:
     """Ensure enhanced task description includes key metrics and steps."""
     integrator = GedcomAIIntegrator()
     sample_task = {
@@ -589,7 +589,7 @@ def test_enhanced_task_description_formatting():
         assert token in desc, f"Description missing {token}"
 
 
-def test_comprehensive_analysis_structure_with_stubs():
+def test_comprehensive_analysis_structure_with_stubs() -> bool:
     """Test perform_comprehensive_analysis returns combined structure using stub analyzers when available."""
     if not GEDCOM_AI_AVAILABLE:
         # Skip if components not available; availability is already tested elsewhere
@@ -609,7 +609,7 @@ def test_comprehensive_analysis_structure_with_stubs():
     assert result["summary"].get("analysis_completeness") in ["comprehensive", "gedcom_only"]
 
 
-def test_person_specific_insights_fallback():
+def test_person_specific_insights_fallback() -> None:
     """Person insights should provide indicative structure even with minimal data."""
     integrator = GedcomAIIntegrator()
     if not GEDCOM_AI_AVAILABLE:

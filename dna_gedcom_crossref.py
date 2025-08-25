@@ -570,7 +570,7 @@ class DNAGedcomCrossReferencer:
 
 
 # Test functions
-def test_dna_gedcom_crossref():
+def test_dna_gedcom_crossref() -> bool:
     """Test the DNA-GEDCOM cross-reference system."""
     logger.info("Testing DNA-GEDCOM cross-reference system...")
 
@@ -604,7 +604,7 @@ def test_dna_gedcom_crossref():
     return True
 
 
-def test_name_match_and_confidence_boost():
+def test_name_match_and_confidence_boost() -> None:
     """Test that multiple match types boost confidence score up to cap."""
     crossref = DNAGedcomCrossReferencer()
     DNAMatch(match_id="m1", match_name="Alice Brown", estimated_relationship="2nd cousin", shared_dna_cm=150.0, shared_ancestors=["Brown"])
@@ -622,7 +622,7 @@ def test_name_match_and_confidence_boost():
     assert boosted <= 1.0
 
 
-def test_conflict_identification_out_of_range_cm():
+def test_conflict_identification_out_of_range_cm() -> None:
     """Test conflict creation when shared cM outside expected range."""
     crossref = DNAGedcomCrossReferencer()
     # Construct a cross_reference_matches entry with mismatch cM
@@ -640,7 +640,7 @@ def test_conflict_identification_out_of_range_cm():
     assert any(c.conflict_id.startswith("cm_conflict_") for c in crossref.conflicts_identified), "Should flag relationship mismatch conflict"
 
 
-def test_verification_opportunity_threshold():
+def test_verification_opportunity_threshold() -> None:
     """High confidence matches should produce verification opportunities (>0.7)."""
     crossref = DNAGedcomCrossReferencer()
     good_match = DNAMatch(match_id="m3", match_name="Carol Jones", estimated_relationship="1st cousin", shared_dna_cm=800.0)
@@ -657,7 +657,7 @@ def test_verification_opportunity_threshold():
     assert len(crossref.verification_opportunities) == 1, "High confidence match should yield verification opportunity"
 
 
-def test_relationship_distance_parser():
+def test_relationship_distance_parser() -> None:
     """Parser should map common relationship strings to distances."""
     crossref = DNAGedcomCrossReferencer()
     assert crossref._parse_relationship_distance("1st cousin") == 3
