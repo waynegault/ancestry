@@ -302,7 +302,7 @@ from selenium.common.exceptions import (
     WebDriverException,
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
+from sqlalchemy.orm import joinedload, Session as SqlAlchemySession  # Alias Session
 
 from error_handling import (
     AuthenticationExpiredError,
@@ -321,11 +321,11 @@ from cache import cache as global_cache  # Use the initialized global cache inst
 from config import config_schema
 from core.session_manager import SessionManager
 from database import (
+    db_transn,
     DnaMatch,
     FamilyTree,
     Person,
     PersonStatusEnum,
-    db_transn,
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
