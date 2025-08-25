@@ -288,7 +288,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from datetime import datetime, timezone
-from typing import Literal, Optional, TYPE_CHECKING
+from typing import Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
