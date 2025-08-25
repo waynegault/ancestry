@@ -313,11 +313,11 @@ from error_handling import (
     retry_on_failure,
     timeout_protection,
 )
-from my_selectors import *  # Import CSS selectors
-from selenium_utils import get_driver_cookies
 from color_utils import Colors
 from core.enhanced_error_recovery import with_enhanced_recovery
+from my_selectors import *  # Import CSS selectors
 from performance_cache import progressive_processing
+from selenium_utils import get_driver_cookies
 from utils import (
     JSONP_PATTERN,           # JSONP detection
     fast_json_loads,         # Fast JSON loader
