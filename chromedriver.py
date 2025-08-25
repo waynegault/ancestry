@@ -70,7 +70,7 @@ else:
 # --------------------------
 
 
-def reset_preferences_file():
+def reset_preferences_file() -> None:
     """Replace Chrome Preferences file with controlled configuration."""
     try:
         # Create the directory if it does not exist
@@ -122,7 +122,7 @@ def reset_preferences_file():
 # End of reset_preferences_file
 
 
-def set_win_size(driver):
+def set_win_size(driver: WebDriver) -> None:
     """Set the window size and position to the right half of the screen, 95% height."""
     try:
         # Get screen dimensions
@@ -147,7 +147,7 @@ def set_win_size(driver):
 # End of set_win_size
 
 
-def close_tabs(driver):
+def close_tabs(driver: WebDriver) -> None:
     """Closes all but the first tab in the given driver."""
     logger.debug("Closing extra tabs...")
     try:
@@ -383,7 +383,7 @@ def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
 # End of init_webdvr
 
 
-def cleanup_webdrv():
+def cleanup_webdrv() -> None:
     """
     Cleans up any leftover chromedriver processes.  Important for preventing
     orphaned processes and port conflicts.
@@ -420,7 +420,7 @@ def cleanup_webdrv():
 # ------------------------------------------------------------------------------------
 
 
-def test_preferences_file():
+def test_preferences_file() -> bool:
     """Test the reset_preferences_file function."""
     print("\n=== Testing Preferences File Reset ===")
     try:
@@ -446,7 +446,7 @@ def test_preferences_file():
         return False
 
 
-def test_cleanup():
+def test_cleanup() -> bool:
     """Test the cleanup_webdrv function."""
     print("\n=== Testing Chrome Process Cleanup ===")
     try:
@@ -501,7 +501,7 @@ def test_cleanup():
         return False
 
 
-def test_driver_initialization(headless=True):
+def test_driver_initialization(headless: bool = True) -> bool:
     """Test the init_webdvr function."""
     print("\n=== Testing WebDriver Initialization ===")
     driver = None
@@ -576,7 +576,7 @@ def test_driver_initialization(headless=True):
         return False
 
 
-def run_all_tests(interactive=False):
+def run_all_tests(interactive: bool = False) -> bool:
     """Run all self-tests."""
     print("\n===== ChromeDriver Self-Test Suite =====")
     print(f"Date/Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -633,7 +633,7 @@ def run_all_tests(interactive=False):
 # ------------------------------------------------------------------------------------
 
 
-def main():
+def main() -> None:
     """Main function for standalone use (testing and debugging)."""
     import sys  # Import here to avoid potential circular imports
 
@@ -662,7 +662,7 @@ def main():
 # End of main
 
 
-def test_chromedriver_initialization():
+def test_chromedriver_initialization() -> None:
     """Test ChromeDriver initialization functionality."""
     if is_function_available("initialize_chrome_driver"):
         init_func = get_function("initialize_chrome_driver")
@@ -670,7 +670,7 @@ def test_chromedriver_initialization():
         assert callable(init_func)
 
 
-def test_preferences_file_reset():
+def test_preferences_file_reset() -> None:
     """Test preferences file reset functionality."""
     # Test that preference management functions are properly defined
     required_funcs = [
@@ -684,7 +684,7 @@ def test_preferences_file_reset():
             assert callable(func), f"{func_name} should be callable"
 
 
-def test_chrome_process_cleanup():
+def test_chrome_process_cleanup() -> None:
     """Test Chrome process cleanup functionality."""
     # Test that cleanup functions exist and are properly structured
     cleanup_functions = ["cleanup_chrome_processes", "safe_close_chrome"]
@@ -699,13 +699,13 @@ def test_chrome_process_cleanup():
             assert len(sig.parameters) >= 0, f"{func_name} should have valid parameters"
 
 
-def test_webdriver_initialization():
+def test_webdriver_initialization() -> None:
     """Test WebDriver initialization with various configurations."""
     if is_function_available("initialize_chrome_driver"):
         init_func = get_function("initialize_chrome_driver")
         assert callable(init_func)
 
-def test_chrome_options_creation():
+def test_chrome_options_creation() -> None:
     """Test that undetected_chromedriver ChromeOptions can be created without NameError."""
     try:
         # This should work with undetected_chromedriver
