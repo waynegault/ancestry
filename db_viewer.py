@@ -192,7 +192,7 @@ def run_comprehensive_tests() -> bool:
 
     suite = TestSuite("Database Viewer", "db_viewer")
 
-    def test_database_connection():
+    def test_database_connection() -> None:
         """Test database connection functionality"""
         import sqlite3
         import tempfile
@@ -219,7 +219,7 @@ def run_comprehensive_tests() -> bool:
             from pathlib import Path
             Path(test_db).unlink(missing_ok=True)
 
-    def test_table_display_functions():
+    def test_table_display_functions() -> None:
         """Test table display and data retrieval functions"""
         import sqlite3
         import sys
@@ -258,7 +258,7 @@ def run_comprehensive_tests() -> bool:
             from pathlib import Path
             Path(test_db).unlink(missing_ok=True)
 
-    def test_table_data_display():
+    def test_table_data_display() -> None:
         """Test table data display formatting"""
         import sqlite3
         import sys
@@ -294,7 +294,7 @@ def run_comprehensive_tests() -> bool:
             from pathlib import Path
             Path(test_db).unlink(missing_ok=True)
 
-    def test_database_stats():
+    def test_database_stats() -> None:
         """Test database statistics generation"""
         import sqlite3
         import sys
@@ -330,7 +330,7 @@ def run_comprehensive_tests() -> bool:
             from pathlib import Path
             Path(test_db).unlink(missing_ok=True)
 
-    def test_custom_query_handling():
+    def test_custom_query_handling() -> None:
         """Test custom query execution"""
         import sqlite3
         import tempfile
@@ -361,7 +361,7 @@ def run_comprehensive_tests() -> bool:
             from pathlib import Path
             Path(test_db).unlink(missing_ok=True)
 
-    def test_menu_display():
+    def test_menu_display() -> None:
         """Test menu display functionality"""
         import sys
         from io import StringIO
@@ -388,7 +388,7 @@ def run_comprehensive_tests() -> bool:
             sys.stdout = old_stdout
             sys.stdin = old_stdin
 
-    def test_error_handling():
+    def test_error_handling() -> None:
         """Test error handling with invalid database operations"""
         import sqlite3
         import tempfile
@@ -417,7 +417,7 @@ def run_comprehensive_tests() -> bool:
             from pathlib import Path
             Path(test_db).unlink(missing_ok=True)
 
-    def test_function_availability():
+    def test_function_availability() -> None:
         """Test that all required functions are available"""
         required_functions = [
             "display_menu",
