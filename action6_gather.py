@@ -17,8 +17,14 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
+import atexit
+import os
+import time
+import uuid
+from pathlib import Path
 from typing import Any
 
+from color_utils import Colors
 from core.enhanced_error_recovery import with_enhanced_recovery
 
 # === PHASE 1 OPTIMIZATIONS ===
@@ -91,17 +97,7 @@ def _progress_callback(progress: float) -> None:
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
-
-# === COLOR UTILITIES ===
-from color_utils import Colors
-
-
 # === RUN-ID & SINGLE-INSTANCE LOCK ===
-import atexit
-import os
-import time
-import uuid
-from pathlib import Path
 
 _A6_LOCK_DIR = Path("Locks")
 _A6_LOCK_FILE = _A6_LOCK_DIR / "action6.lock"
