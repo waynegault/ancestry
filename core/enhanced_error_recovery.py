@@ -145,6 +145,60 @@ class EnhancedErrorRecovery:
 # Global instance
 error_recovery = EnhancedErrorRecovery()
 
+def _handle_successful_attempt(operation_name: str, attempt: int) -> None:
+    """Handle successful attempt logging and recording."""
+    error_recovery.record_success(operation_name)
+    error_recovery.update_stats(operation_name, success=True)
+
+    if attempt > 1:
+        logger.info(f"✅ {operation_name} succeeded after {attempt} attempts")
+
+
+def _handle_non_retryable_error(operation_name: str, e: Exception) -> None:
+    """Handle non-retryable errors."""
+    logger.error(f"❌ Non-retryable error in {operation_name}: {e}")
+    error_recovery.record_failure(operation_name)
+    error_recovery.update_stats(operation_name, success=False)
+
+
+def _handle_partial_success(
+    operation_name: str,
+    partial_success_handler: Optional[Callable],
+    context: 'ErrorContext',
+    last_exception: Exception
+) -> Any:
+    """Handle partial success scenarios."""
+    if partial_success_handler and context.partial_results:
+        try:
+            partial_result = partial_success_handler(context.partial_results, last_exception)
+            error_recovery.update_stats(operation_name, success=False, partial=True)
+            logger.warning(f"⚠️ {operation_name} completed with partial success")
+            return partial_result
+        except Exception as partial_error:
+            logger.error(f"Partial success handler failed: {partial_error}")
+    return None
+
+
+def _handle_retry_failure(
+    operation_name: str,
+    max_attempts: int,
+    partial_success_handler: Optional[Callable],
+    context: 'ErrorContext',
+    last_exception: Exception
+) -> Any:
+    """Handle final retry failure."""
+    logger.error(f"❌ {operation_name} failed after {max_attempts} attempts")
+    error_recovery.record_failure(operation_name)
+    error_recovery.update_stats(operation_name, success=False)
+
+    # Try partial success handler
+    partial_result = _handle_partial_success(operation_name, partial_success_handler, context, last_exception)
+    if partial_result is not None:
+        return partial_result
+
+    raise last_exception
+
+
 def with_enhanced_recovery(
     max_attempts: int = 3,
     base_delay: float = 1.0,
@@ -188,14 +242,7 @@ def with_enhanced_recovery(
                 try:
                     logger.debug(f"Attempting {operation_name} (attempt {attempt}/{max_attempts})")
                     result = func(*args, **kwargs)
-
-                    # Record success
-                    error_recovery.record_success(operation_name)
-                    error_recovery.update_stats(operation_name, success=True)
-
-                    if attempt > 1:
-                        logger.info(f"✅ {operation_name} succeeded after {attempt} attempts")
-
+                    _handle_successful_attempt(operation_name, attempt)
                     return result
 
                 except Exception as e:
@@ -204,15 +251,11 @@ def with_enhanced_recovery(
 
                     # Check if this exception is retryable
                     if not isinstance(e, retryable_exceptions):
-                        logger.error(f"❌ Non-retryable error in {operation_name}: {e}")
-                        error_recovery.record_failure(operation_name)
-                        error_recovery.update_stats(operation_name, success=False)
+                        _handle_non_retryable_error(operation_name, e)
                         raise
 
                     # Log the error with context
-                    logger.warning(
-                        f"⚠️ {operation_name} failed (attempt {attempt}/{max_attempts}): {e}"
-                    )
+                    logger.warning(f"⚠️ {operation_name} failed (attempt {attempt}/{max_attempts}): {e}")
 
                     # Provide user guidance if available
                     if user_guidance and type(e) in user_guidance:
@@ -220,21 +263,7 @@ def with_enhanced_recovery(
 
                     # Check if we should retry
                     if not context.should_retry():
-                        logger.error(f"❌ {operation_name} failed after {max_attempts} attempts")
-                        error_recovery.record_failure(operation_name)
-                        error_recovery.update_stats(operation_name, success=False)
-
-                        # Try partial success handler
-                        if partial_success_handler and context.partial_results:
-                            try:
-                                partial_result = partial_success_handler(context.partial_results, last_exception)
-                                error_recovery.update_stats(operation_name, success=False, partial=True)
-                                logger.warning(f"⚠️ {operation_name} completed with partial success")
-                                return partial_result
-                            except Exception as partial_error:
-                                logger.error(f"Partial success handler failed: {partial_error}")
-
-                        raise last_exception
+                        return _handle_retry_failure(operation_name, max_attempts, partial_success_handler, context, last_exception)
 
                     # Calculate delay for next attempt
                     delay = context.get_backoff_delay(base_delay, max_delay)
