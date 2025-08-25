@@ -93,33 +93,7 @@ from standard_imports import setup_module
 
 
 # === COLOR UTILITIES ===
-class Colors:
-    """ANSI color codes for terminal output"""
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    MAGENTA = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    END = '\033[0m'  # Reset to default
-
-    @staticmethod
-    def green(text: str) -> str:
-        """Return text in green color"""
-        return f"{Colors.GREEN}{text}{Colors.END}"
-
-    @staticmethod
-    def red(text: str) -> str:
-        """Return text in red color"""
-        return f"{Colors.RED}{text}{Colors.END}"
-
-    @staticmethod
-    def yellow(text: str) -> str:
-        """Return text in yellow color"""
-        return f"{Colors.YELLOW}{text}{Colors.END}"
+from color_utils import Colors
 
 
 # === RUN-ID & SINGLE-INSTANCE LOCK ===

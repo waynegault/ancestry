@@ -46,19 +46,8 @@ __all__ = [
 ]
 
 
-# ANSI Color Codes for consistent formatting
-class Colors:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    MAGENTA = "\033[95m"
-    CYAN = "\033[96m"
-    WHITE = "\033[97m"
-    GRAY = "\033[90m"
-    BOLD = "\033[1m"
-    UNDERLINE = "\033[4m"
-    RESET = "\033[0m"
+# Import shared color utilities
+from color_utils import Colors
 
 
 # Icons for consistent visual indicators
@@ -449,6 +438,7 @@ def test_framework_module_tests():
         assert Colors.BOLD == "\033[1m"
         assert Colors.UNDERLINE == "\033[4m"
         assert Colors.RESET == "\033[0m"
+        assert Colors.END == "\033[0m"  # Test both naming conventions
 
     def test_icons():
         """Test that all icon constants are properly defined."""
@@ -542,6 +532,7 @@ if __name__ == "__main__":
             assert Colors.RED == "\033[91m"
             assert Colors.GREEN == "\033[92m"
             assert Colors.RESET == "\033[0m"
+            assert Colors.END == "\033[0m"
 
         def test_icons():
             assert Icons.PASS == "✅"
