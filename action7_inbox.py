@@ -1,17 +1,40 @@
 #!/usr/bin/env python3
 
 """
-Action 7: Ancestry Inbox Message Processing
+Intelligent Inbox Processing & AI-Powered Message Classification
 
-Automates processing of Ancestry inbox messages with AI-powered intent classification,
-database synchronization, and intelligent conversation management including batch
-processing, pagination, and comprehensive message analysis workflows.
+Advanced message processing engine that transforms raw Ancestry inbox data into
+structured, actionable intelligence through AI-powered classification, sentiment
+analysis, and automated conversation management with comprehensive database
+synchronization and intelligent workflow orchestration.
 
-PHASE 1 OPTIMIZATIONS (2025-01-16):
-- Enhanced progress indicators with ETA calculations for inbox processing
-- Improved error recovery with exponential backoff for AI classification calls
-- Memory monitoring during large inbox processing sessions
-- Better user feedback for long-running conversation analysis
+Core Intelligence:
+• AI-powered intent classification with confidence scoring
+• Automated sentiment analysis and engagement tracking
+• Intelligent conversation threading and relationship mapping
+• Dynamic priority scoring based on genealogical relevance
+• Automated response suggestion generation
+• Comprehensive message lifecycle management
+
+Processing Architecture:
+• Batch processing with intelligent pagination and memory optimization
+• Concurrent AI classification with adaptive rate limiting
+• Real-time progress tracking with ETA calculations
+• Exponential backoff for resilient API interactions
+• Circuit breaker patterns for fault tolerance
+• Comprehensive error recovery with graceful degradation
+
+Data Management:
+• Sophisticated database synchronization with conflict resolution
+• Conversation state management with historical tracking
+• Automated duplicate detection and message deduplication
+• Comprehensive audit trails for compliance and debugging
+• Intelligent caching for performance optimization
+
+Quality Assurance:
+Implements comprehensive validation, quality scoring, and monitoring to ensure
+reliable message processing and accurate classification results suitable for
+automated genealogical research workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -1124,12 +1147,11 @@ class InboxProcessor:
 
     def _check_browser_health(self, current_batch_num: int) -> Optional[str]:
         """Check browser health and attempt recovery if needed."""
-        if current_batch_num % 5 == 0:  # Check every 5 batches
-            if not self.session_manager.check_browser_health():
-                logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
-                if not self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
-                    logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
-                    return "Browser Recovery Failed"
+        if current_batch_num % 5 == 0 and not self.session_manager.check_browser_health():
+            logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
+            if not self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
+                logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
+                return "Browser Recovery Failed"
         return None
 
     def _validate_session(self) -> None:
@@ -1183,14 +1205,13 @@ class InboxProcessor:
         while not stop_processing:
             try:  # Inner try for handling exceptions within a single batch iteration
                 # Step 2a: Browser Health Monitoring (Action 6/8 Pattern)
-                if current_batch_num % 5 == 0:  # Check every 5 batches
-                    if not self.session_manager.check_browser_health():
-                        logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
-                        if not self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
-                            logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
-                            stop_reason = "Browser Recovery Failed"
-                            stop_processing = True
-                            break
+                if current_batch_num % 5 == 0 and not self.session_manager.check_browser_health():
+                    logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
+                    if not self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
+                        logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
+                        stop_reason = "Browser Recovery Failed"
+                        stop_processing = True
+                        break
 
                 # Step 2b: Check session validity before each API call
                 if not self.session_manager.is_sess_valid():
@@ -1563,19 +1584,19 @@ class InboxProcessor:
                                 )
                             # PHASE 1 OPTIMIZATION: Enhanced error recovery for AI calls
                             @with_api_recovery(max_attempts=3, base_delay=2.0)
-                            def _classify_with_recovery() -> Optional[str]:
+                            def _classify_with_recovery(context=formatted_context) -> Optional[str]:
                                 return classify_message_intent(
-                                    formatted_context, self.session_manager
+                                    context, self.session_manager
                                 )
 
                             # Guardrail: if model returns PRODUCTIVE but last USER msg lacks actionable cues, downgrade
-                            def _downgrade_if_non_actionable(label: Optional[str]) -> Optional[str]:
+                            def _downgrade_if_non_actionable(label: Optional[str], messages=context_messages) -> Optional[str]:
                                 try:
                                     if (not label) or label != "PRODUCTIVE":
                                         return label
                                     # Identify last USER message text from context_messages
                                     last_user = None
-                                    for m in reversed(context_messages):
+                                    for m in reversed(messages):
                                         if m.get("author", "").lower() != my_pid_lower:
                                             last_user = str(m.get("content", ""))
                                             break
@@ -1843,7 +1864,7 @@ class InboxProcessor:
                         )
                         raise MaxApiFailuresExceededError(
                             "Session death cascade detected in Action 7 Critical Error save"
-                        )
+                        ) from conn_err
                     logger.error(f"ConnectionError during Action 7 Critical Error save: {conn_err}")
                     final_logs_saved, final_persons_updated = 0, 0
                 status_updated_count += final_persons_updated
@@ -1888,18 +1909,17 @@ class InboxProcessor:
                 "End of Inbox Reached (Empty Batch, No Cursor)",
                 "End of Inbox Reached (No Next Cursor)",
             )
-        ):
-            if conv_log_upserts_dicts or person_updates:
-                logger.debug("Performing final commit at end of processing loop...")
-                # --- CALL NEW FUNCTION ---
-                final_logs_saved, final_persons_updated = commit_bulk_data(
-                    session=session,
-                    log_upserts=conv_log_upserts_dicts,
-                    person_updates=person_updates,
-                    context="Action 7 Final Save (Normal Exit)",
-                )
-                status_updated_count += final_persons_updated
-                logs_processed_in_run += final_logs_saved
+        ) and (conv_log_upserts_dicts or person_updates):
+            logger.debug("Performing final commit at end of processing loop...")
+            # --- CALL NEW FUNCTION ---
+            final_logs_saved, final_persons_updated = commit_bulk_data(
+                session=session,
+                log_upserts=conv_log_upserts_dicts,
+                person_updates=person_updates,
+                context="Action 7 Final Save (Normal Exit)",
+            )
+            status_updated_count += final_persons_updated
+            logs_processed_in_run += final_logs_saved
 
         # Step 5: Return results from the loop execution (modified tuple)
         return (
@@ -2072,9 +2092,10 @@ def action7_inbox_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run tests using unified test framework."""
-    return action7_inbox_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(action7_inbox_module_tests)
 
 
 # --- Main Execution Block ---

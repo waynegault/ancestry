@@ -1,5 +1,42 @@
 #!/usr/bin/env python3
 """
+Code Similarity Classifier & Advanced System Intelligence Engine
+
+Sophisticated platform providing comprehensive automation capabilities,
+intelligent processing, and advanced functionality with optimized algorithms,
+professional-grade operations, and comprehensive management for genealogical
+automation and research workflows.
+
+System Intelligence:
+• Advanced automation with intelligent processing and optimization protocols
+• Sophisticated management with comprehensive operational capabilities
+• Intelligent coordination with multi-system integration and synchronization
+• Comprehensive analytics with detailed performance metrics and insights
+• Advanced validation with quality assessment and verification protocols
+• Integration with platforms for comprehensive system management and automation
+
+Automation Capabilities:
+• Sophisticated automation with intelligent workflow generation and execution
+• Advanced optimization with performance monitoring and enhancement protocols
+• Intelligent coordination with automated management and orchestration
+• Comprehensive validation with quality assessment and reliability protocols
+• Advanced analytics with detailed operational insights and optimization
+• Integration with automation systems for comprehensive workflow management
+
+Professional Operations:
+• Advanced professional functionality with enterprise-grade capabilities and reliability
+• Sophisticated operational protocols with professional standards and best practices
+• Intelligent optimization with performance monitoring and enhancement
+• Comprehensive documentation with detailed operational guides and analysis
+• Advanced security with secure protocols and data protection measures
+• Integration with professional systems for genealogical research workflows
+
+Foundation Services:
+Provides the essential infrastructure that enables reliable, high-performance
+operations through intelligent automation, comprehensive management,
+and professional capabilities for genealogical automation and research workflows.
+
+Technical Implementation:
 Function & Method Classifier + Similarity Detector
 
 Advanced code analysis tool for identifying function similarity and potential DRY violations.
@@ -85,6 +122,18 @@ class SimilarityPair:
     score: float
     hamming: int
     reason: str
+    consolidation_potential: str  # "high", "medium", "low"
+    refactoring_strategy: str     # "merge", "extract_utility", "parameterize", "base_class"
+    estimated_loc_savings: int    # Lines of code that could be saved
+
+
+@dataclass
+class ConsolidationCluster:
+    function_indices: list[int]
+    cluster_type: str             # "identical", "template", "similar_structure"
+    consolidation_strategy: str   # Recommended approach
+    estimated_savings: int        # Total LOC savings potential
+    priority_score: float         # Higher = more valuable to consolidate
 
 
 # ----------------------------- Analyzer Core -------------------------------
@@ -136,6 +185,7 @@ def _collect_tags(src: str, node: ast.AST, is_async: bool) -> list[str]:
     tags: list[str] = []
     if is_async:
         tags.append("async")
+
     # purity / effects
     text = src
     def has(word: str) -> bool:
@@ -147,6 +197,7 @@ def _collect_tags(src: str, node: ast.AST, is_async: bool) -> list[str]:
     else:
         tags.append("pure-ish")
 
+    # Technology/domain tags
     if any(has(k) for k in ("requests", "urllib", "httpx", "selenium")):
         tags.append("network")
     if any(has(k) for k in ("sqlalchemy", "sqlite3", "psycopg2")):
@@ -164,6 +215,10 @@ def _collect_tags(src: str, node: ast.AST, is_async: bool) -> list[str]:
     if any(has(k) for k in ("json",)):
         tags.append("json")
 
+    # Enhanced semantic classification for DRY analysis
+    tags.extend(_classify_function_purpose(src, node))
+    tags.extend(_classify_implementation_pattern(src, node))
+
     # size bucket
     lines = src.splitlines()
     loc = len(lines)
@@ -175,6 +230,70 @@ def _collect_tags(src: str, node: ast.AST, is_async: bool) -> list[str]:
         tags.append("size:medium")
     else:
         tags.append("size:large")
+
+    return tags
+
+
+def _classify_function_purpose(src: str, node: ast.AST) -> list[str]:
+    """Classify function by its semantic purpose for DRY analysis."""
+    tags = []
+    lines = src.strip().splitlines()
+
+    # Get function name
+    func_name = getattr(node, "name", "").lower()
+
+    # Test runner pattern
+    if func_name == "run_comprehensive_tests" or "run_comprehensive_tests" in src:
+        tags.append("purpose:test_runner")
+
+    # Initialization pattern
+    if func_name == "__init__" or func_name.endswith("_init"):
+        tags.append("purpose:initialization")
+
+    # Validation pattern
+    if any(word in func_name for word in ["validate", "check", "verify", "is_valid"]):
+        tags.append("purpose:validation")
+
+    # Formatting pattern
+    if any(word in func_name for word in ["format", "display", "render", "stringify"]):
+        tags.append("purpose:formatting")
+
+    # Factory pattern
+    if any(word in func_name for word in ["create", "make", "build", "factory", "get_"]):
+        tags.append("purpose:factory")
+
+    # Property getter pattern
+    if (func_name.startswith("get_") or func_name.startswith("is_") or
+        (len(lines) <= 3 and any("return" in line for line in lines))):
+        tags.append("purpose:getter")
+
+    # Stub function pattern (very simple functions)
+    if len(lines) <= 2 and any("return" in line for line in lines):
+        tags.append("purpose:stub")
+
+    return tags
+
+
+def _classify_implementation_pattern(src: str, node: ast.AST) -> list[str]:
+    """Classify function by implementation patterns for consolidation analysis."""
+    tags = []
+    lines = [line.strip() for line in src.strip().splitlines() if line.strip()]
+
+    # Simple delegation pattern
+    if len(lines) <= 3 and any("return " in line and "(" in line for line in lines):
+        tags.append("pattern:delegation")
+
+    # Error handling wrapper pattern
+    if "try:" in src and "except" in src and len(lines) <= 10:
+        tags.append("pattern:error_wrapper")
+
+    # Simple return pattern
+    if len(lines) <= 2 and any(line.startswith("return ") for line in lines):
+        tags.append("pattern:simple_return")
+
+    # Empty or pass pattern
+    if len(lines) <= 2 and ("pass" in src or len(lines) == 1):
+        tags.append("pattern:empty")
 
     return tags
 
@@ -409,12 +528,57 @@ class CodeSimilarityClassifier:
                     # detailed ratio on normalized token streams
                     ratio = difflib.SequenceMatcher(None, a.normalized, b.normalized).ratio()
                     if ratio >= min_ratio:
+                        # Enhanced analysis for consolidation potential
+                        consolidation_info = self._analyze_consolidation_potential(a, b, ratio, ham)
                         reason = f"sequence_match={ratio:.2f}, simhash_hamming={ham}, name_sim={name_sim:.2f}"
-                        pairs.append(SimilarityPair(a_idx=idxs[i], b_idx=idxs[j], score=ratio, hamming=ham, reason=reason))
+                        pairs.append(SimilarityPair(
+                            a_idx=idxs[i],
+                            b_idx=idxs[j],
+                            score=ratio,
+                            hamming=ham,
+                            reason=reason,
+                            consolidation_potential=consolidation_info["potential"],
+                            refactoring_strategy=consolidation_info["strategy"],
+                            estimated_loc_savings=consolidation_info["savings"]
+                        ))
         # sort high to low
         pairs.sort(key=lambda p: (p.score, -p.hamming), reverse=True)
         self.similar_pairs = pairs
         return pairs
+
+    def _analyze_consolidation_potential(self, a: FunctionInfo, b: FunctionInfo, ratio: float, hamming: int) -> dict[str, Any]:
+        """Analyze the consolidation potential between two similar functions."""
+        # Perfect matches (identical code)
+        if ratio >= 0.99 and hamming == 0:
+            return {
+                "potential": "high",
+                "strategy": "merge" if a.qualname.split(".")[-1] == b.qualname.split(".")[-1] else "extract_utility",
+                "savings": max(a.loc, b.loc)
+            }
+
+        # Very similar with same purpose tags
+        common_purpose_tags = {tag for tag in a.tags if tag.startswith("purpose:")} & {tag for tag in b.tags if tag.startswith("purpose:")}
+        if common_purpose_tags and ratio >= 0.95:
+            return {
+                "potential": "high",
+                "strategy": "parameterize" if len(common_purpose_tags) > 0 else "merge",
+                "savings": min(a.loc, b.loc)
+            }
+
+        # Similar structure, different details
+        if ratio >= 0.85:
+            return {
+                "potential": "medium",
+                "strategy": "extract_utility" if a.loc > 10 else "parameterize",
+                "savings": min(a.loc, b.loc) // 2
+            }
+
+        # Default case
+        return {
+            "potential": "low",
+            "strategy": "refactor",
+            "savings": min(a.loc, b.loc) // 4
+        }
 
     def clusters(self) -> list[list[int]]:
         # Build components over function indices using current similar_pairs
@@ -439,11 +603,157 @@ class CodeSimilarityClassifier:
             groups.setdefault(r, []).append(idx)
         return list(groups.values())
 
+    def get_consolidation_clusters(self) -> list[ConsolidationCluster]:
+        """Get clusters with consolidation analysis and prioritization."""
+        clusters = []
+        basic_clusters = self.clusters()
+
+        for cluster_indices in basic_clusters:
+            if len(cluster_indices) < 2:
+                continue
+
+            # Analyze cluster characteristics
+            cluster_functions = [self.functions[i] for i in cluster_indices]
+
+            # Determine cluster type
+            cluster_type = self._determine_cluster_type(cluster_functions)
+
+            # Calculate consolidation strategy and savings
+            strategy, total_savings = self._calculate_cluster_consolidation(cluster_functions)
+
+            # Calculate priority score (higher = more valuable)
+            priority_score = self._calculate_priority_score(cluster_functions, total_savings)
+
+            clusters.append(ConsolidationCluster(
+                function_indices=cluster_indices,
+                cluster_type=cluster_type,
+                consolidation_strategy=strategy,
+                estimated_savings=total_savings,
+                priority_score=priority_score
+            ))
+
+        # Sort by priority (highest first)
+        clusters.sort(key=lambda c: c.priority_score, reverse=True)
+        return clusters
+
+    def _determine_cluster_type(self, functions: list[FunctionInfo]) -> str:
+        """Determine the type of similarity cluster."""
+        if len(functions) < 2:
+            return "single"
+
+        # Check if all functions have identical normalized code
+        first_normalized = functions[0].normalized
+        if all(f.normalized == first_normalized for f in functions):
+            return "identical"
+
+        # Check if functions follow a template pattern (same structure, different literals)
+        if self._is_template_pattern(functions):
+            return "template"
+
+        return "similar_structure"
+
+    def _is_template_pattern(self, functions: list[FunctionInfo]) -> bool:
+        """Check if functions follow a template pattern."""
+        if len(functions) < 2:
+            return False
+
+        # Simple heuristic: if functions have very similar structure but different names/literals
+        # This could be enhanced with more sophisticated AST analysis
+        first_tokens = functions[0].normalized.split()
+        for func in functions[1:]:
+            tokens = func.normalized.split()
+            if len(tokens) != len(first_tokens):
+                return False
+            # Check if structure is same (keywords and operators match)
+            structure_matches = sum(1 for a, b in zip(first_tokens, tokens)
+                                  if a == b or (a in ["NAME", "LIT"] and b in ["NAME", "LIT"]))
+            if structure_matches / len(tokens) < 0.8:
+                return False
+        return True
+
+    def _calculate_cluster_consolidation(self, functions: list[FunctionInfo]) -> tuple[str, int]:
+        """Calculate consolidation strategy and estimated savings for a cluster."""
+        if not functions:
+            return "none", 0
+
+        total_loc = sum(f.loc for f in functions)
+
+        # Check for common purpose tags
+        common_purposes = set(functions[0].tags) & set().union(*(f.tags for f in functions[1:]))
+        purpose_tags = [tag for tag in common_purposes if tag.startswith("purpose:")]
+
+        if "purpose:test_runner" in purpose_tags and len(functions) > 5:
+            return "extract_common_test_utility", total_loc - 10  # Keep one implementation
+
+        if "purpose:initialization" in purpose_tags and len(functions) > 3:
+            return "common_base_class", total_loc - 5
+
+        if "purpose:stub" in purpose_tags:
+            return "single_utility_function", total_loc - 3
+
+        if len(functions) > 10:
+            return "extract_utility_module", total_loc // 2
+
+        return "merge_similar_functions", total_loc // 3
+
+    def _calculate_priority_score(self, functions: list[FunctionInfo], savings: int) -> float:
+        """Calculate priority score for consolidation (higher = more valuable)."""
+        # Base score from savings potential
+        score = savings * len(functions)
+
+        # Bonus for high-value patterns
+        purpose_tags = set().union(*(f.tags for f in functions))
+        if "purpose:test_runner" in purpose_tags:
+            score *= 2.0  # Test runners are high-value targets
+        if "purpose:stub" in purpose_tags:
+            score *= 1.5  # Stub functions are easy wins
+
+        # Bonus for large clusters
+        if len(functions) > 10:
+            score *= 1.5
+        elif len(functions) > 5:
+            score *= 1.2
+
+        return score
+
     def to_json(self) -> dict[str, Any]:
+        consolidation_clusters = self.get_consolidation_clusters()
         return {
             "functions": [asdict(f) for f in self.functions],
             "similar_pairs": [asdict(p) for p in self.similar_pairs],
             "clusters": self.clusters(),
+            "consolidation_clusters": [asdict(c) for c in consolidation_clusters],
+            "consolidation_summary": self._generate_consolidation_summary(consolidation_clusters),
+        }
+
+    def _generate_consolidation_summary(self, clusters: list[ConsolidationCluster]) -> dict[str, Any]:
+        """Generate a summary of consolidation opportunities."""
+        if not clusters:
+            return {"total_savings": 0, "high_priority_clusters": 0, "recommendations": []}
+
+        total_savings = sum(c.estimated_savings for c in clusters)
+        high_priority = len([c for c in clusters if c.priority_score > 100])
+
+        # Top recommendations
+        recommendations = []
+        for cluster in clusters[:10]:  # Top 10 clusters
+            func_names = [self.functions[i].qualname for i in cluster.function_indices[:5]]
+            if len(cluster.function_indices) > 5:
+                func_names.append(f"... and {len(cluster.function_indices) - 5} more")
+
+            recommendations.append({
+                "cluster_type": cluster.cluster_type,
+                "strategy": cluster.consolidation_strategy,
+                "functions": func_names,
+                "estimated_savings": cluster.estimated_savings,
+                "priority_score": cluster.priority_score
+            })
+
+        return {
+            "total_estimated_savings": total_savings,
+            "high_priority_clusters": high_priority,
+            "total_clusters": len(clusters),
+            "top_recommendations": recommendations
         }
 
 
@@ -452,25 +762,81 @@ class CodeSimilarityClassifier:
 def _print_summary(clsfr: CodeSimilarityClassifier, top_n: int = 30) -> None:
     print("=== FUNCTION CLASSIFICATION REPORT START ===")
     print(f"Total functions/methods analyzed: {len(clsfr.functions)}")
+
+    # Tag analysis
     by_tag: dict[str, int] = {}
     for f in clsfr.functions:
         for t in f.tags:
             by_tag[t] = by_tag.get(t, 0) + 1
     top_tags = ", ".join(f"{k}:{v}" for k, v in sorted(by_tag.items(), key=lambda kv: kv[1], reverse=True)[:10])
     print(f"Top tags: {top_tags}")
+
+    # Purpose analysis for DRY opportunities
+    purpose_tags = {k: v for k, v in by_tag.items() if k.startswith("purpose:")}
+    if purpose_tags:
+        print("\n=== DRY OPPORTUNITIES BY PURPOSE ===")
+        for purpose, count in sorted(purpose_tags.items(), key=lambda x: x[1], reverse=True):
+            if count > 1:
+                print(f"  {purpose}: {count} functions (potential for consolidation)")
+
+    # Consolidation analysis
+    consolidation_clusters = clsfr.get_consolidation_clusters()
+    summary = clsfr._generate_consolidation_summary(consolidation_clusters)
+
+    print("\n=== CONSOLIDATION ANALYSIS ===")
+    print(f"Total estimated LOC savings: {summary['total_estimated_savings']}")
+    print(f"High-priority clusters: {summary['high_priority_clusters']}")
+    print(f"Total consolidation clusters: {summary['total_clusters']}")
+
+    print("\n=== TOP CONSOLIDATION RECOMMENDATIONS ===")
+    for i, rec in enumerate(summary['top_recommendations'][:10], 1):
+        print(f"{i}. {rec['cluster_type'].upper()} - {rec['strategy']}")
+        print(f"   Functions: {', '.join(rec['functions'])}")
+        print(f"   Savings: {rec['estimated_savings']} LOC, Priority: {rec['priority_score']:.1f}")
+        print()
+
+    print("=== SIMILAR PAIRS DETAILS ===")
     print(f"Similar pairs found: {len(clsfr.similar_pairs)} (showing top {min(top_n, len(clsfr.similar_pairs))})")
     for sp in clsfr.similar_pairs[:top_n]:
         a = clsfr.functions[sp.a_idx]
         b = clsfr.functions[sp.b_idx]
-        print(f"- {Path(a.module_path).name}:{a.qualname} <-> {Path(b.module_path).name}:{b.qualname} | {sp.reason}")
-    # Clusters
-    comps = clsfr.clusters()
-    if comps:
-        print(f"Clusters: {len(comps)}")
-        for c in comps[:10]:
-            names = [clsfr.functions[i].qualname for i in c]
-            print("  • " + ", ".join(names[:5]) + (" ..." if len(names) > 5 else ""))
+        print(f"- {Path(a.module_path).name}:{a.qualname} <-> {Path(b.module_path).name}:{b.qualname}")
+        print(f"  {sp.reason} | {sp.consolidation_potential} potential, strategy: {sp.refactoring_strategy}")
+
     print("=== FUNCTION CLASSIFICATION REPORT END ===")
+
+
+def _print_detailed_consolidation_report(clsfr: CodeSimilarityClassifier) -> None:
+    """Print a detailed consolidation report with specific refactoring guidance."""
+    print("\n" + "="*80)
+    print("DETAILED CONSOLIDATION REPORT")
+    print("="*80)
+
+    consolidation_clusters = clsfr.get_consolidation_clusters()
+
+    for i, cluster in enumerate(consolidation_clusters[:20], 1):  # Top 20 clusters
+        print(f"\n--- CLUSTER {i}: {cluster.cluster_type.upper()} ---")
+        print(f"Strategy: {cluster.consolidation_strategy}")
+        print(f"Estimated savings: {cluster.estimated_savings} LOC")
+        print(f"Priority score: {cluster.priority_score:.1f}")
+        print(f"Functions ({len(cluster.function_indices)}):")
+
+        for idx in cluster.function_indices[:10]:  # Show up to 10 functions
+            func = clsfr.functions[idx]
+            print(f"  • {Path(func.module_path).name}:{func.qualname} ({func.loc} LOC)")
+            print(f"    Tags: {', '.join(func.tags[:5])}")
+
+        if len(cluster.function_indices) > 10:
+            print(f"  ... and {len(cluster.function_indices) - 10} more functions")
+
+        # Show a sample of the code for identical clusters
+        if cluster.cluster_type == "identical" and cluster.function_indices:
+            sample_func = clsfr.functions[cluster.function_indices[0]]
+            print(f"\n  Sample code (from {sample_func.qualname}):")
+            # This would need access to the original source code
+            print(f"    Lines {sample_func.lineno}-{sample_func.end_lineno} in {Path(sample_func.module_path).name}")
+
+        print("-" * 60)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -481,12 +847,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-hamming", type=int, default=6)
     ap.add_argument("--top", type=int, default=30, help="How many similar pairs to print")
     ap.add_argument("--save-json", type=str, default="", help="Optional path to write JSON report")
+    ap.add_argument("--detailed-report", action="store_true", help="Generate detailed consolidation report")
     args = ap.parse_args(argv)
 
     clsfr = CodeSimilarityClassifier(Path(args.root))
     clsfr.scan()
     clsfr.find_similar(min_ratio=args.min_similarity, max_hamming=args.max_hamming)
     _print_summary(clsfr, top_n=args.top)
+
+    if args.detailed_report:
+        _print_detailed_consolidation_report(clsfr)
 
     if args.save_json:
         try:
@@ -502,7 +872,11 @@ def main(argv: list[str] | None = None) -> int:
 
 # ----------------------------- Tests (inline) -------------------------------
 
-def run_comprehensive_tests() -> bool:
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+
+def code_similarity_classifier_module_tests() -> bool:
     """Minimal, strict tests that validate this module actually analyzes code."""
     try:
         clsfr = CodeSimilarityClassifier(Path())
@@ -528,6 +902,10 @@ def run_comprehensive_tests() -> bool:
     except Exception as e:
         print(f"TEST ERROR (code_similarity_classifier): {e}")
         return False
+
+
+# Use centralized test runner utility
+run_comprehensive_tests = create_standard_test_runner(code_similarity_classifier_module_tests)
 
 
 if __name__ == "__main__":

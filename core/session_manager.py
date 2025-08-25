@@ -1,14 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Refactored Session Manager - Orchestrates all session components.
+Session Management & Resource Orchestration Engine
 
-This module provides a new, modular SessionManager that orchestrates
-the specialized managers (DatabaseManager, BrowserManager, APIManager, etc.)
-to provide a clean, maintainable architecture.
+Advanced session lifecycle orchestration platform providing comprehensive
+coordination of browser automation, database connections, API management,
+and validation services with intelligent resource management, health monitoring,
+and performance optimization for reliable genealogical automation workflows.
 
-PHASE 5.1 OPTIMIZATION: Enhanced with intelligent session caching for dramatic
-performance improvement. Reduces initialization from 34.59s to <12s target.
+Session Orchestration:
+• Centralized session lifecycle management with intelligent component coordination
+• Advanced dependency injection with service discovery and configuration management
+• Comprehensive resource management with automatic cleanup and optimization
+• Intelligent session state management with persistence and recovery capabilities
+• Multi-session coordination for concurrent operations and resource sharing
+• Advanced health monitoring with proactive issue detection and resolution
+
+Component Integration:
+• Seamless browser automation integration with WebDriver lifecycle management
+• Robust database connection management with connection pooling and failover
+• Sophisticated API management with authentication, rate limiting, and caching
+• Comprehensive validation services with session state verification and health checks
+• Advanced error handling with graceful degradation and automatic recovery
+• Performance monitoring with resource usage tracking and optimization recommendations
+
+Resource Management:
+• Intelligent resource allocation with dynamic scaling and optimization
+• Comprehensive cleanup procedures with automatic resource deallocation
+• Advanced memory management with garbage collection and leak detection
+• Sophisticated connection pooling with load balancing and failover capabilities
+• Performance optimization with caching strategies and resource reuse
+• Comprehensive monitoring with real-time metrics and alerting
+
+Reliability & Performance:
+Provides the foundational session infrastructure that enables reliable, scalable
+genealogical automation through intelligent resource management, comprehensive
+error handling, and performance optimization for professional research workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -2263,7 +2290,7 @@ class SessionManager:
             import api_utils as local_api_utils
         except ImportError as e:
             logger.error(f"get_my_tree_id: Failed to import api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}")
+            raise ImportError(f"api_utils module failed to import: {e}") from e
 
         tree_name_config = config_schema.api.tree_name
         if not tree_name_config:
@@ -2307,7 +2334,7 @@ class SessionManager:
             import api_utils as local_api_utils
         except ImportError as e:
             logger.error(f"get_tree_owner: Failed to import api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}")
+            raise ImportError(f"api_utils module failed to import: {e}") from e
 
         if not tree_id:
             logger.warning("Cannot get tree owner: tree_id is missing.")
@@ -3093,7 +3120,7 @@ def _test_error_handling() -> bool:
         _ = session_manager.session_ready
         _ = session_manager.is_ready
     except Exception as e:
-        raise AssertionError(f"SessionManager should handle operations gracefully: {e}")
+        raise AssertionError(f"SessionManager should handle operations gracefully: {e}") from e
     return True
 
 
@@ -3250,7 +3277,7 @@ def _test_regression_prevention_initialization_stability() -> bool:
     return success
 
 
-def run_comprehensive_tests() -> bool:
+def session_manager_module_tests() -> bool:
     """
     Comprehensive test suite for session_manager.py (decomposed).
     """
@@ -3567,6 +3594,12 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(session_manager_module_tests)
 
 
 if __name__ == "__main__":

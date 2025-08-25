@@ -1,21 +1,41 @@
 #!/usr/bin/env python3
 
 """
-GEDCOM Utilities for Ancestry Project
+GEDCOM Processing & Genealogical Data Intelligence Engine
 
-This module provides comprehensive GEDCOM file processing capabilities including:
-- Data parsing and validation
-- Family tree relationship analysis
-- Individual record matching and scoring
-- Optimized search algorithms (bidirectional BFS)
-- Data formatting and display utilities
+Comprehensive genealogical data processing platform providing sophisticated
+GEDCOM file analysis, family relationship mapping, and intelligent genealogical
+data extraction with advanced parsing capabilities, relationship pathfinding,
+and comprehensive data validation for professional genealogical research.
 
-Key Features:
-- High-performance relationship path finding
-- Comprehensive individual scoring system
-- Flexible data filtering and search
-- Detailed life event formatting
-- Robust error handling and logging
+GEDCOM Processing:
+• Advanced GEDCOM file parsing with comprehensive format support and validation
+• Intelligent individual and family record extraction with metadata preservation
+• Sophisticated date parsing and normalization with flexible format recognition
+• Advanced name processing with standardization and variant recognition
+• Comprehensive data validation with error detection and correction suggestions
+• Efficient memory management for large genealogical datasets
+
+Relationship Intelligence:
+• Advanced relationship pathfinding using optimized graph algorithms
+• Comprehensive family structure analysis with multi-generational mapping
+• Intelligent sibling detection and family group identification
+• Complex relationship calculation including step-relationships and adoptions
+• Advanced ancestor and descendant tracking with generation mapping
+• Sophisticated relationship degree calculation with cousin identification
+
+Data Enhancement:
+• Intelligent data normalization with standardization and quality improvement
+• Advanced search capabilities with fuzzy matching and phonetic algorithms
+• Comprehensive data quality assessment with improvement recommendations
+• Integration with external genealogical databases for data enrichment
+• Export capabilities for seamless integration with genealogical software
+• Performance optimization for large family tree processing
+
+Foundation Services:
+Provides the essential GEDCOM processing infrastructure that enables sophisticated
+genealogical analysis, relationship discovery, and family tree intelligence for
+professional genealogical research and family history exploration.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -2456,9 +2476,10 @@ def gedcom_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive GEDCOM utilities tests using standardized TestSuite format."""
-    return gedcom_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(gedcom_module_tests)
 
 
 # Test functions for comprehensive testing

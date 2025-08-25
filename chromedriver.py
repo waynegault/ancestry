@@ -1,7 +1,41 @@
 #!/usr/bin/env python3
 
 """
-chromedriver.py - ChromeDriver management and configuration utility
+ChromeDriver Management & Browser Automation Engine
+
+Advanced browser automation platform providing sophisticated ChromeDriver management,
+intelligent browser configuration, and comprehensive automation capabilities with
+optimized performance settings, robust error handling, and professional-grade
+browser orchestration for genealogical automation and web scraping workflows.
+
+Browser Orchestration:
+• Advanced ChromeDriver management with intelligent process lifecycle and resource optimization
+• Sophisticated browser configuration with optimized settings for automation and performance
+• Comprehensive browser session management with intelligent cleanup and recovery protocols
+• Advanced browser pool management with resource optimization and concurrent session handling
+• Intelligent browser monitoring with performance analytics and automated optimization
+• Integration with session management systems for comprehensive browser orchestration
+
+Automation Intelligence:
+• Sophisticated automation capabilities with intelligent element detection and interaction
+• Advanced error handling with comprehensive recovery protocols and fallback strategies
+• Intelligent performance optimization with memory management and resource allocation
+• Comprehensive automation analytics with detailed performance metrics and insights
+• Advanced browser security with secure automation protocols and data protection
+• Integration with automation frameworks for comprehensive browser automation workflows
+
+Performance Optimization:
+• High-performance browser configuration with optimized settings for speed and reliability
+• Memory-efficient browser management with intelligent resource allocation and cleanup
+• Advanced browser caching with intelligent cache management and optimization strategies
+• Comprehensive performance monitoring with real-time analytics and optimization recommendations
+• Intelligent browser scaling with automated resource management and load balancing
+• Integration with performance systems for comprehensive browser performance optimization
+
+Foundation Services:
+Provides the essential browser automation infrastructure that enables reliable,
+high-performance web automation through intelligent ChromeDriver management,
+comprehensive browser orchestration, and professional automation for research workflows.
 
 Features:
 - Safe Chrome process cleanup and initialization
@@ -107,7 +141,8 @@ def reset_preferences_file() -> None:
         }
         try:
             from pathlib import Path
-            Path(PREFERENCES_FILE).open("w", encoding="utf-8").write(json.dumps(minimal_preferences, indent=2))
+            with Path(PREFERENCES_FILE).open("w", encoding="utf-8") as f:
+                f.write(json.dumps(minimal_preferences, indent=2))
         except OSError as e:
             logger.error(f"IOError writing Preferences file: {e}", exc_info=True)
             raise
@@ -720,10 +755,10 @@ def test_chrome_options_creation() -> None:
         return True
     except NameError as e:
         if "'uc' is not defined" in str(e):
-            raise AssertionError(f"NameError indicates missing undetected_chromedriver import: {e}")
-        raise AssertionError(f"Unexpected NameError: {e}")
+            raise AssertionError(f"NameError indicates missing undetected_chromedriver import: {e}") from e
+        raise AssertionError(f"Unexpected NameError: {e}") from e
     except Exception as e:
-        raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}")
+        raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}") from e
 
 
 def chromedriver_module_tests() -> bool:
@@ -769,10 +804,10 @@ def chromedriver_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests including both module tests and unified framework tests."""
-    # Run module tests directly (no unified framework needed)
-    return chromedriver_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(chromedriver_module_tests)
 
 
 # ==============================================

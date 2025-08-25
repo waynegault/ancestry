@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 
 """
-logging_config.py - Centralized Logging Configuration
+Centralized Logging Configuration & Intelligent Log Management Engine
 
+Advanced logging platform providing sophisticated log management, intelligent
+logging strategies, and comprehensive log analytics with performance optimization,
+automated log processing, and professional-grade logging infrastructure for
+genealogical automation systems and research workflow monitoring and analysis.
+
+Logging Intelligence:
+• Advanced logging configuration with intelligent log level management and performance optimization
+• Sophisticated log formatting with comprehensive structured logging and analysis-ready output
+• Intelligent log routing with advanced log distribution and multi-destination logging protocols
+• Comprehensive log analytics with intelligent log analysis and pattern recognition algorithms
+• Advanced log aggregation with intelligent log collection and centralized log management
+• Integration with monitoring systems for comprehensive logging intelligence and analysis
+
+Performance Optimization:
+• High-performance logging with memory-efficient log processing and optimized output algorithms
+• Advanced log buffering with intelligent batch processing and performance-optimized log writing
+• Sophisticated log compression with intelligent storage optimization and retrieval algorithms
+• Comprehensive log rotation with automated log management and storage optimization protocols
+• Intelligent log filtering with performance-optimized log processing and selective logging
+• Integration with performance systems for comprehensive logging performance optimization
+
+Log Management:
+• Advanced log lifecycle management with intelligent log retention and automated cleanup protocols
+• Sophisticated log archiving with comprehensive log storage and retrieval management systems
+• Intelligent log monitoring with automated log health checking and performance validation
+• Comprehensive log security with secure log handling and access control protocols
+• Advanced log integration with intelligent log forwarding and multi-system log coordination
+• Integration with log management platforms for comprehensive logging infrastructure and analytics
+
+Foundation Services:
+Provides the essential logging infrastructure that enables comprehensive system
+monitoring and analysis through intelligent log management, performance optimization,
+and professional logging for genealogical automation and research workflow monitoring.
+
+Technical Implementation:
 Sets up application-wide logging using Python's standard `logging` module.
 Features:
 - Configurable log level via environment variable or function argument.
@@ -466,9 +501,10 @@ def logging_config_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive logging configuration tests using standardized TestSuite format."""
-    return logging_config_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(logging_config_module_tests)
 
 
 # Test functions for comprehensive testing

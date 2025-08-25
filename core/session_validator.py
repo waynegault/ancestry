@@ -617,7 +617,7 @@ def _test_general_exception_handling() -> bool:
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def session_validator_module_tests() -> bool:
     """
     Comprehensive test suite for session_validator.py (decomposed).
     """
@@ -692,6 +692,12 @@ def run_comprehensive_tests() -> bool:
             "Test error handling for general exceptions during validation",
         )
         return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(session_validator_module_tests)
 
 
 if __name__ == "__main__":

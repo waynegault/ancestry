@@ -407,11 +407,11 @@ def _test_exception_handling() -> bool:
         result = manager.create_new_tab()
         assert result is None, "create_new_tab should return None for invalid session"
     except Exception as e:
-        raise AssertionError(f"Methods should handle invalid state gracefully: {e}")
+        raise AssertionError(f"Methods should handle invalid state gracefully: {e}") from e
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def browser_manager_module_tests() -> bool:
     """
     Comprehensive test suite for browser_manager.py (decomposed).
     """
@@ -559,6 +559,12 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(browser_manager_module_tests)
 
 
 if __name__ == "__main__":

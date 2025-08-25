@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 
 """
-GEDCOM Cache System - Advanced Genealogical Data Caching
+GEDCOM Cache Intelligence & Advanced Genealogical Data Optimization Engine
 
+Sophisticated genealogical caching platform providing high-performance GEDCOM data
+caching, intelligent cache management, and comprehensive optimization strategies
+with advanced genealogical data structures, memory-efficient processing, and
+professional-grade caching for genealogical research and family tree analysis.
+
+GEDCOM Cache Intelligence:
+• Advanced GEDCOM data caching with intelligent genealogical data structures and optimization
+• Sophisticated cache management with genealogy-specific optimization and performance monitoring
+• Intelligent GEDCOM data serialization with optimized storage and retrieval algorithms
+• Comprehensive genealogical data validation with intelligent integrity checking and verification
+• Advanced GEDCOM cache coordination with multi-process synchronization and conflict resolution
+• Integration with genealogical systems for comprehensive GEDCOM data caching and optimization
+
+Performance Optimization:
+• High-performance GEDCOM processing with memory-efficient data structures and algorithms
+• Advanced genealogical data compression with intelligent storage optimization and retrieval
+• Sophisticated GEDCOM cache warming with predictive data loading and optimization strategies
+• Comprehensive performance monitoring with genealogy-specific metrics and optimization insights
+• Intelligent GEDCOM cache sizing with automatic optimization and resource management
+• Integration with performance systems for comprehensive genealogical data optimization
+
+Genealogical Intelligence:
+• Advanced genealogical data analysis with intelligent family tree optimization and insights
+• Sophisticated relationship caching with intelligent relationship mapping and validation
+• Intelligent genealogical data indexing with optimized search and retrieval algorithms
+• Comprehensive family tree validation with intelligent data quality assessment and improvement
+• Advanced genealogical data migration with seamless data transfer and version compatibility
+• Integration with genealogical intelligence systems for comprehensive family tree optimization
+
+Foundation Services:
+Provides the essential GEDCOM caching infrastructure that enables high-performance
+genealogical data processing through intelligent caching, comprehensive optimization,
+and professional-grade genealogical data management for family history research workflows.
+
+Technical Implementation:
 Implements multi-level caching strategies specifically optimized for GEDCOM files
 and genealogical data with memory and disk caching, intelligent invalidation,
 and preloading for dramatically improved family tree processing performance.
@@ -1045,9 +1080,10 @@ def gedcom_cache_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive GEDCOM cache tests using standardized TestSuite format."""
-    return gedcom_cache_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(gedcom_cache_module_tests)
 
 
 

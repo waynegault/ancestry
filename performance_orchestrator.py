@@ -1,6 +1,43 @@
 #!/usr/bin/env python3
 
 """
+Performance Intelligence & Advanced System Optimization Engine
+
+Sophisticated performance platform providing comprehensive system optimization,
+intelligent performance monitoring, and advanced analytics with real-time
+performance tracking, automated optimization, and professional-grade performance
+management for genealogical automation and research workflow optimization.
+
+Performance Intelligence:
+• Advanced performance monitoring with intelligent metrics collection and analysis
+• Sophisticated performance optimization with automated tuning and enhancement protocols
+• Intelligent performance analytics with detailed insights and optimization recommendations
+• Comprehensive performance validation with quality assessment and verification protocols
+• Advanced performance coordination with multi-system optimization and synchronization
+• Integration with monitoring systems for comprehensive performance intelligence
+
+System Optimization:
+• Sophisticated system tuning with intelligent optimization algorithms and enhancement
+• Advanced resource management with optimized allocation and utilization protocols
+• Intelligent performance scaling with automated resource adjustment and optimization
+• Comprehensive performance testing with detailed analysis and validation protocols
+• Advanced performance automation with intelligent optimization and enhancement workflows
+• Integration with optimization platforms for comprehensive system performance management
+
+Analytics & Monitoring:
+• Advanced performance analytics with detailed metrics analysis and trend monitoring
+• Sophisticated performance reporting with comprehensive insights and recommendations
+• Intelligent performance alerting with automated notification and escalation protocols
+• Comprehensive performance documentation with detailed analysis reports and insights
+• Advanced performance integration with multi-system coordination and optimization
+• Integration with analytics systems for comprehensive performance monitoring and analysis
+
+Foundation Services:
+Provides the essential performance infrastructure that enables high-performance,
+optimized system operation through intelligent monitoring, comprehensive optimization,
+and professional performance management for genealogical automation workflows.
+
+Technical Implementation:
 Performance Optimizer - Priority 4 Implementation
 
 Focused performance optimization system that provides immediate, practical
@@ -527,7 +564,11 @@ def optimize_on_high_usage(memory_threshold: float = 85.0):
 # COMPREHENSIVE TEST SUITE
 # ==============================================
 
-def run_comprehensive_tests() -> bool:
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+
+def performance_orchestrator_module_tests() -> bool:
     """
     Comprehensive test suite for performance orchestrator functionality.
 
@@ -744,7 +785,7 @@ def run_comprehensive_tests() -> bool:
             assert isinstance(results, list)
         except Exception as e:
             # Should not raise unhandled exceptions
-            raise AssertionError(f"Optimization should handle errors gracefully: {e}")
+            raise AssertionError(f"Optimization should handle errors gracefully: {e}") from e
 
     def test_function_availability():
         """Test that all required optimization functions are available"""
@@ -871,6 +912,10 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
+
+
+# Use centralized test runner utility
+run_comprehensive_tests = create_standard_test_runner(performance_orchestrator_module_tests)
 
 
 def _run_basic_tests() -> bool:

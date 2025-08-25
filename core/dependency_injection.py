@@ -294,7 +294,7 @@ class DIContainer:
                 logger.error(f"Fallback creation also failed: {fallback_error}")
                 raise DIResolutionError(
                     f"Cannot create instance of {implementation}: {e}"
-                )
+                ) from e
 
 
 class DIResolutionError(Exception):
@@ -531,8 +531,9 @@ class TestDIContainer(unittest.TestCase):
         self.container = DIContainer()
 
     def test_register_singleton(self):
-        class ServiceA:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceA(EmptyTestService): ...
 
         self.container.register_singleton(ServiceA, ServiceA)
         instance1 = self.container.resolve(ServiceA)
@@ -540,8 +541,9 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(instance1, instance2)
 
     def test_register_transient(self):
-        class ServiceB:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceB(EmptyTestService): ...
 
         self.container.register_transient(ServiceB, ServiceB)
         instance1 = self.container.resolve(ServiceB)
@@ -561,8 +563,9 @@ class TestDIContainer(unittest.TestCase):
         self.assertEqual(instance.value, "factory_value")
 
     def test_register_instance(self):
-        class ServiceD:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceD(EmptyTestService): ...
 
         instance = ServiceD()
         self.container.register_instance(ServiceD, instance)
@@ -570,16 +573,18 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(resolved_instance, instance)
 
     def test_resolve_singleton(self):
-        class ServiceE:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceE(EmptyTestService): ...
 
         self.container.register_singleton(ServiceE, ServiceE)
         instance = self.container.resolve(ServiceE)
         self.assertIsInstance(instance, ServiceE)
 
     def test_resolve_transient(self):
-        class ServiceF:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceF(EmptyTestService): ...
 
         self.container.register_transient(ServiceF, ServiceF)
         instance = self.container.resolve(ServiceF)
@@ -599,8 +604,9 @@ class TestDIContainer(unittest.TestCase):
         self.assertEqual(instance.value, "factory_value")
 
     def test_resolve_instance(self):
-        class ServiceH:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceH(EmptyTestService): ...
 
         instance = ServiceH()
         self.container.register_instance(ServiceH, instance)
@@ -609,41 +615,54 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(resolved_instance, instance)
 
     def test_is_registered(self):
-        class ServiceI:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceI(EmptyTestService): ...
 
         self.assertFalse(self.container.is_registered(ServiceI))
         self.container.register_singleton(ServiceI, ServiceI)
         self.assertTrue(self.container.is_registered(ServiceI))
 
     def test_clear(self):
-        class ServiceJ:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceJ(EmptyTestService): ...
 
         self.container.register_singleton(ServiceJ, ServiceJ)
         self.container.clear()
         self.assertFalse(self.container.is_registered(ServiceJ))
 
     def test_get_registration_info(self):
-        class ServiceK:
-            pass
+        from test_utilities import EmptyTestService
+
+        class ServiceK(EmptyTestService): ...
 
         self.container.register_singleton(ServiceK, ServiceK, "service_k")
+        info = self.container.get_registration_info()
+        self.assertIn("service_k", info["singleton_classes"])
+
+        # Now instantiate it and check singleton_instances
+        instance = self.container.resolve(ServiceK, "service_k")
         info = self.container.get_registration_info()
         self.assertIn("service_k", info["singleton_instances"])
 
     def test_create_instance(self):
-        class ServiceL:
-            def __init__(self, value: Any) -> None:
-                self.value = value
+        from test_utilities import EmptyTestService
+
+        class ServiceL(EmptyTestService):
+            def __init__(self) -> None:
+                super().__init__()
+                self.created = True
 
         self.container.register_singleton(ServiceL, ServiceL)
         instance = self.container.resolve(ServiceL)
         self.assertIsInstance(instance, ServiceL)
+        self.assertTrue(instance.created)
 
     def test_di_resolution_error(self):
-        class UnregisteredService:
-            pass
+        from test_utilities import EmptyTestService
+
+        class UnregisteredService(EmptyTestService): ...
 
         with self.assertRaises(DIResolutionError):
             self.container.resolve(UnregisteredService)
@@ -662,7 +681,9 @@ class TestDIContainer(unittest.TestCase):
             def __init__(self) -> None:
                 self.value = "injected"
 
-        self.container.register_singleton(InjectedService, InjectedService)
+        # Register with global container for inject decorator to work
+        global_container = get_container()
+        global_container.register_singleton(InjectedService, InjectedService)
 
         @inject(InjectedService)
         def test_function(**kwargs: Any) -> str:
@@ -671,6 +692,9 @@ class TestDIContainer(unittest.TestCase):
 
         result = test_function()
         self.assertEqual(result, "injected")
+
+        # Clean up
+        global_container.clear()
 
     def test_service_registry(self):
         container1 = ServiceRegistry.get_container("test_container")
@@ -705,11 +729,16 @@ class TestDIContainer(unittest.TestCase):
             def __init__(self) -> None:
                 self.convenient = True
 
-        self.container.register_singleton(ConvenienceService, ConvenienceService)
+        # Register with global container for get_service to work
+        global_container = get_container()
+        global_container.register_singleton(ConvenienceService, ConvenienceService)
 
         service = get_service(ConvenienceService)
         self.assertIsInstance(service, ConvenienceService)
         self.assertTrue(service.convenient)
+
+        # Clean up
+        global_container.clear()
 
     def test_di_scope(self):
         with DIScope() as container:
@@ -790,11 +819,17 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(app.log.config, app.config)  # Define all tests
 
 
-def run_comprehensive_tests() -> None:
-    suite = unittest.TestSuite()
-    suite.addTest(unittest.TestLoader().loadTestsFromTestCase(TestDIContainer))
-    runner = unittest.TextTestRunner()
-    runner.run(suite)
+def dependency_injection_module_tests() -> bool:
+    """Run dependency injection tests and return success status."""
+    try:
+        suite = unittest.TestSuite()
+        suite.addTest(unittest.TestLoader().loadTestsFromTestCase(TestDIContainer))
+        runner = unittest.TextTestRunner()
+        result = runner.run(suite)
+        return result.wasSuccessful()
+    except Exception as e:
+        print(f"❌ Dependency injection tests failed: {e}")
+        return False
 
 
 if __name__ == "__main__":
@@ -810,4 +845,11 @@ if __name__ == "__main__":
     except ImportError:
         # Fallback for testing environment
         sys.path.insert(0, project_root)
-    run_comprehensive_tests()
+    success = dependency_injection_module_tests()
+    sys.exit(0 if success else 1)
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(dependency_injection_module_tests)

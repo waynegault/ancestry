@@ -359,7 +359,7 @@ class CredentialManager:
         }
 
 
-def run_comprehensive_tests():
+def credential_manager_module_tests() -> bool:
     """
     Run comprehensive tests for the CredentialManager class.
 
@@ -978,4 +978,12 @@ def run_comprehensive_tests():
 
 
 if __name__ == "__main__":
-    run_comprehensive_tests()
+    import sys
+    success = credential_manager_module_tests()
+    sys.exit(0 if success else 1)
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(credential_manager_module_tests)

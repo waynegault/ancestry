@@ -1,10 +1,39 @@
 """
-Smart DNA-GEDCOM Cross-Reference System for Ancestry Project
+DNA-GEDCOM Cross-Reference Intelligence & Advanced Genealogical Integration Engine
 
-This module provides intelligent cross-referencing between DNA match data and
-GEDCOM family tree data to identify verification opportunities, conflicts, and
-research priorities. Enhances genealogical research by combining genetic and
-documentary evidence.
+Sophisticated genealogical integration platform providing intelligent DNA-GEDCOM
+cross-referencing, advanced relationship validation, and comprehensive family tree
+analysis with AI-powered matching algorithms, relationship discovery, and
+professional-grade genealogical intelligence for DNA research and family history.
+
+DNA Integration Intelligence:
+• Advanced DNA-GEDCOM cross-referencing with intelligent matching algorithms and relationship validation
+• Sophisticated DNA match analysis with comprehensive relationship degree calculation and verification
+• Intelligent family tree integration with automated DNA match placement and relationship mapping
+• Advanced genetic relationship validation with statistical analysis and confidence scoring algorithms
+• Comprehensive DNA segment analysis with intelligent inheritance pattern recognition and validation
+• Integration with DNA analysis platforms for comprehensive genetic genealogy and research workflows
+
+Relationship Discovery:
+• Sophisticated relationship pathfinding with intelligent DNA evidence integration and validation
+• Advanced family tree reconstruction with DNA-guided relationship discovery and verification
+• Intelligent relationship hypothesis generation with statistical validation and confidence scoring
+• Comprehensive relationship conflict resolution with DNA evidence prioritization and analysis
+• Advanced relationship degree calculation with genetic distance analysis and statistical validation
+• Integration with genealogical research platforms for comprehensive relationship discovery workflows
+
+Genealogical Intelligence:
+• Advanced genealogical analysis with AI-powered insights and DNA-guided research recommendations
+• Sophisticated family tree optimization with DNA evidence integration and relationship validation
+• Intelligent research gap identification with DNA-guided priority scoring and opportunity analysis
+• Comprehensive genealogical data validation with DNA evidence verification and quality assessment
+• Advanced research automation with DNA-guided task generation and priority assignment algorithms
+• Integration with genealogical intelligence systems for comprehensive DNA-enhanced research workflows
+
+Foundation Services:
+Provides the essential DNA-GEDCOM integration infrastructure that enables sophisticated
+genealogical research through intelligent cross-referencing, comprehensive relationship
+validation, and professional DNA-enhanced genealogy for family history research workflows.
 
 Author: Ancestry Automation System
 Created: August 6, 2025
@@ -321,7 +350,7 @@ class DNAGedcomCrossReferencer:
 
         # Calculate combined scores for each person
         unique_matches = []
-        for person_id, matches in person_matches.items():
+        for _, matches in person_matches.items():
             # Take the best match for each person
             best_match = max(matches, key=lambda m: m['confidence'])
 
@@ -715,9 +744,10 @@ def dna_gedcom_crossref_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive DNA-GEDCOM cross-reference tests using standardized TestSuite format."""
-    return dna_gedcom_crossref_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(dna_gedcom_crossref_module_tests)
 
 
 if __name__ == "__main__":

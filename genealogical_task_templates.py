@@ -1,9 +1,39 @@
 """
-Genealogical Research Task Templates for Ancestry Project
+Genealogical Research Task Intelligence & Advanced Workflow Automation Engine
 
-This module provides specialized task templates for different types of genealogical
-research based on extracted data. Creates actionable, specific research tasks that
-leverage genealogical information to improve research productivity.
+Sophisticated research automation platform providing comprehensive genealogical task
+templates, intelligent research workflow generation, and advanced task management
+with AI-powered research prioritization, systematic investigation protocols, and
+professional-grade research automation for genealogical investigation workflows.
+
+Research Task Intelligence:
+• Advanced genealogical task templates with intelligent research workflow generation and optimization
+• Sophisticated research prioritization with AI-powered scoring algorithms and opportunity analysis
+• Intelligent task automation with comprehensive research protocol generation and execution
+• Advanced research gap analysis with intelligent opportunity identification and priority scoring
+• Comprehensive research validation with intelligent quality assessment and verification protocols
+• Integration with research management systems for comprehensive genealogical investigation workflows
+
+Workflow Automation:
+• Sophisticated research workflow generation with intelligent task sequencing and dependency management
+• Advanced research protocol automation with systematic investigation methodologies and best practices
+• Intelligent research coordination with multi-researcher collaboration and task distribution algorithms
+• Comprehensive research tracking with detailed progress monitoring and performance analytics
+• Advanced research optimization with intelligent workflow refinement and efficiency enhancement
+• Integration with research platforms for comprehensive genealogical workflow automation and management
+
+Research Intelligence:
+• Advanced genealogical research analysis with AI-powered insights and research recommendations
+• Sophisticated research pattern recognition with intelligent opportunity identification and analysis
+• Intelligent research strategy optimization with data-driven research planning and execution
+• Comprehensive research documentation with detailed investigation reports and findings analysis
+• Advanced research collaboration with intelligent task sharing and coordination protocols
+• Integration with genealogical intelligence systems for comprehensive research automation workflows
+
+Foundation Services:
+Provides the essential research task infrastructure that enables systematic,
+professional genealogical investigation through intelligent task generation,
+comprehensive workflow automation, and advanced research management for family history research.
 
 Author: Ancestry Automation System
 Created: August 6, 2025
@@ -1019,9 +1049,10 @@ def genealogical_task_templates_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive genealogical task templates tests using standardized TestSuite format."""
-    return genealogical_task_templates_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(genealogical_task_templates_module_tests)
 
 
 # =============================================================================

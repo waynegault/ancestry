@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 
 """
-health_monitor.py - Comprehensive Health Monitoring System
+Comprehensive Health Monitoring & Intelligent System Diagnostics Engine
 
+Advanced system health platform providing sophisticated monitoring, predictive
+analytics, and comprehensive diagnostics with intelligent alerting, automated
+health assessment, and professional-grade system monitoring for genealogical
+automation systems and research workflow health management and optimization.
+
+System Health Intelligence:
+• Advanced system health monitoring with intelligent diagnostics and predictive analytics algorithms
+• Sophisticated performance tracking with comprehensive metrics collection and analysis protocols
+• Intelligent health assessment with automated diagnostics and proactive issue identification
+• Advanced system analytics with detailed health insights and optimization recommendations
+• Comprehensive health validation with intelligent system integrity checking and verification
+• Integration with monitoring systems for comprehensive system health intelligence and management
+
+Predictive Analytics:
+• Sophisticated predictive health modeling with machine learning-based performance prediction
+• Advanced health trend analysis with intelligent pattern recognition and anomaly detection
+• Intelligent health forecasting with predictive system failure analysis and prevention protocols
+• Comprehensive health optimization with data-driven performance enhancement and system tuning
+• Advanced health correlation analysis with intelligent root cause identification and resolution
+• Integration with analytics platforms for comprehensive predictive health monitoring and optimization
+
+Automated Diagnostics:
+• Advanced automated diagnostics with intelligent system analysis and issue identification protocols
+• Sophisticated health alerting with intelligent notification systems and escalation procedures
+• Intelligent health recovery with automated remediation protocols and system healing algorithms
+• Comprehensive health reporting with detailed system health analysis and performance insights
+• Advanced health automation with intelligent system maintenance and optimization protocols
+• Integration with automation systems for comprehensive health management and system optimization
+
+Foundation Services:
+Provides the essential health monitoring infrastructure that enables reliable,
+high-performance system operation through intelligent health monitoring, comprehensive
+diagnostics, and professional system health management for genealogical automation workflows.
+
+Technical Implementation:
 Provides real-time health monitoring, session health scoring, early warning detection,
 and predictive analytics for the Ancestry automation system.
 """
@@ -1841,12 +1876,10 @@ register_function("get_performance_recommendations", get_performance_recommendat
 register_function("health_monitor_tests", health_monitor_tests)
 
 
-def run_comprehensive_tests():
-    """
-    Standardized test function for the test framework.
-    This function is required for integration with run_all_tests.py.
-    """
-    return health_monitor_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(health_monitor_tests)
 
 
 if __name__ == "__main__":

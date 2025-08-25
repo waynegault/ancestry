@@ -1,11 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Standardized Test Framework - Unified Testing Infrastructure
+Comprehensive Testing Infrastructure & Quality Assurance Engine
 
-Provides consistent test execution, output formatting, result reporting, and
-validation utilities across all modules in the Ancestry automation project
-with standardized colors, icons, and comprehensive test result tracking.
+Advanced testing framework providing sophisticated test execution, comprehensive
+validation, and intelligent quality assurance capabilities with standardized
+test suite management, performance monitoring, and automated quality assessment
+for reliable genealogical automation system validation and verification.
+
+Test Execution Framework:
+• Standardized test suite execution with comprehensive reporting and analytics
+• Advanced test orchestration with parallel execution and dependency management
+• Intelligent test discovery with automatic test registration and categorization
+• Comprehensive assertion utilities with detailed validation and error reporting
+• Advanced test lifecycle management with setup, execution, and cleanup phases
+• Integration with continuous integration systems for automated testing workflows
+
+Quality Assurance:
+• Comprehensive validation utilities with business rule enforcement and data integrity checks
+• Advanced performance monitoring with timing analysis and resource usage tracking
+• Intelligent test result aggregation with trend analysis and quality scoring
+• Automated regression detection with baseline comparison and deviation analysis
+• Comprehensive error handling with detailed debugging information and stack traces
+• Integration with system monitoring for real-time test execution visibility
+
+Testing Intelligence:
+• Advanced test analytics with success rate tracking and failure pattern analysis
+• Intelligent test prioritization with risk-based testing and impact assessment
+• Comprehensive test coverage analysis with code coverage and functional coverage metrics
+• Automated test maintenance with self-healing tests and adaptive test strategies
+• Performance benchmarking with baseline establishment and performance regression detection
+• Integration with quality gates for automated quality assessment and release validation
+
+Foundation Services:
+Provides the essential testing infrastructure that ensures reliable, high-quality
+genealogical automation through comprehensive validation, intelligent quality
+assessment, and systematic testing for professional research workflow reliability.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -18,8 +48,8 @@ import logging
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
-from typing import Any, Callable, ContextManager, Optional
+from contextlib import AbstractContextManager, contextmanager, suppress
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities
@@ -66,54 +96,72 @@ class Colors:
     RESET = '\033[0m'  # Alternative name for compatibility
 
     @staticmethod
+    def colorize(text: str, color_code: str) -> str:
+        """
+        Apply color formatting to text using the specified color code.
+
+        Consolidated method that eliminates 10 duplicate color formatting methods.
+        This implements DRY principles by providing a single implementation for
+        all color formatting operations.
+
+        Args:
+            text: The text to colorize
+            color_code: The ANSI color code to apply
+
+        Returns:
+            str: The text wrapped with the specified color code and reset
+        """
+        return f"{color_code}{text}{Colors.END}"
+
+    @staticmethod
     def green(text: str) -> str:
         """Return text in green color."""
-        return f"{Colors.GREEN}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.GREEN)
 
     @staticmethod
     def red(text: str) -> str:
         """Return text in red color."""
-        return f"{Colors.RED}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.RED)
 
     @staticmethod
     def yellow(text: str) -> str:
         """Return text in yellow color."""
-        return f"{Colors.YELLOW}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.YELLOW)
 
     @staticmethod
     def blue(text: str) -> str:
         """Return text in blue color."""
-        return f"{Colors.BLUE}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.BLUE)
 
     @staticmethod
     def magenta(text: str) -> str:
         """Return text in magenta color."""
-        return f"{Colors.MAGENTA}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.MAGENTA)
 
     @staticmethod
     def cyan(text: str) -> str:
         """Return text in cyan color."""
-        return f"{Colors.CYAN}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.CYAN)
 
     @staticmethod
     def white(text: str) -> str:
         """Return text in white color."""
-        return f"{Colors.WHITE}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.WHITE)
 
     @staticmethod
     def gray(text: str) -> str:
         """Return text in gray color."""
-        return f"{Colors.GRAY}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.GRAY)
 
     @staticmethod
     def bold(text: str) -> str:
         """Return text in bold formatting."""
-        return f"{Colors.BOLD}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.BOLD)
 
     @staticmethod
     def underline(text: str) -> str:
         """Return text with underline formatting."""
-        return f"{Colors.UNDERLINE}{text}{Colors.END}"
+        return Colors.colorize(text, Colors.UNDERLINE)
 
 
 def has_ansi_codes(text: Any) -> bool:
@@ -595,9 +643,10 @@ def test_framework_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return test_framework_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(test_framework_module_tests)
 
 
 if __name__ == "__main__":
@@ -830,7 +879,7 @@ def restore_debug_logging() -> None:
     logging.getLogger().setLevel(logging.INFO)
 
 
-def clean_test_output() -> ContextManager[None]:
+def clean_test_output() -> AbstractContextManager[None]:
     """
     Context manager for clean test output without debug noise.
 

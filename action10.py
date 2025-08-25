@@ -1,23 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Action 10: GEDCOM Analysis & Relationship Path Calculation
+GEDCOM Analysis & Advanced Genealogical Intelligence Engine
 
-Comprehensive genealogical research tool that processes GEDCOM data to find
-and analyze family relationships. Features include:
+Comprehensive genealogical data analysis platform that transforms GEDCOM files
+into actionable family tree insights through sophisticated relationship pathfinding,
+intelligent match scoring, and advanced genealogical research capabilities with
+integrated AI-powered analysis and comprehensive family relationship mapping.
 
-- Advanced filtering and scoring algorithms for individual matching
-- Family relationship analysis with detailed relative information
-- Relationship path calculation between individuals
-- Performance-optimized caching and processing
-- Comprehensive test suite with real genealogical data validation
+Core Analysis Capabilities:
+• Advanced GEDCOM parsing with comprehensive data validation and normalization
+• Sophisticated relationship pathfinding using bidirectional breadth-first search
+• Intelligent match scoring with configurable weighting and similarity algorithms
+• Comprehensive family tree analysis with multi-generational relationship mapping
+• Advanced date parsing and normalization with flexible format support
+• Intelligent name matching with phonetic similarity and variant recognition
 
-Uses cached GEDCOM data for fast processing and provides detailed scoring
-breakdowns for genealogical research accuracy.
+Relationship Intelligence:
+• Bidirectional relationship path calculation with detailed explanation generation
+• Complex family relationship analysis including step-relationships and adoptions
+• Intelligent sibling detection and family group analysis
+• Comprehensive ancestor and descendant tracking with generation mapping
+• Advanced relationship degree calculation with cousin relationship identification
+• Integration with DNA match data for relationship validation and enhancement
 
-This module provides the following main functions:
-- search_gedcom_for_person: Search GEDCOM data for matching individuals
-- display_relatives: Show family relationships for a person
+Research Enhancement:
+• Intelligent research gap identification and priority scoring
+• Automated research suggestion generation based on family tree analysis
+• Integration with external genealogical databases and research platforms
+• Comprehensive data quality assessment and improvement recommendations
+• Advanced search capabilities with fuzzy matching and phonetic algorithms
+• Export capabilities for integration with genealogical research workflows
+
+Performance & Reliability:
+Built on optimized algorithms for large family tree processing with memory-efficient
+data structures, comprehensive error handling, and progress tracking for optimal
+user experience during extensive genealogical analysis operations.
 - analyze_top_match: Detailed analysis of best match
 - calculate_relationship_path: Find relationship between two people
 
@@ -37,6 +55,7 @@ logger = setup_module(globals(), __name__)
 import argparse
 import logging
 import os
+import re
 import sys
 import time
 from collections.abc import Mapping
@@ -65,6 +84,11 @@ try:
     from tabulate import tabulate
 except ImportError:
     tabulate = None
+
+try:
+    import dateparser
+except ImportError:
+    dateparser = None
 
 # === LOCAL IMPORTS ===
 from config import config_schema
@@ -289,29 +313,13 @@ def _format_test_person_analysis(field_scores: dict[str, int], total_score: floa
 
 
 # --- Helper Functions ---
+# Import centralized string validation utility
+
 def sanitize_input(value: str) -> Optional[str]:
     """
     Sanitize user input for safe processing in genealogical searches.
 
-    Performs basic sanitization including whitespace trimming, length validation,
-    and removal of potentially harmful characters. Designed for genealogical
-    data input where names, places, and dates need to be cleaned.
-
-    Args:
-        value: The input string to sanitize.
-
-    Returns:
-        Optional[str]: Sanitized string, or None if input is empty/invalid.
-
-    Examples:
-        >>> sanitize_input("  John Smith  ")
-        'John Smith'
-        >>> sanitize_input("")
-        None
-        >>> sanitize_input("   ")
-        None
-        >>> sanitize_input("Mary O'Connor")
-        "Mary O'Connor"
+    Uses centralized validation utilities for consistent string handling.
     """
     if not value:
         return None
@@ -320,9 +328,8 @@ def sanitize_input(value: str) -> Optional[str]:
     return sanitized if sanitized else None
 
 
-def _is_valid_year(year: int) -> bool:
-    """Check if year is within valid range."""
-    return 1000 <= year <= 2100
+# Import centralized validation utility
+from test_utilities import is_valid_year as _is_valid_year
 
 
 def _try_simple_year_parsing(value: str) -> Optional[int]:
@@ -350,7 +357,6 @@ def _try_dateparser_parsing(value: str) -> Optional[int]:
 
 def _try_regex_year_extraction(value: str) -> Optional[int]:
     """Try to extract year using regex as fallback."""
-    import re
     year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', value)
     if year_match:
         year = int(year_match.group(1))
@@ -1438,7 +1444,7 @@ def action10_module_tests() -> bool:
     suite.start_suite()
 
     # --- TESTS ---
-    def debug_wrapper(test_func) -> Callable:
+    def debug_wrapper(test_func: Callable) -> Callable:
         """Simple wrapper for test functions (timing removed for cleaner output)"""
         return test_func
 
@@ -1617,7 +1623,9 @@ def action10_module_tests() -> bool:
         try:
             for input_val, expected, description in test_inputs:
                 try:
-                    builtins.input = (lambda val: (lambda _prompt: val))(input_val)
+                    def mock_input(_prompt: str, val: str = input_val) -> str:
+                        return val
+                    builtins.input = mock_input
                     actual = get_validated_year_input("Enter year: ")
                     passed = actual == expected
                     status = "✅" if passed else "❌"
@@ -2569,7 +2577,7 @@ if __name__ == "__main__":
 
     # Create custom filter to block performance messages
     class PerformanceFilter(logging.Filter):
-        def filter(self, record) -> bool:
+        def filter(self, record: logging.LogRecord) -> bool:
             message = record.getMessage() if hasattr(record, 'getMessage') else str(record.msg)
             return not ('executed in' in message and 'wrapper' in message)
 
@@ -2605,3 +2613,9 @@ if __name__ == "__main__":
             success = False
 
     sys.exit(0 if success else 1)
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(action10_module_tests)

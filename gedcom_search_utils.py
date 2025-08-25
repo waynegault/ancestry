@@ -1,11 +1,41 @@
 #!/usr/bin/env python3
 
 """
-GEDCOM Search Utilities - Advanced Genealogical Data Search
+GEDCOM Search Intelligence & Advanced Genealogical Discovery Engine
 
-Provides comprehensive GEDCOM file search capabilities with intelligent filtering,
-scoring algorithms, family relationship analysis, and optimized search patterns
-for efficient genealogical research and family tree data processing.
+Sophisticated genealogical search platform providing advanced GEDCOM analysis,
+intelligent relationship discovery, and comprehensive family tree exploration
+with optimized search algorithms, relationship pathfinding, and genealogical
+data intelligence for professional family history research and analysis.
+
+Search Intelligence:
+• Advanced GEDCOM search algorithms with fuzzy matching and phonetic similarity
+• Intelligent individual and family record matching with confidence scoring
+• Sophisticated relationship path calculation using optimized graph algorithms
+• Comprehensive name matching with variant recognition and standardization
+• Advanced date and place matching with flexible format support and normalization
+• Multi-criteria search with weighted scoring and relevance ranking
+
+Relationship Discovery:
+• Bidirectional relationship pathfinding with detailed explanation generation
+• Complex family relationship analysis including step-relationships and adoptions
+• Intelligent sibling detection and family group identification
+• Comprehensive ancestor and descendant tracking with generation mapping
+• Advanced relationship degree calculation with cousin relationship identification
+• Integration with DNA match data for relationship validation and enhancement
+
+Performance Optimization:
+• High-performance search algorithms with memory-efficient data structures
+• Advanced caching strategies with intelligent cache management and optimization
+• Optimized indexing for large genealogical datasets with fast retrieval
+• Parallel processing capabilities for concurrent search operations
+• Performance monitoring with search analytics and optimization recommendations
+• Integration with performance systems for comprehensive search optimization
+
+Foundation Services:
+Provides the essential GEDCOM search infrastructure that enables sophisticated
+genealogical discovery through intelligent search algorithms, comprehensive
+relationship analysis, and optimized performance for professional research workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -899,9 +929,10 @@ def gedcom_search_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive GEDCOM search utilities tests using standardized TestSuite format."""
-    return gedcom_search_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(gedcom_search_module_tests)
 
 
 # Test functions for comprehensive testing

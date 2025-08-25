@@ -1,22 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Comprehensive Test Runner for Ancestry Project
-Runs all unit tests and integration tests with advanced performance monitoring and optimization.
+Comprehensive Test Orchestration & Quality Assurance Engine
 
-Features:
-• Automatic test discovery with enhanced module descriptions
-• Parallel test execution for improved performance
-• Memory usage and CPU monitoring during test execution
-• Performance benchmarking and trend analysis
-• Test execution optimization with intelligent parallel processing
-• Detailed pass/fail status with timing metrics
+Advanced test execution platform providing systematic validation of the entire
+genealogical automation system through comprehensive test suite orchestration,
+intelligent quality assessment, and detailed performance analytics with
+automated test discovery and professional reporting for reliable system validation.
 
-This unified test runner provides:
-• Comprehensive test coverage across all 66 standardized modules
-• Detailed reporting showing what was tested and outcomes achieved
-• Performance metrics and optimization insights
-• Clear test results with enhanced descriptions
+Test Orchestration:
+• Comprehensive test suite execution with intelligent module discovery and coordination
+• Advanced test scheduling with dependency management and parallel execution capabilities
+• Sophisticated test reporting with detailed analytics, quality metrics, and performance insights
+• Intelligent test categorization with enhanced module descriptions and quality scoring
+• Comprehensive error handling with detailed debugging information and failure analysis
+• Integration with continuous integration systems for automated testing workflows
+
+Quality Assessment:
+• Advanced quality scoring with comprehensive code analysis and best practices validation
+• Intelligent quality gate enforcement with configurable thresholds and automated reporting
+• Comprehensive linting integration with automated code style and quality checks
+• Performance monitoring with timing analysis, resource usage tracking, and optimization recommendations
+• Automated regression detection with baseline comparison and deviation analysis
+• Integration with quality assessment tools for comprehensive system validation
+
+System Validation:
+• Complete system health validation with comprehensive module testing and verification
+• Advanced test analytics with success rate tracking, failure pattern analysis, and trend monitoring
+• Intelligent test prioritization with risk-based testing and impact assessment strategies
+• Comprehensive test coverage analysis with functional coverage metrics and gap identification
+• Automated test maintenance with self-healing tests and adaptive testing strategies
+• Professional reporting with detailed test results, quality insights, and actionable recommendations
+
+Foundation Services:
+Provides the essential test orchestration infrastructure that ensures reliable,
+high-quality genealogical automation through systematic validation, comprehensive
+quality assessment, and professional testing for production-ready research workflows.
 
 Usage:
     python run_all_tests.py           # Run all tests with detailed reporting
@@ -310,8 +329,9 @@ def discover_test_modules() -> list[str]:
                 if has_interactive:
                     continue
 
-                # Look for the standardized test function (with or without parentheses)
-                if "def run_comprehensive_tests" in content:
+                # Look for the standardized test function (either def or factory pattern)
+                if ("def run_comprehensive_tests" in content or
+                    "run_comprehensive_tests = create_standard_test_runner" in content):
                     # Convert to relative path from project root
                     relative_path = python_file.relative_to(project_root)
                     test_modules.append(str(relative_path))
@@ -1067,7 +1087,7 @@ def main() -> bool:
     # Show failed modules first if any
     if failed_count > 0:
         print("\n❌ FAILED MODULES:")
-        for module_name, description, success in results:
+        for module_name, _, success in results:
             if not success:
                 print(f"   • {module_name}")
 

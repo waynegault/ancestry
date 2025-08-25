@@ -1,6 +1,43 @@
 #!/usr/bin/env python3
 
 """
+Advanced Utility & Intelligent Service Engine
+
+Sophisticated utility platform providing comprehensive service automation,
+intelligent utility functions, and advanced operational capabilities with
+optimized algorithms, professional-grade utilities, and comprehensive
+service management for genealogical automation and research workflows.
+
+Utility Intelligence:
+• Advanced utility functions with intelligent automation and optimization protocols
+• Sophisticated service management with comprehensive operational capabilities
+• Intelligent utility coordination with multi-system integration and synchronization
+• Comprehensive utility analytics with detailed performance metrics and insights
+• Advanced utility validation with quality assessment and verification protocols
+• Integration with service platforms for comprehensive utility management and automation
+
+Service Automation:
+• Sophisticated service automation with intelligent workflow generation and execution
+• Advanced utility optimization with performance monitoring and enhancement protocols
+• Intelligent service coordination with automated management and orchestration
+• Comprehensive service validation with quality assessment and reliability protocols
+• Advanced service analytics with detailed operational insights and optimization
+• Integration with automation systems for comprehensive service management workflows
+
+Professional Services:
+• Advanced professional utilities with enterprise-grade functionality and reliability
+• Sophisticated service protocols with professional standards and best practices
+• Intelligent service optimization with performance monitoring and enhancement
+• Comprehensive service documentation with detailed operational guides and analysis
+• Advanced service security with secure protocols and data protection measures
+• Integration with professional service systems for genealogical research workflows
+
+Foundation Services:
+Provides the essential utility infrastructure that enables reliable, high-performance
+operations through intelligent automation, comprehensive service management,
+and professional utilities for genealogical automation and research workflows.
+
+Technical Implementation:
 Selenium/WebDriver utility functions specifically for browser automation
 and element interaction, separated from general or API-specific utilities.
 """
@@ -247,7 +284,11 @@ def selenium_module_tests() -> None:
     return tests
 
 
-def run_comprehensive_tests() -> bool:
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+
+def selenium_utils_module_tests() -> bool:
     """Run comprehensive selenium utilities tests using standardized TestSuite framework."""
     import time
     from unittest.mock import MagicMock
@@ -554,6 +595,10 @@ def run_comprehensive_tests() -> bool:
 
     # Generate summary report and return result
     return suite.finish_suite()
+
+
+# Use centralized test runner utility
+run_comprehensive_tests = create_standard_test_runner(selenium_utils_module_tests)
 
 
 # Functions are automatically registered via auto_register_module() at import

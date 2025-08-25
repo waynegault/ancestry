@@ -839,9 +839,7 @@ def database_manager_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive database manager tests using standardized TestSuite format."""
-    return database_manager_module_tests()
+
 
 
 # Test functions for comprehensive testing
@@ -936,6 +934,12 @@ def test_transaction_isolation() -> None:
 # ==============================================
 # Standalone Test Block
 # ==============================================
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(database_manager_module_tests)
+
+
 if __name__ == "__main__":
     from core_imports import import_context
 

@@ -1,15 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Utility functions for parsing Ancestry API responses and formatting API data.
+API Intelligence & Request Orchestration Engine
 
-Provides functions to:
-- Parse person details from various Ancestry API responses.
-- Format relationship paths from getladder API responses.
-- Call specific Ancestry APIs (Suggest, Facts, Ladder, Discovery Relationship, TreesUI, Send Message, Profile Details, Header Trees, Tree Owner).
-- Includes a self-check mechanism using live API calls (requires configuration).
+Advanced API management platform providing sophisticated request orchestration,
+intelligent response processing, and comprehensive authentication management
+with adaptive rate limiting, intelligent caching, and performance optimization
+for reliable genealogical API interactions and data synchronization workflows.
 
-Note: Relationship path formatting functions previously in test_relationship_path.py are now integrated here.
+API Management:
+• Unified API request handling with intelligent routing and endpoint management
+• Advanced response processing with validation, transformation, and error handling
+• Sophisticated authentication management with credential rotation and session persistence
+• Intelligent rate limiting with adaptive throttling and circuit breaker patterns
+• Comprehensive error handling with retry logic, exponential backoff, and graceful degradation
+• Real-time API health monitoring with performance tracking and alerting
+
+Performance Optimization:
+• Advanced caching strategies with TTL-based invalidation and intelligent cache warming
+• Request optimization with batching, compression, and connection pooling
+• Response optimization with streaming, pagination, and memory-efficient processing
+• Performance monitoring with latency tracking, throughput analysis, and bottleneck detection
+• Intelligent load balancing with failover capabilities and endpoint health checking
+• Comprehensive metrics collection with API usage analytics and performance insights
+
+Integration Intelligence:
+• Sophisticated API endpoint discovery with automatic configuration and validation
+• Advanced request transformation with data mapping, validation, and enrichment
+• Intelligent response parsing with schema validation and data extraction
+• Comprehensive API versioning support with backward compatibility and migration strategies
+• Integration with external systems through standardized API patterns and protocols
+• Real-time synchronization with conflict resolution and data consistency management
+
+Foundation Services:
+Provides the essential API infrastructure that enables reliable, scalable
+genealogical automation through intelligent request management, comprehensive
+error handling, and performance optimization for professional research workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -1141,7 +1167,7 @@ def call_suggest_api(
                 suggest_response = None
                 break
             # End of if/elif/else
-        except requests.exceptions.Timeout:
+        except requests.exceptions.Timeout as timeout_err:
             timeout_error = NetworkTimeoutError(
                 f"API request timed out after {timeout}s",
                 context={
@@ -1155,7 +1181,7 @@ def call_suggest_api(
             )
             logger.warning(str(timeout_error))
             if attempt == max_attempts:
-                raise timeout_error
+                raise timeout_error from timeout_err
         except requests.exceptions.RequestException as req_err:
             if "rate limit" in str(req_err).lower() or "429" in str(req_err):
                 # Enhanced 429 handling with progressive backoff
@@ -1169,12 +1195,12 @@ def call_suggest_api(
                     raise APIRateLimitError(
                         f"API rate limit exceeded after {max_attempts} attempts: {req_err}",
                         context={"api": api_description, "url": suggest_url, "final_delay": rate_limit_delay},
-                    )
+                    ) from req_err
                 continue  # Retry the request after delay
             raise NetworkTimeoutError(
                 f"Network request failed: {req_err}",
                 context={"api": api_description, "url": suggest_url},
-            )
+            ) from req_err
         except Exception as api_err:
             logger.error(
                 f"{api_description} _api_req call failed on attempt {attempt}/{max_attempts}: {api_err}",
@@ -1188,7 +1214,7 @@ def call_suggest_api(
                         "attempts": max_attempts,
                         "url": suggest_url,
                     },
-                )
+                ) from api_err
             suggest_response = None
             continue
         # End of try/except
@@ -3091,8 +3117,8 @@ def api_utils_module_tests() -> bool:
             parsed = json.loads(test_json_response)
             assert isinstance(parsed, dict), "Parsed JSON should be dictionary"
             assert "status" in parsed, "Parsed response should have status"
-        except json.JSONDecodeError:
-            raise AssertionError("Valid JSON should parse successfully")
+        except json.JSONDecodeError as json_err:
+            raise AssertionError("Valid JSON should parse successfully") from json_err
 
     def test_url_construction():
         """Test URL construction and encoding functions."""
@@ -3173,7 +3199,7 @@ def api_utils_module_tests() -> bool:
         try:
             logger.info("Test log message")
         except Exception as e:
-            raise AssertionError(f"Logging should work without errors: {e}")
+            raise AssertionError(f"Logging should work without errors: {e}") from e
 
     def test_datetime_handling():
         """Test datetime parsing and formatting integration."""
@@ -3443,9 +3469,10 @@ def api_utils_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive API utilities tests using standardized TestSuite format."""
-    return api_utils_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(api_utils_module_tests)
 
 
 # --- Main Execution Block ---

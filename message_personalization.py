@@ -1,4 +1,41 @@
 """
+Intelligent Messaging & Communication Automation Engine
+
+Advanced messaging platform providing sophisticated communication automation,
+intelligent message processing, and comprehensive messaging workflows with
+AI-powered personalization, automated messaging protocols, and professional-grade
+communication management for genealogical research and collaboration workflows.
+
+Messaging Intelligence:
+• Advanced message automation with intelligent communication protocols and personalization
+• Sophisticated message processing with AI-powered content analysis and optimization
+• Intelligent message routing with advanced distribution and delivery management
+• Comprehensive message analytics with detailed communication metrics and insights
+• Advanced message coordination with multi-channel communication and synchronization
+• Integration with communication systems for comprehensive messaging automation
+
+Communication Automation:
+• Sophisticated communication workflows with intelligent message sequencing and timing
+• Advanced message personalization with AI-powered content generation and customization
+• Intelligent communication optimization with performance monitoring and enhancement
+• Comprehensive message validation with quality assessment and delivery verification
+• Advanced communication analytics with detailed messaging insights and optimization
+• Integration with automation platforms for comprehensive communication management
+
+Professional Communication:
+• Advanced professional messaging with intelligent tone and content optimization
+• Sophisticated communication protocols with professional standards and best practices
+• Intelligent message coordination with multi-stakeholder communication management
+• Comprehensive communication documentation with detailed messaging reports and analysis
+• Advanced communication security with secure messaging protocols and data protection
+• Integration with professional communication systems for genealogical research workflows
+
+Foundation Services:
+Provides the essential messaging infrastructure that enables professional,
+intelligent communication through advanced automation, comprehensive messaging
+management, and sophisticated communication for genealogical research workflows.
+
+Technical Implementation:
 Enhanced Message Personalization System for Ancestry Project
 
 This module provides dynamic message generation capabilities that leverage
@@ -1243,9 +1280,10 @@ def message_personalization_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive message personalization tests using standardized TestSuite format."""
-    return message_personalization_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(message_personalization_module_tests)
 
 
 if __name__ == "__main__":

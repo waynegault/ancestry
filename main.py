@@ -1,31 +1,38 @@
 #!/usr/bin/env python3
 
 """
-main.py - Ancestry Research Automation Main Entry Point
+Ancestry Research Automation - Main Application Controller
 
-Provides the main application entry point with menu-driven interface for
-all automation workflows including DNA match gathering, inbox processing,
-messaging, and genealogical research tools.
+Central orchestration hub for comprehensive genealogical research automation.
+Provides unified access to all research workflows through an intelligent menu
+system with integrated session management, configuration validation, and
+resource monitoring for optimal performance and reliability.
 
-Main Features:
-- Interactive menu system for all automation actions
-- Configuration validation and environment setup
-- Session management and authentication handling
-- Memory monitoring and resource cleanup
-- Comprehensive error handling and logging
-- Action coordination and workflow management
+Core Capabilities:
+• Interactive command center with guided workflow selection
+• Automated session lifecycle management with authentication handling
+• Real-time memory monitoring and resource optimization
+• Comprehensive error recovery with graceful degradation
+• Configuration validation and environment health checks
+• Integrated logging and telemetry for operational insights
 
-Available Actions:
-1. DNA Match Gathering (Action 6)
-2. Inbox Processing (Action 7)
-3. Messaging Automation (Action 8)
-4. Productive Message Processing (Action 9)
-5. GEDCOM Analysis (Action 10)
-6. Live API Research (Action 11)
+Research Workflows:
+• Action 6: DNA Match Discovery & Database Synchronization
+• Action 7: Intelligent Inbox Processing with AI Classification
+• Action 8: Automated Messaging with Personalization Engine
+• Action 9: Productive Message Analysis & Task Generation
+• Action 10: GEDCOM Analysis with Relationship Pathfinding
+• Action 11: Live API Research with Advanced Scoring
 
-Quality Score: Central application controller with comprehensive menu system
-and action coordination. Could benefit from improved modularity and reduced
-complexity in the main menu loop.
+Architecture:
+Built on modular session management architecture with dependency injection,
+adaptive rate limiting, and comprehensive error handling. Integrates with
+SQLAlchemy for data persistence, Selenium for web automation, and custom
+AI interfaces for intelligent content processing.
+
+Quality Focus:
+Emphasizes reliability, performance, and user experience through systematic
+testing, quality gates, and continuous monitoring of operational metrics.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -1831,7 +1838,7 @@ def main() -> None:
                     # Build a list of (line_index, setting_line) for settings only
                     settings = [(i, line.strip()) for i, line in enumerate(lines) if line.strip() and not line.strip().startswith("#")]
                     print("\nCurrent .env Settings:")
-                    for idx, (line_idx, setting) in enumerate(settings, 1):
+                    for idx, (_, setting) in enumerate(settings, 1):
                         print(f"{idx}. {setting}")
                     print("\nEnter the number of the setting to edit, or 'q' to cancel.")
                     sel = input("Select setting: ").strip().lower()

@@ -1,6 +1,0 @@
-{
-  "ai_provider": "deepseek",
-  "app_mode": "testing",
-  "enable_task_dedup": true,
-  "enable_task_enrichment": true
-}

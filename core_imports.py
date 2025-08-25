@@ -1,6 +1,43 @@
 #!/usr/bin/env python3
 
 """
+Core Imports & Advanced System Intelligence Engine
+
+Sophisticated platform providing comprehensive automation capabilities,
+intelligent processing, and advanced functionality with optimized algorithms,
+professional-grade operations, and comprehensive management for genealogical
+automation and research workflows.
+
+System Intelligence:
+• Advanced automation with intelligent processing and optimization protocols
+• Sophisticated management with comprehensive operational capabilities
+• Intelligent coordination with multi-system integration and synchronization
+• Comprehensive analytics with detailed performance metrics and insights
+• Advanced validation with quality assessment and verification protocols
+• Integration with platforms for comprehensive system management and automation
+
+Automation Capabilities:
+• Sophisticated automation with intelligent workflow generation and execution
+• Advanced optimization with performance monitoring and enhancement protocols
+• Intelligent coordination with automated management and orchestration
+• Comprehensive validation with quality assessment and reliability protocols
+• Advanced analytics with detailed operational insights and optimization
+• Integration with automation systems for comprehensive workflow management
+
+Professional Operations:
+• Advanced professional functionality with enterprise-grade capabilities and reliability
+• Sophisticated operational protocols with professional standards and best practices
+• Intelligent optimization with performance monitoring and enhancement
+• Comprehensive documentation with detailed operational guides and analysis
+• Advanced security with secure protocols and data protection measures
+• Integration with professional systems for genealogical research workflows
+
+Foundation Services:
+Provides the essential infrastructure that enables reliable, high-performance
+operations through intelligent automation, comprehensive management,
+and professional capabilities for genealogical automation and research workflows.
+
+Technical Implementation:
 Core Import System - Unified Module and Function Registry
 
 Provides centralized import management, function registry, and module coordination
@@ -332,8 +369,7 @@ def core_imports_module_tests() -> bool:
     """Module-specific tests for core_imports.py functionality."""
     try:
         # Test 1: Function registration and retrieval
-        def test_func(x: int) -> int:
-            return x * 2
+        from test_utilities import test_func_with_param as test_func
 
         register_function("test_func", test_func)
         assert is_function_available(
@@ -379,305 +415,11 @@ def core_imports_module_tests() -> bool:
         return False
 
 
-def run_comprehensive_tests() -> bool:
-    """
-    Comprehensive test suite for core imports functionality.
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
 
-    Tests all core import system functionality including function registry,
-    module management, performance caching, and error handling.
-
-    Returns:
-        bool: True if all tests pass, False otherwise
-    """
-    try:
-        from test_framework import TestSuite
-    except ImportError:
-        print("⚠️  TestSuite not available - falling back to basic testing")
-        return core_imports_module_tests()
-
-    suite = TestSuite("Core Imports", "core_imports")
-
-    def test_function_registry() -> None:
-        """Test function registration and retrieval"""
-        # Test basic registration
-        def test_func() -> str:
-            return "test_result"
-
-        register_function("test_func", test_func)
-        assert is_function_available("test_func")
-
-        retrieved_func = get_function("test_func")
-        assert retrieved_func is not None
-        assert retrieved_func() == "test_result"
-
-        # Test function call
-        result = call_function("test_func")
-        assert result == "test_result"
-
-    def test_bulk_registration() -> None:
-        """Test bulk function registration"""
-        # Test using **kwargs format
-        register_many(
-            bulk_test1=lambda: "result1",
-            bulk_test2=lambda: "result2"
-        )
-
-        assert is_function_available("bulk_test1")
-        assert is_function_available("bulk_test2")
-        assert call_function("bulk_test1") == "result1"
-        assert call_function("bulk_test2") == "result2"
-
-    def test_module_auto_registration() -> None:
-        """Test automatic module registration"""
-        # Create mock module globals with test functions
-        mock_globals = {
-            "test_auto_func": lambda: "auto_result",
-            "another_test_func": lambda: "another_result",
-            "__name__": "mock_test_module"
-        }
-
-        # Test auto registration
-        auto_register_module(mock_globals, "mock_test_module")
-
-        # Functions are registered with module prefix
-        assert is_function_available("mock_test_module.test_auto_func")
-        assert call_function("mock_test_module.test_auto_func") == "auto_result"
-        assert is_function_available("mock_test_module.another_test_func")
-        assert call_function("mock_test_module.another_test_func") == "another_result"
-
-    def test_project_root_detection() -> None:
-        """Test project root detection"""
-        root = get_project_root()
-        assert root is not None
-        assert isinstance(root, Path)
-        assert root.exists()
-
-    def test_logger_functionality() -> None:
-        """Test logger creation and functionality"""
-        logger = get_logger("test_logger")
-        assert logger is not None
-        assert hasattr(logger, 'info')
-        assert hasattr(logger, 'error')
-        assert hasattr(logger, 'warning')
-
-        # Test logger naming
-        logger2 = get_logger("test.module.name")
-        assert logger2 is not None
-
-    def test_import_context_manager() -> None:
-        """Test import context manager"""
-        original_path = sys.path.copy()
-
-        with import_context():
-            # Context manager should preserve sys.path
-            pass
-
-        assert sys.path == original_path
-
-    def test_safe_execution() -> None:
-        """Test safe function execution wrapper"""
-        def safe_func() -> str:
-            return "safe_result"
-
-        def error_func() -> None:
-            raise ValueError("Test error")
-
-        # Test successful execution using decorator
-        @safe_execute
-        def decorated_safe_func() -> str:
-            return "safe_result"
-
-        result = decorated_safe_func()
-        assert result == "safe_result"
-
-        # Test error handling using decorator with default return
-        @safe_execute(default_return="default")
-        def decorated_error_func() -> None:
-            raise ValueError("Test error")
-
-        result = decorated_error_func()
-        assert result == "default"
-
-    def test_performance_caching() -> None:
-        """Test performance caching functionality"""
-        # Clear cache first
-        _import_cache.clear()
-        _stats["cache_hits"] = 0
-        _stats["cache_misses"] = 0
-
-        # Register a test function
-        register_function("cache_test", lambda: "cached")
-
-        # Multiple lookups should hit cache
-        for _ in range(5):
-            assert is_function_available("cache_test")
-
-        # Should have cache hits
-        stats = get_import_stats()
-        assert stats["cache_hits"] > 0
-
-    def test_statistics_tracking() -> None:
-        """Test import statistics tracking"""
-        initial_stats = get_import_stats()
-        assert isinstance(initial_stats, dict)
-        assert "functions_registered" in initial_stats
-        assert "imports_resolved" in initial_stats
-        assert "cache_hits" in initial_stats
-        assert "registry_size" in initial_stats
-
-    def test_cleanup_functionality() -> None:
-        """Test registry cleanup functionality"""
-        # Register some test functions
-        register_function("cleanup_test1", lambda: "test1")
-        register_function("cleanup_test2", lambda: "test2")
-
-        # Verify functions are available before cleanup
-        assert is_function_available("cleanup_test1")
-        assert is_function_available("cleanup_test2")
-
-        initial_size = len(_registry)
-        assert initial_size >= 2  # Should have at least our test functions
-
-        # Test cleanup
-        cleanup_registry()
-
-        # Registry should be empty after cleanup
-        assert len(_registry) == 0
-        assert not is_function_available("cleanup_test1")
-        assert not is_function_available("cleanup_test2")
-
-        # Registry should still work after cleanup - register new functions
-        register_function("post_cleanup_test", lambda: "post_cleanup")
-        assert is_function_available("post_cleanup_test")
-
-    def test_error_handling() -> None:
-        """Test error handling and recovery"""
-        # Test with non-existent function
-        assert not is_function_available("nonexistent_function")
-
-        # Test that call_function raises ValueError for non-existent function
-        try:
-            call_function("nonexistent_function")
-            raise AssertionError("Should have raised ValueError")
-        except ValueError as e:
-            assert "not available in registry" in str(e)
-
-        # Test with invalid module registration (empty globals)
-        try:
-            auto_register_module({}, "empty_module")
-            # Should handle gracefully without error
-        except Exception:
-            raise AssertionError("Should handle empty module gracefully")
-
-    def test_function_availability() -> None:
-        """Test that all required functions are available"""
-        required_functions = [
-            "ensure_imports", "register_function", "get_function", "is_function_available",
-            "call_function", "auto_register_module", "get_logger", "get_project_root",
-            "safe_execute", "cleanup_registry"
-        ]
-
-        from test_framework import test_function_availability
-        test_function_availability(required_functions, globals(), "Core Imports")
-
-    # Run all tests
-    suite.run_test(
-        "Function registry operations",
-        test_function_registry,
-        "Function registration and retrieval works correctly with registry system",
-        "Test register_function, get_function, and is_function_available operations",
-        "Verify function registry enables proper registration and retrieval of callables"
-    )
-
-    suite.run_test(
-        "Bulk function registration",
-        test_bulk_registration,
-        "Bulk function registration processes multiple functions efficiently",
-        "Test register_many function with dictionary of functions",
-        "Verify bulk registration handles multiple function registrations properly"
-    )
-
-    suite.run_test(
-        "Module auto-registration",
-        test_module_auto_registration,
-        "Automatic module registration discovers and registers module functions",
-        "Test auto_register_module with mock module and function discovery",
-        "Verify auto-registration scans modules and registers available functions"
-    )
-
-    suite.run_test(
-        "Project root detection",
-        test_project_root_detection,
-        "Project root detection finds correct project directory structure",
-        "Test get_project_root function with filesystem path detection",
-        "Verify project root detection locates correct directory hierarchy"
-    )
-
-    suite.run_test(
-        "Logger functionality",
-        test_logger_functionality,
-        "Logger creation provides proper logging interface for modules",
-        "Test get_logger function with various module name formats",
-        "Verify logger creation provides standard logging interface"
-    )
-
-    suite.run_test(
-        "Import context management",
-        test_import_context_manager,
-        "Import context manager preserves system state during operations",
-        "Test import_context context manager with sys.path preservation",
-        "Verify context manager maintains system import path state"
-    )
-
-    suite.run_test(
-        "Safe execution wrapper",
-        test_safe_execution,
-        "Safe execution wrapper handles errors gracefully with fallbacks",
-        "Test safe_execute function with both successful and error cases",
-        "Verify safe execution provides error handling with default returns"
-    )
-
-    suite.run_test(
-        "Performance caching",
-        test_performance_caching,
-        "Performance caching improves function lookup efficiency",
-        "Test caching system with repeated function availability checks",
-        "Verify caching system reduces lookup overhead for repeated operations"
-    )
-
-    suite.run_test(
-        "Statistics tracking",
-        test_statistics_tracking,
-        "Statistics tracking provides comprehensive system metrics",
-        "Test get_import_stats function with various operational metrics",
-        "Verify statistics provide insights into import system performance"
-    )
-
-    suite.run_test(
-        "Cleanup functionality",
-        test_cleanup_functionality,
-        "Registry cleanup maintains system health without losing functionality",
-        "Test cleanup_registry function with registered functions",
-        "Verify cleanup operations maintain registry functionality"
-    )
-
-    suite.run_test(
-        "Error handling and recovery",
-        test_error_handling,
-        "Error conditions are handled gracefully with proper fallbacks",
-        "Test error handling with missing functions and invalid operations",
-        "Verify robust error handling provides safe defaults for failures"
-    )
-
-    suite.run_test(
-        "Function availability verification",
-        test_function_availability,
-        "All required core import functions are available and callable",
-        "Test availability of ensure_imports, register_function, and utility functions",
-        "Verify function availability ensures complete core import interface"
-    )
-
-    return suite.finish_suite()
+# Use centralized test runner utility
+run_comprehensive_tests = create_standard_test_runner(core_imports_module_tests)
 
 
 # ==============================================

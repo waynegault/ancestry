@@ -3,20 +3,41 @@
 #!/usr/bin/env python3
 
 """
-Performance Monitor - Advanced Performance Tracking & Optimization
+Performance Intelligence & System Optimization Engine
 
-This module provides comprehensive performance monitoring, profiling,
-and optimization recommendations for the Ancestry project.
+Advanced performance monitoring and optimization platform providing comprehensive
+system health tracking, intelligent performance analysis, and automated optimization
+recommendations with real-time metrics collection, predictive analytics, and
+proactive system health management for optimal genealogical automation performance.
 
-Features:
-- Function execution time tracking
-- Memory usage monitoring
-- Database query performance analysis
-- Cache hit/miss ratio tracking
-- API response time monitoring
-- Automated performance alerts
-- Performance trend analysis
-- Optimization recommendations
+Performance Analytics:
+• Real-time performance metrics collection with comprehensive system monitoring
+• Advanced profiling capabilities with function-level timing and resource usage analysis
+• Intelligent performance trend analysis with predictive modeling and forecasting
+• Comprehensive bottleneck detection with automated root cause analysis
+• Advanced memory usage tracking with leak detection and optimization recommendations
+• Database performance monitoring with query optimization and index recommendations
+
+System Health Monitoring:
+• Comprehensive system resource monitoring with CPU, memory, and disk usage tracking
+• Advanced alerting system with configurable thresholds and notification channels
+• Intelligent health scoring with predictive failure detection and prevention
+• Real-time system diagnostics with automated issue detection and resolution
+• Performance baseline establishment with deviation detection and alerting
+• Comprehensive logging and audit trails for performance analysis and debugging
+
+Optimization Intelligence:
+• Automated performance optimization recommendations with impact analysis
+• Intelligent resource allocation with dynamic scaling and load balancing
+• Advanced caching strategies with intelligent cache management and optimization
+• Performance tuning automation with configuration optimization and adjustment
+• Comprehensive performance reporting with detailed analytics and insights
+• Integration with system monitoring tools for comprehensive observability
+
+Research Enhancement:
+Provides the essential performance infrastructure that ensures optimal system
+performance for genealogical automation through intelligent monitoring, proactive
+optimization, and comprehensive system health management for reliable research workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -953,7 +974,11 @@ def get_system_health_score() -> float:
 # COMPREHENSIVE TEST SUITE
 # ==============================================
 
-def run_comprehensive_tests() -> bool:
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+
+def performance_monitor_module_tests() -> bool:
     """
     Comprehensive test suite for performance monitoring functionality.
 
@@ -1335,6 +1360,10 @@ def run_comprehensive_tests() -> bool:
     )
 
     return suite.finish_suite()
+
+
+# Use centralized test runner utility
+run_comprehensive_tests = create_standard_test_runner(performance_monitor_module_tests)
 
 
 def _run_basic_tests() -> bool:

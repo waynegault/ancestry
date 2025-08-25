@@ -1,4 +1,41 @@
 """
+Performance Intelligence & Advanced System Optimization Engine
+
+Sophisticated performance platform providing comprehensive system optimization,
+intelligent performance monitoring, and advanced analytics with real-time
+performance tracking, automated optimization, and professional-grade performance
+management for genealogical automation and research workflow optimization.
+
+Performance Intelligence:
+• Advanced performance monitoring with intelligent metrics collection and analysis
+• Sophisticated performance optimization with automated tuning and enhancement protocols
+• Intelligent performance analytics with detailed insights and optimization recommendations
+• Comprehensive performance validation with quality assessment and verification protocols
+• Advanced performance coordination with multi-system optimization and synchronization
+• Integration with monitoring systems for comprehensive performance intelligence
+
+System Optimization:
+• Sophisticated system tuning with intelligent optimization algorithms and enhancement
+• Advanced resource management with optimized allocation and utilization protocols
+• Intelligent performance scaling with automated resource adjustment and optimization
+• Comprehensive performance testing with detailed analysis and validation protocols
+• Advanced performance automation with intelligent optimization and enhancement workflows
+• Integration with optimization platforms for comprehensive system performance management
+
+Analytics & Monitoring:
+• Advanced performance analytics with detailed metrics analysis and trend monitoring
+• Sophisticated performance reporting with comprehensive insights and recommendations
+• Intelligent performance alerting with automated notification and escalation protocols
+• Comprehensive performance documentation with detailed analysis reports and insights
+• Advanced performance integration with multi-system coordination and optimization
+• Integration with analytics systems for comprehensive performance monitoring and analysis
+
+Foundation Services:
+Provides the essential performance infrastructure that enables high-performance,
+optimized system operation through intelligent monitoring, comprehensive optimization,
+and professional performance management for genealogical automation workflows.
+
+Technical Implementation:
 Performance Monitoring Dashboard for Ancestry Project
 
 This module provides comprehensive performance monitoring and reporting
@@ -457,9 +494,10 @@ def performance_dashboard_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive performance dashboard tests using standardized TestSuite format."""
-    return performance_dashboard_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(performance_dashboard_module_tests)
 
 
 if __name__ == "__main__":
