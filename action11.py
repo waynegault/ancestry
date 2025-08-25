@@ -63,6 +63,164 @@ _edit_relationships_cache: dict[str, dict] = {}
 _cached_fraser_person_id = None
 _cached_fraser_name = None
 
+
+# --- Internal helpers (behavior-preserving refactor; typed; no I/O side effects) ---
+from typing import cast
+
+
+def _get_tree_id(session_manager: SessionManager) -> Optional[str]:
+    """Return the active tree_id from session or test fallback; None if unavailable."""
+    tree_id = getattr(session_manager, "my_tree_id", None)
+    if not tree_id:
+        tree_id = getattr(config_schema.test, "test_tree_id", "")
+    return tree_id or None
+
+
+def _build_treesui_url(session_manager: SessionManager, full_name: str) -> tuple[str, str]:
+    """Build TreesUI persons endpoint URL and return (url, tree_id).
+
+    Raises ValueError if no tree_id is available.
+    """
+    tree_id = _get_tree_id(session_manager)
+    if not tree_id:
+        raise ValueError("No tree ID available for enhanced TreesUI search")
+    base_url = config_schema.api.base_url.rstrip('/')
+    from urllib.parse import quote
+    encoded_name = quote(full_name)
+    endpoint = f"/api/treesui-list/trees/{tree_id}/persons"
+    params = (
+        "name=" + encoded_name
+        + "&fields=EVENTS,GENDERS,KINSHIP,NAMES,RELATIONS"
+        + "&isGetFullPersonObject=true"
+    )
+    return f"{base_url}{endpoint}?{params}", tree_id
+
+
+def _parse_treesui_response(response: Any) -> list[dict[str, Any]]:
+    """Normalize various possible response shapes into a list of person dicts."""
+    persons: list[dict[str, Any]] = []
+    if not response:
+        return persons
+    if isinstance(response, dict):
+        if "persons" in response and isinstance(response["persons"], list):
+            return cast(list[dict[str, Any]], response["persons"])  # standard shape
+        if "data" in response and isinstance(response["data"], list):
+            return cast(list[dict[str, Any]], response["data"])  # alt shape
+        if isinstance(response, list):  # defensive
+            return cast(list[dict[str, Any]], response)
+        return persons
+    if isinstance(response, list):
+        return cast(list[dict[str, Any]], response)
+    return persons
+
+
+def _extract_person_id(person: dict[str, Any]) -> str:
+    """Extract a person identifier from multiple possible fields."""
+    pid = (person.get("pid") or person.get("personId") or person.get("id") or "")
+    if not pid and "gid" in person:
+        gid = person.get("gid")
+        if isinstance(gid, dict):
+            gv = gid.get("v")
+            if isinstance(gv, str) and ":" in gv:
+                pid = gv.split(":")[0]
+    return cast(str, pid or "")
+
+
+def _format_full_name(candidate: dict[str, Any]) -> str:
+    """Return display name from extracted candidate fields."""
+    return f"{candidate.get('first_name', '')} {candidate.get('surname', '')}".strip()
+
+
+def _score_persons(
+    persons: list[dict[str, Any]],
+    search_criteria: dict[str, Any],
+    *,
+    max_results: int,
+) -> list[dict[str, Any]]:
+    """Apply universal scoring to person dicts and return enriched, sorted results.
+
+    Preserves prior behavior: early termination, defensive checks, and debug logs.
+    """
+    scored_results: list[dict[str, Any]] = []
+    scoring_weights = config_schema.common_scoring_weights
+    date_flex = {"year_match_range": config_schema.date_flexibility}
+
+    persons_list = cast(list[dict[str, Any]], persons)
+
+    # Debug logging for development (kept for parity with previous behavior)
+    if len(persons_list) > 0:
+        first_person = persons_list[0]
+        logger.debug(f"First person structure: {first_person}")
+        logger.debug(
+            "First person keys: "
+            + (str(list(first_person.keys())) if isinstance(first_person, dict) else 'Not a dict')
+        )
+
+    # Limit processing for performance
+    persons_to_process = persons_list[:max_results] if len(persons_list) > max_results else persons_list
+
+    import time as _time
+    start_time = _time.time()
+
+    for i, person in enumerate(persons_to_process):
+        if len(scored_results) >= max_results and (_time.time() - start_time) > 3.0:
+            logger.debug(f"Early termination after processing {i+1} persons due to time limit")
+            break
+        try:
+            if not isinstance(person, dict):
+                logger.warning(f"Skipping non-dict person: {type(person)}")
+                continue
+
+            candidate = extract_person_data_for_scoring(person)
+
+            from universal_scoring import apply_universal_scoring
+            scored_candidates = apply_universal_scoring(
+                candidates=[candidate],
+                search_criteria=search_criteria,
+                scoring_weights=scoring_weights,
+                date_flexibility=date_flex,
+                max_results=1,
+                performance_timeout=1.0,
+            )
+
+            if scored_candidates:
+                scored_candidate = scored_candidates[0]
+                total_score = scored_candidate.get('total_score', 0)
+                field_scores = scored_candidate.get('field_scores', {})
+                reasons = scored_candidate.get('reasons', [])
+            else:
+                total_score, field_scores, reasons = 0, {}, []
+
+            # Assemble output
+            result = candidate.copy()
+            person_id = _extract_person_id(person)
+            result.update(
+                {
+                    "total_score": int(total_score),
+                    "field_scores": field_scores,
+                    "reasons": reasons,
+                    "full_name_disp": _format_full_name(candidate),
+                    "person_id": person_id,
+                    "raw_data": person,
+                }
+            )
+            scored_results.append(result)
+
+            if total_score >= 200 and len(scored_results) >= 1:
+                logger.debug(
+                    f"Found high-quality match (score: {total_score}), stopping early for performance"
+                )
+                break
+        except Exception as e:  # defensive
+            person_id_for_log = "unknown"
+            if isinstance(person, dict):
+                person_id_for_log = person.get('personId', person.get('pid', 'unknown'))
+            logger.warning(f"Error scoring person {person_id_for_log}: {e}")
+            continue
+
+    scored_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
+    return scored_results[:max_results]
+
 def enhanced_treesui_search(
     session_manager: SessionManager,
     search_criteria: dict[str, Any],
@@ -101,16 +259,8 @@ def enhanced_treesui_search(
         last_name = search_criteria.get("surname", "")
         full_name = f"{first_name} {last_name}".strip()
 
-        # URL encode the name parameter
-        from urllib.parse import quote
-        encoded_name = quote(full_name)
-
-        # Construct the new TreesUI endpoint
-        endpoint = f"/api/treesui-list/trees/{tree_id}/persons"
-        params = f"name={encoded_name}&fields=EVENTS,GENDERS,KINSHIP,NAMES,RELATIONS&isGetFullPersonObject=true"
-        url = f"{base_url}{endpoint}?{params}"
-
-        # Make the API request with enhanced headers and reduced timeout for faster response
+        # Construct URL and perform request
+        url, tree_id = _build_treesui_url(session_manager, full_name)
         response = _api_req(
             url=url,
             driver=session_manager.driver,
@@ -120,138 +270,24 @@ def enhanced_treesui_search(
             headers={
                 "_use_enhanced_headers": "true",
                 "_tree_id": tree_id,
-                "_person_id": "search"
+                "_person_id": "search",
             },
             timeout=8,  # Reduced to 8 seconds for faster response
-            use_csrf_token=False  # Don't request CSRF token for this endpoint
+            use_csrf_token=False,  # Don't request CSRF token for this endpoint
         )
 
         if not response:
             logger.warning("Enhanced TreesUI search returned no response")
             return []
 
-        # Parse the response
-        persons = []
-        if isinstance(response, dict):
-            if "persons" in response:
-                persons = response["persons"]
-            elif "data" in response and isinstance(response["data"], list):
-                persons = response["data"]
-            elif isinstance(response, list):
-                persons = response
-        elif isinstance(response, list):
-            persons = response
-
-        # Ensure persons is a list
+        # Parse/score pipeline
+        persons = _parse_treesui_response(response)
         if not persons:
             logger.warning("Enhanced TreesUI search found no persons")
             return []
 
-        if not isinstance(persons, list):
-            logger.warning(f"Expected list but got {type(persons)}, converting to empty list")
-            return []
-
         print(f"TreesUI search found {len(persons)} raw results")
-
-        # Score and filter results using universal scoring
-        scored_results = []
-        scoring_weights = config_schema.common_scoring_weights
-        date_flex = {"year_match_range": config_schema.date_flexibility}
-
-        # Process persons (limit to reasonable number for performance)
-        from typing import cast
-        persons_list = cast(list[dict[str, Any]], persons)
-
-        # Debug logging for development (can be removed in production)
-        if len(persons_list) > 0:
-            first_person = persons_list[0]
-            logger.debug(f"First person structure: {first_person}")
-            logger.debug(f"First person keys: {list(first_person.keys()) if isinstance(first_person, dict) else 'Not a dict'}")
-
-        # Limit processing for performance
-        persons_to_process = persons_list[:max_results] if len(persons_list) > max_results else persons_list
-
-        # Track processing time for early termination
-        import time
-        start_time = time.time()
-
-        for i, person in enumerate(persons_to_process):
-            # Early termination if processing takes too long
-            if len(scored_results) >= max_results and (time.time() - start_time) > 3.0:
-                logger.debug(f"Early termination after processing {i+1} persons due to time limit")
-                break
-            try:
-                if not isinstance(person, dict):
-                    logger.warning(f"Skipping non-dict person: {type(person)}")
-                    continue
-
-                # Extract and score person data using universal scoring
-                candidate = extract_person_data_for_scoring(person)
-
-                # Use universal scoring for consistency with Action 10
-                from universal_scoring import apply_universal_scoring
-                scored_candidates = apply_universal_scoring(
-                    candidates=[candidate],
-                    search_criteria=search_criteria,
-                    scoring_weights=scoring_weights,
-                    date_flexibility=date_flex,
-                    max_results=1,
-                    performance_timeout=1.0
-                )
-
-                if scored_candidates:
-                    scored_candidate = scored_candidates[0]
-                    total_score = scored_candidate.get('total_score', 0)
-                    field_scores = scored_candidate.get('field_scores', {})
-                    reasons = scored_candidate.get('reasons', [])
-                else:
-                    total_score, field_scores, reasons = 0, {}, []
-
-                # Add scoring results to the person data
-                result = candidate.copy()
-
-                # Extract person ID from various possible fields
-                person_id = ""
-                if isinstance(person, dict):
-                    person_id = (person.get("pid") or
-                               person.get("personId") or
-                               person.get("id") or "")
-
-                    # Try to extract from gid if available
-                    if not person_id and "gid" in person:
-                        gid = person.get("gid")
-                        if isinstance(gid, dict) and "v" in gid:
-                            gid_value = gid["v"]
-                            if isinstance(gid_value, str) and ":" in gid_value:
-                                person_id = gid_value.split(":")[0]
-
-                result.update({
-                    "total_score": int(total_score),
-                    "field_scores": field_scores,
-                    "reasons": reasons,
-                    "full_name_disp": f"{candidate.get('first_name', '')} {candidate.get('surname', '')}".strip(),
-                    "person_id": person_id,
-                    "raw_data": person  # Keep original data for debugging
-                })
-
-                scored_results.append(result)
-
-                # Performance optimization: if we have a very high score, we can stop early
-                if total_score >= 200 and len(scored_results) >= 1:
-                    logger.debug(f"Found high-quality match (score: {total_score}), stopping early for performance")
-                    break
-
-            except Exception as e:
-                person_id_for_log = "unknown"
-                if isinstance(person, dict):
-                    person_id_for_log = person.get('personId', person.get('pid', 'unknown'))
-                logger.warning(f"Error scoring person {person_id_for_log}: {e}")
-                continue
-
-        # Sort by score (descending) and return top results
-        scored_results.sort(key=lambda x: x.get("total_score", 0), reverse=True)
-        final_results = scored_results[:max_results]
-
+        final_results = _score_persons(persons, search_criteria, max_results=max_results)
         print(f"TreesUI search returning {len(final_results)} scored results")
         return final_results
 
