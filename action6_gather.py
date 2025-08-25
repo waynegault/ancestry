@@ -296,7 +296,9 @@ from sqlalchemy.orm import joinedload, Session as SqlAlchemySession  # Alias Ses
 
 # === LOCAL IMPORTS ===
 from cache import cache as global_cache  # Use the initialized global cache instance
+from color_utils import Colors
 from config import config_schema
+from core.enhanced_error_recovery import with_enhanced_recovery
 from core.session_manager import SessionManager
 from database import (
     DnaMatch,
@@ -313,8 +315,6 @@ from error_handling import (
     retry_on_failure,
     timeout_protection,
 )
-from color_utils import Colors
-from core.enhanced_error_recovery import with_enhanced_recovery
 from my_selectors import *  # Import CSS selectors
 from performance_cache import progressive_processing
 from selenium_utils import get_driver_cookies
