@@ -344,7 +344,7 @@ RECOMMENDATIONS:
 
 
 # Test functions
-def test_performance_dashboard():
+def test_performance_dashboard() -> bool:
     """Test the performance dashboard system."""
     try:
         # Use a simple test that doesn't rely on file I/O
@@ -373,7 +373,7 @@ def test_performance_dashboard():
         return False
 
 
-def test_session_and_metric_recording():
+def test_session_and_metric_recording() -> None:
     """Verify session start, metric recording, and session summary structure."""
     dash = PerformanceDashboard(":memory:")
     dash.record_session_start({"purpose": "unit_test"})
@@ -383,7 +383,7 @@ def test_session_and_metric_recording():
     assert summary.get("metrics_recorded", 0) >= 2
 
 
-def test_report_recommendations_variants():
+def test_report_recommendations_variants() -> None:
     """Trigger different recommendation branches (low success vs good)."""
     dash = PerformanceDashboard(":memory:")
     dash.record_rate_limiting_metrics({"success_rate": 0.85, "error_rate": 0.05})
@@ -396,7 +396,7 @@ def test_report_recommendations_variants():
     assert "Excellent performance" in report2 or "Fast batch processing" in report2
 
 
-def test_export_and_cleanup():
+def test_export_and_cleanup() -> bool:
     """Test data export and cleanup_old_data does not raise and trims entries."""
     dash = PerformanceDashboard("temp_perf_data.json")
     dash.record_rate_limiting_metrics({"success_rate": 0.95})
