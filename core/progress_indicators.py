@@ -13,7 +13,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
 import psutil
 from tqdm.auto import tqdm
