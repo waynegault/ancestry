@@ -80,62 +80,92 @@ def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, p
     except Exception:
         pass
 
-def summarize_experiments(last_n: int = 1000) -> dict[str, Any]:
-    """Return summary of last N telemetry events (or all if smaller).
-
-    Adds per-variant success_rate, avg_tasks, and average_quality (if any events include quality_score).
-    """
-    if not TELEMETRY_FILE.exists():
-        return {"events": 0, "variants": {}, "success_rate": 0.0}
+def _read_recent_jsonl(file_path: Path, last_n: int) -> list[dict[str, Any]]:
+    """Read and parse up to last_n JSONL records from a file (best-effort)."""
+    if not file_path.exists():
+        return []
     try:
-        lines: list[str] = []
-        with Path(TELEMETRY_FILE).open(encoding="utf-8") as fh:
-            for line in fh:
-                if line.strip():
-                    lines.append(line)
+        with file_path.open(encoding="utf-8") as fh:
+            lines = [ln for ln in fh if ln.strip()]
         if last_n > 0:
             lines = lines[-last_n:]
-        events = []
+        events: list[dict[str, Any]] = []
         for line in lines:
             try:
                 events.append(json.loads(line))
             except Exception:
                 continue
+        return events
+    except Exception:
+        return []
+
+
+essential_variant_fields = {"count", "success", "avg_tasks", "success_rate", "average_quality"}
+
+
+def _accumulate_variant_stats(events: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], int, float, int]:
+    """Aggregate per-variant stats and overall quality accumulators."""
+    variant_stats: dict[str, dict[str, Any]] = {}
+    total_success = 0
+    quality_sum_overall = 0.0
+    quality_count_overall = 0
+
+    for ev in events:
+        var = ev.get("variant_label") or "unknown"
+        st = variant_stats.setdefault(
+            var,
+            {"count": 0, "success": 0, "avg_tasks": 0.0, "_quality_sum": 0.0, "_quality_count": 0},
+        )
+        st["count"] += 1
+        if ev.get("parse_success"):
+            st["success"] += 1
+            total_success += 1
+        tasks = ev.get("suggested_tasks_count") or 0
+        st["avg_tasks"] = ((st["count"] - 1) * st["avg_tasks"] + tasks) / st["count"]
+        q = ev.get("quality_score")
+        if isinstance(q, (int, float)):
+            val = float(q)
+            st["_quality_sum"] += val
+            st["_quality_count"] += 1
+            quality_sum_overall += val
+            quality_count_overall += 1
+
+    return variant_stats, total_success, quality_sum_overall, quality_count_overall
+
+
+def _finalize_variant_stats(variant_stats: dict[str, dict[str, Any]]) -> None:
+    """Compute derived metrics and remove internal accumulators in-place."""
+    for st in variant_stats.values():
+        c = st.get("count", 0) or 1
+        st["success_rate"] = st.get("success", 0) / c
+        st["avg_tasks"] = round(st.get("avg_tasks", 0.0), 2)
+        if st.get("_quality_count"):
+            st["average_quality"] = round(st["_quality_sum"] / st["_quality_count"], 2)
+        st.pop("_quality_sum", None)
+        st.pop("_quality_count", None)
+
+
+def summarize_experiments(last_n: int = 1000) -> dict[str, Any]:
+    """Return summary of last N telemetry events (or all if smaller).
+
+    Adds per-variant success_rate, avg_tasks, and average_quality (if any events include quality_score).
+    """
+    try:
+        events = _read_recent_jsonl(TELEMETRY_FILE, last_n)
         total = len(events)
         if not total:
             return {"events": 0, "variants": {}, "success_rate": 0.0}
-        variant_stats: dict[str, dict[str, Any]] = {}
-        success = 0
-        quality_accumulator_overall = 0.0
-        quality_events_overall = 0
-        for ev in events:
-            var = ev.get("variant_label") or "unknown"
-            st = variant_stats.setdefault(var, {"count": 0, "success": 0, "avg_tasks": 0.0, "_quality_sum": 0.0, "_quality_count": 0})
-            st["count"] += 1
-            if ev.get("parse_success"):
-                st["success"] += 1
-                success += 1
-            tasks = ev.get("suggested_tasks_count") or 0
-            st["avg_tasks"] = ((st["count"] - 1) * st["avg_tasks"] + tasks) / st["count"]
-            q = ev.get("quality_score")
-            if isinstance(q, (int, float)):
-                st["_quality_sum"] += float(q)
-                st["_quality_count"] += 1
-                quality_accumulator_overall += float(q)
-                quality_events_overall += 1
-        overall_success_rate = success / total if total else 0.0
-        for st in variant_stats.values():
-            c = st["count"] or 1
-            st["success_rate"] = st["success"] / c
-            st["avg_tasks"] = round(st["avg_tasks"], 2)
-            if st.get("_quality_count"):
-                st["average_quality"] = round(st["_quality_sum"] / st["_quality_count"], 2)
-            # Remove internal accumulators
-            st.pop("_quality_sum", None)
-            st.pop("_quality_count", None)
-        summary: dict[str, Any] = {"events": total, "success_rate": round(overall_success_rate, 3), "variants": variant_stats}
-        if quality_events_overall:
-            summary["average_quality"] = round(quality_accumulator_overall / quality_events_overall, 2)
+
+        variant_stats, total_success, qsum, qcount = _accumulate_variant_stats(events)
+        _finalize_variant_stats(variant_stats)
+
+        summary: dict[str, Any] = {
+            "events": total,
+            "success_rate": round((total_success / total) if total else 0.0, 3),
+            "variants": variant_stats,
+        }
+        if qcount:
+            summary["average_quality"] = round(qsum / qcount, 2)
         return summary
     except Exception:
         return {"events": 0, "variants": {}, "success_rate": 0.0}
@@ -163,16 +193,8 @@ def _load_recent_events(window: int = 500) -> list[dict[str, Any]]:
         return []
     return events
 
-def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
-                        quality_margin: float = 5.0, success_margin: float = 0.05) -> dict[str, Any]:
-    """Compute comparative statistics for variants.
-
-    Returns dict with per-variant metrics and potential improvement flags.
-    Simple heuristic (not statistical test) identifies improved_quality and improved_success.
-    """
-    events = _load_recent_events(window)
-    if not events:
-        return {"events": 0, "variants": {}, "analysis": "no_data"}
+def _aggregate_variant_data(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Aggregate raw per-variant data from events."""
     variants: dict[str, dict[str, Any]] = {}
     for ev in events:
         v = ev.get("variant_label") or "unknown"
@@ -186,14 +208,18 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
         tasks = ev.get("suggested_tasks_count")
         if isinstance(tasks, int):
             data["tasks"].append(tasks)
-    # Compute aggregates
+    return variants
+
+
+def _compute_variant_metrics(variants: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Compute metrics for each variant from aggregated data."""
     result_variants: dict[str, Any] = {}
     for v, d in variants.items():
         count = max(d["count"], 1)
         qs_list = d["quality_scores"]
         median_quality = statistics.median(qs_list) if qs_list else None
         avg_quality = sum(qs_list)/len(qs_list) if qs_list else None
-        avg_tasks = sum(d["tasks"])/len(d["tasks"]) if d["tasks"] else 0.0
+        avg_tasks = sum(d["tasks"]) / len(d["tasks"]) if d["tasks"] else 0.0
         success_rate = d["successes"]/count
         result_variants[v] = {
             "events": d["count"],
@@ -202,7 +228,11 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
             "avg_quality": round(avg_quality, 2) if avg_quality is not None else None,
             "avg_tasks": round(avg_tasks, 2),
         }
-    # Identify control vs alt (heuristic)
+    return result_variants
+
+
+def _compare_control_alt(result_variants: dict[str, Any], min_events_per_variant: int, quality_margin: float, success_margin: float) -> dict[str, Any]:
+    """Compare control vs alt and derive improvement flags."""
     control = result_variants.get("control")
     alt = result_variants.get("alt")
     improvement: dict[str, Any] = {}
@@ -214,6 +244,24 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
         improvement["improved_quality"] = quality_delta >= quality_margin
         improvement["improved_success"] = success_delta >= success_margin
         improvement["promote_recommendation"] = bool(improvement["improved_quality"] or improvement["improved_success"])
+    return improvement
+
+
+def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
+                        quality_margin: float = 5.0, success_margin: float = 0.05) -> dict[str, Any]:
+    """Compute comparative statistics for variants.
+
+    Returns dict with per-variant metrics and potential improvement flags.
+    Simple heuristic (not statistical test) identifies improved_quality and improved_success.
+    """
+    events = _load_recent_events(window)
+    if not events:
+        return {"events": 0, "variants": {}, "analysis": "no_data"}
+
+    variants = _aggregate_variant_data(events)
+    result_variants = _compute_variant_metrics(variants)
+    improvement = _compare_control_alt(result_variants, min_events_per_variant, quality_margin, success_margin)
+
     return {"events": len(events), "variants": result_variants, "improvement": improvement}
 
 def _write_alert(alert: dict[str, Any]) -> None:
@@ -318,7 +366,7 @@ def detect_quality_regression(current_window: int = 120, drop_threshold: float =
     return {"status": "ok", "median_now": median_now, "baseline_median": median_then, "drop": round(drop,2), "regression": regression}
 
 ## === Internal Test Suite (for run_all_tests detection & coverage) ===
-def _test_record_and_summarize():
+def _test_record_and_summarize() -> None:
     """Record several events and verify summary reflects them."""
     # Capture starting count
     initial = summarize_experiments().get("events", 0)
@@ -338,7 +386,7 @@ def _test_record_and_summarize():
     summary = summarize_experiments()
     assert summary.get("events", 0) >= initial + 3, "Summary should show newly added events"
 
-def _test_variant_analysis():
+def _test_variant_analysis() -> None:
     """Add alt variant events then run analyze_experiments for improvement structure."""
     for i in range(2):
         record_extraction_experiment_event(
@@ -354,7 +402,7 @@ def _test_variant_analysis():
     analysis = analyze_experiments(window=50, min_events_per_variant=1)
     assert "variants" in analysis and analysis.get("events",0) > 0
 
-def _test_build_baseline_and_regression():
+def _test_build_baseline_and_regression() -> None:
     """Ensure baseline can be built and regression check returns expected keys."""
     # Ensure enough control events to build baseline (min_events=8)
     needed = 8
