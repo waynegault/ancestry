@@ -283,8 +283,8 @@ def with_progress(
         unit: Unit of measurement
         extract_total: Function to extract total from function arguments
     """
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable) -> Callable:
+        def wrapper(*args, **kwargs) -> Any:
             # Extract total if function provided
             total = None
             if extract_total:
