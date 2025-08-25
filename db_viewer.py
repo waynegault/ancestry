@@ -7,7 +7,7 @@ Run this anytime to browse your database content
 import sqlite3
 
 
-def display_menu():
+def display_menu() -> str:
     print("\n" + "="*50)
     print("📊 ANCESTRY DATABASE VIEWER")
     print("="*50)
@@ -22,7 +22,7 @@ def display_menu():
     print("q. Quit")
     return input("\nChoice: ").strip().lower()
 
-def show_tables(cursor):
+def show_tables(cursor) -> None:
     cursor.execute("SELECT name, type FROM sqlite_master WHERE type='table'")
     tables = cursor.fetchall()
     print(f"\n📋 Tables ({len(tables)}):")
@@ -31,7 +31,7 @@ def show_tables(cursor):
         count = cursor.fetchone()[0]
         print(f"  - {name}: {count:,} records")
 
-def show_table_data(cursor, table_name, limit=20):
+def show_table_data(cursor, table_name: str, limit: int = 20) -> None:
     print(f"\n📊 {table_name.upper()} DATA:")
     print("="*60)
 
@@ -62,7 +62,7 @@ def show_table_data(cursor, table_name, limit=20):
     total = cursor.fetchone()[0]
     print(f"\nShowing {len(rows)} of {total} total records")
 
-def run_custom_query(cursor):
+def run_custom_query(cursor) -> None:
     print("\n💻 CUSTOM SQL QUERY")
     print("Enter your SQL query (or 'back' to return):")
     query = input("SQL> ").strip()
@@ -95,7 +95,7 @@ def run_custom_query(cursor):
     except Exception as e:
         print(f"❌ Error: {e}")
 
-def show_db_stats(cursor):
+def show_db_stats(cursor) -> None:
     print("\n📈 DATABASE STATISTICS:")
     print("="*40)
 
@@ -126,7 +126,7 @@ def show_db_stats(cursor):
     print(f"Total tables: {len(tables)}")
     print(f"Total records: {total_records:,}")
 
-def main():
+def main() -> None:
     from pathlib import Path
     db_path = Path("Data/ancestry.db")
 
