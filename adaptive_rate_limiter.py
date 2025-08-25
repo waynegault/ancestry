@@ -692,7 +692,7 @@ class SystemHealthMonitor:
 
 
 # Test functions
-def test_adaptive_rate_limiter():
+def test_adaptive_rate_limiter() -> bool:
     """Test the adaptive rate limiter system."""
     logger.info("Testing adaptive rate limiter system...")
 
@@ -719,7 +719,7 @@ def test_adaptive_rate_limiter():
     return True
 
 
-def test_smart_batch_processor():
+def test_smart_batch_processor() -> bool:
     """Test the smart batch processor system."""
     logger.info("Testing smart batch processor system...")
 
@@ -884,7 +884,7 @@ class ConfigurationOptimizer:
         return report.strip()
 
 
-def test_configuration_optimizer():
+def test_configuration_optimizer() -> bool:
     """Test the configuration optimizer system."""
     logger.info("Testing configuration optimizer system...")
 
@@ -919,7 +919,7 @@ def test_configuration_optimizer():
     return True
 
 
-def test_regression_prevention_rate_limiter_caching():
+def test_regression_prevention_rate_limiter_caching() -> bool:
     """
     🛡️ REGRESSION TEST: Rate limiter optimal settings caching.
 
