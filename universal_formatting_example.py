@@ -17,7 +17,7 @@ from test_framework import (
 )
 
 
-def example_test_with_beautiful_formatting():
+def example_test_with_beautiful_formatting() -> bool:
     """Example test showing universal formatting usage"""
 
     # Create test suite
@@ -65,7 +65,7 @@ def example_test_with_beautiful_formatting():
 
     suite.finish_suite()
 
-def example_api_test_formatting():
+def example_api_test_formatting() -> None:
     """Example showing API test formatting"""
 
     print(format_test_section_header("API Response Validation", "🌐"))
@@ -92,7 +92,7 @@ def example_api_test_formatting():
 
     print(f"\n{Colors.YELLOW}{Icons.WARNING} API Quality Score: 70/100 - Review data quality{Colors.RESET}")
 
-def example_file_processing_test():
+def example_file_processing_test() -> None:
     """Example showing file processing test formatting"""
 
     print(format_test_section_header("GEDCOM File Processing", "📁"))

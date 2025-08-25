@@ -11,7 +11,7 @@ from core.session_manager import SessionManager
 from database import ConversationLog, MessageDirectionEnum
 
 
-def debug_prefetch():
+def debug_prefetch() -> None:
     session_manager = SessionManager()
     session_manager.ensure_db_ready()
 

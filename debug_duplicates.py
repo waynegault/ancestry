@@ -6,7 +6,7 @@ Debug script to analyze duplicate detection issues in Action 6.
 import sqlite3
 
 
-def analyze_duplicates():
+def analyze_duplicates() -> None:
     """Analyze the database for duplicate detection issues."""
 
     print("🔍 DUPLICATE DETECTION ANALYSIS")
