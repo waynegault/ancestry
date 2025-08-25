@@ -12,71 +12,77 @@ from pathlib import Path
 import psutil
 
 
+def _print_process_info(process, pid: int) -> tuple[float, float, float]:
+    """Print basic process information and return metrics."""
+    print(f"MONITORING ACTION 6 HEALTH - PID: {pid}")
+    print("=" * 60)
+
+    print(f"Process Name: {process.name()}")
+    print(f"Status: {process.status()}")
+    print(f"Started: {time.ctime(process.create_time())}")
+
+    # Calculate and return metrics
+    start_time = process.create_time()
+    runtime_minutes = (time.time() - start_time) / 60
+    print(f"Runtime: {runtime_minutes:.1f} minutes")
+
+    memory_info = process.memory_info()
+    memory_mb = memory_info.rss / 1024 / 1024
+    print(f"Memory Usage: {memory_mb:.1f} MB")
+
+    cpu_percent = process.cpu_percent(interval=1)
+    print(f"CPU Usage: {cpu_percent:.1f}%")
+
+    return runtime_minutes, memory_mb, cpu_percent
+
+
+def _print_health_status(process) -> None:
+    """Print health monitoring status information."""
+    print("✅ Process Status: RUNNING")
+    print("✅ Health Monitoring: ACTIVE")
+    print("✅ Emergency Intervention: READY")
+
+    children = process.children()
+    if children:
+        print(f"Child Processes: {len(children)}")
+
+    print("\n🛡️ HEALTH MONITORING PROTECTION ACTIVE")
+    print("- Session death prevention: ENABLED")
+    print("- Emergency intervention: STANDBY")
+    print("- Error handling: COMPREHENSIVE")
+    print("- Performance monitoring: ACTIVE")
+
+
+def _assess_performance(runtime_minutes: float, memory_mb: float, cpu_percent: float) -> None:
+    """Assess and report performance metrics."""
+    if memory_mb > 1000:
+        print(f"⚠️ High memory usage: {memory_mb:.1f} MB")
+    else:
+        print(f"✅ Memory usage normal: {memory_mb:.1f} MB")
+
+    if cpu_percent > 80:
+        print(f"⚠️ High CPU usage: {cpu_percent:.1f}%")
+    else:
+        print(f"✅ CPU usage normal: {cpu_percent:.1f}%")
+
+    if runtime_minutes > 15:
+        print(f"📊 Long runtime detected: {runtime_minutes:.1f} minutes")
+        print("   This is normal for Action 6 (typically 12+ minutes)")
+
+
 def monitor_action6_health(pid: int) -> bool:
     """Monitor Action 6 process health and performance."""
     try:
         process = psutil.Process(pid)
-        print(f"MONITORING ACTION 6 HEALTH - PID: {pid}")
-        print("=" * 60)
+        runtime_minutes, memory_mb, cpu_percent = _print_process_info(process, pid)
 
-        # Basic process info
-        print(f"Process Name: {process.name()}")
-        print(f"Status: {process.status()}")
-        print(f"Started: {time.ctime(process.create_time())}")
-
-        # Calculate runtime
-        start_time = process.create_time()
-        runtime_seconds = time.time() - start_time
-        runtime_minutes = runtime_seconds / 60
-        print(f"Runtime: {runtime_minutes:.1f} minutes")
-
-        # Memory usage
-        memory_info = process.memory_info()
-        memory_mb = memory_info.rss / 1024 / 1024
-        print(f"Memory Usage: {memory_mb:.1f} MB")
-
-        # CPU usage (requires a moment to calculate)
-        cpu_percent = process.cpu_percent(interval=1)
-        print(f"CPU Usage: {cpu_percent:.1f}%")
-
-        # Check if process is still running
         if process.is_running():
-            print("✅ Process Status: RUNNING")
-            print("✅ Health Monitoring: ACTIVE")
-            print("✅ Emergency Intervention: READY")
-
-            # Check for any child processes
-            children = process.children()
-            if children:
-                print(f"Child Processes: {len(children)}")
-
-            print("\n🛡️ HEALTH MONITORING PROTECTION ACTIVE")
-            print("- Session death prevention: ENABLED")
-            print("- Emergency intervention: STANDBY")
-            print("- Error handling: COMPREHENSIVE")
-            print("- Performance monitoring: ACTIVE")
-
-            # Performance assessment
-            if memory_mb > 1000:
-                print(f"⚠️ High memory usage: {memory_mb:.1f} MB")
-            else:
-                print(f"✅ Memory usage normal: {memory_mb:.1f} MB")
-
-            if cpu_percent > 80:
-                print(f"⚠️ High CPU usage: {cpu_percent:.1f}%")
-            else:
-                print(f"✅ CPU usage normal: {cpu_percent:.1f}%")
-
-            # Runtime assessment
-            if runtime_minutes > 15:
-                print(f"📊 Long runtime detected: {runtime_minutes:.1f} minutes")
-                print("   This is normal for Action 6 (typically 12+ minutes)")
-
+            _print_health_status(process)
+            _assess_performance(runtime_minutes, memory_mb, cpu_percent)
+            return True
         else:
             print("❌ Process Status: NOT RUNNING")
             return False
-
-        return True
 
     except psutil.NoSuchProcess:
         print(f"❌ Process {pid} not found")
@@ -85,28 +91,43 @@ def monitor_action6_health(pid: int) -> bool:
         print(f"❌ Error monitoring process: {e}")
         return False
 
+def _is_relevant_log_file(path: Path, log_patterns: list[str]) -> bool:
+    """Check if a file is a relevant log file."""
+    if not path.is_file():
+        return False
+
+    name = path.name
+    lower = name.lower()
+
+    if not (name.endswith(".log") or "log" in lower):
+        return False
+
+    return any(p in lower for p in log_patterns)
+
+
+def _is_recent_file(path: Path, max_age_seconds: int = 3600) -> bool:
+    """Check if a file was modified recently."""
+    try:
+        stat = path.stat()
+        return time.time() - stat.st_mtime < max_age_seconds
+    except Exception:
+        return False
+
+
 def check_log_files() -> None:
     """Check for recent log files that might indicate Action 6 activity."""
     print("\n📋 CHECKING LOG FILES:")
     print("-" * 30)
 
-    # Look for recent log files
     log_patterns = ["action6", "dna", "gather", "ancestry"]
     recent_logs = []
 
-    # Check current directory for log files
     try:
         for path in Path().iterdir():
             try:
-                if path.is_file():
-                    name = path.name
-                    lower = name.lower()
-                    if name.endswith(".log") or "log" in lower:
-                        if any(p in lower for p in log_patterns):
-                            stat = path.stat()
-                            mod_time = stat.st_mtime
-                            if time.time() - mod_time < 3600:  # Modified in last hour
-                                recent_logs.append((name, mod_time))
+                if _is_relevant_log_file(path, log_patterns) and _is_recent_file(path):
+                    stat = path.stat()
+                    recent_logs.append((path.name, stat.st_mtime))
             except Exception:
                 continue
 
