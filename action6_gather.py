@@ -3270,16 +3270,20 @@ def _process_page_matches(
                 # FINAL OPTIMIZATION 3: Advanced Async Integration for large batches
                 if len(fetch_candidates_uuid) >= 15:  # Use async orchestrator for large batches
                     try:
-                                                logger.debug(f"Batch {current_page}: Using sync API prefetches for {len(fetch_candidates_uuid)} candidates")
-
+                        logger.debug(
+                            f"Batch {current_page}: Using sync API prefetches for {len(fetch_candidates_uuid)} candidates"
+                        )
                         # Use sync method (async orchestrator was removed)
                         prefetched_data = _perform_api_prefetches(
                             session_manager, fetch_candidates_uuid, matches_to_process_later
                         )
-
-                        logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
+                        logger.debug(
+                            f"Batch {current_page}: Async orchestrator completed successfully"
+                        )
                     except Exception as async_error:
-                        logger.warning(f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync")
+                        logger.warning(
+                            f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync"
+                        )
                         # Fallback to sync method
                         prefetched_data = _perform_api_prefetches(
                             session_manager, fetch_candidates_uuid, matches_to_process_later
