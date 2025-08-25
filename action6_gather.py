@@ -301,11 +301,11 @@ from config import config_schema
 from core.enhanced_error_recovery import with_enhanced_recovery
 from core.session_manager import SessionManager
 from database import (
+    db_transn,
     DnaMatch,
     FamilyTree,
     Person,
     PersonStatusEnum,
-    db_transn,
 )
 from error_handling import (
     AuthenticationExpiredError,
@@ -319,9 +319,9 @@ from my_selectors import *  # Import CSS selectors
 from performance_cache import progressive_processing
 from selenium_utils import get_driver_cookies
 from utils import (
+    _api_req,                # API request helper
     JSONP_PATTERN,           # JSONP detection
     fast_json_loads,         # Fast JSON loader
-    _api_req,                # API request helper
     format_name,             # Name formatting utility
     nav_to_page,             # Navigation helper
     ordinal_case,            # Ordinal case formatting
