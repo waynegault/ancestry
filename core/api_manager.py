@@ -552,7 +552,7 @@ def _test_connection_error_handling() -> bool:
         return False
 
 
-def run_comprehensive_tests() -> bool:
+def api_manager_module_tests() -> bool:
     """
     Comprehensive test suite for core/api_manager.py (decomposed).
     """
@@ -633,5 +633,11 @@ if __name__ == "__main__":
         sys.path.insert(0, str(project_root))
 
     print("🔗 Running API Manager & HTTP Request Handling comprehensive test suite...")
-    success = run_comprehensive_tests()
+    success = api_manager_module_tests()
     sys.exit(0 if success else 1)
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(api_manager_module_tests)

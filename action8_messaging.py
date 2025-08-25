@@ -1,17 +1,40 @@
 #!/usr/bin/env python3
 
 """
-Action 8: Automated Messaging System
+Intelligent Messaging Automation & Personalization Engine
 
-Manages intelligent, templated messaging to DNA matches with status-based workflows,
-communication history tracking, and automated follow-up sequences using configurable
-templates and comprehensive recipient filtering based on relationship and engagement.
+Sophisticated communication orchestration system that delivers personalized,
+contextually-aware messages to DNA matches through intelligent template selection,
+relationship-based personalization, and automated follow-up sequences with
+comprehensive tracking and engagement optimization.
 
-PHASE 1 OPTIMIZATIONS (2025-01-16):
-- Enhanced progress indicators with ETA calculations for message sending
-- Improved error recovery with exponential backoff for messaging API calls
-- Memory monitoring during large messaging campaigns
-- Better user feedback for batch message operations
+Personalization Intelligence:
+• Dynamic template selection based on relationship strength and context
+• AI-powered content personalization with genealogical insights
+• Intelligent recipient filtering with engagement prediction
+• Automated follow-up sequences with timing optimization
+• Comprehensive communication history analysis
+• Sentiment-aware message crafting and tone adjustment
+
+Workflow Management:
+• Status-based messaging workflows with conditional logic
+• Batch processing with intelligent scheduling and rate limiting
+• Real-time progress tracking with detailed analytics
+• Comprehensive error recovery with message queue management
+• Circuit breaker patterns for reliable delivery
+• Automated retry logic with exponential backoff
+
+Communication Tracking:
+• Complete message lifecycle tracking with delivery confirmation
+• Engagement analytics with response rate optimization
+• Comprehensive audit trails for compliance and analysis
+• Automated duplicate prevention and message deduplication
+• Historical communication analysis for relationship insights
+
+Quality & Compliance:
+Implements comprehensive validation, delivery tracking, and compliance monitoring
+to ensure professional, effective communication that enhances genealogical
+research relationships while maintaining platform guidelines and user privacy.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -3712,9 +3735,10 @@ def action8_messaging_tests() -> None:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run tests using unified test framework."""
-    return action8_messaging_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(action8_messaging_tests)
 
 
 # ==============================================

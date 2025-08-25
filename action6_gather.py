@@ -3,13 +3,37 @@
 # action6_gather.py
 
 """
-action6_gather.py - Gather DNA Matches from Ancestry
+DNA Match Discovery & Database Synchronization Engine
 
-Fetches the user's DNA match list page by page, extracts relevant information,
-compares with existing database records, fetches additional details via API for
-new or changed matches, and performs bulk updates/inserts into the local database.
-Handles pagination, rate limiting, caching (via utils/cache.py decorators used
-within helpers), error handling, and concurrent API fetches using ThreadPoolExecutor.
+High-performance genealogical data harvesting system that systematically discovers,
+analyzes, and synchronizes DNA match information from Ancestry.com. Employs
+intelligent pagination, concurrent API processing, and sophisticated caching
+strategies to efficiently maintain comprehensive genealogical databases.
+
+Core Functionality:
+• Automated DNA match discovery with intelligent pagination
+• Real-time database synchronization with conflict resolution
+• Concurrent API processing with adaptive rate limiting
+• Advanced caching strategies for optimal performance
+• Comprehensive data validation and quality assurance
+• Progressive processing with memory optimization
+
+Technical Architecture:
+Built on ThreadPoolExecutor for concurrent operations, SQLAlchemy for robust
+data persistence, and custom session management for reliable web automation.
+Integrates adaptive rate limiting, circuit breakers, and comprehensive error
+recovery to ensure reliable operation under varying network conditions.
+
+Performance Optimizations:
+• Memory-efficient streaming processing for large datasets
+• Intelligent caching with TTL-based invalidation
+• Batch database operations with transaction management
+• Concurrent API calls with connection pooling
+• Progressive loading with user feedback
+
+Data Quality:
+Implements comprehensive validation, duplicate detection, and data normalization
+to ensure high-quality genealogical data suitable for research and analysis.
 
 PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Enhanced progress indicators with ETA calculations and memory monitoring
@@ -22,13 +46,13 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 # === PHASE 1 OPTIMIZATIONS ===
 
 
 # Performance monitoring helper with session manager integration
-def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
+def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager: Optional[Any] = None) -> None:
     """Log API performance metrics for monitoring and optimization."""
 
     duration = time.time() - start_time
@@ -55,7 +79,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
         pass  # Graceful degradation if performance monitor not available
 
 
-def _update_session_performance_tracking(session_manager, duration: float) -> None:
+def _update_session_performance_tracking(session_manager: Optional[Any], duration: float) -> None:
     """Update session manager with performance tracking data."""
     try:
         # Initialize tracking if not exists
@@ -222,9 +246,9 @@ CACHE_TTL = {
 
 def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
     """Decorator for caching API responses with TTL."""
-    def decorator(func) -> Callable:
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Create cache key from function name and arguments
             cache_args = str(args[1:]) + str(kwargs) if len(args) > 1 else str(kwargs)
             cache_key = f"{cache_key_prefix}_{hashlib.md5(cache_args.encode()).hexdigest()}"
@@ -1491,7 +1515,7 @@ def _handle_database_lookup_error(db_lookup_err: SQLAlchemyError) -> None:
         f"Database lookup failed during prefetch: {db_lookup_err}",
         exc_info=True,
     )
-    raise  # Re-raise to be handled by the caller
+    raise RuntimeError("Database lookup failed during prefetch") from db_lookup_err
 
 
 def _lookup_existing_persons(
@@ -5991,7 +6015,7 @@ def action6_gather_module_tests() -> bool:
 
         # Test _initialize_gather_state performance
         start_time = time.time()
-        for i in range(100):
+        for _ in range(100):
             state = _initialize_gather_state()
             assert isinstance(state, dict), "Should return dict each time"
         duration = time.time() - start_time
@@ -6054,7 +6078,7 @@ def action6_gather_module_tests() -> bool:
             assert db_error.recovery_hint and "temporarily unavailable" in db_error.recovery_hint
             print("     ✅ DatabaseConnectionError constructor works correctly")
         except TypeError as e:
-            raise AssertionError(f"DatabaseConnectionError constructor has parameter conflicts: {e}")
+            raise AssertionError(f"DatabaseConnectionError constructor has parameter conflicts: {e}") from e
 
         # Test 3: Simulate the specific database transaction rollback scenario
         print("   • Test 3: Database transaction rollback scenario simulation")
@@ -6180,7 +6204,7 @@ def action6_gather_module_tests() -> bool:
             print("     ✅ UNIQUE constraint error handling works without constructor conflicts")
 
         except Exception as e:
-            raise AssertionError(f"Duplicate record error handling failed: {e}")
+            raise AssertionError(f"Duplicate record error handling failed: {e}") from e
 
         # Test 8: Final Summary Accuracy Test
         print("   • Test 8: Final summary accuracy validation")
@@ -6613,9 +6637,10 @@ def action6_gather_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return action6_gather_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(action6_gather_module_tests)
 
 
 # ==============================================

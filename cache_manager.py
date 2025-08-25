@@ -1,11 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Cache Manager - Centralized Cache Operations
+Centralized Cache Management & Intelligent Coordination Engine
 
-Provides comprehensive cache management, monitoring, and maintenance operations
-with intelligent cache lifecycle management, performance optimization, and
-automated cleanup for efficient memory and disk usage across all cache systems.
+Advanced cache orchestration platform providing centralized cache management,
+intelligent coordination strategies, and comprehensive performance optimization
+with sophisticated cache lifecycle management, multi-tier caching, and
+professional-grade cache orchestration for genealogical automation workflows.
+
+Cache Orchestration:
+• Centralized cache management with intelligent coordination and resource optimization
+• Advanced multi-tier caching with intelligent cache hierarchy and performance optimization
+• Sophisticated cache lifecycle management with automated cleanup and optimization protocols
+• Comprehensive cache synchronization with multi-process coordination and conflict resolution
+• Intelligent cache warming with predictive data loading and optimization strategies
+• Integration with performance monitoring systems for comprehensive cache intelligence
+
+Performance Intelligence:
+• Advanced cache analytics with detailed performance metrics and optimization insights
+• Intelligent cache sizing with automatic optimization and resource management algorithms
+• Sophisticated cache invalidation with intelligent dependency tracking and cleanup protocols
+• Comprehensive performance monitoring with real-time analytics and optimization recommendations
+• Advanced cache coordination with intelligent load balancing and resource distribution
+• Integration with performance systems for comprehensive cache performance optimization
+
+Resource Management:
+• Intelligent memory management with optimized resource allocation and cleanup strategies
+• Advanced cache persistence with reliable storage and recovery mechanisms
+• Sophisticated cache migration with seamless data transfer and version compatibility
+• Comprehensive backup and recovery with automated data protection and restoration
+• Intelligent cache partitioning with optimized data distribution and access patterns
+• Integration with resource management systems for comprehensive cache orchestration
+
+Foundation Services:
+Provides the essential cache management infrastructure that enables centralized,
+high-performance caching through intelligent coordination, comprehensive performance
+optimization, and professional cache management for genealogical automation workflows.
 
 Consolidated from:
 - core/session_cache.py - Session-specific caching
@@ -476,9 +506,6 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[F], F]:
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Create cache key from endpoint and parameters
-            cache_key = _unified_cache_manager.api_cache.create_api_cache_key(endpoint, kwargs)
-
             # Try to get cached result
             cached_result = _unified_cache_manager.api_cache.get_cached_api_response(endpoint, kwargs)
             if cached_result is not None:
@@ -751,9 +778,10 @@ def cache_manager_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive cache manager tests using standardized TestSuite format."""
-    return cache_manager_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(cache_manager_module_tests)
 
 
 # ==============================================

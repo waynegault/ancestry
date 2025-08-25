@@ -174,7 +174,7 @@ class ConfigManager:
 
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
-            raise ValidationError(f"Configuration loading failed: {e}")
+            raise ValidationError(f"Configuration loading failed: {e}") from e
 
     def get_config(self, reload_if_changed: bool = True) -> ConfigSchema:
         """
@@ -997,7 +997,7 @@ class ConfigManager:
         return self.get_config().security
 
 
-def run_comprehensive_tests() -> bool:
+def config_manager_module_tests() -> bool:
     """
     Comprehensive test suite for config_manager.py with proper TestSuite framework.
     Tests configuration management, validation, and loading functionality.
@@ -1251,8 +1251,14 @@ def run_comprehensive_tests() -> bool:
     return suite.finish_suite()
 
 
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(config_manager_module_tests)
+
+
 if __name__ == "__main__":
     print("🔧 Running Configuration Manager comprehensive test suite...")
-    success = run_comprehensive_tests()
+    success = config_manager_module_tests()
     import sys
     sys.exit(0 if success else 1)

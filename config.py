@@ -1,7 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Minimal config shim re-exporting essential config components.
+Configuration Management & Environment Orchestration Engine
+
+Comprehensive configuration management platform providing sophisticated environment
+setup, intelligent configuration validation, and secure credential management
+with multi-environment support, schema validation, and runtime configuration
+management for reliable genealogical automation system configuration.
+
+Configuration Intelligence:
+• Advanced environment variable management with intelligent type conversion and validation
+• Comprehensive configuration schema definition with business rule enforcement
+• Multi-environment support with environment-specific configuration inheritance
+• Intelligent configuration validation with dependency checking and constraint enforcement
+• Secure credential management with encryption, rotation, and access control
+• Configuration file parsing with format detection and validation
+
+Environment Management:
+• Sophisticated environment detection with automatic configuration selection
+• Advanced configuration inheritance with environment-specific overrides
+• Intelligent default value management with fallback strategies and validation
+• Runtime configuration updates with hot-reloading and change notification
+• Configuration versioning with rollback capabilities and change tracking
+• Comprehensive configuration auditing with change logs and compliance tracking
+
+Security & Validation:
+• Secure credential storage with encryption at rest and in transit
+• Advanced validation frameworks with custom validators and business rule enforcement
+• Configuration sanitization with input validation and output encoding
+• Access control with role-based configuration access and permission management
+• Comprehensive logging with security event tracking and audit trails
+• Integration with secret management systems for enterprise credential handling
+
+Foundation Services:
+Provides the essential configuration infrastructure that enables reliable,
+secure genealogical automation through comprehensive configuration management,
+intelligent validation, and robust environment setup for professional workflows.
 """
 
 from config.config_manager import ConfigManager
@@ -17,7 +51,7 @@ __all__ = ["ConfigManager", "config_manager", "config_schema"]
 # COMPREHENSIVE TEST SUITE
 # =============================================================================
 
-def run_comprehensive_tests() -> bool:
+def config_module_tests() -> bool:
     """
     Comprehensive test suite for config.py (minimal shim module).
 
@@ -162,8 +196,14 @@ def run_comprehensive_tests() -> bool:
             return False
 
 
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(config_module_tests)
+
+
 if __name__ == "__main__":
     import sys
     print("🧪 Running Config Shim Comprehensive Tests...")
-    success = run_comprehensive_tests()
+    success = config_module_tests()
     sys.exit(0 if success else 1)

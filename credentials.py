@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 
 """
-Unified Credential Manager - Secure Authentication Setup
+Unified Credential Management & Enterprise Security Engine
 
+Advanced authentication platform providing comprehensive credential management,
+enterprise-grade security protocols, and sophisticated authentication workflows
+with encrypted storage, multi-factor authentication, and professional-grade
+security infrastructure for genealogical automation and research systems.
+
+Security Infrastructure:
+• Advanced credential management with enterprise-grade encryption and secure storage protocols
+• Sophisticated authentication workflows with multi-factor authentication and security validation
+• Comprehensive security monitoring with intelligent threat detection and automated response
+• Advanced access control with role-based permissions and intelligent authorization protocols
+• Intelligent security analytics with detailed audit trails and compliance reporting
+• Integration with enterprise security systems for comprehensive authentication infrastructure
+
+Credential Orchestration:
+• Centralized credential storage with encrypted databases and secure key management systems
+• Advanced credential rotation with automated security protocols and intelligent key management
+• Sophisticated credential validation with comprehensive verification and integrity checking
+• Comprehensive credential synchronization with multi-system coordination and conflict resolution
+• Intelligent credential caching with secure memory management and automated cleanup protocols
+• Integration with authentication systems for comprehensive credential orchestration workflows
+
+Authentication Intelligence:
+• Advanced authentication protocols with intelligent security validation and threat detection
+• Sophisticated session management with secure token handling and automated security protocols
+• Comprehensive authentication analytics with detailed security metrics and compliance insights
+• Advanced security automation with intelligent threat response and automated security protocols
+• Intelligent authentication optimization with performance monitoring and security enhancement
+• Integration with security frameworks for comprehensive authentication and authorization workflows
+
+Foundation Services:
+Provides the essential security infrastructure that enables secure, enterprise-grade
+authentication through comprehensive credential management, advanced security protocols,
+and professional authentication for genealogical automation and research workflows.
+
+Technical Implementation:
 Provides comprehensive credential management for the Ancestry automation project,
 including interactive setup, validation, and secure storage of authentication
 credentials with encryption and environment variable management.
@@ -1324,9 +1359,10 @@ def credentials_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive credentials tests using standardized TestSuite format."""
-    return credentials_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(credentials_module_tests)
 
 
 def main() -> bool:

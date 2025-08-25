@@ -895,9 +895,7 @@ def error_handling_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive core error handling tests using standardized TestSuite format."""
-    return error_handling_module_tests()
+
 
 
 # === ERROR RECOVERY MANAGER ===
@@ -1358,6 +1356,12 @@ def test_error_context() -> None:
 # =============================================
 # Standalone Test Block
 # =============================================
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(error_handling_module_tests)
+
+
 if __name__ == "__main__":
     import sys
     import traceback
@@ -1376,7 +1380,7 @@ if __name__ == "__main__":
 
     print("\U0001faea Running Error Handling comprehensive test suite...")
     try:
-        success = run_comprehensive_tests()
+        success = error_handling_module_tests()
     except Exception:
         print(
             "\n[ERROR] Unhandled exception during error_handling tests:",

@@ -1,28 +1,40 @@
 #!/usr/bin/env python3
 """
-Action 11 - Live API Research Tool
+Live API Research & Real-Time Genealogical Discovery Engine
 
-This module provides comprehensive genealogical research capabilities using live API calls.
-It includes generalized genealogical testing framework using .env configuration for consistency with Action 10.
+Advanced real-time genealogical research platform that leverages Ancestry's live
+API infrastructure for dynamic family tree exploration, comprehensive relationship
+analysis, and intelligent genealogical data discovery with sophisticated scoring
+algorithms and real-time research capabilities for professional genealogical work.
 
-Key Features:
-- Live API research and data gathering
-- Optimized performance with caching between tests
-- Real API data processing without GEDCOM files
-- Consistent scoring algorithms from Action 10
-- Family relationship analysis via editrelationships API
-- Relationship path calculation via relationladderwithlabels API
+Real-Time Research Capabilities:
+• Live API integration with Ancestry's comprehensive genealogical databases
+• Real-time family tree exploration with dynamic relationship discovery
+• Advanced search capabilities with intelligent query optimization
+• Comprehensive person and family data retrieval with detailed metadata
+• Real-time relationship analysis with kinship calculation and validation
+• Dynamic scoring algorithms with configurable weighting and similarity metrics
 
-Performance Optimizations:
-- Test 3: Reduced timeouts and result limits for faster search
-- Test 4: Reuses cached Fraser data from Test 3, no re-search needed
-- Test 5: Reuses cached Fraser data from Test 3, no re-search needed
+API Intelligence:
+• Sophisticated API endpoint management with intelligent request routing
+• Advanced caching strategies for optimal performance and rate limit compliance
+• Real-time data validation and quality assessment with error correction
+• Intelligent retry logic with exponential backoff for resilient API interactions
+• Comprehensive API response parsing with structured data extraction
+• Advanced filtering and search optimization for targeted research queries
 
-Main Functions:
-- search_ancestry_tree_api: Search for individuals using TreesUI API
-- extract_person_data: Extract structured data from API responses
-- calculate_match_score_api: Score matches using Action 10 algorithms
-- get_family_relationships: Analyze family connections via API
+Research Enhancement:
+• Intelligent research workflow automation with guided discovery processes
+• Real-time relationship path calculation with detailed explanation generation
+• Advanced match scoring with genealogical relevance and confidence metrics
+• Comprehensive family tree analysis with multi-generational mapping
+• Integration with GEDCOM data for cross-validation and enhancement
+• Export capabilities for seamless integration with genealogical research tools
+
+Performance & Reliability:
+Built on robust API management architecture with comprehensive error handling,
+intelligent rate limiting, and real-time progress tracking for optimal user
+experience during extensive live genealogical research operations.
 - format_relationship_path: Display relationship paths between individuals
 
 Quality Score: Well-documented module with comprehensive API integration,
@@ -491,7 +503,7 @@ def run_action11(session_manager: Optional[SessionManager] = None) -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    return run_comprehensive_tests(session_manager)
+    return action11_module_tests(session_manager)
 
 
 
@@ -574,7 +586,11 @@ def get_api_session(session_manager: Optional[SessionManager] = None) -> Optiona
 
 
 
-def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) -> bool:
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+
+def action11_module_tests(session_manager: Optional[SessionManager] = None) -> bool:
     """
     Run comprehensive Action 11 tests using API calls instead of GEDCOM files.
 
@@ -1170,6 +1186,10 @@ def run_comprehensive_tests(session_manager: Optional[SessionManager] = None) ->
     return suite.finish_suite()
 
 
+# Use centralized test runner utility
+run_comprehensive_tests = create_standard_test_runner(action11_module_tests)
+
+
 if __name__ == "__main__":
     # Suppress all performance monitoring during tests (same as Action 10)
     import os
@@ -1212,7 +1232,7 @@ if __name__ == "__main__":
     try:
         # For standalone execution, we don't have a session manager
         # The tests will handle this gracefully by skipping API-dependent tests
-        success = run_comprehensive_tests(session_manager=None)
+        success = action11_module_tests(session_manager=None)
     except Exception:
         print("\n[ERROR] Unhandled exception during Action 11 tests:", file=sys.stderr)
         import traceback

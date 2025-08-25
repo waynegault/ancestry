@@ -1,12 +1,41 @@
 #!/usr/bin/env python3
 
 """
-ai_interface.py - AI Model Interaction Layer
+AI Intelligence & Genealogical Content Analysis Engine
 
-Provides functions to interact with external AI models (configured via config.py)
-for tasks like message intent classification, genealogical data extraction, and reply generation.
-Supports DeepSeek (OpenAI compatible) and Google Gemini Pro. Includes error
-handling and rate limiting integration with SessionManager.
+Advanced artificial intelligence interface providing sophisticated genealogical
+content analysis, intelligent message classification, and automated research
+assistance through unified AI model integration with specialized genealogical
+knowledge processing and contextual understanding capabilities.
+
+Genealogical Intelligence:
+• Specialized genealogical content analysis with family tree context understanding
+• Advanced message classification with intent detection and sentiment analysis
+• Intelligent research assistance with automated suggestion generation
+• Comprehensive relationship analysis with kinship detection and validation
+• Advanced name entity recognition with genealogical context awareness
+• Intelligent data extraction from unstructured genealogical content
+
+AI Model Integration:
+• Unified interface supporting multiple AI providers and model architectures
+• Advanced prompt engineering with genealogical domain expertise
+• Intelligent response validation with quality assessment and confidence scoring
+• Sophisticated error handling with graceful degradation and fallback strategies
+• Comprehensive retry logic with exponential backoff and circuit breaker patterns
+• Real-time performance monitoring with latency and accuracy tracking
+
+Content Processing:
+• Advanced natural language processing for genealogical text analysis
+• Intelligent conversation threading with relationship context preservation
+• Automated content summarization with genealogical relevance scoring
+• Advanced entity extraction with genealogical relationship mapping
+• Intelligent content generation with personalization and context awareness
+• Comprehensive quality validation with accuracy and relevance assessment
+
+Research Enhancement:
+Provides sophisticated AI capabilities that enhance genealogical research through
+intelligent content analysis, automated research assistance, and contextual
+understanding of family relationships and genealogical data structures.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -1468,9 +1497,10 @@ def ai_interface_tests() -> dict[str, Any]:
     return all(test_results.values())
 
 
-def run_comprehensive_tests() -> bool:
-    """Run tests using unified test framework."""
-    return ai_interface_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(ai_interface_tests)
 
 
 def quick_health_check(session_manager: SessionManager) -> dict[str, Any]:

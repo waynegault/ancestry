@@ -1,9 +1,39 @@
 """
-Adaptive Rate Limiting System for Ancestry Project
+Adaptive Rate Limiting & Intelligent API Throttling Engine
 
-This module provides intelligent rate limiting that adapts based on API response
-patterns, success rates, and system performance. Optimizes throughput while
-maintaining API stability and avoiding 429 rate limit errors.
+Advanced rate limiting platform providing intelligent API throttling, dynamic
+adaptation algorithms, and comprehensive performance optimization with real-time
+monitoring, predictive scaling, and sophisticated caching strategies for optimal
+API interaction management and professional genealogical research workflows.
+
+Intelligent Rate Limiting:
+• Advanced adaptive rate limiting with dynamic threshold adjustment and performance monitoring
+• Intelligent API throttling with predictive scaling and real-time performance optimization
+• Sophisticated request queuing with priority management and intelligent scheduling algorithms
+• Comprehensive rate limit detection with automatic backoff strategies and recovery protocols
+• Advanced caching integration with intelligent cache management and optimization strategies
+• Integration with performance monitoring systems for comprehensive API interaction analytics
+
+Dynamic Adaptation:
+• Real-time performance monitoring with intelligent threshold adjustment and optimization
+• Predictive scaling algorithms with machine learning-based performance prediction models
+• Sophisticated load balancing with intelligent request distribution and resource optimization
+• Comprehensive error handling with automatic recovery protocols and fallback strategies
+• Advanced analytics with detailed performance metrics and optimization recommendations
+• Integration with monitoring systems for comprehensive rate limiting intelligence and insights
+
+Performance Optimization:
+• High-performance request processing with memory-efficient data structures and algorithms
+• Advanced caching strategies with intelligent cache management and optimization protocols
+• Optimized API interaction patterns with intelligent request batching and scheduling
+• Comprehensive performance analytics with detailed metrics and optimization insights
+• Real-time monitoring with intelligent alerting and automated optimization recommendations
+• Integration with performance systems for comprehensive API interaction optimization
+
+Foundation Services:
+Provides the essential rate limiting infrastructure that enables reliable, high-performance
+API interactions through intelligent throttling, dynamic adaptation, and comprehensive
+performance optimization for professional genealogical research and automation workflows.
 
 Author: Ancestry Automation System
 Created: August 6, 2025
@@ -1061,9 +1091,10 @@ def adaptive_rate_limiter_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive adaptive rate limiter tests using standardized TestSuite format."""
-    return adaptive_rate_limiter_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(adaptive_rate_limiter_module_tests)
 
 
 if __name__ == "__main__":

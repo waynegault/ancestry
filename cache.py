@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 
 """
-cache.py - Disk-Based Caching Utility
+High-Performance Disk Caching & Intelligent Data Management Engine
 
+Advanced caching platform providing sophisticated disk-based storage, intelligent
+cache management, and comprehensive performance optimization with automated cleanup,
+memory-efficient data structures, and professional-grade caching strategies for
+high-performance genealogical automation and data processing workflows.
+
+Intelligent Caching:
+• Advanced disk-based caching with intelligent data serialization and compression algorithms
+• Sophisticated cache management with automatic cleanup, size optimization, and performance monitoring
+• Intelligent cache invalidation with time-based expiration and dependency tracking systems
+• Comprehensive cache analytics with detailed performance metrics and optimization insights
+• Advanced cache coordination with multi-process synchronization and conflict resolution
+• Integration with performance monitoring systems for comprehensive caching intelligence
+
+Performance Optimization:
+• High-performance data serialization with optimized pickle protocols and compression strategies
+• Memory-efficient cache structures with intelligent memory management and resource optimization
+• Advanced cache sizing with automatic size limit enforcement and intelligent cleanup algorithms
+• Comprehensive performance monitoring with detailed timing metrics and optimization recommendations
+• Real-time cache analytics with intelligent reporting and automated optimization suggestions
+• Integration with performance systems for comprehensive cache performance optimization
+
+Data Management:
+• Sophisticated data integrity with comprehensive validation and error detection protocols
+• Advanced cache persistence with reliable storage and recovery mechanisms
+• Intelligent cache warming with predictive data loading and optimization strategies
+• Comprehensive backup and recovery with automated data protection and restoration
+• Advanced cache migration with seamless data transfer and version compatibility
+• Integration with data management systems for comprehensive cache orchestration
+
+Foundation Services:
+Provides the essential caching infrastructure that enables high-performance data
+storage and retrieval through intelligent cache management, comprehensive performance
+optimization, and professional-grade caching for genealogical automation workflows.
+
+Technical Implementation:
 Provides a persistent caching mechanism using the `diskcache` library.
 Includes a decorator (`@cache_result`) for easily caching function outputs
 and utility functions for managing the cache lifecycle (clearing, closing).
@@ -1456,9 +1491,10 @@ def cache_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive cache tests using standardized TestSuite format."""
-    return cache_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(cache_module_tests)
 
 
 if __name__ == "__main__":

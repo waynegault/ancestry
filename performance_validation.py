@@ -1,5 +1,42 @@
 #!/usr/bin/env python3
 """
+Performance Intelligence & Advanced System Optimization Engine
+
+Sophisticated performance platform providing comprehensive system optimization,
+intelligent performance monitoring, and advanced analytics with real-time
+performance tracking, automated optimization, and professional-grade performance
+management for genealogical automation and research workflow optimization.
+
+Performance Intelligence:
+• Advanced performance monitoring with intelligent metrics collection and analysis
+• Sophisticated performance optimization with automated tuning and enhancement protocols
+• Intelligent performance analytics with detailed insights and optimization recommendations
+• Comprehensive performance validation with quality assessment and verification protocols
+• Advanced performance coordination with multi-system optimization and synchronization
+• Integration with monitoring systems for comprehensive performance intelligence
+
+System Optimization:
+• Sophisticated system tuning with intelligent optimization algorithms and enhancement
+• Advanced resource management with optimized allocation and utilization protocols
+• Intelligent performance scaling with automated resource adjustment and optimization
+• Comprehensive performance testing with detailed analysis and validation protocols
+• Advanced performance automation with intelligent optimization and enhancement workflows
+• Integration with optimization platforms for comprehensive system performance management
+
+Analytics & Monitoring:
+• Advanced performance analytics with detailed metrics analysis and trend monitoring
+• Sophisticated performance reporting with comprehensive insights and recommendations
+• Intelligent performance alerting with automated notification and escalation protocols
+• Comprehensive performance documentation with detailed analysis reports and insights
+• Advanced performance integration with multi-system coordination and optimization
+• Integration with analytics systems for comprehensive performance monitoring and analysis
+
+Foundation Services:
+Provides the essential performance infrastructure that enables high-performance,
+optimized system operation through intelligent monitoring, comprehensive optimization,
+and professional performance management for genealogical automation workflows.
+
+Technical Implementation:
 Performance Validation Script - Tests the optimizations implemented
 
 This script validates the key performance improvements:
@@ -20,8 +57,8 @@ logger = logging.getLogger(__name__)
 
 # Import TestSuite for standardized testing
 try:
-    from test_framework import TestSuite
-    TESTSUITE_AVAILABLE = True
+    import importlib.util
+    TESTSUITE_AVAILABLE = importlib.util.find_spec("test_framework") is not None
 except ImportError:
     TESTSUITE_AVAILABLE = False
     print("Warning: TestSuite not available, using basic tests")
@@ -85,7 +122,7 @@ def test_rate_limiter_caching() -> bool:
 
     # Test with caching (repeated calls should be faster)
     start_time = time.time()
-    for i in range(50):
+    for _ in range(50):
         _apply_rate_limiting(session_manager, "Test API", 1)
     cached_time = time.time() - start_time
 
@@ -556,77 +593,6 @@ def test_utils_import_handling() -> bool:
         logger.error(f"Utils import test failed: {e}")
         return False
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive test suite with TestSuite integration"""
-    if not TESTSUITE_AVAILABLE:
-        logger.warning("TestSuite not available, running basic tests")
-        return _run_basic_tests()
-
-    suite = TestSuite("Performance Validation Comprehensive Tests", __name__)
-    suite.start_suite()
-
-    tests = [
-        ("CSRF Token Performance Metrics", test_csrf_token_performance_metrics,
-         "Validates CSRF token caching performance calculations",
-         "Should demonstrate significant speedup from caching vs WebDriver access",
-         "Tests timing measurements and speedup calculations for CSRF token retrieval"),
-
-        ("Rate Limiter Optimization Logic", test_rate_limiter_optimization_logic,
-         "Tests rate limiter caching optimization setup",
-         "Should properly configure mock rate limiters with expected return values",
-         "Validates rate limiter mock configuration and cache structure"),
-
-        ("Database Session Simulation", test_database_session_simulation,
-         "Tests database session reuse simulation calculations",
-         "Should demonstrate reduced session overhead through reuse",
-         "Validates session creation tracking and performance improvement calculations"),
-
-        ("Logging Optimization Measurement", test_logging_optimization_measurement,
-         "Tests logging optimization overhead measurement",
-         "Should measure timing differences between verbose and optimized logging",
-         "Validates logging performance measurement methodology"),
-
-        ("Validation Function Availability", test_validation_function_availability,
-         "Tests availability of core validation functions",
-         "Should verify all main validation functions are accessible and documented",
-         "Checks function availability, callability, and documentation"),
-
-        ("Performance Thresholds", test_performance_thresholds,
-         "Tests performance improvement threshold validation",
-         "Should validate expected performance improvement calculations",
-         "Validates speedup calculations and session reduction metrics"),
-
-        ("Mock Configuration Validation", test_mock_configuration_validation,
-         "Tests validation of mock object configurations",
-         "Should properly configure and validate mock session managers",
-         "Validates mock object setup for testing performance improvements"),
-
-        ("Optimization Results Validation", test_optimization_results_validation,
-         "Tests validation of optimization measurement results",
-         "Should validate result format and pass rate calculations",
-         "Validates test result structure and success metrics"),
-
-        ("Timing Measurement Accuracy", test_timing_measurement_accuracy,
-         "Tests accuracy of performance timing measurements",
-         "Should provide accurate timing measurements within expected ranges",
-         "Validates timing precision and measurement consistency"),
-
-        ("Error Handling Robustness", test_error_handling_robustness,
-         "Tests error handling in validation functions",
-         "Should handle invalid data and edge cases gracefully",
-         "Validates robust error handling and graceful degradation"),
-
-        ("Original Performance Validation Integration", test_original_validation_integration,
-         "Original validation functions integrate correctly and validate actual optimizations",
-         "Should run all original validation functions and validate optimization performance",
-         "Tests the complete original performance validation workflow")
-    ]
-
-    for test_name, test_func, expected, description, method_desc in tests:
-        suite.run_test(test_name, test_func, expected, description, method_desc)
-
-    return suite.finish_suite()
-
 def test_original_validation_integration() -> bool:
     """Test that original validation functions work correctly and validate actual performance optimizations"""
     try:
@@ -696,6 +662,13 @@ def _run_basic_tests() -> bool:
         print("⚠️ Some tests failed - review validation logic")
 
     return success
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(_run_basic_tests)
+
 
 if __name__ == "__main__":
     import sys

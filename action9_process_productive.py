@@ -1,17 +1,41 @@
 #!/usr/bin/env python3
 
 """
-Action 9: Productive DNA Match Processing
+Productive Message Analysis & Genealogical Task Generation Engine
 
-Analyzes and processes productive DNA matches with comprehensive relationship
-analysis, GEDCOM integration, and automated workflow management for genealogical
-research including match scoring, family tree analysis, and research prioritization.
+Advanced conversation intelligence system that transforms productive DNA match
+communications into structured genealogical insights, actionable research tasks,
+and comprehensive family tree enhancement recommendations through sophisticated
+AI-powered content analysis and automated task generation workflows.
 
-PHASE 1 OPTIMIZATIONS (2025-01-16):
-- Enhanced progress indicators with ETA calculations for match processing
-- Improved error recovery with exponential backoff for GEDCOM operations
-- Memory monitoring during large match analysis sessions
-- Better user feedback for relationship analysis workflows
+Intelligence Extraction:
+• AI-powered conversation analysis with genealogical context understanding
+• Automated extraction of names, dates, places, and relationships
+• Intelligent task generation based on conversation content and gaps
+• Comprehensive quality scoring and validation of extracted information
+• Automated research priority assessment and recommendation ranking
+• Integration with genealogical databases and family tree structures
+
+Task Generation Framework:
+• Dynamic task creation based on conversation insights and research gaps
+• Intelligent prioritization using genealogical relevance scoring
+• Automated research workflow generation with step-by-step guidance
+• Integration with external task management systems (Microsoft To-Do)
+• Comprehensive task categorization and tagging for organization
+• Progress tracking and completion monitoring
+
+Data Processing Architecture:
+• Batch processing with intelligent conversation threading
+• Real-time progress tracking with detailed analytics and ETA calculations
+• Exponential backoff for resilient AI service interactions
+• Memory optimization for large conversation datasets
+• Circuit breaker patterns for fault tolerance and graceful degradation
+• Comprehensive error recovery with detailed logging and monitoring
+
+Quality Assurance:
+Implements sophisticated validation, quality scoring, and monitoring to ensure
+accurate extraction and meaningful task generation suitable for serious
+genealogical research and family tree enhancement activities.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -553,7 +577,7 @@ def _search_gedcom_for_names(
     except Exception as e:
         error_msg = f"Error searching GEDCOM file: {e}"
         logger.error(error_msg, exc_info=True)
-        raise RuntimeError(error_msg)
+        raise RuntimeError(error_msg) from e
 
 
 def _validate_api_search_parameters(session_manager: Optional[SessionManager], names: Optional[list[str]]) -> list[str]:
@@ -688,7 +712,7 @@ def _search_api_for_names(
     except Exception as e:
         error_msg = f"Error searching Ancestry API: {e}"
         logger.error(error_msg, exc_info=True)
-        raise RuntimeError(error_msg)
+        raise RuntimeError(error_msg) from e
 
 
 #####################################################
@@ -1104,7 +1128,7 @@ class PersonProcessor:
         # Use enhanced tasks if available and enrichment flag enabled, otherwise fall back to standard tasks
         if enhanced_tasks and getattr(config_schema, "enable_task_enrichment", False):
             logger.info(f"{log_prefix}: Creating {len(enhanced_tasks)} enhanced MS To-Do tasks...")
-            for task_index, task_data in enumerate(enhanced_tasks):
+            for _, task_data in enumerate(enhanced_tasks):
                 task_title = task_data.get("title", f"Ancestry Research: {person.username or 'Unknown'}")
                 task_body = f"{task_data.get('description', 'Research task')}\n\n--- Task Details ---\nCategory: {task_data.get('category', 'general')}\nPriority: {task_data.get('priority', 'medium')}\nTemplate: {task_data.get('template_used', 'standard')}\n\n--- Match Information ---\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
 
@@ -2872,24 +2896,20 @@ def _calculate_task_data_integration_score(task: dict[str, Any], extracted_data:
     task.get('title', '').lower()
 
     # Score based on data type utilization
-    if extracted_data.get('vital_records'):
-        if any(term in task_desc for term in ['birth', 'death', 'marriage', 'vital']):
-            score += 0.3
+    if extracted_data.get('vital_records') and any(term in task_desc for term in ['birth', 'death', 'marriage', 'vital']):
+        score += 0.3
 
-    if extracted_data.get('locations'):
-        if any(term in task_desc for term in ['location', 'place', 'county', 'state']):
-            score += 0.25
+    if extracted_data.get('locations') and any(term in task_desc for term in ['location', 'place', 'county', 'state']):
+        score += 0.25
 
-    if extracted_data.get('relationships'):
-        if any(term in task_desc for term in ['family', 'parent', 'child', 'spouse', 'relationship']):
-            score += 0.2
+    if extracted_data.get('relationships') and any(term in task_desc for term in ['family', 'parent', 'child', 'spouse', 'relationship']):
+        score += 0.2
 
     if extracted_data.get('dna_information') and any(term in task_desc for term in ['dna', 'match', 'genetic']):
         score += 0.35
 
-    if extracted_data.get('occupations'):
-        if any(term in task_desc for term in ['occupation', 'work', 'job', 'career']):
-            score += 0.15
+    if extracted_data.get('occupations') and any(term in task_desc for term in ['occupation', 'work', 'job', 'career']):
+        score += 0.15
 
     # Bonus for specific names mentioned
     structured_names = extracted_data.get('structured_names', [])
@@ -2999,9 +3019,10 @@ def _calculate_task_quality_score(task: dict[str, Any], extracted_data: dict[str
     return min(1.0, score)
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return action9_process_productive_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(action9_process_productive_module_tests)
 
 
 if __name__ == "__main__":

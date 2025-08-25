@@ -1,24 +1,49 @@
 #!/usr/bin/env python3
 
 """
-utils.py - Core Session Management, API Requests, General Utilities
+Core Utilities & Session Management Infrastructure
 
-Manages Selenium/Requests sessions, handles core API interaction (_api_req),
-provides general utilities (decorators, formatting, rate limiting),
-and includes login/session verification logic closely tied to SessionManager.
+Comprehensive utility foundation providing essential services for genealogical
+automation including session management, API orchestration, web automation,
+and data processing utilities. Serves as the backbone infrastructure for all
+genealogical research workflows with robust error handling and performance optimization.
 
-Core Functions:
-- _api_req: Primary API request handler with authentication and error handling
-- rate_limit: Decorator for API rate limiting and throttling
-- format_duration: Human-readable time formatting
-- sanitize_filename: Safe filename generation
-- retry_with_backoff: Exponential backoff retry mechanism
-- validate_session: Session state validation
-- extract_csrf_token: CSRF token extraction from responses
+Session Management:
+• Advanced session lifecycle management with automatic recovery
+• Intelligent authentication handling with credential management
+• Browser automation with Selenium WebDriver integration
+• Session state persistence and restoration capabilities
+• Comprehensive session validation and health monitoring
+• Multi-session coordination for concurrent operations
 
-Quality Score: Large utility module with extensive functionality. Contains
-comprehensive error handling, logging, and session management. Could benefit
-from modularization to improve maintainability and reduce complexity.
+API Infrastructure:
+• Sophisticated API request handling with intelligent rate limiting
+• Advanced retry logic with exponential backoff and circuit breakers
+• Comprehensive response validation and error handling
+• Dynamic header management and cookie synchronization
+• Request/response caching with TTL-based invalidation
+• API endpoint management with intelligent routing
+
+Web Automation:
+• Robust browser automation with Selenium WebDriver
+• Intelligent element detection and interaction handling
+• Advanced page navigation with wait strategies and timeout management
+• Dynamic content handling with JavaScript execution capabilities
+• Comprehensive error recovery for web automation failures
+• Screenshot and debugging utilities for troubleshooting
+
+Data Processing:
+• Advanced data validation and normalization utilities
+• Comprehensive text processing and formatting functions
+• Database interaction helpers with transaction management
+• File I/O utilities with error handling and validation
+• Performance monitoring and optimization utilities
+• Logging and debugging infrastructure with structured output
+
+Foundation Services:
+Provides the essential infrastructure layer that enables reliable, scalable
+genealogical automation with comprehensive error handling, performance monitoring,
+and robust session management for professional research workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -4026,12 +4051,13 @@ def test_decorators():
         assert callable(ensure_browser_open), "ensure_browser_open decorator should be callable"
         assert callable(time_wait), "time_wait decorator should be callable"
 
-        # Basic decorator functionality test
-        @retry(MAX_RETRIES=1, BACKOFF_FACTOR=0.001)
-        def test_func():
-            return "success"
+        # Basic decorator functionality test using centralized test utilities
+        from test_utilities import create_test_function
 
-        result = test_func()
+        test_func = create_test_function("success")
+        decorated_test_func = retry(MAX_RETRIES=1, BACKOFF_FACTOR=0.001)(test_func)
+
+        result = decorated_test_func()
         assert result == "success", "Retry decorator should work"
         return True
     except Exception:
@@ -4283,9 +4309,10 @@ def utils_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive utils tests using standardized TestSuite format."""
-    return utils_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(utils_module_tests)
 
 
 if __name__ == "__main__":

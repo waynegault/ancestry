@@ -185,7 +185,7 @@ class OptimizedLogger:
 # COMPREHENSIVE TEST SUITE
 # =============================================================================
 
-def run_comprehensive_tests() -> bool:
+def logging_utils_module_tests() -> bool:
     """
     Comprehensive test suite for core/logging_utils.py.
 
@@ -479,8 +479,14 @@ def run_comprehensive_tests() -> bool:
             return False
 
 
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(logging_utils_module_tests)
+
+
 if __name__ == "__main__":
     import sys
     print("🧪 Running Logging Utils Comprehensive Tests...")
-    success = run_comprehensive_tests()
+    success = logging_utils_module_tests()
     sys.exit(0 if success else 1)

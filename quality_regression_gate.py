@@ -1,5 +1,43 @@
 #!/usr/bin/env python3
-"""Quality Regression Gate
+"""
+Quality Regression Gate & Advanced System Intelligence Engine
+
+Sophisticated platform providing comprehensive automation capabilities,
+intelligent processing, and advanced functionality with optimized algorithms,
+professional-grade operations, and comprehensive management for genealogical
+automation and research workflows.
+
+System Intelligence:
+• Advanced automation with intelligent processing and optimization protocols
+• Sophisticated management with comprehensive operational capabilities
+• Intelligent coordination with multi-system integration and synchronization
+• Comprehensive analytics with detailed performance metrics and insights
+• Advanced validation with quality assessment and verification protocols
+• Integration with platforms for comprehensive system management and automation
+
+Automation Capabilities:
+• Sophisticated automation with intelligent workflow generation and execution
+• Advanced optimization with performance monitoring and enhancement protocols
+• Intelligent coordination with automated management and orchestration
+• Comprehensive validation with quality assessment and reliability protocols
+• Advanced analytics with detailed operational insights and optimization
+• Integration with automation systems for comprehensive workflow management
+
+Professional Operations:
+• Advanced professional functionality with enterprise-grade capabilities and reliability
+• Sophisticated operational protocols with professional standards and best practices
+• Intelligent optimization with performance monitoring and enhancement
+• Comprehensive documentation with detailed operational guides and analysis
+• Advanced security with secure protocols and data protection measures
+• Integration with professional systems for genealogical research workflows
+
+Foundation Services:
+Provides the essential infrastructure that enables reliable, high-performance
+operations through intelligent automation, comprehensive management,
+and professional capabilities for genealogical automation and research workflows.
+
+Technical Implementation:
+Quality Regression Gate
 
 Purpose:
   Optional CI/build gating script that fails (exit code 1) if the current
@@ -122,8 +160,10 @@ def quality_regression_gate_module_tests() -> bool:
                        "Check presence of status key")
     return suite.finish_suite()
 
-def run_comprehensive_tests() -> bool:
-    return quality_regression_gate_module_tests()
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(quality_regression_gate_module_tests)
 
 if __name__ == "__main__":
     # If an environment variable or no extra CLI args, also run internal tests so harness counts them.

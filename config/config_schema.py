@@ -116,28 +116,11 @@ def validate_path_exists(path: Union[str, Path]) -> bool:
     return Path(path).exists() if path else False
 
 
-def validate_file_extension(
-    extensions: list[str],
-) -> Callable[[Union[str, Path]], bool]:
-    """Create validator for file extensions."""
-
-    def validator(path: Union[str, Path]) -> bool:
-        if not path:
-            return True  # Allow None/empty values
-        path_obj = Path(path)
-        return path_obj.suffix.lower() in [ext.lower() for ext in extensions]
-
-    return validator
+# Import centralized file extension validation utility
 
 
-def validate_port_range(port: int) -> bool:
-    """Validate port is in valid range."""
-    return 1024 <= port <= 65535
-
-
-def validate_positive_integer(value: int) -> bool:
-    """Validate value is a positive integer."""
-    return isinstance(value, int) and value > 0
+# Import centralized validation utilities
+from test_utilities import validate_positive_integer
 
 
 @dataclass
@@ -784,7 +767,7 @@ class ConfigSchema:
         return errors
 
 
-def run_comprehensive_tests() -> bool:
+def config_schema_module_tests() -> bool:
     """
     Run comprehensive tests for the Config Schema classes.
 
@@ -1272,6 +1255,12 @@ def run_comprehensive_tests() -> bool:
 
     # Finish suite and return result
     return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(config_schema_module_tests)
 
 
 if __name__ == "__main__":
