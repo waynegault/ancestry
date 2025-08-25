@@ -583,7 +583,7 @@ class GedcomIntelligenceAnalyzer:
 
 
 # Test functions
-def test_gedcom_intelligence():
+def test_gedcom_intelligence() -> bool:
     """Test the GEDCOM intelligence analyzer."""
     logger.info("Testing GEDCOM intelligence analyzer...")
 
@@ -607,7 +607,7 @@ def test_gedcom_intelligence():
     return True
 
 
-def test_gap_detection_with_mocked_birth_year():
+def test_gap_detection_with_mocked_birth_year() -> None:
     """Mock birth year extraction to trigger missing parents gap logic (>1800)."""
     analyzer = GedcomIntelligenceAnalyzer()
     mock_gedcom = type('MockGedcom', (), {
@@ -625,7 +625,7 @@ def test_gap_detection_with_mocked_birth_year():
     assert any('Missing birth location' in g['description'] for g in result['gaps_identified']), "Should include missing place gap"
 
 
-def test_ai_insights_structure():
+def test_ai_insights_structure() -> None:
     """Ensure ai_insights include expected nested keys even with placeholder implementations."""
     analyzer = GedcomIntelligenceAnalyzer()
     mock_gedcom = type('MockGedcom', (), {
