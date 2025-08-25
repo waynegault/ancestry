@@ -212,11 +212,6 @@ from functools import wraps
 
 
 # FINAL OPTIMIZATION 1: Progressive Processing Import
-from performance_cache import progressive_processing
-from utils import (
-    JSONP_PATTERN,
-    fast_json_loads,
-)
 
 # In-memory cache for API responses with TTL
 API_RESPONSE_CACHE = {}
@@ -318,12 +313,19 @@ from error_handling import (
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
+from standard_imports import setup_module
+from color_utils import Colors
+from core.enhanced_error_recovery import with_enhanced_recovery
+from core.logging_utils import OptimizedLogger
+from performance_cache import progressive_processing
 from utils import (
-    _api_req,  # API request helper
-    format_name,  # Name formatting utility
-    nav_to_page,  # Navigation helper
-    ordinal_case,  # Ordinal case formatting
-    retry_api,  # API retry decorator
+    JSONP_PATTERN,           # JSONP detection
+    fast_json_loads,         # Fast JSON loader
+    _api_req,                # API request helper
+    format_name,             # Name formatting utility
+    nav_to_page,             # Navigation helper
+    ordinal_case,            # Ordinal case formatting
+    retry_api,               # API retry decorator
 )
 
 
