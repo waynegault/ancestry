@@ -39,7 +39,7 @@ def test_csrf_token_caching() -> bool:
     session_manager._csrf_cache_time = time.time()
     session_manager._csrf_cache_duration = 300  # 5 minutes
 
-    def _is_csrf_token_valid():
+    def _is_csrf_token_valid() -> bool:
         return (time.time() - session_manager._csrf_cache_time) < session_manager._csrf_cache_duration
 
     session_manager._is_csrf_token_valid = _is_csrf_token_valid
@@ -246,7 +246,7 @@ def test_csrf_token_performance_metrics() -> bool:
         session_manager._csrf_cache_time = time.time()
         session_manager._csrf_cache_duration = 300
 
-        def _is_csrf_token_valid():
+        def _is_csrf_token_valid() -> bool:
             return (time.time() - session_manager._csrf_cache_time) < session_manager._csrf_cache_duration
 
         session_manager._is_csrf_token_valid = _is_csrf_token_valid
