@@ -24,11 +24,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from color_utils import Colors
-from core.enhanced_error_recovery import with_enhanced_recovery
-
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import create_progress_indicator
 
 
 # Performance monitoring helper with session manager integration
@@ -95,7 +91,6 @@ def _progress_callback(progress: float) -> None:
     logger.info(f"Processing progress: {progress:.1%} complete")
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
 
 # === RUN-ID & SINGLE-INSTANCE LOCK ===
 
@@ -215,7 +210,6 @@ class ColorLogger:
 import hashlib
 from functools import wraps
 
-from core.logging_utils import OptimizedLogger
 
 # FINAL OPTIMIZATION 1: Progressive Processing Import
 from performance_cache import progressive_processing
