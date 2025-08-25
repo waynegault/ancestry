@@ -424,7 +424,7 @@ def run_comprehensive_tests() -> bool:
 
         suite = TestSuite("Python Best Practices", "python_best_practices")
 
-        def test_immutable_config():
+        def test_immutable_config() -> None:
             """Test immutable configuration."""
             config = ImmutableConfig(name="test", version="1.0.0")
             assert config.name == "test"
@@ -437,7 +437,7 @@ def run_comprehensive_tests() -> bool:
             except AttributeError:
                 pass  # Expected
 
-        def test_type_validation():
+        def test_type_validation() -> None:
             """Test type validation decorator."""
             @validate_types(name=str, age=int)
             def create_person(name: str, age: int) -> str:
@@ -454,7 +454,7 @@ def run_comprehensive_tests() -> bool:
             except TypeError:
                 pass  # Expected
 
-        def test_safe_operation():
+        def test_safe_operation() -> None:
             """Test safe operation context manager."""
             with safe_operation("test_operation", reraise=False):
                 pass  # Should complete successfully

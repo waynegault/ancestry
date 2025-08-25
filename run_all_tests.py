@@ -243,7 +243,7 @@ def run_quality_checks() -> bool:
         return True
 
 
-def discover_test_modules():
+def discover_test_modules() -> list[str]:
     """
     Discover all Python modules that contain tests by scanning the project directory.
 
