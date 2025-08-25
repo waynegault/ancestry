@@ -46,7 +46,7 @@ class ErrorContext:
     partial_results: list[Any] = field(default_factory=list)
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF
 
-    def add_error(self, error: Exception):
+    def add_error(self, error: Exception) -> None:
         """Add an error to the history"""
         self.last_error = error
         self.error_history.append(error)
@@ -77,7 +77,7 @@ class EnhancedErrorRecovery:
     - Recovery statistics and monitoring
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.recovery_stats: dict[str, dict[str, int]] = {}
         self.circuit_breakers: dict[str, dict[str, Any]] = {}
 
@@ -90,7 +90,7 @@ class EnhancedErrorRecovery:
             'partial_successes': 0
         })
 
-    def update_stats(self, operation: str, success: bool, partial: bool = False):
+    def update_stats(self, operation: str, success: bool, partial: bool = False) -> None:
         """Update recovery statistics"""
         if operation not in self.recovery_stats:
             self.recovery_stats[operation] = {

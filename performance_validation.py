@@ -29,7 +29,7 @@ except ImportError:
 
 # ===== ORIGINAL PERFORMANCE VALIDATION FUNCTIONS =====
 
-def test_csrf_token_caching():
+def test_csrf_token_caching() -> bool:
     """Test CSRF token caching performance improvement"""
     logger.info("🧪 Testing CSRF token caching...")
 
@@ -63,7 +63,7 @@ def test_csrf_token_caching():
     return speedup > 50  # Should be much faster
 
 
-def test_rate_limiter_caching():
+def test_rate_limiter_caching() -> bool:
     """Test rate limiter caching performance"""
     logger.info("🧪 Testing rate limiter caching...")
 
@@ -104,7 +104,7 @@ def test_rate_limiter_caching():
     return True
 
 
-def test_database_session_reuse():
+def test_database_session_reuse() -> bool:
     """Test database session reuse concept"""
     logger.info("🧪 Testing database session reuse simulation...")
 
@@ -141,7 +141,7 @@ def test_database_session_reuse():
     return speedup > 1.8  # Should be significantly faster
 
 
-def test_logging_optimization():
+def test_logging_optimization() -> bool:
     """Test reduced logging overhead"""
     logger.info("🧪 Testing logging optimization...")
 
@@ -180,7 +180,7 @@ def test_logging_optimization():
     return True
 
 
-def validate_all_optimizations():
+def validate_all_optimizations() -> bool:
     """Run all performance validation tests"""
     logger.info("🚀 Starting Performance Validation Tests")
     logger.info("=" * 60)
@@ -237,7 +237,7 @@ def validate_all_optimizations():
 
 # ===== COMPREHENSIVE TEST SUITE =====
 
-def test_csrf_token_performance_metrics():
+def test_csrf_token_performance_metrics() -> bool:
     """Test CSRF token caching performance improvement calculations"""
     try:
         # Mock session manager with caching
@@ -272,7 +272,7 @@ def test_csrf_token_performance_metrics():
         logger.error(f"CSRF token performance test failed: {e}")
         return False
 
-def test_rate_limiter_optimization_logic():
+def test_rate_limiter_optimization_logic() -> bool:
     """Test rate limiter caching optimization functionality"""
     try:
         # Test rate limiter mock setup
@@ -294,7 +294,7 @@ def test_rate_limiter_optimization_logic():
         logger.error(f"Rate limiter optimization test failed: {e}")
         return False
 
-def test_database_session_simulation():
+def test_database_session_simulation() -> bool:
     """Test database session reuse simulation calculations"""
     try:
         # Simulate session creation overhead measurement
@@ -334,7 +334,7 @@ def test_database_session_simulation():
         logger.error(f"Database session simulation test failed: {e!s}")
         return False
 
-def test_logging_optimization_measurement():
+def test_logging_optimization_measurement() -> bool:
     """Test logging optimization overhead measurement"""
     try:
         # Test logging setup
@@ -365,7 +365,7 @@ def test_logging_optimization_measurement():
         logger.error(f"Logging optimization test failed: {e}")
         return False
 
-def test_validation_function_availability():
+def test_validation_function_availability() -> bool:
     """Test availability of core validation functions"""
     try:
         # Check that all main functions are available
@@ -387,7 +387,7 @@ def test_validation_function_availability():
         logger.error(f"Function availability test failed: {e}")
         return False
 
-def test_performance_thresholds():
+def test_performance_thresholds() -> bool:
     """Test performance improvement threshold validation"""
     try:
         # Test threshold calculations
@@ -411,7 +411,7 @@ def test_performance_thresholds():
         logger.error(f"Performance thresholds test failed: {e}")
         return False
 
-def test_mock_configuration_validation():
+def test_mock_configuration_validation() -> bool:
     """Test validation of mock object configurations"""
     try:
         # Test session manager mock
@@ -440,7 +440,7 @@ def test_mock_configuration_validation():
         logger.error(f"Mock configuration test failed: {e}")
         return False
 
-def test_optimization_results_validation():
+def test_optimization_results_validation() -> bool:
     """Test validation of optimization measurement results"""
     try:
         # Test result structure validation
@@ -472,7 +472,7 @@ def test_optimization_results_validation():
         logger.error(f"Optimization results validation test failed: {e}")
         return False
 
-def test_timing_measurement_accuracy():
+def test_timing_measurement_accuracy() -> bool:
     """Test accuracy of performance timing measurements"""
     try:
         # Test timing precision
@@ -503,7 +503,7 @@ def test_timing_measurement_accuracy():
         logger.error(f"Timing measurement test failed: {e}")
         return False
 
-def test_error_handling_robustness():
+def test_error_handling_robustness() -> bool:
     """Test error handling in validation functions"""
     try:
         # Test with broken mock
@@ -534,7 +534,7 @@ def test_error_handling_robustness():
         logger.error(f"Error handling test failed: {e}")
         return False
 
-def test_utils_import_handling():
+def test_utils_import_handling() -> bool:
     """Test handling of optional utils import"""
     try:
         # Test import availability check
@@ -556,7 +556,7 @@ def test_utils_import_handling():
         logger.error(f"Utils import test failed: {e}")
         return False
 
-def run_comprehensive_tests():
+def run_comprehensive_tests() -> bool:
     """Run comprehensive test suite with TestSuite integration"""
     if not TESTSUITE_AVAILABLE:
         logger.warning("TestSuite not available, running basic tests")
@@ -627,7 +627,7 @@ def run_comprehensive_tests():
 
     return suite.finish_suite()
 
-def test_original_validation_integration():
+def test_original_validation_integration() -> bool:
     """Test that original validation functions work correctly and validate actual performance optimizations"""
     try:
         # Run each original validation function individually
@@ -652,7 +652,7 @@ def test_original_validation_integration():
         logger.error(f"Original validation integration test failed: {e}")
         return False
 
-def _run_basic_tests():
+def _run_basic_tests() -> bool:
     """Fallback test runner when TestSuite is not available"""
     print(f"\n{'='*60}")
     print("🧪 Running Basic Performance Validation Tests")

@@ -101,16 +101,16 @@ class ProgressIndicator:
         self._last_update = 0.0
         self._lock = threading.Lock()
 
-    def __enter__(self):
+    def __enter__(self) -> 'ProgressIndicator':
         """Context manager entry"""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager exit"""
         self.finish()
 
-    def start(self):
+    def start(self) -> None:
         """Initialize the progress bar"""
         if self.show_bar:
             tqdm_kwargs = {
@@ -134,7 +134,7 @@ class ProgressIndicator:
         api_calls: int = 0,
         cache_hits: int = 0,
         custom_status: Optional[str] = None
-    ):
+    ) -> None:
         """Update progress with optional statistics"""
         with self._lock:
             self.stats.items_processed += increment
@@ -153,7 +153,7 @@ class ProgressIndicator:
                 self._update_display(custom_status)
                 self._last_update = current_time
 
-    def _update_display(self, custom_status: Optional[str] = None):
+    def _update_display(self, custom_status: Optional[str] = None) -> None:
         """Update the progress bar display"""
         if self.progress_bar is None:
             return
@@ -192,7 +192,7 @@ class ProgressIndicator:
 
         self.progress_bar.refresh()
 
-    def set_total(self, total: int):
+    def set_total(self, total: int) -> None:
         """Update the total number of items"""
         with self._lock:
             self.stats.total_items = total
@@ -200,7 +200,7 @@ class ProgressIndicator:
                 self.progress_bar.total = total
                 self.progress_bar.refresh()
 
-    def log_milestone(self, message: str, level: int = logging.INFO):
+    def log_milestone(self, message: str, level: int = logging.INFO) -> None:
         """Log a milestone message"""
         elapsed = self.stats.elapsed_seconds()
         rate = self.stats.items_per_second()
@@ -217,7 +217,7 @@ class ProgressIndicator:
 
         logger.log(level, milestone_msg)
 
-    def finish(self, final_message: Optional[str] = None):
+    def finish(self, final_message: Optional[str] = None) -> None:
         """Complete the progress tracking"""
         if self.progress_bar is not None:
             # Ensure progress bar shows completion
