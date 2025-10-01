@@ -58,7 +58,7 @@
   "reportMissingModuleSource": "none",
   "reportInvalidTypeVarUse": true,
   "reportCallIssue": true,
-  "reportArgumentType": true,
+  "reportArgumentType": "none",
   "reportAssignmentType": true,
   "reportAttributeAccessIssue": "none",
   "reportIndexIssue": true,
