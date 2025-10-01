@@ -1025,28 +1025,19 @@ def call_suggest_api(
             "Suggest API call failed: _api_req function unavailable (Import Failed?)."
         )
         raise AncestryException(
-            "_api_req function not available from utils",
-            error_code="IMPORT_ERROR",
-            severity="FATAL",
-            recovery_hint="Check module imports and dependencies",
+            "_api_req function not available from utils - Check module imports and dependencies"
         )
 
     if not isinstance(session_manager, SessionManager) and not hasattr(
         session_manager, "is_sess_valid"
     ):
         raise AncestryException(
-            "Invalid SessionManager passed to suggest API",
-            error_code="INVALID_SESSION_MANAGER",
-            severity="ERROR",
-            recovery_hint="Provide a valid SessionManager instance",
+            "Invalid SessionManager passed to suggest API - Provide a valid SessionManager instance"
         )
 
     if not owner_tree_id:
         raise AncestryException(
-            "owner_tree_id is required for suggest API",
-            error_code="MISSING_TREE_ID",
-            severity="ERROR",
-            recovery_hint="Provide a valid tree ID",
+            "owner_tree_id is required for suggest API - Provide a valid tree ID"
         )
 
     api_description = "Suggest API"
