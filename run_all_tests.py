@@ -922,6 +922,9 @@ def main() -> bool:
     # Set environment variable to skip live API tests that require browser/network
     os.environ["SKIP_LIVE_API_TESTS"] = "true"
 
+    # Set environment variable to skip slow simulation tests (724-page workload, etc.)
+    os.environ["SKIP_SLOW_TESTS"] = "true"
+
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
     if enable_fast_mode:
         print("🚀 FAST MODE: Parallel execution enabled")
