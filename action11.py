@@ -1256,67 +1256,10 @@ def _score_detailed_match(  # type: ignore[unused-function]
 
 # Family/Relationship Display Functions
 
-def _convert_api_family_to_display_format(api_family: Dict) -> Dict:  # type: ignore[unused-function]
-    """Convert API family structure to the format expected by _display_family_info."""
-    display_family = {}
-
-    # Convert parents
-    parents = api_family.get("parents", [])
-    fathers = [p for p in parents if p.get("gender") == "M"]
-    mothers = [p for p in parents if p.get("gender") == "F"]
-    display_family["Fathers"] = fathers
-    display_family["Mothers"] = mothers
-
-    # Convert siblings
-    display_family["Siblings"] = api_family.get("siblings", [])
-    display_family["HalfSiblings"] = api_family.get("half_siblings", [])
-
-    # Convert spouses
-    display_family["Spouses"] = api_family.get("spouses", [])
-
-    # Convert children
-    display_family["Children"] = api_family.get("children", [])
-
-    return display_family
+# _convert_api_family_to_display_format removed - unused 22-line family converter
 
 
-def _extract_family_from_relationship_calculation(person_id: str, tree_id: str, session_manager_local) -> Dict:  # type: ignore[unused-function]
-    """
-    Extract family data by calling the same Tree Ladder API that's used for relationship calculation.
-    This reuses the working relationship calculation logic to get family member names.
-    """
-    try:
-        from api_utils import call_getladder_api
-
-        logger.debug(f"Calling Tree Ladder API for relationship calculation to extract family data")
-
-        # Use the same URL pattern that works for relationship calculation
-        base_url = f"https://www.ancestry.co.uk/family-tree/person/tree/{tree_id}/person/{person_id}"
-
-        # Call the Tree Ladder API with correct parameters (same as relationship calculation)
-        ladder_response = call_getladder_api(session_manager_local, tree_id, person_id, base_url)
-
-        if not ladder_response:
-            logger.debug("No response from Tree Ladder API")
-            return {}
-
-        logger.debug(f"Tree Ladder API response type: {type(ladder_response)}")
-
-        # The Tree Ladder API returns a string response that contains relationship information
-        if isinstance(ladder_response, str):
-            # Parse the relationship path to extract family member names
-            family_data = _parse_family_from_relationship_text(ladder_response)
-            logger.debug(f"Parsed family data from relationship text: {family_data}")
-            return family_data
-        else:
-            logger.debug("Tree Ladder API response is not a string")
-            return {}
-
-    except Exception as e:
-        logger.debug(f"Error extracting family from relationship calculation: {e}")
-        import traceback
-        logger.debug(f"Traceback: {traceback.format_exc()}")
-        return {}
+# _extract_family_from_relationship_calculation removed - unused 37-line family extractor
 
 
 def _extract_family_from_tree_ladder_response(person_id: str, tree_id: str, session_manager_local) -> Dict:  # type: ignore[unused-function]

@@ -100,13 +100,12 @@ config = config_manager.get_config()
 
 # === TYPE ALIASES ===
 # Define type aliases for GEDCOM types
-if TYPE_CHECKING:
-    GedcomIndividualType = Individual
-    GedcomRecordType = Record
-    GedcomNameType = Name
-    GedcomNameRecType = NameRec
-    GedcomReaderType = GedcomReader
-# else block removed - GEDCOM is always available (required dependency)
+# Define type aliases for GEDCOM classes (always available as required dependency)
+GedcomIndividualType = Individual
+GedcomRecordType = Record
+GedcomNameType = Name
+GedcomNameRecType = NameRec
+GedcomReaderType = GedcomReader
 TAG_INDI = "INDI"
 TAG_BIRTH = "BIRT"
 TAG_DEATH = "DEAT"
