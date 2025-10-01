@@ -30,7 +30,7 @@ else:
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (  # type: ignore[import-not-found]
+from error_handling import (
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
@@ -68,7 +68,6 @@ import binascii  # For make_ube
 import contextlib  # Added import for contextlib
 import random  # For make_newrelic, retry_api, DynamicRateLimiter
 import sqlite3  # For SessionManager._initialize_db_engine_and_session (pragma exception)
-import time
 import uuid  # For make_ube, make_traceparent, make_tracestate
 from datetime import datetime, timezone
 from functools import wraps
