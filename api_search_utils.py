@@ -14,28 +14,13 @@ criteria matching for genealogical research and family tree analysis.
 
 # === CORE INFRASTRUCTURE ===
 from core_imports import (
-    register_function,
-    get_function,
-    is_function_available,
     standardize_module_imports,
     auto_register_module,
     get_logger,
 )
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
+# Imports removed - not used in this module
 
 standardize_module_imports()
 auto_register_module(globals(), __name__)
@@ -49,8 +34,6 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
 
 # === LOCAL IMPORTS ===

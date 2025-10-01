@@ -1901,7 +1901,7 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
     # End of if
     driver = session_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
-    page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)
+    # page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)  # Not used
     short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
     try:
         print(
@@ -1936,6 +1936,12 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
             logger.error(f"WebDriverException waiting for 2FA header: {e}")
             return False
         # End of try/except
+
+        # Handle cookie consent banner if present on 2FA page
+        logger.debug("Checking for cookie consent banner on 2FA page...")
+        if not consent(driver):
+            logger.warning("Failed to handle consent banner on 2FA page, but continuing anyway.")
+        # End of if
 
         # Try clicking SMS button
         try:
@@ -2129,11 +2135,52 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
         logger.debug("Username entered.")
         time.sleep(random.uniform(0.2, 0.4))
 
+        # --- Click Next Button (two-step login flow) ---
+        logger.debug("Looking for Next/Continue button after username...")
+        next_clicked = False
+        try:
+            # The sign in button might say "Next" on the first step
+            next_button = short_wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
+            )
+            logger.debug("Next button found, attempting to click...")
+
+            # Try multiple click methods
+            try:
+                # First try: JavaScript click (more reliable when elements might be obscured)
+                driver.execute_script("arguments[0].click();", next_button)
+                logger.debug("Next button clicked via JavaScript.")
+                next_clicked = True
+            except WebDriverException as js_err:  # type: ignore
+                logger.warning(f"JS click failed: {js_err}, trying standard click...")
+                try:
+                    next_button.click()
+                    logger.debug("Next button clicked successfully (standard click).")
+                    next_clicked = True
+                except (ElementClickInterceptedException, ElementNotInteractableException) as e:  # type: ignore
+                    logger.error(f"Both click methods failed: {e}")
+
+            if next_clicked:
+                logger.info("Next button clicked, waiting for password field to appear...")
+                time.sleep(random.uniform(2.0, 3.0))  # Wait for password field to appear
+        except TimeoutException:  # type: ignore
+            logger.debug("Next button not found, assuming single-step login (password field already visible).")
+        except WebDriverException as e:  # type: ignore
+            logger.warning(f"Error finding Next button: {e}. Continuing anyway.")
+        # End of try/except
+
         # --- Password ---
         logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")  # type: ignore
-        password_input = element_wait.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
-        )
+        try:
+            password_input = element_wait.until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+            )
+        except TimeoutException:  # type: ignore
+            logger.error("Password field did not appear after clicking Next. Retrying with longer wait...")
+            # Try one more time with a longer wait
+            password_input = WebDriverWait(driver, 30).until(  # type: ignore
+                EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+            )
         logger.debug("Password input field found.")
         try:
             # Attempt to clear field robustly
@@ -2291,46 +2338,8 @@ def consent(driver: WebDriver) -> bool:  # type: ignore
         return False  # Indicate failure if check fails
     # End of try/except
 
-    # If overlay detected, try to handle it
-    removed_via_js = False
+    # If overlay detected, try clicking the accept button (don't use JS removal)
     if overlay_element:
-        # Attempt 1: Try removing the element directly with JS
-        try:
-            logger.debug("Attempting JS removal of consent overlay...")
-            driver.execute_script("arguments[0].remove();", overlay_element)
-            time.sleep(0.5)  # Allow DOM to update
-            # Verify removal
-            try:
-                WebDriverWait(driver, 1).until_not(  # type: ignore
-                    EC.presence_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)  # type: ignore
-                    )
-                )
-                logger.debug("Cookie consent overlay REMOVED successfully via JS.")
-                removed_via_js = True
-                return True  # Success
-            except TimeoutException:  # type: ignore
-                logger.warning(
-                    "Consent overlay still present after JS removal attempt."
-                )
-            except WebDriverException as verify_err:  # type: ignore
-                logger.warning(
-                    f"Error verifying overlay removal after JS: {verify_err}"
-                )
-            # End of try/except verification
-        except WebDriverException as js_err:  # type: ignore
-            logger.warning(
-                f"Error removing consent overlay via JS: {js_err}. Trying button click..."
-            )
-        except Exception as e:  # Catch other unexpected errors during JS removal
-            logger.warning(
-                f"Unexpected error during JS removal of consent: {e}. Trying button click..."
-            )
-        # End of try/except JS removal
-    # End of if overlay_element
-
-    # Attempt 2: Try clicking the specific accept button if JS removal failed/skipped
-    if not removed_via_js:
         logger.debug(
             f"JS removal failed/skipped. Trying specific accept button: '{CONSENT_ACCEPT_BUTTON_SELECTOR}'"
         )
@@ -2894,7 +2903,7 @@ def nav_to_page(
 
     # Define common problematic URLs/selectors
     signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip("/")
-    mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")
+    # mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")  # Not used
     # Selectors for known 'unavailable' pages
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),  # type: ignore # Selector : (action, wait_seconds)

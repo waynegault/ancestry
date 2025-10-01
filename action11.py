@@ -11,8 +11,6 @@ with relationship path calculations and family tree visualization.
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
     is_function_available,
 )
 
@@ -20,19 +18,7 @@ from standard_imports import (
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
+# Imports removed - not used in this module
 
 logger = setup_module(globals(), __name__)
 
@@ -44,7 +30,7 @@ import os
 import re  # Added for robust lifespan splitting
 import sys
 import time
-import urllib.parse
+# import urllib.parse  # Not used
 from datetime import datetime
 from pathlib import Path
 from traceback import print_exception
@@ -125,8 +111,7 @@ except Exception as e:
 
 # Double check critical configs
 if (
-    config_schema is None
-    or not hasattr(config_schema, "common_scoring_weights")
+    not hasattr(config_schema, "common_scoring_weights")
     or not hasattr(config_schema, "selenium")
     or not hasattr(config_schema.selenium, "api_timeout")
 ):
@@ -144,10 +129,10 @@ try:
     from gedcom_utils import calculate_match_score, _parse_date, _clean_display_date
 
     logger.debug("Successfully imported functions from gedcom_utils.")
-    GEDCOM_SCORING_AVAILABLE = calculate_match_score is not None and callable(
+    GEDCOM_SCORING_AVAILABLE = calculate_match_score is not None and callable(  # type: ignore
         calculate_match_score
     )
-    GEDCOM_UTILS_AVAILABLE = all(
+    GEDCOM_UTILS_AVAILABLE = all(  # type: ignore
         f is not None for f in [_parse_date, _clean_display_date]
     )
     if not GEDCOM_UTILS_AVAILABLE:
@@ -198,7 +183,7 @@ if not session_manager:
 
 # --- Helper Function for Parsing PersonFacts Array (Kept local as it's specific parsing logic) ---
 def _extract_fact_data(
-    person_facts: List[Dict], fact_type_str: str
+    person_facts: List[Dict[str, Any]], fact_type_str: str
 ) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
     """
     Extracts date string, place string, and parsed date object from PersonFacts list.
@@ -410,7 +395,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
 # Simple scoring fallback (Uses 'gender_match' key)
 def _run_simple_suggestion_scoring(
     search_criteria: Dict[str, Any], candidate_data_dict: Dict[str, Any]
-) -> Tuple[float, Dict, List[str]]:
+) -> Tuple[float, Dict[str, Any], List[str]]:
     """Performs simple fallback scoring based on hardcoded rules. Uses 'gender_match' key."""
     logger.warning("Using simple fallback scoring for suggestion.")
     score = 0.0
@@ -463,6 +448,7 @@ def _run_simple_suggestion_scoring(
         reasons.append("bonus both names (25pts)")
 
     # Birth Date Scoring - get weights from config
+    weights = getattr(config_schema, 'common_scoring_weights', {})
     birth_year_match_weight = weights.get("birth_year_match", 20) if weights else 20
     birth_year_close_weight = weights.get("birth_year_close", 10) if weights else 10
     birth_place_match_weight = weights.get("birth_place_match", 20) if weights else 20
@@ -3514,10 +3500,10 @@ def _handle_search_phase(
 
 
 # Parsing (Definition before use in _handle_search_phase)
-def _parse_treesui_list_response(
-    treesui_response: List[Dict],
+def _parse_treesui_list_response(  # type: ignore
+    treesui_response: List[Dict[str, Any]],
     search_criteria: Dict[str, Any],
-) -> Optional[List[Dict]]:
+) -> Optional[List[Dict[str, Any]]]:
     """
     Parses the specific TreesUI List API response provided by the user
     to extract information needed for scoring and display.
@@ -5275,130 +5261,134 @@ def action11_module_tests() -> bool:
     # === RUN ALL TESTS ===
     with suppress_logging():
         # INITIALIZATION TESTS
+
+
+
+        # === LIVE API TESTS (REAL, ENV-DRIVEN) ===
+        def _require_env(keys: list[str]):
+            missing = [k for k in keys if not os.getenv(k)]
+            assert not missing, f"Missing required env vars for Action 11 tests: {missing}"
+
+        def _ensure_session() -> SessionManager:
+            _require_env(["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD", "TREE_NAME", "API_BASE_URL"])
+            sm = SessionManager()
+            started = sm.start_sess("Action 11 Tests")
+            assert started, "Failed to start session"
+            ready = sm.ensure_session_ready("Action 11 Tests")
+            assert ready, "Session not ready (login/cookies/ids missing)"
+            assert sm.my_profile_id, "Profile ID not available"
+            # TREE_NAME is required; ensure we can resolve a tree id
+            assert sm.my_tree_id, "Tree ID not available (check TREE_NAME in .env)"
+            return sm
+
+        def test_live_search_fraser():
+            """Live API: search for Fraser Gault and ensure a scored match is returned."""
+            sm = _ensure_session()
+            tp = load_test_person_from_env()
+            criteria = {
+                "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
+                "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
+                "gender": str(tp.get("gender", "M")).lower()[0],
+                "birth_year": int(tp.get("birth_year", 1941)),
+                "birth_place": str(tp.get("birth_place", "Banff")).lower(),
+            }
+            results = search_ancestry_api_for_person(sm, criteria, max_results=5)
+            assert results, "No results returned from live API search"
+            top = results[0]
+            name_l = str(top.get("name", "")).lower()
+            assert "fraser" in name_l and "gault" in name_l, f"Top match is not Fraser Gault: {top.get('name')}"
+            assert float(top.get("score", 0)) > 0, "Top match has non-positive score"
+            # Birth place 'contains' logic
+            bp_disp = str(top.get("birth_place", "")).lower()
+            assert criteria["birth_place"] in bp_disp, f"Birth place does not contain '{criteria['birth_place']}'"
+            return True
+
+        def test_live_family_matches_env():
+            """Live API: fetch person details and validate spouse/children from .env test data."""
+            sm = _ensure_session()
+            tp = load_test_person_from_env()
+            # Reuse search to pick id/tree
+            criteria = {
+                "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
+                "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
+                "gender": str(tp.get("gender", "M")).lower()[0],
+                "birth_year": int(tp.get("birth_year", 1941)),
+                "birth_place": str(tp.get("birth_place", "Banff")).lower(),
+            }
+            results = search_ancestry_api_for_person(sm, criteria, max_results=3)
+            assert results, "No results available for details test"
+            raw = results[0].get("raw_data", {})
+            person_id = raw.get("PersonId")
+            tree_id = raw.get("TreeId") or sm.my_tree_id
+            assert person_id and tree_id, "Missing person or tree id for details fetch"
+            details = get_ancestry_person_details(sm, str(person_id), str(tree_id))
+            assert details, "No details returned from Facts User API"
+            # Validate spouse and at least one child per .env expectations
+            spouse_expect = str(tp.get("spouse_name", "Helen")).lower()
+            children_expect = [c.lower() for c in tp.get("children", []) if c]
+            spouses = [str(s.get("name", "")).lower() for s in details.get("spouses", [])]
+            children = [str(c.get("name", "")).lower() for c in details.get("children", [])]
+            assert any(spouse_expect in s for s in spouses), f"Expected spouse '{spouse_expect}' not found in {spouses}"
+            assert any(any(exp in ch for exp in children_expect) for ch in children), f"Expected one of children {children_expect} not found in {children}"
+            return True
+
+        def test_live_relationship_uncle():
+            """Live API: format relationship path between Fraser Gault and owner; should include 'Uncle'."""
+            sm = _ensure_session()
+            tp = load_test_person_from_env()
+            # Search to get ids
+            criteria = {
+                "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
+                "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
+                "gender": str(tp.get("gender", "M")).lower()[0],
+                "birth_year": int(tp.get("birth_year", 1941)),
+                "birth_place": str(tp.get("birth_place", "Banff")).lower(),
+            }
+            results = search_ancestry_api_for_person(sm, criteria, max_results=3)
+            assert results, "No results available for relationship test"
+            top = results[0]
+            raw = top.get("raw_data", {})
+            person_id = str(raw.get("PersonId"))
+            tree_id = str(raw.get("TreeId") or sm.my_tree_id)
+            owner_name = sm.tree_owner_name or os.getenv("TREE_OWNER_NAME", "Wayne Gault")
+            target_name = top.get("name", tp.get("name", "Fraser Gault"))
+            # Call ladder API and format
+            from api_utils import call_getladder_api
+            from relationship_utils import format_api_relationship_path
+            ladder_raw = call_getladder_api(sm, tree_id, person_id, config_schema.api.base_url, timeout=20)
+            assert ladder_raw and isinstance(ladder_raw, str), "GetLadder API returned no/invalid data"
+            formatted = format_api_relationship_path(ladder_raw, owner_name=owner_name, target_name=target_name, relationship_type="relative")
+            fmt_lower = formatted.lower()
+            assert "uncle" in fmt_lower, f"Formatted relationship does not show 'uncle': {formatted}"
+            assert "fraser" in fmt_lower and "gault" in fmt_lower, "Target name missing in formatted relationship"
+            assert owner_name.split()[0].lower() in fmt_lower, "Owner name missing in formatted relationship"
+            return True
+
+        # Register the live tests (these are decisive, fail on real issues)
         suite.run_test(
-            "Module imports",
-            test_module_imports,
-            "4 modules imported: json, re, time, typing - all standard library modules available.",
-            "Test imports of json, re, time, and typing modules for live API operations.",
-            "Import json, re, time, and typing modules and verify successful import.",
+            "Live API search: Fraser Gault",
+            test_live_search_fraser,
+            "Uses .env to search API and verifies top match and scoring are real.",
+            "Start session, call search_ancestry_api_for_person, assert name/score/place.",
+            "Live Suggest/List API reachable, results scored and contain Fraser Gault.",
         )
 
         suite.run_test(
-            "Core function availability",
-            test_core_function_availability,
-            "2 core functions available and callable: handle_api_report, main.",
-            "Test that core functions are available and callable.",
-            "Check globals() for handle_api_report and main, verify callable() returns True.",
+            "Live API details: family matches .env",
+            test_live_family_matches_env,
+            "Fetch detailed person info and validate spouse/children against .env expectations.",
+            "Call get_ancestry_person_details and assert spouse/children present.",
+            "Facts User API reachable; parsed family contains expected relatives.",
         )
 
         suite.run_test(
-            "Search functions availability",
-            test_search_functions,
-            "Should have search criteria functions available for genealogical research",
-            "Test _get_search_criteria function availability in globals",
-            "Search criteria functions exist for genealogical API research",
+            "Live API relationship: Uncle path formatting",
+            test_live_relationship_uncle,
+            "GetLadder API builds a readable path identifying 'Uncle' between Fraser and owner.",
+            "Call call_getladder_api and format_api_relationship_path; assert 'Uncle' present.",
+            "Relationship ladder parsed correctly; formatted output meets spec.",
         )
 
-        # CORE FUNCTIONALITY TESTS
-        suite.run_test(
-            "Scoring functions",
-            test_scoring_functions,
-            "Should have scoring and ranking capabilities for genealogical research suggestions",
-            "Test availability of _process_and_score_suggestions and _run_simple_suggestion_scoring",
-            "Scoring functions exist for processing and ranking genealogical research suggestions",
-        )
-
-        suite.run_test(
-            "Display functions",
-            test_display_functions,
-            "Should have result display capabilities for research results and comparisons",
-            "Test availability of _display_search_results and _display_initial_comparison",
-            "Display functions exist for showing research results and genealogical comparisons",
-        )
-
-        suite.run_test(
-            "API integration functions",
-            test_api_integration_functions,
-            "Should have API integration handlers for search and selection phases",
-            "Test availability of _handle_search_phase and _handle_selection_phase",
-            "API integration handlers exist for managing search and selection workflows",
-        )
-
-        # EDGE CASE TESTS
-        suite.run_test(
-            "Empty globals handling",
-            test_empty_globals_handling,
-            "Should handle missing functions gracefully without crashing system",
-            "Test checking for non-existent functions in globals without exceptions",
-            "Missing function checks handled gracefully without system errors",
-        )
-
-        suite.run_test(
-            "Function callable check",
-            test_function_callable_check,
-            "Should properly check if functions are callable for API research operations",
-            "Test callable() function with known functions to verify proper operation",
-            "Callable checks work properly for verifying function availability",
-        )
-
-        # INTEGRATION TESTS
-        suite.run_test(
-            "Family functions",
-            test_family_functions,
-            "Should have family data processing capabilities for genealogical tree management",
-            "Test availability of _display_family_info and _display_tree_relationship",
-            "Family data processing functions exist for genealogical relationship management",
-        )
-
-        suite.run_test(
-            "Data extraction functions",
-            test_data_extraction_functions,
-            "Should have data extraction utilities for genealogical fact processing",
-            "Test availability of _extract_fact_data and _extract_detailed_info",
-            "Data extraction functions exist for processing genealogical facts and details",
-        )
-
-        suite.run_test(
-            "Utility functions",
-            test_utility_functions,
-            "Should have utility helper functions for API response processing",
-            "Test availability of _parse_treesui_list_response and _flatten_children_list",
-            "Utility helper functions exist for processing tree UI responses and data structures",
-        )
-
-        # PERFORMANCE TESTS
-        suite.run_test(
-            "Function lookup performance",
-            test_function_lookup_performance,
-            "Should perform function lookups efficiently for API research operations",
-            "Test multiple function lookups with timing validation under 0.01 seconds",
-            "Function lookups complete efficiently for genealogical API research functions",
-        )
-
-        suite.run_test(
-            "Callable check performance",
-            test_callable_check_performance,
-            "Should perform callable checks efficiently for function validation",
-            "Test 50 callable checks with timing validation under 0.01 seconds",
-            "Callable checks complete efficiently for API function validation",
-        )
-
-        # ERROR HANDLING TESTS
-        suite.run_test(
-            "Fraser Gault functions",
-            test_fraser_gault_functions,
-            "Should have Fraser Gault test functionality available for specialized testing",
-            "Test availability of run_standalone_fraser_test and load_test_person_from_env functions",
-            "Fraser Gault test functions exist for specialized genealogical testing scenarios",
-        )
-
-        suite.run_test(
-            "Exception handling",
-            test_exception_handling,
-            "Should handle exceptions in function checks gracefully without system crashes",
-            "Test callable() function with None value to verify exception handling",
-            "Exception handling works properly for function validation operations",
-        )
 
         return suite.finish_suite()
 

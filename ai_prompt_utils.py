@@ -11,27 +11,12 @@ AI interactions including intent classification and response generation.
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
     setup_module,
-    register_function,
-    get_function,
-    is_function_available,
 )
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
+# Imports removed - not used in this module
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -42,12 +27,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 
 # --- Test framework imports ---
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
+# Imports removed - not used in this module
 
 # Path to the AI prompts JSON file
 PROMPTS_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "ai_prompts.json"
