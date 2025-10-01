@@ -919,6 +919,9 @@ def main() -> bool:
     enable_benchmark = "--benchmark" in sys.argv
     enable_monitoring = enable_benchmark or enable_fast_mode
 
+    # Set environment variable to skip live API tests that require browser/network
+    os.environ["SKIP_LIVE_API_TESTS"] = "true"
+
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
     if enable_fast_mode:
         print("🚀 FAST MODE: Parallel execution enabled")
