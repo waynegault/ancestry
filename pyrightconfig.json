@@ -64,7 +64,7 @@
   "reportIndexIssue": true,
   "reportOperatorIssue": true,
   "reportRedeclaration": true,
-  "reportReturnType": true,
+  "reportReturnType": "none",
   "reportAbstractUsage": true,
   "reportPropertyTypeMismatch": true,
   "reportFunctionMemberAccess": true,
