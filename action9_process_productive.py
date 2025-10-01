@@ -50,7 +50,7 @@ from database import (
 )
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import cached_database_query  # type: ignore[import-not-found]
+# from core.system_cache import cached_database_query  # Module doesn't exist yet
 
 from ai_interface import extract_genealogical_entities
 import ms_graph_utils
@@ -1458,7 +1458,7 @@ def _setup_configuration(
     return True
 
 
-@cached_database_query(ttl=300)  # 5-minute cache for candidate queries
+# @cached_database_query(ttl=300)  # 5-minute cache for candidate queries - module doesn't exist yet
 def _query_candidates(
     db_state: DatabaseState, msg_config: MessageConfig, limit: int
 ) -> List[Person]:
