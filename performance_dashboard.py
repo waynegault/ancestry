@@ -119,61 +119,43 @@ class PerformanceDashboard:
         self.current_session = session_data
         logger.info(f"Started performance monitoring session: {session_data['session_id']}")
 
-    def record_rate_limiting_metrics(self, metrics: dict[str, Any]):
-        """Record rate limiting performance metrics."""
-        metric_entry = {
+    def _record_metric(self, metric_type: str, data: dict[str, Any], history_key: str, data_key: str = "metrics"):
+        """
+        Generic method to record metrics with consistent structure.
+
+        Args:
+            metric_type: Type of metric (e.g., 'rate_limiting', 'batch_processing')
+            data: The metric data to record
+            history_key: Key in performance_data to append to (e.g., 'rate_limiting_history')
+            data_key: Key to use for data in entry (default: 'metrics', can be 'data')
+        """
+        entry = {
             "timestamp": datetime.now().isoformat(),
-            "type": "rate_limiting",
-            "metrics": metrics
+            "type": metric_type,
+            data_key: data
         }
 
-        self.performance_data["rate_limiting_history"].append(metric_entry)
+        self.performance_data[history_key].append(entry)
 
         # Also add to current session if available
         if hasattr(self, 'current_session'):
-            self.current_session["metrics"].append(metric_entry)
+            self.current_session["metrics"].append(entry)
+
+    def record_rate_limiting_metrics(self, metrics: dict[str, Any]):
+        """Record rate limiting performance metrics."""
+        self._record_metric("rate_limiting", metrics, "rate_limiting_history")
 
     def record_batch_processing_metrics(self, metrics: dict[str, Any]):
         """Record batch processing performance metrics."""
-        metric_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "type": "batch_processing",
-            "metrics": metrics
-        }
-
-        self.performance_data["batch_processing_history"].append(metric_entry)
-
-        # Also add to current session if available
-        if hasattr(self, 'current_session'):
-            self.current_session["metrics"].append(metric_entry)
+        self._record_metric("batch_processing", metrics, "batch_processing_history")
 
     def record_optimization_event(self, optimization_data: dict[str, Any]):
         """Record configuration optimization events."""
-        optimization_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "type": "optimization",
-            "data": optimization_data
-        }
-
-        self.performance_data["optimization_history"].append(optimization_entry)
-
-        # Also add to current session if available
-        if hasattr(self, 'current_session'):
-            self.current_session["metrics"].append(optimization_entry)
+        self._record_metric("optimization", optimization_data, "optimization_history", data_key="data")
 
     def record_system_metrics(self, system_data: dict[str, Any]):
         """Record general system performance metrics."""
-        system_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "type": "system",
-            "metrics": system_data
-        }
-
-        self.performance_data["system_metrics"].append(system_entry)
-
-        # Also add to current session if available
-        if hasattr(self, 'current_session'):
-            self.current_session["metrics"].append(system_entry)
+        self._record_metric("system", system_data, "system_metrics")
 
     def generate_performance_report(self, hours_back: int = 24) -> str:
         """
