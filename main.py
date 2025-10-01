@@ -1864,7 +1864,7 @@ def main_module_tests() -> bool:
         import inspect
 
         sm_methods = inspect.getmembers(SessionManager, predicate=inspect.ismethod)
-        method_names = [method[0] for method in sm_methods]
+        _method_names = [method[0] for method in sm_methods]  # Unused but kept for debugging
 
         # Should have key methods for session management
         assert hasattr(

@@ -1,9 +1,11 @@
 # Pylance Errors Fixed - Progress Report
 
-**Date**: 2025-10-01  
-**Initial Errors**: 231  
-**Remaining Errors**: ~150  
+**Date**: 2025-10-01
+**Initial Errors**: 231
+**Remaining Errors**: ~150 (in real code files)
 **Errors Fixed**: ~81 (35% reduction)
+
+**Note**: The "3000 errors" reported was due to pylance analyzing `run_all_tests.py.git` (a git backup/conflict file) which has ~2850 "unknown type" errors from trying to import non-existent `code_quality_checker` module. This file should not be analyzed. Added VS Code settings to exclude `*.git` files from analysis.
 
 ---
 

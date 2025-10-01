@@ -410,7 +410,7 @@ def selenium_utils_module_tests() -> bool:
         mock_invalid_driver = MagicMock(spec=WebDriver)
 
         # Define property that raises exception
-        def current_url_getter(self):
+        def current_url_getter(_self):  # _self unused in property getter
             raise InvalidSessionIdException()
 
         # Set the property on the mock's type

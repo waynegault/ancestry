@@ -73,13 +73,8 @@ from core.error_handling import (
 )
 
 # --- Check for optional dependencies ---
-try:
-    from bs4 import BeautifulSoup
-
-    BS4_AVAILABLE = True
-except ImportError:
-    BeautifulSoup = None  # type: ignore
-    BS4_AVAILABLE = False
+# BeautifulSoup import removed - not used in this module
+BS4_AVAILABLE = False
 
 try:
     from importlib.util import find_spec as _find_spec
@@ -99,18 +94,12 @@ from utils import _api_req, format_name
 try:
     from test_framework import (
         TestSuite as TestFrameworkTestSuite,
-        assert_valid_function,
-        create_mock_data,
-        suppress_logging,
     )
 
     TestSuite = TestFrameworkTestSuite  # type: ignore
 except ImportError:
     # If test framework not available, import will fail at test time
     TestSuite = None
-    suppress_logging = None
-    create_mock_data = None
-    assert_valid_function = None
 
 # === MODULE LOGGER ===
 logger = setup_logging(log_file="api_utils.log", log_level="INFO")

@@ -1629,7 +1629,7 @@ def action10_module_tests() -> bool:
         try:
             for input_val, expected, description in test_inputs:
                 try:
-                    def mock_input(_prompt: str, val: str = input_val) -> str:
+                    def mock_input(_prompt: str, val: str = input_val) -> str:  # _prompt unused
                         return val
                     builtins.input = mock_input
                     actual = get_validated_year_input("Enter year: ")

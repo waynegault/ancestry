@@ -673,7 +673,7 @@ def _process_and_score_suggestions(
                     search_criteria,
                     candidate_data_dict,
                     scoring_weights,
-                    name_flexibility=name_flex if isinstance(name_flex, dict) else None,
+                    _name_flexibility=name_flex if isinstance(name_flex, dict) else None,
                     date_flexibility=date_flex if isinstance(date_flex, dict) else None,
                 )
 
@@ -1448,7 +1448,7 @@ def _score_detailed_match(
                 search_criteria,
                 candidate_processed_data,
                 scoring_weights,
-                name_flexibility=name_flex if isinstance(name_flex, dict) else None,
+                _name_flexibility=name_flex if isinstance(name_flex, dict) else None,
                 date_flexibility=date_flex if isinstance(date_flex, dict) else None,
             )
         else:
