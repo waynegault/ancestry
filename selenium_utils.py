@@ -87,7 +87,7 @@ def force_user_agent(driver: Optional[WebDriver], user_agent: str):
 
 
 @safe_execute(default_return="", log_errors=False)
-def extract_text(element) -> str:
+def extract_text(element: Any) -> str:  # type: ignore[misc]
     """Extract text from an element safely with unified error handling."""
     if not element:
         return ""
@@ -95,7 +95,7 @@ def extract_text(element) -> str:
 
 
 @safe_execute(default_return="", log_errors=False)
-def extract_attribute(element, attribute: str) -> str:
+def extract_attribute(element: Any, attribute: str) -> str:  # type: ignore[misc]
     """Extract attribute from an element safely with unified error handling."""
     if not element:
         return ""
@@ -103,7 +103,7 @@ def extract_attribute(element, attribute: str) -> str:
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_elem_there(driver, selector: str, by: str = By.CSS_SELECTOR) -> bool:
+def is_elem_there(driver: Any, selector: str, by: str = By.CSS_SELECTOR) -> bool:  # type: ignore[misc]
     """Check if element exists with unified error handling."""
     if not driver:
         return False
@@ -112,7 +112,7 @@ def is_elem_there(driver, selector: str, by: str = By.CSS_SELECTOR) -> bool:
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_browser_open(driver) -> bool:
+def is_browser_open(driver: Any) -> bool:  # type: ignore[misc]
     """Check if browser is still open and responsive with unified error handling."""
     if not driver:
         return False
@@ -122,7 +122,7 @@ def is_browser_open(driver) -> bool:
 
 
 @safe_execute(log_errors=True)
-def close_tabs(driver, keep_first: bool = True):
+def close_tabs(driver: Any, keep_first: bool = True) -> None:  # type: ignore[misc]
     """Close browser tabs with unified error handling."""
     if not driver:
         return
@@ -143,7 +143,7 @@ def close_tabs(driver, keep_first: bool = True):
 
 
 @safe_execute(default_return=[], log_errors=False)
-def get_driver_cookies(driver) -> list:
+def get_driver_cookies(driver: Any) -> list[dict[str, Any]]:  # type: ignore[misc]
     """Get all cookies from driver with unified error handling."""
     if not driver:
         return []
@@ -151,7 +151,7 @@ def get_driver_cookies(driver) -> list:
 
 
 @safe_execute(default_return=False, log_errors=True)
-def export_cookies(driver, filepath: str) -> bool:
+def export_cookies(driver: Any, filepath: str) -> bool:  # type: ignore[misc]
     """Export cookies to file with unified error handling."""
     if not driver:
         return False
@@ -199,7 +199,7 @@ def safe_click(driver: Any, element: Any) -> bool:
 
 
 @safe_execute(default_return="", log_errors=False)
-def get_element_text(element) -> str:
+def get_element_text(element: Any) -> str:  # type: ignore[misc]
     """Get text from element with unified error handling."""
     if not element:
         return ""
@@ -207,19 +207,19 @@ def get_element_text(element) -> str:
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_element_visible(element) -> bool:
+def is_element_visible(element: Any) -> bool:  # type: ignore[misc]
     """Check if element is visible with unified error handling."""
     if not element:
         return False
     return element.is_displayed()
 
 
-def selenium_module_tests() -> None:
+def selenium_module_tests() -> list[tuple[str, Any]]:  # type: ignore[misc]
     """Essential selenium utilities tests for unified framework."""
     import time
     from unittest.mock import MagicMock
 
-    tests = []
+    tests: list[tuple[str, Any]] = []
 
     # Test 1: Function availability
     def test_function_availability():
