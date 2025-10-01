@@ -15,7 +15,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
@@ -43,14 +43,14 @@ from config import config_schema
 from database import (
     ConversationLog,
     MessageDirectionEnum,
-    MessageType,
+    MessageTemplate,
     Person,
     PersonStatusEnum,
     commit_bulk_data,
 )
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from core.system_cache import cached_database_query
+from core.system_cache import cached_database_query  # type: ignore[import-not-found]
 
 from ai_interface import extract_genealogical_entities
 import ms_graph_utils
@@ -1431,28 +1431,28 @@ def _setup_configuration(
         return False
 
     ack_msg_type_obj = (
-        db_state.session.query(MessageType.id)
-        .filter(MessageType.type_name == ACKNOWLEDGEMENT_MESSAGE_TYPE)
+        db_state.session.query(MessageTemplate.id)
+        .filter(MessageTemplate.template_name == ACKNOWLEDGEMENT_MESSAGE_TYPE)
         .scalar()
     )
     if not ack_msg_type_obj:
         logger.critical(
-            f"Action 9: MessageType '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
+            f"Action 9: MessageTemplate '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
         )
         return False
     msg_config.ack_msg_type_id = ack_msg_type_obj
 
     # Get custom reply message type ID (optional)
     custom_reply_msg_type_obj = (
-        db_state.session.query(MessageType.id)
-        .filter(MessageType.type_name == CUSTOM_RESPONSE_MESSAGE_TYPE)
+        db_state.session.query(MessageTemplate.id)
+        .filter(MessageTemplate.template_name == CUSTOM_RESPONSE_MESSAGE_TYPE)
         .scalar()
     )
     if custom_reply_msg_type_obj:
         msg_config.custom_reply_msg_type_id = custom_reply_msg_type_obj
     else:
         logger.warning(
-            f"Action 9: MessageType '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
+            f"Action 9: MessageTemplate '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
         )
 
     return True
