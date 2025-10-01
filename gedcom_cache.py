@@ -92,7 +92,7 @@ _CACHE_MAX_AGE = 3600  # 1 hour default for memory cache
 _GEDCOM_CACHE_PREFIX = "gedcom_data"
 
 # --- Memory-Efficient Object Pool for GEDCOM Data ---
-from utils import ObjectPool
+from memory_utils import ObjectPool
 
 # Pool for GedcomReader objects (if available)
 try:
