@@ -818,7 +818,7 @@ def fast_bidirectional_bfs(
     max_depth: int = 25,
     node_limit: int = 150000,
     timeout_sec: int = 45,
-    log_progress: bool = False,
+    _log_progress: bool = False,  # Unused but kept for API compatibility
 ) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
@@ -876,7 +876,7 @@ def fast_bidirectional_bfs(
             # Check if we've reached a node visited by backward search
             if current_id in visited_bwd:
                 # Found a meeting point - reconstruct the path
-                bwd_depth, bwd_path = visited_bwd[current_id]
+                _bwd_depth, bwd_path = visited_bwd[current_id]  # depth unused
                 # Combine paths (remove duplicate meeting point)
                 combined_path = path + bwd_path[1:]
                 all_paths.append(combined_path)
@@ -897,7 +897,7 @@ def fast_bidirectional_bfs(
             # Check if we've reached a node visited by forward search
             if current_id in visited_fwd:
                 # Found a meeting point - reconstruct the path
-                fwd_depth, fwd_path = visited_fwd[current_id]
+                _fwd_depth, fwd_path = visited_fwd[current_id]  # depth unused
                 # Combine paths (remove duplicate meeting point)
                 combined_path = fwd_path + path[1:]
                 all_paths.append(combined_path)
@@ -967,7 +967,7 @@ def _are_directly_related(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
+    _id_to_children: dict[str, set[str]],  # Unused but kept for API consistency
 ) -> bool:
     """
     Check if two individuals are directly related (parent-child or siblings).
@@ -1279,7 +1279,7 @@ def _are_cousins(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
+    _id_to_children: dict[str, set[str]],  # Unused but kept for API consistency
 ) -> bool:
     """Check if id1 and id2 are cousins (children of siblings)."""
     # Get parents of id1 and id2
@@ -1416,7 +1416,7 @@ def calculate_match_score(
     search_criteria: dict,
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    name_flexibility: Optional[dict] = None,
+    _name_flexibility: Optional[dict] = None,  # Unused but kept for API consistency
     date_flexibility: Optional[dict] = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """
@@ -2106,7 +2106,7 @@ class GedcomData:
                 parent_families = self._find_family_records_where_individual_is_parent(
                     target_id
                 )
-                for fam_record, is_husband, _is_wife in parent_families:
+                for fam_record, is_husband, _is_wife in parent_families:  # _is_wife unused
                     other_spouse_tag = TAG_WIFE if is_husband else TAG_HUSBAND
                     # Add null check before calling sub_tag
                     spouse_ref = (

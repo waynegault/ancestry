@@ -26,14 +26,12 @@ standardize_module_imports()
 auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import os  # Used for path operations
 import re
 from typing import Dict, List, Any, Optional, Tuple, Union
 
 # === THIRD-PARTY IMPORTS ===
 from test_framework import (
     TestSuite,
-    suppress_logging,
 )
 
 # === LOCAL IMPORTS ===
@@ -1085,7 +1083,7 @@ def api_search_utils_module_tests() -> bool:
         assert result == 1800, "Should extract first year from range"
 
         # Test scoring with empty data
-        score, field_scores, reasons = _run_simple_suggestion_scoring({}, {})
+        score, field_scores, _reasons = _run_simple_suggestion_scoring({}, {})  # reasons unused
         assert score == 0, "Should return zero score for empty inputs"
         assert len(field_scores) == 0, "Should return empty field scores"
 
