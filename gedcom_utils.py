@@ -89,8 +89,10 @@ except ImportError:
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
-from relationship_utils import _find_direct_relationship, _has_direct_relationship
 from utils import format_name
+
+# Note: _find_direct_relationship and _has_direct_relationship are imported
+# from relationship_utils.py where needed to avoid circular imports
 
 # === MODULE CONFIGURATION ===
 config_manager = ConfigManager()
@@ -838,6 +840,9 @@ def fast_bidirectional_bfs(
 
     # First try to find a direct relationship (parent, child, sibling)
     # This is a quick check before running the full BFS
+    # Import here to avoid circular dependency
+    from relationship_utils import _find_direct_relationship
+
     direct_path = _find_direct_relationship(
         start_id, end_id, id_to_parents, id_to_children
     )
@@ -914,6 +919,9 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
     """Select the best path from a list of found paths based on relationship directness."""
     # If we found paths, select the best one
     if all_paths:
+        # Import here to avoid circular dependency
+        from relationship_utils import _has_direct_relationship
+
         # Score paths based on directness of relationships
         scored_paths = []
         for path in all_paths:
