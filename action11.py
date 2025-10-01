@@ -18,7 +18,13 @@ from standard_imports import (
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-# Imports removed - not used in this module
+from core.error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+)
 
 logger = setup_module(globals(), __name__)
 

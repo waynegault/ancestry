@@ -1,149 +1,60 @@
 #!/usr/bin/env python3
 
 """
-Productive Message Analysis & Genealogical Task Generation Engine
+Action 9: Productive DNA Match Processing
 
-Advanced conversation intelligence system that transforms productive DNA match
-communications into structured genealogical insights, actionable research tasks,
-and comprehensive family tree enhancement recommendations through sophisticated
-AI-powered content analysis and automated task generation workflows.
-
-Intelligence Extraction:
-• AI-powered conversation analysis with genealogical context understanding
-• Automated extraction of names, dates, places, and relationships
-• Intelligent task generation based on conversation content and gaps
-• Comprehensive quality scoring and validation of extracted information
-• Automated research priority assessment and recommendation ranking
-• Integration with genealogical databases and family tree structures
-
-Task Generation Framework:
-• Dynamic task creation based on conversation insights and research gaps
-• Intelligent prioritization using genealogical relevance scoring
-• Automated research workflow generation with step-by-step guidance
-• Integration with external task management systems (Microsoft To-Do)
-• Comprehensive task categorization and tagging for organization
-• Progress tracking and completion monitoring
-
-Data Processing Architecture:
-• Batch processing with intelligent conversation threading
-• Real-time progress tracking with detailed analytics and ETA calculations
-• Exponential backoff for resilient AI service interactions
-• Memory optimization for large conversation datasets
-• Circuit breaker patterns for fault tolerance and graceful degradation
-• Comprehensive error recovery with detailed logging and monitoring
-
-Quality Assurance:
-Implements sophisticated validation, quality scoring, and monitoring to ensure
-accurate extraction and meaningful task generation suitable for serious
-genealogical research and family tree enhancement activities.
+Analyzes and processes productive DNA matches with comprehensive relationship
+analysis, GEDCOM integration, and automated workflow management for genealogical
+research including match scoring, family tree analysis, and research prioritization.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-)
+from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from core.error_handling import (
-    circuit_breaker,
-    error_context,
-    graceful_degradation,
     retry_on_failure,
+    circuit_breaker,
     timeout_protection,
+    graceful_degradation,
+    error_context,
 )
 
-logger = setup_module(globals(), __name__)
-
-# === PHASE 1 OPTIMIZATIONS ===
-
 # === STANDARD LIBRARY IMPORTS ===
-import hashlib
 import json
-import re
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, joinedload
-
-# === PHASE 9.1: MESSAGE PERSONALIZATION ===
-try:
-    from message_personalization import MessagePersonalizer
-    MESSAGE_PERSONALIZATION_AVAILABLE = True
-    logger.debug("Message personalization system loaded in action9")
-except ImportError as e:
-    logger.warning(f"Message personalization not available in action9: {e}")
-    MESSAGE_PERSONALIZATION_AVAILABLE = False
-    MessagePersonalizer = None
-
-# === PHASE 10.1: GENEALOGICAL TASK TEMPLATES ===
-try:
-    from genealogical_task_templates import GenealogicalTaskGenerator
-    GENEALOGICAL_TASK_GENERATION_AVAILABLE = True
-    logger.debug("Genealogical task generation system loaded in action9")
-except ImportError as e:
-    logger.warning(f"Genealogical task generation not available in action9: {e}")
-    GENEALOGICAL_TASK_GENERATION_AVAILABLE = False
-    GenealogicalTaskGenerator = None
-
-# === PHASE 11.1: ADAPTIVE RATE LIMITING & PERFORMANCE MONITORING ===
-try:
-    from adaptive_rate_limiter import AdaptiveRateLimiter, ConfigurationOptimizer, SmartBatchProcessor
-    from performance_dashboard import PerformanceDashboard
-    ADAPTIVE_SYSTEMS_AVAILABLE = True
-    logger.debug("Adaptive rate limiting and performance monitoring loaded in action9")
-except ImportError as e:
-    logger.warning(f"Adaptive systems not available in action9: {e}")
-    ADAPTIVE_SYSTEMS_AVAILABLE = False
-    AdaptiveRateLimiter = None
-    SmartBatchProcessor = None
-    ConfigurationOptimizer = None
-    PerformanceDashboard = None
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-import ms_graph_utils
-from ai_interface import extract_genealogical_entities
-
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-from cache_manager import (
-    cached_api_call,
-)
-
 # === LOCAL IMPORTS ===
 from config import config_schema
-from core.session_manager import SessionManager
-
-
-# Legacy compatibility
-def cached_database_query(ttl: int = 300):
-    """Legacy wrapper for database query caching with TTL support"""
-    def decorator(func):
-        return cached_api_call("database", ttl=ttl)(func)
-    return decorator
 from database import (
     ConversationLog,
     MessageDirectionEnum,
-    MessageTemplate,
+    MessageType,
     Person,
     PersonStatusEnum,
     commit_bulk_data,
 )
-from test_framework import (
-    MagicMock,
-    TestSuite,
-    patch,
-    suppress_logging,
-)
+
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+from core.system_cache import cached_database_query
+
+from ai_interface import extract_genealogical_entities
+import ms_graph_utils
+from core.session_manager import SessionManager
 from utils import format_name
 
 # === CONSTANTS ===
@@ -152,9 +63,9 @@ OTHER_SENTIMENT = (
     "OTHER"  # Sentiment string for messages that don't fit other categories
 )
 ACKNOWLEDGEMENT_MESSAGE_TYPE = (
-    "Productive_Reply_Acknowledgement"  # Key in MessageTemplate table
+    "Productive_Reply_Acknowledgement"  # Key in messages.json
 )
-CUSTOM_RESPONSE_MESSAGE_TYPE = "Automated_Genealogy_Response"  # Key in MessageTemplate table
+CUSTOM_RESPONSE_MESSAGE_TYPE = "Automated_Genealogy_Response"  # Key in messages.json
 
 # Keywords that indicate no response should be sent
 EXCLUSION_KEYWORDS = [
@@ -207,7 +118,11 @@ def should_exclude_message(message_content: str) -> bool:
     message_lower = message_content.lower()
 
     # Check for exclusion keywords
-    return any(keyword.lower() in message_lower for keyword in EXCLUSION_KEYWORDS)
+    for keyword in EXCLUSION_KEYWORDS:
+        if keyword.lower() in message_lower:
+            return True
+
+    return False
 
 
 # AI Prompt for generating genealogical replies
@@ -243,7 +158,7 @@ class NameData(BaseModel):
     """Model for structured name information."""
 
     full_name: str
-    nicknames: list[str] = Field(default_factory=list)
+    nicknames: List[str] = Field(default_factory=list)
     maiden_name: Optional[str] = None
     generational_suffix: Optional[str] = None
 
@@ -288,15 +203,15 @@ class ExtractedData(BaseModel):
     """Enhanced Pydantic model for validating the extracted_data structure in AI responses."""
 
     # Enhanced structured fields
-    structured_names: list[NameData] = Field(default_factory=list)
-    vital_records: list[VitalRecord] = Field(default_factory=list)
-    relationships: list[Relationship] = Field(default_factory=list)
-    locations: list[Location] = Field(default_factory=list)
-    occupations: list[Occupation] = Field(default_factory=list)
-    research_questions: list[str] = Field(default_factory=list)
-    documents_mentioned: list[str] = Field(default_factory=list)
-    dna_information: list[str] = Field(default_factory=list)
-    suggested_tasks: list[str] = Field(default_factory=list)
+    structured_names: List[NameData] = Field(default_factory=list)
+    vital_records: List[VitalRecord] = Field(default_factory=list)
+    relationships: List[Relationship] = Field(default_factory=list)
+    locations: List[Location] = Field(default_factory=list)
+    occupations: List[Occupation] = Field(default_factory=list)
+    research_questions: List[str] = Field(default_factory=list)
+    documents_mentioned: List[str] = Field(default_factory=list)
+    dna_information: List[str] = Field(default_factory=list)
+    suggested_tasks: List[str] = Field(default_factory=list)
 
     @field_validator(
         "research_questions",
@@ -306,7 +221,7 @@ class ExtractedData(BaseModel):
         mode="before",
     )
     @classmethod
-    def ensure_list_of_strings(cls, v: Any) -> list[str]:
+    def ensure_list_of_strings(cls, v):
         """Ensures all fields are lists of strings."""
         if v is None:
             return []
@@ -314,7 +229,7 @@ class ExtractedData(BaseModel):
             return []
         return [str(item) for item in v if item is not None]
 
-    def get_all_names(self) -> list[str]:
+    def get_all_names(self) -> List[str]:
         """Get all names from structured fields."""
         names = []
         for name_data in self.structured_names:
@@ -322,7 +237,7 @@ class ExtractedData(BaseModel):
             names.extend(name_data.nicknames)
         return list(set(names))
 
-    def get_all_locations(self) -> list[str]:
+    def get_all_locations(self) -> List[str]:
         """Get all locations from structured fields."""
         locations = []
         for vital_record in self.vital_records:
@@ -335,11 +250,11 @@ class AIResponse(BaseModel):
     """Pydantic model for validating the complete AI response structure."""
 
     extracted_data: ExtractedData = Field(default_factory=ExtractedData)
-    suggested_tasks: list[str] = Field(default_factory=list)
+    suggested_tasks: List[str] = Field(default_factory=list)
 
     @field_validator("suggested_tasks", mode="before")
     @classmethod
-    def ensure_tasks_list(cls, v: Any) -> list[str]:
+    def ensure_tasks_list(cls, v):
         """Ensures suggested_tasks is a list of strings."""
         if v is None:
             return []
@@ -352,7 +267,7 @@ class AIResponse(BaseModel):
 _CACHED_GEDCOM_DATA = None
 
 
-def get_gedcom_data() -> Optional[Any]:
+def get_gedcom_data():
     """
     Returns the cached GEDCOM data instance, loading it if necessary.
 
@@ -388,7 +303,7 @@ def get_gedcom_data() -> Optional[Any]:
 
         _CACHED_GEDCOM_DATA = load_gedcom_data(str(gedcom_path))
         if _CACHED_GEDCOM_DATA:
-            logger.debug("GEDCOM file loaded successfully and cached for reuse.")
+            logger.debug(f"GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
             logger.debug(
                 f"  Index size: {len(getattr(_CACHED_GEDCOM_DATA, 'indi_index', {}))}"
@@ -403,284 +318,155 @@ def get_gedcom_data() -> Optional[Any]:
 
 
 # Import required modules and functions
-# Import from relationship_utils
-# Import from api_search_utils where it belongs
-from api_search_utils import process_and_score_suggestions
-from gedcom_utils import (
-    calculate_match_score,
-)
+from gedcom_utils import calculate_match_score
+
+# Import from action11
+from action11 import _process_and_score_suggestions
 
 
-def _get_gedcom_data_for_search(gedcom_data: Optional[Any]) -> Any:
-    """Get GEDCOM data for search, either from parameter or cache."""
+def _search_gedcom_for_names(
+    names: List[str], gedcom_data: Optional[Any] = None
+) -> List[Dict[str, Any]]:
+    """
+    Searches the configured GEDCOM file for names and returns matching individuals.
+    Uses the cached GEDCOM data to avoid loading the file multiple times.
+
+    Args:
+        names: List of names to search for in the GEDCOM file
+        gedcom_data: Optional pre-loaded GEDCOM data instance
+
+    Returns:
+        List of dictionaries containing information about matching individuals
+
+    Raises:
+        RuntimeError: If GEDCOM utilities are not available or if the GEDCOM file is not found
+    """
+    # Get the GEDCOM data (either from parameter or from cache)
     if gedcom_data is None:
         gedcom_data = get_gedcom_data()
         if not gedcom_data:
             error_msg = "Failed to load GEDCOM data from cache or file"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
-    return gedcom_data
 
-
-def _parse_name_parts(name: str) -> tuple[str, str]:
-    """Parse name into first name and surname components."""
-    name_parts = name.strip().split()
-    first_name = name_parts[0] if name_parts else ""
-    surname = name_parts[-1] if len(name_parts) > 1 else ""
-    return first_name, surname
-
-
-def _create_search_criteria(first_name: str, surname: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Create filter and scoring criteria from name parts."""
-    filter_criteria = {
-        "first_name": first_name.lower() if first_name else None,
-        "surname": surname.lower() if surname else None,
-    }
-    scoring_criteria = filter_criteria.copy()
-    return filter_criteria, scoring_criteria
-
-
-def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any]]:
-    """Get scoring weights and date flexibility configuration."""
-    scoring_weights = config_schema.common_scoring_weights
-    date_flex = {
-        "year_flex": getattr(config_schema, "year_flexibility", 2),
-        "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
-    }
-    return scoring_weights, date_flex
-
-
-def _prepare_indi_index(gedcom_data: Any) -> Optional[dict[str, Any]]:
-    """Prepare individual index for iteration."""
-    if not (
-        gedcom_data
-        and hasattr(gedcom_data, "indi_index")
-        and gedcom_data.indi_index
-        and hasattr(gedcom_data.indi_index, "items")
-    ):
-        return None
-
-    # Convert to dict if it's not already to ensure it's iterable
-    return (
-        dict(gedcom_data.indi_index)
-        if not isinstance(gedcom_data.indi_index, dict)
-        else gedcom_data.indi_index
-    )
-
-
-def _matches_filter_criteria(indi_data: dict[str, Any], filter_criteria: dict[str, Any]) -> bool:
-    """Check if individual matches filter criteria."""
-    # Skip individuals with no name
-    if not indi_data.get("first_name") and not indi_data.get("surname"):
-        return False
-
-    # Simple OR filter: match on first name OR surname
-    fn_match = filter_criteria["first_name"] and indi_data.get(
-        "first_name", ""
-    ).lower().startswith(filter_criteria["first_name"])
-    sn_match = filter_criteria["surname"] and indi_data.get(
-        "surname", ""
-    ).lower().startswith(filter_criteria["surname"])
-
-    return fn_match or sn_match
-
-
-def _create_match_record(
-    indi_id: str,
-    indi_data: dict[str, Any],
-    total_score: float,
-    field_scores: dict[str, Any],
-    reasons: list[str]
-) -> dict[str, Any]:
-    """Create a match record from individual data and scores."""
-    return {
-        "id": indi_id,
-        "display_id": indi_id,
-        "first_name": indi_data.get("first_name", ""),
-        "surname": indi_data.get("surname", ""),
-        "gender": indi_data.get("gender", ""),
-        "birth_year": indi_data.get("birth_year"),
-        "birth_place": indi_data.get("birth_place", ""),
-        "death_year": indi_data.get("death_year"),
-        "death_place": indi_data.get("death_place", ""),
-        "total_score": total_score,
-        "field_scores": field_scores,
-        "reasons": reasons,
-        "source": "GEDCOM",
-    }
-
-
-def _process_individuals_for_name(
-    name: str,
-    gedcom_data: Any
-) -> list[dict[str, Any]]:
-    """Process individuals for a single name search."""
-    if not name or len(name.strip()) < 2:
-        return []
-
-    first_name, surname = _parse_name_parts(name)
-    filter_criteria, scoring_criteria = _create_search_criteria(first_name, surname)
-    scoring_weights, date_flex = _get_scoring_config()
-
-    indi_index = _prepare_indi_index(gedcom_data)
-    if not indi_index:
-        return []
-
-    scored_matches = []
-
-    for indi_id, indi_data in indi_index.items():
-        try:
-            if _matches_filter_criteria(indi_data, filter_criteria):
-                # Calculate match score
-                total_score, field_scores, reasons = calculate_match_score(
-                    search_criteria=scoring_criteria,
-                    candidate_processed_data=indi_data,
-                    scoring_weights=scoring_weights,
-                    date_flexibility=date_flex,
-                )
-
-                # Only include if score is above threshold
-                if total_score > 0:
-                    match_record = _create_match_record(
-                        indi_id, indi_data, total_score, field_scores, reasons
-                    )
-                    scored_matches.append(match_record)
-        except Exception as e:
-            logger.error(f"Error processing individual {indi_id}: {e}")
-            continue
-
-    # Sort matches by score (highest first) and take top 3
-    scored_matches.sort(key=lambda x: x["total_score"], reverse=True)
-    return scored_matches[:3]
-
-
-def _search_gedcom_for_names(
-    names: list[str], gedcom_data: Optional[Any] = None
-) -> list[dict[str, Any]]:
-    """
-    Searches the configured GEDCOM file for names and returns matching individuals.
-    Uses the cached GEDCOM data to avoid loading the file multiple times.
-    """
-    gedcom_data = _get_gedcom_data_for_search(gedcom_data)
     logger.info(f"Searching GEDCOM data for: {names}")
 
     try:
+        # Prepare search criteria
         search_results = []
 
         # For each name, create a simple search criteria and filter individuals
         for name in names:
-            top_matches = _process_individuals_for_name(name, gedcom_data)
+            if not name or len(name.strip()) < 2:
+                continue
+
+            # Split name into first name and surname if possible
+            name_parts = name.strip().split()
+            first_name = name_parts[0] if name_parts else ""
+            surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+            # Create basic filter criteria (just names)
+            filter_criteria = {
+                "first_name": first_name.lower() if first_name else None,
+                "surname": surname.lower() if surname else None,
+            }
+
+            # Use the same criteria for scoring
+            scoring_criteria = filter_criteria.copy()
+
+            # Get scoring weights from config or use defaults
+            scoring_weights = config_schema.common_scoring_weights
+
+            # Date flexibility settings with defaults
+            date_flex = {
+                "year_flex": getattr(config_schema, "year_flexibility", 2),
+                "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
+            }
+
+            # Filter and score individuals
+            scored_matches = []
+
+            # Process each individual in the GEDCOM data
+            if (
+                gedcom_data
+                and hasattr(gedcom_data, "indi_index")
+                and gedcom_data.indi_index
+                and hasattr(gedcom_data.indi_index, "items")
+            ):
+                # Convert to dict if it's not already to ensure it's iterable
+                indi_index = (
+                    dict(gedcom_data.indi_index)
+                    if not isinstance(gedcom_data.indi_index, dict)
+                    else gedcom_data.indi_index
+                )
+                for indi_id, indi_data in indi_index.items():
+                    try:
+                        # Skip individuals with no name
+                        if not indi_data.get("first_name") and not indi_data.get(
+                            "surname"
+                        ):
+                            continue
+
+                        # Simple OR filter: match on first name OR surname
+                        fn_match = filter_criteria["first_name"] and indi_data.get(
+                            "first_name", ""
+                        ).lower().startswith(filter_criteria["first_name"])
+                        sn_match = filter_criteria["surname"] and indi_data.get(
+                            "surname", ""
+                        ).lower().startswith(filter_criteria["surname"])
+
+                        if fn_match or sn_match:
+                            # Calculate match score
+                            total_score, field_scores, reasons = calculate_match_score(
+                                search_criteria=scoring_criteria,
+                                candidate_processed_data=indi_data,
+                                scoring_weights=scoring_weights,
+                                date_flexibility=date_flex,
+                            )
+
+                            # Only include if score is above threshold
+                            if total_score > 0:
+                                # Create a match record
+                                match_record = {
+                                    "id": indi_id,
+                                    "display_id": indi_id,
+                                    "first_name": indi_data.get("first_name", ""),
+                                    "surname": indi_data.get("surname", ""),
+                                    "gender": indi_data.get("gender", ""),
+                                    "birth_year": indi_data.get("birth_year"),
+                                    "birth_place": indi_data.get("birth_place", ""),
+                                    "death_year": indi_data.get("death_year"),
+                                    "death_place": indi_data.get("death_place", ""),
+                                    "total_score": total_score,
+                                    "field_scores": field_scores,
+                                    "reasons": reasons,
+                                    "source": "GEDCOM",
+                                }
+                                scored_matches.append(match_record)
+                    except Exception as e:
+                        logger.error(f"Error processing individual {indi_id}: {e}")
+                        continue
+
+            # Sort matches by score (highest first) and take top 3
+            scored_matches.sort(key=lambda x: x["total_score"], reverse=True)
+            top_matches = scored_matches[:3]
+
+            # Add to overall results
             search_results.extend(top_matches)
 
+        # Return the combined results
         return search_results
 
     except Exception as e:
         error_msg = f"Error searching GEDCOM file: {e}"
         logger.error(error_msg, exc_info=True)
-        raise RuntimeError(error_msg) from e
-
-
-def _validate_api_search_parameters(session_manager: Optional[SessionManager], names: Optional[list[str]]) -> list[str]:
-    """Validate parameters for API search."""
-    if not session_manager:
-        error_msg = "Session manager not provided. Cannot search Ancestry API."
-        logger.error(error_msg)
         raise RuntimeError(error_msg)
-
-    names = names or []
-    if not names:
-        error_msg = "No names provided for API search."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    return names
-
-
-def _validate_api_configuration(session_manager: SessionManager) -> tuple[str, str]:
-    """Validate API configuration and return tree ID and base URL."""
-    # Get owner tree ID from session manager
-    owner_tree_id = getattr(session_manager, "my_tree_id", None)
-    if not owner_tree_id:
-        error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    # Get base URL from config
-    base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
-    if not base_url:
-        error_msg = "Ancestry URL not configured. Base URL missing."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    return owner_tree_id, base_url
-
-
-def _create_api_search_criteria(name: str) -> Optional[dict[str, str]]:
-    """Create search criteria for API search from name."""
-    if not name or len(name.strip()) < 2:
-        return None
-
-    # Split name into first name and surname if possible
-    name_parts = name.strip().split()
-    first_name = name_parts[0] if name_parts else ""
-    surname = name_parts[-1] if len(name_parts) > 1 else ""
-
-    # Skip if both first name and surname are empty
-    if not first_name and not surname:
-        return None
-
-    return {
-        "first_name_raw": first_name,
-        "surname_raw": surname,
-    }
-
-
-def _process_api_search_results(api_results: list[dict[str, Any]], search_criteria: dict[str, str]) -> list[dict[str, Any]]:
-    """Process and score API search results."""
-    if not api_results:
-        return []
-
-    # Process and score the API results if they exist
-    scored_suggestions = process_and_score_suggestions(api_results, search_criteria)
-
-    # Take top 3 results
-    top_matches = scored_suggestions[:3] if scored_suggestions else []
-
-    # Add source information
-    for match in top_matches:
-        match["source"] = "API"
-
-    return top_matches
-
-
-def _search_single_name_via_api(name: str) -> list[dict[str, Any]]:
-    """Search for a single name via API."""
-    search_criteria = _create_api_search_criteria(name)
-    if not search_criteria:
-        return []
-
-    # Call the API search function from action11
-    # NOTE: _search_ancestry_api function does not exist, so return empty results
-    api_results = []
-    logger.debug(f"API search functionality not available for: {name}")
-
-    if api_results is None:
-        error_msg = f"API search failed for name: {name}"
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    # Empty results are OK - just log and continue
-    if not api_results:
-        logger.info(f"API search returned no results for name: {name}")
-        return []
-
-    return _process_api_search_results(api_results, search_criteria)
 
 
 def _search_api_for_names(
     session_manager: Optional[SessionManager] = None,
-    names: Optional[list[str]] = None,
-) -> list[dict[str, Any]]:
+    names: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
     """
     Searches Ancestry API for names and returns matching individuals.
 
@@ -694,25 +480,93 @@ def _search_api_for_names(
     Raises:
         RuntimeError: If API utilities are not available or if required parameters are missing
     """
-    names = _validate_api_search_parameters(session_manager, names)
-    _validate_api_configuration(session_manager)
+    # Check if session manager is provided
+    if not session_manager:
+        error_msg = "Session manager not provided. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Check if names are provided
+    names = names or []
+    if not names:
+        error_msg = "No names provided for API search."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
 
     logger.info(f"Searching Ancestry API for: {names}")
 
     try:
+        # Get owner tree ID from session manager
+        owner_tree_id = getattr(session_manager, "my_tree_id", None)
+        if not owner_tree_id:
+            error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # Get base URL from config
+        base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
+        if not base_url:
+            error_msg = "Ancestry URL not configured. Base URL missing."
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
         search_results = []
 
         # For each name, create a search criteria and search the API
         for name in names:
-            top_matches = _search_single_name_via_api(name)
-            search_results.extend(top_matches)
+            if not name or len(name.strip()) < 2:
+                continue
 
+            # Split name into first name and surname if possible
+            name_parts = name.strip().split()
+            first_name = name_parts[0] if name_parts else ""
+            surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+            # Skip if both first name and surname are empty
+            if not first_name and not surname:
+                continue
+
+            # Create search criteria
+            search_criteria = {
+                "first_name_raw": first_name,
+                "surname_raw": surname,
+            }
+
+            # Call the API search function from action11
+            # NOTE: _search_ancestry_api function does not exist, so return empty results
+            api_results = []
+            logger.debug(f"API search functionality not available for: {name}")
+
+            if api_results is None:
+                error_msg = f"API search failed for name: {name}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
+            # Empty results are OK - just log and continue
+            if not api_results:
+                logger.info(f"API search returned no results for name: {name}")
+                continue
+
+            # Process and score the API results if they exist
+            scored_suggestions = _process_and_score_suggestions(
+                api_results, search_criteria
+            )
+
+            # Take top 3 results
+            top_matches = scored_suggestions[:3] if scored_suggestions else []
+
+            # Add source information
+            for match in top_matches:
+                match["source"] = "API"
+
+            # Add to overall results
+            search_results.extend(top_matches)  # Return the combined results
         return search_results
 
     except Exception as e:
         error_msg = f"Error searching Ancestry API: {e}"
         logger.error(error_msg, exc_info=True)
-        raise RuntimeError(error_msg) from e
+        raise RuntimeError(error_msg)
 
 
 #####################################################
@@ -751,12 +605,12 @@ class DatabaseState:
     """Manages database session and batch operations."""
 
     session: Optional[DbSession] = None
-    logs_to_add: Optional[list[dict[str, Any]]] = None
-    person_updates: Optional[dict[int, PersonStatusEnum]] = None
+    logs_to_add: Optional[List[Dict[str, Any]]] = None
+    person_updates: Optional[Dict[int, PersonStatusEnum]] = None
     batch_size: int = 10
     commit_threshold: int = 10
 
-    def __post_init__(self) -> None:
+    def __post_init__(self):
         if self.logs_to_add is None:
             self.logs_to_add = []
         if self.person_updates is None:
@@ -767,11 +621,11 @@ class DatabaseState:
 class MessageConfig:
     """Manages message types and templates."""
 
-    templates: Optional[dict[str, str]] = None
+    templates: Optional[Dict[str, str]] = None
     ack_msg_type_id: Optional[int] = None
     custom_reply_msg_type_id: Optional[int] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self):
         if self.templates is None:
             self.templates = {}
 
@@ -790,7 +644,7 @@ class PersonProcessor:
         db_state: DatabaseState,
         msg_config: MessageConfig,
         ms_state: MSGraphState,
-    ) -> None:
+    ):
         self.session_manager = session_manager
         self.db_state = db_state
         self.msg_config = msg_config
@@ -801,7 +655,7 @@ class PersonProcessor:
             else ""
         )
 
-    def process_person(self, person: Person, progress_bar=None) -> tuple[bool, str]:
+    def process_person(self, person: Person, progress_bar=None) -> Tuple[bool, str]:
         """
         Process a single person and return (success, status_message).
 
@@ -811,13 +665,8 @@ class PersonProcessor:
         log_prefix = f"Productive: {person.username} #{person.id}"
 
         try:
-            # Apply rate limiting (defensive: dynamic_rate_limiter may be None in some contexts)
-            try:
-                rl = getattr(self.session_manager, "dynamic_rate_limiter", None)
-                if rl is not None:
-                    rl.wait()
-            except Exception as e:
-                logger.debug(f"{log_prefix}: Rate limiter unavailable or failed: {e}")
+            # Apply rate limiting
+            self.session_manager.dynamic_rate_limiter.wait()
 
             # Get message context
             context_logs = self._get_context_logs(person, log_prefix)
@@ -835,13 +684,6 @@ class PersonProcessor:
 
             extracted_data, suggested_tasks = ai_results
 
-            # Log-only: assess suggested_tasks quality before any task creation (no behavior change)
-            try:
-                _log_suggested_tasks_quality(suggested_tasks, extracted_data, log_prefix)
-                _log_task_dedup_preview(suggested_tasks, log_prefix)
-            except Exception as e:
-                logger.debug(f"{log_prefix}: Task quality audit unavailable: {e}")
-
             # Create MS Graph tasks
             self._create_ms_tasks(person, suggested_tasks, log_prefix, progress_bar)
 
@@ -856,11 +698,11 @@ class PersonProcessor:
 
         except Exception as e:
             logger.error(f"Error processing {log_prefix}: {e}", exc_info=True)
-            return False, f"error: {e!s}"
+            return False, f"error: {str(e)}"
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
-    ) -> Optional[list[ConversationLog]]:
+    ) -> Optional[List[ConversationLog]]:
         """Get message context for the person."""
         if self.db_state.session is None:
             logger.error(f"Database session is None for {log_prefix}")
@@ -873,7 +715,7 @@ class PersonProcessor:
         return context_logs
 
     def _should_skip_person(
-        self, person: Person, context_logs: list[ConversationLog], log_prefix: str
+        self, person: Person, context_logs: List[ConversationLog], log_prefix: str
     ) -> bool:
         """Check if person should be skipped based on various criteria."""
 
@@ -918,7 +760,7 @@ class PersonProcessor:
         return False
 
     def _get_latest_incoming_message(
-        self, context_logs: list[ConversationLog]
+        self, context_logs: List[ConversationLog]
     ) -> Optional[ConversationLog]:
         """Get the latest incoming message from context logs."""
         for log in reversed(context_logs):
@@ -928,8 +770,8 @@ class PersonProcessor:
         return None
 
     def _process_with_ai(
-        self, person: Person, context_logs: list[ConversationLog], progress_bar=None
-    ) -> Optional[tuple[dict[str, Any], list[str]]]:
+        self, person: Person, context_logs: List[ConversationLog], progress_bar=None
+    ) -> Optional[Tuple[Dict[str, Any], List[str]]]:
         """Process message content with AI and return extracted data and tasks."""
         if progress_bar:
             progress_bar.set_description(
@@ -967,30 +809,13 @@ class PersonProcessor:
         logger.debug(
             f"Extracted entities for {person.username}: {json.dumps(entity_counts)}"
         )
-        # Debug-only quality summary for interrogation
-        try:
-            from extraction_quality import summarize_extracted_data
-            quality = summarize_extracted_data(extracted_data)
-            logger.debug(
-                f"Quality summary for {person.username}: "
-                f"counts={quality.get('counts')}, flags={quality.get('flags')}"
-            )
-        except Exception as e:
-            logger.debug(f"Quality summary unavailable: {e}")
-
-        # Store extracted data on person object for message personalization
-        try:
-            person.extracted_genealogical_data = extracted_data
-            logger.debug(f"Stored extracted genealogical data on person object for {person.username}")
-        except Exception as e:
-            logger.warning(f"Failed to store extracted data on person object: {e}")
 
         return extracted_data, suggested_tasks
 
     def _create_ms_tasks(
         self,
         person: Person,
-        suggested_tasks: list[str],
+        suggested_tasks: List[str],
         log_prefix: str,
         progress_bar=None,
     ):
@@ -1012,36 +837,6 @@ class PersonProcessor:
             )
             return
 
-        # Optional guarded de-duplication (Phase 4.3) — only in testing mode and when flag enabled
-        if (
-            config_schema.app_mode == "testing"
-            and getattr(config_schema, "enable_task_dedup", False)
-            and len(suggested_tasks) > 1
-        ):
-            try:
-                original_count = len(suggested_tasks)
-                dedup_map = {}
-                for t in suggested_tasks:
-                    core = _normalize_task_text(t)
-                    # Reuse same core transform as preview (lightweight subset)
-                    core = re.sub(r"\([^)]*\)", "", core)
-                    core = re.sub(r"\b(\d{4}s?)\b", "YEAR", core)
-                    core = re.sub(r"\b(census|record|records)\b", "record", core)
-                    core = re.sub(r"\s+", " ", core).strip()
-                    if core:
-                        dedup_map.setdefault(core, []).append(t)
-                # Keep first occurrence per core group
-                deduped = [vals[0] for vals in dedup_map.values()]
-                if len(deduped) < original_count:
-                    logger.info(
-                        f"{log_prefix}: Guarded de-dup (testing) reduced tasks {original_count}→{len(deduped)}"
-                    )
-                    suggested_tasks = deduped
-                else:
-                    logger.debug(f"{log_prefix}: Guarded de-dup found no reductions")
-            except Exception as e:
-                logger.debug(f"{log_prefix}: Guarded de-dup failed: {e}")
-
         # Create tasks
         app_mode = config_schema.app_mode
         if app_mode == "dry_run":
@@ -1050,125 +845,29 @@ class PersonProcessor:
             )
             return
 
-        # Generate enhanced tasks if genealogical task generation is available
-        enhanced_tasks = []
-        if (
-            GENEALOGICAL_TASK_GENERATION_AVAILABLE
-            and getattr(config_schema, "enable_task_enrichment", False)
-            and hasattr(person, 'extracted_genealogical_data')
-            and callable(GenealogicalTaskGenerator)
-        ):
-            try:
-                task_generator = GenealogicalTaskGenerator()  # type: ignore[call-arg]
-                person_data = {"username": getattr(person, "username", "Unknown")}
-                extracted_data = getattr(person, 'extracted_genealogical_data', {})
+        logger.info(f"{log_prefix}: Creating {len(suggested_tasks)} MS To-Do tasks...")
+        for task_index, task_desc in enumerate(suggested_tasks):
+            task_title = (
+                f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
+            )
+            task_body = f"AI Suggested Task ({task_index+1}/{len(suggested_tasks)}): {task_desc}\n\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
 
-                # === PHASE 12: GEDCOM DATA INTEGRATION ===
-                gedcom_data = None
-                try:
-                    # Try to load GEDCOM data for enhanced task generation
-                    from gedcom_search_utils import get_cached_gedcom_data
-                    gedcom_data = get_cached_gedcom_data()
-                    if gedcom_data:
-                        logger.debug(f"{log_prefix}: Using GEDCOM data for enhanced task generation")
-                except Exception as e:
-                    logger.debug(f"{log_prefix}: GEDCOM data not available for task generation: {e}")
+            task_ok = ms_graph_utils.create_todo_task(
+                self.ms_state.token,
+                self.ms_state.list_id,
+                task_title,
+                task_body,
+            )
 
-                # === PHASE 12.3: ENHANCED DATA INTEGRATION ===
-                enhanced_tasks = task_generator.generate_research_tasks(
-                    person_data,
-                    extracted_data,
-                    suggested_tasks,
-                    gedcom_data
+            if task_ok:
+                # This will be tracked by the caller
+                pass
+            else:
+                logger.warning(
+                    f"{log_prefix}: Failed to create MS task: '{task_desc[:100]}...'"
                 )
 
-                # Apply intelligent task selection and validation
-                enhanced_tasks = _apply_intelligent_task_selection(
-                    enhanced_tasks, extracted_data, person_data, log_prefix
-                )
-
-                # Validate and score task quality
-                enhanced_tasks = _validate_and_score_tasks(
-                    enhanced_tasks, extracted_data, log_prefix
-                )
-
-                if enhanced_tasks:
-                    logger.info(f"{log_prefix}: Generated {len(enhanced_tasks)} enhanced genealogical tasks")
-                    # Log a small debug sample mapping original suggested tasks to enhanced outputs (Phase 4.4 completion instrumentation)
-                    try:
-                        sample_count = min(2, len(enhanced_tasks))
-                        original_preview = suggested_tasks[:sample_count]
-                        enrichment_sample = []
-                        for i in range(sample_count):
-                            et = enhanced_tasks[i]
-                            enrichment_sample.append(
-                                {
-                                    "orig": original_preview[i] if i < len(original_preview) else None,
-                                    "title": et.get("title", ""),
-                                    "category": et.get("category", ""),
-                                    "priority": et.get("priority", ""),
-                                    "template": et.get("template_used", ""),
-                                }
-                            )
-                        # Use json dumps to keep single-line structured debug output
-                        try:
-                            import json as _json
-                            logger.debug(f"{log_prefix}: Task enrichment sample: {_json.dumps(enrichment_sample, ensure_ascii=False)}")
-                        except Exception:
-                            logger.debug(f"{log_prefix}: Task enrichment sample (fallback repr): {enrichment_sample}")
-                    except Exception as e:
-                        logger.debug(f"{log_prefix}: Failed to log enrichment sample: {e}")
-                else:
-                    logger.debug(f"{log_prefix}: No enhanced tasks generated, using standard tasks")
-
-            except Exception as e:
-                logger.warning(f"{log_prefix}: Enhanced task generation failed: {e}, using standard tasks")
-                enhanced_tasks = []
-
-        # Use enhanced tasks if available and enrichment flag enabled, otherwise fall back to standard tasks
-        if enhanced_tasks and getattr(config_schema, "enable_task_enrichment", False):
-            logger.info(f"{log_prefix}: Creating {len(enhanced_tasks)} enhanced MS To-Do tasks...")
-            for _, task_data in enumerate(enhanced_tasks):
-                task_title = task_data.get("title", f"Ancestry Research: {person.username or 'Unknown'}")
-                task_body = f"{task_data.get('description', 'Research task')}\n\n--- Task Details ---\nCategory: {task_data.get('category', 'general')}\nPriority: {task_data.get('priority', 'medium')}\nTemplate: {task_data.get('template_used', 'standard')}\n\n--- Match Information ---\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
-
-                task_ok = ms_graph_utils.create_todo_task(
-                    self.ms_state.token,
-                    self.ms_state.list_id,
-                    task_title,
-                    task_body,
-                )
-
-                if task_ok:
-                    logger.debug(f"{log_prefix}: Created enhanced task: {task_title[:50]}...")
-                else:
-                    logger.warning(
-                        f"{log_prefix}: Failed to create enhanced MS task: '{task_title[:100]}...'"
-                    )
-        else:
-            # Fallback to standard task creation
-            logger.info(f"{log_prefix}: Creating {len(suggested_tasks)} standard MS To-Do tasks...")
-            for task_index, task_desc in enumerate(suggested_tasks):
-                task_title = (
-                    f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
-                )
-                task_body = f"AI Suggested Task ({task_index+1}/{len(suggested_tasks)}): {task_desc}\n\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
-
-                task_ok = ms_graph_utils.create_todo_task(
-                    self.ms_state.token,
-                    self.ms_state.list_id,
-                    task_title,
-                    task_body,
-                )
-
-                if task_ok:
-                    logger.debug(f"{log_prefix}: Created standard task: {task_title[:50]}...")
-                else:
-                    logger.warning(
-                        f"{log_prefix}: Failed to create standard MS task: '{task_desc[:100]}...'"
-                    )
-
-    def _initialize_ms_graph(self) -> None:
+    def _initialize_ms_graph(self):
         """Initialize MS Graph authentication and list ID if needed."""
         if not self.ms_state.token and not self.ms_state.auth_attempted:
             logger.info("Attempting MS Graph authentication (device flow)...")
@@ -1192,8 +891,8 @@ class PersonProcessor:
     def _handle_message_response(
         self,
         person: Person,
-        context_logs: list[ConversationLog],
-        extracted_data: dict[str, Any],
+        context_logs: List[ConversationLog],
+        extracted_data: Dict[str, Any],
         log_prefix: str,
         progress_bar=None,
     ) -> bool:
@@ -1225,7 +924,7 @@ class PersonProcessor:
         )
 
         # Format message (custom or standard acknowledgment)
-        message_text, message_template_id = self._format_message(
+        message_text, message_type_id = self._format_message(
             person, extracted_data, custom_reply, log_prefix
         )
         # Apply filtering and send message
@@ -1233,7 +932,7 @@ class PersonProcessor:
             person,
             context_logs,
             message_text,
-            message_template_id,
+            message_type_id,
             custom_reply,
             latest_message,
             log_prefix,
@@ -1244,7 +943,7 @@ class PersonProcessor:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
-                message.custom_reply_sent_at = datetime.now(timezone.utc)
+                setattr(message, "custom_reply_sent_at", datetime.now(timezone.utc))
                 self.db_state.session.add(message)
                 self.db_state.session.flush()
         except Exception as e:
@@ -1253,8 +952,8 @@ class PersonProcessor:
     def _generate_custom_reply(
         self,
         person: Person,
-        context_logs: list[ConversationLog],
-        extracted_data: dict[str, Any],
+        context_logs: List[ConversationLog],
+        extracted_data: Dict[str, Any],
         latest_message: ConversationLog,
         log_prefix: str,
         progress_bar=None,
@@ -1323,10 +1022,10 @@ class PersonProcessor:
     def _format_message(
         self,
         person: Person,
-        extracted_data: dict[str, Any],
+        extracted_data: Dict[str, Any],
         custom_reply: Optional[str],
         log_prefix: str,
-    ) -> tuple[str, int]:
+    ) -> Tuple[str, int]:
         """Format the message text and determine message type ID."""
 
         try:
@@ -1337,7 +1036,7 @@ class PersonProcessor:
                 location_part = f"\n{user_location}" if user_location else ""
                 signature = f"\n\nBest regards,\n{user_name}{location_part}"
                 message_text = custom_reply + signature
-                message_template_id = self.msg_config.custom_reply_msg_type_id
+                message_type_id = self.msg_config.custom_reply_msg_type_id
                 logger.info(
                     f"{log_prefix}: Using custom genealogical reply with signature."
                 )
@@ -1350,52 +1049,21 @@ class PersonProcessor:
                 # Generate summary
                 summary_for_ack = _generate_ack_summary(extracted_data)
 
-                # Try enhanced personalized message formatting first
-                message_text = None
-                if MESSAGE_PERSONALIZATION_AVAILABLE and hasattr(person, 'extracted_genealogical_data'):
-                    try:
-                        from message_personalization import MessagePersonalizer
-                        personalizer = MessagePersonalizer()
+                # Format message using template
+                if (
+                    self.msg_config.templates
+                    and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates
+                ):
+                    message_text = self.msg_config.templates[
+                        ACKNOWLEDGEMENT_MESSAGE_TYPE
+                    ].format(name=name_to_use, summary=summary_for_ack)
+                else:
+                    user_name = getattr(config_schema, "user_name", "Tree Owner")
+                    message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
+                message_type_id = self.msg_config.ack_msg_type_id
+                logger.info(f"{log_prefix}: Using standard acknowledgement template.")
 
-                        # Check if we have an enhanced productive reply template
-                        enhanced_template_key = "Enhanced_Productive_Reply"
-                        if enhanced_template_key in personalizer.templates:
-                            logger.debug(f"Using enhanced productive reply template for {log_prefix}")
-
-                            extracted_data = getattr(person, 'extracted_genealogical_data', {})
-                            person_data = {"username": getattr(person, "username", "Unknown")}
-                            base_format_data = {"name": name_to_use, "summary": summary_for_ack}
-
-                            message_text = personalizer.create_personalized_message(
-                                enhanced_template_key,
-                                person_data,
-                                extracted_data,
-                                base_format_data
-                            )
-                            logger.info(f"Successfully created personalized productive reply for {log_prefix}")
-                        else:
-                            logger.debug(f"Enhanced template '{enhanced_template_key}' not available")
-                    except Exception as e:
-                        logger.warning(f"Enhanced productive reply formatting failed for {log_prefix}: {e}, falling back to standard")
-                        message_text = None
-
-                # Fallback to standard template formatting
-                if not message_text:
-                    if (
-                        self.msg_config.templates
-                        and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates
-                    ):
-                        message_text = self.msg_config.templates[
-                            ACKNOWLEDGEMENT_MESSAGE_TYPE
-                        ].format(name=name_to_use, summary=summary_for_ack)
-                    else:
-                        user_name = getattr(config_schema, "user_name", "Tree Owner")
-                        message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
-                    logger.info(f"{log_prefix}: Using standard acknowledgement template.")
-
-                message_template_id = self.msg_config.ack_msg_type_id
-
-            return message_text, message_template_id or 1  # Provide default
+            return message_text, message_type_id or 1  # Provide default
 
         except Exception as e:
             logger.error(
@@ -1404,15 +1072,15 @@ class PersonProcessor:
             safe_username = safe_column_value(person, "username", "User")
             user_name = getattr(config_schema, "user_name", "Tree Owner")
             message_text = f"Dear {format_name(safe_username)},\n\nThank you for your message!\n\n{user_name}"
-            message_template_id = self.msg_config.ack_msg_type_id or 1  # Provide default
-            return message_text, message_template_id
+            message_type_id = self.msg_config.ack_msg_type_id or 1  # Provide default
+            return message_text, message_type_id
 
     def _send_message(
         self,
         person: Person,
-        context_logs: list[ConversationLog],
+        context_logs: List[ConversationLog],
         message_text: str,
-        message_template_id: int,
+        message_type_id: int,
         custom_reply: Optional[str],
         latest_message: ConversationLog,
         log_prefix: str,
@@ -1457,7 +1125,7 @@ class PersonProcessor:
         return self._stage_database_updates(
             person,
             message_text,
-            message_template_id,
+            message_type_id,
             send_status,
             effective_conv_id or "",
             custom_reply,
@@ -1465,7 +1133,7 @@ class PersonProcessor:
             log_prefix,
         )
 
-    def _should_send_message(self, person: Person, log_prefix: str) -> tuple[bool, str]:
+    def _should_send_message(self, person: Person, _log_prefix: str) -> Tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
         app_mode = config_schema.app_mode
@@ -1476,7 +1144,7 @@ class PersonProcessor:
         if app_mode == "testing":
             if not testing_profile_id:
                 return False, "skipped (config_error)"
-            if current_profile_id != str(testing_profile_id):
+            elif current_profile_id != str(testing_profile_id):
                 return False, f"skipped (testing_mode_filter: not {testing_profile_id})"
         elif (
             app_mode == "production"
@@ -1488,7 +1156,7 @@ class PersonProcessor:
         return True, ""
 
     def _get_conversation_id(
-        self, context_logs: list[ConversationLog], log_prefix: str
+        self, context_logs: List[ConversationLog], log_prefix: str
     ) -> Optional[str]:
         """Get conversation ID from context logs."""
         if not context_logs:
@@ -1514,7 +1182,7 @@ class PersonProcessor:
         self,
         person: Person,
         message_text: str,
-        message_template_id: int,
+        message_type_id: int,
         send_status: str,
         effective_conv_id: str,
         custom_reply: Optional[str],
@@ -1546,7 +1214,7 @@ class PersonProcessor:
                         : config_schema.message_truncation_length
                     ],
                     "latest_timestamp": datetime.now(timezone.utc),
-                    "message_template_id": message_template_id,
+                    "message_type_id": message_type_id,
                     "script_message_status": send_status,
                     "ai_sentiment": None,
                 }
@@ -1558,11 +1226,15 @@ class PersonProcessor:
                 if (
                     custom_reply
                     and latest_message
-                    and message_template_id == self.msg_config.custom_reply_msg_type_id
+                    and message_type_id == self.msg_config.custom_reply_msg_type_id
                 ):
                     try:
                         if self.db_state.session:
-                            latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
+                            setattr(
+                                latest_message,
+                                "custom_reply_sent_at",
+                                datetime.now(timezone.utc),
+                            )
                             self.db_state.session.add(latest_message)
                             self.db_state.session.flush()
                             logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
@@ -1593,7 +1265,7 @@ class PersonProcessor:
 class BatchCommitManager:
     """Manages batch commits to the database."""
 
-    def __init__(self, db_state: DatabaseState) -> None:
+    def __init__(self, db_state: DatabaseState):
         self.db_state = db_state
 
     def should_commit(self) -> bool:
@@ -1605,7 +1277,7 @@ class BatchCommitManager:
         total_pending = logs_count + updates_count
         return total_pending >= self.db_state.commit_threshold
 
-    def commit_batch(self, batch_num: int) -> tuple[bool, int, int]:
+    def commit_batch(self, batch_num: int) -> Tuple[bool, int, int]:
         """
         Commit current batch to database.
 
@@ -1665,81 +1337,6 @@ class BatchCommitManager:
 @timeout_protection(timeout=2400)  # 40 minutes for productive message processing
 @graceful_degradation(fallback_value=False)
 @error_context("action9_process_productive")
-def _initialize_state_objects() -> tuple[ProcessingState, MSGraphState]:
-    """Initialize processing and MS Graph state objects."""
-    state = ProcessingState()
-    ms_state = MSGraphState(list_name=config_schema.ms_todo_list_name)
-    return state, ms_state
-
-
-def _initialize_adaptive_systems() -> tuple[Optional[Any], Optional[Any], int]:
-    """Initialize adaptive batch processing systems if available."""
-    adaptive_batch_size = config_schema.batch_size
-    smart_batch_processor = None
-    performance_dashboard = None
-
-    if ADAPTIVE_SYSTEMS_AVAILABLE:
-        try:
-            # Initialize adaptive systems only if classes loaded
-            if callable(SmartBatchProcessor):
-                smart_batch_processor = SmartBatchProcessor(
-                    initial_batch_size=config_schema.batch_size,
-                    min_batch_size=1,
-                    max_batch_size=min(20, config_schema.max_productive_to_process or 20)
-                )
-                adaptive_batch_size = smart_batch_processor.get_next_batch_size()
-                logger.debug(f"Adaptive batch processing enabled: initial size {adaptive_batch_size}")
-
-            if callable(PerformanceDashboard):
-                performance_dashboard = PerformanceDashboard("action9_performance.json")
-                performance_dashboard.record_session_start({
-                    "action": "action9_process_productive",
-                    "initial_batch_size": config_schema.batch_size,
-                    "max_productive": config_schema.max_productive_to_process
-                })
-
-        except Exception as e:
-            logger.warning(f"Failed to initialize adaptive systems: {e}, using standard batch processing")
-            smart_batch_processor = None
-            performance_dashboard = None
-
-    return smart_batch_processor, performance_dashboard, adaptive_batch_size
-
-
-def _initialize_database_and_message_config(adaptive_batch_size: int) -> tuple[DatabaseState, MessageConfig]:
-    """Initialize database state and message configuration."""
-    db_state = DatabaseState(
-        batch_size=max(1, adaptive_batch_size),
-        commit_threshold=max(1, adaptive_batch_size),
-    )
-    msg_config = MessageConfig()
-    return db_state, msg_config
-
-
-def _validate_session_manager(session_manager: SessionManager) -> bool:
-    """Validate session manager has required attributes."""
-    if not session_manager or not session_manager.my_profile_id:
-        logger.error("Action 9: SessionManager or Profile ID missing.")
-        return False
-    return True
-
-
-def _finalize_performance_monitoring(performance_dashboard: Optional[Any]) -> None:
-    """Finalize performance monitoring if available."""
-    if performance_dashboard:
-        try:
-            performance_dashboard.finalize_session()
-            logger.info("Performance monitoring session finalized")
-        except Exception as e:
-            logger.warning(f"Failed to finalize performance monitoring: {e}")
-
-
-def _cleanup_resources(session_manager: SessionManager, db_state: DatabaseState) -> None:
-    """Clean up database session resources."""
-    if db_state.session:
-        session_manager.return_session(db_state.session)
-
-
 def process_productive_messages(session_manager: SessionManager) -> bool:
     """
     Simplified main function for Action 9. Processes productive messages by:
@@ -1747,20 +1344,27 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
     2. Querying candidates
     3. Processing each person in batches
     4. Committing results
+
+    Args:
+        session_manager: The active SessionManager instance.
+
+    Returns:
+        True if processing completed successfully, False otherwise.
     """
     logger.info("--- Starting Action 9: Process Productive Messages (Streamlined) ---")
 
     # Initialize state objects
-    state, ms_state = _initialize_state_objects()
-
-    # Initialize adaptive systems
-    smart_batch_processor, performance_dashboard, adaptive_batch_size = _initialize_adaptive_systems()
-
-    # Initialize database and message configuration
-    db_state, msg_config = _initialize_database_and_message_config(adaptive_batch_size)
+    state = ProcessingState()
+    ms_state = MSGraphState(list_name=config_schema.ms_todo_list_name)
+    db_state = DatabaseState(
+        batch_size=max(1, config_schema.batch_size),
+        commit_threshold=max(1, config_schema.batch_size),
+    )
+    msg_config = MessageConfig()
 
     # Validate session manager
-    if not _validate_session_manager(session_manager):
+    if not session_manager or not session_manager.my_profile_id:
+        logger.error("Action 9: SessionManager or Profile ID missing.")
         return False
 
     try:
@@ -1798,8 +1402,9 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         )
         return False
     finally:
-        _finalize_performance_monitoring(performance_dashboard)
-        _cleanup_resources(session_manager, db_state)
+        # Cleanup
+        if db_state.session:
+            session_manager.return_session(db_state.session)
 
 
 def _setup_configuration(
@@ -1826,28 +1431,28 @@ def _setup_configuration(
         return False
 
     ack_msg_type_obj = (
-        db_state.session.query(MessageTemplate.id)
-        .filter(MessageTemplate.template_key == ACKNOWLEDGEMENT_MESSAGE_TYPE)
+        db_state.session.query(MessageType.id)
+        .filter(MessageType.type_name == ACKNOWLEDGEMENT_MESSAGE_TYPE)
         .scalar()
     )
     if not ack_msg_type_obj:
         logger.critical(
-            f"Action 9: MessageTemplate '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
+            f"Action 9: MessageType '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
         )
         return False
     msg_config.ack_msg_type_id = ack_msg_type_obj
 
-    # Get custom reply message template ID (optional)
+    # Get custom reply message type ID (optional)
     custom_reply_msg_type_obj = (
-        db_state.session.query(MessageTemplate.id)
-        .filter(MessageTemplate.template_key == CUSTOM_RESPONSE_MESSAGE_TYPE)
+        db_state.session.query(MessageType.id)
+        .filter(MessageType.type_name == CUSTOM_RESPONSE_MESSAGE_TYPE)
         .scalar()
     )
     if custom_reply_msg_type_obj:
         msg_config.custom_reply_msg_type_id = custom_reply_msg_type_obj
     else:
         logger.warning(
-            f"Action 9: MessageTemplate '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
+            f"Action 9: MessageType '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
         )
 
     return True
@@ -1856,7 +1461,7 @@ def _setup_configuration(
 @cached_database_query(ttl=300)  # 5-minute cache for candidate queries
 def _query_candidates(
     db_state: DatabaseState, msg_config: MessageConfig, limit: int
-) -> list[Person]:
+) -> List[Person]:
     """Query for candidate persons to process."""
 
     if not db_state.session:
@@ -1884,7 +1489,7 @@ def _query_candidates(
         )
         .filter(
             ConversationLog.direction == MessageDirectionEnum.OUT,
-            ConversationLog.message_template_id == msg_config.ack_msg_type_id,
+            ConversationLog.message_type_id == msg_config.ack_msg_type_id,
         )
         .group_by(ConversationLog.people_id)
         .subquery("latest_ack_out_sub")
@@ -1905,7 +1510,7 @@ def _query_candidates(
                     ConversationLog.ai_sentiment == PRODUCTIVE_SENTIMENT,
                     ConversationLog.ai_sentiment == OTHER_SENTIMENT,
                 ),
-                ConversationLog.custom_reply_sent_at is None,
+                ConversationLog.custom_reply_sent_at == None,
             ),
         )
         .outerjoin(
@@ -1914,7 +1519,7 @@ def _query_candidates(
         )
         .filter(
             Person.status == PersonStatusEnum.ACTIVE,
-            (latest_ack_out_log_subq.c.max_ack_out_ts is None)
+            (latest_ack_out_log_subq.c.max_ack_out_ts == None)
             | (
                 latest_ack_out_log_subq.c.max_ack_out_ts
                 < latest_in_log_subq.c.max_in_ts
@@ -1933,7 +1538,7 @@ def _query_candidates(
 
 def _process_candidates(
     session_manager: SessionManager,
-    candidates: list[Person],
+    candidates: List[Person],
     state: ProcessingState,
     ms_state: MSGraphState,
     db_state: DatabaseState,
@@ -1982,56 +1587,19 @@ def _process_candidates(
                     # Note: tasks_created_count is updated in the person processor
                 else:
                     state.skipped_count += 1
-            elif status.startswith("error"):
-                state.error_count += 1
-                state.overall_success = False
             else:
-                state.skipped_count += 1
+                if status.startswith("error"):
+                    state.error_count += 1
+                    state.overall_success = False
+                else:
+                    state.skipped_count += 1
 
             # Check for batch commit
             if commit_manager.should_commit():
                 state.batch_num += 1
-
-                # === PHASE 11.1: BATCH PERFORMANCE MONITORING ===
-                batch_start_time = time.time()
-                current_batch_size = len(db_state.logs_to_add or []) + len(db_state.person_updates or [])
-
-                commit_success, logs_committed, persons_updated = (
+                commit_success, _, _ = (
                     commit_manager.commit_batch(state.batch_num)
                 )
-
-                # Record batch performance for adaptive processing
-                _sbp = locals().get('smart_batch_processor')
-                _pd = locals().get('performance_dashboard')
-                if ADAPTIVE_SYSTEMS_AVAILABLE and _sbp is not None and _pd is not None:
-                    try:
-                        batch_processing_time = time.time() - batch_start_time
-                        batch_success_rate = 1.0 if commit_success else 0.0
-
-                        _sbp.record_batch_performance(
-                            batch_size=current_batch_size,
-                            processing_time=batch_processing_time,
-                            success_rate=batch_success_rate
-                        )
-
-                        _pd.record_batch_processing_metrics({
-                            "batch_number": state.batch_num,
-                            "batch_size": current_batch_size,
-                            "processing_time": batch_processing_time,
-                            "success_rate": batch_success_rate,
-                            "logs_committed": logs_committed,
-                            "persons_updated": persons_updated
-                        })
-
-                        # Get updated batch size recommendation
-                        recommended_batch_size = _sbp.get_next_batch_size()
-                        if recommended_batch_size != db_state.batch_size:
-                            logger.info(f"Adaptive batch size adjustment: {db_state.batch_size} → {recommended_batch_size}")
-                            db_state.batch_size = recommended_batch_size
-                            db_state.commit_threshold = recommended_batch_size
-
-                    except Exception as e:
-                        logger.warning(f"Batch performance monitoring failed: {e}")
 
                 if not commit_success:
                     logger.critical(f"Critical: Batch {state.batch_num} commit failed!")
@@ -2097,198 +1665,131 @@ def _log_summary(state: ProcessingState):
 #####################################################
 
 
-def _normalize_task_text(task: str) -> str:
-    """Create a normalized representation of a task string for hashing/dedup logs.
-
-    - Lowercase
-    - Collapse whitespace
-    - Strip leading/trailing punctuation
-    - Remove repeated punctuation
+def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
     """
-    if not isinstance(task, str):
-        return ""
-    t = task.lower()
-    t = re.sub(r"\s+", " ", t).strip()
-    t = re.sub(r"[\s\-_,.;:!]+$", "", t)  # strip trailing punctuation clusters
-    t = re.sub(r"^[\s\-_,.;:!]+", "", t)  # strip leading punctuation clusters
-    return re.sub(r"[!?.]{2,}", ".", t)
+    Processes and validates the AI response using Pydantic models for robust parsing.
 
+    This function takes the raw AI response and attempts to validate it against the
+    expected schema using Pydantic models. It handles various error cases gracefully
+    and always returns a valid structure even if the input is malformed.
 
-def _log_suggested_tasks_quality(suggested_tasks: list[str], extracted_data: dict[str, Any], log_prefix: str) -> None:
-    """Log-only audit of suggested task quality; does not modify behavior.
+    Args:
+        ai_response: The raw AI response from extract_genealogical_entities
+        log_prefix: A string prefix for log messages (usually includes person info)
 
-    Metrics logged:
-    - total vs unique (normalized) count
-    - average/median length and counts of very short/very long tasks
-    - coverage hints: whether tasks reference extracted names/locations/dates
-    - idempotency hashes for potential future de-duplication
-    - presence of action verbs
+    Returns:
+        A dictionary with 'extracted_data' and 'suggested_tasks' keys, properly
+        structured and validated, with empty lists as fallbacks for invalid data.
     """
-    try:
-        tasks = suggested_tasks or []
-        if not tasks:
-            logger.debug(f"{log_prefix}: No suggested_tasks to audit.")
-            return
-
-        # Normalize and hash
-        norm = [_normalize_task_text(t) for t in tasks if isinstance(t, str) and t.strip()]
-        unique_norm = list({n for n in norm if n})
-        dup_count = max(0, len(norm) - len(unique_norm))
-        hashes = [hashlib.sha1(n.encode("utf-8")).hexdigest()[:12] for n in unique_norm]
-
-        # Length stats
-        lengths = [len(t) for t in tasks if isinstance(t, str)]
-        avg_len = sum(lengths) / len(lengths) if lengths else 0
-        short_count = sum(1 for ln in lengths if ln < 25)
-        long_count = sum(1 for ln in lengths if ln > 220)
-
-        # Action verbs heuristic
-        ACTION_VERBS = [
-            "search", "check", "look", "compare", "review", "request",
-            "contact", "verify", "order", "compile", "analyze", "map",
-            "triangulate", "confirm", "document",
-        ]
-        verb_hits = sum(1 for n in norm for v in ACTION_VERBS if f" {v} " in f" {n} ")
-
-        # Names/locations coverage (best-effort; extracted_data structure may vary)
-        names = set()
-        try:
-            for nd in (extracted_data.get("structured_names") or []):
-                full = nd.get("full_name") if isinstance(nd, dict) else None
-                if full:
-                    names.add(full.lower())
-        except Exception:
-            pass
-        locations = set()
-        try:
-            for loc in (extracted_data.get("locations") or []):
-                place = loc.get("place") if isinstance(loc, dict) else None
-                if place:
-                    locations.add(place.lower())
-        except Exception:
-            pass
-
-        names_refs = sum(1 for n in norm if any(name in n for name in names)) if names else 0
-        loc_refs = sum(1 for n in norm if any(place in n for place in locations)) if locations else 0
-
-        logger.info(
-            f"{log_prefix}: Task audit — total={len(tasks)}, unique_norm={len(unique_norm)}, dupes={dup_count}, "
-            f"avg_len={avg_len:.1f}, short(<25)={short_count}, long(>220)={long_count}, verbs={verb_hits}, "
-            f"name_refs={names_refs}, location_refs={loc_refs}"
-        )
-        # Log a compact preview of normalized tasks and their hashes
-        preview = [f"{i+1}:{unique_norm[i][:70]} # {hashes[i]}" for i in range(min(3, len(unique_norm)))]
-        if preview:
-            logger.debug(f"{log_prefix}: Task audit sample: {preview}")
-    except Exception as e:
-        logger.debug(f"{log_prefix}: Task audit failed: {e}")
-
-
-def _log_task_dedup_preview(suggested_tasks: list[str], log_prefix: str) -> None:
-        """Phase 4.2 (log-only): Preview potential task de-duplication impact.
-
-        Groups tasks by normalized core text (after stripping trailing qualifiers).
-        Logs cluster sizes and a consolidation estimate WITHOUT modifying the list.
-        """
-        try:
-            tasks = suggested_tasks or []
-            if len(tasks) < 2:
-                return
-            # Lightweight normalization reuse
-            core_map: dict[str, list[int]] = {}
-            for idx, raw in enumerate(tasks):
-                if not isinstance(raw, str) or not raw.strip():
-                    continue
-                norm = _normalize_task_text(raw)
-                # Remove parenthetical clarifiers & counts for grouping
-                core = re.sub(r"\([^)]*\)", "", norm)
-                core = re.sub(r"\b(\d{4}s?)\b", r"YEAR", core)  # Generalize years
-                core = re.sub(r"\b(census|record|records)\b", "record", core)
-                core = re.sub(r"\s+", " ", core).strip()
-                if not core:
-                    continue
-                core_map.setdefault(core, []).append(idx)
-
-            duplicate_clusters = {k: v for k, v in core_map.items() if len(v) > 1}
-            if not duplicate_clusters:
-                logger.debug(f"{log_prefix}: De-dup preview: no duplicate clusters detected")
-                return
-
-            potential_savings = sum(len(v) - 1 for v in duplicate_clusters.values())
-            logger.info(
-                f"{log_prefix}: De-dup preview — clusters={len(duplicate_clusters)}, "
-                f"potential_savings={potential_savings} (would reduce {len(tasks)}→{len(tasks)-potential_savings})"
-            )
-            sample = []
-            for core_text, idxs in list(duplicate_clusters.items())[:3]:
-                hash_prefix = hashlib.sha1(core_text.encode('utf-8')).hexdigest()[:10]
-                sample.append(f"{hash_prefix}:{len(idxs)}:'{core_text[:55]}'")
-            if sample:
-                logger.debug(f"{log_prefix}: De-dup cluster samples: {sample}")
-        except Exception as e:
-            logger.debug(f"{log_prefix}: De-dup preview failed: {e}")
-
-
-def _process_ai_response(ai_response: Any, log_prefix: str) -> dict[str, Any]:
-    """
-    Processes and validates the AI response using Pydantic models for robust parsing,
-    then normalizes the structure to the enriched schema used downstream.
-
-    Always returns a dict with keys: 'extracted_data' and 'suggested_tasks'.
-    """
-    # Lazy import to avoid circulars at module import time
-    try:
-        from genealogical_normalization import normalize_ai_response
-    except Exception:
-        normalize_ai_response = None  # type: ignore
-
-    # Default minimal fallback
-    result: dict[str, Any] = {
-        "extracted_data": {},
+    # Initialize default result structure
+    result = {
+        "extracted_data": {
+            "mentioned_names": [],
+            "mentioned_locations": [],
+            "mentioned_dates": [],
+            "potential_relationships": [],
+            "key_facts": [],
+        },
         "suggested_tasks": [],
     }
 
-    if not isinstance(ai_response, dict):
-        logger.warning(f"{log_prefix}: AI response is not a dict; applying defaults.")
-        return (
-            normalize_ai_response({}) if callable(normalize_ai_response) else result
+    # Early return if response is None or not a dict
+    if not ai_response or not isinstance(ai_response, dict):
+        logger.warning(
+            f"{log_prefix}: AI response is None or not a dictionary. Using default empty structure."
         )
+        return result
 
     logger.debug(f"{log_prefix}: Processing AI response...")
 
     try:
         # First attempt: Try direct validation with Pydantic
         validated_response = AIResponse.model_validate(ai_response)
+
+        # If validation succeeds, convert to dict and return
         result = validated_response.model_dump()
-        logger.debug(f"{log_prefix}: AI response validated with Pydantic schema.")
+        logger.debug(
+            f"{log_prefix}: AI response successfully validated with Pydantic schema."
+        )
+        return result
+
     except ValidationError as ve:
+        # Log validation error details
         logger.warning(f"{log_prefix}: AI response validation failed: {ve}")
-        # Salvage minimal content before normalization
-        minimal = {"extracted_data": {}, "suggested_tasks": []}
+
+        # Second attempt: Try to salvage partial data with more defensive approach
         try:
-            if isinstance(ai_response.get("extracted_data"), dict):
-                minimal["extracted_data"] = dict(ai_response["extracted_data"])  # shallow copy
-            if isinstance(ai_response.get("suggested_tasks"), list):
-                minimal["suggested_tasks"] = list(ai_response["suggested_tasks"])  # shallow copy
+            # Process extracted_data if it exists
+            if "extracted_data" in ai_response and isinstance(
+                ai_response["extracted_data"], dict
+            ):
+                extracted_data_raw = ai_response["extracted_data"]
+
+                # Process each expected key
+                for key in result["extracted_data"].keys():
+                    # Get value with fallback to empty list
+                    value = extracted_data_raw.get(key, [])
+
+                    # Ensure it's a list and contains only strings
+                    if isinstance(value, list):
+                        # Filter and convert items to strings
+                        result["extracted_data"][key] = [
+                            str(item)
+                            for item in value
+                            if item is not None and isinstance(item, (str, int, float))
+                        ]
+                    else:
+                        logger.warning(
+                            f"{log_prefix}: AI response 'extracted_data.{key}' is not a list. Using empty list."
+                        )
+            else:
+                logger.warning(
+                    f"{log_prefix}: AI response missing 'extracted_data' dictionary. Using defaults."
+                )
+
+            # Process suggested_tasks if it exists
+            if "suggested_tasks" in ai_response:
+                tasks_raw = ai_response["suggested_tasks"]
+
+                # Ensure it's a list and contains only strings
+                if isinstance(tasks_raw, list):
+                    result["suggested_tasks"] = [
+                        str(item)
+                        for item in tasks_raw
+                        if item is not None and isinstance(item, (str, int, float))
+                    ]
+                else:
+                    logger.warning(
+                        f"{log_prefix}: AI response 'suggested_tasks' is not a list. Using empty list."
+                    )
+            else:
+                logger.warning(
+                    f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list."
+                )
+
+            logger.debug(
+                f"{log_prefix}: Salvaged partial data from AI response after validation failure."
+            )
+
         except Exception as e:
-            logger.debug(f"{log_prefix}: Defensive salvage failed: {e}")
-        result = minimal
+            # If even the defensive parsing fails, log and return defaults
+            logger.error(
+                f"{log_prefix}: Failed to salvage data from AI response: {e}",
+                exc_info=True,
+            )
+
     except Exception as e:
-        logger.error(f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True)
-        result = {"extracted_data": {}, "suggested_tasks": []}
+        # Catch any other unexpected errors
+        logger.error(
+            f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True
+        )
 
-    # Normalize to ensure structured keys exist and legacy fields are promoted
-    if callable(normalize_ai_response):
-        try:
-            result = normalize_ai_response(result)
-        except Exception as e:
-            logger.warning(f"{log_prefix}: Normalization failed, using unnormalized result: {e}")
-
+    # Return the result (either default or partially salvaged)
     return result
 
 
 def _format_context_for_ai_extraction(
-    context_logs: list[ConversationLog],
+    context_logs: List[ConversationLog],
     # my_pid_lower parameter is kept for compatibility but not used
     # pylint: disable=unused-argument
     _: str = "",  # Renamed to underscore to indicate unused parameter
@@ -2334,7 +1835,7 @@ def _format_context_for_ai_extraction(
                 elif str(direction_value) == str(MessageDirectionEnum.IN):
                     # Try string comparison as last resort
                     is_in_direction = True
-        except Exception:
+        except:
             # Default to OUT if any error occurs
             is_in_direction = False
 
@@ -2349,7 +1850,10 @@ def _format_context_for_ai_extraction(
 
         # Step 3c: Truncate content by word count if necessary
         words = content.split()
-        truncated_content = " ".join(words[:max_words]) + "..." if len(words) > max_words else content
+        if len(words) > max_words:
+            truncated_content = " ".join(words[:max_words]) + "..."
+        else:
+            truncated_content = content
 
         # Step 3d: Append formatted line to the list
         context_lines.append(
@@ -2362,7 +1866,7 @@ def _get_message_context(
     db_session: DbSession,
     person_id: Union[int, Any],  # Accept SQLAlchemy Column type or int
     limit: int = config_schema.ai_context_messages_count,
-) -> list[ConversationLog]:
+) -> List[ConversationLog]:
     """
     Fetches the last 'limit' ConversationLog entries for a given person_id,
     ordered by timestamp ascending (oldest first).
@@ -2387,7 +1891,7 @@ def _get_message_context(
 
         # Step 2: Sort the fetched logs by timestamp ascending (oldest first) for AI context
         # Convert SQLAlchemy Column objects to Python datetime objects for sorting
-        def get_sort_key(log: Any) -> datetime:
+        def get_sort_key(log):
             # Extract timestamp value from SQLAlchemy Column if needed
             ts = log.latest_timestamp
             # If it's already a datetime or can be used as one, use it
@@ -2413,7 +1917,7 @@ def _get_message_context(
         return []
 
 
-def _load_templates_for_action9() -> dict[str, str]:
+def _load_templates_for_action9() -> Dict[str, str]:
     """
     Loads message templates for Action 9 from action8_messaging.
 
@@ -2441,8 +1945,8 @@ def _load_templates_for_action9() -> dict[str, str]:
 
 
 def _search_ancestry_tree(
-    _session_manager: SessionManager, extracted_data: Union[ExtractedData, list[str]]
-) -> dict[str, Any]:
+    _session_manager: SessionManager, extracted_data: Union[ExtractedData, List[str]]
+) -> Dict[str, Any]:
     """
     Searches the user's tree (GEDCOM or API) for names extracted by the AI.
 
@@ -2491,18 +1995,19 @@ def _search_ancestry_tree(
 
 
 def _identify_and_get_person_details(
-    _session_manager: SessionManager, extracted_data: dict[str, Any], log_prefix: str
-) -> Optional[dict[str, Any]]:
+    _session_manager: SessionManager, _extracted_data: Dict[str, Any], log_prefix: str
+) -> Optional[Dict[str, Any]]:
     """
     Simplified version that returns None (no person details found).
     """
     logger.debug(
         f"{log_prefix}: _identify_and_get_person_details - returning None (simplified version)"
     )
+    return None
 
 
 def _format_genealogical_data_for_ai(
-    genealogical_data: dict[str, Any], log_prefix: str
+    genealogical_data: Dict[str, Any], _log_prefix: str
 ) -> str:
     """
     Simplified version that formats genealogical data for AI consumption.
@@ -2543,11 +2048,11 @@ def generate_genealogical_reply(
         )
 
     except Exception as e:
-        logger.error(f"{log_prefix}: Error generating genealogical reply: {e!s}")
+        logger.error(f"{log_prefix}: Error generating genealogical reply: {str(e)}")
         return None
 
 
-def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
+def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
     """
     Generates a summary from extracted data for acknowledgment messages.
     """
@@ -2570,7 +2075,8 @@ def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
 
         if summary_parts:
             return "; ".join(summary_parts)
-        return "your family history research"
+        else:
+            return "your family history research"
     except Exception as e:
         logger.error(f"Error generating acknowledgment summary: {e}")
         return "your genealogy information"
@@ -2586,6 +2092,7 @@ def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
 # ==============================================
 def action9_process_productive_module_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
+    from test_framework import TestSuite, suppress_logging, MagicMock, patch
 
     suite = TestSuite(
         "Action 9 - AI Message Processing & Data Extraction",
@@ -2593,7 +2100,7 @@ def action9_process_productive_module_tests() -> bool:
     )
     suite.start_suite()  # INITIALIZATION TESTS
 
-    def test_module_initialization() -> None:
+    def test_module_initialization():
         """Test module initialization and constants"""
         # Test constants
         assert (
@@ -2617,12 +2124,12 @@ def action9_process_productive_module_tests() -> bool:
             safe_column_value
         ), "safe_column_value should be callable"  # CORE FUNCTIONALITY TESTS
 
-    def test_core_functionality() -> None:
+    def test_core_functionality():
         """Test all core AI processing and data extraction functions"""
 
         # Test safe_column_value function with a simple object
         class TestObj:
-            def __init__(self) -> None:
+            def __init__(self):
                 self.test_attr = "test_value_12345"
 
         test_obj = TestObj()
@@ -2639,7 +2146,7 @@ def action9_process_productive_module_tests() -> bool:
         result = should_exclude_message("test message 12345")
         assert isinstance(result, bool), "Should handle test messages"
 
-    def test_ai_processing_functions() -> None:
+    def test_ai_processing_functions():
         """Test AI processing and extraction functions"""
 
         # Test _process_ai_response function
@@ -2656,7 +2163,7 @@ def action9_process_productive_module_tests() -> bool:
         ), "Should generate meaningful summary"
 
     # EDGE CASE TESTS
-    def test_edge_cases() -> None:
+    def test_edge_cases():
         """Test edge cases and boundary conditions"""
         # Test safe_column_value with None object
         result = safe_column_value(None, "any_attr", "default_12345")
@@ -2679,7 +2186,7 @@ def action9_process_productive_module_tests() -> bool:
             result, dict
         ), "Should handle empty response"  # INTEGRATION TESTS
 
-    def test_integration() -> None:
+    def test_integration():
         """Test integration with external dependencies"""
 
         # Test get_gedcom_data integration - patch the import
@@ -2701,7 +2208,7 @@ def action9_process_productive_module_tests() -> bool:
             result, dict
         ), "Should return templates dictionary"  # PERFORMANCE TESTS
 
-    def test_performance() -> None:
+    def test_performance():
         """Test performance of processing operations"""
         import time
 
@@ -2728,20 +2235,20 @@ def action9_process_productive_module_tests() -> bool:
             duration < 0.5
         ), f"500 exclusion checks should be fast, took {duration:.3f}s"  # ERROR HANDLING TESTS
 
-    def test_error_handling() -> None:
+    def test_error_handling():
         """Test error handling scenarios"""
 
         # Test safe_column_value with attribute access exception
         class ErrorObj:
             @property
-            def test_attr(self) -> None:
+            def test_attr(self):
                 raise Exception("Test error 12345")
 
         error_obj = ErrorObj()
         result = safe_column_value(error_obj, "test_attr", "fallback_12345")
         assert result == "fallback_12345", "Should handle attribute access errors"
 
-    def test_circuit_breaker_config() -> None:
+    def test_circuit_breaker_config():
         """Test circuit breaker decorator configuration reflects Action 6 lessons."""
         import inspect
 
@@ -2844,185 +2351,9 @@ def action9_process_productive_module_tests() -> bool:
     return suite.finish_suite()
 
 
-# === PHASE 12.3: ENHANCED DATA INTEGRATION FUNCTIONS ===
-
-def _apply_intelligent_task_selection(
-    tasks: list[dict[str, Any]],
-    extracted_data: dict[str, Any],
-    person_data: dict[str, Any],
-    log_prefix: str
-) -> list[dict[str, Any]]:
-    """
-    Apply intelligent task selection based on data completeness and quality.
-    Prioritizes tasks that make best use of available extracted data.
-    """
-    try:
-        if not tasks:
-            return tasks
-
-        logger.debug(f"{log_prefix}: Applying intelligent task selection to {len(tasks)} tasks")
-
-        # Score tasks based on data integration potential
-        scored_tasks = []
-        for task in tasks:
-            score = _calculate_task_data_integration_score(task, extracted_data)
-            task['data_integration_score'] = score
-            scored_tasks.append(task)
-
-        # Sort by integration score (highest first) and select top tasks
-        scored_tasks.sort(key=lambda t: t.get('data_integration_score', 0), reverse=True)
-
-        # Select tasks with good data integration (score > 0.6) or top 5 tasks
-        selected_tasks = []
-        for task in scored_tasks:
-            if task.get('data_integration_score', 0) > 0.6 or len(selected_tasks) < 5:
-                selected_tasks.append(task)
-            if len(selected_tasks) >= 8:  # Maximum 8 tasks
-                break
-
-        logger.debug(f"{log_prefix}: Selected {len(selected_tasks)} tasks with good data integration")
-        return selected_tasks
-
-    except Exception as e:
-        logger.warning(f"{log_prefix}: Error in intelligent task selection: {e}")
-        return tasks[:5]  # Fallback to first 5 tasks
-
-def _calculate_task_data_integration_score(task: dict[str, Any], extracted_data: dict[str, Any]) -> float:
-    """Calculate how well a task integrates with available extracted data."""
-    score = 0.0
-
-    # Check if task uses specific extracted data
-    task_desc = task.get('description', '').lower()
-    task.get('title', '').lower()
-
-    # Score based on data type utilization
-    if extracted_data.get('vital_records') and any(term in task_desc for term in ['birth', 'death', 'marriage', 'vital']):
-        score += 0.3
-
-    if extracted_data.get('locations') and any(term in task_desc for term in ['location', 'place', 'county', 'state']):
-        score += 0.25
-
-    if extracted_data.get('relationships') and any(term in task_desc for term in ['family', 'parent', 'child', 'spouse', 'relationship']):
-        score += 0.2
-
-    if extracted_data.get('dna_information') and any(term in task_desc for term in ['dna', 'match', 'genetic']):
-        score += 0.35
-
-    if extracted_data.get('occupations') and any(term in task_desc for term in ['occupation', 'work', 'job', 'career']):
-        score += 0.15
-
-    # Bonus for specific names mentioned
-    structured_names = extracted_data.get('structured_names', [])
-    for name_data in structured_names:
-        if isinstance(name_data, dict):
-            full_name = name_data.get('full_name', '')
-            if full_name and full_name.lower() in task_desc:
-                score += 0.2
-                break
-
-    # Bonus for research questions alignment
-    research_questions = extracted_data.get('research_questions', [])
-    for question in research_questions:
-        if isinstance(question, str):
-            question_words = question.lower().split()
-            if any(word in task_desc for word in question_words if len(word) > 3):
-                score += 0.15
-                break
-
-    return min(1.0, score)
-
-def _validate_and_score_tasks(
-    tasks: list[dict[str, Any]],
-    extracted_data: dict[str, Any],
-    log_prefix: str
-) -> list[dict[str, Any]]:
-    """
-    Validate task quality and add quality scores for better task management.
-    """
-    try:
-        if not tasks:
-            return tasks
-
-        logger.debug(f"{log_prefix}: Validating and scoring {len(tasks)} tasks")
-
-        validated_tasks = []
-        for task in tasks:
-            # Calculate task quality score
-            quality_score = _calculate_task_quality_score(task, extracted_data)
-            task['quality_score'] = quality_score
-
-            # Only include tasks with minimum quality threshold
-            if quality_score >= 0.4:  # Minimum 40% quality score
-                validated_tasks.append(task)
-            else:
-                logger.debug(f"{log_prefix}: Filtered out low-quality task: {task.get('title', 'Unknown')[:50]}")
-
-        logger.debug(f"{log_prefix}: Validated {len(validated_tasks)} tasks meeting quality threshold")
-        return validated_tasks
-
-    except Exception as e:
-        logger.warning(f"{log_prefix}: Error in task validation: {e}")
-        return tasks
-
-def _calculate_task_quality_score(task: dict[str, Any], extracted_data: dict[str, Any]) -> float:
-    """Calculate overall quality score for a research task."""
-    score = 0.0
-
-    # Check task completeness
-    title = task.get('title', '')
-    description = task.get('description', '')
-    category = task.get('category', '')
-
-    if title and len(title) > 10:
-        score += 0.2
-    if description and len(description) > 50:
-        score += 0.3
-    if category:
-        score += 0.1
-
-    # Check specificity (specific names, dates, places)
-    specificity_score = 0.0
-
-    # Look for specific names
-    structured_names = extracted_data.get('structured_names', [])
-    for name_data in structured_names:
-        if isinstance(name_data, dict):
-            full_name = name_data.get('full_name', '')
-            if full_name and full_name in description:
-                specificity_score += 0.1
-                break
-
-    # Look for specific dates
-    vital_records = extracted_data.get('vital_records', [])
-    for record in vital_records:
-        if isinstance(record, dict):
-            date = record.get('date', '')
-            if date and date in description:
-                specificity_score += 0.1
-                break
-
-    # Look for specific places
-    locations = extracted_data.get('locations', [])
-    for location in locations:
-        if isinstance(location, dict):
-            place = location.get('place', '')
-            if place and place in description:
-                specificity_score += 0.1
-                break
-
-    score += min(0.3, specificity_score)
-
-    # Check actionability (presence of research steps or methodology)
-    if any(term in description.lower() for term in ['search', 'check', 'review', 'examine', 'research']):
-        score += 0.1
-
-    return min(1.0, score)
-
-
-# Use centralized test runner utility
-from test_utilities import create_standard_test_runner
-
-run_comprehensive_tests = create_standard_test_runner(action9_process_productive_module_tests)
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    return action9_process_productive_module_tests()
 
 
 if __name__ == "__main__":
