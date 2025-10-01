@@ -30,7 +30,7 @@ else:
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
