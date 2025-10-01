@@ -1105,154 +1105,33 @@ def _extract_family_from_person_facts(person_facts: List[Dict]) -> Dict:
     return family_data
 
 
-def _fetch_facts_glue_data(person_id: str, tree_id: str, session_manager_local) -> Dict:  # type: ignore[unused-function]
-    """Fetch family data using the factsgluenodata endpoint."""
+# _fetch_facts_glue_data removed - unused 50-line factsgluenodata API fetcher
+# _fetch_html_facts_page_data removed - unused 88-line HTML facts page fetcher
+# _extract_family_data_from_html removed - unused 63-line HTML family data extractor
+# _extract_json_from_script_tags removed - unused 54-line JSON script tag extractor
+# _parse_html_family_sections removed - unused 733-line HTML family section parser (MASSIVE!)
+
+
+# Removed duplicate _fetch_family_data_alternative function (was actually HTML parsing code)
+# Removed massive HTML parsing function block (855 lines total):
+#   - _extract_family_data_from_html
+#   - _extract_json_from_script_tags
+#   - _parse_html_family_sections
+#   - _merge_family_data
+#   - _extract_microdata_family_info
+#   - _extract_family_from_text_patterns
+#   - _extract_family_from_navigation_data
+#   - _extract_person_from_html_element
+#   - _extract_year_from_text
+#   - And many other HTML parsing helper functions
+
+
+def _fetch_family_data_alternative(person_id: str, tree_id: str, session_manager_local) -> Dict:
+    """Fetch family data using alternative API endpoints when the main API doesn't provide family info."""
     try:
+        # Validate session manager
         if not session_manager_local:
-            logger.debug("No session manager available for factsgluenodata request")
-            return {}
-
-        # Get the owner profile ID
-        owner_profile_id = session_manager_local.get_my_uuid()
-        if not owner_profile_id:
-            logger.debug("No owner profile ID available for factsgluenodata request")
-            return {}
-
-        # Construct the factsgluenodata URL
-        base_url = config_schema.api.base_url.rstrip("/")
-        glue_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/factsgluenodata"
-
-        logger.debug(f"Attempting factsgluenodata API call: {glue_url}")
-
-        # Make the API request using the session manager's requests session
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': f'{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Content-Type': 'application/json',
-            'DNT': '1',
-            'Connection': 'keep-alive'
-        }
-
-        # Use the session manager's requests session
-        response = session_manager_local.requests_session.get(glue_url, headers=headers, timeout=30)
-
-        if response.status_code == 200:
-            try:
-                glue_data = response.json()
-                logger.debug(f"factsgluenodata API successful, response keys: {list(glue_data.keys()) if isinstance(glue_data, dict) else 'Not a dict'}")
-                return glue_data
-            except Exception as e:
-                logger.debug(f"Error parsing factsgluenodata JSON response: {e}")
-                return {}
-        else:
-            logger.debug(f"factsgluenodata API failed with status {response.status_code}")
-            return {}
-
-    except Exception as e:
-        logger.debug(f"Error in _fetch_facts_glue_data: {e}")
-        return {}
-
-
-def _fetch_html_facts_page_data(person_id: str, tree_id: str, session_manager_local) -> Dict:
-    """
-    Fetch and analyze the HTML facts page to extract embedded family data.
-    This is a fallback method when API endpoints don't provide complete family information.
-    """
-    try:
-        if not session_manager_local:
-            logger.debug("No session manager available for HTML facts page request")
-            return {}
-
-        # Get the owner profile ID
-        owner_profile_id = session_manager_local.get_my_uuid()
-        if not owner_profile_id:
-            logger.debug("No owner profile ID available for HTML facts page request")
-            return {}
-
-        # Construct the HTML facts page URL
-        base_url = config_schema.api.base_url.rstrip("/")
-        facts_url = f"{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts"
-
-        logger.debug(f"Attempting HTML facts page fetch: {facts_url}")
-
-        # Headers to mimic browser request for HTML page
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
-            'cache-control': 'no-cache',
-            'pragma': 'no-cache',
-            'referer': f'{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts',
-            'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
-        }
-
-        # Use _api_req with force_text_response=True to get HTML
-        from utils import _api_req
-        response = _api_req(
-            url=facts_url,
-            driver=session_manager_local.driver,
-            session_manager=session_manager_local,
-            method="GET",
-            api_description="HTML Facts Page for Family Data",
-            headers=headers,
-            referer_url=f'{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts',
-            timeout=30,
-            force_text_response=True,  # Get raw HTML
-            use_csrf_token=False,
-        )
-
-        if not response:
-            logger.debug("HTML facts page request returned no response")
-            return {}
-
-        # Get the HTML content
-        html_content = ""
-        if hasattr(response, 'text'):
-            html_content = response.text
-        elif isinstance(response, str):
-            html_content = response
-        else:
-            logger.debug(f"Unexpected response type for HTML facts page: {type(response)}")
-            return {}
-
-        if not html_content:
-            logger.debug("HTML facts page returned empty content")
-            return {}
-
-        logger.debug(f"Successfully fetched HTML facts page ({len(html_content)} characters)")
-
-        # Parse the HTML and extract embedded JSON data
-        family_data = _extract_family_data_from_html(html_content, person_id, tree_id)
-
-        if family_data:
-            logger.debug("Successfully extracted family data from HTML facts page")
-            return family_data
-        else:
-            logger.debug("No family data found in HTML facts page")
-            return {}
-
-    except Exception as e:
-        logger.debug(f"Error in _fetch_html_facts_page_data: {e}")
-        return {}
-
-
-def _extract_family_data_from_html(html_content: str, person_id: str, tree_id: str) -> Dict:
-    """
-    Extract family data from embedded JSON in HTML content with sophisticated parsing.
-    """
-    try:
-        logger.debug(f"Starting sophisticated HTML analysis for person {person_id}")
+            logger.debug("No session manager available for family search")
 
         # Initialize family data structure
         family_data = {
