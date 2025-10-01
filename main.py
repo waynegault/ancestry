@@ -24,13 +24,8 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple
 from urllib.parse import urljoin
-
-# === TYPE CHECKING IMPORTS ===
-if TYPE_CHECKING:
-    from config.config_schema import ConfigSchema
-    from core.session_manager import SessionManager
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -112,11 +107,11 @@ from database import (
     backup_database,
     Base,
     db_transn,
-    MessageType,
     Person,
     ConversationLog,
     DnaMatch,
     FamilyTree,
+    MessageTemplate,
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
@@ -229,7 +224,7 @@ _caching_initialized = False
 def initialize_aggressive_caching():
     """Initialize aggressive caching systems."""
     try:
-        from core.system_cache import warm_system_caches
+        from core.system_cache import warm_system_caches  # type: ignore[import-not-found]
         return warm_system_caches()
     except ImportError:
         logger.warning("System cache module not available")
@@ -876,36 +871,36 @@ def reset_db_actn(session_manager: SessionManager, *_):
                 if isinstance(messages_data, dict):
                     # Use the session from the temporary manager
                     with db_transn(recreation_session) as sess:
-                        # First check if there are any existing message types
+                        # First check if there are any existing message templates
                         existing_count = (
-                            sess.query(func.count(MessageType.id)).scalar() or 0
+                            sess.query(func.count(MessageTemplate.id)).scalar() or 0
                         )
 
                         if existing_count > 0:
                             logger.debug(
-                                f"Found {existing_count} existing message types. Skipping seeding."
+                                f"Found {existing_count} existing message templates. Skipping seeding."
                             )
                         else:
-                            # Only add message types if none exist
-                            types_to_add = [
-                                MessageType(type_name=name) for name in messages_data
+                            # Only add message templates if none exist
+                            templates_to_add = [
+                                MessageTemplate(template_name=name) for name in messages_data
                             ]
-                            if types_to_add:
-                                sess.add_all(types_to_add)
+                            if templates_to_add:
+                                sess.add_all(templates_to_add)
                                 logger.debug(
-                                    f"Added {len(types_to_add)} message types."
+                                    f"Added {len(templates_to_add)} message templates."
                                 )
                             else:
                                 logger.warning(
-                                    "No message types found in messages.json to seed."
+                                    "No message templates found in messages.json to seed."
                                 )
 
                     count = (
-                        recreation_session.query(func.count(MessageType.id)).scalar()
+                        recreation_session.query(func.count(MessageTemplate.id)).scalar()
                         or 0
                     )
                     logger.debug(
-                        f"MessageType seeding complete. Total types in DB: {count}"
+                        f"MessageTemplate seeding complete. Total templates in DB: {count}"
                     )
                 else:
                     logger.error("'messages.json' has incorrect format. Cannot seed.")
@@ -1116,7 +1111,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager: SessionManager, config_schema: Optional[ConfigSchema] = None, start: int = 1) -> bool:
+def coord_action(session_manager, config_schema=None, start=1):
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1157,7 +1152,7 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Config
 
 
 # Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager: 'SessionManager', *_) -> bool:
+def srch_inbox_actn(session_manager, *_):
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1204,7 +1199,7 @@ def srch_inbox_actn(session_manager: 'SessionManager', *_) -> bool:
 
 
 # Action 8 (send_messages_action)
-def send_messages_action(session_manager: 'SessionManager', *_) -> bool:
+def send_messages_action(session_manager, *_):
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1263,7 +1258,7 @@ def send_messages_action(session_manager: 'SessionManager', *_) -> bool:
 
 
 # Action 9 (process_productive_messages_action)
-def process_productive_messages_action(session_manager: 'SessionManager', *_) -> bool:
+def process_productive_messages_action(session_manager, *_):
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1310,7 +1305,7 @@ def process_productive_messages_action(session_manager: 'SessionManager', *_) ->
 
 
 # Action 11 (run_action11_wrapper)
-def run_action11_wrapper(session_manager: 'SessionManager', *_) -> bool:
+def run_action11_wrapper(session_manager, *_):
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
     logger.debug("Starting API Report...")
     try:
@@ -1797,7 +1792,7 @@ def main_module_tests() -> bool:
         assert ConversationLog is not None, "ConversationLog model should be available"
         assert DnaMatch is not None, "DnaMatch model should be available"
         assert FamilyTree is not None, "FamilyTree model should be available"
-        assert MessageType is not None, "MessageType enum should be available"
+        assert MessageTemplate is not None, "MessageTemplate model should be available"
 
     def test_reset_db_actn_integration():
         """Test reset_db_actn function integration and method availability"""
