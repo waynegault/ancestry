@@ -127,7 +127,7 @@ def get_cached_gedcom() -> Optional[GedcomData]:
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION CONFIGURATION ===
 # Global flag to enable ultra-fast mock mode for tests
-_MOCK_MODE_ENABLED = False
+_mock_mode_enabled = False  # Changed from uppercase to avoid pylance constant warning
 
 
 def enable_mock_mode() -> None:
@@ -145,8 +145,8 @@ def enable_mock_mode() -> None:
         >>> enable_mock_mode()
         >>> print("Mock mode enabled for fast testing")
     """
-    global _MOCK_MODE_ENABLED
-    _MOCK_MODE_ENABLED = True
+    global _mock_mode_enabled
+    _mock_mode_enabled = True
     logger.info("🚀 Mock mode enabled for ultra-fast testing")
 
 
@@ -165,13 +165,13 @@ def disable_mock_mode() -> None:
         >>> disable_mock_mode()
         >>> print("Mock mode disabled - using real data")
     """
-    global _MOCK_MODE_ENABLED
-    _MOCK_MODE_ENABLED = False
+    global _mock_mode_enabled
+    _mock_mode_enabled = False
 
 
 def is_mock_mode() -> bool:
     """Check if mock mode is enabled"""
-    return _MOCK_MODE_ENABLED
+    return _mock_mode_enabled
 
 
 def _format_search_criteria(search_criteria: dict[str, Any]) -> list[str]:
@@ -1424,7 +1424,9 @@ def main() -> bool:
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
     import builtins
+    import os
     import time
+    from pathlib import Path
 
     from test_framework import (
         Colors,
@@ -1435,13 +1437,23 @@ def action10_module_tests() -> bool:
         format_test_section_header,
     )
 
-    # PHASE 4.2: Disable mock mode - use real GEDCOM data for testing
-    disable_mock_mode()
+    # Use minimal test GEDCOM for faster tests (saves ~35s)
+    original_gedcom = os.getenv("GEDCOM_FILE_PATH")
+    test_gedcom = "test_data/minimal_test.ged"
 
-    suite = TestSuite(
-        "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
-    )
-    suite.start_suite()
+    # Only use minimal GEDCOM if it exists and we're in fast mode
+    if Path(test_gedcom).exists() and os.getenv("SKIP_SLOW_TESTS", "false").lower() == "true":
+        os.environ["GEDCOM_FILE_PATH"] = test_gedcom
+        logger.info(f"Using minimal test GEDCOM: {test_gedcom}")
+
+    try:
+        # PHASE 4.2: Disable mock mode - use real GEDCOM data for testing
+        disable_mock_mode()
+
+        suite = TestSuite(
+            "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
+        )
+        suite.start_suite()
 
     # --- TESTS ---
     def debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
@@ -2382,10 +2394,17 @@ def action10_module_tests() -> bool:
         "Calculate relationship path from test person to tree owner using bidirectional BFS and format relationship description.",
     )
 
-    # PHASE 4.2: Disable mock mode after tests complete
-    disable_mock_mode()
+        # PHASE 4.2: Disable mock mode after tests complete
+        disable_mock_mode()
 
-    return suite.finish_suite()
+        return suite.finish_suite()
+
+    finally:
+        # Restore original GEDCOM path
+        if original_gedcom:
+            os.environ["GEDCOM_FILE_PATH"] = original_gedcom
+        else:
+            os.environ.pop("GEDCOM_FILE_PATH", None)
 
 
 

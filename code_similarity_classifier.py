@@ -878,6 +878,11 @@ from test_utilities import create_standard_test_runner
 
 def code_similarity_classifier_module_tests() -> bool:
     """Minimal, strict tests that validate this module actually analyzes code."""
+    import os
+
+    # Skip expensive similarity detection in fast mode (saves ~58s)
+    skip_slow = os.getenv("SKIP_SLOW_TESTS", "false").lower() == "true"
+
     try:
         clsfr = CodeSimilarityClassifier(Path())
         funcs = clsfr.scan()
@@ -888,11 +893,17 @@ def code_similarity_classifier_module_tests() -> bool:
         assert sample.module_path.endswith(".py"), "module_path should be a .py file"
         assert sample.qualname and isinstance(sample.qualname, str)
         assert sample.loc >= 1 and sample.lineno >= 1
-        # Similarity should find at least a few candidates in a real repo
-        pairs = clsfr.find_similar(min_ratio=0.86, max_hamming=10)
-        # Not required to be many, but expect at least 1 in a sizable repo
-        assert len(pairs) >= 1, "No similar function pairs found — unexpected in this repo"
-        # JSON serialization
+
+        # Skip expensive similarity detection in fast mode
+        if not skip_slow:
+            # Similarity should find at least a few candidates in a real repo
+            pairs = clsfr.find_similar(min_ratio=0.86, max_hamming=10)
+            # Not required to be many, but expect at least 1 in a sizable repo
+            assert len(pairs) >= 1, "No similar function pairs found — unexpected in this repo"
+        else:
+            print("ℹ️  Skipping similarity detection (SKIP_SLOW_TESTS=true)")
+
+        # JSON serialization (fast)
         blob = clsfr.to_json()
         assert "functions" in blob and "similar_pairs" in blob and "clusters" in blob
         return True
