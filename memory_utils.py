@@ -14,17 +14,17 @@ from collections import deque
 class ObjectPool:
     """
     Simple object pool for reusing objects to reduce memory allocation overhead.
-    
+
     Args:
         factory: Callable that creates new objects
         max_size: Maximum number of objects to keep in the pool
     """
-    
-    def __init__(self, factory: Callable, max_size: int = 10):
+
+    def __init__(self, factory: Callable[[], Any], max_size: int = 10):
         """Initialize the object pool."""
         self.factory = factory
         self.max_size = max_size
-        self._pool: deque = deque(maxlen=max_size)
+        self._pool: deque[Any] = deque(maxlen=max_size)
     
     def acquire(self) -> Any:
         """Get an object from the pool or create a new one."""
@@ -38,13 +38,13 @@ class ObjectPool:
             self._pool.append(obj)
 
 
-def fast_json_loads(json_str: str) -> Optional[dict]:
+def fast_json_loads(json_str: str) -> Optional[dict[str, Any]]:
     """
     Fast JSON loading with error handling.
-    
+
     Args:
         json_str: JSON string to parse
-        
+
     Returns:
         Parsed JSON dict or None if parsing fails
     """
