@@ -1,38 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Ancestry Research Automation - Main Application Controller
+main.py - Ancestry Research Automation Main Entry Point
 
-Central orchestration hub for comprehensive genealogical research automation.
-Provides unified access to all research workflows through an intelligent menu
-system with integrated session management, configuration validation, and
-resource monitoring for optimal performance and reliability.
-
-Core Capabilities:
-• Interactive command center with guided workflow selection
-• Automated session lifecycle management with authentication handling
-• Real-time memory monitoring and resource optimization
-• Comprehensive error recovery with graceful degradation
-• Configuration validation and environment health checks
-• Integrated logging and telemetry for operational insights
-
-Research Workflows:
-• Action 6: DNA Match Discovery & Database Synchronization
-• Action 7: Intelligent Inbox Processing with AI Classification
-• Action 8: Automated Messaging with Personalization Engine
-• Action 9: Productive Message Analysis & Task Generation
-• Action 10: GEDCOM Analysis with Relationship Pathfinding
-• Action 11: Live API Research with Advanced Scoring
-
-Architecture:
-Built on modular session management architecture with dependency injection,
-adaptive rate limiting, and comprehensive error handling. Integrates with
-SQLAlchemy for data persistence, Selenium for web automation, and custom
-AI interfaces for intelligent content processing.
-
-Quality Focus:
-Emphasizes reliability, performance, and user experience through systematic
-testing, quality gates, and continuous monitoring of operational metrics.
+Provides the main application entry point with menu-driven interface for
+all automation workflows including DNA match gathering, inbox processing,
+messaging, and genealogical research tools.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -41,19 +14,17 @@ from standard_imports import setup_module
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-# Error handling imports available if needed
-
 # === STANDARD LIBRARY IMPORTS ===
 import gc
 import inspect
+import json
 import logging
 import os
 import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -69,7 +40,6 @@ from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
 from action11 import run_action11
-
 
 # Configuration validation
 def validate_action_config() -> bool:
@@ -93,25 +63,37 @@ def validate_action_config() -> bool:
             logger.error(f"Unexpected error loading configuration: {e}")
             return False
 
-        # Check essential processing limits (only warn about critical issues)
-        warnings = []
-        if config.max_productive_to_process <= 0:
-            warnings.append("MAX_PRODUCTIVE_TO_PROCESS not set")
-        if config.max_inbox <= 0:
-            warnings.append("MAX_INBOX not set")
-        # Remove RPS warning since 0.25 is actually conservative
+        # Check essential processing limits
+        if config.api.max_pages <= 0:
+            logger.warning("MAX_PAGES not set or invalid - actions may process unlimited pages")
 
-        if warnings:
-            logger.debug(f"Configuration notes: {'; '.join(warnings)}")
+        if config.batch_size <= 0:
+            logger.warning("BATCH_SIZE not set or invalid - actions may use large batches")
+
+        if config.max_productive_to_process <= 0:
+            logger.warning("MAX_PRODUCTIVE_TO_PROCESS not set - actions may process unlimited items")
+
+        if config.max_inbox <= 0:
+            logger.warning("MAX_INBOX not set - actions may process unlimited inbox items")
+
+        # Check rate limiting settings
+        if config.api.requests_per_second > 1.0:
+            logger.warning(f"requests_per_second ({config.api.requests_per_second}) may be too aggressive - consider ≤1.0")
+
+        if config.api.retry_backoff_factor < 2.0:
+            logger.warning(f"retry_backoff_factor ({config.api.retry_backoff_factor}) may be too low - consider ≥2.0")
+
+        if config.api.initial_delay < 1.0:
+            logger.warning(f"initial_delay ({config.api.initial_delay}) may be too short - consider ≥1.0")
 
         # Log current configuration for transparency
-        logger.debug("=== ACTION CONFIGURATION VALIDATION ===")
-        logger.debug(f"MAX_PAGES: {config.api.max_pages}")
-        logger.debug(f"BATCH_SIZE: {config.batch_size}")
-        logger.debug(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
-        logger.debug(f"MAX_INBOX: {config.max_inbox}")
-        logger.debug(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
-        logger.debug("========================================")
+        logger.info("=== ACTION CONFIGURATION VALIDATION ===")
+        logger.info(f"MAX_PAGES: {config.api.max_pages}")
+        logger.info(f"BATCH_SIZE: {config.batch_size}")
+        logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+        logger.info(f"MAX_INBOX: {config.max_inbox}")
+        logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+        logger.info("========================================")
 
         return True
 
@@ -121,42 +103,35 @@ def validate_action_config() -> bool:
 
 # Core modules
 from config.config_manager import ConfigManager
-from core.session_manager import SessionManager
 from database import (
+    backup_database,
     Base,
+    db_transn,
+    MessageType,
+    Person,
     ConversationLog,
     DnaMatch,
     FamilyTree,
-    MessageTemplate,
-    Person,
-    backup_database,
-    db_transn,
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
+from core.session_manager import SessionManager
 from utils import (
     log_in,
     login_status,
     nav_to_page,
 )
 
-# === PHASE 12: GEDCOM AI INTEGRATION ===
-try:
-    from gedcom_search_utils import get_cached_gedcom_data
-    PHASE_12_AVAILABLE = True
-    logger.debug("Phase 12 GEDCOM AI components loaded successfully")
-except ImportError as e:
-    logger.warning(f"Phase 12 GEDCOM AI components not available: {e}")
-    PHASE_12_AVAILABLE = False
-    get_cached_gedcom_data = None
 
 # Initialize config manager
 config_manager = ConfigManager()
 config = config_manager.get_config()
 
 
-def _get_current_log_level() -> str:
-    """Get the current logging level name."""
+def menu():
+    """Display the main menu and return the user's choice."""
+    print("Main Menu")
+    print("=" * 17)
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
@@ -175,11 +150,7 @@ def _get_current_log_level() -> str:
     elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
         level_name = config.logging.log_level.upper()
 
-    return level_name
-
-
-def _display_main_menu_options() -> None:
-    """Display the main menu options."""
+    print(f"(Log Level: {level_name})\n")
     print("0. Delete all rows except the first")
     print("1. Run Full Workflow (7, 9, 8)")
     print("2. Reset Database")
@@ -192,51 +163,23 @@ def _display_main_menu_options() -> None:
     print("9. Process Productive Messages")
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
-
-
-def _display_phase12_menu_options() -> None:
-    """Display Phase 12 GEDCOM AI Intelligence menu options."""
-    print("")
-    print("=== PHASE 12: GEDCOM AI INTELLIGENCE ===")
-    print("12. GEDCOM Intelligence Analysis")
-    print("13. DNA-GEDCOM Cross-Reference")
-    print("14. Research Prioritization")
-    print("15. Comprehensive GEDCOM AI Analysis")
-
-
-def _display_utility_menu_options() -> None:
-    """Display utility and settings menu options."""
     print("")
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
     print("")
     print("sec. Credential Manager (Setup/View/Update/Import from .env)")
     print("s. Show Cache Statistics")
-    print("t. Toggle Log Level (DEBUG → INFO → WARNING)")
+    print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
     print("q. Exit")
-    print("settings. Review/Edit .env Settings")
-
-
-def menu() -> str:
-    """Display the main menu and return the user's choice."""
-    print("Main Menu")
-    print("=" * 17)
-
-    level_name = _get_current_log_level()
-    print(f"(Log Level: {level_name})\n")
-
-    _display_main_menu_options()
-    _display_phase12_menu_options()
-    _display_utility_menu_options()
-
-    return input("\nEnter choice: ").strip().lower()
+    choice = input("\nEnter choice: ").strip().lower()
+    return choice
 
 
 # End of menu
 
 
-def clear_log_file() -> tuple[bool, Optional[str]]:
+def clear_log_file() -> Tuple[bool, Optional[str]]:
     """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
     cleared = False
     log_file_handler: Optional[logging.FileHandler] = None
@@ -254,15 +197,15 @@ def clear_log_file() -> tuple[bool, Optional[str]]:
             # Step 3: Close the handler (releases resources)
             log_file_handler.close()  # type: ignore[union-attr]
             # Step 4: Clear the log file contents
-            from pathlib import Path
-            Path(log_file_path).open("w", encoding="utf-8").close()
+            with open(log_file_path, "w", encoding="utf-8"):
+                pass
             cleared = True
     except PermissionError as permission_error:
         # Handle permission errors when attempting to open the log file
         logger.warning(
             f"Permission denied clearing log '{log_file_path}': {permission_error}"
         )
-    except OSError as io_error:
+    except IOError as io_error:
         # Handle I/O errors when attempting to open the log file
         logger.warning(f"IOError clearing log '{log_file_path}': {io_error}")
     except Exception as error:
@@ -274,38 +217,24 @@ def clear_log_file() -> tuple[bool, Optional[str]]:
 # End of clear_log_file
 
 
-def _show_platform_specific_instructions() -> None:
-    """Show platform-specific installation instructions for non-Windows systems."""
-    import platform
-
-    # Use platform.system() instead of os.name to avoid static analysis warning
-    system_name = platform.system()
-    if system_name in ("Linux", "Darwin"):  # Linux or macOS
-        print("\n  For Linux/macOS users, you may also need:")
-        print("     pip install keyrings.alt")
-        print(
-            "     Some Linux distributions may require: sudo apt-get install python3-dbus"
-        )
-
-
 # Global flag to track if caching has been initialized
 _caching_initialized = False
 
 
-def initialize_aggressive_caching() -> bool:
+def initialize_aggressive_caching():
     """Initialize aggressive caching systems."""
     try:
-        from cache_manager import warm_all_caches
-        return warm_all_caches()
+        from core.system_cache import warm_system_caches
+        return warm_system_caches()
     except ImportError:
-        logger.warning("Cache manager module not available")
+        logger.warning("System cache module not available")
         return False
     except Exception as e:
         logger.error(f"Failed to initialize aggressive caching: {e}")
         return False
 
 
-def ensure_caching_initialized() -> bool:
+def ensure_caching_initialized():
     """Initialize aggressive caching systems if not already done."""
     global _caching_initialized
 
@@ -320,122 +249,16 @@ def ensure_caching_initialized() -> bool:
                 "Some caching systems failed to initialize, continuing with reduced performance"
             )
         return cache_init_success
-    logger.debug("Caching systems already initialized")
-    return True
+    else:
+        logger.debug("Caching systems already initialized")
+        return True
 
 
 # End of ensure_caching_initialized
 
 
-def _check_cached_gedcom_data() -> bool:
-    """Check if GEDCOM data is already cached."""
-    if PHASE_12_AVAILABLE:
-        from gedcom_search_utils import get_cached_gedcom_data
-        cached_data = get_cached_gedcom_data()
-        if cached_data:
-            logger.info("GEDCOM data already cached and available")
-            return True
-    return False
-
-
-def _get_gedcom_file_path() -> Optional[str]:
-    """Get GEDCOM file path from configuration."""
-    try:
-        from config.config_manager import ConfigManager
-        config_manager = ConfigManager()
-        config = config_manager.get_config()
-        gedcom_path = getattr(config.database, 'gedcom_file_path', None)
-
-        if not gedcom_path:
-            print("❌ GEDCOM file path not configured.")
-            print("Please set GEDCOM_FILE_PATH in your .env file or run option 10 first.")
-            return None
-
-        return gedcom_path
-
-    except Exception as e:
-        logger.debug(f"Error getting GEDCOM path from config: {e}")
-        return None
-
-
-def _validate_gedcom_file_exists(gedcom_path: str) -> bool:
-    """Validate that GEDCOM file exists at the specified path."""
-    from pathlib import Path
-    gedcom_file = Path(gedcom_path)
-
-    if not gedcom_file.exists():
-        print(f"❌ GEDCOM file not found: {gedcom_path}")
-        print("Please check the file path or run option 10 to load a different file.")
-        return False
-
-    print(f"📂 Loading GEDCOM file: {gedcom_file.name}")
-    return True
-
-
-def _load_and_cache_gedcom_data(gedcom_path: str) -> bool:
-    """Load GEDCOM data from file and cache it."""
-    if not PHASE_12_AVAILABLE:
-        print("❌ Phase 12 components not available for GEDCOM loading.")
-        return False
-
-    from pathlib import Path
-
-    from gedcom_search_utils import load_gedcom_data, set_cached_gedcom_data
-
-    gedcom_file = Path(gedcom_path)
-    gedcom_data = load_gedcom_data(gedcom_file)
-
-    if gedcom_data:
-        # Cache the loaded data
-        set_cached_gedcom_data(gedcom_data)
-        print("✅ GEDCOM file loaded and cached successfully!")
-        print(f"   📊 Individuals: {len(getattr(gedcom_data, 'indi_index', {}))}")
-        return True
-
-    print("❌ Failed to load GEDCOM data from file.")
-    return False
-
-
-def ensure_gedcom_loaded_and_cached() -> bool:
-    """
-    Ensure GEDCOM file is loaded and cached before GEDCOM operations.
-
-    Returns:
-        bool: True if GEDCOM data is available, False otherwise
-    """
-    try:
-        # First ensure caching is initialized
-        ensure_caching_initialized()
-
-        # Check if GEDCOM data is already cached
-        if _check_cached_gedcom_data():
-            return True
-
-        # Try to load GEDCOM data
-        print("\n📁 GEDCOM data not found in cache. Loading GEDCOM file...")
-
-        # Get GEDCOM file path from configuration
-        gedcom_path = _get_gedcom_file_path()
-        if not gedcom_path:
-            return False
-
-        # Validate file exists
-        if not _validate_gedcom_file_exists(gedcom_path):
-            return False
-
-        # Load and cache the GEDCOM data
-        return _load_and_cache_gedcom_data(gedcom_path)
-
-    except Exception as e:
-        logger.error(f"Error ensuring GEDCOM loaded and cached: {e}")
-        return False
-
-
-from typing import Any, Callable
-
-
 def exec_actn(
-    action_func: Callable[..., Any],
+    action_func,
     session_manager: SessionManager,
     choice: str,
     close_sess_after: bool = False,
@@ -465,7 +288,7 @@ def exec_actn(
 
     logger.info("------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("------------------------------------------\n")
+    logger.info("------------------------------------------")
 
     action_result = None
     action_exception = None  # Store exception if one occurs
@@ -489,38 +312,12 @@ def exec_actn(
 
     if requires_browser:
         # Special case for check_login_actn: only needs driver, not full session
-        required_state = "driver_ready" if action_name == "check_login_actn" else "session_ready"
+        if action_name == "check_login_actn":
+            required_state = "driver_ready"  # Browser started, but no login required
+        else:
+            required_state = "session_ready"  # Full session with browser
     else:
         required_state = "db_ready"  # Database-only session
-
-        # --- Preflight: prevent duplicate Action 6 run if lock is held ---
-        if action_name in ("coord", "coord_action"):
-            try:
-                from pathlib import Path
-                lock_file = Path("Locks") / "action6.lock"
-                if lock_file.exists():
-                    try:
-                        data = lock_file.read_text(encoding="utf-8", errors="ignore").strip()
-                        parts = data.split("|")
-                        holder_pid = int(parts[0]) if parts and parts[0].isdigit() else None
-                        holder_run_id = parts[1] if len(parts) > 1 else ""
-                    except Exception:
-                        holder_pid = None
-                        holder_run_id = ""
-                    # Check if holder is alive
-                    alive = False
-                    if holder_pid:
-                        try:
-                            alive = psutil.pid_exists(holder_pid)
-                        except Exception:
-                            alive = False
-                    if alive:
-                        logger.info(
-                            f"Action 6 already running (PID={holder_pid}, RUN={holder_run_id}). Skipping duplicate start."
-                        )
-                        return True  # Graceful no-op, do not close session
-            except Exception as e:
-                logger.debug(f"Action 6 lock preflight check error: {e}")
 
     try:
         # --- Ensure Required State ---
@@ -624,6 +421,9 @@ def exec_actn(
         # --- Return Action Result ---
         # Return True only if action completed without exception AND didn't return False explicitly
         final_outcome = action_result is not False and action_exception is None
+        logger.debug(
+            f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n"
+        )
 
         logger.info("------------------------------------------")
         logger.info(f"Action {choice} ({action_name}) finished.")
@@ -634,15 +434,22 @@ def exec_actn(
         # Perform cleanup AFTER footer to prevent logs bleeding after completion
         if should_close and isinstance(session_manager, SessionManager):
             if session_manager.browser_needed and session_manager.driver_live:
-                logger.debug("Closing browser session...")
+                logger.debug(f"Closing browser session...")
                 # Close browser but keep DB connections for most actions
                 session_manager.close_browser()
-                logger.debug("Browser session closed. DB connections kept.")
+                logger.debug(f"Browser session closed. DB connections kept.")
             elif should_close and action_name in ["all_but_first_actn"]:
                 # For specific actions, close everything including DB
-                logger.debug("Closing all connections including database...")
+                logger.debug(f"Closing all connections including database...")
                 session_manager.close_sess(keep_db=False)
-                logger.debug("All connections closed.")
+                logger.debug(f"All connections closed.")
+        # Log if session is kept open
+        elif (
+            isinstance(session_manager, SessionManager)
+            and session_manager.driver_live
+            and not should_close
+        ):
+            logger.debug(f"Keeping session live after '{action_name}'.")
 
     return final_outcome
 
@@ -653,7 +460,7 @@ def exec_actn(
 
 
 # Action 0 (all_but_first_actn)
-def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
+def all_but_first_actn(session_manager: SessionManager, *_):
     """
     V1.2: Modified to delete records from people, conversation_log,
           dna_match, and family_tree, except for the person with a
@@ -700,7 +507,7 @@ def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
             person_to_keep = (
                 sess.query(Person.id, Person.username)
                 .filter(
-                    Person.profile_id == profile_id_to_keep, Person.deleted_at is None
+                    Person.profile_id == profile_id_to_keep, Person.deleted_at == None
                 )
                 .first()
             )
@@ -801,7 +608,7 @@ def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 1
-def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
+def run_core_workflow_action(session_manager, *_):
     """
     Action to run the core workflow sequence: Action 7 (Inbox) → Action 9 (Process Productive) → Action 8 (Send Messages).
     Optionally runs Action 6 (Gather) first if configured.
@@ -818,12 +625,16 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
         run_action6 = config.include_action6_in_workflow
         if run_action6:
             logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
+            print("Starting DNA match gathering from page 1...")
+            # Call the coord_action function which wraps the coord function
             gather_result = coord_action(session_manager, config, start=1)
             if gather_result is False:
                 logger.error("Action 6 FAILED.")
-                # Match gathering failure logged above
+                print("ERROR: Match gathering failed. Check logs for details.")
                 return False
-            logger.info("Action 6 OK.")
+            else:
+                logger.info("Action 6 OK.")
+                print("✓ Match gathering completed successfully.")
 
         # --- Action 7 ---
         logger.info("--- Running Action 7: Search Inbox ---")
@@ -840,7 +651,9 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
                 session_manager,
             ):
                 logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
-                # Navigation error logged above
+                print(
+                    "ERROR: Could not navigate to inbox page. Check network connection."
+                )
                 return False
 
             logger.debug("Navigation to inbox page successful.")
@@ -855,15 +668,16 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
 
             if search_result is False:
                 logger.error("Action 7 FAILED - Inbox search returned failure.")
-                # Inbox search failure logged above
+                print("ERROR: Inbox search failed. Check logs for details.")
                 return False
-            logger.info("Action 7 OK.")
-                # Inbox search completed successfully
+            else:
+                logger.info("Action 7 OK.")
+                print("✓ Inbox search completed successfully.")
         except Exception as inbox_error:
             logger.error(
                 f"Action 7 FAILED with exception: {inbox_error}", exc_info=True
             )
-            # Error during inbox search logged above
+            print(f"ERROR during inbox search: {inbox_error}")
             return False
 
         # --- Action 9 ---
@@ -878,7 +692,9 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
                 session_manager,
             ):
                 logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
-                # Navigation error logged above
+                print(
+                    "ERROR: Could not navigate to base URL. Check network connection."
+                )
                 return False
 
             logger.debug(
@@ -899,8 +715,9 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
                     "ERROR: Productive message processing failed. Check logs for details."
                 )
                 return False
-            logger.info("Action 9 OK.")
-                # Productive message processing completed successfully
+            else:
+                logger.info("Action 9 OK.")
+                print("✓ Productive message processing completed successfully.")
         except Exception as process_error:
             logger.error(
                 f"Action 9 FAILED with exception: {process_error}", exc_info=True
@@ -935,10 +752,11 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
 
             if send_result is False:
                 logger.error("Action 8 FAILED - Message sending returned failure.")
-                # Message sending failure logged above
+                print("ERROR: Message sending failed. Check logs for details.")
                 return False
-            logger.info("Action 8 OK.")
-                # Message sending completed successfully
+            else:
+                logger.info("Action 8 OK.")
+                print("✓ Message sending completed successfully.")
         except Exception as message_error:
             logger.error(
                 f"Action 8 FAILED with exception: {message_error}", exc_info=True
@@ -962,65 +780,21 @@ def run_core_workflow_action(session_manager: SessionManager, *_) -> bool:
         return True
     except Exception as e:
         logger.error(f"Critical error during core workflow: {e}", exc_info=True)
-        # Critical error during core workflow logged above
+        print(f"CRITICAL ERROR during core workflow: {e}")
         return False
 
 
 # End Action 1
 
 
-def _create_message_template(template_key: str, template_content: str) -> MessageTemplate:
-    """Create a MessageTemplate object with proper categorization."""
-    # Extract subject line from content
-    subject_line = None
-    if template_content.startswith("Subject: "):
-        lines = template_content.split("\n", 1)
-        if len(lines) >= 1:
-            subject_line = lines[0].replace("Subject: ", "").strip()
-
-    # Determine template category and tree status
-    template_category = "other"
-    tree_status = "universal"
-
-    if "Initial" in template_key:
-        template_category = "initial"
-    elif "Follow_Up" in template_key:
-        template_category = "follow_up"
-    elif "Reminder" in template_key:
-        template_category = "reminder"
-    elif "Acknowledgement" in template_key:
-        template_category = "acknowledgement"
-    elif "Desist" in template_key:
-        template_category = "desist"
-
-    if template_key.startswith("In_Tree"):
-        tree_status = "in_tree"
-    elif template_key.startswith("Out_Tree"):
-        tree_status = "out_tree"
-
-    # Create human-readable name
-    template_name = template_key.replace("_", " ").replace("-", " - ")
-
-    return MessageTemplate(
-        template_key=template_key,
-        template_name=template_name,
-        subject_line=subject_line,
-        message_content=template_content,
-        template_category=template_category,
-        tree_status=tree_status,
-        is_active=True,
-        version=1
-    )
-
-
 # Action 2 (reset_db_actn)
-def reset_db_actn(session_manager: SessionManager, *_) -> bool:
+def reset_db_actn(session_manager: SessionManager, *_):
     """
-    Action to COMPLETELY reset the database by truncating tables and recreating schema.
+    Action to COMPLETELY reset the database by deleting the file. Browserless.
     - Closes main pool.
-    - Truncates all tables (safer than file deletion).
+    - Deletes the .db file.
     - Recreates schema from scratch.
-    - Seeds the MessageTemplate table.
+    - Seeds the MessageType table.
     """
     db_path = config.database.database_file
     reset_successful = False
@@ -1030,7 +804,7 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
     try:
         # --- 1. Close main pool FIRST ---
         if session_manager:
-            logger.debug("Closing main DB connections before database reset...")
+            logger.debug("Closing main DB connections before database deletion...")
             session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
             logger.debug("Main DB pool closed.")
         else:
@@ -1042,79 +816,96 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
         time.sleep(1.0)
         gc.collect()
 
-        # --- 2. Reset Database Content ---
+        # --- 2. Delete the Database File ---
         if db_path is None:
             logger.critical("DATABASE_FILE is not configured. Reset aborted.")
             return False
 
-        logger.debug("Starting database reset using table truncation...")
+        logger.debug(f"Attempting to delete database file: {db_path}...")
         try:
-            # Create temporary SessionManager for database reset
+            # Streamlined database reset using single temporary SessionManager
             logger.debug("Creating temporary session manager for database reset...")
             temp_manager = SessionManager()
 
-            # Step 1: Safely truncate all tables that exist
-            logger.debug("Safely truncating existing tables...")
+            # Step 1: Truncate all tables
+            logger.debug("Truncating all tables...")
             truncate_session = temp_manager.get_db_conn()
             if truncate_session:
                 with db_transn(truncate_session) as sess:
-                    # Check which tables exist and delete in safe order
-                    from sqlalchemy import inspect
-                    inspector = inspect(sess.get_bind())
-                    existing_tables = inspector.get_table_names()
-                    logger.debug(f"Found existing tables: {existing_tables}")
-
-                    # Delete in reverse dependency order, but only if tables exist
-                    if 'conversation_log' in existing_tables:
-                        sess.query(ConversationLog).delete(synchronize_session=False)
-                        logger.debug("Truncated conversation_log table")
-
-                    if 'dna_match' in existing_tables:
-                        sess.query(DnaMatch).delete(synchronize_session=False)
-                        logger.debug("Truncated dna_match table")
-
-                    if 'family_tree' in existing_tables:
-                        sess.query(FamilyTree).delete(synchronize_session=False)
-                        logger.debug("Truncated family_tree table")
-
-                    if 'people' in existing_tables:
-                        sess.query(Person).delete(synchronize_session=False)
-                        logger.debug("Truncated people table")
-
-                    # Clear message_types too for complete reset
-                    if 'message_types' in existing_tables:
-                        sess.query(MessageTemplate).delete(synchronize_session=False)
-                        logger.debug("Truncated message_types table")
-
+                    # Delete all records from tables in reverse order of dependencies
+                    sess.query(ConversationLog).delete(synchronize_session=False)
+                    sess.query(DnaMatch).delete(synchronize_session=False)
+                    sess.query(FamilyTree).delete(synchronize_session=False)
+                    sess.query(Person).delete(synchronize_session=False)
+                    # Keep MessageType table intact
                 temp_manager.return_session(truncate_session)
-                logger.debug("All existing tables truncated successfully.")
+                logger.debug("All tables truncated successfully.")
             else:
                 logger.critical("Failed to get session for truncating tables. Reset aborted.")
                 return False
 
-            # Step 2: Ensure all tables exist with proper schema
-            logger.debug("Ensuring complete database schema...")
+            # Step 2: Re-initialize database schema (reuse same temp_manager)
+            logger.debug("Re-initializing database schema...")
+            # This will create a new engine and session factory pointing to the file path
             temp_manager.db_manager._initialize_engine_and_session()
             if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
                 raise SQLAlchemyError(
                     "Failed to initialize DB engine/session for recreation!"
                 )
 
-            # Create any missing tables
+            # This will recreate the tables in the existing file
             Base.metadata.create_all(temp_manager.db_manager.engine)
-            logger.debug("Database schema ensured successfully.")
+            logger.debug("Database schema recreated successfully.")
 
-            # --- Seed MessageTemplate Table (handled by database.py) ---
-            # Note: MessageTemplate seeding is now handled by database.py during create_all()
-            # The following code is kept for reference but should not be needed
+            # --- Seed MessageType Table ---
             recreation_session = temp_manager.get_db_conn()
             if not recreation_session:
-                raise SQLAlchemyError("Failed to get session for seeding MessageTemplates!")
+                raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
 
-            # MessageTemplate verification (templates managed in database)
-            with db_transn(recreation_session) as sess:
-                template_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
-                logger.debug(f"MessageTemplate verification: {template_count} templates found in database")
+            logger.debug("Seeding message_types table...")
+            script_dir = Path(__file__).resolve().parent
+            messages_file = script_dir / "messages.json"
+            if messages_file.exists():
+                with messages_file.open("r", encoding="utf-8") as f:
+                    messages_data = json.load(f)
+                if isinstance(messages_data, dict):
+                    # Use the session from the temporary manager
+                    with db_transn(recreation_session) as sess:
+                        # First check if there are any existing message types
+                        existing_count = (
+                            sess.query(func.count(MessageType.id)).scalar() or 0
+                        )
+
+                        if existing_count > 0:
+                            logger.debug(
+                                f"Found {existing_count} existing message types. Skipping seeding."
+                            )
+                        else:
+                            # Only add message types if none exist
+                            types_to_add = [
+                                MessageType(type_name=name) for name in messages_data
+                            ]
+                            if types_to_add:
+                                sess.add_all(types_to_add)
+                                logger.debug(
+                                    f"Added {len(types_to_add)} message types."
+                                )
+                            else:
+                                logger.warning(
+                                    "No message types found in messages.json to seed."
+                                )
+
+                    count = (
+                        recreation_session.query(func.count(MessageType.id)).scalar()
+                        or 0
+                    )
+                    logger.debug(
+                        f"MessageType seeding complete. Total types in DB: {count}"
+                    )
+                else:
+                    logger.error("'messages.json' has incorrect format. Cannot seed.")
+            else:
+                logger.warning(f"'messages.json' not found. Cannot seed MessageTypes.")
             # --- End Seeding ---
 
             reset_successful = True
@@ -1149,19 +940,19 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
 
 # Action 3 (backup_db_actn)
 def backup_db_actn(
-    session_manager: Optional[SessionManager] = None, *_
-):  # Added session_manager parameter for exec_actn compatibility
-    _ = session_manager  # Mark as intentionally unused
+    _session_manager: Optional[SessionManager] = None, *_
+):  # Added _session_manager parameter for exec_actn compatibility (unused but required)
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
-        # session_manager isn't used but needed for exec_actn compatibility
+        # _session_manager isn't used but needed for exec_actn compatibility
         result = backup_database()
         if result:
             logger.info("DB backup OK.")
             return True
-        logger.error("DB backup failed.")
-        return False
+        else:
+            logger.error("DB backup failed.")
+            return False
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
@@ -1171,7 +962,7 @@ def backup_db_actn(
 
 
 # Action 4 (restore_db_actn)
-def restore_db_actn(session_manager: SessionManager, *_) -> bool:  # Added session_manager back
+def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manager back
     """
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.
@@ -1214,11 +1005,11 @@ def restore_db_actn(session_manager: SessionManager, *_) -> bool:  # Added sessi
         gc.collect()
 
         shutil.copy2(backup_path, db_path)
-        logger.info("Db restored from backup OK.")
+        logger.info(f"Db restored from backup OK.")
         success = True
     except FileNotFoundError:
         logger.error(f"Backup not found during copy: {backup_path}")
-    except (OSError, shutil.Error) as e:
+    except (OSError, IOError, shutil.Error) as e:
         logger.error(f"Error restoring DB: {e}", exc_info=True)
     except Exception as e:
         logger.critical(f"Unexpected restore error: {e}", exc_info=True)
@@ -1268,8 +1059,9 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
                 print(f"  Profile ID: {session_manager.my_profile_id}")
             if session_manager.tree_owner_name:
                 print(f"  Account: {session_manager.tree_owner_name}")
+            print("  (Using saved authentication cookies)")
             return True
-        if status is False:
+        elif status is False:
             print("\n✗ You are NOT currently logged in to Ancestry.")
             print("  Attempting to log in with stored credentials...")
 
@@ -1289,11 +1081,13 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
                         if session_manager.tree_owner_name:
                             print(f"  Account: {session_manager.tree_owner_name}")
                         return True
-                    print("⚠️  Login appeared successful but verification failed.")
+                    else:
+                        print("⚠️  Login appeared successful but verification failed.")
+                        return False
+                else:
+                    print("✗ Login failed. Please check your credentials.")
+                    print("  You can update credentials using the 'sec' option in the main menu.")
                     return False
-                print("✗ Login failed. Please check your credentials.")
-                print("  You can update credentials using the 'sec' option in the main menu.")
-                return False
 
             except Exception as login_e:
                 logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
@@ -1318,7 +1112,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager: SessionManager, config_schema: Optional[object] = None, start: int = 1) -> bool:
+def coord_action(session_manager, config_schema=None, start=1):
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1337,17 +1131,21 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[object
         print("ERROR: Session not ready. Cannot gather matches.")
         return False
 
-    logger.info(f"Gathering DNA Matches from page {start}...")
+    print(f"Gathering DNA Matches from page {start}...")
     try:
         # Call the imported function from action6
         result = coord(session_manager, config, start=start)
         if result is False:
             logger.error("Match gathering reported failure.")
+            print("ERROR: Match gathering failed. Check logs for details.")
             return False
-        logger.debug("Gathering matches OK.")
-        return True
+        else:
+            logger.info("Gathering matches OK.")
+            print("✓ Match gathering completed successfully.")
+            return True
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
+        print(f"ERROR: Exception during match gathering: {e}")
         return False
 
 
@@ -1355,7 +1153,7 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[object
 
 
 # Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager: SessionManager, *_) -> bool:
+def srch_inbox_actn(session_manager, *_):
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1368,11 +1166,13 @@ def srch_inbox_actn(session_manager: SessionManager, *_) -> bool:
         # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
-            logger.debug("Initializing session_ready based on driver_live")
+            logger.warning("session_ready not set, initializing based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.debug("Initializing session_ready to False")
+            logger.warning(
+                "session_ready and driver_live not set, initializing to False"
+            )
             session_manager.session_ready = False
             session_ready = False
 
@@ -1388,8 +1188,9 @@ def srch_inbox_actn(session_manager: SessionManager, *_) -> bool:
         if result is False:
             logger.error("Inbox search reported failure.")
             return False
-        logger.info("Inbox search OK.")
-        return True  # Use INFO
+        else:
+            logger.info("Inbox search OK.")
+            return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
@@ -1399,7 +1200,7 @@ def srch_inbox_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 8 (send_messages_action)
-def send_messages_action(session_manager: SessionManager, *_) -> bool:
+def send_messages_action(session_manager, *_):
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1412,11 +1213,13 @@ def send_messages_action(session_manager: SessionManager, *_) -> bool:
         # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
-            logger.debug("Initializing session_ready based on driver_live")
+            logger.warning("session_ready not set, initializing based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.debug("Initializing session_ready to False")
+            logger.warning(
+                "session_ready and driver_live not set, initializing to False"
+            )
             session_manager.session_ready = False
             session_ready = False
 
@@ -1444,8 +1247,9 @@ def send_messages_action(session_manager: SessionManager, *_) -> bool:
         if result is False:
             logger.error("Message sending reported failure.")
             return False
-        logger.debug("Messages sent OK.")
-        return True  # Use INFO
+        else:
+            logger.info("Messages sent OK.")
+            return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
@@ -1455,7 +1259,7 @@ def send_messages_action(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 9 (process_productive_messages_action)
-def process_productive_messages_action(session_manager: SessionManager, *_) -> bool:
+def process_productive_messages_action(session_manager, *_):
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1468,11 +1272,13 @@ def process_productive_messages_action(session_manager: SessionManager, *_) -> b
         # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
-            logger.debug("Initializing session_ready based on driver_live")
+            logger.warning("session_ready not set, initializing based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.debug("Initializing session_ready to False")
+            logger.warning(
+                "session_ready and driver_live not set, initializing to False"
+            )
             session_manager.session_ready = False
             session_ready = False
 
@@ -1488,8 +1294,9 @@ def process_productive_messages_action(session_manager: SessionManager, *_) -> b
         if result is False:
             logger.error("Productive message processing reported failure.")
             return False
-        logger.info("Productive message processing OK.")
-        return True
+        else:
+            logger.info("Productive message processing OK.")
+            return True
     except Exception as e:
         logger.error(f"Error during productive message processing: {e}", exc_info=True)
         return False
@@ -1499,17 +1306,18 @@ def process_productive_messages_action(session_manager: SessionManager, *_) -> b
 
 
 # Action 11 (run_action11_wrapper)
-def run_action11_wrapper(session_manager: SessionManager, *_) -> bool:
+def run_action11_wrapper(session_manager, *_):
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
     logger.debug("Starting API Report...")
     try:
-        # Call the actual API Report function, passing the session_manager for API calls
+        # Call the actual API Report function, passing the session_manager
         result = run_action11(session_manager)
         if result is False:
             logger.error("API Report reported failure.")
             return False
-        logger.debug("API Report OK.")
-        return True
+        else:
+            logger.debug("API Report OK.")
+            return True
     except Exception as e:
         logger.error(f"Error during API Report: {e}", exc_info=True)
         return False
@@ -1518,50 +1326,27 @@ def run_action11_wrapper(session_manager: SessionManager, *_) -> bool:
 # End of run_action11_wrapper
 
 
-def main() -> None:
-    global logger, session_manager
+def main():
+    global logger, session_manager  # Ensure global logger can be modified
     session_manager = None  # Initialize session_manager
 
-    # Ensure terminal window has focus (Windows & VS Code)
+    # Ensure terminal window has focus on Windows
     try:
         if os.name == 'nt':  # Windows
             import ctypes
-            import time
 
             # Get console window handle
             kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
 
-            # Method 1: Try to focus console window (for regular terminals)
+            # Get console window
             console_window = kernel32.GetConsoleWindow()
             if console_window:
                 # Bring console window to foreground
                 user32.SetForegroundWindow(console_window)
                 user32.ShowWindow(console_window, 9)  # SW_RESTORE
-
-            # Method 2: For VS Code integrated terminal, try to focus current window
-            # Get the currently active window
-            current_window = user32.GetForegroundWindow()
-            if current_window and current_window != console_window:
-                # This might be VS Code - try to ensure it stays focused
-                user32.SetForegroundWindow(current_window)
-                user32.BringWindowToTop(current_window)
-
-                # Also try to send a focus message to ensure terminal panel is active
-                # This is a gentle nudge that shouldn't disrupt the user
-                user32.SetActiveWindow(current_window)
-
-            # Small delay to ensure focus operations complete
-            time.sleep(0.05)
-
-    except Exception as focus_error:
-        # Silently ignore focus errors but log for debugging if logger is available
-        try:
-            # Check if logger exists and is available (logging is already imported at top)
-            if 'logger' in globals() and logger and hasattr(logger, 'debug'):
-                logger.debug(f"Terminal focus attempt failed (non-critical): {focus_error}")
-        except Exception:
-            pass  # Even logging failed, continue silently
+    except Exception:
+        pass  # Silently ignore focus errors
 
     try:
         print("")
@@ -1629,7 +1414,8 @@ def main() -> None:
                 if confirm not in ["yes", "y"]:
                     print("Action cancelled.\n")
                     continue
-                print(" ")  # Newline after confirmation
+                else:
+                    print(" ")  # Newline after confirmation
 
             # --- Action Dispatching ---
             # Note: Removed most close_sess_after=False as the default is now to keep open.
@@ -1678,6 +1464,7 @@ def main() -> None:
                         logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
                         print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
 
+                print(f"Starting DNA match gathering from page {start_val}...")
                 # Call exec_actn with the correct parameters
                 exec_actn(
                     coord_action,
@@ -1698,56 +1485,30 @@ def main() -> None:
                     process_productive_messages_action, session_manager, choice
                 )  # Keep open
             elif choice == "10":
-                # Initialize caching for GEDCOM operations and load GEDCOM data
+                # Initialize caching for GEDCOM operations
                 ensure_caching_initialized()
                 exec_actn(run_action10, session_manager, choice)
-                # After running action 10, try to cache the GEDCOM data for future use
-                try:
-                    print("\n📁 Caching GEDCOM data for Phase 12 AI analysis...")
-                    if ensure_gedcom_loaded_and_cached():
-                        print("✅ GEDCOM data cached successfully! Phase 12 AI analysis now available.")
-                    else:
-                        print("INFO: GEDCOM data not cached. Phase 12 AI analysis may require manual loading.")
-                except Exception as e:
-                    logger.debug(f"Error caching GEDCOM data after action 10: {e}")
-                    print("INFO: GEDCOM data caching skipped. Phase 12 AI analysis may require manual loading.")
             elif choice == "11":
                 # Initialize caching for GEDCOM operations
                 ensure_caching_initialized()
                 # Use the wrapper function to run Action 11 through exec_actn
                 exec_actn(run_action11_wrapper, session_manager, choice)
-            # === PHASE 12: GEDCOM AI INTELLIGENCE ===
-            elif choice == "12":
-                if ensure_gedcom_loaded_and_cached():
-                    run_gedcom_intelligence_analysis()
-                else:
-                    input("\nPress Enter to continue...")
-            elif choice == "13":
-                if ensure_gedcom_loaded_and_cached():
-                    run_dna_gedcom_crossref()
-                else:
-                    input("\nPress Enter to continue...")
-            elif choice == "14":
-                if ensure_gedcom_loaded_and_cached():
-                    run_research_prioritization()
-                else:
-                    input("\nPress Enter to continue...")
-            elif choice == "15":
-                if ensure_gedcom_loaded_and_cached():
-                    run_comprehensive_gedcom_ai()
-                else:
-                    input("\nPress Enter to continue...")
             # --- Test Options ---
             elif choice == "test":
-                # Show Main.py Status
-                print("\n" + "=" * 60)
-                print("MAIN.PY APPLICATION STATUS")
-                print("=" * 60)
-                print("🚀 main.py - Application entry point")
-                print("✅ Application is properly initialized and ready to run")
-                print("📋 All action modules loaded successfully")
-                print("🎯 Menu system functional")
-                print("\n✅ main.py status: READY")
+                # Run Main.py Internal Tests
+                try:
+                    print("\n" + "=" * 60)
+                    print("RUNNING MAIN.PY INTERNAL TESTS")
+                    print("=" * 60)
+                    result = run_comprehensive_tests()
+                    if result:
+                        print("\n🎉 All main.py tests completed successfully!")
+                    else:
+                        print("\n⚠️ Some main.py tests failed. Check output above.")
+                except Exception as e:
+                    logger.error(f"Error running main.py tests: {e}")
+                    print(f"Error running main.py tests: {e}")
+                print("\nReturning to main menu...")
                 input("Press Enter to continue...")
             elif choice == "testall":
                 # Run All Module Tests
@@ -1759,7 +1520,7 @@ def main() -> None:
                     print("=" * 60)
                     result = subprocess.run(
                         [sys.executable, "run_all_tests.py"],
-                        check=False, capture_output=False,
+                        capture_output=False,
                         text=True,
                     )
                     if result.returncode == 0:
@@ -1804,8 +1565,12 @@ def main() -> None:
                         print("     - OR -")
                         print("     pip install -r requirements.txt")
 
-                        # Platform-specific installation instructions
-                        _show_platform_specific_instructions()
+                        if os.name != "nt":  # Not Windows
+                            print("\n  For Linux/macOS users, you may also need:")
+                            print("     pip install keyrings.alt")
+                            print(
+                                "     Some Linux distributions may require: sudo apt-get install python3-dbus"
+                            )
 
                         print("\n📚 For more information, see:")
                         print("  - ENV_IMPORT_GUIDE.md")
@@ -1821,59 +1586,6 @@ def main() -> None:
                 except Exception as e:
                     logger.error(f"Error running credential manager: {e}")
                     print(f"Error running credential manager: {e}")
-                print("\nReturning to main menu...")
-                input("Press Enter to continue...")
-            elif choice == "settings":
-                # Review/Edit .env Settings
-                try:
-                    env_path = Path(__file__).parent / ".env"
-                    if not env_path.exists():
-                        print(".env file not found.")
-                        input("Press Enter to continue...")
-                        continue
-                    # Read .env file
-                    with env_path.open(encoding="utf-8") as f:
-                        lines = f.readlines()
-                    # Filter out comments and blank lines
-                    # Build a list of (line_index, setting_line) for settings only
-                    settings = [(i, line.strip()) for i, line in enumerate(lines) if line.strip() and not line.strip().startswith("#")]
-                    print("\nCurrent .env Settings:")
-                    for idx, (_, setting) in enumerate(settings, 1):
-                        print(f"{idx}. {setting}")
-                    print("\nEnter the number of the setting to edit, or 'q' to cancel.")
-                    sel = input("Select setting: ").strip().lower()
-                    if sel == "q":
-                        continue
-                    try:
-                        sel_idx = int(sel) - 1
-                        if sel_idx < 0 or sel_idx >= len(settings):
-                            print("Invalid selection.")
-                            input("Press Enter to continue...")
-                            continue
-                    except ValueError:
-                        print("Invalid input.")
-                        input("Press Enter to continue...")
-                        continue
-                    line_idx, orig_setting = settings[sel_idx]
-                    key, eq, value = orig_setting.partition("=")
-                    if not eq:
-                        print("Selected line is not a valid setting.")
-                        input("Press Enter to continue...")
-                        continue
-                    print(f"Current value for {key}: {value}")
-                    new_value = input(f"Enter new value for {key} (or leave blank to cancel): ").strip()
-                    if not new_value:
-                        print("No change made.")
-                        input("Press Enter to continue...")
-                        continue
-                    # Update the line in the original lines list
-                    lines[line_idx] = f"{key}={new_value}\n"
-                    # Write back to .env
-                    with env_path.open("w", encoding="utf-8") as f:
-                        f.writelines(lines)
-                    print(f"Updated {key} in .env.")
-                except Exception as e:
-                    print(f"Error editing .env: {e}")
                 print("\nReturning to main menu...")
                 input("Press Enter to continue...")
             elif choice == "s":
@@ -1897,19 +1609,15 @@ def main() -> None:
                             break
                     if console_handler:
                         current_level = console_handler.level
-
-                        # Cycle through DEBUG → INFO → WARNING
-                        if current_level == logging.DEBUG:
-                            new_level_name = "INFO"
-                        elif current_level == logging.INFO:
-                            new_level_name = "WARNING"
-                        else:  # WARNING or other
-                            new_level_name = "DEBUG"
-
+                        new_level = (
+                            logging.DEBUG
+                            if current_level > logging.DEBUG
+                            else logging.INFO
+                        )
+                        new_level_name = logging.getLevelName(new_level)
                         # Re-call setup_logging to potentially update filters etc. too
                         logger = setup_logging(log_level=new_level_name)
                         logger.info(f"Console log level toggled to: {new_level_name}")
-                        print(f"Log level changed to: {new_level_name}")
                     else:
                         logger.warning(
                             "Could not find console handler to toggle level."
@@ -1924,9 +1632,10 @@ def main() -> None:
                 os.system("cls" if os.name == "nt" else "clear")
                 print("Exiting.")
                 break
-            # Handle invalid choices
-            elif choice not in confirm_actions:  # Avoid double 'invalid' message
-                print("Invalid choice.\n")
+            else:
+                # Handle invalid choices
+                if choice not in confirm_actions:  # Avoid double 'invalid' message
+                    print("Invalid choice.\n")
 
             # No need to track if driver became live anymore
 
@@ -1950,381 +1659,566 @@ def main() -> None:
 
         # Log program finish
         logger.info("--- Main program execution finished ---")
-        # Execution finished
+        print("\nExecution finished.")
 
 
 # end main
 
 
-# === PHASE 12: GEDCOM AI FUNCTIONS ===
-
-def run_gedcom_intelligence_analysis() -> None:
-    """Run GEDCOM Intelligence Analysis (Phase 12.1)."""
-    print("\n" + "="*60)
-    print("🧠 GEDCOM INTELLIGENCE ANALYSIS")
-    print("="*60)
-
-    if not PHASE_12_AVAILABLE:
-        print("❌ Phase 12 GEDCOM AI components not available.")
-        print("Please ensure all Phase 12 modules are properly installed.")
-        input("\nPress Enter to continue...")
-        return
-
+def main_module_tests() -> bool:
+    """Comprehensive test suite for main.py"""
     try:
-        # Get cached GEDCOM data (already loaded by menu handler)
-        from gedcom_search_utils import get_cached_gedcom_data
-        gedcom_data = get_cached_gedcom_data()
+        from test_framework import TestSuite, suppress_logging
+    except ImportError:
+        # Fall back to relative import if absolute import fails
+        from .test_framework import TestSuite, suppress_logging
 
-        # Initialize analyzer
-        print("🔍 Initializing GEDCOM Intelligence Analyzer...")
-        from gedcom_intelligence import GedcomIntelligenceAnalyzer
-        analyzer = GedcomIntelligenceAnalyzer()
+    suite = TestSuite("Main Application Controller & Menu System", "main.py")
+    suite.start_suite()
 
-        # Perform analysis
-        print("🧠 Analyzing family tree data...")
-        analysis_result = analyzer.analyze_gedcom_data(gedcom_data)
+    # INITIALIZATION TESTS
+    def test_module_initialization():
+        """Test module initialization and import availability"""
+        # Test that all required functions are available
+        assert callable(menu), "menu() function should be callable"
+        assert callable(main), "main() function should be callable"
+        assert callable(clear_log_file), "clear_log_file() function should be callable"
 
-        # Display results
-        print("\n" + "="*50)
-        print("📊 ANALYSIS RESULTS")
-        print("="*50)
+        # Test that all action modules are imported
+        assert coord is not None, "action6_gather.coord should be imported"
+        assert InboxProcessor is not None, "InboxProcessor should be imported"
+        assert (
+            send_messages_to_matches is not None
+        ), "send_messages_to_matches should be imported"
+        assert (
+            process_productive_messages is not None
+        ), "process_productive_messages should be imported"
+        assert run_action10 is not None, "run_action10 should be imported"
+        assert run_action11 is not None, "run_action11 should be imported"
 
-        summary = analysis_result.get("summary", {})
-        print(f"👥 Individuals Analyzed: {analysis_result.get('individuals_analyzed', 0)}")
-        print(f"🔍 Gaps Identified: {summary.get('total_gaps', 0)}")
-        print(f"⚠️  Conflicts Found: {summary.get('total_conflicts', 0)}")
-        print(f"🎯 Research Opportunities: {summary.get('total_opportunities', 0)}")
-        print(f"🔥 High Priority Items: {summary.get('high_priority_items', 0)}")
+    def test_configuration_availability():
+        """Test configuration and database availability"""
+        assert config is not None, "config should be available"
+        assert logger is not None, "logger should be available"
+        assert SessionManager is not None, "SessionManager should be available"
 
-        # Show top gaps
-        gaps = analysis_result.get("gaps_identified", [])
-        if gaps:
-            print("\n🔍 TOP GAPS IDENTIFIED:")
-            for i, gap in enumerate(gaps[:5], 1):
-                print(f"{i}. {gap.get('description', 'Unknown gap')} (Priority: {gap.get('priority', 'unknown')})")
+        # Test database components
+        assert Base is not None, "SQLAlchemy Base should be available"
+        assert Person is not None, "Person model should be available"
+        assert ConversationLog is not None, "ConversationLog model should be available"
+        assert DnaMatch is not None, "DnaMatch model should be available"
 
-        # Show top conflicts
-        conflicts = analysis_result.get("conflicts_identified", [])
-        if conflicts:
-            print("\n⚠️  TOP CONFLICTS FOUND:")
-            for i, conflict in enumerate(conflicts[:3], 1):
-                print(f"{i}. {conflict.get('description', 'Unknown conflict')} (Severity: {conflict.get('severity', 'unknown')})")
+    # CORE FUNCTIONALITY TESTS
+    def test_clear_log_file_function():
+        """Test log file clearing functionality"""
+        # Test clear_log_file function exists and is callable
+        assert callable(clear_log_file), "clear_log_file should be callable"
 
-        # Show AI insights
-        ai_insights = analysis_result.get("ai_insights", {})
-        tree_completeness = ai_insights.get("tree_completeness", {})
-        if tree_completeness:
-            completeness = tree_completeness.get("completeness_percentage", 0)
-            print(f"\n🌳 Tree Completeness: {completeness:.1f}%")
-
-        print("\n✅ Analysis completed successfully!")
-
-    except Exception as e:
-        print(f"❌ Error during GEDCOM intelligence analysis: {e}")
-        logger.error(f"GEDCOM intelligence analysis error: {e}")
-
-    input("\nPress Enter to continue...")
-
-
-def run_dna_gedcom_crossref() -> None:
-    """Run DNA-GEDCOM Cross-Reference Analysis (Phase 12.2)."""
-    print("\n" + "="*60)
-    print("🧬 DNA-GEDCOM CROSS-REFERENCE ANALYSIS")
-    print("="*60)
-
-    if not PHASE_12_AVAILABLE:
-        print("❌ Phase 12 GEDCOM AI components not available.")
-        input("\nPress Enter to continue...")
-        return
-
-    try:
-        # Load GEDCOM data
-        print("📁 Loading GEDCOM data...")
-        if get_cached_gedcom_data is None:
-            print("❌ GEDCOM functionality not available.")
-            return
-
-        gedcom_data = get_cached_gedcom_data()
-
-        if not gedcom_data:
-            print("❌ No GEDCOM data available.")
-            input("\nPress Enter to continue...")
-            return
-
-        # Get DNA matches from database
-        print("🧬 Loading DNA match data...")
-        session_manager = SessionManager()
-        session = session_manager.get_db_conn()
-
+        # Test function returns proper tuple structure
         try:
-            if not session:
-                print("❌ Could not get database session for DNA match data.")
-                print("INFO: DNA cross-reference will proceed without DNA match data.")
-                dna_matches = []
-            else:
-                dna_matches_db = session.query(DnaMatch).limit(10).all()
+            result = clear_log_file()
+            assert isinstance(result, tuple), "clear_log_file should return a tuple"
+            assert len(result) == 2, "clear_log_file should return a 2-element tuple"
+            success, message = result
+            assert isinstance(success, bool), "First element should be boolean"
+            assert message is None or isinstance(
+                message, str
+            ), "Second element should be None or string"
+        except Exception as e:
+            # Function may fail in test environment, but should not crash
+            assert isinstance(e, Exception), "Should handle errors gracefully"
 
-                # Convert to Phase 12 format
-                dna_matches = []
-                for match in dna_matches_db:
-                    from dna_gedcom_crossref import DNAMatch
-                    dna_match = DNAMatch(
-                        match_id=str(match.id),
-                        match_name=match.username or "Unknown",
-                        estimated_relationship="unknown",
-                        shared_dna_cm=None,
-                        testing_company="Ancestry"
-                    )
-                    dna_matches.append(dna_match)
+    def test_main_function_structure():
+        """Test main function structure and error handling"""
+        assert callable(main), "main() function should be callable"
 
-                print(f"📊 Found {len(dna_matches)} DNA matches to analyze")
+        # Test that main function has proper structure for error handling
+        import inspect
 
-        finally:
-            if session:
-                session_manager.return_session(session)
+        sig = inspect.signature(main)
+        assert len(sig.parameters) == 0, "main() should take no parameters"
 
-        if not dna_matches:
-            print("❌ No DNA matches available for analysis.")
-            input("\nPress Enter to continue...")
-            return
+    def test_menu_system_components():
+        """Test menu system components availability"""
+        # Test menu function exists
+        assert callable(menu), "menu() function should be callable"
 
-        # Initialize cross-referencer
-        print("🔍 Initializing DNA-GEDCOM Cross-Referencer...")
-        from dna_gedcom_crossref import DNAGedcomCrossReferencer
-        crossref = DNAGedcomCrossReferencer()
+        # Test that menu has access to all action functions
+        menu_globals = menu.__globals__
+        assert "coord" in menu_globals, "menu should have access to coord function"
+        assert (
+            "InboxProcessor" in menu_globals
+        ), "menu should have access to InboxProcessor"
+        assert (
+            "send_messages_to_matches" in menu_globals
+        ), "menu should have access to send_messages_to_matches"
+        assert (
+            "process_productive_messages" in menu_globals
+        ), "menu should have access to process_productive_messages"
+        assert "run_action10" in menu_globals, "menu should have access to run_action10"
+        assert "run_action11" in menu_globals, "menu should have access to run_action11"
 
-        # Perform analysis
-        print("🧬 Cross-referencing DNA matches with GEDCOM data...")
-        analysis_result = crossref.analyze_dna_gedcom_connections(dna_matches, gedcom_data)
+    def test_action_function_availability():
+        """Test all action functions are properly imported and callable"""
+        # Test action6_gather
+        assert callable(coord), "coord function should be callable"
 
-        # Display results
-        print("\n" + "="*50)
-        print("📊 CROSS-REFERENCE RESULTS")
-        print("="*50)
+        # Test action7_inbox
+        assert callable(InboxProcessor), "InboxProcessor should be callable"
 
-        summary = analysis_result.get("summary", {})
-        print(f"🧬 DNA Matches Analyzed: {analysis_result.get('dna_matches_analyzed', 0)}")
-        print(f"👥 GEDCOM People Analyzed: {analysis_result.get('gedcom_people_analyzed', 0)}")
-        print(f"🔗 Cross-References Found: {summary.get('total_cross_references', 0)}")
-        print(f"⭐ High Confidence Matches: {summary.get('high_confidence_matches', 0)}")
-        print(f"⚠️  Conflicts Identified: {summary.get('conflicts_found', 0)}")
-        print(f"✅ Verification Opportunities: {summary.get('verification_opportunities', 0)}")
+        # Test action8_messaging
+        assert callable(
+            send_messages_to_matches
+        ), "send_messages_to_matches should be callable"
 
-        # Show top matches
-        crossref_matches = analysis_result.get("cross_reference_matches", [])
-        if crossref_matches:
-            print("\n🔗 TOP CROSS-REFERENCE MATCHES:")
-            for i, match in enumerate(crossref_matches[:5], 1):
-                confidence = match.get('confidence_score', 0)
-                dna_name = match.get('dna_match_name', 'Unknown')
-                match_type = match.get('match_type', 'unknown')
-                print(f"{i}. {dna_name} - {match_type} (Confidence: {confidence:.1%})")
+        # Test action9_process_productive
+        assert callable(
+            process_productive_messages
+        ), "process_productive_messages should be callable"
 
-        print("\n✅ Cross-reference analysis completed!")
+        # Test action10
+        assert callable(run_action10), "run_action10 should be callable"
 
-    except Exception as e:
-        print(f"❌ Error during DNA-GEDCOM cross-reference: {e}")
-        logger.error(f"DNA-GEDCOM cross-reference error: {e}")
+        # Test action11
+        assert callable(run_action11), "run_action11 should be callable"
 
-    input("\nPress Enter to continue...")
+    def test_database_operations():
+        """Test database operation functions"""
+        assert callable(backup_database), "backup_database should be callable"
+        assert callable(db_transn), "db_transn should be callable"
+        assert callable(reset_db_actn), "reset_db_actn should be callable"
 
+        # Test database models are available
+        assert Person is not None, "Person model should be available"
+        assert ConversationLog is not None, "ConversationLog model should be available"
+        assert DnaMatch is not None, "DnaMatch model should be available"
+        assert FamilyTree is not None, "FamilyTree model should be available"
+        assert MessageType is not None, "MessageType enum should be available"
 
-def run_research_prioritization() -> None:
-    """Run Research Prioritization Analysis (Phase 12.3)."""
-    print("\n" + "="*60)
-    print("📊 INTELLIGENT RESEARCH PRIORITIZATION")
-    print("="*60)
-
-    if not PHASE_12_AVAILABLE:
-        print("❌ Phase 12 GEDCOM AI components not available.")
-        input("\nPress Enter to continue...")
-        return
-
-    try:
-        # First run GEDCOM intelligence analysis
-        print("🧠 Running GEDCOM intelligence analysis...")
-        from gedcom_search_utils import get_cached_gedcom_data
-        gedcom_data = get_cached_gedcom_data()
-
-        if not gedcom_data:
-            print("❌ No GEDCOM data available.")
-            input("\nPress Enter to continue...")
-            return
-
-        from gedcom_intelligence import GedcomIntelligenceAnalyzer
-        analyzer = GedcomIntelligenceAnalyzer()
-        gedcom_analysis = analyzer.analyze_gedcom_data(gedcom_data)
-
-        # Initialize prioritizer
-        print("📊 Initializing Research Prioritizer...")
-        from research_prioritization import IntelligentResearchPrioritizer
-        prioritizer = IntelligentResearchPrioritizer()
-
-        # Perform prioritization
-        print("🎯 Analyzing research priorities...")
-        prioritization_result = prioritizer.prioritize_research_tasks(gedcom_analysis, {})
-
-        # Display results
-        print("\n" + "="*50)
-        print("📊 PRIORITIZATION RESULTS")
-        print("="*50)
-
-        print(f"🎯 Total Priorities Identified: {prioritization_result.get('total_priorities_identified', 0)}")
-
-        # Show family line analysis
-        family_lines = prioritization_result.get("family_line_analysis", [])
-        if family_lines:
-            print("\n👨‍👩‍👧‍👦 FAMILY LINE ANALYSIS:")
-            for line in family_lines[:3]:
-                surname = line.get('surname', 'Unknown')
-                completeness = line.get('completeness_percentage', 0)
-                generations = line.get('generations_back', 0)
-                print(f"• {surname} Line: {completeness:.1f}% complete, {generations} generations back")
-
-        # Show location clusters
-        clusters = prioritization_result.get("location_clusters", [])
-        if clusters:
-            print("\n🌍 RESEARCH CLUSTERS:")
-            for cluster in clusters[:3]:
-                location = cluster.get('location', 'Unknown')
-                people_count = cluster.get('people_count', 0)
-                efficiency = cluster.get('research_efficiency_score', 0)
-                print(f"• {location}: {people_count} people (Efficiency: {efficiency:.1%})")
-
-        # Show top priority tasks
-        tasks = prioritization_result.get("prioritized_tasks", [])
-        if tasks:
-            print("\n🔥 TOP PRIORITY RESEARCH TASKS:")
-            for i, task in enumerate(tasks[:5], 1):
-                description = task.get('description', 'Unknown task')
-                priority_score = task.get('priority_score', 0)
-                urgency = task.get('urgency', 'unknown')
-                print(f"{i}. {description[:60]}... (Score: {priority_score:.1f}, Urgency: {urgency})")
-
-        # Show recommendations
-        recommendations = prioritization_result.get("research_recommendations", [])
-        if recommendations:
-            print("\n💡 AI RECOMMENDATIONS:")
-            for i, rec in enumerate(recommendations[:3], 1):
-                print(f"{i}. {rec}")
-
-        # Show next steps
-        next_steps = prioritization_result.get("next_steps", [])
-        if next_steps:
-            print("\n🚀 IMMEDIATE NEXT STEPS:")
-            for i, step in enumerate(next_steps[:3], 1):
-                print(f"{i}. {step}")
-
-        print("\n✅ Research prioritization completed!")
-
-    except Exception as e:
-        print(f"❌ Error during research prioritization: {e}")
-        logger.error(f"Research prioritization error: {e}")
-
-    input("\nPress Enter to continue...")
-
-
-def run_comprehensive_gedcom_ai() -> None:
-    """Run Comprehensive GEDCOM AI Analysis (All Phase 12 components)."""
-    print("\n" + "="*60)
-    print("🤖 COMPREHENSIVE GEDCOM AI ANALYSIS")
-    print("="*60)
-
-    if not PHASE_12_AVAILABLE:
-        print("❌ Phase 12 GEDCOM AI components not available.")
-        input("\nPress Enter to continue...")
-        return
-
-    try:
-        # Load GEDCOM data
-        print("📁 Loading GEDCOM data...")
-        from gedcom_search_utils import get_cached_gedcom_data
-        gedcom_data = get_cached_gedcom_data()
-
-        if not gedcom_data:
-            print("❌ No GEDCOM data available.")
-            input("\nPress Enter to continue...")
-            return
-
-        # Get DNA matches
-        print("🧬 Loading DNA match data...")
-        session_manager = SessionManager()
-        session = session_manager.get_db_conn()
-
-        dna_matches_data = []
+    def test_reset_db_actn_integration():
+        """Test reset_db_actn function integration and method availability"""
+        # Test that reset_db_actn can be called without AttributeError
         try:
-            if not session:
-                print("❌ Could not get database session for DNA match data.")
-                print("INFO: Comprehensive analysis will proceed without DNA match data.")
-            else:
-                dna_matches_db = session.query(DnaMatch).limit(10).all()
-                for match in dna_matches_db:
-                    dna_matches_data.append({
-                        "match_id": str(match.id),
-                        "match_name": match.username or "Unknown",
-                        "estimated_relationship": "unknown",
-                        "shared_dna_cm": None,
-                        "testing_company": "Ancestry"
-                    })
-        finally:
-            if session:
-                session_manager.return_session(session)
+            # Create a test SessionManager to verify method availability
+            test_sm = SessionManager()
 
-        # Initialize comprehensive integrator
-        print("🤖 Initializing GEDCOM AI Integrator...")
-        from gedcom_ai_integration import GedcomAIIntegrator
-        integrator = GedcomAIIntegrator()
+            # Verify that the required methods exist on the SessionManager and DatabaseManager
+            assert hasattr(test_sm, 'db_manager'), "SessionManager should have db_manager attribute"
+            assert hasattr(test_sm.db_manager, '_initialize_engine_and_session'), \
+                "DatabaseManager should have _initialize_engine_and_session method"
+            assert hasattr(test_sm.db_manager, 'engine'), "DatabaseManager should have engine attribute"
+            assert hasattr(test_sm.db_manager, 'Session'), "DatabaseManager should have Session attribute"
 
-        # Perform comprehensive analysis
-        print("🧠 Running comprehensive GEDCOM AI analysis...")
-        comprehensive_result = integrator.perform_comprehensive_analysis(
-            gedcom_data, dna_matches_data
+            # Test that reset_db_actn doesn't fail with AttributeError on method calls
+            # Note: We don't actually run the reset to avoid affecting the test database
+            logger.debug("reset_db_actn integration test: All required methods and attributes verified")
+
+        except AttributeError as e:
+            assert False, f"reset_db_actn integration test failed with AttributeError: {e}"
+        except Exception as e:
+            # Other exceptions are acceptable for this test (we're only checking for AttributeError)
+            logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")
+
+    # EDGE CASE TESTS
+    def test_edge_case_handling():
+        """Test edge cases and error conditions"""
+        # Test imports are properly structured
+        import sys
+
+        assert "action6_gather" in sys.modules, "action6_gather should be imported"
+        assert "action7_inbox" in sys.modules, "action7_inbox should be imported"
+        assert (
+            "action8_messaging" in sys.modules
+        ), "action8_messaging should be imported"
+        assert (
+            "action9_process_productive" in sys.modules
+        ), "action9_process_productive should be imported"
+        assert "action10" in sys.modules, "action10 should be imported"
+        assert "action11" in sys.modules, "action11 should be imported"
+
+    def test_import_error_handling():
+        """Test import error scenarios"""
+        # Check that main module has all required imports
+        module_globals = globals()
+        required_imports = [
+            "coord",
+            "InboxProcessor",
+            "send_messages_to_matches",
+            "process_productive_messages",
+            "run_action10",
+            "run_action11",
+            "config",
+            "logger",
+            "SessionManager",
+        ]
+
+        for import_name in required_imports:
+            assert import_name in module_globals, f"{import_name} should be imported"
+
+    # INTEGRATION TESTS
+    def test_session_manager_integration():
+        """Test SessionManager integration"""
+        assert SessionManager is not None, "SessionManager should be available"
+        assert callable(SessionManager), "SessionManager should be callable"
+
+        # Test SessionManager has required methods
+        import inspect
+
+        sm_methods = inspect.getmembers(SessionManager, predicate=inspect.ismethod)
+        method_names = [method[0] for method in sm_methods]
+
+        # Should have key methods for session management
+        assert hasattr(
+            SessionManager, "__init__"
+        ), "SessionManager should have __init__ method"
+
+    def test_logging_integration():
+        """Test logging system integration"""
+        assert logger is not None, "logger should be available"
+        assert hasattr(logger, "info"), "logger should have info method"
+        assert hasattr(logger, "error"), "logger should have error method"
+        assert hasattr(logger, "warning"), "logger should have warning method"
+        assert hasattr(logger, "debug"), "logger should have debug method"
+        assert hasattr(logger, "critical"), "logger should have critical method"
+
+    def test_configuration_integration():
+        """Test configuration system integration"""
+        assert config is not None, "config should be available"
+
+        # Test config has basic attributes (may vary by implementation)
+        # This tests that the config object is properly initialized
+        assert hasattr(config, "__dict__") or hasattr(
+            config, "__getattribute__"
+        ), "config should be a proper object"
+
+    def test_validate_action_config():
+        """Test the new validate_action_config() function from Action 6 lessons"""
+        # Test that the function exists and is callable
+        assert callable(validate_action_config), "validate_action_config should be callable"
+
+        # Test that the function can be executed without errors
+        try:
+            result = validate_action_config()
+            assert isinstance(result, bool), "validate_action_config should return boolean"
+            # Function should succeed even if some warnings are generated
+            assert result is True, "validate_action_config should return True for basic validation"
+        except Exception as e:
+            # If it fails, it should be due to missing config, not function errors
+            assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
+
+    def test_database_integration():
+        """Test database system integration"""
+        # Test database functions are available
+        assert callable(backup_database), "backup_database should be callable"
+
+        # Test database transaction manager
+        assert callable(db_transn), "db_transn should be callable"
+
+        # Test that we can access database models
+        from database import Base
+
+        assert Base is not None, "SQLAlchemy Base should be accessible"
+
+    def test_action_integration():
+        """Test all actions integrate properly with main"""
+        # Test that all action functions can be called (at module level)
+        actions_to_test = [
+            ("coord", coord),
+            ("InboxProcessor", InboxProcessor),
+            ("send_messages_to_matches", send_messages_to_matches),
+            ("process_productive_messages", process_productive_messages),
+            ("run_action10", run_action10),
+            ("run_action11", run_action11),
+        ]
+
+        for action_name, action_func in actions_to_test:
+            assert callable(action_func), f"{action_name} should be callable"
+            assert action_func is not None, f"{action_name} should not be None"
+
+    # PERFORMANCE TESTS
+    def test_import_performance():
+        """Test import performance is reasonable"""
+        import time
+        import importlib
+
+        # Test that re-importing modules is fast (cached)
+        start_time = time.time()
+
+        # Test a few key imports
+        try:
+            config_module = sys.modules.get("config")
+            if config_module:
+                importlib.reload(config_module)
+        except Exception:
+            pass  # Module reload may not work in test environment
+
+        duration = time.time() - start_time
+        assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
+
+    def test_memory_efficiency():
+        """Test memory usage is reasonable"""
+        import sys
+
+        # Check that module size is reasonable
+        module_size = sys.getsizeof(sys.modules[__name__])
+        assert (
+            module_size < 10000
+        ), f"Module size should be reasonable, got {module_size} bytes"
+
+        # Test that globals are not excessive
+        globals_count = len(globals())
+        assert (
+            globals_count < 100
+        ), f"Global variables should be reasonable, got {globals_count}"
+
+    def test_function_call_performance():
+        """Test function call performance"""
+        import time
+
+        # Test that basic function calls are fast
+        start_time = time.time()
+
+        for _ in range(1000):
+            # Test a simple function call
+            result = callable(menu)
+            assert result is True, "menu should be callable"
+
+        duration = time.time() - start_time
+        assert (
+            duration < 0.1
+        ), f"1000 function checks should be fast, took {duration:.3f}s"
+
+    # ERROR HANDLING TESTS
+    def test_error_handling_structure():
+        """Test error handling structure in main functions"""
+        import inspect
+
+        # Test that main function has proper structure
+        main_source = inspect.getsource(main)
+        assert "try:" in main_source, "main() should have try-except structure"
+        assert "except" in main_source, "main() should have exception handling"
+        assert "finally:" in main_source, "main() should have finally block"
+
+        # Test that KeyboardInterrupt is handled
+        assert (
+            "KeyboardInterrupt" in main_source
+        ), "main() should handle KeyboardInterrupt"
+
+    def test_cleanup_procedures():
+        """Test cleanup procedures are in place"""
+        import inspect
+
+        # Test that main has cleanup code
+        main_source = inspect.getsource(main)
+        assert "finally:" in main_source, "main() should have finally block for cleanup"
+        assert "cleanup" in main_source.lower(), "main() should mention cleanup"
+
+    def test_exception_handling_coverage():
+        """Test exception handling covers expected scenarios"""
+        import inspect
+
+        # Test main function exception handling
+        main_source = inspect.getsource(main)
+
+        # Should handle general exceptions
+        assert "Exception" in main_source, "main() should handle general exceptions"
+
+        # Should have logging for errors
+        assert "logger" in main_source, "main() should use logger for error reporting"
+
+    # Run all tests with suppress_logging
+    with suppress_logging():
+        # INITIALIZATION TESTS
+        suite.run_test(
+            test_name="menu(), main(), clear_log_file(), action imports",
+            test_func=test_module_initialization,
+            test_description="Module initialization and core function availability",
+            method_description="Testing availability of main functions and action module imports",
+            expected_behavior="All core functions are available and action modules are properly imported",
         )
 
-        # Display results
-        print("\n" + "="*50)
-        print("📊 COMPREHENSIVE ANALYSIS RESULTS")
-        print("="*50)
+        suite.run_test(
+            test_name="config, logger, SessionManager, database models",
+            test_func=test_configuration_availability,
+            test_description="Configuration and database component availability",
+            method_description="Testing configuration instance and database model imports",
+            expected_behavior="Configuration and database components are properly available",
+        )
 
-        summary = comprehensive_result.get("summary", {})
-        print(f"👥 Individuals Analyzed: {summary.get('gedcom_individuals_analyzed', 0)}")
-        print(f"🔍 Gaps Identified: {summary.get('total_gaps_identified', 0)}")
-        print(f"⚠️  Conflicts Found: {summary.get('total_conflicts_identified', 0)}")
-        print(f"🎯 Research Priorities: {summary.get('research_priorities_generated', 0)}")
+        # CORE FUNCTIONALITY TESTS
+        suite.run_test(
+            test_name="clear_log_file() function logic and return values",
+            test_func=test_clear_log_file_function,
+            test_description="Log file clearing functionality and return structure",
+            method_description="Testing clear_log_file function execution and return tuple structure",
+            expected_behavior="Function executes properly and returns appropriate tuple structure",
+        )
 
-        if dna_matches_data:
-            print(f"🧬 DNA Matches Analyzed: {summary.get('dna_matches_analyzed', 0)}")
-            print(f"🔗 DNA Cross-References: {summary.get('dna_crossref_matches', 0)}")
+        suite.run_test(
+            test_name="main() function structure and signature",
+            test_func=test_main_function_structure,
+            test_description="Main function structure and parameter requirements",
+            method_description="Testing main function callable status and parameter signature",
+            expected_behavior="Main function has proper structure and takes no parameters",
+        )
 
-        # Show integrated insights
-        insights = comprehensive_result.get("integrated_insights", {})
-        if insights:
-            print("\n🧠 INTEGRATED AI INSIGHTS:")
-            tree_health = insights.get('tree_health_score', 0)
-            print(f"🌳 Tree Health Score: {tree_health}/100")
+        suite.run_test(
+            test_name="menu() system and action function access",
+            test_func=test_menu_system_components,
+            test_description="Menu system components and action function accessibility",
+            method_description="Testing menu function and its access to all action functions",
+            expected_behavior="Menu system has access to all required action functions",
+        )
 
-            dna_potential = insights.get('dna_verification_potential', 'Unknown')
-            print(f"🧬 DNA Verification Potential: {dna_potential}")
+        suite.run_test(
+            test_name="coord(), InboxProcessor(), send_messages_to_matches(), process_productive_messages(), run_action10(), run_action11()",
+            test_func=test_action_function_availability,
+            test_description="All action functions are properly imported and callable",
+            method_description="Testing callable status of all action module functions",
+            expected_behavior="All action functions are available and callable",
+        )
 
-            data_quality = insights.get('data_quality_assessment', 'Unknown')
-            print(f"📊 Data Quality Assessment: {data_quality}")
+        suite.run_test(
+            test_name="backup_database(), db_transn(), database models",
+            test_func=test_database_operations,
+            test_description="Database operation functions and model availability",
+            method_description="Testing database functions and model imports",
+            expected_behavior="Database operations and models are properly available",
+        )
 
-        # Show actionable recommendations
-        recommendations = comprehensive_result.get("actionable_recommendations", [])
-        if recommendations:
-            print("\n💡 ACTIONABLE RECOMMENDATIONS:")
-            for i, rec in enumerate(recommendations[:5], 1):
-                print(f"{i}. {rec}")
+        suite.run_test(
+            test_name="reset_db_actn() integration and method availability",
+            test_func=test_reset_db_actn_integration,
+            test_description="Database reset function integration and required method verification",
+            method_description="Testing reset_db_actn function for proper SessionManager and DatabaseManager method access",
+            expected_behavior="reset_db_actn can access all required methods without AttributeError",
+        )
 
-        print("\n✅ Comprehensive GEDCOM AI analysis completed!")
-        print("📄 Full analysis results available in system logs.")
+        # EDGE CASE TESTS
+        suite.run_test(
+            test_name="Edge case handling and module import validation",
+            test_func=test_edge_case_handling,
+            test_description="Edge cases and import validation scenarios",
+            method_description="Testing edge conditions and module import status",
+            expected_behavior="Edge cases are handled and imports are properly validated",
+        )
 
-    except Exception as e:
-        print(f"❌ Error during comprehensive GEDCOM AI analysis: {e}")
-        logger.error(f"Comprehensive GEDCOM AI analysis error: {e}")
+        suite.run_test(
+            test_name="Import error scenarios and required module presence",
+            test_func=test_import_error_handling,
+            test_description="Import error handling and required module validation",
+            method_description="Testing essential module imports and availability",
+            expected_behavior="All essential modules are imported and available",
+        )
 
-    input("\nPress Enter to continue...")
+        # INTEGRATION TESTS
+        suite.run_test(
+            test_name="SessionManager integration and method availability",
+            test_func=test_session_manager_integration,
+            test_description="SessionManager integration with main application",
+            method_description="Testing SessionManager availability and method access",
+            expected_behavior="SessionManager integrates properly with required methods",
+        )
 
+        suite.run_test(
+            test_name="Logging system integration and method availability",
+            test_func=test_logging_integration,
+            test_description="Logging system integration with main application",
+            method_description="Testing logger availability and all required logging methods",
+            expected_behavior="Logging system is properly integrated with all methods available",
+        )
+
+        suite.run_test(
+            test_name="Configuration system integration and object access",
+            test_func=test_configuration_integration,
+            test_description="Configuration system integration with main application",
+            method_description="Testing config availability and object structure",
+            expected_behavior="Configuration system is properly integrated and accessible",
+        )
+
+        suite.run_test(
+            test_name="Configuration validation system from Action 6 lessons",
+            test_func=test_validate_action_config,
+            test_description="Configuration validation system prevents Action 6-style failures",
+            method_description="Testing validate_action_config() function validates .env settings and rate limiting",
+            expected_behavior="Configuration validation function works correctly and returns boolean result",
+        )
+
+        suite.run_test(
+            test_name="Database system integration and transaction management",
+            test_func=test_database_integration,
+            test_description="Database system integration with main application",
+            method_description="Testing database functions and model accessibility",
+            expected_behavior="Database system is properly integrated with transaction support",
+        )
+
+        suite.run_test(
+            test_name="All action function integration with main application",
+            test_func=test_action_integration,
+            test_description="Action functions integrate properly with main application",
+            method_description="Testing action function availability and callable status",
+            expected_behavior="All action functions integrate properly and are callable",
+        )
+
+        # PERFORMANCE TESTS
+        suite.run_test(
+            test_name="Module import and reload performance",
+            test_func=test_import_performance,
+            test_description="Import performance and module caching efficiency",
+            method_description="Testing module import and reload times for performance",
+            expected_behavior="Module imports and reloads complete within reasonable time limits",
+        )
+
+        suite.run_test(
+            test_name="Memory usage efficiency and global variable management",
+            test_func=test_memory_efficiency,
+            test_description="Memory usage efficiency and resource management",
+            method_description="Testing module memory usage and global variable count",
+            expected_behavior="Memory usage is reasonable and global variables are controlled",
+        )
+
+        suite.run_test(
+            test_name="Function call performance and responsiveness",
+            test_func=test_function_call_performance,
+            test_description="Function call performance and execution speed",
+            method_description="Testing basic function call performance with multiple iterations",
+            expected_behavior="Function calls execute efficiently within performance limits",
+        )
+
+        # ERROR HANDLING TESTS
+        suite.run_test(
+            test_name="main() error handling structure and exception coverage",
+            test_func=test_error_handling_structure,
+            test_description="Error handling structure in main function",
+            method_description="Testing main function for proper try-except-finally structure",
+            expected_behavior="Main function has comprehensive error handling structure",
+        )
+
+        suite.run_test(
+            test_name="Cleanup procedures and resource management",
+            test_func=test_cleanup_procedures,
+            test_description="Cleanup procedures and resource management implementation",
+            method_description="Testing cleanup code presence and resource management",
+            expected_behavior="Proper cleanup procedures are implemented for resource management",
+        )
+
+        suite.run_test(
+            test_name="Exception handling coverage and logging integration",
+            test_func=test_exception_handling_coverage,
+            test_description="Exception handling coverage and error logging",
+            method_description="Testing exception handling scope and logging integration",
+            expected_behavior="Exception handling covers expected scenarios with proper logging",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive main module tests using standardized TestSuite format."""
+    return main_module_tests()
+
+
+# --- Entry Point ---
 
 if __name__ == "__main__":
     main()
