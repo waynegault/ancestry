@@ -24,8 +24,13 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 from urllib.parse import urljoin
+
+# === TYPE CHECKING IMPORTS ===
+if TYPE_CHECKING:
+    from config.config_schema import ConfigSchema
+    from core.session_manager import SessionManager
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -1059,7 +1064,6 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
                 print(f"  Profile ID: {session_manager.my_profile_id}")
             if session_manager.tree_owner_name:
                 print(f"  Account: {session_manager.tree_owner_name}")
-            print("  (Using saved authentication cookies)")
             return True
         elif status is False:
             print("\n✗ You are NOT currently logged in to Ancestry.")
@@ -1112,7 +1116,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_schema=None, start=1):
+def coord_action(session_manager: SessionManager, config_schema: Optional[ConfigSchema] = None, start: int = 1) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1153,7 +1157,7 @@ def coord_action(session_manager, config_schema=None, start=1):
 
 
 # Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager, *_):
+def srch_inbox_actn(session_manager: 'SessionManager', *_) -> bool:
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1200,7 +1204,7 @@ def srch_inbox_actn(session_manager, *_):
 
 
 # Action 8 (send_messages_action)
-def send_messages_action(session_manager, *_):
+def send_messages_action(session_manager: 'SessionManager', *_) -> bool:
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1259,7 +1263,7 @@ def send_messages_action(session_manager, *_):
 
 
 # Action 9 (process_productive_messages_action)
-def process_productive_messages_action(session_manager, *_):
+def process_productive_messages_action(session_manager: 'SessionManager', *_) -> bool:
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1306,7 +1310,7 @@ def process_productive_messages_action(session_manager, *_):
 
 
 # Action 11 (run_action11_wrapper)
-def run_action11_wrapper(session_manager, *_):
+def run_action11_wrapper(session_manager: 'SessionManager', *_) -> bool:
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
     logger.debug("Starting API Report...")
     try:
