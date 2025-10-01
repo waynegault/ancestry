@@ -163,22 +163,7 @@ def _is_record(obj: Any) -> bool:
     return hasattr(obj, "xref_id") and hasattr(obj, "tag") and hasattr(obj, "sub_tag")
 
 
-def _is_name_rec(obj: Any) -> bool:
-    """Check if an object is a GEDCOM Name Record.
-
-    We can't use isinstance with Any, so we need to check for specific attributes
-    that are expected to be present on NameRec objects.
-    """
-    if obj is None:
-        return False
-
-    # We can't use isinstance with Any, so we need to check for specific attributes
-    # This is a heuristic approach to identify NameRec objects
-    return (
-        hasattr(obj, "value")
-        and hasattr(obj, "tag")
-        and getattr(obj, "tag", "") == TAG_NAME
-    )
+# _is_name_rec removed - unused helper function
 
 
 def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
@@ -622,95 +607,7 @@ def format_relative_info(relative: Any) -> str:  # ... implementation ...
     return f"  - {rel_name}{life_info}"
 
 
-def _reconstruct_path(
-    start_id: str,
-    end_id: str,
-    meeting_id: str,
-    visited_fwd: dict[str, Optional[str]],  # {node: predecessor_from_start}
-    visited_bwd: dict[str, Optional[str]],  # {node: predecessor_from_end}
-) -> list[str]:
-    """
-    Enhanced helper function for BFS to reconstruct the path from visited dictionaries.
-    This version attempts to find more complete paths through family trees.
-    V4 - Improved to handle complex family relationships
-    """
-    # Standard path reconstruction
-    path: list[str] = []
-    # Trace back from meeting point to start_id
-    curr = meeting_id
-    while curr is not None:
-        path.append(curr)
-        curr = visited_fwd.get(curr)
-    path.reverse()  # Now path is start_id -> ... -> meeting_id
-
-    # Trace back from meeting point to end_id (but skip meeting_id itself)
-    curr = visited_bwd.get(
-        meeting_id
-    )  # Start from predecessor of meeting_id in backward search
-    path_end: list[str] = []
-    while curr is not None:
-        path_end.append(curr)
-        curr = visited_bwd.get(curr)
-    # path_end is now [predecessor_of_meeting, ..., end_id] - needs reversing
-    path_end.reverse()
-
-    # Combine the two parts
-    full_path = path + path_end
-
-    # Basic validation
-    if not full_path:
-        logger.error(
-            f"Path reconstruction failed - empty path! Start:{start_id}, End:{end_id}, Meet:{meeting_id}"
-        )
-        return []
-
-    # Check if start_id is in the path
-    if full_path[0] != start_id:
-        logger.warning(
-            f"Path reconstruction issue - start ID not at beginning. Start:{start_id}, First in path:{full_path[0]}"
-        )
-        # Try to fix by ensuring start_id is at the beginning
-        if start_id in full_path:
-            # Remove everything before start_id
-            start_idx = full_path.index(start_id)
-            full_path = full_path[start_idx:]
-        else:
-            # Prepend start_id if not in path
-            full_path = [start_id, *full_path]
-
-    # Check if end_id is in the path
-    if full_path[-1] != end_id:
-        logger.warning(
-            f"Path reconstruction issue - end ID not at end. End:{end_id}, Last in path:{full_path[-1]}"
-        )
-        # Try to fix by ensuring end_id is at the end
-        if end_id in full_path:
-            # Remove everything after end_id
-            end_idx = full_path.index(end_id)
-            full_path = full_path[: end_idx + 1]
-        else:
-            # Append end_id if not in path
-            full_path.append(end_id)
-
-    # Final validation
-    if full_path[0] != start_id or full_path[-1] != end_id:
-        logger.error(
-            f"Path reconstruction failed after correction attempts! Start:{start_id}, End:{end_id}, Meet:{meeting_id}, Result:{full_path}"
-        )
-        # Attempt manual reconstruction if possible (simple cases)
-        if meeting_id == end_id and path and path[0] == start_id:
-            return path  # FWD search found END directly
-        if meeting_id == start_id and path_end and path_end[-1] == end_id:
-            return [start_id, *path_end]  # BWD search found START directly
-
-        # Last resort: create a direct path if all else fails
-        logger.warning(
-            f"Creating direct path from {start_id} to {end_id} as last resort"
-        )
-        return [start_id, end_id]
-
-    logger.debug(f"_reconstruct_path: Final reconstructed path IDs: {full_path}")
-    return full_path
+# _reconstruct_path removed - unused 89-line helper function for BFS path reconstruction
 
 
 def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: dict, id_to_children: dict) -> bool:
@@ -958,32 +855,7 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
 # to eliminate duplication. They are imported at the top of this file.
 
 
-def _are_directly_related(
-    id1: str,
-    id2: str,
-    id_to_parents: dict[str, set[str]],
-    _id_to_children: dict[str, set[str]],  # Unused but kept for API consistency
-) -> bool:
-    """
-    Check if two individuals are directly related (parent-child or siblings).
-
-    Args:
-        id1: ID of the first individual
-        id2: ID of the second individual
-        id_to_parents: Dictionary mapping individual IDs to their parent IDs
-        id_to_children: Dictionary mapping individual IDs to their child IDs
-
-    Returns:
-        True if directly related, False otherwise
-    """
-    # Parent-child relationship
-    if id2 in id_to_parents.get(id1, set()) or id1 in id_to_parents.get(id2, set()):
-        return True
-
-    # Sibling relationship (share at least one parent)
-    parents_1 = id_to_parents.get(id1, set())
-    parents_2 = id_to_parents.get(id2, set())
-    return bool(parents_1 and parents_2 and not parents_1.isdisjoint(parents_2))
+# _are_directly_related removed - unused 24-line helper function for relationship checking
 
 
 def explain_relationship_path(

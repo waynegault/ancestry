@@ -952,7 +952,7 @@ def _select_top_candidate(
 
 
 # Display initial comparison (Uses 'gender_match' key)
-def _display_initial_comparison(
+def _display_initial_comparison(  # type: ignore[unused-function]
     selected_candidate: Dict,  # The processed candidate dictionary with scoring information
     search_criteria: Dict[str, Any],  # The user's search criteria
 ):
@@ -1254,7 +1254,7 @@ def _extract_best_name_from_details(
 # End of _extract_best_name_from_details
 
 
-def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> Dict:
+def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> Dict:  # type: ignore[unused-function]
     """Extracts detailed information from the 'personResearch' dictionary."""
     extracted = {}
     logger.debug("Extracting details from person_research_data...")
@@ -1393,7 +1393,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
 
 
 # Detailed scoring (Uses 'gender_match' key via fallback scorer)
-def _score_detailed_match(
+def _score_detailed_match(  # type: ignore[unused-function]
     extracted_info: Dict, search_criteria: Dict[str, Any]
 ) -> Tuple[float, Dict, List[str]]:
     """Calculates final match score based on detailed info. Uses fallback scorer if gedcom_utils unavailable."""
@@ -1498,7 +1498,7 @@ def _score_detailed_match(
 
 # Family/Relationship Display Functions
 
-def _convert_api_family_to_display_format(api_family: Dict) -> Dict:
+def _convert_api_family_to_display_format(api_family: Dict) -> Dict:  # type: ignore[unused-function]
     """Convert API family structure to the format expected by _display_family_info."""
     display_family = {}
 
@@ -1522,7 +1522,7 @@ def _convert_api_family_to_display_format(api_family: Dict) -> Dict:
     return display_family
 
 
-def _extract_family_from_relationship_calculation(person_id: str, tree_id: str, session_manager_local) -> Dict:
+def _extract_family_from_relationship_calculation(person_id: str, tree_id: str, session_manager_local) -> Dict:  # type: ignore[unused-function]
     """
     Extract family data by calling the same Tree Ladder API that's used for relationship calculation.
     This reuses the working relationship calculation logic to get family member names.
@@ -1561,7 +1561,7 @@ def _extract_family_from_relationship_calculation(person_id: str, tree_id: str, 
         return {}
 
 
-def _extract_family_from_tree_ladder_response(person_id: str, tree_id: str, session_manager_local) -> Dict:
+def _extract_family_from_tree_ladder_response(person_id: str, tree_id: str, session_manager_local) -> Dict:  # type: ignore[unused-function]
     """
     Extract family data from Tree Ladder API response.
     The Tree Ladder API provides relationship paths that contain family member names.
@@ -1849,7 +1849,7 @@ def _extract_family_from_person_facts(person_facts: List[Dict]) -> Dict:
     return family_data
 
 
-def _fetch_facts_glue_data(person_id: str, tree_id: str, session_manager_local) -> Dict:
+def _fetch_facts_glue_data(person_id: str, tree_id: str, session_manager_local) -> Dict:  # type: ignore[unused-function]
     """Fetch family data using the factsgluenodata endpoint."""
     try:
         if not session_manager_local:
