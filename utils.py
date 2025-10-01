@@ -171,6 +171,9 @@ from test_framework import (
     MagicMock,
 )
 
+# --- Memory utilities imports ---
+from memory_utils import ObjectPool, fast_json_loads
+
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)
 # ------------------------------------------------------------------------------------
