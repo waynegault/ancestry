@@ -39,6 +39,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
+import os
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -119,6 +120,22 @@ class BrowserManager:
                 self.close_browser()
                 return False
 
+            # Try to load saved cookies after navigating to base URL
+            try:
+                from utils import _load_login_cookies
+                # Create a minimal session manager-like object for cookie loading
+                class CookieLoader:
+                    def __init__(self, driver):
+                        self.driver = driver
+
+                cookie_loader = CookieLoader(self.driver)
+                if _load_login_cookies(cookie_loader):
+                    logger.debug("Saved login cookies loaded successfully")
+                else:
+                    logger.debug("No saved cookies to load or loading failed")
+            except Exception as e:
+                logger.warning(f"Error loading saved cookies: {e}")
+
             # Mark as live and set timing
             self.driver_live = True
             self.browser_needed = True
@@ -170,7 +187,7 @@ class BrowserManager:
             NoSuchWindowException,
             WebDriverException,
         ) as e:
-            logger.warning(f"Browser session invalid: {e}")
+            logger.debug(f"Browser session invalid, will restart: {type(e).__name__}")
             self.driver_live = False
             return False
         except Exception as e:

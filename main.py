@@ -9,27 +9,10 @@ messaging, and genealogical research tools.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-    register_function,
-    get_function,
-    is_function_available,
-)
+from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 # === STANDARD LIBRARY IMPORTS ===
 import gc
@@ -957,12 +940,12 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
 # Action 3 (backup_db_actn)
 def backup_db_actn(
-    session_manager: Optional[SessionManager] = None, *_
-):  # Added session_manager parameter for exec_actn compatibility
+    _session_manager: Optional[SessionManager] = None, *_
+):  # Added _session_manager parameter for exec_actn compatibility (unused but required)
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
-        # session_manager isn't used but needed for exec_actn compatibility
+        # _session_manager isn't used but needed for exec_actn compatibility
         result = backup_database()
         if result:
             logger.info("DB backup OK.")
@@ -1076,6 +1059,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
                 print(f"  Profile ID: {session_manager.my_profile_id}")
             if session_manager.tree_owner_name:
                 print(f"  Account: {session_manager.tree_owner_name}")
+            print("  (Using saved authentication cookies)")
             return True
         elif status is False:
             print("\n✗ You are NOT currently logged in to Ancestry.")
@@ -1838,9 +1822,6 @@ def main_module_tests() -> bool:
     # EDGE CASE TESTS
     def test_edge_case_handling():
         """Test edge cases and error conditions"""
-        # Test with None config
-        original_config = config
-
         # Test imports are properly structured
         import sys
 
@@ -1857,9 +1838,6 @@ def main_module_tests() -> bool:
 
     def test_import_error_handling():
         """Test import error scenarios"""
-        # Test that essential modules are imported
-        import inspect
-
         # Check that main module has all required imports
         module_globals = globals()
         required_imports = [
@@ -2000,7 +1978,7 @@ def main_module_tests() -> bool:
         # Test that basic function calls are fast
         start_time = time.time()
 
-        for i in range(1000):
+        for _ in range(1000):
             # Test a simple function call
             result = callable(menu)
             assert result is True, "menu should be callable"

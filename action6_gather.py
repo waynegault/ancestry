@@ -23,15 +23,15 @@ from error_handling import (
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
-    graceful_degradation,
+    # graceful_degradation,  # Not used
     error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    DatabaseConnectionError,
+    # AncestryException,  # Not used
+    # RetryableError,  # Not used
+    # NetworkTimeoutError,  # Not used
+    # DatabaseConnectionError,  # Not used
     BrowserSessionError,
     AuthenticationExpiredError,
-    ErrorContext,
+    # ErrorContext,  # Not used
 )
 
 # === STANDARD LIBRARY IMPORTS ===
@@ -87,10 +87,10 @@ from utils import (
     nav_to_page,  # Navigation helper
 )
 from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
+    # TestSuite,  # Not used in main code
+    # suppress_logging,  # Not used in main code
+    # create_mock_data,  # Not used in main code
+    # assert_valid_function,  # Not used in main code
 )
 
 # --- Constants ---
@@ -493,7 +493,7 @@ def _main_page_processing_loop(
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 3 to 10 for better tolerance
 @timeout_protection(timeout=300)
 @error_context("DNA match gathering coordination")
-def coord(
+def coord(  # type: ignore
     session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
     """
@@ -2361,7 +2361,7 @@ def _prepare_family_tree_operation_data(
 # ------------------------------------------------------------------------------
 
 
-def _do_match(
+def _do_match(  # type: ignore
     _session: SqlAlchemySession,  # Changed from _ to session
     match: Dict[str, Any],
     session_manager: SessionManager,
@@ -2567,7 +2567,7 @@ def _do_match(
 # ------------------------------------------------------------------------------
 
 
-def get_matches(
+def get_matches(  # type: ignore
     session_manager: SessionManager,
     _db_session: SqlAlchemySession,  # Parameter name changed for clarity
     current_page: int = 1,
@@ -3032,10 +3032,10 @@ def _fetch_combined_details(
         config_schema.api.base_url,
         f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
     )
-    details_referer = urljoin(
-        config_schema.api.base_url,
-        f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
-    )
+    # details_referer = urljoin(  # Not used
+    #     config_schema.api.base_url,
+    #     f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
+    # )
     logger.debug(f"Fetching /details API for UUID {match_uuid}...")
 
     # Use headers from working cURL command
@@ -3980,9 +3980,9 @@ def action6_gather_module_tests() -> bool:
         print(f"📊 Results: {sum(results)}/{len(results)} initialization tests passed")
 
     # CORE FUNCTIONALITY TESTS
-    def test_core_functionality():
+    def test_core_functionality():  # type: ignore
         """Test all core DNA match gathering functions"""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock  # , patch  # patch not used
 
         # Test _lookup_existing_persons function
         mock_session = MagicMock()
@@ -4002,9 +4002,9 @@ def action6_gather_module_tests() -> bool:
         # Test navigation function
         assert callable(nav_to_list), "nav_to_list should be callable"
 
-    def test_data_processing_functions():
+    def test_data_processing_functions():  # type: ignore
         """Test all data processing and preparation functions"""
-        from unittest.mock import MagicMock
+        # from unittest.mock import MagicMock  # Not used
 
         # Test _identify_fetch_candidates with correct signature
         matches_on_page = [{"uuid": "test_12345", "cM_DNA": 100}]
