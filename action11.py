@@ -29,6 +29,7 @@ from core.error_handling import (
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import json
 import os
 import re  # Added for robust lifespan splitting
 import sys
@@ -38,6 +39,8 @@ from typing import Optional, List, Dict, Any, Tuple, Union
 from urllib.parse import urlencode, quote
 
 # === THIRD-PARTY IMPORTS ===
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from tabulate import tabulate
 
@@ -914,7 +917,7 @@ def _display_search_results(candidates: List[Dict], max_to_display: int):
 # Select top candidate
 def _select_top_candidate(
     scored_candidates: List[Dict],
-    raw_suggestions: List[
+    _raw_suggestions: List[
         Dict
     ],  # Keep for potential future use? Currently unused here.
 ) -> Optional[Tuple[Dict, Dict]]:
@@ -1637,7 +1640,7 @@ def _parse_family_from_relationship_text(relationship_text: str) -> Dict:
             # Pattern: "Fraser Gault's father is James Gault (1906-1988)"
             father_match = re.search(r"(.+?)'s father is (.+?)(?:\s*\(([^)]+)\))?$", line, re.IGNORECASE)
             if father_match:
-                child_name = father_match.group(1).strip()
+                _child_name = father_match.group(1).strip()  # Unused but part of pattern
                 father_name = father_match.group(2).strip()
                 lifespan = father_match.group(3).strip() if father_match.group(3) else ""
 
@@ -1656,7 +1659,7 @@ def _parse_family_from_relationship_text(relationship_text: str) -> Dict:
             # Pattern: "James Gault's son is Derrick Wardie Gault"
             sibling_match = re.search(r"(.+?)'s (?:son|daughter) is (.+?)(?:\s*\(([^)]+)\))?$", line, re.IGNORECASE)
             if sibling_match:
-                parent_name = sibling_match.group(1).strip()
+                _parent_name = sibling_match.group(1).strip()  # Unused but part of pattern
                 sibling_name = sibling_match.group(2).strip()
                 lifespan = sibling_match.group(3).strip() if sibling_match.group(3) else ""
 
@@ -1993,10 +1996,6 @@ def _extract_family_data_from_html(html_content: str, person_id: str, tree_id: s
     Extract family data from embedded JSON in HTML content with sophisticated parsing.
     """
     try:
-        import re
-        import json
-        from bs4 import BeautifulSoup
-
         logger.debug(f"Starting sophisticated HTML analysis for person {person_id}")
 
         # Initialize family data structure
@@ -2062,10 +2061,6 @@ def _extract_json_from_script_tags(html_content: str, person_id: str, tree_id: s
     Extract family data from JSON embedded in script tags.
     """
     try:
-        import re
-        import json
-        from bs4 import BeautifulSoup
-
         soup = BeautifulSoup(html_content, 'html.parser')
         script_tags = soup.find_all('script')
 
@@ -2122,8 +2117,6 @@ def _parse_html_family_sections(html_content: str, person_id: str) -> Dict:
     Parse HTML structure for family relationship sections.
     """
     try:
-        from bs4 import BeautifulSoup
-
         soup = BeautifulSoup(html_content, 'html.parser')
         family_data = {
             "Fathers": [],
@@ -2198,9 +2191,6 @@ def _extract_microdata_family_info(html_content: str, person_id: str) -> Dict:
     Extract family information from microdata and structured data.
     """
     try:
-        from bs4 import BeautifulSoup
-        import re
-
         soup = BeautifulSoup(html_content, 'html.parser')
         family_data = {
             "Fathers": [],
@@ -2293,7 +2283,7 @@ def _search_for_family_data_in_json(json_obj, person_id: str, tree_id: str, path
     return family_data
 
 
-def _extract_family_from_text_patterns(html_content: str, person_id: str) -> Dict:
+def _extract_family_from_text_patterns(html_content: str, _person_id: str) -> Dict:
     """
     Extract family relationships from text patterns in the HTML.
     """
@@ -2361,9 +2351,6 @@ def _extract_family_from_navigation_data(html_content: str, person_id: str) -> D
     Extract family data from navigation and tree structure data.
     """
     try:
-        from bs4 import BeautifulSoup
-        import re
-
         soup = BeautifulSoup(html_content, 'html.parser')
         family_data = {
             "Fathers": [],
@@ -2484,7 +2471,7 @@ def _extract_family_members_from_element(element, person_id: str) -> Dict:
         return {}
 
 
-def _extract_structured_family_data(data, person_id: str) -> Dict:
+def _extract_structured_family_data(data, _person_id: str) -> Dict:
     """
     Extract family data from a structured data object.
     """
@@ -2595,7 +2582,7 @@ def _extract_person_from_microdata(element) -> Dict:
         return {}
 
 
-def _determine_relationship_from_context(element, person_id: str) -> str:
+def _determine_relationship_from_context(element, _person_id: str) -> str:
     """
     Determine family relationship from element context.
     """
@@ -2629,7 +2616,7 @@ def _determine_relationship_from_context(element, person_id: str) -> str:
         return None
 
 
-def _extract_family_from_json_ld(structured_data, person_id: str) -> Dict:
+def _extract_family_from_json_ld(structured_data, _person_id: str) -> Dict:
     """
     Extract family data from JSON-LD structured data.
     """
@@ -2768,7 +2755,7 @@ def _is_family_member_link(href: str, text: str, person_id: str) -> bool:
         return False
 
 
-def _determine_relationship_from_link(href: str, text: str, nav_element) -> str:
+def _determine_relationship_from_link(_href: str, _text: str, nav_element) -> str:
     """
     Determine relationship type from link context.
     """
@@ -2803,13 +2790,13 @@ def _extract_person_id_from_link(href: str) -> str:
         return None
 
 
-def _extract_year_from_element(element, name: str, event_type: str) -> int:
+def _extract_year_from_element(element, _name: str, event_type: str) -> int:
     """
     Extract year from element context for a specific event type.
 
     Args:
         element: BeautifulSoup element containing the text
-        name: Name of the person (for context)
+        _name: Name of the person (for context) - unused but kept for API consistency
         event_type: Type of event ('birth' or 'death')
 
     Returns:
@@ -2833,7 +2820,7 @@ def _extract_death_year_from_element(element, name: str) -> int:
     return _extract_year_from_element(element, name, 'death')
 
 
-def _extract_year_from_text(text: str, context: str = None) -> int:
+def _extract_year_from_text(text: str, _context: str = None) -> int:
     """
     Extract year from text using various patterns.
     """
@@ -4144,8 +4131,6 @@ def _handle_supplementary_info_phase(
                                 html_content = api_response_dict.get("html", "")
                                 if html_content and isinstance(html_content, str):
                                     # Use BeautifulSoup to parse the HTML
-                                    from bs4 import BeautifulSoup
-
                                     soup = BeautifulSoup(html_content, "html.parser")
 
                                     # Find all list items
@@ -5029,10 +5014,7 @@ def action11_module_tests() -> bool:
             print(f"   • {module}")
 
         try:
-            import json
-            import re
             import time
-            from typing import Dict, List, Any, Optional, Tuple
 
             print("📊 Results:")
             print(
