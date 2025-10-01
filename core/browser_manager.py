@@ -9,11 +9,10 @@ SessionManager class to provide a clean separation of concerns.
 
 # === CORE INFRASTRUCTURE ===
 import sys
+import os
 
 # Add parent directory to path for standard_imports
-from pathlib import Path
-
-parent_dir = str(Path(__file__).resolve().parent.parent)
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -22,12 +21,27 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from error_handling import (
+    retry_on_failure,
+    circuit_breaker,
+    timeout_protection,
+    graceful_degradation,
+    error_context,
+    AncestryException,
+    RetryableError,
+    NetworkTimeoutError,
+    AuthenticationExpiredError,
+    APIRateLimitError,
+    ErrorContext,
+)
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import threading
+import logging
+import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -39,10 +53,10 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
-from chromedriver import init_webdvr
-
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
+from chromedriver import init_webdvr
+from selenium_utils import export_cookies
 from utils import nav_to_page
 
 # === MODULE CONFIGURATION ===
@@ -57,18 +71,14 @@ DriverType = Optional[WebDriver]
 class BrowserManager:
     """Manages browser/WebDriver operations and state."""
 
-    def __init__(self) -> None:
+    def __init__(self):
         """Initialize the BrowserManager."""
         self.driver: DriverType = None
         self.driver_live: bool = False
         self.browser_needed: bool = False
         self.session_start_time: Optional[float] = None
 
-        # MASTER BROWSER LOCK - Single lock for ALL browser operations
-        # This prevents race conditions between refresh, cookie access, navigation, etc.
-        self._master_browser_lock = threading.RLock()  # Reentrant lock for nested calls
-
-        logger.debug("BrowserManager initialized with unified master browser lock")
+        logger.debug("BrowserManager initialized")
 
     def start_browser(self, action_name: Optional[str] = None) -> bool:
         """
@@ -82,98 +92,81 @@ class BrowserManager:
         """
         logger.debug(f"Starting browser for action: {action_name or 'Unknown'}")
 
-        # Use master browser lock for thread safety
-        with self._master_browser_lock:
-            try:
-                if self.is_session_valid():
-                    logger.debug("Browser already running and valid")
-                    return True
-
-                logger.debug("Initializing WebDriver instance...")
-                self.driver = init_webdvr()
-
-                if not self.driver:
-                    logger.error(
-                        "WebDriver initialization failed (init_webdvr returned None)."
-                    )
-                    return False
-
-                logger.debug("WebDriver initialization successful.")
-
-                # Navigate to base URL to stabilize
-                logger.debug(
-                    f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
-                )
-                # Optimization: if already at base URL, skip re-navigation
-                try:
-                    current = self.driver.current_url or ""
-                    base = (config_schema.api.base_url or "").rstrip("/")
-                    if current.startswith(base):
-                        logger.debug("Already at base URL; skipping stabilization navigation")
-                    elif not nav_to_page(self.driver, config_schema.api.base_url):
-                        logger.error(
-                            f"Failed to navigate to base URL: {config_schema.api.base_url}"
-                        )
-                        self.close_browser()
-                        return False
-                except Exception:
-                    if not nav_to_page(self.driver, config_schema.api.base_url):
-                        logger.error(
-                            f"Failed to navigate to base URL: {config_schema.api.base_url}"
-                        )
-                        self.close_browser()
-                        return False
-
-
-                if not nav_to_page(self.driver, config_schema.api.base_url):
-                    logger.error(
-                        f"Failed to navigate to base URL: {config_schema.api.base_url}"
-                    )
-                    self.close_browser()
-                    return False
-
-                # Mark as live and set timing
-                self.driver_live = True
-                self.browser_needed = True
-                self.session_start_time = time.time()
-
-                logger.debug("Browser session started successfully")
+        try:
+            if self.is_session_valid():
+                logger.debug("Browser already running and valid")
                 return True
 
-            except Exception as e:
-                logger.error(f"Failed to start browser: {e}", exc_info=True)
+            logger.debug("Initializing WebDriver instance...")
+            self.driver = init_webdvr()
+
+            if not self.driver:
+                logger.error(
+                    "WebDriver initialization failed (init_webdvr returned None)."
+                )
+                return False
+
+            logger.debug("WebDriver initialization successful.")
+
+            # Navigate to base URL to stabilize
+            logger.debug(
+                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
+            )
+
+            if not nav_to_page(self.driver, config_schema.api.base_url):
+                logger.error(
+                    f"Failed to navigate to base URL: {config_schema.api.base_url}"
+                )
                 self.close_browser()
                 return False
 
+            # Try to load saved cookies after navigating to base URL
+            try:
+                from utils import _load_login_cookies
+                # Create a minimal session manager-like object for cookie loading
+                class CookieLoader:
+                    def __init__(self, driver):
+                        self.driver = driver
+
+                cookie_loader = CookieLoader(self.driver)
+                if _load_login_cookies(cookie_loader):
+                    logger.debug("Saved login cookies loaded successfully")
+                else:
+                    logger.debug("No saved cookies to load or loading failed")
+            except Exception as e:
+                logger.warning(f"Error loading saved cookies: {e}")
+
+            # Mark as live and set timing
+            self.driver_live = True
+            self.browser_needed = True
+            self.session_start_time = time.time()
+
+            logger.debug("Browser session started successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to start browser: {e}", exc_info=True)
+            self.close_browser()
+            return False
+
     def close_browser(self) -> None:
-        """Close the browser and cleanup resources with enhanced error handling."""
+        """Close the browser and cleanup resources."""
         logger.debug("Closing browser session...")
 
-        # Use master browser lock for thread safety
-        with self._master_browser_lock:
-            if self.driver:
-                try:
-                    # First try to close gracefully
-                    self.driver.quit()
-                    logger.debug("WebDriver quit successfully")
-                except Exception as e:
-                    logger.warning(f"Error quitting WebDriver gracefully: {e}")
+        if self.driver:
+            try:
+                self.driver.quit()
+                logger.debug("WebDriver quit successfully")
+            except Exception as e:
+                logger.warning(f"Error quitting WebDriver: {e}")
 
-                    # Force cleanup if graceful quit failed
-                    try:
-                        if hasattr(self.driver, 'service') and self.driver.service:
-                            self.driver.service.stop()
-                            logger.debug("WebDriver service stopped forcefully")
-                    except Exception as service_e:
-                        logger.warning(f"Error stopping WebDriver service: {service_e}")
+        # Reset state
+        self.driver = None
+        self.driver_live = False
+        self.browser_needed = False
+        self.session_start_time = None
 
-            # Always reset state regardless of quit success
-            self.driver = None
-            self.driver_live = False
-            self.browser_needed = False
-            self.session_start_time = None
-
-            logger.debug("Browser session closed and state reset")
+        logger.debug("Browser session closed")
 
     def is_session_valid(self) -> bool:
         """
@@ -182,27 +175,25 @@ class BrowserManager:
         Returns:
             bool: True if session is valid, False otherwise
         """
-        # Use master browser lock for thread safety
-        with self._master_browser_lock:
-            if not self.driver or not self.driver_live:
-                return False
+        if not self.driver or not self.driver_live:
+            return False
 
-            try:
-                # Try a simple operation to check if driver is responsive
-                _ = self.driver.current_url
-                return True
-            except (
-                InvalidSessionIdException,
-                NoSuchWindowException,
-                WebDriverException,
-            ) as e:
-                logger.warning(f"Browser session invalid: {e}")
-                self.driver_live = False
-                return False
-            except Exception as e:
-                logger.error(f"Unexpected error checking session validity: {e}")
-                self.driver_live = False
-                return False
+        try:
+            # Try a simple operation to check if driver is responsive
+            _ = self.driver.current_url
+            return True
+        except (
+            InvalidSessionIdException,
+            NoSuchWindowException,
+            WebDriverException,
+        ) as e:
+            logger.debug(f"Browser session invalid, will restart: {type(e).__name__}")
+            self.driver_live = False
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error checking session validity: {e}")
+            self.driver_live = False
+            return False
 
     def ensure_driver_live(self, action_name: Optional[str] = None) -> bool:
         """
@@ -222,14 +213,12 @@ class BrowserManager:
             logger.debug(f"Browser session is valid for action: {action_name}")
             return True
 
-        # Removed duplicate logging - start_browser will log the action
+        logger.debug(f"Starting browser session for action: {action_name}")
         return self.start_browser(action_name)
 
-    def get_cookies(self, cookie_names: list[str], timeout: int = 60) -> bool:
+    def get_cookies(self, cookie_names: list, timeout: int = 60) -> bool:
         """
         Check if specified cookies are present in browser session.
-
-        Thread-safe implementation to prevent race conditions during browser refresh.
 
         Args:
             cookie_names: List of cookie names to check for
@@ -238,38 +227,36 @@ class BrowserManager:
         Returns:
             bool: True if all specified cookies are found, False otherwise
         """
-        # Use master browser lock to prevent race conditions with browser refresh
-        with self._master_browser_lock:
-            if not self.is_session_valid():
-                logger.error("Cannot check cookies: WebDriver session invalid")
-                return False
+        if not self.is_session_valid():
+            logger.error("Cannot check cookies: WebDriver session invalid")
+            return False
 
-            try:
-                start_time = time.time()
-                required_lower = {name.lower() for name in cookie_names}
+        try:
+            start_time = time.time()
+            required_lower = {name.lower() for name in cookie_names}
 
-                while time.time() - start_time < timeout:
-                    if not self.driver:  # Additional safety check
-                        logger.error("WebDriver became None during cookie check")
-                        return False
+            while time.time() - start_time < timeout:
+                if not self.driver:  # Additional safety check
+                    logger.error("WebDriver became None during cookie check")
+                    return False
 
-                    cookies = self.driver.get_cookies()
-                    current_cookies_lower = {
-                        c["name"].lower()
-                        for c in cookies
-                        if isinstance(c, dict) and "name" in c
-                    }
-                    missing_lower = required_lower - current_cookies_lower
-                    if not missing_lower:
-                        logger.debug(f"All required cookies found: {cookie_names}")
-                        return True
-                    time.sleep(0.5)
+                cookies = self.driver.get_cookies()
+                current_cookies_lower = {
+                    c["name"].lower()
+                    for c in cookies
+                    if isinstance(c, dict) and "name" in c
+                }
+                missing_lower = required_lower - current_cookies_lower
+                if not missing_lower:
+                    logger.debug(f"All required cookies found: {cookie_names}")
+                    return True
+                time.sleep(0.5)
 
-                logger.warning(f"Timeout waiting for cookies: {list(missing_lower)}")
-                return False
-            except Exception as e:
-                logger.error(f"Error checking cookies: {e}", exc_info=True)
-                return False
+            logger.warning(f"Timeout waiting for cookies: {list(missing_lower)}")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking cookies: {e}", exc_info=True)
+            return False
 
     def create_new_tab(self) -> Optional[str]:
         """
@@ -302,8 +289,9 @@ class BrowserManager:
                 self.driver.switch_to.window(new_handle)
                 logger.debug(f"Created and switched to new tab: {new_handle}")
                 return new_handle
-            logger.error("Failed to find new tab handle")
-            return None
+            else:
+                logger.error("Failed to find new tab handle")
+                return None
 
         except Exception as e:
             logger.error(f"Error creating new tab: {e}", exc_info=True)
@@ -311,11 +299,11 @@ class BrowserManager:
 
 
 # === Decomposed Helper Functions ===
-def _test_browser_manager_initialization() -> bool:
+def _test_browser_manager_initialization():
     manager = BrowserManager()
     assert manager is not None, "BrowserManager should initialize"
-    assert not manager.driver_live, "Should start with driver_live=False"
-    assert not manager.browser_needed, "Should start with browser_needed=False"
+    assert manager.driver_live == False, "Should start with driver_live=False"
+    assert manager.browser_needed == False, "Should start with browser_needed=False"
     assert manager.driver is None, "Should start with driver=None"
     assert (
         manager.session_start_time is None
@@ -323,7 +311,7 @@ def _test_browser_manager_initialization() -> bool:
     return True
 
 
-def _test_method_availability() -> bool:
+def _test_method_availability():
     manager = BrowserManager()
     required_methods = [
         "start_browser",
@@ -340,57 +328,57 @@ def _test_method_availability() -> bool:
     return True
 
 
-def _test_session_validation_no_driver() -> bool:
+def _test_session_validation_no_driver():
     manager = BrowserManager()
     result = manager.is_session_valid()
-    assert not result, "Should return False when no driver exists"
+    assert result == False, "Should return False when no driver exists"
     return True
 
 
-def _test_ensure_driver_not_needed() -> bool:
+def _test_ensure_driver_not_needed():
     manager = BrowserManager()
     manager.browser_needed = False
     result = manager.ensure_driver_live("test_action")
-    assert result, "Should return True when browser not needed"
+    assert result == True, "Should return True when browser not needed"
     return True
 
 
-def _test_cookie_check_invalid_session() -> bool:
+def _test_cookie_check_invalid_session():
     manager = BrowserManager()
     result = manager.get_cookies(["test_cookie"])
-    assert not result, "Should return False for invalid session"
+    assert result == False, "Should return False for invalid session"
     return True
 
 
-def _test_close_browser_no_driver() -> bool:
+def _test_close_browser_no_driver():
     manager = BrowserManager()
     manager.close_browser()
     assert manager.driver is None, "Driver should remain None"
-    assert not manager.driver_live, "driver_live should be False"
+    assert manager.driver_live == False, "driver_live should be False"
     return True
 
 
-def _test_state_management() -> bool:
+def _test_state_management():
     manager = BrowserManager()
     manager.browser_needed = True
-    assert manager.browser_needed, "browser_needed should be modifiable"
+    assert manager.browser_needed == True, "browser_needed should be modifiable"
     manager.close_browser()
-    assert not manager.browser_needed, "close_browser should reset browser_needed"
+    assert manager.browser_needed == False, "close_browser should reset browser_needed"
     return True
 
 
-def _test_configuration_access() -> bool:
+def _test_configuration_access():
     assert config_schema is not None, "config_schema should be available"
     assert logger is not None, "Logger should be initialized"
     return True
 
 
-def _test_initialization_performance() -> bool:
+def _test_initialization_performance():
     import time
 
     start_time = time.time()
     for _ in range(100):
-        BrowserManager()
+        manager = BrowserManager()
     end_time = time.time()
     total_time = end_time - start_time
     assert (
@@ -399,7 +387,7 @@ def _test_initialization_performance() -> bool:
     return True
 
 
-def _test_exception_handling() -> bool:
+def _test_exception_handling():
     manager = BrowserManager()
     try:
         manager.is_session_valid()
@@ -407,11 +395,11 @@ def _test_exception_handling() -> bool:
         result = manager.create_new_tab()
         assert result is None, "create_new_tab should return None for invalid session"
     except Exception as e:
-        raise AssertionError(f"Methods should handle invalid state gracefully: {e}") from e
+        assert False, f"Methods should handle invalid state gracefully: {e}"
     return True
 
 
-def browser_manager_module_tests() -> bool:
+def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for browser_manager.py (decomposed).
     """
@@ -492,79 +480,7 @@ def browser_manager_module_tests() -> bool:
             "Call various browser methods without valid driver and verify no exceptions are raised",
             "Test error handling and graceful degradation for browser operations",
         )
-
-        # === PHASE 4: REAL BROWSER CONCURRENCY TESTS ===
-        def test_real_browser_concurrency():
-            """Test real browser instances under concurrent access patterns."""
-            import threading
-            from unittest.mock import Mock, patch
-
-            # Test with mock browser to avoid actual browser creation in tests
-            with patch('core.browser_manager.init_webdvr') as mock_init, \
-                 patch('core.browser_manager.nav_to_page', return_value=True):
-                mock_driver = Mock()
-                mock_driver.current_url = "https://ancestry.com"
-                mock_driver.get_cookies.return_value = [{'name': 'test', 'value': 'value'}]
-                mock_driver.execute_script.return_value = "complete"
-                mock_init.return_value = mock_driver
-
-                browser_manager = BrowserManager()
-
-                # Test concurrent browser operations
-                results = []
-                errors = []
-
-                def concurrent_browser_operation(thread_id):
-                    try:
-                        # Start browser
-                        success = browser_manager.start_browser(f"ConcurrencyTest-{thread_id}")
-                        if success:
-                            # Check session validity
-                            valid = browser_manager.is_session_valid()
-                            if valid:
-                                # Get cookies (the originally failing operation)
-                                browser_manager.driver.get_cookies()
-                                results.append(f"Thread-{thread_id}: Success")
-                            else:
-                                errors.append(f"Thread-{thread_id}: Invalid session")
-                        else:
-                            errors.append(f"Thread-{thread_id}: Failed to start browser")
-                    except Exception as e:
-                        errors.append(f"Thread-{thread_id}: Exception - {e}")
-
-                # Run 5 concurrent threads
-                threads = []
-                for i in range(5):
-                    t = threading.Thread(target=concurrent_browser_operation, args=(i,))
-                    threads.append(t)
-                    t.start()
-
-                # Wait for all threads to complete
-                for t in threads:
-                    t.join()
-
-                # Verify results
-                assert len(errors) == 0, f"Concurrency test should have no errors, got: {errors}"
-                assert len(results) == 5, f"Should have 5 successful operations, got: {len(results)}"
-
-                # Clean up
-                browser_manager.close_browser()
-
-        suite.run_test(
-            "Real Browser Concurrency",
-            test_real_browser_concurrency,
-            "Real browser instances under concurrent access patterns",
-            "Test real browser instances under concurrent access patterns with thread safety",
-            "Verify master browser lock prevents race conditions in concurrent browser operations",
-        )
-
         return suite.finish_suite()
-
-
-# Use centralized test runner utility
-from test_utilities import create_standard_test_runner
-
-run_comprehensive_tests = create_standard_test_runner(browser_manager_module_tests)
 
 
 if __name__ == "__main__":

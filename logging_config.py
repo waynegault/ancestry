@@ -327,10 +327,11 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
     # Configure logging levels for external libraries
     logging.getLogger("urllib3").setLevel(logging.ERROR)
     logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
-    logging.getLogger("selenium").setLevel(logging.INFO)
+    logging.getLogger("selenium").setLevel(logging.WARNING)
     logging.getLogger("selenium.webdriver.remote.remote_connection").setLevel(
-        logging.INFO
+        logging.WARNING
     )
+    logging.getLogger("selenium.webdriver.common.service").setLevel(logging.WARNING)
     logging.getLogger("websockets").setLevel(logging.INFO)
     logging.getLogger("undetected_chromedriver").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
