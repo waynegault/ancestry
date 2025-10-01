@@ -3475,7 +3475,13 @@ def session_manager_module_tests() -> bool:
 
         def test_memory_pressure_simulation():
             """Test browser replacement under memory pressure conditions."""
+            import os
             from unittest.mock import Mock, patch
+
+            # Skip in fast mode to reduce test time
+            if os.getenv("SKIP_SLOW_TESTS", "false").lower() == "true":
+                logger.info("Skipping memory pressure simulation (SKIP_SLOW_TESTS=true)")
+                return True
 
             # Test memory availability check under pressure
             session_manager = Mock()
@@ -3495,8 +3501,14 @@ def session_manager_module_tests() -> bool:
 
         def test_network_instability_simulation():
             """Test system behavior under poor network conditions."""
+            import os
             import time
             from unittest.mock import Mock, patch
+
+            # Skip in fast mode to reduce test time
+            if os.getenv("SKIP_SLOW_TESTS", "false").lower() == "true":
+                logger.info("Skipping network instability simulation (SKIP_SLOW_TESTS=true)")
+                return True
 
             # Create mock session manager
             session_manager = Mock()
@@ -3533,8 +3545,14 @@ def session_manager_module_tests() -> bool:
 
         def test_cascade_failure_recovery():
             """Test system recovery from cascade failure scenarios."""
+            import os
             import time
             from unittest.mock import Mock, patch
+
+            # Skip in fast mode to reduce test time
+            if os.getenv("SKIP_SLOW_TESTS", "false").lower() == "true":
+                logger.info("Skipping cascade failure recovery simulation (SKIP_SLOW_TESTS=true)")
+                return True
 
             # Create mock session manager
             session_manager = Mock()
