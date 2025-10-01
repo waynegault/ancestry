@@ -128,7 +128,7 @@ config_manager = ConfigManager()
 config = config_manager.get_config()
 
 
-def menu():
+def menu() -> str:
     """Display the main menu and return the user's choice."""
     print("Main Menu")
     print("=" * 17)
@@ -221,7 +221,7 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
 _caching_initialized = False
 
 
-def initialize_aggressive_caching():
+def initialize_aggressive_caching() -> None:
     """Initialize aggressive caching systems."""
     try:
         from core.system_cache import warm_system_caches  # type: ignore[import-not-found]
@@ -234,7 +234,7 @@ def initialize_aggressive_caching():
         return False
 
 
-def ensure_caching_initialized():
+def ensure_caching_initialized() -> None:
     """Initialize aggressive caching systems if not already done."""
     global _caching_initialized
 
@@ -1325,7 +1325,7 @@ def run_action11_wrapper(session_manager, *_):
 # End of run_action11_wrapper
 
 
-def main():
+def main() -> None:
     global logger, session_manager  # Ensure global logger can be modified
     session_manager = None  # Initialize session_manager
 
