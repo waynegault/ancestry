@@ -45,7 +45,7 @@ optimization and detailed logging.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+from standard_imports import setup_module  # type: ignore[import-not-found]
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
@@ -63,7 +63,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from core.error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     circuit_breaker,
     error_context,
     graceful_degradation,
@@ -72,7 +72,7 @@ from core.error_handling import (
 )
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION ===
-from performance_cache import (
+from performance_cache import (  # type: ignore[import-not-found]
     FastMockDataFactory,
     cache_gedcom_results,
     fast_test_cache,
@@ -91,11 +91,11 @@ except ImportError:
     dateparser = None
 
 # === LOCAL IMPORTS ===
-from config import config_schema
-from core.error_handling import MissingConfigError
+from config import config_schema  # type: ignore[import-not-found]
+from core.error_handling import MissingConfigError  # type: ignore[import-not-found]
 
 # Import GEDCOM utilities
-from gedcom_utils import (
+from gedcom_utils import (  # type: ignore[import-not-found]
     GedcomData,
     _normalize_id,
     calculate_match_score,
@@ -103,12 +103,12 @@ from gedcom_utils import (
 )
 
 # Import relationship utilities
-from relationship_utils import (
+from relationship_utils import (  # type: ignore[import-not-found]
     convert_gedcom_path_to_unified_format,
     fast_bidirectional_bfs,
     format_relationship_path_unified,
 )
-from test_framework import mock_logger_context
+from test_framework import mock_logger_context  # type: ignore[import-not-found]
 
 # --- Module-level GEDCOM cache for tests ---
 _gedcom_cache = None
@@ -329,7 +329,7 @@ def sanitize_input(value: str) -> Optional[str]:
 
 
 # Import centralized validation utility
-from test_utilities import is_valid_year as _is_valid_year
+from test_utilities import is_valid_year as _is_valid_year  # type: ignore[import-not-found]
 
 
 def _try_simple_year_parsing(value: str) -> Optional[int]:
@@ -1428,7 +1428,7 @@ def action10_module_tests() -> bool:
     import time
     from pathlib import Path
 
-    from test_framework import (
+    from test_framework import (  # type: ignore[import-not-found]
         Colors,
         TestSuite,
         clean_test_output,
@@ -2136,7 +2136,7 @@ def action10_module_tests() -> bool:
                 return False
 
             # Import the relationship calculation functions
-            from relationship_utils import (
+            from relationship_utils import (  # type: ignore[import-not-found]
                 convert_gedcom_path_to_unified_format,
                 fast_bidirectional_bfs,
                 format_relationship_path_unified,
@@ -2394,17 +2394,17 @@ def action10_module_tests() -> bool:
         "Calculate relationship path from test person to tree owner using bidirectional BFS and format relationship description.",
     )
 
-        # PHASE 4.2: Disable mock mode after tests complete
-        disable_mock_mode()
+    # PHASE 4.2: Disable mock mode after tests complete
+    disable_mock_mode()
 
-        return suite.finish_suite()
+    return suite.finish_suite()
 
-    finally:
-        # Restore original GEDCOM path
-        if original_gedcom:
-            os.environ["GEDCOM_FILE_PATH"] = original_gedcom
-        else:
-            os.environ.pop("GEDCOM_FILE_PATH", None)
+finally:
+    # Restore original GEDCOM path
+    if original_gedcom:
+        os.environ["GEDCOM_FILE_PATH"] = original_gedcom
+    else:
+        os.environ.pop("GEDCOM_FILE_PATH", None)
 
 
 
@@ -2572,7 +2572,7 @@ if __name__ == "__main__":
     import traceback  # Use centralized path management - already handled at module level
     os.environ['DISABLE_PERFORMANCE_MONITORING'] = '1'
 
-    from logging_config import setup_logging
+    from logging_config import setup_logging  # type: ignore[import-not-found]
 
     logger = setup_logging()
 
@@ -2635,6 +2635,6 @@ if __name__ == "__main__":
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
 
 run_comprehensive_tests = create_standard_test_runner(action10_module_tests)
