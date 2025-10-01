@@ -2819,26 +2819,34 @@ def _extract_person_id_from_link(href: str) -> str:
         return None
 
 
-def _extract_birth_year_from_element(element, name: str) -> int:
+def _extract_year_from_element(element, name: str, event_type: str) -> int:
     """
-    Extract birth year from element context.
+    Extract year from element context for a specific event type.
+
+    Args:
+        element: BeautifulSoup element containing the text
+        name: Name of the person (for context)
+        event_type: Type of event ('birth' or 'death')
+
+    Returns:
+        Extracted year as integer, or None if not found
     """
     try:
         text = element.get_text(strip=True)
-        return _extract_year_from_text(text, 'birth')
+        return _extract_year_from_text(text, event_type)
     except:
         return None
+
+
+# Convenience wrappers for backward compatibility
+def _extract_birth_year_from_element(element, name: str) -> int:
+    """Extract birth year from element context."""
+    return _extract_year_from_element(element, name, 'birth')
 
 
 def _extract_death_year_from_element(element, name: str) -> int:
-    """
-    Extract death year from element context.
-    """
-    try:
-        text = element.get_text(strip=True)
-        return _extract_year_from_text(text, 'death')
-    except:
-        return None
+    """Extract death year from element context."""
+    return _extract_year_from_element(element, name, 'death')
 
 
 def _extract_year_from_text(text: str, context: str = None) -> int:
