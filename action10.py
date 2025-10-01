@@ -699,7 +699,7 @@ def calculate_match_score_cached(
     candidate_data: dict[str, Any],
     scoring_weights: Mapping[str, int | float],
     date_flex: dict[str, Any],
-    cache: Optional[dict[tuple[str, ...], Any]] = None,
+    cache: Optional[dict[Any, Any]] = None,  # type: ignore[type-arg]
 ) -> tuple[float, dict[str, int], list[str]]:
     """Calculate match score with caching for performance."""
     if cache is None:
@@ -1313,7 +1313,7 @@ def analyze_top_match(
         _handle_same_person_case(display_name, reference_person_name)
     elif reference_person_id_norm:
         _calculate_relationship_path(
-            gedcom_data, top_match_norm_id, reference_person_id_norm,
+            gedcom_data, top_match_norm_id, reference_person_id_norm,  # type: ignore[arg-type]
             display_name, reference_person_name
         )
 
@@ -2132,7 +2132,7 @@ def action10_module_tests() -> bool:
 
             # Find the relationship path using the consolidated function
             path_ids = fast_bidirectional_bfs(
-                person_id,
+                person_id,  # type: ignore[arg-type]
                 reference_person_id,
                 gedcom_data.id_to_parents,
                 gedcom_data.id_to_children,
@@ -2153,7 +2153,7 @@ def action10_module_tests() -> bool:
             if unified_path:
                 # Format the path using the unified formatter
                 relationship_explanation = format_relationship_path_unified(
-                    unified_path, person.get('full_name_disp'), reference_person_name, None
+                    unified_path, person.get('full_name_disp'), reference_person_name, None  # type: ignore[arg-type]
                 )
 
                 # Print the formatted relationship path without logger prefix
