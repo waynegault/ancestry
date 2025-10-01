@@ -49,7 +49,7 @@ Phase: 12.3 - Intelligent Research Prioritization
 """
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Optional
 
@@ -854,46 +854,16 @@ class IntelligentResearchPrioritizer:
         }
 
     def _priority_to_dict(self, priority: ResearchPriority) -> dict[str, Any]:
-        """Convert ResearchPriority to dictionary."""
-        return {
-            "priority_id": priority.priority_id,
-            "task_type": priority.task_type,
-            "description": priority.description,
-            "target_people": priority.target_people,
-            "priority_score": priority.priority_score,
-            "urgency": priority.urgency,
-            "research_context": priority.research_context,
-            "expected_outcomes": priority.expected_outcomes,
-            "research_steps": priority.research_steps,
-            "estimated_effort": priority.estimated_effort,
-            "success_probability": priority.success_probability
-        }
+        """Convert ResearchPriority to dictionary using dataclass asdict()."""
+        return asdict(priority)
 
     def _family_line_to_dict(self, family_line: FamilyLineStatus) -> dict[str, Any]:
-        """Convert FamilyLineStatus to dictionary."""
-        return {
-            "line_id": family_line.line_id,
-            "line_name": family_line.line_name,
-            "surname": family_line.surname,
-            "generations_back": family_line.generations_back,
-            "completeness_percentage": family_line.completeness_percentage,
-            "missing_generations": family_line.missing_generations,
-            "research_bottlenecks": family_line.research_bottlenecks,
-            "priority_research_targets": family_line.priority_research_targets
-        }
+        """Convert FamilyLineStatus to dictionary using dataclass asdict()."""
+        return asdict(family_line)
 
     def _location_cluster_to_dict(self, cluster: LocationResearchCluster) -> dict[str, Any]:
-        """Convert LocationResearchCluster to dictionary."""
-        return {
-            "cluster_id": cluster.cluster_id,
-            "location": cluster.location,
-            "time_period": cluster.time_period,
-            "people_count": cluster.people_count,
-            "target_people": cluster.target_people,
-            "available_records": cluster.available_records,
-            "research_efficiency_score": cluster.research_efficiency_score,
-            "cluster_research_plan": cluster.cluster_research_plan
-        }
+        """Convert LocationResearchCluster to dictionary using dataclass asdict()."""
+        return asdict(cluster)
 
 
 # Test functions
