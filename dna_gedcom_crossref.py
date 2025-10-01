@@ -40,7 +40,7 @@ Created: August 6, 2025
 Phase: 12.2 - Smart DNA-GEDCOM Cross-Reference
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Optional
 
@@ -564,38 +564,12 @@ class DNAGedcomCrossReferencer:
         }
 
     def _crossref_to_dict(self, crossref_match: CrossReferenceMatch) -> dict[str, Any]:
-        """Convert CrossReferenceMatch to dictionary."""
-        return {
-            "match_id": crossref_match.match_id,
-            "dna_match_name": crossref_match.dna_match.match_name,
-            "estimated_relationship": crossref_match.dna_match.estimated_relationship,
-            "shared_dna_cm": crossref_match.dna_match.shared_dna_cm,
-            "potential_gedcom_matches": [
-                {
-                    "person_id": person.person_id,
-                    "full_name": person.full_name,
-                    "birth_year": person.birth_year,
-                    "birth_place": person.birth_place
-                }
-                for person in crossref_match.potential_gedcom_matches
-            ],
-            "confidence_score": crossref_match.confidence_score,
-            "match_type": crossref_match.match_type,
-            "verification_needed": crossref_match.verification_needed,
-            "research_suggestions": crossref_match.research_suggestions
-        }
+        """Convert CrossReferenceMatch to dictionary using dataclass asdict()."""
+        return asdict(crossref_match)
 
     def _conflict_to_dict(self, conflict: ConflictIdentification) -> dict[str, Any]:
-        """Convert ConflictIdentification to dictionary."""
-        return {
-            "conflict_id": conflict.conflict_id,
-            "conflict_type": conflict.conflict_type,
-            "description": conflict.description,
-            "dna_evidence": conflict.dna_evidence,
-            "gedcom_evidence": conflict.gedcom_evidence,
-            "severity": conflict.severity,
-            "resolution_steps": conflict.resolution_steps
-        }
+        """Convert ConflictIdentification to dictionary using dataclass asdict()."""
+        return asdict(conflict)
 
 
 # Test functions

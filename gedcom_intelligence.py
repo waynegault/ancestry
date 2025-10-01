@@ -47,7 +47,7 @@ Created: August 6, 2025
 Phase: 12.1 - Advanced GEDCOM Integration & Family Tree Intelligence
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Optional
 
@@ -585,39 +585,16 @@ class GedcomIntelligenceAnalyzer:
         }
 
     def _gap_to_dict(self, gap: GedcomGap) -> dict[str, Any]:
-        """Convert GedcomGap to dictionary."""
-        return {
-            "person_id": gap.person_id,
-            "person_name": gap.person_name,
-            "gap_type": gap.gap_type,
-            "description": gap.description,
-            "priority": gap.priority,
-            "research_suggestions": gap.research_suggestions,
-            "related_people": gap.related_people
-        }
+        """Convert GedcomGap to dictionary using dataclass asdict()."""
+        return asdict(gap)
 
     def _conflict_to_dict(self, conflict: GedcomConflict) -> dict[str, Any]:
-        """Convert GedcomConflict to dictionary."""
-        return {
-            "conflict_id": conflict.conflict_id,
-            "conflict_type": conflict.conflict_type,
-            "description": conflict.description,
-            "people_involved": conflict.people_involved,
-            "severity": conflict.severity,
-            "resolution_suggestions": conflict.resolution_suggestions
-        }
+        """Convert GedcomConflict to dictionary using dataclass asdict()."""
+        return asdict(conflict)
 
     def _opportunity_to_dict(self, opportunity: ResearchOpportunity) -> dict[str, Any]:
-        """Convert ResearchOpportunity to dictionary."""
-        return {
-            "opportunity_id": opportunity.opportunity_id,
-            "opportunity_type": opportunity.opportunity_type,
-            "description": opportunity.description,
-            "target_people": opportunity.target_people,
-            "expected_outcome": opportunity.expected_outcome,
-            "priority": opportunity.priority,
-            "research_steps": opportunity.research_steps
-        }
+        """Convert ResearchOpportunity to dictionary using dataclass asdict()."""
+        return asdict(opportunity)
 
 
 # Test functions
