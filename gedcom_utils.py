@@ -106,12 +106,7 @@ if TYPE_CHECKING:
     GedcomNameType = Name
     GedcomNameRecType = NameRec
     GedcomReaderType = GedcomReader
-else:
-    GedcomIndividualType = Any
-    GedcomRecordType = Any
-    GedcomNameType = Any
-    GedcomNameRecType = Any
-    GedcomReaderType = Any
+# else block removed - GEDCOM is always available (required dependency)
 TAG_INDI = "INDI"
 TAG_BIRTH = "BIRT"
 TAG_DEATH = "DEAT"
