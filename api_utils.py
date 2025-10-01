@@ -442,7 +442,7 @@ api_rate_limiter = ApiRateLimiter()
 
 # --- Helper Functions for parse_ancestry_person_details ---
 def _extract_name_from_api_details(
-    person_card: dict, facts_data: Optional[dict]
+    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]
 ) -> str:
     """
     Extract and format a person's name from Ancestry API response data.
@@ -851,7 +851,7 @@ def _generate_person_link(
 
 
 def parse_ancestry_person_details(
-    person_card: dict, facts_data: Optional[dict] = None
+    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]] = None
 ) -> dict[str, Any]:
     details: dict[str, Any] = {
         "name": "Unknown",
@@ -1029,7 +1029,7 @@ def call_suggest_api(
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
-) -> Optional[list[dict]]:
+) -> Optional[list[dict[str, Any]]]:
     # Validate inputs and raise appropriate exceptions
     if not callable(_api_req):
         logger.critical(
@@ -1303,7 +1303,7 @@ def call_facts_user_api(
     api_tree_id: str,
     base_url: str,
     timeouts: Optional[list[int]] = None,
-) -> Optional[dict]:
+) -> Optional[dict[str, Any]]:
     if not callable(_api_req):
         logger.critical(
             "Facts API call failed: _api_req function unavailable (Import Failed?)."
@@ -1615,7 +1615,7 @@ def call_discovery_relationship_api(
     owner_profile_id: str,
     base_url: str,
     timeout: Optional[int] = None,
-) -> Optional[dict]:
+) -> Optional[dict[str, Any]]:
     """
     Makes an API call to get relationship data from the Discovery API.
 
@@ -1758,7 +1758,7 @@ def call_treesui_list_api(
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
-) -> Optional[list[dict]]:
+) -> Optional[list[dict[str, Any]]]:
     if not callable(_api_req):
         logger.critical(
             "TreesUI List API call failed: _api_req function unavailable (Import Failed?)."
