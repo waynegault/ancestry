@@ -1025,7 +1025,7 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 def call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],
+    _owner_profile_id: Optional[str],  # Unused but kept for API consistency
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
@@ -1754,7 +1754,7 @@ def call_discovery_relationship_api(
 def call_treesui_list_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],
+    _owner_profile_id: Optional[str],  # Unused but kept for API consistency
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
@@ -2657,7 +2657,7 @@ def _sc_print_summary(
 async def async_call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    owner_profile_id: Optional[str],
+    _owner_profile_id: Optional[str],  # Unused but kept for API consistency
     base_url: str,
     search_criteria: dict[str, Any],
     timeout: Optional[int] = None,
@@ -2782,7 +2782,7 @@ async def async_batch_person_lookup(
 
     # Parse results into PersonFactsResponse objects
     parsed_results = {}
-    for _i, (person_id, response_data) in enumerate(zip(person_ids, results)):
+    for person_id, response_data in zip(person_ids, results):
         if response_data:
             try:
                 parsed_results[person_id] = PersonFactsResponse.from_dict(response_data)
@@ -2953,7 +2953,7 @@ def call_relationship_ladder_api(
 def get_relationship_path_data(
     session_manager: "SessionManager",
     person_id: str,
-    reference_person_id: Optional[str] = None
+    _reference_person_id: Optional[str] = None  # Unused but kept for future use
 ) -> Optional[dict[str, Any]]:
     """
     Get comprehensive relationship path data for a person using the enhanced API.
