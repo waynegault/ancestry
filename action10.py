@@ -554,7 +554,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         ) from e
 
 
-def _create_input_getter(args: Optional[argparse.Namespace]) -> callable:
+def _create_input_getter(args: Optional[argparse.Namespace]) -> Callable[[str], str]:
     """Create input getter function that handles automated inputs."""
     auto_inputs = getattr(args, "auto_input", None) if args else None
     auto_index = 0
@@ -572,7 +572,7 @@ def _create_input_getter(args: Optional[argparse.Namespace]) -> callable:
     return get_input
 
 
-def _collect_basic_criteria(get_input: callable) -> dict[str, Any]:
+def _collect_basic_criteria(get_input: Callable[[str], str]) -> dict[str, Any]:
     """Collect basic search criteria from user input."""
     input_fname = sanitize_input(get_input("  First Name Contains:"))
     input_sname = sanitize_input(get_input("  Surname Contains:"))
@@ -699,7 +699,7 @@ def calculate_match_score_cached(
     candidate_data: dict[str, Any],
     scoring_weights: Mapping[str, int | float],
     date_flex: dict[str, Any],
-    cache: Optional[dict[tuple, Any]] = None,
+    cache: Optional[dict[tuple[str, ...], Any]] = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """Calculate match score with caching for performance."""
     if cache is None:
@@ -1444,7 +1444,7 @@ def action10_module_tests() -> bool:
     suite.start_suite()
 
     # --- TESTS ---
-    def debug_wrapper(test_func: Callable) -> Callable:
+    def debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
         """Simple wrapper for test functions (timing removed for cleaner output)"""
         return test_func
 
