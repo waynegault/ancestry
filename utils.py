@@ -30,7 +30,7 @@ else:
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
@@ -410,14 +410,14 @@ def format_name(name: Optional[str]) -> str:
 # Decorators (Remain in utils.py)
 # ------------------------------
 
-def retry(  # type: ignore[misc]
+def retry(
     MAX_RETRIES: Optional[int] = None,
     BACKOFF_FACTOR: Optional[float] = None,
     MAX_DELAY: Optional[float] = None,
 ):
     """Decorator factory to retry a function with exponential backoff and jitter."""
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # type: ignore[misc]
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             cfg = config_schema  # Use new config system
@@ -468,7 +468,7 @@ def retry(  # type: ignore[misc]
 
 # End of retry
 
-def retry_api(  # type: ignore[misc]
+def retry_api(
     max_retries: Optional[int] = None,
     initial_delay: Optional[float] = None,
     backoff_factor: Optional[float] = None,
@@ -481,7 +481,7 @@ def retry_api(  # type: ignore[misc]
 ):
     """Decorator factory for retrying API calls with exponential backoff, logging, etc."""
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # type: ignore[misc]
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             cfg = config_schema  # Use new config system
@@ -604,7 +604,7 @@ def retry_api(  # type: ignore[misc]
 
 # End of retry_api
 
-def ensure_browser_open(func: Callable[..., Any]) -> Callable[..., Any]:  # type: ignore[misc]
+def ensure_browser_open(func: Callable) -> Callable:
     """Decorator to ensure browser session is valid before executing."""
 
     @wraps(func)
@@ -653,10 +653,10 @@ def ensure_browser_open(func: Callable[..., Any]) -> Callable[..., Any]:  # type
 
 # End of ensure_browser_open
 
-def time_wait(wait_description: str) -> Callable[..., Any]:  # type: ignore[misc]
+def time_wait(wait_description: str) -> Callable:
     """Decorator factory to time Selenium WebDriverWait calls."""
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:  # type: ignore[misc]
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
@@ -1440,9 +1440,9 @@ def _api_req(
     driver: DriverType,
     session_manager: SessionManager,  # type: ignore
     method: str = "GET",
-    data: Optional[Dict[str, Any]] = None,
-    json_data: Optional[Dict[str, Any]] = None,
-    json: Optional[Dict[str, Any]] = None,
+    data: Optional[Dict] = None,
+    json_data: Optional[Dict] = None,
+    json: Optional[Dict] = None,
     use_csrf_token: bool = True,
     headers: Optional[Dict[str, str]] = None,
     referer_url: Optional[str] = None,
