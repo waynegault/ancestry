@@ -85,11 +85,6 @@ try:
 except ImportError:
     tabulate = None
 
-try:
-    import dateparser
-except ImportError:
-    dateparser = None
-
 # === LOCAL IMPORTS ===
 from config import config_schema  # type: ignore[import-not-found]
 from core.error_handling import MissingConfigError  # type: ignore[import-not-found]

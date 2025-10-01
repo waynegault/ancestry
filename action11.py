@@ -29,29 +29,17 @@ from core.error_handling import (
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import argparse
-import json
-import logging
 import os
 import re  # Added for robust lifespan splitting
 import sys
-import time
-# import urllib.parse  # Not used
 from datetime import datetime
-from pathlib import Path
 from traceback import print_exception
-from typing import Optional, List, Dict, Any, Tuple, Union, cast
-from urllib.parse import urljoin, urlencode, quote
+from typing import Optional, List, Dict, Any, Tuple, Union
+from urllib.parse import urlencode, quote
 
 # === THIRD-PARTY IMPORTS ===
-import requests  # Keep for potential exception types
 from dotenv import load_dotenv
 from tabulate import tabulate
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    logger.warning("BeautifulSoup4 not available. HTML parsing features will be limited.")
-    BeautifulSoup = None
 
 # === LOCAL IMPORTS ===
 from config import config_schema
@@ -149,13 +137,9 @@ except ImportError as e:
 # --- Import API Utilities ---
 # Import specific API call helpers, parsers, AND the timeout helper
 from api_utils import (
-    parse_ancestry_person_details,
-    call_suggest_api,
     call_facts_user_api,
     call_getladder_api,
     call_discovery_relationship_api,
-    call_treesui_list_api,
-    _get_api_timeout,
 )
 
 # Import relationship utilities
@@ -174,7 +158,7 @@ API_UTILS_AVAILABLE = True
 
 # --- Import General Utilities ---
 from core.session_manager import SessionManager
-from utils import format_name, ordinal_case
+from utils import format_name
 
 logger.debug("Successfully imported required components from utils.")
 CORE_UTILS_AVAILABLE = True
