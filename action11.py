@@ -5273,6 +5273,9 @@ def action11_module_tests() -> bool:
         # === LIVE API TESTS (REAL, ENV-DRIVEN) ===
         # Skip live API tests when running through test runner to avoid hanging
         skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+        if skip_live_tests:
+            print("ℹ️  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
+            logger.info("Skipping all live API tests due to SKIP_LIVE_API_TESTS environment variable")
 
         def _require_env(keys: list[str]):
             missing = [k for k in keys if not os.getenv(k)]
