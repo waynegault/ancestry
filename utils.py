@@ -30,7 +30,7 @@ else:
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
+from core.error_handling import (
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
@@ -1901,7 +1901,7 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
     # End of if
     driver = session_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
-    # page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)  # Not used
+    page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)
     short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
     try:
         print(
@@ -2903,7 +2903,7 @@ def nav_to_page(
 
     # Define common problematic URLs/selectors
     signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip("/")
-    # mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")  # Not used
+    mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")
     # Selectors for known 'unavailable' pages
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),  # type: ignore # Selector : (action, wait_seconds)
