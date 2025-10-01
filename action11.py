@@ -3487,14 +3487,14 @@ def _handle_search_phase(
 # Parsing (Definition before use in _handle_search_phase)
 def _parse_treesui_list_response(  # type: ignore
     treesui_response: List[Dict[str, Any]],
-    search_criteria: Dict[str, Any],
+    _search_criteria: Dict[str, Any],  # Unused but kept for API consistency
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Parses the specific TreesUI List API response provided by the user
     to extract information needed for scoring and display.
     """
     parsed_results = []
-    parse_date_func = _parse_date if callable(_parse_date) else None
+    _parse_date_func = _parse_date if callable(_parse_date) else None  # Unused but kept for potential future use
     logger.debug(
         f"Parsing {len(treesui_response)} items from TreesUI List API response."
     )
@@ -3763,7 +3763,7 @@ def _handle_selection_phase(
         logger.error("Failed to select top candidate.")
         print("\nFailed to select top candidate.")
         return None
-    selected_candidate_processed, selected_candidate_raw = selection
+    _selected_candidate_processed, _selected_candidate_raw = selection  # Unpacked but unused
     # Field-by-field comparison display has been removed as requested
     pass
     return selection
@@ -3809,8 +3809,8 @@ def _handle_details_phase(
         logger.error("Cannot fetch details: Function missing.")
         print("\nError: Details fetching utility unavailable.")
         return None
-    # Construct the API URL for logging/display purposes
-    facts_api_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id}/tree/{api_tree_id}/person/{api_person_id}"
+    # Construct the API URL for logging/display purposes (unused but kept for debugging)
+    _facts_api_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id}/tree/{api_tree_id}/person/{api_person_id}"
 
     # Call the API
     person_research_data = call_facts_user_api(
@@ -3877,8 +3877,8 @@ def _handle_supplementary_info_phase(
         else:
             # If not in config, try alternative config location
             if owner_profile_id:
-                # Try to get from reference person name config
-                alt_config_owner_name = getattr(
+                # Try to get from reference person name config (unused but kept for potential future use)
+                _alt_config_owner_name = getattr(
                     config_schema, "reference_person_name", None
                 )
                 owner_name = config_owner_name if config_owner_name else "Tree Owner"
@@ -3889,8 +3889,8 @@ def _handle_supplementary_info_phase(
     # Action 11 simplified to focus on search, scoring, and relationship calculation only
     # Family details functionality removed to keep Action 11 focused and reliable
 
-    # Get the person's name for relationship calculation
-    person_name = selected_candidate_processed.get("name", "Unknown")
+    # Get the person's name for relationship calculation (unused but kept for potential future use)
+    _person_name = selected_candidate_processed.get("name", "Unknown")
 
     # --- Family Details Section Removed ---
     # Action 11 simplified to focus on search, scoring, and relationship calculation only
@@ -4622,7 +4622,7 @@ def handle_api_report(session_manager_param=None):
     )  # Includes initial comparison display
     if not selection:
         return True  # No candidate selected or comparison failed gracefully
-    selected_candidate_processed, selected_candidate_raw = selection
+    selected_candidate_processed, _selected_candidate_raw = selection  # Raw data unused
 
     # Phase 3: Skip detailed data fetching - Action 11 simplified
     # Phase 4: Display Relationship Path Only...
@@ -4863,7 +4863,7 @@ def get_ancestry_person_details(
 def get_ancestry_relationship_path(
     session_manager: SessionManager,
     target_person_id: str,
-    target_tree_id: str,
+    _target_tree_id: str,  # Unused but kept for API consistency
     reference_name: str = "Reference Person",
 ) -> str:
     """
