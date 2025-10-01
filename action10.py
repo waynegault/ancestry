@@ -1446,14 +1446,13 @@ def action10_module_tests() -> bool:
         os.environ["GEDCOM_FILE_PATH"] = test_gedcom
         logger.info(f"Using minimal test GEDCOM: {test_gedcom}")
 
-    try:
-        # PHASE 4.2: Disable mock mode - use real GEDCOM data for testing
-        disable_mock_mode()
+    # PHASE 4.2: Disable mock mode - use real GEDCOM data for testing
+    disable_mock_mode()
 
-        suite = TestSuite(
-            "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
-        )
-        suite.start_suite()
+    suite = TestSuite(
+        "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
+    )
+    suite.start_suite()
 
     # --- TESTS ---
     def debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
@@ -2397,14 +2396,13 @@ def action10_module_tests() -> bool:
     # PHASE 4.2: Disable mock mode after tests complete
     disable_mock_mode()
 
-    return suite.finish_suite()
-
-finally:
     # Restore original GEDCOM path
     if original_gedcom:
         os.environ["GEDCOM_FILE_PATH"] = original_gedcom
     else:
         os.environ.pop("GEDCOM_FILE_PATH", None)
+
+    return suite.finish_suite()
 
 
 
