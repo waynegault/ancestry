@@ -466,7 +466,7 @@ def explain_relationship_path(
     """
     if not path_ids or len(path_ids) < 2:
         return "(No relationship path explanation available)"
-    if id_to_parents is None or id_to_children is None or indi_index is None:
+    if id_to_parents is None or id_to_children is None or indi_index is None:  # type: ignore[unreachable]
         return "(Error: Data maps or index unavailable)"
 
     # Convert the GEDCOM path to the unified format

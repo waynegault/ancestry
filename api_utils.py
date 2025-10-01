@@ -240,7 +240,7 @@ class TreeOwnerResponse:
         - Maps legacy 'treeMembersCount' to 'peopleCount' if present.
         - Ignores unknown fields to avoid constructor errors.
         """
-        if not isinstance(data, dict):
+        if not isinstance(data, dict):  # type: ignore[unreachable]
             data = {}
         normalized = dict(data)
         # Alias mapping: treeMembersCount -> peopleCount (if peopleCount missing)
@@ -1030,7 +1030,7 @@ def call_suggest_api(
 
     if not isinstance(session_manager, SessionManager) and not hasattr(
         session_manager, "is_sess_valid"
-    ):
+    ):  # type: ignore[unreachable]
         raise AncestryException(
             "Invalid SessionManager passed to suggest API - Provide a valid SessionManager instance"
         )
@@ -1290,7 +1290,7 @@ def call_facts_user_api(
         )
         raise ImportError("_api_req function not available from utils")
     # End of if
-    if not isinstance(session_manager, SessionManager):
+    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("Facts API call failed: Invalid SessionManager passed.")
         return None
     # End of if
@@ -1496,7 +1496,7 @@ def call_getladder_api(
         )
         raise ImportError("_api_req function not available from utils")
     # End of if
-    if not isinstance(session_manager, SessionManager):
+    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("GetLadder API call failed: Invalid SessionManager passed.")
         return None
     # End of if
@@ -1618,7 +1618,7 @@ def call_discovery_relationship_api(
         )
         raise ImportError("_api_req function not available from utils")
     # End of if
-    if not isinstance(session_manager, SessionManager):
+    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error(
             "Discovery Relationship API call failed: Invalid SessionManager passed."
         )
@@ -1745,7 +1745,7 @@ def call_treesui_list_api(
         )
         raise ImportError("_api_req function not available from utils")
     # End of if
-    if not isinstance(session_manager, SessionManager):
+    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("TreesUI List API call failed: Invalid SessionManager passed.")
         return None
     # End of if
@@ -2341,7 +2341,7 @@ def call_tree_owner_api(
         logger.warning("Cannot get tree owner: tree_id is missing.")
         return None
     # End of if
-    if not isinstance(tree_id, str):
+    if not isinstance(tree_id, str):  # type: ignore[unreachable]
         logger.warning(
             f"Invalid tree_id type provided: {type(tree_id)}. Expected string."
         )

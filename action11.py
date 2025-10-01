@@ -187,7 +187,7 @@ def _extract_fact_data(
     place_str: Optional[str] = None
     date_obj: Optional[datetime] = None
 
-    if not isinstance(person_facts, list):
+    if not isinstance(person_facts, list):  # type: ignore[unreachable]
         logger.debug(
             f"_extract_fact_data: Invalid input person_facts (not a list) for {fact_type_str}."
         )
@@ -1264,7 +1264,7 @@ def _extract_detailed_info(person_research_data: Dict, candidate_raw: Dict) -> D
         if callable(_clean_display_date)
         else lambda x: str(x) if x else "N/A"
     )
-    if not isinstance(person_research_data, dict):
+    if not isinstance(person_research_data, dict):  # type: ignore[unreachable]
         logger.error("Invalid input to _extract_detailed_info.")
         return {}
     person_facts_list = person_research_data.get("PersonFacts", [])
@@ -3005,7 +3005,7 @@ def _flatten_children_list(children_raw: Union[List, Dict, None]) -> List[Dict]:
         elif not child_id:
             logger.warning("Single child dict missing PersonId.")
             children_flat_list.append(children_raw)
-    elif children_raw is not None:
+    elif children_raw is not None:  # type: ignore[unreachable]
         logger.warning(f"Unexpected data type for 'Children': {type(children_raw)}")
     logger.debug(
         f"Flattened children entries into {len(children_flat_list)} unique children."
@@ -3031,7 +3031,7 @@ def _display_family_info(family_data: Dict):
         if not rel_list:
             print("    None found.")
             return
-        if not isinstance(rel_list, list):
+        if not isinstance(rel_list, list):  # type: ignore[unreachable]
             print_exception(f"Expected list for {rel_type}, got {type(rel_list)}.")
             return
         found_any = False

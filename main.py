@@ -487,7 +487,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             )
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
-        else:
+        else:  # type: ignore[unreachable]
             logger.warning(
                 "No main session manager passed to all_but_first_actn to close."
             )
@@ -807,7 +807,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
             logger.debug("Closing main DB connections before database deletion...")
             session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
             logger.debug("Main DB pool closed.")
-        else:
+        else:  # type: ignore[unreachable]
             logger.warning("No main session manager passed to reset_db_actn to close.")
 
         # Force garbage collection to release any file handles
@@ -988,7 +988,7 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
             logger.debug("Closing main DB connections before restore...")
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
-        else:
+        else:  # type: ignore[unreachable]
             logger.warning(
                 "No main session manager passed to restore_db_actn to close."
             )
@@ -1029,7 +1029,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
     If not logged in, it attempts to log in using stored credentials.
     Provides clear user feedback about the final login state.
     """
-    if not session_manager:
+    if not session_manager:  # type: ignore[unreachable]
         logger.error("SessionManager required for check_login_actn.")
         print("ERROR: Internal error - session manager not available.")
         return False
