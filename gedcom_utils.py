@@ -89,6 +89,7 @@ except ImportError:
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
+from relationship_utils import _find_direct_relationship, _has_direct_relationship
 from utils import format_name
 
 # === MODULE CONFIGURATION ===
@@ -950,83 +951,8 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
     return [start_id, end_id]
 
 
-def _has_direct_relationship(
-    id1: str,
-    id2: str,
-    id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
-) -> bool:
-    """
-    Check if two individuals have a direct relationship (parent-child, siblings, or spouses).
-
-    Args:
-        id1: ID of the first individual
-        id2: ID of the second individual
-        id_to_parents: Dictionary mapping individual IDs to their parent IDs
-        id_to_children: Dictionary mapping individual IDs to their child IDs
-
-    Returns:
-        True if directly related, False otherwise
-    """
-    # Parent-child relationship
-    if id2 in id_to_parents.get(id1, set()) or id1 in id_to_parents.get(id2, set()):
-        return True
-
-    # Sibling relationship (share at least one parent)
-    parents_1 = id_to_parents.get(id1, set())
-    parents_2 = id_to_parents.get(id2, set())
-    if parents_1 and parents_2 and not parents_1.isdisjoint(parents_2):
-        return True
-
-    # Check for grandparent relationship
-    for parent_id in id_to_parents.get(id1, set()):
-        if id2 in id_to_parents.get(parent_id, set()):
-            return True
-
-    # Check for grandchild relationship
-    return any(
-        id2 in id_to_children.get(child_id, set())
-        for child_id in id_to_children.get(id1, set())
-    )
-
-
-def _find_direct_relationship(
-    id1: str,
-    id2: str,
-    id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
-) -> list[str]:
-    """
-    Find a direct relationship between two individuals.
-
-    Args:
-        id1: ID of the first individual
-        id2: ID of the second individual
-        id_to_parents: Dictionary mapping individual IDs to their parent IDs
-        id_to_children: Dictionary mapping individual IDs to their child IDs
-
-    Returns:
-        A list of IDs representing the path from id1 to id2, or an empty list if no direct relationship
-    """
-    # Check if id2 is a parent of id1
-    if id2 in id_to_parents.get(id1, set()):
-        return [id1, id2]
-
-    # Check if id2 is a child of id1
-    if id2 in id_to_children.get(id1, set()):
-        return [id1, id2]
-
-    # Check if id1 and id2 are siblings (share at least one parent)
-    parents_1 = id_to_parents.get(id1, set())
-    parents_2 = id_to_parents.get(id2, set())
-    common_parents = parents_1.intersection(parents_2)
-    if common_parents:
-        # Use the first common parent
-        common_parent = next(iter(common_parents))
-        return [id1, common_parent, id2]
-
-    # No direct relationship found
-    return []
+# Note: _has_direct_relationship and _find_direct_relationship have been moved to relationship_utils.py
+# to eliminate duplication. They are imported at the top of this file.
 
 
 def _are_directly_related(
@@ -1374,68 +1300,105 @@ def _are_cousins(
     return False
 
 
+def _is_ancestor_at_generation(
+    descendant_id: str,
+    ancestor_id: str,
+    generations: int,
+    id_to_parents: dict[str, set[str]]
+) -> bool:
+    """
+    Check if ancestor_id is an ancestor of descendant_id at a specific generation level.
+
+    Args:
+        descendant_id: ID of the descendant
+        ancestor_id: ID of the potential ancestor
+        generations: Number of generations up (1=parent, 2=grandparent, 3=great-grandparent, etc.)
+        id_to_parents: Dictionary mapping individual IDs to their parent IDs
+
+    Returns:
+        True if ancestor_id is an ancestor at the specified generation level
+    """
+    if generations < 1:
+        return False
+
+    # Start with the descendant
+    current_generation = {descendant_id}
+
+    # Walk up the specified number of generations
+    for _ in range(generations):
+        next_generation = set()
+        for person_id in current_generation:
+            parents = id_to_parents.get(person_id, set())
+            next_generation.update(parents)
+
+        if not next_generation:
+            return False  # No more ancestors at this level
+
+        current_generation = next_generation
+
+    # Check if ancestor_id is in the final generation
+    return ancestor_id in current_generation
+
+
+def _is_descendant_at_generation(
+    ancestor_id: str,
+    descendant_id: str,
+    generations: int,
+    id_to_children: dict[str, set[str]]
+) -> bool:
+    """
+    Check if descendant_id is a descendant of ancestor_id at a specific generation level.
+
+    Args:
+        ancestor_id: ID of the ancestor
+        descendant_id: ID of the potential descendant
+        generations: Number of generations down (1=child, 2=grandchild, 3=great-grandchild, etc.)
+        id_to_children: Dictionary mapping individual IDs to their child IDs
+
+    Returns:
+        True if descendant_id is a descendant at the specified generation level
+    """
+    if generations < 1:
+        return False
+
+    # Start with the ancestor
+    current_generation = {ancestor_id}
+
+    # Walk down the specified number of generations
+    for _ in range(generations):
+        next_generation = set()
+        for person_id in current_generation:
+            children = id_to_children.get(person_id, set())
+            next_generation.update(children)
+
+        if not next_generation:
+            return False  # No more descendants at this level
+
+        current_generation = next_generation
+
+    # Check if descendant_id is in the final generation
+    return descendant_id in current_generation
+
+
+# Convenience wrappers for backward compatibility
 def _is_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if id2 is a grandparent of id1."""
-    # Get parents of id1
-    parents = id_to_parents.get(id1, set())
-
-    # For each parent, check if id2 is their parent
-    for parent_id in parents:
-        grandparents = id_to_parents.get(parent_id, set())
-        if id2 in grandparents:
-            return True
-
-    return False
+    return _is_ancestor_at_generation(id1, id2, 2, id_to_parents)
 
 
 def _is_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
     """Check if id2 is a grandchild of id1."""
-    # Get children of id1
-    children = id_to_children.get(id1, set())
-
-    # For each child, check if id2 is their child
-    for child_id in children:
-        grandchildren = id_to_children.get(child_id, set())
-        if id2 in grandchildren:
-            return True
-
-    return False
+    return _is_descendant_at_generation(id1, id2, 2, id_to_children)
 
 
-def _is_great_grandparent(
-    id1: str, id2: str, id_to_parents: dict[str, set[str]]
-) -> bool:
+def _is_great_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if id2 is a great-grandparent of id1."""
-    # Get parents of id1
-    parents = id_to_parents.get(id1, set())
-
-    # For each parent, check if id2 is their grandparent
-    for parent_id in parents:
-        grandparents = id_to_parents.get(parent_id, set())
-        for grandparent_id in grandparents:
-            great_grandparents = id_to_parents.get(grandparent_id, set())
-            if id2 in great_grandparents:
-                return True
-
-    return False
+    return _is_ancestor_at_generation(id1, id2, 3, id_to_parents)
 
 
-def _is_great_grandchild(
-    id1: str, id2: str, id_to_children: dict[str, set[str]]
-) -> bool:
+def _is_great_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
     """Check if id2 is a great-grandchild of id1."""
-    # Get children of id1
-    children = id_to_children.get(id1, set())
-
-    # For each child, check if id2 is their grandchild
-    for child_id in children:
-        grandchildren = id_to_children.get(child_id, set())
-        for grandchild_id in grandchildren:
-            great_grandchildren = id_to_children.get(grandchild_id, set())
-            if id2 in great_grandchildren:
-                return True
-
-    return False
+    return _is_descendant_at_generation(id1, id2, 3, id_to_children)
 
 
 # ==============================================
