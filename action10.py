@@ -1264,7 +1264,7 @@ def _calculate_relationship_path(
             logger.info(
                 f"(Error: Could not determine relationship path for {display_name})"
             )
-    else:
+    else:  # type: ignore[unreachable]
         logger.warning("Cannot calculate relationship path: Invalid IDs")
 
 

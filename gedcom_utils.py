@@ -722,7 +722,7 @@ def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: dict, id_to_
     """Validate inputs for bidirectional BFS search."""
     if start_id == end_id:
         return True
-    if id_to_parents is None or id_to_children is None:
+    if id_to_parents is None or id_to_children is None:  # type: ignore[unreachable]
         logger.error("[FastBiBFS] Relationship maps are None.")
         return False
     if not start_id or not end_id:
@@ -1008,7 +1008,7 @@ def explain_relationship_path(
     """
     if not path_ids or len(path_ids) < 2:
         return "(No relationship path explanation available)"
-    if id_to_parents is None or id_to_children is None or indi_index is None:
+    if id_to_parents is None or id_to_children is None or indi_index is None:  # type: ignore[unreachable]
         return "(Error: Data maps or index unavailable)"
 
     steps: list[str] = []
