@@ -533,7 +533,7 @@ def search_api_for_criteria(
                 treesui_results = call_treesui_list_api(
                     session_manager=session_manager,
                     owner_tree_id=tree_id,
-                    owner_profile_id=owner_profile_id,
+                    _owner_profile_id=owner_profile_id,
                     base_url=base_url,
                     search_criteria=search_params,
                 )
