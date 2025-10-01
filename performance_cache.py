@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
-from utils import ObjectPool
+from memory_utils import ObjectPool
 
 # === PERFORMANCE CACHE CLASSES ===
 

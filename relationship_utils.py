@@ -59,7 +59,7 @@ from typing import Any, Optional, Union
 from bs4 import BeautifulSoup, Tag
 
 # === PERFORMANCE OPTIMIZATIONS ===
-from utils import fast_json_loads
+from memory_utils import fast_json_loads
 
 BS4_AVAILABLE = True
 
