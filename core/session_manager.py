@@ -82,6 +82,8 @@ class SystemHealthError(Exception):
     pass
 
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
+from typing import Callable
+
 from cache_manager import (
     cached_session_component,
     get_session_cache_stats,
