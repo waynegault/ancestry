@@ -16,11 +16,11 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 from core.error_handling import (
-    retry_on_failure,
     circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
     error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
 
 logger = setup_module(globals(), __name__)
@@ -31,9 +31,8 @@ import os
 import re  # Added for robust lifespan splitting
 import sys
 from datetime import datetime
-
-from typing import Optional, List, Dict, Any, Tuple
-from urllib.parse import urlencode, quote
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote, urlencode
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -65,7 +64,7 @@ try:
                 raise TypeError(f"config_schema.{attr} missing.")
             api_config = getattr(config_schema, attr)
             if not hasattr(api_config, "base_url"):
-                raise TypeError(f"config_schema.api.base_url missing.")
+                raise TypeError("config_schema.api.base_url missing.")
         else:
             if not hasattr(config_schema, attr):
                 raise TypeError(f"config_schema.{attr} missing.")
@@ -86,7 +85,7 @@ try:
                 logger.warning(f"config_schema.{attr} is empty.")
 
     if not hasattr(config_schema.selenium, "api_timeout"):
-        raise TypeError(f"config_schema.selenium.api_timeout missing.")
+        raise TypeError("config_schema.selenium.api_timeout missing.")
 
 except ImportError as e:
     logger.critical(
@@ -120,7 +119,7 @@ _clean_display_date = None
 GEDCOM_UTILS_AVAILABLE = False
 GEDCOM_SCORING_AVAILABLE = False
 try:
-    from gedcom_utils import calculate_match_score, _parse_date, _clean_display_date
+    from gedcom_utils import _clean_display_date, _parse_date, calculate_match_score
 
     logger.debug("Successfully imported functions from gedcom_utils.")
     GEDCOM_SCORING_AVAILABLE = calculate_match_score is not None and callable(  # type: ignore
@@ -137,16 +136,16 @@ except ImportError as e:
 # --- Import API Utilities ---
 # Import specific API call helpers, parsers, AND the timeout helper
 from api_utils import (
+    call_discovery_relationship_api,
     call_facts_user_api,
     call_getladder_api,
-    call_discovery_relationship_api,
 )
 
 # Import relationship utilities
 from relationship_utils import (
-    format_api_relationship_path,
     convert_api_path_to_unified_format,
     convert_discovery_api_path_to_unified_format,
+    format_api_relationship_path,
     format_relationship_path_unified,
 )
 
@@ -462,7 +461,7 @@ def _run_simple_suggestion_scoring(
                 f"[Simple Scoring] Gender match SUCCESS. Awarded {gender_score_value} points to 'gender_match'."
             )
         else:
-            logger.debug(f"[Simple Scoring] Gender MISMATCH. No points awarded.")
+            logger.debug("[Simple Scoring] Gender MISMATCH. No points awarded.")
     elif search_gn is None:
         # No gender provided in search criteria - this is acceptable
         logger.debug("[Simple Scoring] No search gender provided. No points awarded.")
@@ -575,10 +574,10 @@ def _process_and_score_suggestions(
                 and scoring_func is not None
             ):
                 if gender_weight == 0:
-                    logger.warning(f"Gender weight ('gender_match') in config is 0.")
+                    logger.warning("Gender weight ('gender_match') in config is 0.")
                 # Debug logging for Fraser Gault scoring comparison
                 if "fraser" in candidate_data_dict.get("first_name", "").lower():
-                    logger.info(f"=== ACTION 11 FRASER GAULT SCORING DEBUG ===")
+                    logger.info("=== ACTION 11 FRASER GAULT SCORING DEBUG ===")
                     logger.info(f"Search criteria: {search_criteria}")
                     logger.info(f"Candidate data: {candidate_data_dict}")
                     logger.info(f"Scoring weights: {scoring_weights}")
@@ -598,7 +597,7 @@ def _process_and_score_suggestions(
                     logger.info(f"Score result: {score}")
                     logger.info(f"Field scores: {field_scores}")
                     logger.info(f"Reasons: {reasons}")
-                    logger.info(f"=== END ACTION 11 FRASER GAULT DEBUG ===")
+                    logger.info("=== END ACTION 11 FRASER GAULT DEBUG ===")
                 logger.debug(
                     f"Gedcom Score for {person_id}: {score}, Fields: {field_scores}"
                 )
@@ -609,23 +608,22 @@ def _process_and_score_suggestions(
                     )
                 else:
                     logger.debug("Gedcom Field Scores missing 'gender_match' key.")
-            else:  # Simple scoring
-                if scoring_func is not None:
-                    # Use the local simple scoring function that takes only 2 parameters
-                    score, field_scores, reasons = _run_simple_suggestion_scoring(
-                        search_criteria, candidate_data_dict
-                    )
+            elif scoring_func is not None:
+                # Use the local simple scoring function that takes only 2 parameters
+                score, field_scores, reasons = _run_simple_suggestion_scoring(
+                    search_criteria, candidate_data_dict
+                )
+                logger.debug(
+                    f"Simple Score for {person_id}: {score}, Fields: {field_scores}"
+                )
+                if "gender_match" in field_scores:
                     logger.debug(
-                        f"Simple Score for {person_id}: {score}, Fields: {field_scores}"
+                        f"Simple Field Score ('gender_match'): {field_scores['gender_match']}"
                     )
-                    if "gender_match" in field_scores:
-                        logger.debug(
-                            f"Simple Field Score ('gender_match'): {field_scores['gender_match']}"
-                        )
-                    else:
-                        logger.debug("Simple Field Scores missing 'gender_match' key.")
                 else:
-                    logger.error("Scoring function is None")
+                    logger.debug("Simple Field Scores missing 'gender_match' key.")
+            else:
+                logger.error("Scoring function is None")
         except Exception as score_err:
             logger.error(f"Error scoring {person_id}: {score_err}", exc_info=True)
             logger.warning("Falling back to simple scoring...")
@@ -1073,13 +1071,12 @@ def _call_direct_treesui_list_api(
                 data = response.json()
                 if isinstance(data, list):
                     return data
-                else:
-                    logger.error(
-                        f"API call OK but response not JSON list. Type: {type(data)}"
-                    )
-                    logger.debug(f"API Response Text: {response.text[:500]}")
-                    print("Error: API returned unexpected data format.")
-                    return None
+                logger.error(
+                    f"API call OK but response not JSON list. Type: {type(data)}"
+                )
+                logger.debug(f"API Response Text: {response.text[:500]}")
+                print("Error: API returned unexpected data format.")
+                return None
             except json.JSONDecodeError as json_err:
                 logger.error(f"Failed to parse JSON response (200 OK): {json_err}")
                 logger.debug(f"API Response Text: {response.text[:1000]}")
@@ -1099,7 +1096,7 @@ def _call_direct_treesui_list_api(
 
     except requests.exceptions.Timeout:
         logger.error(f"API call timed out after {api_timeout}s")
-        print(f"(Error: Timed out searching Ancestry API)")
+        print("(Error: Timed out searching Ancestry API)")
         return None
     except requests.exceptions.RequestException as req_err:
         logger.error(f"API call network/request issue: {req_err}", exc_info=True)
@@ -1203,8 +1200,7 @@ def _handle_search_phase(
             f"Processing only top {max_score_limit} of {len(parsed_results)} suggestions for scoring."
         )
         return parsed_results[:max_score_limit]
-    else:
-        return parsed_results
+    return parsed_results
 
 
 # End of _handle_search_phase
@@ -1527,7 +1523,7 @@ def _handle_details_phase(
             return None
     if not api_person_id or not api_tree_id:
         # Log error and display to user
-        logger.error(f"Cannot fetch details: Missing PersonId/TreeId.")
+        logger.error("Cannot fetch details: Missing PersonId/TreeId.")
         print("\nError: Missing IDs for detail fetch.")
         return None
     if not callable(call_facts_user_api):
@@ -1547,8 +1543,7 @@ def _handle_details_phase(
         logger.warning("Failed to retrieve detailed info.")
         print("\nWarning: Could not retrieve detailed info.")
         return None
-    else:
-        return person_research_data
+    return person_research_data
 
 
 # End of _handle_details_phase
@@ -1600,16 +1595,15 @@ def _handle_supplementary_info_phase(
             # Update the session manager with the owner name from config
             session_manager_local.tree_owner_name = owner_name
             logger.info(f"Using tree owner name from configuration: {owner_name}")
-        else:
-            # If not in config, try alternative config location
-            if owner_profile_id:
-                # Try to get from reference person name config (unused but kept for potential future use)
-                _alt_config_owner_name = getattr(
-                    config_schema, "reference_person_name", None
-                )
-                owner_name = config_owner_name if config_owner_name else "Tree Owner"
-                session_manager_local.tree_owner_name = owner_name
-                logger.info(f"Using tree owner name from config/default: {owner_name}")
+        # If not in config, try alternative config location
+        elif owner_profile_id:
+            # Try to get from reference person name config (unused but kept for potential future use)
+            _alt_config_owner_name = getattr(
+                config_schema, "reference_person_name", None
+            )
+            owner_name = config_owner_name if config_owner_name else "Tree Owner"
+            session_manager_local.tree_owner_name = owner_name
+            logger.info(f"Using tree owner name from config/default: {owner_name}")
 
     # --- Skip Family Details Section ---
     # Action 11 simplified to focus on search, scoring, and relationship calculation only
@@ -1977,7 +1971,7 @@ def _handle_supplementary_info_phase(
                         unified_path, selected_name, owner_name, None
                     )
                     logger.debug(
-                        f"Discovery API path formatted using unified formatter"
+                        "Discovery API path formatted using unified formatter"
                     )
                 else:
                     logger.warning(
@@ -2004,7 +1998,7 @@ def _handle_supplementary_info_phase(
                     path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
                     formatted_path = "\n".join(path_display_lines)
                     logger.debug(
-                        f"Discovery API path constructed using fallback formatter"
+                        "Discovery API path constructed using fallback formatter"
                     )
             except Exception as e:
                 logger.error(f"Error formatting Discovery API path: {e}", exc_info=True)
@@ -2206,8 +2200,7 @@ def handle_api_report(session_manager_param=None):
         logger.error(f"Browser session not available. Session manager: {session_manager}, Driver: {session_manager.driver}")
         print("\nERROR: Browser session not available.")
         return False
-    else:
-        logger.debug("Browser session is available and ready.")
+    logger.debug("Browser session is available and ready.")
 
     # Check login status
     login_stat = login_status(session_manager, disable_ui_fallback=True)
@@ -2279,7 +2272,7 @@ def handle_api_report(session_manager_param=None):
                     return False
 
                 # First check if we're already logged in
-                from utils import login_status, log_in
+                from utils import log_in, login_status
 
                 login_stat = login_status(session_manager, disable_ui_fallback=True)
                 if login_stat is True:
@@ -2691,8 +2684,7 @@ def run_action11(session_manager_param=None, *_):
     # Use the session_manager passed by the framework if available
     if session_manager_param:
         return handle_api_report(session_manager_param)
-    else:
-        return handle_api_report()
+    return handle_api_report()
 
 
 def load_test_person_from_env():

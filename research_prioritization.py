@@ -49,7 +49,7 @@ Phase: 12.3 - Intelligent Research Prioritization
 """
 
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 

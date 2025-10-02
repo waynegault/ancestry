@@ -14,9 +14,9 @@ criteria matching for genealogical research and family tree analysis.
 
 # === CORE INFRASTRUCTURE ===
 from core_imports import (
-    standardize_module_imports,
     auto_register_module,
     get_logger,
+    standardize_module_imports,
 )
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -27,16 +27,15 @@ auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
-
 # === LOCAL IMPORTS ===
 from api_utils import (
-    call_suggest_api,
     call_facts_user_api,
     call_getladder_api,
+    call_suggest_api,
     call_treesui_list_api,
 )
 from config import config_schema
@@ -1001,7 +1000,7 @@ def get_api_relationship_path(
         return relationship_path
     except Exception as e:
         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
-        return f"(Error formatting relationship path: {str(e)})"
+        return f"(Error formatting relationship path: {e!s})"
 
 
 def api_search_utils_module_tests() -> bool:

@@ -57,7 +57,6 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Any,
     Optional,
     Union,

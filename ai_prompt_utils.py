@@ -24,7 +24,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # --- Test framework imports ---
 # Imports removed - not used in this module
@@ -56,7 +56,7 @@ def load_prompts() -> Dict[str, Any]:
             logger.warning(f"AI prompts file not found at {PROMPTS_FILE}")
             return default_data
 
-        with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+        with open(PROMPTS_FILE, encoding="utf-8") as f:
             prompts_data = json.load(f)
 
             # Validate loaded data structure
@@ -229,7 +229,7 @@ def import_improved_prompts() -> Tuple[int, List[str]]:
             prompt_file = IMPROVED_PROMPTS_DIR / filename
             if prompt_file.exists():
                 try:
-                    with open(prompt_file, "r", encoding="utf-8") as f:
+                    with open(prompt_file, encoding="utf-8") as f:
                         improved_prompt = f.read().strip()
 
                     if improved_prompt and update_prompt(
@@ -334,7 +334,7 @@ def cleanup_old_backups(keep_count: int = 5, logs_dir: Optional[Path] = None) ->
     try:
         if logs_dir is None:
             logs_dir = PROMPTS_FILE.parent / "Logs"
-        backup_pattern = f"ai_prompts.bak.*"
+        backup_pattern = "ai_prompts.bak.*"
         backup_files = list(logs_dir.glob(backup_pattern))
 
         if len(backup_files) <= keep_count:
@@ -569,7 +569,7 @@ def quick_test() -> Dict[str, Any]:
 
     except Exception as e:
         results["failed"] += 1
-        results["errors"].append(f"Unexpected error: {str(e)}")
+        results["errors"].append(f"Unexpected error: {e!s}")
 
     results["total"] = results["passed"] + results["failed"]
     results["success_rate"] = (

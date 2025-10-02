@@ -3,38 +3,17 @@
 """
 Intelligent Inbox Processing & AI-Powered Message Classification
 
-Advanced message processing engine that transforms raw Ancestry inbox data into
-structured, actionable intelligence through AI-powered classification, sentiment
-analysis, and automated conversation management with comprehensive database
-synchronization and intelligent workflow orchestration.
+Processes Ancestry inbox messages with AI-powered classification, sentiment analysis,
+and automated conversation management. Synchronizes with database and provides
+comprehensive message lifecycle tracking.
 
-Core Intelligence:
-• AI-powered intent classification with confidence scoring
-• Automated sentiment analysis and engagement tracking
-• Intelligent conversation threading and relationship mapping
-• Dynamic priority scoring based on genealogical relevance
-• Automated response suggestion generation
-• Comprehensive message lifecycle management
-
-Processing Architecture:
-• Batch processing with intelligent pagination and memory optimization
-• Concurrent AI classification with adaptive rate limiting
-• Real-time progress tracking with ETA calculations
-• Exponential backoff for resilient API interactions
-• Circuit breaker patterns for fault tolerance
-• Comprehensive error recovery with graceful degradation
-
-Data Management:
-• Sophisticated database synchronization with conflict resolution
-• Conversation state management with historical tracking
-• Automated duplicate detection and message deduplication
-• Comprehensive audit trails for compliance and debugging
-• Intelligent caching for performance optimization
-
-Quality Assurance:
-Implements comprehensive validation, quality scoring, and monitoring to ensure
-reliable message processing and accurate classification results suitable for
-automated genealogical research workflows.
+Features:
+- AI-powered message classification (PRODUCTIVE, DESIST, OTHER)
+- Sentiment analysis and engagement tracking
+- Conversation threading and relationship mapping
+- Batch processing with pagination and rate limiting
+- Database synchronization with conflict resolution
+- Progress tracking and error recovery
 """
 
 # === CORE INFRASTRUCTURE ===
