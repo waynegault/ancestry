@@ -278,68 +278,118 @@ def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int,
         return None
 
 
-def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float) -> Optional[str]:
-    """Call Gemini AI model."""
+# Helper functions for _call_gemini_model
+
+def _validate_gemini_availability() -> bool:
+    """Validate Gemini library is available."""
     if not genai_available or genai is None or google_exceptions is None:
         logger.error("_call_ai_model: Google GenerativeAI library not available for Gemini.")
-        return None
+        return False
 
+    if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
+        logger.error("_call_ai_model: Gemini library missing expected interfaces.")
+        return False
+
+    return True
+
+
+def _get_gemini_config() -> tuple[Optional[str], Optional[str]]:
+    """Get Gemini API key and model name from config."""
     api_key = getattr(config_schema.api, "google_api_key", None)
     model_name = getattr(config_schema.api, "google_ai_model", None)
 
     if not api_key or not model_name:
         logger.error("_call_ai_model: Gemini configuration incomplete.")
-        return None
+        return None, None
 
-    if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
-        logger.error("_call_ai_model: Gemini library missing expected interfaces.")
-        return None
+    return api_key, model_name
 
+
+def _initialize_gemini_model(api_key: str, model_name: str) -> Optional[Any]:
+    """Initialize Gemini model."""
     try:
         genai.configure(api_key=api_key)  # type: ignore[attr-defined]
-        model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+        return genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
     except Exception as e:
         logger.error(f"_call_ai_model: Failed initializing Gemini model: {e}")
         return None
 
-    full_prompt = f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
 
-    generation_config = None
-    if hasattr(genai, "GenerationConfig"):
-        try:
-            generation_config = genai.GenerationConfig(  # type: ignore[attr-defined]
-                candidate_count=1,
-                max_output_tokens=max_tokens,
-                temperature=temperature,
-            )
-        except Exception:
-            generation_config = None
+def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Optional[Any]:
+    """Create Gemini generation config."""
+    if not hasattr(genai, "GenerationConfig"):
+        return None
 
-    response = None
-    if hasattr(model, "generate_content"):
-        try:
-            response = model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
-        except Exception as e:
-            logger.error(f"Gemini generation failed: {e}")
-            response = None
+    try:
+        return genai.GenerationConfig(  # type: ignore[attr-defined]
+            candidate_count=1,
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        )
+    except Exception:
+        return None
 
+
+def _generate_gemini_content(model: Any, full_prompt: str, generation_config: Optional[Any]) -> Optional[Any]:
+    """Generate content using Gemini model."""
+    if not hasattr(model, "generate_content"):
+        return None
+
+    try:
+        return model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
+    except Exception as e:
+        logger.error(f"Gemini generation failed: {e}")
+        return None
+
+
+def _extract_gemini_response_text(response: Optional[Any]) -> Optional[str]:
+    """Extract text from Gemini response."""
     if response is not None and getattr(response, "text", None):
         return getattr(response, "text", "").strip()
-    else:
-        block_reason_msg = "Unknown"
-        try:
-            if response is not None and hasattr(response, "prompt_feedback"):
-                pf = getattr(response, "prompt_feedback", None)
-                if pf and hasattr(pf, "block_reason"):
-                    br = getattr(pf, "block_reason", None)
-                    if hasattr(br, "name"):
-                        block_reason_msg = getattr(br, "name", "Unknown")
-                    elif br is not None:
-                        block_reason_msg = str(br)
-        except Exception:
-            pass
-        logger.error(f"Gemini returned an empty or blocked response. Reason: {block_reason_msg}")
+
+    # Log block reason if response was blocked
+    block_reason_msg = "Unknown"
+    try:
+        if response is not None and hasattr(response, "prompt_feedback"):
+            pf = getattr(response, "prompt_feedback", None)
+            if pf and hasattr(pf, "block_reason"):
+                br = getattr(pf, "block_reason", None)
+                if hasattr(br, "name"):
+                    block_reason_msg = getattr(br, "name", "Unknown")
+                elif br is not None:
+                    block_reason_msg = str(br)
+    except Exception:
+        pass
+
+    logger.error(f"Gemini returned an empty or blocked response. Reason: {block_reason_msg}")
+    return None
+
+
+def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float) -> Optional[str]:
+    """Call Gemini AI model."""
+    # Validate Gemini availability
+    if not _validate_gemini_availability():
         return None
+
+    # Get configuration
+    api_key, model_name = _get_gemini_config()
+    if not api_key or not model_name:
+        return None
+
+    # Initialize model
+    model = _initialize_gemini_model(api_key, model_name)
+    if not model:
+        return None
+
+    # Prepare prompt and config
+    full_prompt = f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
+    generation_config = _create_gemini_generation_config(max_tokens, temperature)
+
+    # Generate content
+    response = _generate_gemini_content(model, full_prompt, generation_config)
+
+    # Extract and return response text
+    return _extract_gemini_response_text(response)
 
 
 def _handle_rate_limit_error(session_manager: SessionManager) -> None:
