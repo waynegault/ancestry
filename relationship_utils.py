@@ -483,6 +483,180 @@ def explain_relationship_path(
     )
 
 
+# Helper functions for format_api_relationship_path
+
+def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tuple[Optional[str], Optional[dict]]:
+    """Extract HTML content and JSON data from API response."""
+    html_content_raw: Optional[str] = None
+    json_data: Optional[dict] = None
+
+    if isinstance(api_response_data, str):
+        # Handle JSONP response format: no({...})
+        jsonp_match = re.search(r"no\((.*)\)", api_response_data, re.DOTALL)
+        if jsonp_match:
+            try:
+                json_str = jsonp_match.group(1)
+                json_data = fast_json_loads(json_str)
+                html_content_raw = json_data.get("html") if json_data is not None else None
+            except Exception as e:
+                logger.error(f"Error parsing JSONP response: {e}", exc_info=True)
+                return None, None
+        else:
+            # Direct HTML response
+            html_content_raw = api_response_data
+    elif isinstance(api_response_data, dict):
+        # Handle direct JSON/dict response
+        json_data = api_response_data
+        html_content_raw = json_data.get("html") if json_data is not None else None
+
+    return html_content_raw, json_data
+
+
+def _format_discovery_api_path(json_data: dict, target_name: str, owner_name: str) -> Optional[str]:
+    """Format relationship path from Discovery API JSON format."""
+    if not json_data or "path" not in json_data:
+        return None
+
+    discovery_path = json_data["path"]
+    if not isinstance(discovery_path, list) or not discovery_path:
+        return None
+
+    logger.info("Formatting relationship path from Discovery API JSON.")
+    path_steps_json = [f"*   {format_name(target_name)}"]
+
+    for step in discovery_path:
+        step_name = format_name(step.get("name", "?"))
+        step_rel = step.get("relationship", "?")
+        step_rel_display = _get_relationship_term(None, step_rel).capitalize()
+        path_steps_json.append(f"    -> is {step_rel_display} of")
+        path_steps_json.append(f"*   {step_name}")
+
+    path_steps_json.append("    -> leads to")
+    path_steps_json.append(f"*   {owner_name} (You)")
+
+    return "\n".join(path_steps_json)
+
+
+def _try_simple_text_relationship(html_content_raw: str, target_name: str, owner_name: str) -> Optional[str]:
+    """Try to extract relationship from simple text format."""
+    if not html_content_raw or html_content_raw.strip().startswith("<"):
+        return None
+
+    text = html_content_raw.strip()
+    relationship_patterns = [
+        r"is the (father|mother|son|daughter|brother|sister|husband|wife|parent|child|sibling|spouse) of",
+        r"(father|mother|son|daughter|brother|sister|husband|wife|parent|child|sibling|spouse)",
+    ]
+
+    for pattern in relationship_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            relationship = match.group(1).lower()
+            return f"{target_name} is the {relationship} of {owner_name}"
+
+    # If no pattern found but contains relationship terms, return original text
+    relationship_terms = [
+        "father", "mother", "son", "daughter", "brother", "sister",
+        "husband", "wife", "parent", "child", "sibling", "spouse"
+    ]
+    if any(rel in text.lower() for rel in relationship_terms):
+        return text
+
+    return None
+
+
+def _extract_person_from_list_item(item) -> dict[str, str]:
+    """Extract name, relationship, and lifespan from a list item."""
+    # Skip icon items - check if item is a Tag first
+    try:
+        if not isinstance(item, Tag):
+            return {}
+
+        is_hidden = item.get("aria-hidden") == "true"
+        item_classes = item.get("class") or []
+        has_icon_class = isinstance(item_classes, list) and "icon" in item_classes
+
+        if is_hidden or has_icon_class:
+            return {}
+    except (AttributeError, TypeError):
+        logger.debug(f"Error checking item attributes: {type(item)}")
+        return {}
+
+    # Extract name
+    try:
+        name_elem = item.find("b") if isinstance(item, Tag) else None
+        name = (
+            name_elem.get_text(strip=True)
+            if name_elem and hasattr(name_elem, "get_text")
+            else (
+                str(item.string).strip()
+                if hasattr(item, "string") and item.string
+                else "Unknown"
+            )
+        )
+    except (AttributeError, TypeError):
+        name = "Unknown"
+        logger.debug(f"Error extracting name: {type(item)}")
+
+    # Extract relationship description
+    try:
+        rel_elem = item.find("i") if isinstance(item, Tag) else None
+        relationship_desc = (
+            rel_elem.get_text(strip=True)
+            if rel_elem and hasattr(rel_elem, "get_text")
+            else ""
+        )
+    except (AttributeError, TypeError):
+        relationship_desc = ""
+        logger.debug(f"Error extracting relationship: {type(item)}")
+
+    # Extract lifespan
+    try:
+        text_content = (
+            item.get_text(strip=True)
+            if hasattr(item, "get_text")
+            else str(item)
+        )
+        lifespan_match = re.search(r"(\d{4})-(\d{4}|\bLiving\b|-)", text_content, re.IGNORECASE)
+        lifespan = lifespan_match.group(0) if lifespan_match else ""
+    except (AttributeError, TypeError):
+        lifespan = ""
+        logger.debug(f"Error extracting lifespan: {type(item)}")
+
+    return {"name": name, "relationship": relationship_desc, "lifespan": lifespan}
+
+
+def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]:
+    """Parse relationship data from HTML content using BeautifulSoup."""
+    if not BS4_AVAILABLE or BeautifulSoup is None:
+        logger.error("BeautifulSoup is not available. Cannot parse HTML.")
+        return []
+
+    # Decode HTML entities
+    html_content_decoded = html.unescape(html_content_raw) if html_content_raw else ""
+
+    try:
+        soup = BeautifulSoup(html_content_decoded, "html.parser")
+        list_items = soup.find_all("li")
+
+        if not list_items or len(list_items) < 2:
+            logger.warning(f"Not enough list items found in HTML: {len(list_items) if list_items else 0}")
+            return []
+
+        # Extract relationship information from each list item
+        relationship_data = []
+        for item in list_items:
+            person_data = _extract_person_from_list_item(item)
+            if person_data:  # Only add if we got valid data
+                relationship_data.append(person_data)
+
+        return relationship_data
+
+    except Exception as e:
+        logger.error(f"Error parsing relationship HTML: {e}", exc_info=True)
+        return []
+
+
 def format_api_relationship_path(
     api_response_data: Union[str, dict, None],
     owner_name: str,
@@ -503,206 +677,53 @@ def format_api_relationship_path(
     - Person 2's relationship is Person 3 (birth-death)
     ...
     """
+    # Validate input
     if not api_response_data:
-        logger.warning(
-            "format_api_relationship_path: Received empty API response data."
-        )
+        logger.warning("format_api_relationship_path: Received empty API response data.")
         return "(No relationship data received from API)"
 
-    html_content_raw: Optional[str] = None
-    json_data: Optional[dict] = None
+    # Extract HTML and JSON from response
+    html_content_raw, json_data = _extract_html_from_response(api_response_data)
 
-    # Extract HTML content from API response
-    if isinstance(api_response_data, str):
-        # Handle JSONP response format: no({...})
-        jsonp_match = re.search(
-            r"no\((.*)\)", api_response_data, re.DOTALL
-        )  # Added re.DOTALL
-        if jsonp_match:
-            try:
-                json_str = jsonp_match.group(1)
-                json_data = fast_json_loads(json_str)
-                html_content_raw = (
-                    json_data.get("html") if json_data is not None else None
-                )
-            except Exception as e:
-                logger.error(f"Error parsing JSONP response: {e}", exc_info=True)
-                return f"(Error parsing JSONP response: {e})"
-        else:
-            # Direct HTML response
-            html_content_raw = api_response_data
-    elif isinstance(api_response_data, dict):
-        # Handle direct JSON/dict response
-        json_data = api_response_data
-        html_content_raw = json_data.get("html") if json_data is not None else None
+    if html_content_raw is None and json_data is None:
+        return "(Error parsing API response)"
 
-    # Handle Discovery API JSON format
-    if json_data and "path" in json_data:
-        path_steps_json = []
-        discovery_path = json_data["path"]
-        if isinstance(discovery_path, list) and discovery_path:
-            logger.info("Formatting relationship path from Discovery API JSON.")
-            path_steps_json.append(f"*   {format_name(target_name)}")
-            for step in discovery_path:
-                step_name = format_name(step.get("name", "?"))
-                step_rel = step.get("relationship", "?")
-                step_rel_display = _get_relationship_term(None, step_rel).capitalize()
-                path_steps_json.append(f"    -> is {step_rel_display} of")
-                path_steps_json.append(f"*   {step_name}")
-            path_steps_json.append("    -> leads to")
-            path_steps_json.append(f"*   {owner_name} (You)")
-            return "\n".join(path_steps_json)
+    # Try Discovery API JSON format first
+    if json_data:
+        discovery_result = _format_discovery_api_path(json_data, target_name, owner_name)
+        if discovery_result:
+            return discovery_result
 
-    # Process HTML content if available
+    # Check if we have HTML content
     if not html_content_raw:
         logger.warning("No HTML content found in API response.")
         return "(No relationship HTML content found in API response)"
 
-    # Check if this is a simple text relationship description before trying HTML parsing
-    if html_content_raw and not html_content_raw.strip().startswith("<"):
-        # Simple text processing for strings like "John Doe is the father of Jane Doe"
-        text = html_content_raw.strip()
-        # Look for relationship patterns
-        relationship_patterns = [
-            r"is the (father|mother|son|daughter|brother|sister|husband|wife|parent|child|sibling|spouse) of",
-            r"(father|mother|son|daughter|brother|sister|husband|wife|parent|child|sibling|spouse)",
-        ]
+    # Try simple text relationship format
+    simple_text_result = _try_simple_text_relationship(html_content_raw, target_name, owner_name)
+    if simple_text_result:
+        return simple_text_result
 
-        for pattern in relationship_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                relationship = match.group(1).lower()
-                return f"{target_name} is the {relationship} of {owner_name}"
-
-        # If no pattern found, return the original text
-        if any(
-            rel in text.lower()
-            for rel in [
-                "father",
-                "mother",
-                "son",
-                "daughter",
-                "brother",
-                "sister",
-                "husband",
-                "wife",
-                "parent",
-                "child",
-                "sibling",
-                "spouse",
-            ]
-        ):
-            return text
-
+    # Check BeautifulSoup availability
     if not BS4_AVAILABLE:
         logger.error("BeautifulSoup is not available. Cannot parse HTML.")
         return "(BeautifulSoup is not available. Cannot parse relationship HTML.)"
 
-    # Decode HTML entities
-    html_content_decoded = html.unescape(html_content_raw) if html_content_raw else ""
+    # Parse HTML relationship data
+    relationship_data = _parse_html_relationship_data(html_content_raw)
 
-    # Parse HTML with BeautifulSoup
-    try:
-        if not BS4_AVAILABLE or BeautifulSoup is None:
-            logger.error("BeautifulSoup is not available. Cannot parse HTML.")
-            return "(BeautifulSoup is not available. Cannot parse relationship HTML.)"
-        soup = BeautifulSoup(html_content_decoded, "html.parser")
-
-        # Find all list items
-        list_items = soup.find_all("li")
-        if not list_items or len(list_items) < 2:
-            logger.warning(
-                f"Not enough list items found in HTML: {len(list_items) if list_items else 0}"
-            )
-            return "(Relationship HTML structure not recognized)"
-
-        # Extract relationship information
-        relationship_data = []
-        for item in list_items:
-            # Skip icon items - check if item is a Tag first
-            try:
-                if not isinstance(item, Tag):
-                    continue  # Skip non-Tag elements
-
-                is_hidden = item.get("aria-hidden") == "true"
-                item_classes = item.get("class")
-                if item_classes is None:
-                    item_classes = []
-                has_icon_class = (
-                    isinstance(item_classes, list) and "icon" in item_classes
-                )
-                if is_hidden or has_icon_class:
-                    continue
-            except (AttributeError, TypeError):
-                logger.debug(f"Error checking item attributes: {type(item)}")
-                continue
-
-            # Extract name, relationship, and lifespan
-            try:
-                name_elem = item.find("b") if isinstance(item, Tag) else None
-                name = (
-                    name_elem.get_text(strip=True)  # Added strip=True
-                    if name_elem and hasattr(name_elem, "get_text")
-                    else (
-                        str(item.string).strip()
-                        if hasattr(item, "string") and item.string
-                        else "Unknown"
-                    )  # Added strip and check for item.string
-                )
-            except (AttributeError, TypeError):
-                name = "Unknown"
-                logger.debug(f"Error extracting name: {type(item)}")
-
-            # Extract relationship description
-            try:
-                rel_elem = item.find("i") if isinstance(item, Tag) else None
-                relationship_desc = (  # Renamed to avoid conflict
-                    rel_elem.get_text(strip=True)  # Added strip=True
-                    if rel_elem and hasattr(rel_elem, "get_text")
-                    else ""
-                )
-            except (AttributeError, TypeError):
-                relationship_desc = ""
-                logger.debug(f"Error extracting relationship: {type(item)}")
-
-            # Extract lifespan
-            try:
-                text_content = (
-                    item.get_text(strip=True)
-                    if hasattr(item, "get_text")
-                    else str(item)
-                )  # Added strip=True
-                lifespan_match = re.search(
-                    r"(\d{4})-(\d{4}|\bLiving\b|-)", text_content, re.IGNORECASE
-                )  # Allow "Living"
-                lifespan = lifespan_match.group(0) if lifespan_match else ""
-            except (AttributeError, TypeError):
-                lifespan = ""
-                logger.debug(f"Error extracting lifespan: {type(item)}")
-
-            relationship_data.append(
-                {"name": name, "relationship": relationship_desc, "lifespan": lifespan}
-            )
-
-        # Convert API relationship data to unified format and format it
-        if relationship_data:
-            # Convert the API data to the unified format
-            unified_path = convert_api_path_to_unified_format(
-                relationship_data, target_name
-            )
-
-            if not unified_path:
-                return "(Error: Could not convert relationship data to unified format)"
-
-            # Format the path using the unified formatter
-            return format_relationship_path_unified(
-                unified_path, target_name, owner_name, relationship_type
-            )
+    if not relationship_data:
         return "(Could not extract relationship data from HTML)"
 
-    except Exception as e:
-        logger.error(f"Error parsing relationship HTML: {e}", exc_info=True)
-        return f"(Error parsing relationship HTML: {e})"
+    # Convert to unified format and format the path
+    unified_path = convert_api_path_to_unified_format(relationship_data, target_name)
+
+    if not unified_path:
+        return "(Error: Could not convert relationship data to unified format)"
+
+    return format_relationship_path_unified(
+        unified_path, target_name, owner_name, relationship_type
+    )
 
 
 def convert_gedcom_path_to_unified_format(
