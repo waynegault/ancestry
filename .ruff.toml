@@ -21,13 +21,19 @@ select = [
 
 # Project-wide intentional patterns:
 # - E402: imports after module setup (setup_module) by design
+# - F401: unused imports (re-exports in utils.py and other modules)
 # - F403/F405: controlled star imports for CSS selectors/constants
 # - PLR0913: many arguments in config classes by design
 # - PLR0915: many statements in main functions by design
+# - PLR2004: magic value comparisons (intentional for readability)
+# - PLC0415: imports outside top-level (architectural decision)
+# - UP006: non-PEP585 annotations (Python 3.9 compatibility)
+# - UP007: Union syntax (Python 3.9 compatibility)
 ignore = [
-    "E501", "E402", "F403", "F405",
-    "PLR0913", "PLR0915", "PLR0912",
+    "E501", "E402", "F401", "F403", "F405",
+    "PLR0913", "PLR0915", "PLR0912", "PLR2004", "PLC0415",
     "N806",  # variable names in functions (for compatibility)
+    "UP006", # non-PEP585 annotations (Python 3.9 compatibility)
     "UP007", # Union syntax (for Python 3.9 compatibility)
 ]
 

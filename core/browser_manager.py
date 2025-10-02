@@ -8,8 +8,8 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,27 +21,12 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
 import os
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -53,10 +38,10 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from chromedriver import init_webdvr
+
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
-from chromedriver import init_webdvr
-from selenium_utils import export_cookies
 from utils import nav_to_page
 
 # === MODULE CONFIGURATION ===
@@ -289,9 +274,8 @@ class BrowserManager:
                 self.driver.switch_to.window(new_handle)
                 logger.debug(f"Created and switched to new tab: {new_handle}")
                 return new_handle
-            else:
-                logger.error("Failed to find new tab handle")
-                return None
+            logger.error("Failed to find new tab handle")
+            return None
 
         except Exception as e:
             logger.error(f"Error creating new tab: {e}", exc_info=True)
@@ -302,8 +286,8 @@ class BrowserManager:
 def _test_browser_manager_initialization():
     manager = BrowserManager()
     assert manager is not None, "BrowserManager should initialize"
-    assert manager.driver_live == False, "Should start with driver_live=False"
-    assert manager.browser_needed == False, "Should start with browser_needed=False"
+    assert not manager.driver_live, "Should start with driver_live=False"
+    assert not manager.browser_needed, "Should start with browser_needed=False"
     assert manager.driver is None, "Should start with driver=None"
     assert (
         manager.session_start_time is None
@@ -331,7 +315,7 @@ def _test_method_availability():
 def _test_session_validation_no_driver():
     manager = BrowserManager()
     result = manager.is_session_valid()
-    assert result == False, "Should return False when no driver exists"
+    assert not result, "Should return False when no driver exists"
     return True
 
 
@@ -339,14 +323,14 @@ def _test_ensure_driver_not_needed():
     manager = BrowserManager()
     manager.browser_needed = False
     result = manager.ensure_driver_live("test_action")
-    assert result == True, "Should return True when browser not needed"
+    assert result, "Should return True when browser not needed"
     return True
 
 
 def _test_cookie_check_invalid_session():
     manager = BrowserManager()
     result = manager.get_cookies(["test_cookie"])
-    assert result == False, "Should return False for invalid session"
+    assert not result, "Should return False for invalid session"
     return True
 
 
@@ -354,16 +338,16 @@ def _test_close_browser_no_driver():
     manager = BrowserManager()
     manager.close_browser()
     assert manager.driver is None, "Driver should remain None"
-    assert manager.driver_live == False, "driver_live should be False"
+    assert not manager.driver_live, "driver_live should be False"
     return True
 
 
 def _test_state_management():
     manager = BrowserManager()
     manager.browser_needed = True
-    assert manager.browser_needed == True, "browser_needed should be modifiable"
+    assert manager.browser_needed, "browser_needed should be modifiable"
     manager.close_browser()
-    assert manager.browser_needed == False, "close_browser should reset browser_needed"
+    assert not manager.browser_needed, "close_browser should reset browser_needed"
     return True
 
 
@@ -378,7 +362,7 @@ def _test_initialization_performance():
 
     start_time = time.time()
     for _ in range(100):
-        manager = BrowserManager()
+        _ = BrowserManager()
     end_time = time.time()
     total_time = end_time - start_time
     assert (

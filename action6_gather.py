@@ -19,21 +19,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    # graceful_degradation,  # Not used
-    error_context,
-    # AncestryException,  # Not used
-    # RetryableError,  # Not used
-    # NetworkTimeoutError,  # Not used
-    # DatabaseConnectionError,  # Not used
-    BrowserSessionError,
-    AuthenticationExpiredError,
-    # ErrorContext,  # Not used
-)
-
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import logging
@@ -44,8 +29,8 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
-from urllib.parse import urljoin, urlparse, urlencode, unquote
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Tuple
+from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
 import cloudscraper
@@ -63,12 +48,28 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Ses
 from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
+from core.error_handling import (
+    AuthenticationExpiredError,
+    # ErrorContext,  # Not used
+    # AncestryException,  # Not used
+    # RetryableError,  # Not used
+    # NetworkTimeoutError,  # Not used
+    # DatabaseConnectionError,  # Not used
+    BrowserSessionError,
+    circuit_breaker,
+    # graceful_degradation,  # Not used
+    error_context,
+    retry_on_failure,
+    timeout_protection,
+)
+
 # === LOCAL IMPORTS ===
 if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
+from core.session_manager import SessionManager
 from database import (
     DnaMatch,
     FamilyTree,
@@ -78,14 +79,14 @@ from database import (
 )
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
-from core.session_manager import SessionManager
 from utils import (
     _api_req,  # API request helper
     format_name,  # Name formatting utility
+    nav_to_page,  # Navigation helper
     ordinal_case,  # Ordinal case formatting
     retry_api,  # API retry decorator
-    nav_to_page,  # Navigation helper
 )
+
 # from test_framework import (
 #     # TestSuite,  # Not used in main code
 #     # suppress_logging,  # Not used in main code
@@ -659,7 +660,7 @@ def _lookup_existing_persons(
             # Eager load related tables to avoid N+1 queries later
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
             # Filter by the list of uppercase UUIDs and exclude soft-deleted records
-            .filter(Person.uuid.in_(uuids_upper), Person.deleted_at == None).all()  # type: ignore
+            .filter(Person.uuid.in_(uuids_upper), Person.deleted_at.is_(None)).all()  # type: ignore
         )
         # Step 4: Populate the result map (key by UUID)
         existing_persons_map: Dict[str, Person] = {
@@ -682,13 +683,12 @@ def _lookup_existing_persons(
             raise ValueError(
                 "Database enum mismatch detected during person lookup."
             ) from db_lookup_err
-        else:
-            # Log other SQLAlchemy errors and re-raise
-            logger.error(
-                f"Database lookup failed during prefetch: {db_lookup_err}",
-                exc_info=True,
-            )
-            raise  # Re-raise to be handled by the caller (_do_batch)
+        # Log other SQLAlchemy errors and re-raise
+        logger.error(
+            f"Database lookup failed during prefetch: {db_lookup_err}",
+            exc_info=True,
+        )
+        raise  # Re-raise to be handled by the caller (_do_batch)
     except Exception as e:
         # Catch any other unexpected errors
         logger.error(f"Unexpected error during Person lookup: {e}", exc_info=True)
@@ -1116,7 +1116,7 @@ def _prepare_bulk_db_data(
             # Step 2a: Basic validation
             if not uuid_val:
                 logger.error(
-                    f"Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping."
+                    "Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping."
                 )
                 status_for_this_match = "error"
                 error_msg_for_this_match = "Missing UUID"
@@ -1450,9 +1450,7 @@ def _execute_bulk_db_operations(
                     .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
                     .all()
                 )
-                existing_dna_matches_map = {
-                    pid: match_id for pid, match_id in existing_matches
-                }
+                existing_dna_matches_map = dict(existing_matches)
                 logger.debug(
                     f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
                 )
@@ -1970,113 +1968,112 @@ def _prepare_person_operation_data(
             person_op_dict,
             False,
         )  # False for person_fields_changed as it's a new person
-    else:
-        person_data_for_update: Dict[str, Any] = {
-            "_operation": "update",
-            "_existing_person_id": existing_person.id,
-            "uuid": match_uuid.upper(),  # Keep UUID for identification
-        }
-        person_fields_changed = False
-        for key, new_value in incoming_person_data.items():
-            if key == "uuid":  # UUID should not be changed for existing records
-                continue
-            current_value = getattr(existing_person, key, None)
-            value_changed = False
-            value_to_set = new_value  # Default to new_value
+    person_data_for_update: Dict[str, Any] = {
+        "_operation": "update",
+        "_existing_person_id": existing_person.id,
+        "uuid": match_uuid.upper(),  # Keep UUID for identification
+    }
+    person_fields_changed = False
+    for key, new_value in incoming_person_data.items():
+        if key == "uuid":  # UUID should not be changed for existing records
+            continue
+        current_value = getattr(existing_person, key, None)
+        value_changed = False
+        value_to_set = new_value  # Default to new_value
 
-            # Specific comparisons and transformations
-            if key == "last_logged_in":
-                # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
-                current_dt_utc = (
-                    current_value.astimezone(timezone.utc).replace(microsecond=0)
-                    if isinstance(current_value, datetime) and current_value.tzinfo
-                    else (
-                        current_value.replace(tzinfo=timezone.utc, microsecond=0)
-                        if isinstance(current_value, datetime)
-                        else None
-                    )
+        # Specific comparisons and transformations
+        if key == "last_logged_in":
+            # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
+            current_dt_utc = (
+                current_value.astimezone(timezone.utc).replace(microsecond=0)
+                if isinstance(current_value, datetime) and current_value.tzinfo
+                else (
+                    current_value.replace(tzinfo=timezone.utc, microsecond=0)
+                    if isinstance(current_value, datetime)
+                    else None
                 )
-                new_dt_utc = (
-                    new_value.astimezone(timezone.utc).replace(microsecond=0)
-                    if isinstance(new_value, datetime) and new_value.tzinfo
-                    else (
-                        new_value.replace(tzinfo=timezone.utc, microsecond=0)
-                        if isinstance(new_value, datetime)
-                        else None
-                    )
+            )
+            new_dt_utc = (
+                new_value.astimezone(timezone.utc).replace(microsecond=0)
+                if isinstance(new_value, datetime) and new_value.tzinfo
+                else (
+                    new_value.replace(tzinfo=timezone.utc, microsecond=0)
+                    if isinstance(new_value, datetime)
+                    else None
                 )
-                if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
-                    value_changed = True
-                    # value_to_set is already new_value (potentially a datetime obj)
-            elif key == "status":
-                # Ensure comparison is between Enum types or their values
-                current_enum_val = (
-                    current_value.value
-                    if isinstance(current_value, PersonStatusEnum)
-                    else current_value
-                )
-                new_enum_val = (
-                    new_value.value
-                    if isinstance(new_value, PersonStatusEnum)
-                    else new_value
-                )
-                if new_enum_val != current_enum_val:
-                    value_changed = True
-                    value_to_set = new_value  # Store the Enum object
-            elif key == "birth_year":  # Update only if new is valid and current is None
-                if new_value is not None and current_value is None:
-                    try:
-                        value_to_set_int = int(new_value)
-                        value_changed = True
-                        value_to_set = value_to_set_int
-                    except (ValueError, TypeError):
-                        logger_instance.warning(
-                            f"Invalid birth_year '{new_value}' for update {log_ref_short}"
-                        )
-                        continue  # Skip this field
-                # No change if new_value is None or current_value exists
-            elif (
-                key == "gender"
-            ):  # Update only if new is valid ('f'/'m') and current is None
-                if (
-                    new_value is not None
-                    and current_value is None
-                    and isinstance(new_value, str)
-                    and new_value.lower() in ("f", "m")
-                ):
-                    value_to_set = new_value.lower()
-                    value_changed = True
-            elif key in ("profile_id", "administrator_profile_id"):
-                # Ensure comparison of uppercase strings, handle None
-                current_str_upper = (
-                    str(current_value).upper() if current_value is not None else None
-                )
-                new_str_upper = (
-                    str(new_value).upper() if new_value is not None else None
-                )
-                if new_str_upper != current_str_upper:
-                    value_changed = True
-                    value_to_set = new_str_upper  # Store uppercase
-            elif isinstance(current_value, bool) or isinstance(
-                new_value, bool
-            ):  # For boolean fields
-                if bool(current_value) != bool(new_value):
-                    value_changed = True
-                    value_to_set = bool(new_value)
-            # General comparison for other fields
-            elif current_value != new_value:
+            )
+            if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
                 value_changed = True
+                # value_to_set is already new_value (potentially a datetime obj)
+        elif key == "status":
+            # Ensure comparison is between Enum types or their values
+            current_enum_val = (
+                current_value.value
+                if isinstance(current_value, PersonStatusEnum)
+                else current_value
+            )
+            new_enum_val = (
+                new_value.value
+                if isinstance(new_value, PersonStatusEnum)
+                else new_value
+            )
+            if new_enum_val != current_enum_val:
+                value_changed = True
+                value_to_set = new_value  # Store the Enum object
+        elif key == "birth_year":  # Update only if new is valid and current is None
+            if new_value is not None and current_value is None:
+                try:
+                    value_to_set_int = int(new_value)
+                    value_changed = True
+                    value_to_set = value_to_set_int
+                except (ValueError, TypeError):
+                    logger_instance.warning(
+                        f"Invalid birth_year '{new_value}' for update {log_ref_short}"
+                    )
+                    continue  # Skip this field
+            # No change if new_value is None or current_value exists
+        elif (
+            key == "gender"
+        ):  # Update only if new is valid ('f'/'m') and current is None
+            if (
+                new_value is not None
+                and current_value is None
+                and isinstance(new_value, str)
+                and new_value.lower() in ("f", "m")
+            ):
+                value_to_set = new_value.lower()
+                value_changed = True
+        elif key in ("profile_id", "administrator_profile_id"):
+            # Ensure comparison of uppercase strings, handle None
+            current_str_upper = (
+                str(current_value).upper() if current_value is not None else None
+            )
+            new_str_upper = (
+                str(new_value).upper() if new_value is not None else None
+            )
+            if new_str_upper != current_str_upper:
+                value_changed = True
+                value_to_set = new_str_upper  # Store uppercase
+        elif isinstance(current_value, bool) or isinstance(
+            new_value, bool
+        ):  # For boolean fields
+            if bool(current_value) != bool(new_value):
+                value_changed = True
+                value_to_set = bool(new_value)
+        # General comparison for other fields
+        elif current_value != new_value:
+            value_changed = True
 
-            if value_changed:
-                person_data_for_update[key] = value_to_set
-                person_fields_changed = True
-                logger_instance.debug(
-                    f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
-                )
+        if value_changed:
+            person_data_for_update[key] = value_to_set
+            person_fields_changed = True
+            logger_instance.debug(
+                f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
+            )
 
-        return (
-            person_data_for_update if person_fields_changed else None
-        ), person_fields_changed
+    return (
+        person_data_for_update if person_fields_changed else None
+    ), person_fields_changed
 
 
 # End of _prepare_person_operation_data
@@ -2345,11 +2342,10 @@ def _prepare_family_tree_operation_data(
                 or k in ["_operation", "_existing_tree_id", "uuid"]  # Keep uuid
             }
             return incoming_tree_data, tree_operation
-        else:
-            logger_instance.warning(
-                f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
-            )
-            tree_operation = "none"
+        logger_instance.warning(
+            f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
+        )
+        tree_operation = "none"
 
     return None, tree_operation
 
@@ -2663,8 +2659,7 @@ def get_matches(  # type: ignore
                 "Failed to obtain specific CSRF token required for Match List API."
             )
             return None
-        else:
-            logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
     except Exception as csrf_err:
         logger.error(
@@ -3016,7 +3011,7 @@ def _fetch_combined_details(
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         return None
 
-    logger.debug(f"_fetch_combined_details: Checking session validity...")
+    logger.debug("_fetch_combined_details: Checking session validity...")
     if not session_manager.is_sess_valid():
         logger.error(
             f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
@@ -3025,7 +3020,7 @@ def _fetch_combined_details(
             f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
         )
 
-    logger.debug(f"_fetch_combined_details: Session valid, proceeding with API calls...")
+    logger.debug("_fetch_combined_details: Session valid, proceeding with API calls...")
 
     combined_data: Dict[str, Any] = {}
     details_url = urljoin(
@@ -3304,16 +3299,15 @@ def _fetch_batch_badge_details(
                 f"Successfully fetched /badgedetails for UUID {match_uuid} (CFPID: {their_cfpid})."
             )
             return result_data
-        elif isinstance(badge_response, requests.Response):
+        if isinstance(badge_response, requests.Response):
             logger.warning(
                 f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
             )
             return None
-        else:
-            logger.warning(
-                f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
-            )
-            return None
+        logger.warning(
+            f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
+        )
+        return None
 
     except ConnectionError as conn_err:
         logger.error(
@@ -3394,10 +3388,10 @@ def _fetch_batch_ladder(
                 f"Get Ladder API call failed for CFPID {cfpid} (Status: {api_result.status_code})."
             )
             return None
-        elif api_result is None:
+        if api_result is None:
             logger.warning(f"Get Ladder API call returned None for CFPID {cfpid}.")
             return None
-        elif not isinstance(api_result, str):
+        if not isinstance(api_result, str):
             logger.warning(
                 f"_api_req returned unexpected type '{type(api_result).__name__}' for Get Ladder API (CFPID {cfpid})."
             )
@@ -3494,22 +3488,20 @@ def _fetch_batch_ladder(
                         or ladder_data["relationship_path"]
                     ):
                         return ladder_data
-                    else:  # No data found after parsing
-                        logger.warning(
-                            f"No actual_relationship or path found for CFPID {cfpid} after parsing."
-                        )
-                        return None
-
-                else:
+                    # No data found after parsing
                     logger.warning(
-                        f"Empty HTML in getladder response for CFPID {cfpid}."
+                        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
                     )
                     return None
-            else:
+
                 logger.warning(
-                    f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+                    f"Empty HTML in getladder response for CFPID {cfpid}."
                 )
                 return None
+            logger.warning(
+                f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+            )
+            return None
         except json.JSONDecodeError as inner_json_err:
             logger.error(
                 f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
@@ -3621,7 +3613,7 @@ def _fetch_batch_relationship_prob(
                 if "name" in c and "value" in c
             }
             for name in csrf_cookie_names:
-                if name in driver_cookies_dict and driver_cookies_dict[name]:
+                if driver_cookies_dict.get(name):
                     csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
                     rel_headers["X-CSRF-Token"] = csrf_token_val
                     logger.debug(
@@ -3966,7 +3958,7 @@ def action6_gather_module_tests() -> bool:
                 matches_expected = result == expected
 
                 status = "✅" if matches_expected else "❌"
-                print(f"   {status} {description}: {repr(input_val)} → {result}")
+                print(f"   {status} {description}: {input_val!r} → {result}")
 
                 results.append(matches_expected)
                 assert (

@@ -1,48 +1,17 @@
 #!/usr/bin/env python3
 
 """
-Core Imports & Advanced System Intelligence Engine
-
-Sophisticated platform providing comprehensive automation capabilities,
-intelligent processing, and advanced functionality with optimized algorithms,
-professional-grade operations, and comprehensive management for genealogical
-automation and research workflows.
-
-System Intelligence:
-• Advanced automation with intelligent processing and optimization protocols
-• Sophisticated management with comprehensive operational capabilities
-• Intelligent coordination with multi-system integration and synchronization
-• Comprehensive analytics with detailed performance metrics and insights
-• Advanced validation with quality assessment and verification protocols
-• Integration with platforms for comprehensive system management and automation
-
-Automation Capabilities:
-• Sophisticated automation with intelligent workflow generation and execution
-• Advanced optimization with performance monitoring and enhancement protocols
-• Intelligent coordination with automated management and orchestration
-• Comprehensive validation with quality assessment and reliability protocols
-• Advanced analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive workflow management
-
-Professional Operations:
-• Advanced professional functionality with enterprise-grade capabilities and reliability
-• Sophisticated operational protocols with professional standards and best practices
-• Intelligent optimization with performance monitoring and enhancement
-• Comprehensive documentation with detailed operational guides and analysis
-• Advanced security with secure protocols and data protection measures
-• Integration with professional systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive management,
-and professional capabilities for genealogical automation and research workflows.
-
-Technical Implementation:
 Core Import System - Unified Module and Function Registry
 
 Provides centralized import management, function registry, and module coordination
 with high-performance caching, thread-safe operations, and comprehensive error
-handling for the entire Ancestry automation project infrastructure.
+handling for the Ancestry automation project.
+
+Features:
+- Thread-safe function registry with performance caching
+- Project root detection and path management
+- Import standardization and error tracking
+- Performance metrics and statistics
 """
 
 import logging

@@ -49,10 +49,8 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import logging
 import re
 import time
-import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional

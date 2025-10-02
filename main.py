@@ -41,6 +41,7 @@ from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
 from action11 import run_action11
 
+
 # Configuration validation
 def validate_action_config() -> bool:
     """
@@ -103,25 +104,24 @@ def validate_action_config() -> bool:
 
 # Core modules
 from config.config_manager import ConfigManager
+from core.session_manager import SessionManager
 from database import (
-    backup_database,
     Base,
-    db_transn,
-    Person,
     ConversationLog,
     DnaMatch,
     FamilyTree,
     MessageTemplate,
+    Person,
+    backup_database,
+    db_transn,
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
-from core.session_manager import SessionManager
 from utils import (
     log_in,
     login_status,
     nav_to_page,
 )
-
 
 # Initialize config manager
 config_manager = ConfigManager()
@@ -205,7 +205,7 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
         logger.warning(
             f"Permission denied clearing log '{log_file_path}': {permission_error}"
         )
-    except IOError as io_error:
+    except OSError as io_error:
         # Handle I/O errors when attempting to open the log file
         logger.warning(f"IOError clearing log '{log_file_path}': {io_error}")
     except Exception as error:
@@ -249,9 +249,8 @@ def ensure_caching_initialized() -> None:
                 "Some caching systems failed to initialize, continuing with reduced performance"
             )
         return cache_init_success
-    else:
-        logger.debug("Caching systems already initialized")
-        return True
+    logger.debug("Caching systems already initialized")
+    return True
 
 
 # End of ensure_caching_initialized
@@ -434,15 +433,15 @@ def exec_actn(
         # Perform cleanup AFTER footer to prevent logs bleeding after completion
         if should_close and isinstance(session_manager, SessionManager):
             if session_manager.browser_needed and session_manager.driver_live:
-                logger.debug(f"Closing browser session...")
+                logger.debug("Closing browser session...")
                 # Close browser but keep DB connections for most actions
                 session_manager.close_browser()
-                logger.debug(f"Browser session closed. DB connections kept.")
+                logger.debug("Browser session closed. DB connections kept.")
             elif should_close and action_name in ["all_but_first_actn"]:
                 # For specific actions, close everything including DB
-                logger.debug(f"Closing all connections including database...")
+                logger.debug("Closing all connections including database...")
                 session_manager.close_sess(keep_db=False)
-                logger.debug(f"All connections closed.")
+                logger.debug("All connections closed.")
         # Log if session is kept open
         elif (
             isinstance(session_manager, SessionManager)
@@ -487,10 +486,6 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             )
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
-        else:  # type: ignore[unreachable]
-            logger.warning(
-                "No main session manager passed to all_but_first_actn to close."
-            )
         # --- End closing main pool ---
 
         logger.info(
@@ -507,7 +502,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             person_to_keep = (
                 sess.query(Person.id, Person.username)
                 .filter(
-                    Person.profile_id == profile_id_to_keep, Person.deleted_at == None
+                    Person.profile_id == profile_id_to_keep, Person.deleted_at.is_(None)
                 )
                 .first()
             )
@@ -632,9 +627,8 @@ def run_core_workflow_action(session_manager, *_):
                 logger.error("Action 6 FAILED.")
                 print("ERROR: Match gathering failed. Check logs for details.")
                 return False
-            else:
-                logger.info("Action 6 OK.")
-                print("✓ Match gathering completed successfully.")
+            logger.info("Action 6 OK.")
+            print("✓ Match gathering completed successfully.")
 
         # --- Action 7 ---
         logger.info("--- Running Action 7: Search Inbox ---")
@@ -670,9 +664,8 @@ def run_core_workflow_action(session_manager, *_):
                 logger.error("Action 7 FAILED - Inbox search returned failure.")
                 print("ERROR: Inbox search failed. Check logs for details.")
                 return False
-            else:
-                logger.info("Action 7 OK.")
-                print("✓ Inbox search completed successfully.")
+            logger.info("Action 7 OK.")
+            print("✓ Inbox search completed successfully.")
         except Exception as inbox_error:
             logger.error(
                 f"Action 7 FAILED with exception: {inbox_error}", exc_info=True
@@ -715,9 +708,8 @@ def run_core_workflow_action(session_manager, *_):
                     "ERROR: Productive message processing failed. Check logs for details."
                 )
                 return False
-            else:
-                logger.info("Action 9 OK.")
-                print("✓ Productive message processing completed successfully.")
+            logger.info("Action 9 OK.")
+            print("✓ Productive message processing completed successfully.")
         except Exception as process_error:
             logger.error(
                 f"Action 9 FAILED with exception: {process_error}", exc_info=True
@@ -754,9 +746,8 @@ def run_core_workflow_action(session_manager, *_):
                 logger.error("Action 8 FAILED - Message sending returned failure.")
                 print("ERROR: Message sending failed. Check logs for details.")
                 return False
-            else:
-                logger.info("Action 8 OK.")
-                print("✓ Message sending completed successfully.")
+            logger.info("Action 8 OK.")
+            print("✓ Message sending completed successfully.")
         except Exception as message_error:
             logger.error(
                 f"Action 8 FAILED with exception: {message_error}", exc_info=True
@@ -807,8 +798,6 @@ def reset_db_actn(session_manager: SessionManager, *_):
             logger.debug("Closing main DB connections before database deletion...")
             session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
             logger.debug("Main DB pool closed.")
-        else:  # type: ignore[unreachable]
-            logger.warning("No main session manager passed to reset_db_actn to close.")
 
         # Force garbage collection to release any file handles
         logger.debug("Running garbage collection to release file handles...")
@@ -905,7 +894,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
                 else:
                     logger.error("'messages.json' has incorrect format. Cannot seed.")
             else:
-                logger.warning(f"'messages.json' not found. Cannot seed MessageTypes.")
+                logger.warning("'messages.json' not found. Cannot seed MessageTypes.")
             # --- End Seeding ---
 
             reset_successful = True
@@ -940,8 +929,8 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
 # Action 3 (backup_db_actn)
 def backup_db_actn(
-    _session_manager: Optional[SessionManager] = None, *_
-):  # Added _session_manager parameter for exec_actn compatibility (unused but required)
+    session_manager: Optional[SessionManager] = None, *_
+):  # Added session_manager parameter for exec_actn compatibility (unused but required)
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
@@ -950,9 +939,8 @@ def backup_db_actn(
         if result:
             logger.info("DB backup OK.")
             return True
-        else:
-            logger.error("DB backup failed.")
-            return False
+        logger.error("DB backup failed.")
+        return False
     except Exception as e:
         logger.error(f"Error during DB backup: {e}", exc_info=True)
         return False
@@ -988,10 +976,6 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
             logger.debug("Closing main DB connections before restore...")
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
-        else:  # type: ignore[unreachable]
-            logger.warning(
-                "No main session manager passed to restore_db_actn to close."
-            )
         # --- End closing main pool ---
 
         logger.debug(f"Restoring DB from: {backup_path}")
@@ -1005,11 +989,11 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
         gc.collect()
 
         shutil.copy2(backup_path, db_path)
-        logger.info(f"Db restored from backup OK.")
+        logger.info("Db restored from backup OK.")
         success = True
     except FileNotFoundError:
         logger.error(f"Backup not found during copy: {backup_path}")
-    except (OSError, IOError, shutil.Error) as e:
+    except (OSError, shutil.Error) as e:
         logger.error(f"Error restoring DB: {e}", exc_info=True)
     except Exception as e:
         logger.critical(f"Unexpected restore error: {e}", exc_info=True)
@@ -1029,11 +1013,6 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
     If not logged in, it attempts to log in using stored credentials.
     Provides clear user feedback about the final login state.
     """
-    if not session_manager:  # type: ignore[unreachable]
-        logger.error("SessionManager required for check_login_actn.")
-        print("ERROR: Internal error - session manager not available.")
-        return False
-
     # Phase 1 (Driver Start) is handled by exec_actn if needed.
     # We only need to check if driver is live before proceeding.
     if not session_manager.driver_live:
@@ -1060,7 +1039,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
             if session_manager.tree_owner_name:
                 print(f"  Account: {session_manager.tree_owner_name}")
             return True
-        elif status is False:
+        if status is False:
             print("\n✗ You are NOT currently logged in to Ancestry.")
             print("  Attempting to log in with stored credentials...")
 
@@ -1080,13 +1059,11 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
                         if session_manager.tree_owner_name:
                             print(f"  Account: {session_manager.tree_owner_name}")
                         return True
-                    else:
-                        print("⚠️  Login appeared successful but verification failed.")
-                        return False
-                else:
-                    print("✗ Login failed. Please check your credentials.")
-                    print("  You can update credentials using the 'sec' option in the main menu.")
+                    print("⚠️  Login appeared successful but verification failed.")
                     return False
+                print("✗ Login failed. Please check your credentials.")
+                print("  You can update credentials using the 'sec' option in the main menu.")
+                return False
 
             except Exception as login_e:
                 logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
@@ -1138,10 +1115,9 @@ def coord_action(session_manager, config_schema=None, start=1):
             logger.error("Match gathering reported failure.")
             print("ERROR: Match gathering failed. Check logs for details.")
             return False
-        else:
-            logger.info("Gathering matches OK.")
-            print("✓ Match gathering completed successfully.")
-            return True
+        logger.info("Gathering matches OK.")
+        print("✓ Match gathering completed successfully.")
+        return True
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
         print(f"ERROR: Exception during match gathering: {e}")
@@ -1187,9 +1163,8 @@ def srch_inbox_actn(session_manager, *_):
         if result is False:
             logger.error("Inbox search reported failure.")
             return False
-        else:
-            logger.info("Inbox search OK.")
-            return True  # Use INFO
+        logger.info("Inbox search OK.")
+        return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during inbox search: {e}", exc_info=True)
         return False
@@ -1246,9 +1221,8 @@ def send_messages_action(session_manager, *_):
         if result is False:
             logger.error("Message sending reported failure.")
             return False
-        else:
-            logger.info("Messages sent OK.")
-            return True  # Use INFO
+        logger.info("Messages sent OK.")
+        return True  # Use INFO
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
         return False
@@ -1293,9 +1267,8 @@ def process_productive_messages_action(session_manager, *_):
         if result is False:
             logger.error("Productive message processing reported failure.")
             return False
-        else:
-            logger.info("Productive message processing OK.")
-            return True
+        logger.info("Productive message processing OK.")
+        return True
     except Exception as e:
         logger.error(f"Error during productive message processing: {e}", exc_info=True)
         return False
@@ -1314,9 +1287,8 @@ def run_action11_wrapper(session_manager, *_):
         if result is False:
             logger.error("API Report reported failure.")
             return False
-        else:
-            logger.debug("API Report OK.")
-            return True
+        logger.debug("API Report OK.")
+        return True
     except Exception as e:
         logger.error(f"Error during API Report: {e}", exc_info=True)
         return False
@@ -1413,8 +1385,7 @@ def main() -> None:
                 if confirm not in ["yes", "y"]:
                     print("Action cancelled.\n")
                     continue
-                else:
-                    print(" ")  # Newline after confirmation
+                print(" ")  # Newline after confirmation
 
             # --- Action Dispatching ---
             # Note: Removed most close_sess_after=False as the default is now to keep open.
@@ -1519,7 +1490,7 @@ def main() -> None:
                     print("=" * 60)
                     result = subprocess.run(
                         [sys.executable, "run_all_tests.py"],
-                        capture_output=False,
+                        check=False, capture_output=False,
                         text=True,
                     )
                     if result.returncode == 0:
@@ -1631,10 +1602,9 @@ def main() -> None:
                 os.system("cls" if os.name == "nt" else "clear")
                 print("Exiting.")
                 break
-            else:
-                # Handle invalid choices
-                if choice not in confirm_actions:  # Avoid double 'invalid' message
-                    print("Invalid choice.\n")
+            # Handle invalid choices
+            elif choice not in confirm_actions:  # Avoid double 'invalid' message
+                print("Invalid choice.\n")
 
             # No need to track if driver became live anymore
 
@@ -1861,11 +1831,6 @@ def main_module_tests() -> bool:
         assert callable(SessionManager), "SessionManager should be callable"
 
         # Test SessionManager has required methods
-        import inspect
-
-        sm_methods = inspect.getmembers(SessionManager, predicate=inspect.ismethod)
-        _method_names = [method[0] for method in sm_methods]  # Unused but kept for debugging
-
         # Should have key methods for session management
         assert hasattr(
             SessionManager, "__init__"
@@ -1937,8 +1902,8 @@ def main_module_tests() -> bool:
     # PERFORMANCE TESTS
     def test_import_performance():
         """Test import performance is reasonable"""
-        import time
         import importlib
+        import time
 
         # Test that re-importing modules is fast (cached)
         start_time = time.time()

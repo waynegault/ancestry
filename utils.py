@@ -10,11 +10,11 @@ and includes login/session verification logic closely tied to SessionManager.
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    setup_module,
-    register_function,
+    auto_register_module,  # Needed for testing
     get_function,
     is_function_available,
-    auto_register_module,  # Needed for testing
+    register_function,
+    setup_module,
 )
 
 # === MODULE SETUP ===
@@ -23,6 +23,7 @@ logger = setup_module(globals(), __name__)
 # === SESSION MANAGER IMPORT ===
 # Import SessionManager from core module - use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from core.session_manager import SessionManager
 else:
@@ -30,52 +31,34 @@ else:
     SessionManager = None
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (  # type: ignore[import-not-found]
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import base64  # For make_ube
+import binascii  # For make_ube
 import json
 import logging
+import random  # For make_newrelic, retry_api, DynamicRateLimiter
 import re
 import sys
 import time
-from typing import (
-    Optional,
-    Dict,
-    Any,
-    Union,
-    List,
-    Tuple,
-    Callable,
-    Type,
-    Generator,
-)  # Consolidated typing imports
-import base64  # For make_ube
-import binascii  # For make_ube
-import contextlib  # Added import for contextlib
-import random  # For make_newrelic, retry_api, DynamicRateLimiter
-import sqlite3  # For SessionManager._initialize_db_engine_and_session (pragma exception)
 import uuid  # For make_ube, make_traceparent, make_tracestate
-from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+)  # Consolidated typing imports
 from urllib.parse import urljoin, urlparse, urlunparse
 
 # === THIRD-PARTY IMPORTS ===
-import cloudscraper
 import requests
 from requests import Response as RequestsResponse
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -109,7 +92,7 @@ try:
     from requests import Response as RequestsResponse
     from requests.adapters import HTTPAdapter
     from requests.cookies import RequestsCookieJar
-    from requests.exceptions import HTTPError, RequestException, JSONDecodeError
+    from requests.exceptions import HTTPError, JSONDecodeError, RequestException
     from selenium.common.exceptions import (
         ElementClickInterceptedException,
         ElementNotInteractableException,
@@ -127,7 +110,7 @@ try:
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.wait import WebDriverWait
-    from sqlalchemy import create_engine, event, pool as sqlalchemy_pool, inspect
+    from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool
     from sqlalchemy.exc import SQLAlchemyError
     from sqlalchemy.orm import Session, sessionmaker
     from urllib3.util.retry import Retry
@@ -143,11 +126,10 @@ try:
 
     from database import Base  # Import Base for table creation
     from my_selectors import *
-
     from selenium_utils import (
+        export_cookies,
         is_browser_open,
         is_elem_there,
-        export_cookies,
     )
 
     # Do NOT import api_utils here at the top level
@@ -163,11 +145,9 @@ except ImportError as import_err:
 
 # --- Test framework imports ---
 from test_framework import (
+    MagicMock,
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-    MagicMock,
 )
 
 # ------------------------------------------------------------------------------------
@@ -241,8 +221,7 @@ def ordinal_case(text: Union[str, int]) -> str:
                 # End of if
             # End of for
             return " ".join(words)
-        else:
-            return str(text)
+        return str(text)
         # End of if/else
     # End of try/except
 
@@ -545,9 +524,8 @@ def retry_api(
                         time.sleep(sleep_time)
                         delay *= _backoff_factor
                         continue
-                    else:
-                        # Success or non-retryable error, return the response
-                        return response
+                    # Success or non-retryable error, return the response
+                    return response
                     # End of if/else
                 except retry_on_exceptions as e:
                     last_exception = e
@@ -586,13 +564,12 @@ def retry_api(
             )
             if last_exception:
                 raise last_exception  # Re-raise the last exception if one occurred
-            else:
-                # This case implies a retryable status on the last attempt
-                return (
-                    last_response
-                    if last_response is not None
-                    else RuntimeError(f"{func.__name__} failed after all retries.")
-                )
+            # This case implies a retryable status on the last attempt
+            return (
+                last_response
+                if last_response is not None
+                else RuntimeError(f"{func.__name__} failed after all retries.")
+            )
             # End of if/else
 
         # End of wrapper
@@ -1074,9 +1051,8 @@ def _sync_cookies_for_request(
         if sync_success:
             logger.debug(f"[{api_description}] Cookie sync successful (Attempt {attempt}).")
             return True
-        else:
-            logger.warning(f"[{api_description}] Cookie sync failed (Attempt {attempt}).")
-            return False
+        logger.warning(f"[{api_description}] Cookie sync failed (Attempt {attempt}).")
+        return False
 
     except Exception as e:
         logger.error(f"[{api_description}] Exception during cookie sync (Attempt {attempt}): {e}", exc_info=True)
@@ -1476,7 +1452,6 @@ def _api_req(
     # End of if
 
     cfg = config_schema.api
-    sel_cfg = config_schema.selenium
 
     # --- Step 2: Get Retry Configuration ---
     max_retries = cfg.max_retries
@@ -1541,17 +1516,16 @@ def _api_req(
                         f"{api_description}: Request failed after {max_retries} attempts."
                     )
                     return None
-                else:
-                    sleep_time = min(
-                        current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                    ) + random.uniform(0, 0.2)
-                    sleep_time = max(0.1, sleep_time)
-                    logger.warning(
-                        f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
-                    )
-                    time.sleep(sleep_time)
-                    current_delay *= backoff_factor
-                    continue  # Go to next iteration of the while loop
+                sleep_time = min(
+                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
+                ) + random.uniform(0, 0.2)
+                sleep_time = max(0.1, sleep_time)
+                logger.warning(
+                    f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                )
+                time.sleep(sleep_time)
+                current_delay *= backoff_factor
+                continue  # Go to next iteration of the while loop
                 # End of if/else retries_left
             # End of if response is None
 
@@ -1577,27 +1551,26 @@ def _api_req(
                         pass
                     # End of try/except
                     return response
-                else:
-                    sleep_time = min(
-                        current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                    ) + random.uniform(0, 0.2)
-                    sleep_time = max(0.1, sleep_time)
-                    if status == 429:  # Too Many Requests
-                        session_manager.dynamic_rate_limiter.increase_delay()
-                    # End of if
-                    logger.warning(
-                        f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                sleep_time = min(
+                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
+                ) + random.uniform(0, 0.2)
+                sleep_time = max(0.1, sleep_time)
+                if status == 429:  # Too Many Requests
+                    session_manager.dynamic_rate_limiter.increase_delay()
+                # End of if
+                logger.warning(
+                    f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                )
+                try:
+                    logger.debug(
+                        f"   << Response Text (Retry): {response.text[:500]}..."
                     )
-                    try:
-                        logger.debug(
-                            f"   << Response Text (Retry): {response.text[:500]}..."
-                        )
-                    except Exception:
-                        pass
-                    # End of try/except
-                    time.sleep(sleep_time)
-                    current_delay *= backoff_factor
-                    continue  # Go to next iteration of the while loop
+                except Exception:
+                    pass
+                # End of try/except
+                time.sleep(sleep_time)
+                current_delay *= backoff_factor
+                continue  # Go to next iteration of the while loop
                 # End of if/else retries_left
             # End of if status in retry_status_codes
 
@@ -1690,17 +1663,16 @@ def _api_req(
                     exc_info=False,
                 )
                 return None  # Return None after all retries fail for network errors
-            else:
-                sleep_time = min(
-                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                ) + random.uniform(0, 0.2)
-                sleep_time = max(0.1, sleep_time)
-                logger.warning(
-                    f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
-                )
-                time.sleep(sleep_time)
-                current_delay *= backoff_factor
-                continue  # Go to next attempt
+            sleep_time = min(
+                current_delay * (backoff_factor ** (attempt - 1)), max_delay
+            ) + random.uniform(0, 0.2)
+            sleep_time = max(0.1, sleep_time)
+            logger.warning(
+                f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
+            )
+            time.sleep(sleep_time)
+            current_delay *= backoff_factor
+            continue  # Go to next attempt
             # End of if/else retries_left
         except Exception as e:
             logger.critical(
@@ -1900,7 +1872,6 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
     # End of if
     driver = session_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
-    page_wait = WebDriverWait(driver, config_schema.selenium.page_load_timeout)
     short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
     try:
         print(
@@ -2062,17 +2033,15 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
                     "User completed 2FA successfully (login confirmed after page change)."
                 )
                 return True
-            else:
-                logger.error(
-                    "2FA page disappeared, but final login status check failed or returned False."
-                )
-                return False
-            # End of if/else
-        else:
             logger.error(
-                f"Timed out ({code_entry_timeout}s) waiting for user 2FA action (page did not change)."
+                "2FA page disappeared, but final login status check failed or returned False."
             )
             return False
+            # End of if/else
+        logger.error(
+            f"Timed out ({code_entry_timeout}s) waiting for user 2FA action (page did not change)."
+        )
+        return False
         # End of if/else user_action_detected
 
     except WebDriverException as e:  # type: ignore
@@ -2473,9 +2442,8 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
                     "Detected as already logged in during navigation attempt. Login considered successful."
                 )
                 return "LOGIN_SUCCEEDED"
-            else:
-                logger.error("Failed to navigate to login page (and not logged in).")
-                return "LOGIN_FAILED_NAVIGATION"
+            logger.error("Failed to navigate to login page (and not logged in).")
+            return "LOGIN_FAILED_NAVIGATION"
             # End of if/else
         # End of if
         logger.debug("Successfully navigated to sign-in page.")
@@ -2565,10 +2533,9 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
             )  # API check only for speed
             if status is True:
                 return "LOGIN_SUCCEEDED"
-            elif status is False:
+            if status is False:
                 return "LOGIN_FAILED_UNKNOWN"  # Error + not logged in
-            else:
-                return "LOGIN_FAILED_STATUS_CHECK_ERROR"  # Critical status check error
+            return "LOGIN_FAILED_STATUS_CHECK_ERROR"  # Critical status check error
             # End of if/elif/else
         # End of try/except
 
@@ -2580,99 +2547,95 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
                 if login_status(session_manager) is True:
                     print("\n✓ Two-factor authentication completed successfully!")
                     return "LOGIN_SUCCEEDED"
-                else:
-                    logger.error(
-                        "Login status check failed AFTER successful 2FA handling report."
-                    )
-                    return "LOGIN_FAILED_POST_2FA_VERIFY"
-                # End of if/else
-            else:
-                logger.error("Two-step verification handling failed.")
-                return "LOGIN_FAILED_2FA_HANDLING"
-            # End of if/else handle_twoFA
-        else:
-            # No 2FA detected, check login status directly
-            logger.debug("Checking login status directly (no 2FA detected)...")
-            login_check_result = login_status(
-                session_manager, disable_ui_fallback=False
-            )  # Use UI fallback for reliability
-            if login_check_result is True:
-                print("\n✓ Login successful!")
-                return "LOGIN_SUCCEEDED"
-            elif login_check_result is False:
-                # Verify why it failed if no 2FA was shown
-                print("\n✗ Login failed. Please check your credentials.")
                 logger.error(
-                    "Direct login check failed. Checking for error messages again..."
+                    "Login status check failed AFTER successful 2FA handling report."
                 )
+                return "LOGIN_FAILED_POST_2FA_VERIFY"
+                # End of if/else
+            logger.error("Two-step verification handling failed.")
+            return "LOGIN_FAILED_2FA_HANDLING"
+            # End of if/else handle_twoFA
+        # No 2FA detected, check login status directly
+        logger.debug("Checking login status directly (no 2FA detected)...")
+        login_check_result = login_status(
+            session_manager, disable_ui_fallback=False
+        )  # Use UI fallback for reliability
+        if login_check_result is True:
+            print("\n✓ Login successful!")
+            return "LOGIN_SUCCEEDED"
+        if login_check_result is False:
+            # Verify why it failed if no 2FA was shown
+            print("\n✗ Login failed. Please check your credentials.")
+            logger.error(
+                "Direct login check failed. Checking for error messages again..."
+            )
+            try:
+                # Check specific error again
+                WebDriverWait(driver, 1).until(  # type: ignore
+                    EC.presence_of_element_located(  # type: ignore
+                        (By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR)  # type: ignore
+                    )
+                )
+                logger.error(
+                    "Login failed: Specific 'Invalid Credentials' alert found (post-check)."
+                )
+                return "LOGIN_FAILED_BAD_CREDS"
+            except TimeoutException:  # type: ignore
+                # Check generic error again
+                generic_alert_selector = "div.alert[role='alert']"
                 try:
-                    # Check specific error again
-                    WebDriverWait(driver, 1).until(  # type: ignore
+                    alert_element = WebDriverWait(driver, 0.5).until(  # type: ignore
                         EC.presence_of_element_located(  # type: ignore
-                            (By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR)  # type: ignore
+                            (By.CSS_SELECTOR, generic_alert_selector)  # type: ignore
                         )
+                    )
+                    alert_text = (
+                        alert_element.text if alert_element else "Unknown error"
                     )
                     logger.error(
-                        "Login failed: Specific 'Invalid Credentials' alert found (post-check)."
+                        f"Login failed: Generic alert found (post-check): '{alert_text}'."
                     )
-                    return "LOGIN_FAILED_BAD_CREDS"
+                    return "LOGIN_FAILED_ERROR_DISPLAYED"
                 except TimeoutException:  # type: ignore
-                    # Check generic error again
-                    generic_alert_selector = "div.alert[role='alert']"
+                    # Still on login page?
                     try:
-                        alert_element = WebDriverWait(driver, 0.5).until(  # type: ignore
-                            EC.presence_of_element_located(  # type: ignore
-                                (By.CSS_SELECTOR, generic_alert_selector)  # type: ignore
-                            )
-                        )
-                        alert_text = (
-                            alert_element.text if alert_element else "Unknown error"
-                        )
-                        logger.error(
-                            f"Login failed: Generic alert found (post-check): '{alert_text}'."
-                        )
-                        return "LOGIN_FAILED_ERROR_DISPLAYED"
-                    except TimeoutException:  # type: ignore
-                        # Still on login page?
-                        try:
-                            if driver.current_url.startswith(signin_url):
-                                logger.error(
-                                    "Login failed: Still on login page (post-check), no error message found."
-                                )
-                                return "LOGIN_FAILED_STUCK_ON_LOGIN"
-                            else:
-                                logger.error(
-                                    "Login failed: Status False, no 2FA, no error msg, not on login page."
-                                )
-                                return "LOGIN_FAILED_UNKNOWN"
-                            # End of if/else
-                        except WebDriverException:  # type: ignore
+                        if driver.current_url.startswith(signin_url):
                             logger.error(
-                                "Login failed: Status False, WebDriverException getting URL."
+                                "Login failed: Still on login page (post-check), no error message found."
                             )
-                            return "LOGIN_FAILED_WEBDRIVER"  # Session likely dead
-                        # End of try/except get URL
-                    except (
-                        WebDriverException
-                    ) as alert_err:  # Error checking generic alert # type: ignore
+                            return "LOGIN_FAILED_STUCK_ON_LOGIN"
                         logger.error(
-                            f"Login failed: Error checking for generic alert (post-check): {alert_err}"
+                            "Login failed: Status False, no 2FA, no error msg, not on login page."
                         )
                         return "LOGIN_FAILED_UNKNOWN"
-                    # End of try/except generic alert
+                        # End of if/else
+                    except WebDriverException:  # type: ignore
+                        logger.error(
+                            "Login failed: Status False, WebDriverException getting URL."
+                        )
+                        return "LOGIN_FAILED_WEBDRIVER"  # Session likely dead
+                    # End of try/except get URL
                 except (
                     WebDriverException
-                ) as alert_err:  # Error checking specific alert # type: ignore
+                ) as alert_err:  # Error checking generic alert # type: ignore
                     logger.error(
-                        f"Login failed: Error checking for specific alert (post-check): {alert_err}"
+                        f"Login failed: Error checking for generic alert (post-check): {alert_err}"
                     )
                     return "LOGIN_FAILED_UNKNOWN"
-                # End of try/except specific alert
-            else:  # login_status returned None
+                # End of try/except generic alert
+            except (
+                WebDriverException
+            ) as alert_err:  # Error checking specific alert # type: ignore
                 logger.error(
-                    "Login failed: Critical error during final login status check."
+                    f"Login failed: Error checking for specific alert (post-check): {alert_err}"
                 )
-                return "LOGIN_FAILED_STATUS_CHECK_ERROR"
+                return "LOGIN_FAILED_UNKNOWN"
+            # End of try/except specific alert
+        else:  # login_status returned None
+            logger.error(
+                "Login failed: Critical error during final login status check."
+            )
+            return "LOGIN_FAILED_STATUS_CHECK_ERROR"
             # End of if/elif/else login_check_result
         # End of if/else two_fa_present
 
@@ -2739,7 +2702,7 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
         if api_check_result is True:
             logger.debug("API login check confirmed user is logged in.")
             return True
-        elif api_check_result is False:
+        if api_check_result is False:
             logger.debug("API login check confirmed user is NOT logged in.")
             return False
         # End of if/elif
@@ -2902,7 +2865,6 @@ def nav_to_page(
 
     # Define common problematic URLs/selectors
     signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip("/")
-    mfa_page_url_base = urljoin(config_schema.api.base_url, "account/signin/mfa/").rstrip("/")
     # Selectors for known 'unavailable' pages
     unavailability_selectors = {
         TEMP_UNAVAILABLE_SELECTOR: ("refresh", 5),  # type: ignore # Selector : (action, wait_seconds)
@@ -2936,15 +2898,13 @@ def nav_to_page(
                             return False
                         # End of if
                         continue  # Retry navigation with new driver
-                    else:
-                        logger.error("Session restart failed. Cannot navigate.")
-                        return False  # Unrecoverable
-                    # End of if/else restart
-                else:
-                    logger.error(
-                        "Session invalid and no SessionManager provided for restart."
-                    )
+                    logger.error("Session restart failed. Cannot navigate.")
                     return False  # Unrecoverable
+                    # End of if/else restart
+                logger.error(
+                    "Session invalid and no SessionManager provided for restart."
+                )
+                return False  # Unrecoverable
                 # End of if/else session_manager
             # End of if not is_browser_open
 
@@ -3042,29 +3002,26 @@ def nav_to_page(
                             "Login status OK after landing on login page redirect. Retrying original navigation."
                         )
                         continue  # Retry original nav_to_page call
-                    else:
-                        # Attempt automated login
+                    # Attempt automated login
+                    logger.info(
+                        "Not logged in according to API. Attempting re-login..."
+                    )
+                    login_result_str = log_in(session_manager)
+                    if login_result_str == "LOGIN_SUCCEEDED":
                         logger.info(
-                            "Not logged in according to API. Attempting re-login..."
+                            "Re-login successful. Retrying original navigation..."
                         )
-                        login_result_str = log_in(session_manager)
-                        if login_result_str == "LOGIN_SUCCEEDED":
-                            logger.info(
-                                "Re-login successful. Retrying original navigation..."
-                            )
-                            continue  # Retry original nav_to_page call
-                        else:
-                            logger.error(
-                                f"Re-login attempt failed ({login_result_str}). Cannot complete navigation."
-                            )
-                            return False  # Fail navigation if re-login fails
+                        continue  # Retry original nav_to_page call
+                    logger.error(
+                        f"Re-login attempt failed ({login_result_str}). Cannot complete navigation."
+                    )
+                    return False  # Fail navigation if re-login fails
                         # End of if/else login_result_str
                     # End of if/else login_stat
-                else:
-                    logger.error(
-                        "Landed on login page, no SessionManager provided for re-login attempt."
-                    )
-                    return False  # Fail navigation
+                logger.error(
+                    "Landed on login page, no SessionManager provided for re-login attempt."
+                )
+                return False  # Fail navigation
                 # End of if/else session_manager
             # End of if is_on_login_page
 
@@ -3104,18 +3061,17 @@ def nav_to_page(
                 if action == "skip":
                     logger.error("Page no longer available message found. Skipping.")
                     return False  # Fail navigation
-                elif action == "refresh":
+                if action == "refresh":
                     logger.info(
                         f"Temporary unavailability message found. Waiting {wait_time}s and retrying..."
                     )
                     time.sleep(wait_time)
                     continue  # Retry navigation attempt
-                else:
-                    # Wrong URL, no specific message, likely a redirect issue
-                    logger.warning(
-                        "Wrong URL, no specific unavailability message found. Retrying navigation."
-                    )
-                    continue  # Retry navigation attempt
+                # Wrong URL, no specific message, likely a redirect issue
+                logger.warning(
+                    "Wrong URL, no specific unavailability message found. Retrying navigation."
+                )
+                continue  # Retry navigation attempt
                 # End of if/elif/else action
             # End of if landed_url_base != target_url_base
 
@@ -3154,7 +3110,7 @@ def nav_to_page(
                 )
                 if action == "skip":
                     return False
-                elif action == "refresh":
+                if action == "refresh":
                     time.sleep(wait_time)
                     continue  # Retry navigation
                 # End of if/elif
@@ -3212,16 +3168,14 @@ def nav_to_page(
                         return False  # Fail if restart didn't provide driver
                     # End of if
                     continue  # Retry navigation
-                else:
-                    logger.error("Session restart failed. Cannot complete navigation.")
-                    return False  # Unrecoverable
+                logger.error("Session restart failed. Cannot complete navigation.")
+                return False  # Unrecoverable
                 # End of if/else restart
-            else:
-                logger.warning(
-                    "WebDriverException occurred, session seems valid or no restart possible. Waiting before retry."
-                )
-                time.sleep(random.uniform(2, 4))
-                continue  # Retry navigation attempt
+            logger.warning(
+                "WebDriverException occurred, session seems valid or no restart possible. Waiting before retry."
+            )
+            time.sleep(random.uniform(2, 4))
+            continue  # Retry navigation attempt
             # End of if/else session_manager
         except Exception as e:  # Catch other unexpected errors
             logger.error(
@@ -3279,19 +3233,14 @@ def main() -> None:
     Provides a clear PASS/FAIL summary for each test and an overall result.
     """
     # --- Standard library imports needed for main ---
-    import sys
-    import traceback
-    from textwrap import dedent
+
+    from config.config_manager import ConfigManager
 
     # --- Local imports needed for main ---
     # Imports are assumed successful due to strict checks at top level
     from logging_config import setup_logging
-    from config.config_manager import ConfigManager
 
     config_manager = ConfigManager()
-    config = config_manager.get_config()
-    from selenium.webdriver.remote.webdriver import WebDriver
-    from selenium.common.exceptions import WebDriverException
 
     # Re-assign the global logger for the main function's scope
     # Use INFO level to make test output cleaner
@@ -3375,7 +3324,7 @@ def main() -> None:
 
         except Exception as e:
             status = "FAIL"
-            message = f"{type(e).__name__}: {str(e)}"
+            message = f"{type(e).__name__}: {e!s}"
             logger.error(
                 f"Exception details for {test_name}: {message}", exc_info=False
             )  # Log simple message
@@ -4030,13 +3979,13 @@ if __name__ == "__main__":
 
                 status = "✅" if matches_expected else "❌"
                 print(f"   {status} {description}")
-                print(f"      Input: {repr(input_val)} → Output: '{result}'")
+                print(f"      Input: {input_val!r} → Output: '{result}'")
                 print(f"      Expected: '{expected}'")
 
                 results.append(matches_expected)
                 assert (
                     matches_expected
-                ), f"Failed for {repr(input_val)}: expected '{expected}', got '{result}'"
+                ), f"Failed for {input_val!r}: expected '{expected}', got '{result}'"
 
             except Exception as e:
                 print(f"   ❌ {description}: Exception {e}")

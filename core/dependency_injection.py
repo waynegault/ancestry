@@ -642,7 +642,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertIn("service_k", info["singleton_classes"])
 
         # Now instantiate it and check singleton_instances
-        instance = self.container.resolve(ServiceK, "service_k")
+        _ = self.container.resolve(ServiceK, "service_k")
         info = self.container.get_registration_info()
         self.assertIn("service_k", info["singleton_instances"])
 

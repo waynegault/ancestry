@@ -40,7 +40,7 @@ Created: August 6, 2025
 Phase: 12.2 - Smart DNA-GEDCOM Cross-Reference
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 

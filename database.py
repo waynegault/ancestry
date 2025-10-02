@@ -67,7 +67,6 @@ from core.error_handling import (
     AncestryException,
     DatabaseConnectionError,
     DataValidationError,
-    ErrorContext,
     FatalError,
     RetryableError,
     error_context,

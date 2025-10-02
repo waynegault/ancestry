@@ -15,20 +15,12 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (  # type: ignore[import-not-found]
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -38,8 +30,22 @@ from sqlalchemy.orm import Session as DbSession, joinedload
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+import ms_graph_utils
+
+# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
+# from core.system_cache import cached_database_query  # Module doesn't exist yet
+from ai_interface import extract_genealogical_entities
+
 # === LOCAL IMPORTS ===
 from config import config_schema
+from core.error_handling import (  # type: ignore[import-not-found]
+    circuit_breaker,
+    error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
+)
+from core.session_manager import SessionManager
 from database import (
     ConversationLog,
     MessageDirectionEnum,
@@ -48,13 +54,6 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
-
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-# from core.system_cache import cached_database_query  # Module doesn't exist yet
-
-from ai_interface import extract_genealogical_entities
-import ms_graph_utils
-from core.session_manager import SessionManager
 from utils import format_name
 
 # === CONSTANTS ===
@@ -118,11 +117,7 @@ def should_exclude_message(message_content: str) -> bool:
     message_lower = message_content.lower()
 
     # Check for exclusion keywords
-    for keyword in EXCLUSION_KEYWORDS:
-        if keyword.lower() in message_lower:
-            return True
-
-    return False
+    return any(keyword.lower() in message_lower for keyword in EXCLUSION_KEYWORDS)
 
 
 # AI Prompt for generating genealogical replies
@@ -303,7 +298,7 @@ def get_gedcom_data():
 
         _CACHED_GEDCOM_DATA = load_gedcom_data(str(gedcom_path))
         if _CACHED_GEDCOM_DATA:
-            logger.debug(f"GEDCOM file loaded successfully and cached for reuse.")
+            logger.debug("GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
             logger.debug(
                 f"  Index size: {len(getattr(_CACHED_GEDCOM_DATA, 'indi_index', {}))}"
@@ -318,10 +313,9 @@ def get_gedcom_data():
 
 
 # Import required modules and functions
-from gedcom_utils import calculate_match_score
-
 # Import from action11
 from action11 import _process_and_score_suggestions
+from gedcom_utils import calculate_match_score
 
 
 def _search_gedcom_for_names(
@@ -698,7 +692,7 @@ class PersonProcessor:
 
         except Exception as e:
             logger.error(f"Error processing {log_prefix}: {e}", exc_info=True)
-            return False, f"error: {str(e)}"
+            return False, f"error: {e!s}"
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
@@ -943,7 +937,7 @@ class PersonProcessor:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
-                setattr(message, "custom_reply_sent_at", datetime.now(timezone.utc))
+                message.custom_reply_sent_at = datetime.now(timezone.utc)
                 self.db_state.session.add(message)
                 self.db_state.session.flush()
         except Exception as e:
@@ -1144,7 +1138,7 @@ class PersonProcessor:
         if app_mode == "testing":
             if not testing_profile_id:
                 return False, "skipped (config_error)"
-            elif current_profile_id != str(testing_profile_id):
+            if current_profile_id != str(testing_profile_id):
                 return False, f"skipped (testing_mode_filter: not {testing_profile_id})"
         elif (
             app_mode == "production"
@@ -1230,11 +1224,7 @@ class PersonProcessor:
                 ):
                     try:
                         if self.db_state.session:
-                            setattr(
-                                latest_message,
-                                "custom_reply_sent_at",
-                                datetime.now(timezone.utc),
-                            )
+                            latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
                             self.db_state.session.add(latest_message)
                             self.db_state.session.flush()
                             logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
@@ -1510,7 +1500,7 @@ def _query_candidates(
                     ConversationLog.ai_sentiment == PRODUCTIVE_SENTIMENT,
                     ConversationLog.ai_sentiment == OTHER_SENTIMENT,
                 ),
-                ConversationLog.custom_reply_sent_at == None,
+                ConversationLog.custom_reply_sent_at.is_(None),
             ),
         )
         .outerjoin(
@@ -1519,7 +1509,7 @@ def _query_candidates(
         )
         .filter(
             Person.status == PersonStatusEnum.ACTIVE,
-            (latest_ack_out_log_subq.c.max_ack_out_ts == None)
+            (latest_ack_out_log_subq.c.max_ack_out_ts.is_(None))
             | (
                 latest_ack_out_log_subq.c.max_ack_out_ts
                 < latest_in_log_subq.c.max_in_ts
@@ -1587,12 +1577,11 @@ def _process_candidates(
                     # Note: tasks_created_count is updated in the person processor
                 else:
                     state.skipped_count += 1
+            elif status.startswith("error"):
+                state.error_count += 1
+                state.overall_success = False
             else:
-                if status.startswith("error"):
-                    state.error_count += 1
-                    state.overall_success = False
-                else:
-                    state.skipped_count += 1
+                state.skipped_count += 1
 
             # Check for batch commit
             if commit_manager.should_commit():
@@ -1726,7 +1715,7 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
                 extracted_data_raw = ai_response["extracted_data"]
 
                 # Process each expected key
-                for key in result["extracted_data"].keys():
+                for key in result["extracted_data"]:
                     # Get value with fallback to empty list
                     value = extracted_data_raw.get(key, [])
 
@@ -1835,7 +1824,7 @@ def _format_context_for_ai_extraction(
                 elif str(direction_value) == str(MessageDirectionEnum.IN):
                     # Try string comparison as last resort
                     is_in_direction = True
-        except:
+        except Exception:
             # Default to OUT if any error occurs
             is_in_direction = False
 
@@ -2048,7 +2037,7 @@ def generate_genealogical_reply(
         )
 
     except Exception as e:
-        logger.error(f"{log_prefix}: Error generating genealogical reply: {str(e)}")
+        logger.error(f"{log_prefix}: Error generating genealogical reply: {e!s}")
         return None
 
 
@@ -2075,8 +2064,7 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 
         if summary_parts:
             return "; ".join(summary_parts)
-        else:
-            return "your family history research"
+        return "your family history research"
     except Exception as e:
         logger.error(f"Error generating acknowledgment summary: {e}")
         return "your genealogy information"
@@ -2092,7 +2080,7 @@ def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
 # ==============================================
 def action9_process_productive_module_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
-    from test_framework import TestSuite, suppress_logging, MagicMock, patch
+    from test_framework import MagicMock, TestSuite, patch, suppress_logging
 
     suite = TestSuite(
         "Action 9 - AI Message Processing & Data Extraction",
