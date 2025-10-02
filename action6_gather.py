@@ -266,6 +266,100 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
+# === PAGE PROCESSING LOOP HELPER FUNCTIONS ===
+
+def _get_db_session_with_retry(session_manager: SessionManager, current_page_num: int, state: Dict[str, Any]) -> Optional[SqlAlchemySession]:
+    """Get database session with retry logic."""
+    db_session_for_page: Optional[SqlAlchemySession] = None
+    for retry_attempt in range(3):
+        db_session_for_page = session_manager.get_db_conn()
+        if db_session_for_page:
+            state["db_connection_errors"] = 0
+            return db_session_for_page
+        logger.warning(f"DB session attempt {retry_attempt + 1}/3 failed for page {current_page_num}. Retrying in 5s...")
+        time.sleep(5)
+    return None
+
+
+def _handle_db_session_failure(current_page_num: int, state: Dict[str, Any], progress_bar, loop_final_success: bool) -> tuple[bool, bool]:
+    """Handle database session failure and check if should abort."""
+    state["db_connection_errors"] += 1
+    logger.error(f"Could not get DB session for page {current_page_num} after retries. Skipping page.")
+    state["total_errors"] += MATCHES_PER_PAGE
+    progress_bar.update(MATCHES_PER_PAGE)
+
+    if state["db_connection_errors"] >= DB_ERROR_PAGE_THRESHOLD:
+        logger.critical(f"Aborting run due to {state['db_connection_errors']} consecutive DB connection failures.")
+        loop_final_success = False
+        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+        if remaining_matches_estimate > 0:
+            progress_bar.update(remaining_matches_estimate)
+            state["total_errors"] += remaining_matches_estimate
+        return loop_final_success, True  # should_break
+
+    return loop_final_success, False  # should_break
+
+
+def _fetch_page_matches(session_manager: SessionManager, current_page_num: int, db_session_for_page: SqlAlchemySession, state: Dict[str, Any], progress_bar) -> Optional[List[Dict[str, Any]]]:
+    """Fetch matches for a page with error handling."""
+    try:
+        if not session_manager.is_sess_valid():
+            raise ConnectionError(f"WebDriver session invalid before get_matches page {current_page_num}.")
+
+        result = get_matches(session_manager, current_page_num)
+        if result is None:
+            logger.warning(f"get_matches returned None for page {current_page_num}. Skipping.")
+            progress_bar.update(MATCHES_PER_PAGE)
+            state["total_errors"] += MATCHES_PER_PAGE
+            return []
+
+        matches_on_page_for_batch, _ = result
+        return matches_on_page_for_batch
+
+    except ConnectionError as conn_e:
+        logger.error(f"ConnectionError get_matches page {current_page_num}: {conn_e}", exc_info=False)
+        progress_bar.update(MATCHES_PER_PAGE)
+        state["total_errors"] += MATCHES_PER_PAGE
+        return []
+    except Exception as get_match_e:
+        logger.error(f"Error get_matches page {current_page_num}: {get_match_e}", exc_info=True)
+        progress_bar.update(MATCHES_PER_PAGE)
+        state["total_errors"] += MATCHES_PER_PAGE
+        return []
+    finally:
+        if db_session_for_page:
+            session_manager.return_session(db_session_for_page)
+
+
+def _check_session_validity(session_manager: SessionManager, current_page_num: int, state: Dict[str, Any], progress_bar) -> bool:
+    """Check if session is valid, handle abort if not."""
+    if not session_manager.is_sess_valid():
+        logger.critical(f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run.")
+        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+        if remaining_matches_estimate > 0:
+            progress_bar.update(remaining_matches_estimate)
+            state["total_errors"] += remaining_matches_estimate
+        return False
+    return True
+
+
+def _update_state_after_batch(state: Dict[str, Any], page_new: int, page_updated: int, page_skipped: int, page_errors: int, progress_bar):
+    """Update state counters and progress bar after processing a batch."""
+    state["total_new"] += page_new
+    state["total_updated"] += page_updated
+    state["total_skipped"] += page_skipped
+    state["total_errors"] += page_errors
+    state["total_pages_processed"] += 1
+
+    progress_bar.set_postfix(
+        New=state["total_new"],
+        Upd=state["total_updated"],
+        Skip=state["total_skipped"],
+        Err=state["total_errors"],
+        refresh=True,
+    )
+
+
 def _main_page_processing_loop(
     session_manager: SessionManager,
     start_page: int,
@@ -307,96 +401,30 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
-                if not session_manager.is_sess_valid():
-                    logger.critical(
-                        f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
-                    )
+                # Check session validity
+                if not _check_session_validity(session_manager, current_page_num, state, progress_bar):
                     loop_final_success = False
-                    remaining_matches_estimate = max(
-                        0, progress_bar.total - progress_bar.n
-                    )
-                    if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
-                        state["total_errors"] += remaining_matches_estimate
-                    break  # Exit while loop
+                    break
 
                 # Fetch match data unless it's the first page and data is already available
-                if not (
-                    current_page_num == start_page
-                    and matches_on_page_for_batch is not None
-                ):
-                    db_session_for_page: Optional[SqlAlchemySession] = None
-                    for retry_attempt in range(3):
-                        db_session_for_page = session_manager.get_db_conn()
-                        if db_session_for_page:
-                            state["db_connection_errors"] = 0
-                            break
-                        logger.warning(
-                            f"DB session attempt {retry_attempt + 1}/3 failed for page {current_page_num}. Retrying in 5s..."
-                        )
-                        time.sleep(5)
+                if not (current_page_num == start_page and matches_on_page_for_batch is not None):
+                    # Get DB session with retry
+                    db_session_for_page = _get_db_session_with_retry(session_manager, current_page_num, state)
 
                     if not db_session_for_page:
-                        state["db_connection_errors"] += 1
-                        logger.error(
-                            f"Could not get DB session for page {current_page_num} after retries. Skipping page."
+                        loop_final_success, should_break = _handle_db_session_failure(
+                            current_page_num, state, progress_bar, loop_final_success
                         )
-                        state["total_errors"] += MATCHES_PER_PAGE
-                        progress_bar.update(MATCHES_PER_PAGE)
-                        if state["db_connection_errors"] >= DB_ERROR_PAGE_THRESHOLD:
-                            logger.critical(
-                                f"Aborting run due to {state['db_connection_errors']} consecutive DB connection failures."
-                            )
-                            loop_final_success = False
-                            remaining_matches_estimate = max(
-                                0, progress_bar.total - progress_bar.n
-                            )
-                            if remaining_matches_estimate > 0:
-                                progress_bar.update(remaining_matches_estimate)
-                                state["total_errors"] += remaining_matches_estimate
-                            break  # Exit while loop
+                        if should_break:
+                            break
                         current_page_num += 1
-                        matches_on_page_for_batch = None  # Ensure it's reset
-                        continue  # Next page
+                        matches_on_page_for_batch = None
+                        continue
 
-                    try:
-                        if not session_manager.is_sess_valid():
-                            raise ConnectionError(
-                                f"WebDriver session invalid before get_matches page {current_page_num}."
-                            )
-                        result = get_matches(
-                            session_manager, current_page_num
-                        )
-                        if result is None:
-                            matches_on_page_for_batch = []
-                            logger.warning(
-                                f"get_matches returned None for page {current_page_num}. Skipping."
-                            )
-                            progress_bar.update(MATCHES_PER_PAGE)
-                            state["total_errors"] += MATCHES_PER_PAGE
-                        else:
-                            matches_on_page_for_batch, _ = (
-                                result  # We don't need total_pages again
-                            )
-                    except ConnectionError as conn_e:
-                        logger.error(
-                            f"ConnectionError get_matches page {current_page_num}: {conn_e}",
-                            exc_info=False,
-                        )
-                        progress_bar.update(MATCHES_PER_PAGE)
-                        state["total_errors"] += MATCHES_PER_PAGE
-                        matches_on_page_for_batch = []  # Ensure it's reset
-                    except Exception as get_match_e:
-                        logger.error(
-                            f"Error get_matches page {current_page_num}: {get_match_e}",
-                            exc_info=True,
-                        )
-                        progress_bar.update(MATCHES_PER_PAGE)
-                        state["total_errors"] += MATCHES_PER_PAGE
-                        matches_on_page_for_batch = []  # Ensure it's reset
-                    finally:
-                        if db_session_for_page:
-                            session_manager.return_session(db_session_for_page)
+                    # Fetch page matches
+                    matches_on_page_for_batch = _fetch_page_matches(
+                        session_manager, current_page_num, db_session_for_page, state, progress_bar
+                    )
 
                     if (
                         not matches_on_page_for_batch
@@ -407,25 +435,17 @@ def _main_page_processing_loop(
                         )  # Shorter sleep on success, longer on error path for this page
                         continue  # Next page
 
-                if (
-                    not matches_on_page_for_batch
-                ):  # Should be populated or loop continued
-                    logger.info(
-                        f"No matches found or processed on page {current_page_num}."
-                    )
-                    # If it's the first page and initial fetch was empty, progress bar might not have been updated yet.
-                    if not (
-                        current_page_num == start_page
-                        and state["total_pages_processed"] == 0
-                    ):
-                        progress_bar.update(
-                            MATCHES_PER_PAGE
-                        )  # Assume a full page skip if not first&empty
-                    matches_on_page_for_batch = None  # Reset for next iteration
+                # Handle empty matches
+                if not matches_on_page_for_batch:
+                    logger.info(f"No matches found or processed on page {current_page_num}.")
+                    if not (current_page_num == start_page and state["total_pages_processed"] == 0):
+                        progress_bar.update(MATCHES_PER_PAGE)
+                    matches_on_page_for_batch = None
                     current_page_num += 1
                     time.sleep(0.5)
                     continue
 
+                # Process batch
                 page_new, page_updated, page_skipped, page_errors = _do_batch(
                     session_manager=session_manager,
                     matches_on_page=matches_on_page_for_batch,
@@ -433,19 +453,8 @@ def _main_page_processing_loop(
                     progress_bar=progress_bar,
                 )
 
-                state["total_new"] += page_new
-                state["total_updated"] += page_updated
-                state["total_skipped"] += page_skipped
-                state["total_errors"] += page_errors
-                state["total_pages_processed"] += 1
-
-                progress_bar.set_postfix(
-                    New=state["total_new"],
-                    Upd=state["total_updated"],
-                    Skip=state["total_skipped"],
-                    Err=state["total_errors"],
-                    refresh=True,
-                )
+                # Update state
+                _update_state_after_batch(state, page_new, page_updated, page_skipped, page_errors, progress_bar)
 
                 # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9 (Process Productive Messages)
                 # Action 6 (Gather Matches) should process all matches on the configured pages
