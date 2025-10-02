@@ -180,6 +180,7 @@ from core.error_handling import (
 from core.session_manager import SessionManager
 from database import (  # Database models and utilities
     ConversationLog,
+    DnaMatch,
     FamilyTree,
     MessageDirectionEnum,
     MessageTemplate,
@@ -1732,6 +1733,281 @@ def _safe_api_call_with_validation(
         return False, None
 
 
+# === SINGLE PERSON PROCESSING HELPER FUNCTIONS ===
+
+def _check_halt_signal(session_manager: SessionManager) -> None:
+    """Check for halt signal and raise exception if detected."""
+    if session_manager.should_halt_operations():
+        cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
+        logger.warning(f"🚨 HALT SIGNAL: Skipping person processing due to session death cascade (#{cascade_count})")
+        raise MaxApiFailuresExceededError(f"Session death cascade detected (#{cascade_count}) - halting person processing")
+
+
+def _initialize_person_processing(person: Person) -> tuple[str, int, str, str]:
+    """Initialize person processing variables and return log prefix and identifiers."""
+    username = safe_column_value(person, "username", "Unknown")
+    person_id = safe_column_value(person, "id", 0)
+    status = safe_column_value(person, "status", None)
+    status_name = getattr(status, "name", "Unknown") if status is not None else "Unknown"
+    log_prefix = f"{username} #{person_id} (Status: {status_name})"
+    return log_prefix, person_id, username, status_name
+
+
+def _check_person_eligibility(person: Person, log_prefix: str) -> None:
+    """Check if person is eligible for messaging based on status."""
+    if person.status in (PersonStatusEnum.ARCHIVE, PersonStatusEnum.BLOCKED, PersonStatusEnum.DEAD):
+        logger.debug(f"Skipping {log_prefix}: Status is '{person.status.name}'.")
+        raise StopIteration("skipped (status)")
+
+
+def _handle_desist_status(person: Person, log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]) -> tuple[Optional[str], str]:
+    """Handle DESIST status and return message key and reason if ACK needed."""
+    logger.debug(f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed.")
+
+    desist_ack_type_id = message_type_map.get("User_Requested_Desist")
+    if not desist_ack_type_id:
+        logger.critical("CRITICAL: User_Requested_Desist ID missing from message type map.")
+        raise StopIteration("error (config)")
+
+    ack_already_sent = bool(latest_out_log and latest_out_log.message_template_id == desist_ack_type_id)
+    if ack_already_sent:
+        logger.debug(f"Skipping {log_prefix}: Desist ACK already sent.")
+        raise StopIteration("skipped (ack_sent)")
+
+    logger.debug(f"Action needed for {log_prefix}: Send Desist ACK.")
+    return "User_Requested_Desist", "DESIST Acknowledgment"
+
+
+def _check_reply_received(latest_in_log: Optional[ConversationLog], latest_out_log: Optional[ConversationLog], log_prefix: str) -> None:
+    """Check if reply was received since last script message."""
+    min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
+
+    last_out_ts_utc = min_aware_dt
+    if latest_out_log:
+        last_out_ts_utc = safe_column_value(latest_out_log, "latest_timestamp", min_aware_dt)
+        if last_out_ts_utc and last_out_ts_utc.tzinfo is None:
+            last_out_ts_utc = last_out_ts_utc.replace(tzinfo=timezone.utc)
+
+    last_in_ts_utc = min_aware_dt
+    if latest_in_log:
+        last_in_ts_utc = safe_column_value(latest_in_log, "latest_timestamp", min_aware_dt)
+        if last_in_ts_utc and last_in_ts_utc.tzinfo is None:
+            last_in_ts_utc = last_in_ts_utc.replace(tzinfo=timezone.utc)
+
+    if last_in_ts_utc > last_out_ts_utc:
+        logger.debug(f"Skipping {log_prefix}: Reply received after last script msg.")
+        raise StopIteration("skipped (reply)")
+
+    if latest_in_log and hasattr(latest_in_log, "custom_reply_sent_at") and latest_in_log.custom_reply_sent_at is not None:
+        logger.debug(f"Skipping {log_prefix}: Custom reply already sent.")
+        raise StopIteration("skipped (custom_reply_sent)")
+
+
+def _check_message_interval(latest_out_log: Optional[ConversationLog], log_prefix: str) -> None:
+    """Check if minimum message interval has passed since last script message."""
+    if not latest_out_log:
+        return
+
+    out_timestamp = safe_column_value(latest_out_log, "latest_timestamp", None)
+    if not out_timestamp:
+        return
+
+    try:
+        if out_timestamp.tzinfo is None:
+            out_timestamp = out_timestamp.replace(tzinfo=timezone.utc)
+        elif out_timestamp.tzinfo != timezone.utc:
+            out_timestamp = out_timestamp.astimezone(timezone.utc)
+
+        now_utc = datetime.now(timezone.utc)
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+
+        time_since_last = now_utc - out_timestamp
+        if time_since_last < MIN_MESSAGE_INTERVAL:
+            logger.debug(f"Skipping {log_prefix}: Interval not met.")
+            raise StopIteration("skipped (interval)")
+    except Exception as dt_error:
+        logger.error(f"Datetime comparison error for {log_prefix}: {dt_error}")
+        raise StopIteration("skipped (datetime_error)") from None
+
+
+def _get_last_script_message_details(latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str) -> Optional[tuple[str, datetime, str]]:
+    """Extract details from the last script message."""
+    if not latest_out_log:
+        return None
+
+    out_timestamp = safe_column_value(latest_out_log, "latest_timestamp", None)
+    if not out_timestamp:
+        return None
+
+    try:
+        if out_timestamp.tzinfo is None:
+            out_timestamp = out_timestamp.replace(tzinfo=timezone.utc)
+        elif out_timestamp.tzinfo != timezone.utc:
+            out_timestamp = out_timestamp.astimezone(timezone.utc)
+    except Exception as tz_error:
+        logger.warning(f"Timezone conversion error for {log_prefix}: {tz_error}")
+        out_timestamp = datetime.now(timezone.utc)
+
+    last_type_name = latest_out_template_key
+    if not last_type_name or last_type_name == "Unknown":
+        last_type_name = None
+        logger.debug(f"Could not determine message type for {log_prefix}, using None for fallback")
+
+    last_status = safe_column_value(latest_out_log, "script_message_status", "Unknown")
+    return (last_type_name, out_timestamp, last_status)
+
+
+def _determine_message_to_send(person: Person, latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str) -> tuple[str, str]:
+    """Determine which message to send and the selection reason."""
+    last_script_message_details = _get_last_script_message_details(latest_out_log, latest_out_template_key, log_prefix)
+    base_message_key = determine_next_message_type(last_script_message_details, bool(person.in_my_tree))
+
+    if not base_message_key:
+        logger.debug(f"Skipping {log_prefix}: No appropriate next standard message found.")
+        raise StopIteration("skipped (sequence)")
+
+    person_id = safe_column_value(person, "id", 0)
+    dna_match = person.dna_match
+    family_tree = person.family_tree
+
+    # First try A/B testing for initial messages
+    if base_message_key in ["In_Tree-Initial", "Out_Tree-Initial"]:
+        message_to_send_key = select_template_variant_ab_testing(person_id, base_message_key)
+        template_selection_reason = "A/B Testing"
+
+        if message_to_send_key == base_message_key:
+            message_to_send_key = select_template_by_confidence(base_message_key, family_tree, dna_match)
+            template_selection_reason = "Confidence-based"
+    else:
+        message_to_send_key = base_message_key
+        template_selection_reason = "Standard sequence"
+
+    track_template_selection(message_to_send_key, person_id, template_selection_reason)
+    logger.debug(f"Action needed for {log_prefix}: Send '{message_to_send_key}' (selected via {template_selection_reason}).")
+
+    return message_to_send_key, template_selection_reason
+
+
+def _get_best_name_for_person(person: Person, family_tree: Optional[FamilyTree]) -> str:
+    """Determine the best name to use for the person (Tree Name > First Name > Username)."""
+    tree_name = None
+    if family_tree:
+        tree_name = safe_column_value(family_tree, "person_name_in_tree", None)
+
+    first_name = safe_column_value(person, "first_name", None)
+    username = safe_column_value(person, "username", None)
+
+    if tree_name:
+        return tree_name
+    elif first_name:
+        return first_name
+    elif username and username not in ["Unknown", "Unknown User"]:
+        return username
+    else:
+        return "Valued Relative"
+
+
+def _format_predicted_relationship(rel_str: str) -> str:
+    """Format predicted relationship with correct percentage."""
+    if not rel_str or rel_str == "N/A":
+        return "N/A"
+
+    import re
+    match = re.search(r"\[([\d.]+)%\]", rel_str)
+    if match:
+        try:
+            percentage = float(match.group(1))
+            if percentage > 100.0:
+                corrected_percentage = percentage / 100.0
+                return re.sub(r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str)
+            if percentage < 1.0:
+                corrected_percentage = percentage * 100.0
+                return re.sub(r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str)
+        except (ValueError, IndexError):
+            pass
+
+    return rel_str
+
+
+def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch], db_session: Session) -> dict:
+    """Prepare format data for message template."""
+    name_to_use = _get_best_name_for_person(person, family_tree)
+    formatted_name = format_name(name_to_use)
+
+    total_rows_in_tree = 0
+    try:
+        total_rows_in_tree = db_session.query(func.count(FamilyTree.id)).scalar() or 0
+    except Exception as count_e:
+        logger.warning(f"Could not get FamilyTree count for formatting: {count_e}")
+
+    predicted_rel = "N/A"
+    if dna_match:
+        raw_predicted_rel = getattr(dna_match, "predicted_relationship", "N/A")
+        predicted_rel = _format_predicted_relationship(raw_predicted_rel)
+
+    safe_actual_relationship = get_safe_relationship_text(family_tree, predicted_rel)
+    safe_relationship_path = get_safe_relationship_path(family_tree)
+
+    return {
+        "name": formatted_name,
+        "predicted_relationship": predicted_rel if predicted_rel != "N/A" else "family connection",
+        "actual_relationship": safe_actual_relationship,
+        "relationship_path": safe_relationship_path,
+        "total_rows": total_rows_in_tree,
+    }
+
+
+def _format_message_text(message_to_send_key: str, person: Person, format_data: dict, log_prefix: str) -> str:
+    """Format message text using enhanced or standard template."""
+    message_template = MESSAGE_TEMPLATES[message_to_send_key]
+    message_text = None
+
+    # Try enhanced personalized message formatting first
+    if MESSAGE_PERSONALIZER and hasattr(person, 'extracted_genealogical_data'):
+        try:
+            enhanced_template_key = f"Enhanced_{message_to_send_key}"
+            if enhanced_template_key in MESSAGE_TEMPLATES:
+                logger.debug(f"Using enhanced template '{enhanced_template_key}' for {log_prefix}")
+
+                extracted_data = getattr(person, 'extracted_genealogical_data', {})
+                person_data = {"username": getattr(person, "username", "Unknown")}
+
+                with contextlib.suppress(Exception):
+                    _log_personalization_sanity_for_template(
+                        enhanced_template_key,
+                        MESSAGE_TEMPLATES[enhanced_template_key],
+                        extracted_data or {},
+                        log_prefix,
+                    )
+
+                message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
+                    enhanced_template_key,
+                    person_data,
+                    extracted_data,
+                    format_data
+                )
+                logger.debug(f"Successfully created personalized message for {log_prefix}")
+            else:
+                logger.debug(f"Enhanced template '{enhanced_template_key}' not available, using standard template")
+        except Exception as e:
+            logger.warning(f"Enhanced message formatting failed for {log_prefix}: {e}, falling back to standard")
+            message_text = None
+
+    # Fallback to standard template formatting
+    if not message_text:
+        try:
+            message_text = message_template.format(**format_data)
+        except KeyError as ke:
+            logger.error(f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}")
+            raise StopIteration("error (template_format)") from None
+        except Exception as e:
+            logger.error(f"Unexpected template formatting error for {log_prefix}: {e}", exc_info=True)
+            raise StopIteration("error (template_format)") from None
+
+    return message_text
+
+
 def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
@@ -1761,27 +2037,11 @@ def _process_single_person(
         - person_update (Optional[Tuple[int, PersonStatusEnum]]): Tuple of (person_id, new_status) if status needs update, else None.
         - status_string (str): "sent", "acked", "skipped", or "error".
     """
-    # --- Step 0: Session Validation and Initialization (Action 6 Pattern) ---
-    # CRITICAL FIX: Check for halt signal before processing person
-    if session_manager.should_halt_operations():
-        cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
-        logger.warning(
-            f"🚨 HALT SIGNAL: Skipping person processing due to session death cascade (#{cascade_count})"
-        )
-        raise MaxApiFailuresExceededError(
-            f"Session death cascade detected (#{cascade_count}) - halting person processing"
-        )
+    # --- Step 0: Session Validation and Initialization ---
+    _check_halt_signal(session_manager)
 
     # --- Step 1: Initialization and Logging ---
-    # Convert SQLAlchemy Column objects to Python primitives using our safe helper
-    username = safe_column_value(person, "username", "Unknown")
-    person_id = safe_column_value(person, "id", 0)
-
-    # For nested attributes like person.status.name, we need to be more careful
-    status = safe_column_value(person, "status", None)
-    status_name = getattr(status, "name", "Unknown") if status is not None else "Unknown"
-
-    log_prefix = f"{username} #{person_id} (Status: {status_name})"
+    log_prefix, person_id, username, status_name = _initialize_person_processing(person)
     message_to_send_key: Optional[str] = None  # Key from MESSAGE_TEMPLATES
     send_reason = "Unknown"  # Reason for sending/skipping
     template_selection_reason = "Unknown"  # CONSOLIDATED: Track template selection reason
@@ -1815,209 +2075,32 @@ def _process_single_person(
 
     try:  # Main processing block for this person
         # --- Step 1: Check Person Status for Eligibility ---
-        if person.status in (
-            PersonStatusEnum.ARCHIVE,
-            PersonStatusEnum.BLOCKED,
-            PersonStatusEnum.DEAD,
-        ):
-            logger.debug(f"Skipping {log_prefix}: Status is '{person.status.name}'.")
-            raise StopIteration("skipped (status)")  # Use StopIteration to exit cleanly
+        _check_person_eligibility(person, log_prefix)
 
         # --- Step 2: Determine Action based on Status (DESIST vs ACTIVE) ---
-        # Get the status as a Python enum using our safe helper
         person_status = safe_column_value(person, "status", None)
 
         # Handle DESIST status
         if person_status == PersonStatusEnum.DESIST:
-            # When status is DESIST, we only send an acknowledgment if needed
-            logger.debug(
-                f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed."
-            )
-
-            # Get the message type ID for the Desist acknowledgment
-            desist_ack_type_id = message_type_map.get("User_Requested_Desist")
-            if not desist_ack_type_id:  # Should have been checked during prefetch
-                logger.critical(
-                    "CRITICAL: User_Requested_Desist ID missing from message type map."
-                )
-                raise StopIteration("error (config)")
-
-            # Check if the latest OUT message was already the Desist ACK
-            ack_already_sent = bool(
-                latest_out_log and latest_out_log.message_template_id == desist_ack_type_id
-            )
-            if ack_already_sent:
-                logger.debug(
-                    f"Skipping {log_prefix}: Desist ACK already sent (Last OUT Template ID: {latest_out_log.message_template_id if latest_out_log else 'N/A'})."
-                )
-                # If ACK sent but status still DESIST, could change to ARCHIVE here or Action 9
-                raise StopIteration("skipped (ack_sent)")
-            # ACK needs to be sent
-            message_to_send_key = "User_Requested_Desist"
-            send_reason = "DESIST Acknowledgment"
-            logger.debug(f"Action needed for {log_prefix}: Send Desist ACK.")
+            message_to_send_key, send_reason = _handle_desist_status(person, log_prefix, latest_out_log, message_type_map)
 
         elif person_status == PersonStatusEnum.ACTIVE:
             # Handle ACTIVE status: Check rules for sending standard messages
             logger.debug(f"{log_prefix}: Status is ACTIVE. Checking messaging rules...")
 
             # Rule 1: Check if reply received since last script message
-            # Use our safe helper to get timestamps
-            last_out_ts_utc = min_aware_dt
-            if latest_out_log:
-                last_out_ts_utc = safe_column_value(
-                    latest_out_log, "latest_timestamp", min_aware_dt
-                )
-                # Ensure timezone-aware
-                if last_out_ts_utc and last_out_ts_utc.tzinfo is None:
-                    last_out_ts_utc = last_out_ts_utc.replace(tzinfo=timezone.utc)
-
-            last_in_ts_utc = min_aware_dt
-            if latest_in_log:
-                last_in_ts_utc = safe_column_value(
-                    latest_in_log, "latest_timestamp", min_aware_dt
-                )
-                # Ensure timezone-aware
-                if last_in_ts_utc and last_in_ts_utc.tzinfo is None:
-                    last_in_ts_utc = last_in_ts_utc.replace(tzinfo=timezone.utc)
-
-            if last_in_ts_utc > last_out_ts_utc:
-                logger.debug(
-                    f"Skipping {log_prefix}: Reply received ({last_in_ts_utc}) after last script msg ({last_out_ts_utc})."
-                )
-                raise StopIteration("skipped (reply)")
-
-            # Rule 1b: Check if custom reply has already been sent for the latest incoming message
-            if (
-                latest_in_log
-                and hasattr(latest_in_log, "custom_reply_sent_at")
-                and latest_in_log.custom_reply_sent_at is not None
-            ):
-                logger.debug(
-                    f"Skipping {log_prefix}: Custom reply already sent at {latest_in_log.custom_reply_sent_at}."
-                )
-                raise StopIteration("skipped (custom_reply_sent)")
+            _check_reply_received(latest_in_log, latest_out_log, log_prefix)
 
             # Rule 2: Check time interval since last script message
-            if latest_out_log:
-                # Use our safe helper to get the timestamp
-                out_timestamp = safe_column_value(
-                    latest_out_log, "latest_timestamp", None
-                )
-                if out_timestamp:
-                    # CRITICAL FIX: Handle timezone mismatch between now_utc and out_timestamp
-                    try:
-                        # Ensure out_timestamp is timezone-aware
-                        if out_timestamp.tzinfo is None:
-                            out_timestamp = out_timestamp.replace(tzinfo=timezone.utc)
-                        elif out_timestamp.tzinfo != timezone.utc:
-                            # Convert to UTC if it's in a different timezone
-                            out_timestamp = out_timestamp.astimezone(timezone.utc)
-
-                        # Ensure now_utc is timezone-aware (should already be, but double-check)
-                        if now_utc.tzinfo is None:
-                            now_utc = now_utc.replace(tzinfo=timezone.utc)
-
-                        time_since_last = now_utc - out_timestamp
-                        if time_since_last < MIN_MESSAGE_INTERVAL:
-                            logger.debug(
-                                f"Skipping {log_prefix}: Interval not met ({time_since_last} < {MIN_MESSAGE_INTERVAL})."
-                            )
-                            raise StopIteration("skipped (interval)")
-                    except Exception as dt_error:
-                        logger.error(
-                            f"Datetime comparison error for {log_prefix}: {dt_error}. "
-                            f"now_utc={now_utc} (tzinfo={now_utc.tzinfo}), "
-                            f"out_timestamp={out_timestamp} (tzinfo={getattr(out_timestamp, 'tzinfo', 'N/A')})"
-                        )
-                        # Skip this person due to datetime error
-                        raise StopIteration("skipped (datetime_error)") from None
-                    # else: logger.debug(f"Interval met for {log_prefix}.")
-            # else: logger.debug(f"No previous OUT message for {log_prefix}, interval check skipped.")
+            _check_message_interval(latest_out_log, log_prefix)
 
             # Rule 3: Determine next message type in sequence
-            last_script_message_details: Optional[tuple[str, datetime, str]] = None
-            if latest_out_log:
-                # Use our safe helper to get the timestamp
-                out_timestamp = safe_column_value(
-                    latest_out_log, "latest_timestamp", None
-                )
-                if out_timestamp:
-                    # Ensure timestamp is timezone-aware before using it
-                    try:
-                        if out_timestamp.tzinfo is None:
-                            out_timestamp = out_timestamp.replace(tzinfo=timezone.utc)
-                        elif out_timestamp.tzinfo != timezone.utc:
-                            out_timestamp = out_timestamp.astimezone(timezone.utc)
-                    except Exception as tz_error:
-                        logger.warning(f"Timezone conversion error for {log_prefix}: {tz_error}")
-                        # Use current time as fallback
-                        out_timestamp = now_utc
-
-                    # Use the template key from the latest OUT message
-                    last_type_name = latest_out_template_key
-
-                    # If we still don't have a valid type name, use None for proper fallback handling
-                    if not last_type_name or last_type_name == "Unknown":
-                        last_type_name = None
-                        logger.debug(f"Could not determine message type for {log_prefix}, using None for fallback")
-
-                    # Get status using safe helper
-                    last_status = safe_column_value(
-                        latest_out_log, "script_message_status", "Unknown"
-                    )
-
-                    # Create the tuple with Python primitives
-                    last_script_message_details = (
-                        last_type_name,
-                        out_timestamp,
-                        last_status,
-                    )
-
-
-
-            base_message_key = determine_next_message_type(
-                last_script_message_details, bool(person.in_my_tree)
-            )
-
-
-            if not base_message_key:
-                # No appropriate next message in the standard sequence
-                logger.debug(
-                    f"Skipping {log_prefix}: No appropriate next standard message found."
-                )
-                raise StopIteration("skipped (sequence)")
-
-            # Apply improved template selection logic
-            person_id = safe_column_value(person, "id", 0)
-
-            # Prepare data for template selection (needed early for confidence-based selection)
-            dna_match = person.dna_match  # Eager loaded
-            family_tree = person.family_tree  # Eager loaded
-
-            # First try A/B testing for initial messages
-            if base_message_key in ["In_Tree-Initial", "Out_Tree-Initial"]:
-                message_to_send_key = select_template_variant_ab_testing(person_id, base_message_key)
-                template_selection_reason = "A/B Testing"
-
-                # If A/B testing didn't select a variant, try confidence-based selection
-                if message_to_send_key == base_message_key:
-                    message_to_send_key = select_template_by_confidence(
-                        base_message_key, family_tree, dna_match
-                    )
-                    template_selection_reason = "Confidence-based"
-            else:
-                # For follow-up messages, use standard template
-                message_to_send_key = base_message_key
-                template_selection_reason = "Standard sequence"
-
-            # CONSOLIDATED LOGGING: Track template selection (debug only)
-            track_template_selection(message_to_send_key, person_id, template_selection_reason)
-
+            message_to_send_key, template_selection_reason = _determine_message_to_send(person, latest_out_log, latest_out_template_key, log_prefix)
             send_reason = "Standard Sequence"
-            logger.debug(
-                f"Action needed for {log_prefix}: Send '{message_to_send_key}' (selected via {template_selection_reason})."
-            )
+
+            # Prepare data for message formatting
+            dna_match = person.dna_match
+            family_tree = person.family_tree
 
         else:  # Should not happen if prefetch filters correctly
             logger.error(
@@ -2027,147 +2110,11 @@ def _process_single_person(
 
         # --- Step 3: Format the Selected Message ---
         if not message_to_send_key or message_to_send_key not in MESSAGE_TEMPLATES:
-            logger.error(
-                f"Logic Error: Invalid/missing message key '{message_to_send_key}' for {log_prefix}."
-            )
+            logger.error(f"Logic Error: Invalid/missing message key '{message_to_send_key}' for {log_prefix}.")
             raise StopIteration("error (template_key)")
-        message_template = MESSAGE_TEMPLATES[message_to_send_key]
 
-        # Note: dna_match and family_tree already loaded above for template selection
-
-        # Determine best name to use (Tree Name > First Name > Username)
-        # Use our safe helper to get values
-        tree_name = None
-        if family_tree:
-            tree_name = safe_column_value(family_tree, "person_name_in_tree", None)
-
-        first_name = safe_column_value(person, "first_name", None)
-        username = safe_column_value(person, "username", None)
-
-        # Choose the best name with fallbacks
-        if tree_name:
-            name_to_use = tree_name
-        elif first_name:
-            name_to_use = first_name
-        elif username and username not in ["Unknown", "Unknown User"]:
-            name_to_use = username
-        else:
-            name_to_use = "Valued Relative"
-
-        # Format the name
-        formatted_name = format_name(name_to_use)
-
-        # Get total rows count (optional, consider caching if slow)
-        total_rows_in_tree = 0
-        try:
-            total_rows_in_tree = (
-                db_session.query(func.count(FamilyTree.id)).scalar() or 0
-            )
-        except Exception as count_e:
-            logger.warning(f"Could not get FamilyTree count for formatting: {count_e}")
-
-        # Helper function to format predicted relationship with correct percentage
-        def format_predicted_relationship(rel_str: str) -> str:
-            if not rel_str or rel_str == "N/A":
-                return "N/A"
-
-            # Check if the string contains a percentage in brackets
-            import re
-
-            match = re.search(r"\[([\d.]+)%\]", rel_str)
-            if match:
-                try:
-                    # Extract the percentage value
-                    percentage = float(match.group(1))
-
-                    # Fix percentage formatting based on the value range
-                    if percentage > 100.0:
-                        # Values like 9900.0% should be 99.0%
-                        corrected_percentage = percentage / 100.0
-                        return re.sub(
-                            r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str
-                        )
-                    if percentage < 1.0:
-                        # Values like 0.99% should be 99.0%
-                        corrected_percentage = percentage * 100.0
-                        return re.sub(
-                            r"\[([\d.]+)%\]", f"[{corrected_percentage:.1f}%]", rel_str
-                        )
-                    # If percentage is between 1-100, it's already correct
-                except (ValueError, IndexError):
-                    pass
-
-            # Return the original string if no percentage found or couldn't be processed
-            return rel_str
-
-        # Get the predicted relationship and format it correctly
-        predicted_rel = "N/A"
-        if dna_match:
-            raw_predicted_rel = getattr(dna_match, "predicted_relationship", "N/A")
-            predicted_rel = format_predicted_relationship(raw_predicted_rel)
-
-        # Use improved variable handling for natural text
-        safe_actual_relationship = get_safe_relationship_text(family_tree, predicted_rel)
-        safe_relationship_path = get_safe_relationship_path(family_tree)
-
-        format_data = {
-            "name": formatted_name,
-            "predicted_relationship": predicted_rel if predicted_rel != "N/A" else "family connection",
-            "actual_relationship": safe_actual_relationship,
-            "relationship_path": safe_relationship_path,
-            "total_rows": total_rows_in_tree,
-        }
-
-        # Try enhanced personalized message formatting first
-        message_text = None
-        if MESSAGE_PERSONALIZER and hasattr(person, 'extracted_genealogical_data'):
-            try:
-                # Check if we have an enhanced template available
-                enhanced_template_key = f"Enhanced_{message_to_send_key}"
-                if enhanced_template_key in MESSAGE_TEMPLATES:
-                    logger.debug(f"Using enhanced template '{enhanced_template_key}' for {log_prefix}")
-
-                    # Get extracted data from person object (if available)
-                    extracted_data = getattr(person, 'extracted_genealogical_data', {})
-                    person_data = {"username": getattr(person, "username", "Unknown")}
-
-                    # Log-only: estimate personalization coverage
-                    with contextlib.suppress(Exception):
-                        _log_personalization_sanity_for_template(
-                            enhanced_template_key,
-                            MESSAGE_TEMPLATES[enhanced_template_key],
-                            extracted_data or {},
-                            log_prefix,
-                        )
-
-                    message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
-                        enhanced_template_key,
-                        person_data,
-                        extracted_data,
-                        format_data
-                    )
-                    logger.debug(f"Successfully created personalized message for {log_prefix}")
-                else:
-                    logger.debug(f"Enhanced template '{enhanced_template_key}' not available, using standard template")
-            except Exception as e:
-                logger.warning(f"Enhanced message formatting failed for {log_prefix}: {e}, falling back to standard")
-                message_text = None
-
-        # Fallback to standard template formatting
-        if not message_text:
-            try:
-                message_text = message_template.format(**format_data)
-            except KeyError as ke:
-                logger.error(
-                    f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}"
-                )
-                raise StopIteration("error (template_format)") from None
-            except Exception as e:
-                logger.error(
-                    f"Unexpected template formatting error for {log_prefix}: {e}",
-                    exc_info=True,
-                )
-                raise StopIteration("error (template_format)") from None
+        format_data = _prepare_message_format_data(person, family_tree, dna_match, db_session)
+        message_text = _format_message_text(message_to_send_key, person, format_data, log_prefix)
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
         app_mode = getattr(config_schema, 'app_mode', 'production')
