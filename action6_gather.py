@@ -154,6 +154,67 @@ def _validate_start_page(start_arg: Any) -> int:
 # End of _validate_start_page
 
 
+# === INITIAL PAGE NAVIGATION HELPER FUNCTIONS ===
+
+def _ensure_on_match_list_page(session_manager: SessionManager, target_matches_url_base: str) -> bool:
+    """Ensure browser is on the DNA matches list page."""
+    driver = session_manager.driver
+
+    try:
+        current_url = driver.current_url  # type: ignore
+        if not current_url.startswith(target_matches_url_base):
+            logger.debug("Not on match list page. Navigating...")
+            if not nav_to_list(session_manager):
+                logger.error("Failed to navigate to DNA match list page. Exiting initial fetch.")
+                return False
+            logger.debug("Successfully navigated to DNA matches page.")
+        else:
+            logger.debug(f"Already on correct DNA matches page: {current_url}")
+        return True
+    except WebDriverException as nav_e:
+        logger.error(f"WebDriver error checking/navigating to match list: {nav_e}", exc_info=True)
+        return False
+
+
+def _fetch_initial_page_data(session_manager: SessionManager, start_page: int) -> tuple[Optional[List[Dict[str, Any]]], Optional[int], bool]:
+    """Fetch initial page data with DB session retry."""
+    db_session_for_page: Optional[SqlAlchemySession] = None
+
+    # Get DB session with retry
+    for retry_attempt in range(3):
+        db_session_for_page = session_manager.get_db_conn()
+        if db_session_for_page:
+            break
+        logger.warning(f"DB session attempt {retry_attempt + 1}/3 failed. Retrying in 5s...")
+        time.sleep(5)
+
+    if not db_session_for_page:
+        logger.critical("Could not get DB session for initial page fetch after retries.")
+        return None, None, False
+
+    try:
+        if not session_manager.is_sess_valid():
+            raise ConnectionError("WebDriver session invalid before initial get_matches.")
+
+        result = get_matches(session_manager, start_page)
+        if result is None:
+            logger.error(f"Initial get_matches for page {start_page} returned None.")
+            return [], None, False
+
+        matches_on_page, total_pages_from_api = result
+        return matches_on_page, total_pages_from_api, True
+
+    except ConnectionError as init_conn_e:
+        logger.critical(f"ConnectionError during initial get_matches: {init_conn_e}.", exc_info=False)
+        return None, None, False
+    except Exception as get_match_err:
+        logger.error(f"Error during initial get_matches call on page {start_page}: {get_match_err}", exc_info=True)
+        return None, None, False
+    finally:
+        if db_session_for_page:
+            session_manager.return_session(db_session_for_page)
+
+
 def _navigate_and_get_initial_page_data(
     session_manager: SessionManager, start_page: int
 ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[int], bool]:
@@ -163,82 +224,23 @@ def _navigate_and_get_initial_page_data(
     Returns:
         Tuple: (matches_on_page, total_pages, success_flag)
     """
-    driver = session_manager.driver
     my_uuid = session_manager.my_uuid
 
-    # Detect the correct base URL from the browser's current URL
+    # Detect the correct base URL
     target_matches_url_base = urljoin(
         config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
     )
 
+    # Ensure on match list page
     logger.debug("Ensuring browser is on the DNA matches list page...")
-    try:
-        current_url = driver.current_url  # type: ignore
-        if not current_url.startswith(target_matches_url_base):
-            logger.debug("Not on match list page. Navigating...")
-            if not nav_to_list(session_manager):
-                logger.error(
-                    "Failed to navigate to DNA match list page. Exiting initial fetch."
-                )
-                return None, None, False
-            logger.debug("Successfully navigated to DNA matches page.")
-        else:
-            logger.debug(f"Already on correct DNA matches page: {current_url}")
-    except WebDriverException as nav_e:
-        logger.error(
-            f"WebDriver error checking/navigating to match list: {nav_e}",
-            exc_info=True,
-        )
+    if not _ensure_on_match_list_page(session_manager, target_matches_url_base):
         return None, None, False
 
+    # Fetch initial page data
     logger.debug(f"Fetching initial page {start_page} to determine total pages...")
-    db_session_for_page: Optional[SqlAlchemySession] = None
-    initial_fetch_success = False
-    matches_on_page: Optional[List[Dict[str, Any]]] = None
-    total_pages_from_api: Optional[int] = None
-
-    try:
-        for retry_attempt in range(3):  # DB connection retry
-            db_session_for_page = session_manager.get_db_conn()
-            if db_session_for_page:
-                break
-            logger.warning(
-                f"DB session attempt {retry_attempt + 1}/3 failed. Retrying in 5s..."
-            )
-            time.sleep(5)
-        if not db_session_for_page:
-            logger.critical(
-                "Could not get DB session for initial page fetch after retries."
-            )
-            return None, None, False
-
-        if not session_manager.is_sess_valid():
-            raise ConnectionError(
-                "WebDriver session invalid before initial get_matches."
-            )
-        result = get_matches(session_manager, start_page)
-        if result is None:
-            matches_on_page, total_pages_from_api = [], None
-            logger.error(f"Initial get_matches for page {start_page} returned None.")
-        else:
-            matches_on_page, total_pages_from_api = result
-            initial_fetch_success = True  # Mark success if get_matches returned data
-
-    except ConnectionError as init_conn_e:
-        logger.critical(
-            f"ConnectionError during initial get_matches: {init_conn_e}.",
-            exc_info=False,
-        )
-        # initial_fetch_success remains False
-    except Exception as get_match_err:
-        logger.error(
-            f"Error during initial get_matches call on page {start_page}: {get_match_err}",
-            exc_info=True,
-        )
-        # initial_fetch_success remains False
-    finally:
-        if db_session_for_page:
-            session_manager.return_session(db_session_for_page)
+    matches_on_page, total_pages_from_api, initial_fetch_success = _fetch_initial_page_data(
+        session_manager, start_page
+    )
 
     return matches_on_page, total_pages_from_api, initial_fetch_success
 
