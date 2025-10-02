@@ -503,6 +503,182 @@ def _run_simple_suggestion_scoring(
 # End of _run_simple_suggestion_scoring
 
 
+# === SUGGESTION PROCESSING HELPER FUNCTIONS ===
+
+def _extract_candidate_data(raw_candidate: Dict, idx: int, clean_param: Callable, parse_date_func: Optional[Callable]) -> Dict[str, Any]:
+    """Extract and normalize candidate data from raw API response."""
+    full_name_disp = raw_candidate.get("FullName", "Unknown")
+    person_id = raw_candidate.get("PersonId", f"Unknown_{idx}")
+
+    # Parse name
+    first_name_cand = None
+    surname_cand = None
+    if full_name_disp != "Unknown":
+        parts = full_name_disp.split()
+        if parts:
+            first_name_cand = clean_param(parts[0])
+        if len(parts) > 1:
+            surname_cand = clean_param(parts[-1])
+
+    # Parse dates
+    birth_date_obj_cand = None
+    birth_date_str_cand = raw_candidate.get("BirthDate")
+    if birth_date_str_cand and parse_date_func:
+        try:
+            birth_date_obj_cand = parse_date_func(birth_date_str_cand)
+        except ValueError:
+            logger.debug(f"Could not parse candidate birth date: {birth_date_str_cand}")
+
+    death_date_obj_cand = None
+    death_date_str_cand = raw_candidate.get("DeathDate")
+    if death_date_str_cand and parse_date_func:
+        try:
+            death_date_obj_cand = parse_date_func(death_date_str_cand)
+        except ValueError:
+            logger.debug(f"Could not parse candidate death date: {death_date_str_cand}")
+
+    # Build candidate data dictionary
+    birth_place_cand = clean_param(raw_candidate.get("BirthPlace"))
+    death_place_cand = clean_param(raw_candidate.get("DeathPlace"))
+    gender_cand = raw_candidate.get("Gender")
+
+    return {
+        "norm_id": person_id,
+        "display_id": person_id,
+        "first_name": first_name_cand,
+        "surname": surname_cand,
+        "full_name_disp": full_name_disp,
+        "gender_norm": gender_cand,
+        "birth_year": raw_candidate.get("BirthYear"),
+        "birth_date_obj": birth_date_obj_cand,
+        "birth_place_disp": birth_place_cand,
+        "death_year": raw_candidate.get("DeathYear"),
+        "death_date_obj": death_date_obj_cand,
+        "death_place_disp": death_place_cand,
+        "is_living": raw_candidate.get("IsLiving"),
+        "gender": gender_cand,
+        "birth_place": birth_place_cand,
+        "death_place": death_place_cand,
+    }
+
+
+def _calculate_candidate_score(
+    candidate_data_dict: Dict[str, Any],
+    search_criteria: Dict[str, Any],
+    scoring_func: Optional[Callable],
+    scoring_weights: Dict[str, int],
+    name_flex: int,
+    date_flex: Dict[str, int],
+    gender_weight: int,
+) -> Tuple[float, Dict[str, Any], List[str]]:
+    """Calculate match score for a candidate using available scoring function."""
+    person_id = candidate_data_dict.get("norm_id", "Unknown")
+
+    # Log inputs
+    logger.debug(f"--- Scoring Candidate ID: {person_id} ---")
+    logger.debug(f"Search Criteria Gender: '{search_criteria.get('gender')}'")
+    logger.debug(f"Candidate Dict Gender ('gender'): '{candidate_data_dict.get('gender')}'")
+    logger.debug(f"Calling scoring function: {getattr(scoring_func, '__name__', 'Unknown')}")
+
+    try:
+        # Try GEDCOM scoring first
+        if GEDCOM_SCORING_AVAILABLE and scoring_func == calculate_match_score and scoring_func is not None:
+            if gender_weight == 0:
+                logger.warning("Gender weight ('gender_match') in config is 0.")
+
+            # Debug logging for Fraser Gault
+            if "fraser" in candidate_data_dict.get("first_name", "").lower():
+                logger.info("=== ACTION 11 FRASER GAULT SCORING DEBUG ===")
+                logger.info(f"Search criteria: {search_criteria}")
+                logger.info(f"Candidate data: {candidate_data_dict}")
+                logger.info(f"Scoring weights: {scoring_weights}")
+                logger.info(f"Date flexibility: {date_flex}")
+                logger.info(f"Name flexibility: {name_flex}")
+
+            score, field_scores, reasons = scoring_func(
+                search_criteria,
+                candidate_data_dict,
+                scoring_weights,
+                _name_flexibility=name_flex if isinstance(name_flex, dict) else None,
+                date_flexibility=date_flex if isinstance(date_flex, dict) else None,
+            )
+
+            # Debug logging for Fraser Gault results
+            if "fraser" in candidate_data_dict.get("first_name", "").lower():
+                logger.info(f"Score result: {score}")
+                logger.info(f"Field scores: {field_scores}")
+                logger.info(f"Reasons: {reasons}")
+                logger.info("=== END ACTION 11 FRASER GAULT DEBUG ===")
+
+            logger.debug(f"Gedcom Score for {person_id}: {score}, Fields: {field_scores}")
+            if "gender_match" in field_scores:
+                logger.debug(f"Gedcom Field Score ('gender_match'): {field_scores['gender_match']}")
+            else:
+                logger.debug("Gedcom Field Scores missing 'gender_match' key.")
+
+            return score, field_scores, reasons
+
+        # Fall back to simple scoring
+        elif scoring_func is not None:
+            score, field_scores, reasons = _run_simple_suggestion_scoring(search_criteria, candidate_data_dict)
+            logger.debug(f"Simple Score for {person_id}: {score}, Fields: {field_scores}")
+            if "gender_match" in field_scores:
+                logger.debug(f"Simple Field Score ('gender_match'): {field_scores['gender_match']}")
+            else:
+                logger.debug("Simple Field Scores missing 'gender_match' key.")
+
+            return score, field_scores, reasons
+
+        else:
+            logger.error("Scoring function is None")
+            return 0.0, {}, []
+
+    except Exception as score_err:
+        logger.error(f"Error scoring {person_id}: {score_err}", exc_info=True)
+        logger.warning("Falling back to simple scoring...")
+        score, field_scores, reasons = _run_simple_suggestion_scoring(search_criteria, candidate_data_dict)
+        reasons.append("(Error Fallback)")
+        logger.debug(f"Fallback Score for {person_id}: {score}, Fields: {field_scores}")
+        return score, field_scores, reasons
+
+
+def _build_processed_candidate(
+    raw_candidate: Dict,
+    candidate_data_dict: Dict[str, Any],
+    score: float,
+    field_scores: Dict[str, Any],
+    reasons: List[str],
+) -> Dict[str, Any]:
+    """Build processed candidate dictionary with all required fields."""
+    person_id = candidate_data_dict.get("norm_id", "Unknown")
+    full_name_disp = candidate_data_dict.get("full_name_disp", "Unknown")
+    birth_date_str = raw_candidate.get("BirthDate")
+    death_date_str = raw_candidate.get("DeathDate")
+
+    return {
+        "id": person_id,
+        "name": full_name_disp,
+        "gender": candidate_data_dict.get("gender"),
+        "birth_date": (
+            _clean_display_date(birth_date_str)
+            if callable(_clean_display_date)
+            else (birth_date_str or "N/A")
+        ),
+        "birth_place": raw_candidate.get("BirthPlace", "N/A"),
+        "death_date": (
+            _clean_display_date(death_date_str)
+            if callable(_clean_display_date)
+            else (death_date_str or "N/A")
+        ),
+        "death_place": raw_candidate.get("DeathPlace", "N/A"),
+        "score": score,
+        "field_scores": field_scores,
+        "reasons": reasons,
+        "raw_data": raw_candidate,
+        "parsed_suggestion": candidate_data_dict,
+    }
+
+
 # Suggestion processing and scoring (Uses 'gender_match' key)
 def _process_and_score_suggestions(
     suggestions: List[Dict], search_criteria: Dict[str, Any]
@@ -512,182 +688,50 @@ def _process_and_score_suggestions(
     Uses 'gender_match' key from config weights.
     """
     processed_candidates = []
+
+    # Setup
     clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None
 
+    # Get configuration
     scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
     name_flex = getattr(config_schema, "name_flexibility", 2)
     date_flexibility_value = getattr(config_schema, "date_flexibility", 2)
     date_flex = {"year_match_range": int(date_flexibility_value)}
-    # Log the gender weight using the 'gender_match' key
     gender_weight = scoring_weights.get("gender_match", 0)
 
+    # Process each suggestion
     for idx, raw_candidate in enumerate(suggestions):
         if not isinstance(raw_candidate, dict):
             logger.warning(f"Skipping invalid entry: {raw_candidate}")
             continue
-        # Data extraction into candidate_data_dict (ensure 'gender' key holds 'm'/'f'/None)
-        full_name_disp = raw_candidate.get("FullName", "Unknown")
-        person_id = raw_candidate.get("PersonId", f"Unknown_{idx}")
-        first_name_cand = None
-        surname_cand = None
-        if full_name_disp != "Unknown":
-            parts = full_name_disp.split()
-        if parts:
-            first_name_cand = clean_param(parts[0])
-        if len(parts) > 1:
-            surname_cand = clean_param(parts[-1])
-        birth_year_cand = raw_candidate.get("BirthYear")
-        birth_date_str_cand = raw_candidate.get("BirthDate")
-        birth_place_cand = clean_param(raw_candidate.get("BirthPlace"))
-        death_year_cand = raw_candidate.get("DeathYear")
-        death_date_str_cand = raw_candidate.get("DeathDate")
-        death_place_cand = clean_param(raw_candidate.get("DeathPlace"))
-        gender_cand = raw_candidate.get("Gender")
-        is_living_cand = raw_candidate.get("IsLiving")
-        birth_date_obj_cand = None
-        if birth_date_str_cand and parse_date_func:
-            try:
-                birth_date_obj_cand = parse_date_func(birth_date_str_cand)
-            except ValueError:
-                logger.debug(
-                    f"Could not parse candidate birth date: {birth_date_str_cand}"
-                )
-        death_date_obj_cand = None
-        if death_date_str_cand and parse_date_func:
-            try:
-                death_date_obj_cand = parse_date_func(death_date_str_cand)
-            except ValueError:
-                logger.debug(
-                    f"Could not parse candidate death date: {death_date_str_cand}"
-                )
-        candidate_data_dict = {
-            "norm_id": person_id,
-            "display_id": person_id,
-            "first_name": first_name_cand,
-            "surname": surname_cand,
-            "full_name_disp": full_name_disp,
-            "gender_norm": gender_cand,
-            "birth_year": birth_year_cand,
-            "birth_date_obj": birth_date_obj_cand,
-            "birth_place_disp": birth_place_cand,
-            "death_year": death_year_cand,
-            "death_date_obj": death_date_obj_cand,
-            "death_place_disp": death_place_cand,
-            "is_living": is_living_cand,
-            "gender": gender_cand,
-            "birth_place": birth_place_cand,
-            "death_place": death_place_cand,
-        }
 
-        # Log inputs and Calculate Score
-        logger.debug(f"--- Scoring Candidate ID: {person_id} ---")
-        logger.debug(f"Search Criteria Gender: '{search_criteria.get('gender')}'")
-        logger.debug(
-            f"Candidate Dict Gender ('gender'): '{candidate_data_dict.get('gender')}'"
-        )
-        logger.debug(
-            f"Calling scoring function: {getattr(scoring_func, '__name__', 'Unknown')}"
-        )
-        score = 0.0
-        field_scores = {}
-        reasons = []
-        try:
-            if (
-                GEDCOM_SCORING_AVAILABLE
-                and scoring_func == calculate_match_score
-                and scoring_func is not None
-            ):
-                if gender_weight == 0:
-                    logger.warning("Gender weight ('gender_match') in config is 0.")
-                # Debug logging for Fraser Gault scoring comparison
-                if "fraser" in candidate_data_dict.get("first_name", "").lower():
-                    logger.info("=== ACTION 11 FRASER GAULT SCORING DEBUG ===")
-                    logger.info(f"Search criteria: {search_criteria}")
-                    logger.info(f"Candidate data: {candidate_data_dict}")
-                    logger.info(f"Scoring weights: {scoring_weights}")
-                    logger.info(f"Date flexibility: {date_flex}")
-                    logger.info(f"Name flexibility: {name_flex}")
+        # Extract candidate data
+        candidate_data_dict = _extract_candidate_data(raw_candidate, idx, clean_param, parse_date_func)
 
-                score, field_scores, reasons = scoring_func(
-                    search_criteria,
-                    candidate_data_dict,
-                    scoring_weights,
-                    _name_flexibility=name_flex if isinstance(name_flex, dict) else None,
-                    date_flexibility=date_flex if isinstance(date_flex, dict) else None,
-                )
-
-                # Debug logging for Fraser Gault scoring results
-                if "fraser" in candidate_data_dict.get("first_name", "").lower():
-                    logger.info(f"Score result: {score}")
-                    logger.info(f"Field scores: {field_scores}")
-                    logger.info(f"Reasons: {reasons}")
-                    logger.info("=== END ACTION 11 FRASER GAULT DEBUG ===")
-                logger.debug(
-                    f"Gedcom Score for {person_id}: {score}, Fields: {field_scores}"
-                )
-                # Log gender score using 'gender_match' key
-                if "gender_match" in field_scores:
-                    logger.debug(
-                        f"Gedcom Field Score ('gender_match'): {field_scores['gender_match']}"
-                    )
-                else:
-                    logger.debug("Gedcom Field Scores missing 'gender_match' key.")
-            elif scoring_func is not None:
-                # Use the local simple scoring function that takes only 2 parameters
-                score, field_scores, reasons = _run_simple_suggestion_scoring(
-                    search_criteria, candidate_data_dict
-                )
-                logger.debug(
-                    f"Simple Score for {person_id}: {score}, Fields: {field_scores}"
-                )
-                if "gender_match" in field_scores:
-                    logger.debug(
-                        f"Simple Field Score ('gender_match'): {field_scores['gender_match']}"
-                    )
-                else:
-                    logger.debug("Simple Field Scores missing 'gender_match' key.")
-            else:
-                logger.error("Scoring function is None")
-        except Exception as score_err:
-            logger.error(f"Error scoring {person_id}: {score_err}", exc_info=True)
-            logger.warning("Falling back to simple scoring...")
-            score, field_scores, reasons = _run_simple_suggestion_scoring(
-                search_criteria, candidate_data_dict
-            )
-            reasons.append("(Error Fallback)")
-            logger.debug(
-                f"Fallback Score for {person_id}: {score}, Fields: {field_scores}"
-            )
-
-        # Append Processed Candidate
-        processed_candidates.append(
-            {
-                "id": person_id,
-                "name": full_name_disp,
-                "gender": candidate_data_dict.get("gender"),
-                "birth_date": (
-                    _clean_display_date(birth_date_str_cand)
-                    if callable(_clean_display_date)
-                    else (birth_date_str_cand or "N/A")
-                ),
-                "birth_place": raw_candidate.get("BirthPlace", "N/A"),
-                "death_date": (
-                    _clean_display_date(death_date_str_cand)
-                    if callable(_clean_display_date)
-                    else (death_date_str_cand or "N/A")
-                ),
-                "death_place": raw_candidate.get("DeathPlace", "N/A"),
-                "score": score,
-                "field_scores": field_scores,
-                "reasons": reasons,
-                "raw_data": raw_candidate,
-                "parsed_suggestion": candidate_data_dict,
-            }
+        # Calculate score
+        score, field_scores, reasons = _calculate_candidate_score(
+            candidate_data_dict,
+            search_criteria,
+            scoring_func,
+            scoring_weights,
+            name_flex,
+            date_flex,
+            gender_weight,
         )
 
-    # Sorting
+        # Build processed candidate
+        processed_candidate = _build_processed_candidate(
+            raw_candidate,
+            candidate_data_dict,
+            score,
+            field_scores,
+            reasons,
+        )
+        processed_candidates.append(processed_candidate)
+
+    # Sort by score (highest first)
     processed_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
     return processed_candidates
 
