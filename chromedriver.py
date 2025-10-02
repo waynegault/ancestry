@@ -65,7 +65,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import undetected_chromedriver as uc  # Anti-bot detection bypass
 from selenium.common.exceptions import (
@@ -202,213 +202,184 @@ def close_tabs(driver: WebDriver) -> None:
 # end close_tabs
 
 
+# Helper functions for init_webdvr
+
+def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
+    """Configure Chrome options for WebDriver initialization."""
+    options = uc.ChromeOptions()
+
+    # Headless mode configuration
+    if config.headless_mode:
+        logger.debug("Configuring headless mode.")
+        options.add_argument("--headless=new")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+
+    # User data directory
+    user_data_dir_path = config.chrome_user_data_dir
+    if user_data_dir_path:
+        user_data_dir_str = str(user_data_dir_path.resolve())
+        options.add_argument(f"--user-data-dir={user_data_dir_str}")
+        logger.debug(f"User data directory (no --profile-directory):\n{user_data_dir_str}")
+
+    # Browser path
+    browser_path_obj = config.chrome_browser_path
+    if browser_path_obj:
+        browser_path_str = str(browser_path_obj.resolve())
+        from pathlib import Path
+        if Path(browser_path_str).exists():
+            options.binary_location = browser_path_str
+            logger.debug(f"Using browser executable:\n{browser_path_str}")
+        else:
+            logger.warning(f"Specified browser path not found: {browser_path_str}. Relying on system default.")
+    else:
+        logger.debug("No explicit browser path specified, using system default.")
+
+    # Standard options
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-plugins-discovery")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-infobars")
+    if not config.headless_mode:
+        options.add_argument("--start-maximized")
+
+    # User agent
+    user_agent = random.choice(
+        getattr(config_schema, "USER_AGENTS", ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"])
+    )
+    options.add_argument(f"--user-agent={user_agent}")
+    logger.debug(f"Setting User-Agent:\n{user_agent}")
+    options.add_argument("--disable-popup-blocking")
+
+    return options
+
+
+def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:
+    """Create Chrome WebDriver instance."""
+    try:
+        logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")
+        start_time = time.time()
+
+        # Use undetected_chromedriver for anti-bot protection
+        driver = uc.Chrome(options=options, version_main=138)
+
+        logger.debug(f"[init_webdvr] Chrome WebDriver initialization succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})")
+        logger.debug(f"WebDriver instance object created successfully (attempt {attempt_num}).")
+        return driver
+    except Exception as chrome_exc:
+        logger.error(f"[init_webdvr] Chrome WebDriver initialization failed on attempt {attempt_num}: {chrome_exc}", exc_info=True)
+        if "cannot connect to chrome" in str(chrome_exc).lower() or "chrome not reachable" in str(chrome_exc).lower():
+            logger.warning("[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary.")
+        logger.error("[init_webdvr] undetected_chromedriver failed to initialize. Check Chrome installation and version compatibility.")
+        return None
+
+
+def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str, attempt_num: int) -> None:
+    """Configure driver after initialization."""
+    # Apply user agent override
+    try:
+        driver.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": user_agent})
+        logger.debug("User-Agent override applied via CDP.")
+    except Exception as cdp_exc:
+        logger.warning(f"CDP command failed: {cdp_exc}")
+
+    # Minimize window if not headless
+    if not config.headless_mode:
+        logger.debug("Attempting to minimize window (non-headless mode)...")
+        try:
+            driver.minimize_window()
+            logger.debug("Browser window minimized.")
+        except WebDriverException as win_e:
+            logger.warning(f"Could not minimize window: {win_e}")
+        except Exception as min_e:
+            logger.error(f"Unexpected error minimizing window: {min_e}", exc_info=True)
+
+    # Set timeouts
+    driver.set_page_load_timeout(config.page_load_timeout)
+    driver.set_script_timeout(getattr(config, "script_timeout", 30))
+
+    # Close extra tabs
+    try:
+        if len(driver.window_handles) > 1:
+            logger.debug(f"Multiple tabs ({len(driver.window_handles)}) detected immediately after init. Closing extras.")
+            close_tabs(driver)
+    except Exception as tab_check_e:
+        logger.warning(f"Error checking/closing tabs immediately after init: {tab_check_e}")
+
+    logger.debug(f"WebDriver instance fully configured successfully (attempt {attempt_num}).")
+
+
+def _handle_driver_exception(e: Exception, driver: Optional[WebDriver], attempt_num: int) -> None:
+    """Handle exceptions during driver initialization."""
+    if isinstance(e, TimeoutException):
+        logger.warning(f"Timeout during WebDriver init attempt {attempt_num}: {e}")
+    elif isinstance(e, WebDriverException):
+        err_str = str(e).lower()
+        if "cannot connect to chrome" in err_str or "failed to start" in err_str:
+            logger.error(f"Failed to connect/start Chrome (attempt {attempt_num}): {e}")
+        elif "version mismatch" in err_str:
+            logger.error(f"ChromeDriver/Chrome version mismatch (attempt {attempt_num}): {e}.")
+        elif "service" in err_str and "exited" in err_str:
+            logger.error(f"Service executable exited unexpectedly (Attempt {attempt_num}): {e}")
+        else:
+            logger.warning(f"WebDriverException during init attempt {attempt_num}: {e}")
+    else:
+        logger.error(f"Unexpected error during WebDriver init attempt {attempt_num}: {e}", exc_info=True)
+
+    # Cleanup driver if it exists
+    if driver:
+        with contextlib.suppress(Exception):
+            driver.quit()
+
+
 def init_webdvr(attach_attempt=False) -> Optional[WebDriver]:
     """
     V2.0 MODERNIZED: Uses standard Selenium WebDriver with automatic ChromeDriver management.
     Initializes standard Chrome WebDriver and minimizes the window if not headless.
     """
-    config = config_schema.selenium  # Use selenium config instance
+    config = config_schema.selenium
 
-    # --- 1. Pre-Initialization Cleanup ---
-    cleanup_webdrv()  # Kill existing processes
-    reset_preferences_file()  # Reset Chrome preferences
+    # Pre-initialization cleanup
+    cleanup_webdrv()
+    reset_preferences_file()
 
-    # --- Retry Loop ---
+    # Retry loop
     max_init_retries = config.chrome_max_retries
     retry_delay = config.chrome_retry_delay
     driver = None
 
     for attempt_num in range(1, max_init_retries + 1):
-        logger.debug(
-            f"WebDriver initialization attempt {attempt_num}/{max_init_retries}..."
-        )
+        logger.debug(f"WebDriver initialization attempt {attempt_num}/{max_init_retries}...")
 
-        # --- Create FRESH Options object INSIDE the loop ---
-        options = uc.ChromeOptions()
-
-        # --- Configure Options ---
-        if config.headless_mode:
-            logger.debug("Configuring headless mode.")
-            options.add_argument("--headless=new")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--window-size=1920,1080")
-        user_data_dir_path = config.chrome_user_data_dir
-        if user_data_dir_path:
-            user_data_dir_str = str(user_data_dir_path.resolve())
-            options.add_argument(f"--user-data-dir={user_data_dir_str}")
-            logger.debug(
-                f"User data directory (no --profile-directory):\n{user_data_dir_str}"
-            )
-        # Removed --profile-directory option for correct Chrome profile persistence
-        # profile_dir_str = config.PROFILE_DIR
-        # if profile_dir_str:
-        #     options.add_argument(f"--profile-directory={profile_dir_str}")
-        #     logger.debug(f"Using profile directory: {profile_dir_str}")
-        browser_path_obj = config.chrome_browser_path
-        if browser_path_obj:
-            browser_path_str = str(browser_path_obj.resolve())
-            from pathlib import Path
-            if Path(browser_path_str).exists():
-                options.binary_location = browser_path_str
-                logger.debug(f"Using browser executable:\n{browser_path_str}")
-            else:
-                logger.warning(
-                    f"Specified browser path not found: {browser_path_str}. Relying on system default."
-                )
-        else:
-            logger.debug("No explicit browser path specified, using system default.")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-plugins-discovery")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-infobars")
-        if not config.headless_mode:
-            options.add_argument("--start-maximized")
-        user_agent = random.choice(
-            getattr(
-                config_schema,
-                "USER_AGENTS",
-                ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"],
-            )
-        )
-        options.add_argument(f"--user-agent={user_agent}")
-        logger.debug(f"Setting User-Agent:\n{user_agent}")
-        options.add_argument("--disable-popup-blocking")
-        # --- End Configure Options ---
-
-        # --- Attempt Driver Initialization ---
         try:
-            # Use standard Selenium WebDriver with automatic ChromeDriver management
-            logger.debug(
-                "Using standard Selenium WebDriver with automatic ChromeDriver management."
+            # Configure Chrome options
+            options = _configure_chrome_options(config)
+
+            # Get user agent for later use
+            user_agent = random.choice(
+                getattr(config_schema, "USER_AGENTS", ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"])
             )
-            try:
-                logger.debug(
-                    f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})..."
-                )
-                start_time = time.time()
 
-                # Use undetected_chromedriver for anti-bot protection
-                # Target Chrome v138 specifically for compatibility
-                driver = uc.Chrome(options=options, version_main=138)
+            # Create driver
+            driver = _create_chrome_driver(options, attempt_num)
 
-                logger.debug(
-                    f"[init_webdvr] Chrome WebDriver initialization succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})"
-                )
-                logger.debug(
-                    f"WebDriver instance object created successfully (attempt {attempt_num})."
-                )
-            except Exception as chrome_exc:
-                logger.error(
-                    f"[init_webdvr] Chrome WebDriver initialization failed on attempt {attempt_num}: {chrome_exc}",
-                    exc_info=True,
-                )
-                if (
-                    "cannot connect to chrome" in str(chrome_exc).lower()
-                    or "chrome not reachable" in str(chrome_exc).lower()
-                ):
-                    logger.warning(
-                        "[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary."
-                    )
-                # undetected_chromedriver handles driver management automatically
-                logger.error(
-                    "[init_webdvr] undetected_chromedriver failed to initialize. Check Chrome installation and version compatibility."
-                )
-                driver = None
-
-            # Only proceed with driver setup if driver is not None
+            # Configure driver if creation succeeded
             if driver is not None:
-                # Post-Initialization Settings (still within the inner try)
-                try:
-                    driver.execute_cdp_cmd(
-                        "Network.setUserAgentOverride", {"userAgent": user_agent}
-                    )
-                    logger.debug("User-Agent override applied via CDP.")
-                except Exception as cdp_exc:
-                    logger.warning(f"CDP command failed: {cdp_exc}")
-
-                if not config.headless_mode:
-                    logger.debug("Attempting to minimize window (non-headless mode)...")
-                    try:
-                        driver.minimize_window()
-                        logger.debug("Browser window minimized.")
-                    except WebDriverException as win_e:
-                        logger.warning(f"Could not minimize window: {win_e}")
-                    except Exception as min_e:
-                        logger.error(
-                            f"Unexpected error minimizing window: {min_e}",
-                            exc_info=True,
-                        )
-                driver.set_page_load_timeout(config.page_load_timeout)
-                driver.set_script_timeout(getattr(config, "script_timeout", 30))
-
-                # Check for extra tabs immediately after init
-                try:
-                    if len(driver.window_handles) > 1:
-                        logger.debug(
-                            f"Multiple tabs ({len(driver.window_handles)}) detected immediately after init. Closing extras."
-                        )
-                        close_tabs(driver)
-                except Exception as tab_check_e:
-                    logger.warning(
-                        f"Error checking/closing tabs immediately after init: {tab_check_e}"
-                    )
-
-                logger.debug(
-                    f"WebDriver instance fully configured successfully (attempt {attempt_num})."
-                )
+                _configure_driver_post_init(driver, config, user_agent, attempt_num)
                 return driver  # SUCCESS!
 
-        # --- Handle Specific Exceptions During Outer Initialization Attempt ---
-        except TimeoutException as e:
-            logger.warning(f"Timeout during WebDriver init attempt {attempt_num}: {e}")
-            if driver:
-                with contextlib.suppress(Exception):
-                    driver.quit()
-            driver = None
-        except WebDriverException as e:  # Catches errors before/during webdriver.Chrome call
-            err_str = str(e).lower()
-            if "cannot connect to chrome" in err_str or "failed to start" in err_str:
-                logger.error(
-                    f"Failed to connect/start Chrome (attempt {attempt_num}): {e}"
-                )
-            elif "version mismatch" in err_str:
-                logger.error(
-                    f"ChromeDriver/Chrome version mismatch (attempt {attempt_num}): {e}."
-                )
-            elif "service" in err_str and "exited" in err_str:
-                logger.error(
-                    f"Service executable exited unexpectedly (Attempt {attempt_num}): {e}"
-                )
-            else:
-                logger.warning(
-                    f"WebDriverException during init attempt {attempt_num}: {e}"
-                )
-            if driver:
-                with contextlib.suppress(Exception):
-                    driver.quit()
-            driver = None
-        except Exception as e:  # Catch-all for other unexpected errors
-            logger.error(
-                f"Unexpected error during WebDriver init attempt {attempt_num}: {e}",
-                exc_info=True,
-            )
-            if driver:
-                with contextlib.suppress(Exception):
-                    driver.quit()
+        except (TimeoutException, WebDriverException, Exception) as e:
+            _handle_driver_exception(e, driver, attempt_num)
             driver = None
 
-        # --- Wait Before Retrying ---
+        # Wait before retrying
         if attempt_num < max_init_retries:
-            logger.debug(
-                f"Waiting {retry_delay} seconds before retrying initialization..."
-            )
+            logger.debug(f"Waiting {retry_delay} seconds before retrying initialization...")
             time.sleep(retry_delay)
         else:
-            logger.critical(
-                f"Failed to initialize WebDriver after {max_init_retries} attempts."
-            )
+            logger.critical(f"Failed to initialize WebDriver after {max_init_retries} attempts.")
             return None
 
     logger.error("Exited WebDriver initialization loop unexpectedly.")
