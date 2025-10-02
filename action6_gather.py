@@ -1630,6 +1630,75 @@ def _execute_bulk_db_operations(
 # End of _execute_bulk_db_operations
 
 
+# === BATCH PROCESSING HELPER FUNCTIONS ===
+
+def _validate_batch_prerequisites(my_uuid: Optional[str], matches_on_page: List[Dict[str, Any]], current_page: int) -> None:
+    """Validate prerequisites for batch processing."""
+    if not my_uuid:
+        logger.error(f"_do_batch Page {current_page}: Missing my_uuid.")
+        raise ValueError("Missing my_uuid")
+    if not matches_on_page:
+        logger.debug(f"_do_batch Page {current_page}: Empty match list.")
+        raise ValueError("Empty match list")
+
+
+def _execute_batch_db_commit(session: SqlAlchemySession, prepared_bulk_data: List[Dict[str, Any]], existing_persons_map: Dict[str, Person], current_page: int, page_statuses: Dict[str, int]) -> None:
+    """Execute bulk DB operations with error handling."""
+    if not prepared_bulk_data:
+        logger.debug(f"No data prepared for bulk DB operations on page {current_page}.")
+        return
+
+    logger.debug(f"Attempting bulk DB operations for page {current_page}...")
+    try:
+        with db_transn(session) as sess:
+            bulk_success = _execute_bulk_db_operations(sess, prepared_bulk_data, existing_persons_map)
+            if not bulk_success:
+                logger.error(f"Bulk DB ops FAILED page {current_page}. Adjusting counts.")
+                failed_items = len(prepared_bulk_data)
+                page_statuses["error"] += failed_items
+                page_statuses["new"] = 0
+                page_statuses["updated"] = 0
+        logger.debug(f"Transaction block finished page {current_page}.")
+    except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
+        logger.error(f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}", exc_info=True)
+        failed_items = len(prepared_bulk_data)
+        page_statuses["error"] += failed_items
+        page_statuses["new"] = 0
+        page_statuses["updated"] = 0
+    except Exception as e:
+        logger.error(f"Unexpected error during bulk DB transaction page {current_page}: {e}", exc_info=True)
+        failed_items = len(prepared_bulk_data)
+        page_statuses["error"] += failed_items
+        page_statuses["new"] = 0
+        page_statuses["updated"] = 0
+
+
+def _handle_batch_critical_error(page_statuses: Dict[str, int], num_matches_on_page: int, progress_bar: Optional[tqdm], current_page: int, error: Exception) -> int:
+    """Handle critical errors during batch processing."""
+    logger.critical(f"CRITICAL ERROR processing batch page {current_page}: {error}", exc_info=True)
+
+    # Update progress bar for remaining items
+    if progress_bar:
+        items_already_accounted_for_in_bar = (
+            page_statuses["skipped"] + page_statuses["new"] + page_statuses["updated"] + page_statuses["error"]
+        )
+        remaining_in_batch = max(0, num_matches_on_page - items_already_accounted_for_in_bar)
+        if remaining_in_batch > 0:
+            try:
+                logger.debug(f"Updating progress bar by {remaining_in_batch} due to critical error in _do_batch.")
+                progress_bar.update(remaining_in_batch)
+            except Exception as pbar_e:
+                logger.warning(f"Progress bar update error during critical exception handling: {pbar_e}")
+
+    # Calculate final error count
+    final_error_count_for_page = page_statuses["error"] + max(
+        0,
+        num_matches_on_page - (page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"] + page_statuses["error"]),
+    )
+
+    return final_error_count_for_page
+
+
 def _do_batch(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
@@ -1664,24 +1733,20 @@ def _do_batch(
 
     try:
         # Step 2: Basic validation
-        if not my_uuid:
-            logger.error(f"_do_batch Page {current_page}: Missing my_uuid.")
-            raise ValueError(
-                "Missing my_uuid"
-            )  # This will be caught by outer try-except
-        if not matches_on_page:
-            logger.debug(f"_do_batch Page {current_page}: Empty match list.")
-            return 0, 0, 0, 0
+        try:
+            _validate_batch_prerequisites(my_uuid, matches_on_page, current_page)
+        except ValueError as e:
+            if "Empty match list" in str(e):
+                return 0, 0, 0, 0
+            raise
 
-        logger.debug(
-            f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---"
-        )
+        logger.debug(f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---")
 
         # Step 3: Get DB Session for the batch
         session = session_manager.get_db_conn()
         if not session:
             logger.error(f"_do_batch Page {current_page}: Failed DB session.")
-            raise SQLAlchemyError("Failed get DB session")  # Caught by outer try-except
+            raise SQLAlchemyError("Failed get DB session")
 
         # --- Data Processing Pipeline ---
         logger.debug(f"Batch {current_page}: Looking up existing persons...")
@@ -1722,44 +1787,7 @@ def _do_batch(
         page_statuses["error"] = prep_statuses.get("error", 0)
 
         logger.debug(f"Batch {current_page}: Executing DB Commit...")
-        if prepared_bulk_data:
-            logger.debug(f"Attempting bulk DB operations for page {current_page}...")
-            try:
-                with db_transn(session) as sess:
-                    bulk_success = _execute_bulk_db_operations(
-                        sess, prepared_bulk_data, existing_persons_map
-                    )
-                    if not bulk_success:
-                        logger.error(
-                            f"Bulk DB ops FAILED page {current_page}. Adjusting counts."
-                        )
-                        failed_items = len(prepared_bulk_data)
-                        page_statuses["error"] += failed_items
-                        page_statuses["new"] = 0
-                        page_statuses["updated"] = 0
-                logger.debug(f"Transaction block finished page {current_page}.")
-            except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
-                logger.error(
-                    f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}",
-                    exc_info=True,
-                )
-                failed_items = len(prepared_bulk_data)
-                page_statuses["error"] += failed_items
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error during bulk DB transaction page {current_page}: {e}",
-                    exc_info=True,
-                )
-                failed_items = len(prepared_bulk_data)
-                page_statuses["error"] += failed_items
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
-        else:
-            logger.debug(
-                f"No data prepared for bulk DB operations on page {current_page}."
-            )
+        _execute_batch_db_commit(session, prepared_bulk_data, existing_persons_map, current_page, page_statuses)
 
         _log_page_summary(
             current_page,
@@ -1775,87 +1803,19 @@ def _do_batch(
             page_statuses["error"],
         )
 
-    except MaxApiFailuresExceededError:  # Explicitly catch and re-raise for coord
+    except MaxApiFailuresExceededError:
         raise
-    except (
-        ValueError,
-        SQLAlchemyError,
-        ConnectionError,
-    ) as critical_err:  # Catch other critical errors specific to this batch
-        logger.critical(
-            f"CRITICAL ERROR processing batch page {current_page}: {critical_err}",
-            exc_info=True,
+    except (ValueError, SQLAlchemyError, ConnectionError) as critical_err:
+        final_error_count_for_page = _handle_batch_critical_error(
+            page_statuses, num_matches_on_page, progress_bar, current_page, critical_err
         )
-        # If progress_bar is active, update it for the remaining items in this batch as errors
-        if progress_bar:
-            items_already_accounted_for_in_bar = (
-                page_statuses["skipped"]
-                + page_statuses["new"]
-                + page_statuses["updated"]
-                + page_statuses["error"]
-            )
-            remaining_in_batch = max(
-                0, num_matches_on_page - items_already_accounted_for_in_bar
-            )
-            if remaining_in_batch > 0:
-                try:
-                    logger.debug(
-                        f"Updating progress bar by {remaining_in_batch} due to critical error in _do_batch."
-                    )
-                    progress_bar.update(remaining_in_batch)
-                except Exception as pbar_e:
-                    logger.warning(
-                        f"Progress bar update error during critical exception handling: {pbar_e}"
-                    )
-        # Calculate final error count for the page
-        # Errors are items that hit an error in prep + items that couldn't be processed due to critical batch error
-        final_error_count_for_page = page_statuses["error"] + max(
-            0,
-            num_matches_on_page
-            - (
-                page_statuses["new"]
-                + page_statuses["updated"]
-                + page_statuses["skipped"]
-                + page_statuses["error"]
-            ),
+        return (page_statuses["new"], page_statuses["updated"], page_statuses["skipped"], final_error_count_for_page)
+    except Exception as outer_batch_exc:
+        logger.critical(f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}", exc_info=True)
+        final_error_count_for_page = _handle_batch_critical_error(
+            page_statuses, num_matches_on_page, progress_bar, current_page, outer_batch_exc
         )
-
-        return (
-            page_statuses["new"],
-            page_statuses["updated"],
-            page_statuses["skipped"],
-            final_error_count_for_page,
-        )
-    except Exception as outer_batch_exc:  # Catch-all for any other unexpected exception
-        logger.critical(
-            f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}",
-            exc_info=True,
-        )
-        if progress_bar:
-            items_already_accounted_for_in_bar = (
-                page_statuses["skipped"]
-                + page_statuses["new"]
-                + page_statuses["updated"]
-                + page_statuses["error"]
-            )
-            remaining_in_batch = max(
-                0, num_matches_on_page - items_already_accounted_for_in_bar
-            )
-            if remaining_in_batch > 0:
-                try:
-                    progress_bar.update(remaining_in_batch)
-                except Exception:
-                    pass  # Ignore progress bar errors during exception handling
-        # All remaining items in the batch are considered errors
-        final_error_count_for_page = num_matches_on_page - (
-            page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
-        )
-        return (
-            page_statuses["new"],
-            page_statuses["updated"],
-            page_statuses["skipped"],
-            max(0, final_error_count_for_page),  # Ensure error count is not negative
-        )
+        return (page_statuses["new"], page_statuses["updated"], page_statuses["skipped"], max(0, final_error_count_for_page))
 
     finally:
         if session:
