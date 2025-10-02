@@ -296,6 +296,202 @@ def _run_simple_suggestion_scoring(
     return int(total_score), field_scores, reasons
 
 
+# Helper functions for search_api_for_criteria
+
+def _build_search_query(search_criteria: Dict[str, Any]) -> str:
+    """Build search query string from criteria."""
+    search_query = ""
+    if search_criteria.get("first_name"):
+        search_query += search_criteria["first_name"] + " "
+    if search_criteria.get("surname"):
+        search_query += search_criteria["surname"] + " "
+    if search_criteria.get("birth_year"):
+        search_query += f"b. {search_criteria['birth_year']} "
+    if search_criteria.get("birth_place"):
+        search_query += search_criteria["birth_place"] + " "
+    if search_criteria.get("death_year"):
+        search_query += f"d. {search_criteria['death_year']} "
+    if search_criteria.get("death_place"):
+        search_query += search_criteria["death_place"] + " "
+    return search_query.strip()
+
+
+def _get_tree_and_profile_ids(session_manager: SessionManager) -> tuple[Optional[str], Optional[str]]:
+    """Get tree ID and profile ID from session manager or config."""
+    tree_id = session_manager.my_tree_id
+    if not tree_id:
+        tree_id = getattr(config_schema.test, "test_tree_id", "")
+
+    owner_profile_id = session_manager.my_profile_id
+    if not owner_profile_id:
+        owner_profile_id = getattr(config_schema.test, "test_profile_id", "")
+
+    return tree_id, owner_profile_id
+
+
+def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
+    """Parse lifespan string to extract birth and death years."""
+    birth_year = None
+    death_year = None
+
+    if not lifespan:
+        return birth_year, death_year
+
+    if "-" in lifespan:
+        parts = lifespan.split("-")
+        if len(parts) == 2:
+            try:
+                birth_year = int(parts[0].strip()) if parts[0].strip() else None
+                death_year = int(parts[1].strip()) if parts[1].strip() else None
+            except ValueError:
+                pass
+    elif "b." in lifespan.lower():
+        match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
+        if match:
+            try:
+                birth_year = int(match.group(1))
+            except ValueError:
+                pass
+    elif "d." in lifespan.lower():
+        match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
+        if match:
+            try:
+                death_year = int(match.group(1))
+            except ValueError:
+                pass
+
+    return birth_year, death_year
+
+
+def _process_suggest_result(suggestion: Dict[str, Any], search_criteria: Dict[str, Any], scoring_weights: Dict[str, int], date_flex: Dict[str, int]) -> Optional[Dict[str, Any]]:
+    """Process a single suggestion result and return match record if score > 0."""
+    try:
+        person_id = suggestion.get("id")
+        if not person_id:
+            return None
+
+        # Extract name components
+        full_name = suggestion.get("name", "")
+        name_parts = full_name.split()
+        first_name = name_parts[0] if name_parts else ""
+        surname = name_parts[-1] if len(name_parts) > 1 else ""
+
+        # Parse lifespan
+        lifespan = suggestion.get("lifespan", "")
+        birth_year, death_year = _parse_lifespan(lifespan)
+
+        # Extract location
+        location = suggestion.get("location", "")
+
+        # Create candidate data for scoring
+        candidate = {
+            "first_name": first_name,
+            "surname": surname,
+            "birth_year": birth_year,
+            "death_year": death_year,
+            "birth_place": location,
+            "death_place": None,
+            "gender": None,
+        }
+
+        # Score the candidate
+        total_score, field_scores, reasons = _run_simple_suggestion_scoring(
+            search_criteria, candidate, scoring_weights, date_flex
+        )
+
+        # Only include if score is above threshold
+        if total_score > 0:
+            return {
+                "id": person_id,
+                "display_id": person_id,
+                "first_name": first_name,
+                "surname": surname,
+                "gender": None,
+                "birth_year": birth_year,
+                "birth_place": location,
+                "death_year": death_year,
+                "death_place": None,
+                "total_score": total_score,
+                "field_scores": field_scores,
+                "reasons": reasons,
+                "source": "API",
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error processing suggestion result: {e}")
+        return None
+
+
+def _process_treesui_person(person: Dict[str, Any], search_criteria: Dict[str, Any], scoring_weights: Dict[str, int], date_flex: Dict[str, int], scored_matches: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Process a single treesui-list person and return match record if score > 0 and not duplicate."""
+    try:
+        person_id = person.get("id")
+        if not person_id:
+            return None
+
+        # Extract name components
+        first_name = person.get("firstName", "")
+        surname = person.get("lastName", "")
+
+        # Extract birth information
+        birth_info = person.get("birth", {})
+        birth_date = birth_info.get("date", {}).get("normalized", "")
+        birth_year = _extract_year_from_date(birth_date)
+        birth_place = birth_info.get("place", {}).get("normalized", "")
+
+        # Extract death information
+        death_info = person.get("death", {})
+        death_date = death_info.get("date", {}).get("normalized", "")
+        death_year = _extract_year_from_date(death_date)
+        death_place = death_info.get("place", {}).get("normalized", "")
+
+        # Extract gender
+        gender = person.get("gender", "")
+        if gender == "Male":
+            gender = "M"
+        elif gender == "Female":
+            gender = "F"
+
+        # Create candidate data for scoring
+        candidate = {
+            "first_name": first_name,
+            "surname": surname,
+            "birth_year": birth_year,
+            "death_year": death_year,
+            "birth_place": birth_place,
+            "death_place": death_place,
+            "gender": gender,
+        }
+
+        # Score the candidate
+        total_score, field_scores, reasons = _run_simple_suggestion_scoring(
+            search_criteria, candidate, scoring_weights, date_flex
+        )
+
+        # Only include if score is above threshold and not duplicate
+        if total_score > 0:
+            if not any(match["id"] == person_id for match in scored_matches):
+                return {
+                    "id": person_id,
+                    "display_id": person_id,
+                    "first_name": first_name,
+                    "surname": surname,
+                    "gender": gender,
+                    "birth_year": birth_year,
+                    "birth_place": birth_place,
+                    "death_year": death_year,
+                    "death_place": death_place,
+                    "total_score": total_score,
+                    "field_scores": field_scores,
+                    "reasons": reasons,
+                    "source": "API",
+                }
+        return None
+    except Exception as e:
+        logger.error(f"Error processing treesui-list result: {e}")
+        return None
+
+
 def search_api_for_criteria(
     session_manager: SessionManager,
     search_criteria: Dict[str, Any],
@@ -322,21 +518,7 @@ def search_api_for_criteria(
         return []
 
     # Step 2: Prepare search parameters
-    search_query = ""
-    if search_criteria.get("first_name"):
-        search_query += search_criteria["first_name"] + " "
-    if search_criteria.get("surname"):
-        search_query += search_criteria["surname"] + " "
-    if search_criteria.get("birth_year"):
-        search_query += f"b. {search_criteria['birth_year']} "
-    if search_criteria.get("birth_place"):
-        search_query += search_criteria["birth_place"] + " "
-    if search_criteria.get("death_year"):
-        search_query += f"d. {search_criteria['death_year']} "
-    if search_criteria.get("death_place"):
-        search_query += search_criteria["death_place"] + " "
-
-    search_query = search_query.strip()
+    search_query = _build_search_query(search_criteria)
     if not search_query:
         logger.error("No search criteria provided")
         return []
@@ -344,21 +526,14 @@ def search_api_for_criteria(
     # Step 3: Call the suggest API
     logger.info(f"Searching API with query: {search_query}")
 
-    # Get tree ID from session manager or config
-    tree_id = session_manager.my_tree_id
+    # Get tree ID and profile ID
+    tree_id, owner_profile_id = _get_tree_and_profile_ids(session_manager)
     if not tree_id:
-        tree_id = getattr(config_schema.test, "test_tree_id", "")
-        if not tree_id:
-            logger.error("No tree ID available for API search")
-            return []
+        logger.error("No tree ID available for API search")
+        return []
 
     # Get base URL from config
     base_url = config_schema.api.base_url
-
-    # Get owner profile ID from session manager or config
-    owner_profile_id = session_manager.my_profile_id
-    if not owner_profile_id:
-        owner_profile_id = getattr(config_schema.test, "test_profile_id", "")
 
     # Prepare search criteria for API
     api_search_criteria = {
@@ -394,93 +569,9 @@ def search_api_for_criteria(
 
     # Process each suggestion result
     for suggestion in suggest_results[:max_suggestions]:
-        try:
-            # Extract basic information
-            person_id = suggestion.get("id")
-            if not person_id:
-                continue
-
-            # Extract name components
-            full_name = suggestion.get("name", "")
-            name_parts = full_name.split()
-            first_name = name_parts[0] if name_parts else ""
-            surname = name_parts[-1] if len(name_parts) > 1 else ""
-
-            # Extract lifespan information
-            lifespan = suggestion.get("lifespan", "")
-            birth_year = None
-            death_year = None
-
-            # Parse lifespan (format: "1900-1980" or "b. 1900" or "d. 1980")
-            if lifespan:
-                if "-" in lifespan:
-                    parts = lifespan.split("-")
-                    if len(parts) == 2:
-                        try:
-                            birth_year = (
-                                int(parts[0].strip()) if parts[0].strip() else None
-                            )
-                            death_year = (
-                                int(parts[1].strip()) if parts[1].strip() else None
-                            )
-                        except ValueError:
-                            pass
-                elif "b." in lifespan.lower():
-                    match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
-                    if match:
-                        try:
-                            birth_year = int(match.group(1))
-                        except ValueError:
-                            pass
-                elif "d." in lifespan.lower():
-                    match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
-                    if match:
-                        try:
-                            death_year = int(match.group(1))
-                        except ValueError:
-                            pass
-
-            # Extract location information
-            location = suggestion.get("location", "")
-
-            # Create candidate data for scoring
-            candidate = {
-                "first_name": first_name,
-                "surname": surname,
-                "birth_year": birth_year,
-                "death_year": death_year,
-                "birth_place": location,  # Assuming location is birth place
-                "death_place": None,  # Not available in suggestion results
-                "gender": None,  # Not available in suggestion results
-            }
-
-            # Score the candidate
-            total_score, field_scores, reasons = _run_simple_suggestion_scoring(
-                search_criteria, candidate, scoring_weights, date_flex
-            )
-
-            # Only include if score is above threshold
-            if total_score > 0:
-                # Create a match record
-                match_record = {
-                    "id": person_id,
-                    "display_id": person_id,
-                    "first_name": first_name,
-                    "surname": surname,
-                    "gender": None,  # Not available in suggestion results
-                    "birth_year": birth_year,
-                    "birth_place": location,  # Assuming location is birth place
-                    "death_year": death_year,
-                    "death_place": None,  # Not available in suggestion results
-                    "total_score": total_score,
-                    "field_scores": field_scores,
-                    "reasons": reasons,
-                    "source": "API",
-                }
-                scored_matches.append(match_record)
-        except Exception as e:
-            logger.error(f"Error processing suggestion result: {e}")
-            continue
+        match_record = _process_suggest_result(suggestion, search_criteria, scoring_weights, date_flex)
+        if match_record:
+            scored_matches.append(match_record)
 
     # Step 6: Try treesui-list API if suggest API didn't return enough results
     if len(scored_matches) < max_results:
@@ -506,23 +597,14 @@ def search_api_for_criteria(
             if search_params:
                 logger.info(f"Calling treesui-list API with params: {search_params}")
 
-                # Get tree ID from session manager or config (reuse from earlier)
-                tree_id = session_manager.my_tree_id
+                # Get tree ID and profile ID (reuse from earlier)
+                tree_id, owner_profile_id = _get_tree_and_profile_ids(session_manager)
                 if not tree_id:
-                    tree_id = getattr(config_schema.test, "test_tree_id", "")
-                    if not tree_id:
-                        logger.error("No tree ID available for treesui-list API search")
-                        return scored_matches
+                    logger.error("No tree ID available for treesui-list API search")
+                    return scored_matches
 
                 # Get base URL from config (reuse from earlier)
                 base_url = config_schema.api.base_url
-
-                # Get owner profile ID from session manager or config (reuse from earlier)
-                owner_profile_id = session_manager.my_profile_id
-                if not owner_profile_id:
-                    owner_profile_id = getattr(
-                        config_schema.test, "test_profile_id", ""
-                    )
 
                 # Call the treesui-list API
                 treesui_results = call_treesui_list_api(
@@ -542,89 +624,9 @@ def search_api_for_criteria(
 
                     # Process each person
                     for person in persons:
-                        try:
-                            person_id = person.get("id")
-                            if not person_id:
-                                continue
-
-                            # Extract name components
-                            first_name = person.get("firstName", "")
-                            surname = person.get("lastName", "")
-
-                            # Extract birth information
-                            birth_info = person.get("birth", {})
-                            birth_date = birth_info.get("date", {}).get(
-                                "normalized", ""
-                            )
-                            birth_year = _extract_year_from_date(birth_date)
-                            birth_place = birth_info.get("place", {}).get(
-                                "normalized", ""
-                            )
-
-                            # Extract death information
-                            death_info = person.get("death", {})
-                            death_date = death_info.get("date", {}).get(
-                                "normalized", ""
-                            )
-                            death_year = _extract_year_from_date(death_date)
-                            death_place = death_info.get("place", {}).get(
-                                "normalized", ""
-                            )
-
-                            # Extract gender
-                            gender = person.get("gender", "")
-                            if gender == "Male":
-                                gender = "M"
-                            elif gender == "Female":
-                                gender = "F"
-
-                            # Create candidate data for scoring
-                            candidate = {
-                                "first_name": first_name,
-                                "surname": surname,
-                                "birth_year": birth_year,
-                                "death_year": death_year,
-                                "birth_place": birth_place,
-                                "death_place": death_place,
-                                "gender": gender,
-                            }
-
-                            # Score the candidate
-                            total_score, field_scores, reasons = (
-                                _run_simple_suggestion_scoring(
-                                    search_criteria,
-                                    candidate,
-                                    scoring_weights,
-                                    date_flex,
-                                )
-                            )
-
-                            # Only include if score is above threshold
-                            if total_score > 0:
-                                # Check if this person is already in scored_matches
-                                if not any(
-                                    match["id"] == person_id for match in scored_matches
-                                ):
-                                    # Create a match record
-                                    match_record = {
-                                        "id": person_id,
-                                        "display_id": person_id,
-                                        "first_name": first_name,
-                                        "surname": surname,
-                                        "gender": gender,
-                                        "birth_year": birth_year,
-                                        "birth_place": birth_place,
-                                        "death_year": death_year,
-                                        "death_place": death_place,
-                                        "total_score": total_score,
-                                        "field_scores": field_scores,
-                                        "reasons": reasons,
-                                        "source": "API",
-                                    }
-                                    scored_matches.append(match_record)
-                        except Exception as e:
-                            logger.error(f"Error processing treesui-list result: {e}")
-                            continue
+                        match_record = _process_treesui_person(person, search_criteria, scoring_weights, date_flex, scored_matches)
+                        if match_record:
+                            scored_matches.append(match_record)
         except Exception as e:
             logger.error(f"Error calling treesui-list API: {e}")
 
