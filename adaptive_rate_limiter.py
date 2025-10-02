@@ -210,80 +210,125 @@ class AdaptiveRateLimiter:
         if self.adaptation_enabled and len(self.response_history) >= 10:
             self._adapt_rate_limiting()
 
+    # Helper methods for _adapt_rate_limiting
+
+    def _should_skip_adaptation(self, current_time: float, recent_responses: list) -> bool:
+        """Check if adaptation should be skipped."""
+        if current_time - self.last_adaptation_time < self.adaptation_cooldown:
+            return True
+        if len(recent_responses) < 10:
+            return True
+        return False
+
+    def _calculate_adaptation_metrics(self, recent_responses: list) -> tuple[float, float, float]:
+        """Calculate metrics for adaptation decision."""
+        success_rate = sum(1 for r in recent_responses if r.success) / len(recent_responses)
+        rate_limit_rate = sum(
+            1 for r in recent_responses
+            if r.status_code == 429 or "rate limit" in str(r.error_type).lower()
+        ) / len(recent_responses)
+        avg_response_time = statistics.mean([r.response_time for r in recent_responses])
+        return success_rate, rate_limit_rate, avg_response_time
+
+    def _handle_rate_limiting_response(self, rate_limit_rate: float) -> bool:
+        """Handle rate limiting response by decreasing RPS."""
+        if rate_limit_rate <= 0.02:
+            return False
+
+        new_rps = max(self.min_rps, self.current_rps * 0.5)
+        if new_rps == self.current_rps:
+            return False
+
+        logger.debug(f"Decreasing RPS due to rate limiting: {self.current_rps:.2f} → {new_rps:.2f}")
+        self.current_rps = new_rps
+        self.current_delay = min(self.max_delay, self.current_delay * 2.0)
+        return True
+
+    def _handle_excellent_performance(self, success_rate: float, avg_response_time: float, rate_limit_rate: float) -> bool:
+        """Handle excellent performance by aggressively increasing RPS."""
+        if not (success_rate > 0.98 and avg_response_time < 1.0 and rate_limit_rate == 0):
+            return False
+
+        new_rps = min(self.max_rps, self.current_rps * 1.4)
+        if new_rps == self.current_rps:
+            return False
+
+        logger.debug(f"Aggressively increasing RPS due to excellent performance: {self.current_rps:.2f} → {new_rps:.2f}")
+        self.current_rps = new_rps
+        self.current_delay = max(self.min_delay, self.current_delay * 0.7)
+        return True
+
+    def _handle_good_performance(self, success_rate: float, avg_response_time: float) -> bool:
+        """Handle good performance by moderately increasing RPS."""
+        if not (success_rate > self.success_threshold and avg_response_time < 2.0):
+            return False
+
+        new_rps = min(self.max_rps, self.current_rps * 1.2)
+        if new_rps == self.current_rps:
+            return False
+
+        logger.debug(f"Increasing RPS due to good performance: {self.current_rps:.2f} → {new_rps:.2f}")
+        self.current_rps = new_rps
+        self.current_delay = max(self.min_delay, self.current_delay * 0.85)
+        return True
+
+    def _handle_low_success_rate(self, success_rate: float) -> bool:
+        """Handle low success rate by decreasing RPS."""
+        if success_rate >= 0.9:
+            return False
+
+        new_rps = max(self.min_rps, self.current_rps * 0.7)
+        if new_rps == self.current_rps:
+            return False
+
+        logger.debug(f"Decreasing RPS due to low success rate: {self.current_rps:.2f} → {new_rps:.2f}")
+        self.current_rps = new_rps
+        self.current_delay = min(self.max_delay, self.current_delay * 1.5)
+        return True
+
+    def _finalize_adaptation(self, current_time: float, success_rate: float, rate_limit_rate: float) -> None:
+        """Finalize adaptation by updating stats and cooldown."""
+        self.stats.adaptive_adjustments += 1
+        self.last_adaptation_time = current_time
+
+        # Save optimal settings when performance is good
+        if success_rate >= 0.95:
+            self._save_optimal_settings()
+
+        # Adjust cooldown
+        if rate_limit_rate > 0:
+            self.adaptation_cooldown = min(30.0, self.adaptation_cooldown * 1.2)
+        elif success_rate > 0.95:
+            self.adaptation_cooldown = max(10.0, self.adaptation_cooldown * 0.9)
+
+        logger.debug(
+            f"⚡ Adaptive rate limiting: RPS={self.current_rps:.2f}, Delay={self.current_delay:.2f}s, "
+            f"Success={success_rate:.2%}, RateLimit={rate_limit_rate:.2%}"
+        )
+
     def _adapt_rate_limiting(self) -> None:
         """Adapt rate limiting based on recent response patterns."""
         current_time = time.time()
+        recent_responses = list(self.response_history)[-20:]
 
-        # Check adaptation cooldown
-        if current_time - self.last_adaptation_time < self.adaptation_cooldown:
+        # Check if adaptation should be skipped
+        if self._should_skip_adaptation(current_time, recent_responses):
             return
 
-        # Calculate recent metrics
-        recent_responses = list(self.response_history)[-20:]  # Last 20 responses
-        if len(recent_responses) < 10:
-            return
+        # Calculate metrics
+        success_rate, rate_limit_rate, avg_response_time = self._calculate_adaptation_metrics(recent_responses)
 
-        success_rate = sum(1 for r in recent_responses if r.success) / len(recent_responses)
-        rate_limit_rate = sum(1 for r in recent_responses
-                             if r.status_code == 429 or "rate limit" in str(r.error_type).lower()) / len(recent_responses)
-        avg_response_time = statistics.mean([r.response_time for r in recent_responses])
+        # Try different adaptation strategies
+        adaptation_made = (
+            self._handle_rate_limiting_response(rate_limit_rate)
+            or self._handle_excellent_performance(success_rate, avg_response_time, rate_limit_rate)
+            or self._handle_good_performance(success_rate, avg_response_time)
+            or self._handle_low_success_rate(success_rate)
+        )
 
-        # Determine adaptation strategy
-        adaptation_made = False
-
-        # Simple rate limiting response
-        if rate_limit_rate > 0.02:  # More than 2% rate limiting
-            new_rps = max(self.min_rps, self.current_rps * 0.5)
-            if new_rps != self.current_rps:
-                logger.debug(f"Decreasing RPS due to rate limiting: {self.current_rps:.2f} → {new_rps:.2f}")
-                self.current_rps = new_rps
-                self.current_delay = min(self.max_delay, self.current_delay * 2.0)
-                adaptation_made = True
-
-        # Increase RPS more aggressively if performance is excellent
-        elif success_rate > 0.98 and avg_response_time < 1.0 and rate_limit_rate == 0:
-            # Aggressive increase for excellent performance
-            new_rps = min(self.max_rps, self.current_rps * 1.4)
-            if new_rps != self.current_rps:
-                logger.debug(f"Aggressively increasing RPS due to excellent performance: {self.current_rps:.2f} → {new_rps:.2f}")
-                self.current_rps = new_rps
-                self.current_delay = max(self.min_delay, self.current_delay * 0.7)
-                adaptation_made = True
-
-        # Moderate increase for good performance
-        elif success_rate > self.success_threshold and avg_response_time < 2.0:
-            new_rps = min(self.max_rps, self.current_rps * 1.2)  # Increased from 1.1 to 1.2
-            if new_rps != self.current_rps:
-                logger.debug(f"Increasing RPS due to good performance: {self.current_rps:.2f} → {new_rps:.2f}")
-                self.current_rps = new_rps
-                self.current_delay = max(self.min_delay, self.current_delay * 0.85)  # More aggressive decrease
-                adaptation_made = True
-
-        # Decrease RPS if success rate is low (more conservative threshold)
-        elif success_rate < 0.9:  # Increased threshold from 0.8 to 0.9 for earlier intervention
-            new_rps = max(self.min_rps, self.current_rps * 0.7)  # More aggressive reduction from 0.8 to 0.7
-            if new_rps != self.current_rps:
-                logger.debug(f"Decreasing RPS due to low success rate: {self.current_rps:.2f} → {new_rps:.2f}")
-                self.current_rps = new_rps
-                self.current_delay = min(self.max_delay, self.current_delay * 1.5)  # Increased from 1.2 to 1.5
-                adaptation_made = True
-
+        # Finalize if adaptation was made
         if adaptation_made:
-            self.stats.adaptive_adjustments += 1
-            self.last_adaptation_time = current_time
-
-            # ⚡ OPTIMIZATION 2: Save optimal settings when performance is good
-            if success_rate >= 0.95:  # Save settings when we have good performance
-                self._save_optimal_settings()
-
-            # Simple cooldown adjustment
-            if rate_limit_rate > 0:
-                self.adaptation_cooldown = min(30.0, self.adaptation_cooldown * 1.2)
-            elif success_rate > 0.95:
-                self.adaptation_cooldown = max(10.0, self.adaptation_cooldown * 0.9)
-
-            logger.debug(f"⚡ Adaptive rate limiting: RPS={self.current_rps:.2f}, Delay={self.current_delay:.2f}s, "
-                        f"Success={success_rate:.2%}, RateLimit={rate_limit_rate:.2%}")
+            self._finalize_adaptation(current_time, success_rate, rate_limit_rate)
 
     def get_current_settings(self) -> dict[str, float]:
         """Get current rate limiting settings."""
