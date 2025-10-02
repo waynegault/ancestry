@@ -226,6 +226,132 @@ Your response should be ONLY the message text, with no additional formatting, ex
 
 # --- Private Helper for AI Calls ---
 
+def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None:
+    """Apply rate limiting before AI API call."""
+    try:
+        if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
+            drl = getattr(session_manager, "dynamic_rate_limiter", None)
+            if drl is not None and hasattr(drl, "wait"):
+                wait_time = drl.wait()
+                if isinstance(wait_time, (int, float)) and wait_time > 0.1:
+                    logger.debug(f"AI API rate limit wait: {float(wait_time):.2f}s for {provider}")
+        else:
+            logger.warning("_call_ai_model: SessionManager or rate limiter not available. Proceeding without rate limiting.")
+    except Exception:
+        logger.debug("Rate limiter invocation failed; proceeding without enforced wait.")
+
+
+def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: Optional[str]) -> Optional[str]:
+    """Call DeepSeek AI model."""
+    if not openai_available or OpenAI is None:
+        logger.error("_call_ai_model: OpenAI library not available for DeepSeek.")
+        return None
+
+    api_key = config_schema.api.deepseek_api_key
+    model_name = config_schema.api.deepseek_ai_model
+    base_url = config_schema.api.deepseek_ai_base_url
+
+    if not all([api_key, model_name, base_url]):
+        logger.error("_call_ai_model: DeepSeek configuration incomplete.")
+        return None
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    request_params: dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }
+    if response_format_type == "json_object":
+        request_params["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(**request_params)
+    if response.choices and response.choices[0].message and response.choices[0].message.content:
+        return response.choices[0].message.content.strip()
+    else:
+        logger.error("DeepSeek returned an empty or invalid response structure.")
+        return None
+
+
+def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float) -> Optional[str]:
+    """Call Gemini AI model."""
+    if not genai_available or genai is None or google_exceptions is None:
+        logger.error("_call_ai_model: Google GenerativeAI library not available for Gemini.")
+        return None
+
+    api_key = getattr(config_schema.api, "google_api_key", None)
+    model_name = getattr(config_schema.api, "google_ai_model", None)
+
+    if not api_key or not model_name:
+        logger.error("_call_ai_model: Gemini configuration incomplete.")
+        return None
+
+    if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
+        logger.error("_call_ai_model: Gemini library missing expected interfaces.")
+        return None
+
+    try:
+        genai.configure(api_key=api_key)  # type: ignore[attr-defined]
+        model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+    except Exception as e:
+        logger.error(f"_call_ai_model: Failed initializing Gemini model: {e}")
+        return None
+
+    full_prompt = f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
+
+    generation_config = None
+    if hasattr(genai, "GenerationConfig"):
+        try:
+            generation_config = genai.GenerationConfig(  # type: ignore[attr-defined]
+                candidate_count=1,
+                max_output_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except Exception:
+            generation_config = None
+
+    response = None
+    if hasattr(model, "generate_content"):
+        try:
+            response = model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
+        except Exception as e:
+            logger.error(f"Gemini generation failed: {e}")
+            response = None
+
+    if response is not None and getattr(response, "text", None):
+        return getattr(response, "text", "").strip()
+    else:
+        block_reason_msg = "Unknown"
+        try:
+            if response is not None and hasattr(response, "prompt_feedback"):
+                pf = getattr(response, "prompt_feedback", None)
+                if pf and hasattr(pf, "block_reason"):
+                    br = getattr(pf, "block_reason", None)
+                    if hasattr(br, "name"):
+                        block_reason_msg = getattr(br, "name", "Unknown")
+                    elif br is not None:
+                        block_reason_msg = str(br)
+        except Exception:
+            pass
+        logger.error(f"Gemini returned an empty or blocked response. Reason: {block_reason_msg}")
+        return None
+
+
+def _handle_rate_limit_error(session_manager: SessionManager) -> None:
+    """Handle rate limit error by increasing delay."""
+    if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
+        try:
+            drl = getattr(session_manager, "dynamic_rate_limiter", None)
+            if drl is not None and hasattr(drl, "increase_delay"):
+                drl.increase_delay()
+        except Exception:
+            pass
+
 
 @cached_api_call("ai", ttl=1800)  # Cache AI model responses for 30 minutes
 def _call_ai_model(
@@ -241,135 +367,18 @@ def _call_ai_model(
     Private helper to call the specified AI model.
     Handles API key loading, request construction, rate limiting, and error handling.
     """
-    logger.debug(
-        f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}"
-    )
+    logger.debug(f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}")
 
-    # Apply rate limiting (guarded)
-    wait_time = None
-    try:
-        if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-            drl = getattr(session_manager, "dynamic_rate_limiter", None)
-            if drl is not None and hasattr(drl, "wait"):
-                wait_time = drl.wait()
-                if isinstance(wait_time, (int, float)) and wait_time > 0.1:
-                    logger.debug(f"AI API rate limit wait: {float(wait_time):.2f}s for {provider}")
-        else:
-            logger.warning(
-                "_call_ai_model: SessionManager or rate limiter not available. Proceeding without rate limiting."
-            )
-    except Exception:
-        logger.debug("Rate limiter invocation failed; proceeding without enforced wait.")
+    # Apply rate limiting
+    _apply_rate_limiting(session_manager, provider)
 
     ai_response_text: Optional[str] = None
 
     try:
         if provider == "deepseek":
-            if not openai_available or OpenAI is None:
-                logger.error(
-                    "_call_ai_model: OpenAI library not available for DeepSeek."
-                )
-                return None
-            api_key = config_schema.api.deepseek_api_key
-            model_name = config_schema.api.deepseek_ai_model
-            base_url = config_schema.api.deepseek_ai_base_url
-            if not all([api_key, model_name, base_url]):
-                logger.error("_call_ai_model: DeepSeek configuration incomplete.")
-                return None
-
-            client = OpenAI(api_key=api_key, base_url=base_url)
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ]
-            request_params: dict[str, Any] = {
-                "model": model_name,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "stream": False,
-            }
-            if response_format_type == "json_object":
-                request_params["response_format"] = {"type": "json_object"}
-
-            response = client.chat.completions.create(**request_params)
-            if (
-                response.choices
-                and response.choices[0].message
-                and response.choices[0].message.content
-            ):
-                ai_response_text = response.choices[0].message.content.strip()
-            else:
-                logger.error(
-                    "DeepSeek returned an empty or invalid response structure."
-                )
-
+            ai_response_text = _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
         elif provider == "gemini":
-            if not genai_available or genai is None or google_exceptions is None:
-                logger.error(
-                    "_call_ai_model: Google GenerativeAI library not available for Gemini."
-                )
-                return None
-            api_key = getattr(config_schema.api, "google_api_key", None)
-            model_name = getattr(config_schema.api, "google_ai_model", None)
-            if not api_key or not model_name:
-                logger.error("_call_ai_model: Gemini configuration incomplete.")
-                return None
-            if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
-                logger.error("_call_ai_model: Gemini library missing expected interfaces.")
-                return None
-            try:
-                genai.configure(api_key=api_key)  # type: ignore[attr-defined]
-                model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
-            except Exception as e:
-                logger.error(f"_call_ai_model: Failed initializing Gemini model: {e}")
-                return None
-            # Gemini prefers the system prompt to be part of the main prompt content
-            # or handled through specific parts if using more complex multi-turn chat.
-            # For simplicity here, we'll prepend system prompt to user content.
-            full_prompt = (
-                f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
-            )
-
-            # Create a proper GenerationConfig object instead of a dictionary
-            generation_config = None
-            if hasattr(genai, "GenerationConfig"):
-                try:
-                    generation_config = genai.GenerationConfig(  # type: ignore[attr-defined]
-                        candidate_count=1,
-                        max_output_tokens=max_tokens,
-                        temperature=temperature,
-                    )
-                except Exception:
-                    generation_config = None
-            # Gemini's way of requesting JSON is less direct, often relies on prompt engineering.
-            # If `response_format_type` is 'json_object', ensure the prompt strongly requests JSON.
-
-            response = None
-            if hasattr(model, "generate_content"):
-                try:
-                    response = model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
-                except Exception as e:
-                    logger.error(f"Gemini generation failed: {e}")
-                    response = None
-            if response is not None and getattr(response, "text", None):
-                ai_response_text = getattr(response, "text", "").strip()
-            else:
-                block_reason_msg = "Unknown"
-                try:
-                    if response is not None and hasattr(response, "prompt_feedback"):
-                        pf = getattr(response, "prompt_feedback", None)
-                        if pf and hasattr(pf, "block_reason"):
-                            br = getattr(pf, "block_reason", None)
-                            if hasattr(br, "name"):
-                                block_reason_msg = getattr(br, "name", "Unknown")
-                            elif br is not None:
-                                block_reason_msg = str(br)
-                except Exception:
-                    pass
-                logger.error(
-                    f"Gemini returned an empty or blocked response. Reason: {block_reason_msg}"
-                )
+            ai_response_text = _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
         else:
             logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
             return None
@@ -378,47 +387,24 @@ def _call_ai_model(
         logger.error(f"AI Authentication Error ({provider}): {e}")
     except RateLimitError as e:  # type: ignore
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
-        if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-            try:
-                drl = getattr(session_manager, "dynamic_rate_limiter", None)
-                if drl is not None and hasattr(drl, "increase_delay"):
-                    drl.increase_delay()
-            except Exception:
-                pass
+        _handle_rate_limit_error(session_manager)
     except APIConnectionError as e:  # type: ignore
         logger.error(f"AI Connection Error ({provider}): {e}")
     except APIError as e:  # type: ignore
-        logger.error(
-            f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}"
-        )
+        logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
     except google_exceptions.PermissionDenied as e:  # type: ignore
         logger.error(f"Gemini Permission Denied: {e}")
     except google_exceptions.ResourceExhausted as e:  # type: ignore
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
-        if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-            try:
-                drl = getattr(session_manager, "dynamic_rate_limiter", None)
-                if drl is not None and hasattr(drl, "increase_delay"):
-                    drl.increase_delay()
-            except Exception:
-                pass
+        _handle_rate_limit_error(session_manager)
     except google_exceptions.GoogleAPIError as e:  # type: ignore
         logger.error(f"Google API Error (Gemini): {e}")
     except AttributeError as ae:
-        logger.critical(
-            f"AttributeError during AI call ({provider}): {ae}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}",
-            exc_info=True,
-        )
+        logger.critical(f"AttributeError during AI call ({provider}): {ae}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
     except NameError as ne:
-        logger.critical(
-            f"NameError during AI call ({provider}): {ne}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}",
-            exc_info=True,
-        )
+        logger.critical(f"NameError during AI call ({provider}): {ne}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
     except Exception as e:
-        logger.error(
-            f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}",
-            exc_info=True,
-        )
+        logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
 
     return ai_response_text
 
