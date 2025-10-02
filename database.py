@@ -665,15 +665,6 @@ def db_transn(session: Session):
     transaction_start = time.time()
     session_id = id(session)
 
-    # Create enhanced error context
-    context = ErrorContext(
-        operation="database_transaction",
-        module=__name__,
-        function="db_transn",
-        parameters={"session_id": session_id},
-    )
-    context.capture_environment()
-
     try:
         # Step 1: Validate session state
         if not hasattr(session, "commit"):
@@ -2312,27 +2303,18 @@ def backup_database(_session_manager: Optional[Any] = None) -> bool:
         # Step 2: Enhanced path validation
         if db_path is None:
             raise AncestryException(
-                "Cannot backup database: DATABASE_FILE is not configured",
-                error_code="CONFIG_MISSING_DB_PATH",
-                severity="ERROR",
-                recovery_hint="Configure DATABASE_FILE in configuration",
+                "Cannot backup database: DATABASE_FILE is not configured. Configure DATABASE_FILE in configuration."
             )
 
         if backup_dir is None:
             raise AncestryException(
-                "Cannot backup database: DATA_DIR is not configured",
-                error_code="CONFIG_MISSING_BACKUP_DIR",
-                severity="ERROR",
-                recovery_hint="Configure DATA_DIR in configuration",
+                "Cannot backup database: DATA_DIR is not configured. Configure DATA_DIR in configuration."
             )
 
         # Step 3: Check source database exists and is accessible
         if not db_path.exists():
             raise AncestryException(
-                f"Database file '{db_path.name}' not found",
-                error_code="DB_FILE_NOT_FOUND",
-                context={"db_path": str(db_path)},
-                recovery_hint="Ensure database file exists before backup",
+                f"Database file '{db_path.name}' not found at {db_path}. Ensure database file exists before backup."
             )
 
         # Check if database file is readable
