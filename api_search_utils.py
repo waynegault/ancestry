@@ -433,6 +433,117 @@ def _process_treesui_person(person: Dict[str, Any], search_criteria: Dict[str, A
         return None
 
 
+# Helper functions for search_api_for_criteria
+
+def _validate_session(session_manager: SessionManager) -> bool:
+    """Validate session manager is active."""
+    try:
+        if not session_manager or not session_manager.is_sess_valid():
+            logger.error("Session manager is not valid or not logged in")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Error checking session validity: {e}")
+        return False
+
+
+def _call_suggest_api_for_search(session_manager: SessionManager, search_criteria: Dict[str, Any], tree_id: str, owner_profile_id: str) -> List[Dict[str, Any]]:
+    """Call suggest API and return results."""
+    base_url = config_schema.api.base_url
+
+    api_search_criteria = {
+        "first_name_raw": search_criteria.get("first_name", ""),
+        "surname_raw": search_criteria.get("surname", ""),
+        "birth_year": search_criteria.get("birth_year"),
+    }
+
+    suggest_results = call_suggest_api(
+        session_manager=session_manager,
+        owner_tree_id=tree_id,
+        _owner_profile_id=owner_profile_id,
+        base_url=base_url,
+        search_criteria=api_search_criteria,
+    )
+
+    if not suggest_results or not isinstance(suggest_results, list):
+        logger.warning(f"No results from suggest API for query: {_build_search_query(search_criteria)}")
+        return []
+
+    return suggest_results
+
+
+def _process_suggest_results(suggest_results: List[Dict[str, Any]], search_criteria: Dict[str, Any], max_suggestions: int) -> List[Dict[str, Any]]:
+    """Process suggest API results and return scored matches."""
+    scoring_weights = config_schema.common_scoring_weights
+    date_flex = {"year_match_range": config_schema.date_flexibility}
+    scored_matches = []
+
+    for suggestion in suggest_results[:max_suggestions]:
+        match_record = _process_suggest_result(suggestion, search_criteria, scoring_weights, date_flex)
+        if match_record:
+            scored_matches.append(match_record)
+
+    return scored_matches
+
+
+def _build_treesui_search_params(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
+    """Build search parameters for treesui-list API."""
+    search_params = {}
+
+    field_mapping = {
+        "first_name": "firstName",
+        "surname": "lastName",
+        "gender": "gender",
+        "birth_year": "birthYear",
+        "birth_place": "birthLocation",
+        "death_year": "deathYear",
+        "death_place": "deathLocation",
+    }
+
+    for criteria_key, api_key in field_mapping.items():
+        if search_criteria.get(criteria_key):
+            search_params[api_key] = search_criteria[criteria_key]
+
+    return search_params
+
+
+def _call_treesui_api_for_search(session_manager: SessionManager, search_params: Dict[str, Any], tree_id: str, owner_profile_id: str) -> Optional[Dict[str, Any]]:
+    """Call treesui-list API and return results."""
+    if not search_params:
+        return None
+
+    logger.info(f"Calling treesui-list API with params: {search_params}")
+    base_url = config_schema.api.base_url
+
+    return call_treesui_list_api(
+        session_manager=session_manager,
+        owner_tree_id=tree_id,
+        _owner_profile_id=owner_profile_id,
+        base_url=base_url,
+        search_criteria=search_params,
+    )
+
+
+def _process_treesui_results(treesui_results: Optional[Dict[str, Any]], search_criteria: Dict[str, Any], scored_matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Process treesui-list API results and add to scored matches."""
+    if not treesui_results or not isinstance(treesui_results, dict):
+        return scored_matches
+
+    persons = treesui_results.get("persons", [])
+    if not persons:
+        return scored_matches
+
+    scoring_weights = config_schema.common_scoring_weights
+    date_flex = {"year_match_range": config_schema.date_flexibility}
+
+    for person in persons:
+        match_record = _process_treesui_person(person, search_criteria, scoring_weights, date_flex, scored_matches)
+        if match_record:
+            scored_matches.append(match_record)
+
+    return scored_matches
+
+
 def search_api_for_criteria(
     session_manager: SessionManager,
     search_criteria: Dict[str, Any],
@@ -449,22 +560,16 @@ def search_api_for_criteria(
     Returns:
         List of dictionaries containing match information, sorted by score (highest first)
     """
-    try:
-        # Step 1: Check if session is active
-        if not session_manager or not session_manager.is_sess_valid():
-            logger.error("Session manager is not valid or not logged in")
-            return []
-    except Exception as e:
-        logger.error(f"Error checking session validity: {e}")
+    # Validate session
+    if not _validate_session(session_manager):
         return []
 
-    # Step 2: Prepare search parameters
+    # Prepare search parameters
     search_query = _build_search_query(search_criteria)
     if not search_query:
         logger.error("No search criteria provided")
         return []
 
-    # Step 3: Call the suggest API
     logger.info(f"Searching API with query: {search_query}")
 
     # Get tree ID and profile ID
@@ -473,108 +578,22 @@ def search_api_for_criteria(
         logger.error("No tree ID available for API search")
         return []
 
-    # Get base URL from config
-    base_url = config_schema.api.base_url
-
-    # Prepare search criteria for API
-    api_search_criteria = {
-        "first_name_raw": search_criteria.get("first_name", ""),
-        "surname_raw": search_criteria.get("surname", ""),
-        "birth_year": search_criteria.get("birth_year"),
-    }
-
-    # Call the suggest API
-    suggest_results = call_suggest_api(
-        session_manager=session_manager,
-        owner_tree_id=tree_id,
-        _owner_profile_id=owner_profile_id,
-        base_url=base_url,
-        search_criteria=api_search_criteria,
-    )
-
-    if not suggest_results or not isinstance(suggest_results, list):
-        logger.warning(f"No results from suggest API for query: {search_query}")
-        return []
-
-    # Step 4: Get configuration values
-    scoring_weights = config_schema.common_scoring_weights
-    date_flex = {"year_match_range": config_schema.date_flexibility}
+    # Call suggest API and process results
+    suggest_results = _call_suggest_api_for_search(session_manager, search_criteria, tree_id, owner_profile_id)
     max_suggestions = config_schema.max_suggestions_to_score
+    scored_matches = _process_suggest_results(suggest_results, search_criteria, max_suggestions)
 
-    # Step 5: Score and filter results
-    scored_matches = []
-
-    # Ensure suggest_results is a list (API returns Optional[List[Dict]])
-    if not suggest_results or not isinstance(suggest_results, list):
-        suggest_results = []
-
-    # Process each suggestion result
-    for suggestion in suggest_results[:max_suggestions]:
-        match_record = _process_suggest_result(suggestion, search_criteria, scoring_weights, date_flex)
-        if match_record:
-            scored_matches.append(match_record)
-
-    # Step 6: Try treesui-list API if suggest API didn't return enough results
+    # Try treesui-list API if not enough results
     if len(scored_matches) < max_results:
         try:
-            # Prepare search parameters for treesui-list API
-            search_params = {}
-            if search_criteria.get("first_name"):
-                search_params["firstName"] = search_criteria["first_name"]
-            if search_criteria.get("surname"):
-                search_params["lastName"] = search_criteria["surname"]
-            if search_criteria.get("gender"):
-                search_params["gender"] = search_criteria["gender"]
-            if search_criteria.get("birth_year"):
-                search_params["birthYear"] = search_criteria["birth_year"]
-            if search_criteria.get("birth_place"):
-                search_params["birthLocation"] = search_criteria["birth_place"]
-            if search_criteria.get("death_year"):
-                search_params["deathYear"] = search_criteria["death_year"]
-            if search_criteria.get("death_place"):
-                search_params["deathLocation"] = search_criteria["death_place"]
-
-            # Call treesui-list API
-            if search_params:
-                logger.info(f"Calling treesui-list API with params: {search_params}")
-
-                # Get tree ID and profile ID (reuse from earlier)
-                tree_id, owner_profile_id = _get_tree_and_profile_ids(session_manager)
-                if not tree_id:
-                    logger.error("No tree ID available for treesui-list API search")
-                    return scored_matches
-
-                # Get base URL from config (reuse from earlier)
-                base_url = config_schema.api.base_url
-
-                # Call the treesui-list API
-                treesui_results = call_treesui_list_api(
-                    session_manager=session_manager,
-                    owner_tree_id=tree_id,
-                    _owner_profile_id=owner_profile_id,
-                    base_url=base_url,
-                    search_criteria=search_params,
-                )
-
-                if (
-                    treesui_results
-                    and isinstance(treesui_results, dict)
-                    and "persons" in treesui_results
-                ):
-                    persons = treesui_results.get("persons", [])
-
-                    # Process each person
-                    for person in persons:
-                        match_record = _process_treesui_person(person, search_criteria, scoring_weights, date_flex, scored_matches)
-                        if match_record:
-                            scored_matches.append(match_record)
+            search_params = _build_treesui_search_params(search_criteria)
+            treesui_results = _call_treesui_api_for_search(session_manager, search_params, tree_id, owner_profile_id)
+            scored_matches = _process_treesui_results(treesui_results, search_criteria, scored_matches)
         except Exception as e:
             logger.error(f"Error calling treesui-list API: {e}")
 
-    # Sort matches by score (highest first)
+    # Sort and return top matches
     scored_matches.sort(key=lambda x: x.get("total_score", 0), reverse=True)
-
-    # Return top matches (limited by max_results)
     return scored_matches[:max_results] if scored_matches else []
 
 
