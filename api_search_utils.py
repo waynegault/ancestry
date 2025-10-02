@@ -66,6 +66,123 @@ def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
     return None
 
 
+# Helper functions for _run_simple_suggestion_scoring
+
+def _get_scoring_weights(weights: Optional[Dict[str, Union[int, float]]]) -> Dict[str, Union[int, float]]:
+    """Get scoring weights with defaults."""
+    if weights is None:
+        return dict(config_schema.common_scoring_weights)
+    return weights
+
+
+def _get_year_range(date_flex: Optional[Dict[str, Any]]) -> int:
+    """Get year range for flexible matching."""
+    if date_flex and isinstance(date_flex, dict):
+        return date_flex.get("year_match_range", 10)
+    return 10
+
+
+def _extract_search_criteria(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract and clean search criteria."""
+    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    return {
+        "first_name": clean_param(search_criteria.get("first_name")),
+        "surname": clean_param(search_criteria.get("surname")),
+        "gender": clean_param(search_criteria.get("gender")),
+        "birth_year": search_criteria.get("birth_year"),
+        "birth_place": clean_param(search_criteria.get("birth_place")),
+        "death_year": search_criteria.get("death_year"),
+        "death_place": clean_param(search_criteria.get("death_place")),
+    }
+
+
+def _extract_candidate_data(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract and clean candidate data - handle both camelCase and Title Case field names."""
+    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    return {
+        "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),
+        "surname": clean_param(candidate.get("surname", candidate.get("lastName", candidate.get("Surname")))),
+        "gender": clean_param(candidate.get("gender", candidate.get("Gender"))),
+        "birth_year": candidate.get("birth_year", candidate.get("birthYear", candidate.get("Birth Year"))),
+        "birth_place": clean_param(candidate.get("birth_place", candidate.get("birthPlace", candidate.get("Birth Place")))),
+        "death_year": candidate.get("death_year", candidate.get("deathYear", candidate.get("Death Year"))),
+        "death_place": clean_param(candidate.get("death_place", candidate.get("deathPlace", candidate.get("Death Place")))),
+    }
+
+
+def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+    """Score name matching (first name or surname)."""
+    if search_name and cand_name and search_name in cand_name:
+        total_score += score_value
+        field_scores[field_name] = score_value
+        reasons.append(f"{field_name.replace('_', ' ').title()} '{search_name}' found in '{cand_name}'")
+    return total_score
+
+
+def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+    """Score gender matching."""
+    if search_gender and cand_gender and search_gender == cand_gender:
+        total_score += score_value
+        field_scores["gender"] = score_value
+        reasons.append(f"Gender '{search_gender}' matched")
+    return total_score
+
+
+def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: int, close_score: int, year_range: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+    """Score year matching (birth or death year)."""
+    if search_year and cand_year:
+        try:
+            search_year_int = int(search_year)
+            cand_year_int = int(cand_year)
+
+            if search_year_int == cand_year_int:
+                total_score += exact_score
+                field_scores[field_name] = exact_score
+                reasons.append(f"{field_name.replace('_', ' ').title()} {search_year} matched exactly")
+            elif abs(search_year_int - cand_year_int) <= year_range:
+                total_score += close_score
+                field_scores[field_name] = close_score
+                reasons.append(f"{field_name.replace('_', ' ').title()} {search_year} close to {cand_year}")
+        except (ValueError, TypeError) as e:
+            logger.debug(f"{field_name} comparison failed - search: {search_year} ({type(search_year)}), candidate: {cand_year} ({type(cand_year)}), error: {e}")
+    return total_score
+
+
+def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+    """Score place matching (birth or death place)."""
+    if search_place and cand_place and search_place in cand_place:
+        total_score += score_value
+        field_scores[field_name] = score_value
+        reasons.append(f"{field_name.replace('_', ' ').title()} '{search_place}' found in '{cand_place}'")
+    return total_score
+
+
+def _apply_bonus_scores(field_scores: Dict[str, int], weights: Dict[str, Union[int, float]], total_score: int, reasons: List[str]) -> int:
+    """Apply bonus scores for multiple matching fields."""
+    # Bonus for both names matching
+    if "first_name" in field_scores and "surname" in field_scores:
+        bonus = weights.get("bonus_both_names_contain", 25)
+        total_score += bonus
+        field_scores["name_bonus"] = bonus
+        reasons.append("Both first name and surname matched")
+
+    # Bonus for both birth date and place matching
+    if "birth_year" in field_scores and "birth_place" in field_scores:
+        bonus = weights.get("bonus_birth_date_and_place", 15)
+        total_score += bonus
+        field_scores["birth_bonus"] = bonus
+        reasons.append("Both birth year and place matched")
+
+    # Bonus for both death date and place matching
+    if "death_year" in field_scores and "death_place" in field_scores:
+        bonus = weights.get("bonus_death_date_and_place", 15)
+        total_score += bonus
+        field_scores["death_bonus"] = bonus
+        reasons.append("Both death year and place matched")
+
+    return total_score
+
+
 def _run_simple_suggestion_scoring(
     search_criteria: Dict[str, Any],
     candidate: Dict[str, Any],
@@ -84,214 +201,38 @@ def _run_simple_suggestion_scoring(
     Returns:
         Tuple of (total_score, field_scores, reasons)
     """
-    # Use default weights if none provided
-    if weights is None:
-        weights = dict(config_schema.common_scoring_weights)
-
-    # Use default date flexibility if none provided
+    # Get weights and year range
+    weights = _get_scoring_weights(weights)
     if date_flex is None:
         date_flex = {"year_match_range": config_schema.date_flexibility}
+    year_range = _get_year_range(date_flex)
 
-    # Get year range for flexible matching
-    year_range = 10
-    if date_flex and isinstance(date_flex, dict):
-        year_range = date_flex.get("year_match_range", 10)
+    # Extract search criteria and candidate data
+    search = _extract_search_criteria(search_criteria)
+    cand = _extract_candidate_data(candidate)
 
     # Initialize scoring variables
     total_score = 0
     field_scores = {}
     reasons = []
 
-    # Clean inputs for comparison
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
-
-    # Extract search criteria
-    search_first_name = clean_param(search_criteria.get("first_name"))
-    search_surname = clean_param(search_criteria.get("surname"))
-    search_gender = clean_param(search_criteria.get("gender"))
-    search_birth_year = search_criteria.get("birth_year")
-    search_birth_place = clean_param(search_criteria.get("birth_place"))
-    search_death_year = search_criteria.get("death_year")
-    search_death_place = clean_param(search_criteria.get("death_place"))
-
-    # Extract candidate data - handle both camelCase and Title Case field names
-    cand_first_name = clean_param(
-        candidate.get(
-            "first_name", candidate.get("firstName", candidate.get("First Name"))
-        )
-    )
-    cand_surname = clean_param(
-        candidate.get("surname", candidate.get("lastName", candidate.get("Surname")))
-    )
-    cand_gender = clean_param(candidate.get("gender", candidate.get("Gender")))
-    cand_birth_year = candidate.get(
-        "birth_year", candidate.get("birthYear", candidate.get("Birth Year"))
-    )
-    cand_birth_place = clean_param(
-        candidate.get(
-            "birth_place", candidate.get("birthPlace", candidate.get("Birth Place"))
-        )
-    )
-    cand_death_year = candidate.get(
-        "death_year", candidate.get("deathYear", candidate.get("Death Year"))
-    )
-    cand_death_place = clean_param(
-        candidate.get(
-            "death_place", candidate.get("deathPlace", candidate.get("Death Place"))
-        )
-    )
-
-    # Default scores if weights is None or not a dict
-    contains_first_name_score = 25
-    contains_surname_score = 25
-    bonus_both_names_score = 25
-    gender_match_score = 15
-
-    # Get scores from weights if available
-    if weights and isinstance(weights, dict):
-        contains_first_name_score = weights.get("contains_first_name", 25)
-        contains_surname_score = weights.get("contains_surname", 25)
-        bonus_both_names_score = weights.get("bonus_both_names_contain", 25)
-        gender_match_score = weights.get("gender_match", 15)
-
-    # Score first name
-    if search_first_name and cand_first_name and search_first_name in cand_first_name:
-        score = contains_first_name_score
-        total_score += score
-        field_scores["first_name"] = score
-        reasons.append(f"First name '{search_first_name}' found in '{cand_first_name}'")
-
-    # Score surname
-    if search_surname and cand_surname and search_surname in cand_surname:
-        score = contains_surname_score
-        total_score += score
-        field_scores["surname"] = score
-        reasons.append(f"Surname '{search_surname}' found in '{cand_surname}'")
-
-    # Bonus for both names matching
-    if "first_name" in field_scores and "surname" in field_scores:
-        score = bonus_both_names_score
-        total_score += score
-        field_scores["name_bonus"] = score
-        reasons.append("Both first name and surname matched")
+    # Score name matches
+    total_score = _score_name_match(search["first_name"], cand["first_name"], "first_name", weights.get("contains_first_name", 25), total_score, field_scores, reasons)
+    total_score = _score_name_match(search["surname"], cand["surname"], "surname", weights.get("contains_surname", 25), total_score, field_scores, reasons)
 
     # Score gender
-    if search_gender and cand_gender and search_gender == cand_gender:
-        score = gender_match_score
-        total_score += score
-        field_scores["gender"] = score
-        reasons.append(f"Gender '{search_gender}' matched")
+    total_score = _score_gender_match(search["gender"], cand["gender"], weights.get("gender_match", 15), total_score, field_scores, reasons)
 
-    # More default scores
-    birth_year_match_score = 20
-    birth_year_close_score = 10
-    birth_place_match_score = 20
-    death_year_match_score = 20
-    death_year_close_score = 10
-    death_place_match_score = 20
-    bonus_birth_date_place_score = 15
-    bonus_death_date_place_score = 15
+    # Score birth year and place
+    total_score = _score_year_match(search["birth_year"], cand["birth_year"], "birth_year", weights.get("birth_year_match", 20), weights.get("birth_year_close", 10), year_range, total_score, field_scores, reasons)
+    total_score = _score_place_match(search["birth_place"], cand["birth_place"], "birth_place", weights.get("birth_place_match", 20), total_score, field_scores, reasons)
 
-    # Get more scores from weights if available
-    if weights and isinstance(weights, dict):
-        birth_year_match_score = weights.get("birth_year_match", 20)
-        birth_year_close_score = weights.get("birth_year_close", 10)
-        birth_place_match_score = weights.get("birth_place_match", 20)
-        death_year_match_score = weights.get("death_year_match", 20)
-        death_year_close_score = weights.get("death_year_close", 10)
-        death_place_match_score = weights.get("death_place_match", 20)
-        bonus_birth_date_place_score = weights.get("bonus_birth_date_and_place", 15)
-        bonus_death_date_place_score = weights.get("bonus_death_date_and_place", 15)
+    # Score death year and place
+    total_score = _score_year_match(search["death_year"], cand["death_year"], "death_year", weights.get("death_year_match", 20), weights.get("death_year_close", 10), year_range, total_score, field_scores, reasons)
+    total_score = _score_place_match(search["death_place"], cand["death_place"], "death_place", weights.get("death_place_match", 20), total_score, field_scores, reasons)
 
-    # Score birth year
-    if search_birth_year and cand_birth_year:
-        # Ensure both values are integers for arithmetic operations
-        try:
-            search_birth_year_int = int(search_birth_year)
-            cand_birth_year_int = int(cand_birth_year)
-
-            if search_birth_year_int == cand_birth_year_int:
-                score = birth_year_match_score
-                total_score += score
-                field_scores["birth_year"] = score
-                reasons.append(f"Birth year {search_birth_year} matched exactly")
-            elif abs(search_birth_year_int - cand_birth_year_int) <= year_range:
-                score = birth_year_close_score
-                total_score += score
-                field_scores["birth_year"] = score
-                reasons.append(
-                    f"Birth year {search_birth_year} close to {cand_birth_year}"
-                )
-        except (ValueError, TypeError) as e:
-            # Log the error but continue processing without awarding birth year points
-            logger.debug(
-                f"Birth year comparison failed - search: {search_birth_year} ({type(search_birth_year)}), candidate: {cand_birth_year} ({type(cand_birth_year)}), error: {e}"
-            )
-
-    # Score birth place
-    if (
-        search_birth_place
-        and cand_birth_place
-        and search_birth_place in cand_birth_place
-    ):
-        score = birth_place_match_score
-        total_score += score
-        field_scores["birth_place"] = score
-        reasons.append(
-            f"Birth place '{search_birth_place}' found in '{cand_birth_place}'"
-        )
-
-    # Score death year
-    if search_death_year and cand_death_year:
-        # Ensure both values are integers for arithmetic operations
-        try:
-            search_death_year_int = int(search_death_year)
-            cand_death_year_int = int(cand_death_year)
-
-            if search_death_year_int == cand_death_year_int:
-                score = death_year_match_score
-                total_score += score
-                field_scores["death_year"] = score
-                reasons.append(f"Death year {search_death_year} matched exactly")
-            elif abs(search_death_year_int - cand_death_year_int) <= year_range:
-                score = death_year_close_score
-                total_score += score
-                field_scores["death_year"] = score
-                reasons.append(
-                    f"Death year {search_death_year} close to {cand_death_year}"
-                )
-        except (ValueError, TypeError) as e:
-            # Log the error but continue processing without awarding death year points
-            logger.debug(
-                f"Death year comparison failed - search: {search_death_year} ({type(search_death_year)}), candidate: {cand_death_year} ({type(cand_death_year)}), error: {e}"
-            )
-
-    # Score death place
-    if (
-        search_death_place
-        and cand_death_place
-        and search_death_place in cand_death_place
-    ):
-        score = death_place_match_score
-        total_score += score
-        field_scores["death_place"] = score
-        reasons.append(
-            f"Death place '{search_death_place}' found in '{cand_death_place}'"
-        )
-
-    # Bonus for both birth date and place matching
-    if "birth_year" in field_scores and "birth_place" in field_scores:
-        score = bonus_birth_date_place_score
-        total_score += score
-        field_scores["birth_bonus"] = score
-        reasons.append("Both birth year and place matched")
-
-    # Bonus for both death date and place matching
-    if "death_year" in field_scores and "death_place" in field_scores:
-        score = bonus_death_date_place_score
-        total_score += score
-        field_scores["death_bonus"] = score
-        reasons.append("Both death year and place matched")
+    # Apply bonus scores
+    total_score = _apply_bonus_scores(field_scores, weights, total_score, reasons)
 
     return int(total_score), field_scores, reasons
 
