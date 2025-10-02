@@ -428,6 +428,92 @@ api_rate_limiter = ApiRateLimiter()
 
 
 # --- Helper Functions for parse_ancestry_person_details ---
+
+# Sub-helpers for _extract_name_from_api_details
+
+def _try_extract_name_from_person_info(facts_data: dict[str, Any]) -> Optional[str]:
+    """Try to extract name from person info in facts_data."""
+    person_info = facts_data.get("person", {})
+    if isinstance(person_info, dict):
+        return person_info.get("personName")
+    return None
+
+
+def _try_extract_name_from_direct_fields(facts_data: dict[str, Any]) -> Optional[str]:
+    """Try to extract name from direct fields in facts_data."""
+    for field in ["personName", "DisplayName", "PersonFullName"]:
+        name = facts_data.get(field)
+        if name:
+            return name
+    return None
+
+
+def _try_extract_name_from_person_facts(facts_data: dict[str, Any]) -> Optional[str]:
+    """Try to extract name from PersonFacts list in facts_data."""
+    person_facts_list = facts_data.get("PersonFacts", [])
+    if isinstance(person_facts_list, list):
+        name_fact = next(
+            (f for f in person_facts_list if isinstance(f, dict) and f.get("TypeString") == "Name"),
+            None,
+        )
+        if name_fact and name_fact.get("Value"):
+            return name_fact.get("Value")
+    return None
+
+
+def _try_construct_name_from_parts(facts_data: dict[str, Any]) -> Optional[str]:
+    """Try to construct name from FirstName/LastName in facts_data."""
+    first_name = facts_data.get("FirstName")
+    last_name = facts_data.get("LastName")
+    if first_name or last_name:
+        constructed = f"{first_name or ''} {last_name or ''}".strip()
+        return constructed if constructed else None
+    return None
+
+
+def _extract_name_from_facts_data(facts_data: Optional[dict[str, Any]]) -> Optional[str]:
+    """Extract name from facts_data using multiple strategies."""
+    if not facts_data or not isinstance(facts_data, dict):
+        return None
+
+    # Try each extraction strategy in order
+    name = _try_extract_name_from_person_info(facts_data)
+    if name:
+        return name
+
+    name = _try_extract_name_from_direct_fields(facts_data)
+    if name:
+        return name
+
+    name = _try_extract_name_from_person_facts(facts_data)
+    if name:
+        return name
+
+    return _try_construct_name_from_parts(facts_data)
+
+
+def _extract_name_from_person_card(person_card: dict[str, Any]) -> Optional[str]:
+    """Extract name from person_card using multiple strategies."""
+    if not person_card:
+        return None
+
+    # Try FullName first
+    full_name = person_card.get("FullName")
+    if full_name:
+        return full_name
+
+    # Try constructing from GivenName/Surname
+    given_name = person_card.get("GivenName")
+    surname = person_card.get("Surname")
+    if given_name or surname:
+        constructed = f"{given_name or ''} {surname or ''}".strip()
+        if constructed:
+            return constructed
+
+    # Try generic 'name' field
+    return person_card.get("name")
+
+
 def _extract_name_from_api_details(
     person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]
 ) -> str:
@@ -456,63 +542,22 @@ def _extract_name_from_api_details(
 
         Names are filtered to avoid returning "Valued Relative" placeholder names.
     """
-    name = "Unknown"
-    formatter = format_name
-    if facts_data and isinstance(facts_data, dict):
-        person_info = facts_data.get("person", {})
-        if isinstance(person_info, dict):
-            name = person_info.get("personName", name)
-        # End of if
-        if name == "Unknown":
-            name = facts_data.get("personName", name)
-        # End of if
-        if name == "Unknown":
-            name = facts_data.get("DisplayName", name)
-        # End of if
-        if name == "Unknown":
-            name = facts_data.get("PersonFullName", name)
-        # End of if
-        if name == "Unknown":
-            person_facts_list = facts_data.get("PersonFacts", [])
-            if isinstance(person_facts_list, list):
-                name_fact = next(
-                    (
-                        f
-                        for f in person_facts_list
-                        if isinstance(f, dict) and f.get("TypeString") == "Name"
-                    ),
-                    None,
-                )
-                if name_fact and name_fact.get("Value"):
-                    name = name_fact.get("Value", "Unknown")
-                # End of if
-            # End of if
-        # End of if
-        if name == "Unknown":
-            first_name_pd = facts_data.get("FirstName")
-            last_name_pd = facts_data.get("LastName")
-            if first_name_pd or last_name_pd:
-                name = (
-                    f"{first_name_pd or ''} {last_name_pd or ''}".strip() or "Unknown"
-                )
-            # End of if
-        # End of if
-    # End of if
-    if name == "Unknown" and person_card:
-        suggest_fullname = person_card.get("FullName")
-        suggest_given = person_card.get("GivenName")
-        suggest_sur = person_card.get("Surname")
-        if suggest_fullname:
-            name = suggest_fullname
-        elif suggest_given or suggest_sur:
-            name = f"{suggest_given or ''} {suggest_sur or ''}".strip() or "Unknown"
-        # End of if/elif
-        if name == "Unknown":
-            name = person_card.get("name", "Unknown")
-        # End of if
-    # End of if
-    formatted_name_val = formatter(name) if name and name != "Unknown" else "Unknown"
-    return "Unknown" if formatted_name_val == "Valued Relative" else formatted_name_val
+    # Try extracting from facts_data first
+    name = _extract_name_from_facts_data(facts_data)
+
+    # If not found, try person_card
+    if not name:
+        name = _extract_name_from_person_card(person_card)
+
+    # Default to "Unknown" if still not found
+    if not name:
+        name = "Unknown"
+
+    # Format the name
+    formatted_name = format_name(name) if name and name != "Unknown" else "Unknown"
+
+    # Filter out "Valued Relative" placeholder
+    return "Unknown" if formatted_name == "Valued Relative" else formatted_name
 
 
 # End of _extract_name_from_api_details
