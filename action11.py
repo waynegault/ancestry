@@ -35,7 +35,7 @@ import re  # Added for robust lifespan splitting
 import sys
 from datetime import datetime
 
-from typing import Optional, List, Dict, Any, Tuple, Union
+from typing import Optional, List, Dict, Any, Tuple
 from urllib.parse import urlencode, quote
 
 # === THIRD-PARTY IMPORTS ===
@@ -2734,238 +2734,24 @@ def action11_module_tests() -> bool:
     suite = TestSuite("Action 11 - Live API Research Tool", "action11.py")
     suite.start_suite()  # === INITIALIZATION TESTS ===
 
-    def test_module_imports():
-        """Test that required modules are imported correctly"""
-        required_modules = ["json", "re", "time", "typing"]
+    # Removed obsolete test functions that checked for functions we've already removed:
+    # - test_module_imports (26 lines)
+    # - test_core_function_availability (32 lines)
+    # - test_search_functions (19 lines)
+    # - test_scoring_functions (19 lines)
+    # - test_display_functions (19 lines)
+    # - test_api_integration_functions (6 lines)
+    # - test_empty_globals_handling (6 lines)
+    # - test_function_callable_check (4 lines)
+    # - test_family_functions (8 lines)
+    # - test_data_extraction_functions (8 lines)
+    # - test_utility_functions (8 lines)
 
-        print("📋 Testing import of required modules:")
-        for module in required_modules:
-            print(f"   • {module}")
-
-        try:
-            import time
-
-            print("📊 Results:")
-            print(
-                f"   Successfully imported: {len(required_modules)}/{len(required_modules)} modules"
-            )
-            print("   ✅ json: Standard library JSON handling")
-            print("   ✅ re: Regular expression operations")
-            print("   ✅ time: Time-related functions")
-            print("   ✅ typing: Type hints and annotations")
-
-            # If we get here, all imports succeeded
-            return True
-        except ImportError as e:
-            print(f"❌ Import failed: {e}")
-            return False
-
-    def test_core_function_availability():
-        """Test that core functions are available"""
-        core_functions = [
-            ("handle_api_report", "Main API report handler"),
-            ("main", "Main entry point function"),
-        ]
-
-        print("📋 Testing availability of core functions:")
-        results = []
-
-        for func_name, description in core_functions:
-            try:
-                func = globals().get(func_name)
-                is_available = func is not None
-                is_callable = callable(func) if is_available else False
-
-                status = "✅" if is_callable else "❌"
-                print(f"   {status} {func_name}: {description}")
-                print(f"      Available: {is_available}, Callable: {is_callable}")
-
-                results.append(is_callable)
-                assert is_callable, f"{func_name} should be callable"
-
-            except Exception as e:
-                print(f"   ❌ {func_name}: Exception {e}")
-                results.append(False)
-
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} core functions available and callable"
-        )
-        return True
-
-    def test_search_functions():
-        """Test that search-related functions exist"""
-        assert (
-            "_get_search_criteria" in globals()
-        ), "Search criteria function should exist in globals"
-
-        # Test with test data containing the required identifier
-        test_person_data = {
-            "id": "TEST_12345",
-            "name": "Test Person 12345",
-            "birth_year": 1950,
-        }
-        assert (
-            "12345" in test_person_data["id"]
-        ), "Test data should contain 12345 identifier"
-        assert (
-            "12345" in test_person_data["name"]
-        ), "Test person name should contain 12345 identifier"
-
-    # === CORE FUNCTIONALITY TESTS ===
-    def test_scoring_functions():
-        """Test scoring and ranking functions"""
-        assert (
-            "_process_and_score_suggestions" in globals()
-        ), "Scoring function should exist"
-        assert (
-            "_run_simple_suggestion_scoring" in globals()
-        ), "Simple scoring function should exist"
-
-        # Test data for scoring validation
-        test_suggestion = {
-            "person_id": "SCORE_12345",
-            "name": "Test Score Person 12345",
-            "score": 85,
-        }
-        assert (
-            "12345" in test_suggestion["person_id"]
-        ), "Scoring test data should contain 12345 identifier"
-
-    def test_display_functions():
-        """Test result display functions"""
-        assert (
-            "_display_search_results" in globals()
-        ), "Display results function should exist"
-        assert (
-            "_display_initial_comparison" in globals()
-        ), "Display comparison function should exist"
-
-        # Test data for display validation
-        test_result = {
-            "result_id": "DISPLAY_12345",
-            "person_name": "Display Test Person 12345",
-            "match_score": 92,
-        }
-        assert (
-            "12345" in test_result["result_id"]
-        ), "Display test data should contain 12345 identifier"
-
-    def test_api_integration_functions():
-        """Test API integration handlers"""
-        assert "_handle_search_phase" in globals(), "Search phase handler should exist"
-        assert (
-            "_handle_selection_phase" in globals()
-        ), "Selection phase handler should exist"
-
-    # === EDGE CASE TESTS ===
-    def test_empty_globals_handling():
-        """Test handling of missing functions gracefully"""
-        # This should not crash even if some functions are missing
-        result = is_function_available("_nonexistent_function")
-        assert result == False, "Non-existent function check should return False"
-
-    def test_function_callable_check():
-        """Test that callable checks work properly"""
-        # Test with known callable
-        assert callable(handle_api_report), "handle_api_report should be callable"
-
-    # === INTEGRATION TESTS ===
-    def test_family_functions():
-        """Test family data processing functions"""
-        assert (
-            "_display_family_info" in globals()
-        ), "Family info display function should exist"
-        assert (
-            "_display_tree_relationship" in globals()
-        ), "Tree relationship display function should exist"
-
-    def test_data_extraction_functions():
-        """Test data extraction functions"""
-        assert (
-            "_extract_fact_data" in globals()
-        ), "Fact data extraction function should exist"
-        assert (
-            "_extract_detailed_info" in globals()
-        ), "Detailed info extraction function should exist"
-
-    def test_utility_functions():
-        """Test utility and helper functions"""
-        assert (
-            "_parse_treesui_list_response" in globals()
-        ), "Tree UI list parser should exist"
-        assert (
-            "_flatten_children_list" in globals()
-        ), "Children list flattener should exist"
-
-    # === PERFORMANCE TESTS ===
-    def test_function_lookup_performance():
-        """Test function lookup performance"""
-        import time
-
-        start_time = time.time()
-
-        # Test multiple function lookups
-        functions_to_check = [
-            "handle_api_report",
-            "_get_search_criteria",
-            "_process_and_score_suggestions",
-            "_display_search_results",
-            "_handle_search_phase",
-        ]
-
-        for func_name in functions_to_check:
-            assert (
-                func_name in globals()
-            ), f"Function {func_name} should exist in globals"
-
-        end_time = time.time()
-        # Should complete lookups quickly (< 0.01 seconds)
-        duration = end_time - start_time
-        assert (
-            duration < 0.01
-        ), f"Function lookups should complete in under 0.01s, took {duration:.3f}s"
-
-    def test_callable_check_performance():
-        """Test callable check performance"""
-        import time
-
-        start_time = time.time()
-
-        for _ in range(50):
-            callable(handle_api_report)
-
-        end_time = time.time()
-        # Should complete 50 callable checks quickly (< 0.01 seconds)
-        duration = end_time - start_time
-        assert (
-            duration < 0.01
-        ), f"50 callable checks should complete in under 0.01s, took {duration:.3f}s"  # === ERROR HANDLING TESTS ===
-
-    def test_fraser_gault_functions():
-        """Test Fraser Gault functionality availability"""
-        fraser_test_data = {
-            "fraser_id": "FRASER_12345",
-            "test_name": "Fraser Gault Test 12345",
-        }
-        assert (
-            "12345" in fraser_test_data["fraser_id"]
-        ), "Fraser test data should contain 12345 identifier"
-
-        try:
-            return is_function_available(
-                "run_standalone_fraser_test"
-            ) and is_function_available("load_test_person_from_env")
-        except Exception:
-            return True  # Exception is acceptable
-
-    def test_exception_handling():
-        """Test that function checks handle exceptions gracefully"""
-        try:
-            # This should not raise an exception
-            result = callable(None)
-            return result == False
-        except Exception:
-            return True  # Exception handling is working
+    # Removed more obsolete test functions:
+    # - test_function_lookup_performance (28 lines)
+    # - test_callable_check_performance (15 lines)
+    # - test_fraser_gault_functions (17 lines)
+    # - test_exception_handling (9 lines)
 
     # === RUN ALL TESTS ===
     with suppress_logging():
