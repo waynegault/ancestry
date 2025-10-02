@@ -481,50 +481,41 @@ def search_gedcom_for_criteria(
     return scored_matches[:max_results] if scored_matches else []
 
 
-def get_gedcom_family_details(
-    individual_id: str,
-    gedcom_data: Optional[GedcomData] = None,
-    gedcom_path: Optional[str] = None,
-) -> dict[str, Any]:
-    """
-    Get family details for a specific individual from GEDCOM data.
+# Helper functions for get_gedcom_family_details
 
-    Args:
-        individual_id: GEDCOM ID of the individual
-        gedcom_data: Optional pre-loaded GedcomData instance
-        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+def _ensure_gedcom_data(gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]) -> GedcomData:
+    """Ensure GEDCOM data is loaded."""
+    if gedcom_data:
+        return gedcom_data
 
-    Returns:
-        Dictionary containing family details (parents, spouses, children, siblings)
-    """
-    # Step 1: Ensure we have GEDCOM data
-    if not gedcom_data:
-        # Try to use the cached GEDCOM data first
-        if _CACHED_GEDCOM_DATA is not None:
-            logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
-            gedcom_data = _CACHED_GEDCOM_DATA
-        else:
-            if not gedcom_path:
-                # Try to get path from config
-                gedcom_path = (
-                    str(config_schema.database.gedcom_file_path)
-                    if config_schema
-                    else str(Path(__file__).parent / "Data" / "family.ged")
-                )
-            if not gedcom_path or not Path(gedcom_path).exists():
-                raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+    # Try to use the cached GEDCOM data first
+    if _CACHED_GEDCOM_DATA is not None:
+        logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
+        return _CACHED_GEDCOM_DATA
 
-            # Load GEDCOM data
-            gedcom_data = load_gedcom_data(Path(str(gedcom_path)))
+    # Get path from config if not provided
+    if not gedcom_path:
+        gedcom_path = (
+            str(config_schema.database.gedcom_file_path)
+            if config_schema
+            else str(Path(__file__).parent / "Data" / "family.ged")
+        )
 
-    if not gedcom_data:
+    if not gedcom_path or not Path(gedcom_path).exists():
+        raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+
+    # Load GEDCOM data
+    loaded_data = load_gedcom_data(Path(str(gedcom_path)))
+    if not loaded_data:
         raise MissingConfigError("Failed to load GEDCOM data")
 
-    # Step 2: Get individual data from cache
+    return loaded_data
+
+
+def _get_individual_data(gedcom_data: GedcomData, individual_id: str) -> tuple[str, dict[str, Any]]:
+    """Get individual data from GEDCOM cache."""
     if not hasattr(gedcom_data, "processed_data_cache"):
-        raise MissingConfigError(
-            "GEDCOM data does not have processed_data_cache attribute"
-        )
+        raise MissingConfigError("GEDCOM data does not have processed_data_cache attribute")
 
     # Normalize the individual ID
     individual_id_norm = _normalize_id(individual_id)
@@ -534,12 +525,14 @@ def get_gedcom_family_details(
     # Get individual data from cache
     individual_data = gedcom_data.processed_data_cache.get(individual_id_norm, {})
     if not individual_data:
-        raise MissingConfigError(
-            f"Individual {individual_id_norm} not found in GEDCOM data"
-        )
+        raise MissingConfigError(f"Individual {individual_id_norm} not found in GEDCOM data")
 
-    # Step 3: Extract basic information
-    result = {
+    return individual_id_norm, individual_data
+
+
+def _extract_basic_info(individual_id_norm: str, individual_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract basic information from individual data."""
+    return {
         "id": individual_id_norm,
         "name": individual_data.get("full_name_disp", "Unknown"),
         "first_name": individual_data.get("first_name", ""),
@@ -557,6 +550,197 @@ def get_gedcom_family_details(
         "siblings": [],
     }
 
+
+def _get_parents(gedcom_data: GedcomData, individual_id_norm: str) -> list[dict[str, Any]]:
+    """Get parent information."""
+    parents = []
+    parent_ids = (
+        gedcom_data.id_to_parents.get(individual_id_norm, [])
+        if hasattr(gedcom_data, "id_to_parents")
+        else []
+    )
+
+    for parent_id in parent_ids:
+        if parent_id is None:
+            continue
+        parent_data = gedcom_data.processed_data_cache.get(parent_id, {})
+        if parent_data:
+            gender = parent_data.get("gender", "")
+            relationship = "father" if gender == "M" else "mother" if gender == "F" else "parent"
+
+            parent_info = {
+                "id": parent_id,
+                "name": parent_data.get("full_name_disp", "Unknown"),
+                "birth_year": parent_data.get("birth_year"),
+                "birth_place": parent_data.get("birth_place_disp", "Unknown"),
+                "death_year": parent_data.get("death_year"),
+                "death_place": parent_data.get("death_place_disp", "Unknown"),
+                "relationship": relationship,
+            }
+            parents.append(parent_info)
+
+    return parents
+
+
+def _get_siblings(gedcom_data: GedcomData, individual_id_norm: str, parent_ids: list[str]) -> list[dict[str, Any]]:
+    """Get sibling information."""
+    siblings = []
+    siblings_set = set()
+
+    for parent_id in parent_ids:
+        parent_children = gedcom_data.id_to_children.get(parent_id, [])
+        for child_id in parent_children:
+            if child_id != individual_id_norm:
+                siblings_set.add(child_id)
+
+    for sibling_id in siblings_set:
+        sibling_data = gedcom_data.processed_data_cache.get(sibling_id)
+        if sibling_data:
+            sibling_info = {
+                "id": sibling_id,
+                "name": sibling_data.get("full_name_disp", "Unknown"),
+                "birth_year": sibling_data.get("birth_year"),
+                "birth_place": sibling_data.get("birth_place_disp", "Unknown"),
+                "death_year": sibling_data.get("death_year"),
+                "death_place": sibling_data.get("death_place_disp", "Unknown"),
+            }
+            siblings.append(sibling_info)
+
+    return siblings
+
+
+def _get_spouse_info(gedcom_data: GedcomData, spouse_id: str, fam_record: Any) -> dict[str, Any]:
+    """Get spouse information including marriage details."""
+    spouse_data = gedcom_data.processed_data_cache.get(spouse_id)
+    if not spouse_data:
+        return {}
+
+    # Get marriage information
+    marriage_date = "Unknown"
+    marriage_place = "Unknown"
+    marr_tag = fam_record.sub_tag("MARR")
+    if marr_tag:
+        date_tag = marr_tag.sub_tag("DATE")
+        if date_tag:
+            marriage_date = date_tag.value
+
+        plac_tag = marr_tag.sub_tag("PLAC")
+        if plac_tag:
+            marriage_place = plac_tag.value
+
+    return {
+        "id": spouse_id,
+        "name": spouse_data.get("full_name_disp", "Unknown"),
+        "birth_year": spouse_data.get("birth_year"),
+        "birth_place": spouse_data.get("birth_place_disp", "Unknown"),
+        "death_year": spouse_data.get("death_year"),
+        "death_place": spouse_data.get("death_place_disp", "Unknown"),
+        "marriage_date": marriage_date,
+        "marriage_place": marriage_place,
+    }
+
+
+def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str, Any]]:
+    """Get child information."""
+    child_data = gedcom_data.processed_data_cache.get(child_id, {})
+    if not child_data:
+        return None
+
+    return {
+        "id": child_id,
+        "name": child_data.get("full_name_disp", "Unknown"),
+        "birth_year": child_data.get("birth_year"),
+        "birth_place": child_data.get("birth_place_disp", "Unknown"),
+        "death_year": child_data.get("death_year"),
+        "death_place": child_data.get("death_place_disp", "Unknown"),
+    }
+
+
+def _get_spouses_and_children(gedcom_data: GedcomData, individual_id_norm: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Get spouses and children information."""
+    spouses = []
+    children = []
+
+    if not (hasattr(gedcom_data, "reader") and gedcom_data.reader and hasattr(gedcom_data, "indi_index") and gedcom_data.indi_index):
+        return spouses, children
+
+    # Get the individual record
+    indi_record = gedcom_data.indi_index.get(individual_id_norm)
+    if not indi_record:
+        return spouses, children
+
+    # Get family records where this individual is a spouse
+    for fam_link in indi_record.sub_tags("FAMS"):
+        fam_id = fam_link.value
+        fam_record = None
+
+        # Try to get family record using various methods (with error handling)
+        try:
+            if hasattr(gedcom_data.reader, "fam_dict"):
+                fam_dict = getattr(gedcom_data.reader, "fam_dict", None)
+                if fam_dict:
+                    fam_record = fam_dict.get(fam_id)
+
+            if not fam_record and hasattr(gedcom_data.reader, "get_family"):
+                get_family = getattr(gedcom_data.reader, "get_family", None)
+                if get_family:
+                    fam_record = get_family(fam_id)
+        except Exception:
+            fam_record = None
+
+        if fam_record:
+            # Get spouse
+            husb_tag = fam_record.sub_tag("HUSB")
+            wife_tag = fam_record.sub_tag("WIFE")
+
+            spouse_id = None
+            if husb_tag and husb_tag.value != individual_id_norm:
+                spouse_id = _normalize_id(husb_tag.value)
+            elif wife_tag and wife_tag.value != individual_id_norm:
+                spouse_id = _normalize_id(wife_tag.value)
+
+            if spouse_id:
+                spouse_info = _get_spouse_info(gedcom_data, spouse_id, fam_record)
+                if spouse_info:
+                    spouses.append(spouse_info)
+
+            # Get children
+            for chil_tag in fam_record.sub_tags("CHIL"):
+                child_id = _normalize_id(chil_tag.value)
+                if child_id is None:
+                    continue
+                child_info = _get_child_info(gedcom_data, child_id)
+                if child_info:
+                    children.append(child_info)
+
+    return spouses, children
+
+
+def get_gedcom_family_details(
+    individual_id: str,
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Get family details for a specific individual from GEDCOM data.
+
+    Args:
+        individual_id: GEDCOM ID of the individual
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+
+    Returns:
+        Dictionary containing family details (parents, spouses, children, siblings)
+    """
+    # Step 1: Ensure we have GEDCOM data
+    gedcom_data = _ensure_gedcom_data(gedcom_data, gedcom_path)
+
+    # Step 2: Get individual data from cache
+    individual_id_norm, individual_data = _get_individual_data(gedcom_data, individual_id)
+
+    # Step 3: Extract basic information
+    result = _extract_basic_info(individual_id_norm, individual_data)
+
     # Step 4: Get family relationships
     try:
         # Get parents
@@ -565,153 +749,17 @@ def get_gedcom_family_details(
             if hasattr(gedcom_data, "id_to_parents")
             else []
         )
-        for parent_id in parent_ids:
-            if parent_id is None:
-                continue
-            parent_data = gedcom_data.processed_data_cache.get(parent_id, {})
-            if parent_data:
-                gender = parent_data.get("gender", "")
-                relationship = (
-                    "father"
-                    if gender == "M"
-                    else "mother" if gender == "F" else "parent"
-                )
+        result["parents"] = _get_parents(gedcom_data, individual_id_norm)
 
-                parent_info = {
-                    "id": parent_id,
-                    "name": parent_data.get("full_name_disp", "Unknown"),
-                    "birth_year": parent_data.get("birth_year"),
-                    "birth_place": parent_data.get("birth_place_disp", "Unknown"),
-                    "death_year": parent_data.get("death_year"),
-                    "death_place": parent_data.get("death_place_disp", "Unknown"),
-                    "relationship": relationship,
-                }
-                result["parents"].append(parent_info)
-
-        # Get siblings (share at least one parent)
-        siblings_set = set()
-        for parent_id in parent_ids:
-            parent_children = gedcom_data.id_to_children.get(parent_id, [])
-            for child_id in parent_children:
-                if child_id != individual_id_norm:
-                    siblings_set.add(child_id)
-
-        for sibling_id in siblings_set:
-            sibling_data = gedcom_data.processed_data_cache.get(sibling_id)
-            if sibling_data:
-                sibling_info = {
-                    "id": sibling_id,
-                    "name": sibling_data.get("full_name_disp", "Unknown"),
-                    "birth_year": sibling_data.get("birth_year"),
-                    "birth_place": sibling_data.get("birth_place_disp", "Unknown"),
-                    "death_year": sibling_data.get("death_year"),
-                    "death_place": sibling_data.get("death_place_disp", "Unknown"),
-                }
-                result["siblings"].append(sibling_info)
+        # Get siblings
+        result["siblings"] = _get_siblings(gedcom_data, individual_id_norm, parent_ids)
 
         # Get spouses and children
-        # This requires looking at family records in the GEDCOM data
-        if (
-            hasattr(gedcom_data, "reader")
-            and gedcom_data.reader
-            and hasattr(gedcom_data, "indi_index")
-            and gedcom_data.indi_index
-        ):
-            # Get the individual record
-            indi_record = gedcom_data.indi_index.get(individual_id_norm)
-            if indi_record:
-                # Get family records where this individual is a spouse
-                for fam_link in indi_record.sub_tags("FAMS"):
-                    fam_id = fam_link.value
-                    fam_record = None
-
-                    # Try to get family record using various methods (with error handling)
-                    try:
-                        if hasattr(gedcom_data.reader, "fam_dict"):
-                            fam_dict = getattr(gedcom_data.reader, "fam_dict", None)
-                            if fam_dict:
-                                fam_record = fam_dict.get(fam_id)
-
-                        if not fam_record and hasattr(gedcom_data.reader, "get_family"):
-                            get_family = getattr(gedcom_data.reader, "get_family", None)
-                            if get_family:
-                                fam_record = get_family(fam_id)
-                    except Exception:
-                        fam_record = None
-
-                    if fam_record:
-                        # Get spouse
-                        husb_tag = fam_record.sub_tag("HUSB")
-                        wife_tag = fam_record.sub_tag("WIFE")
-
-                        spouse_id = None
-                        if husb_tag and husb_tag.value != individual_id_norm:
-                            spouse_id = _normalize_id(husb_tag.value)
-                        elif wife_tag and wife_tag.value != individual_id_norm:
-                            spouse_id = _normalize_id(wife_tag.value)
-
-                        if spouse_id:
-                            spouse_data = gedcom_data.processed_data_cache.get(
-                                spouse_id
-                            )
-                            if spouse_data:
-                                # Get marriage information
-                                marriage_date = "Unknown"
-                                marriage_place = "Unknown"
-                                marr_tag = fam_record.sub_tag("MARR")
-                                if marr_tag:
-                                    date_tag = marr_tag.sub_tag("DATE")
-                                    if date_tag:
-                                        marriage_date = date_tag.value
-
-                                    plac_tag = marr_tag.sub_tag("PLAC")
-                                    if plac_tag:
-                                        marriage_place = plac_tag.value
-
-                                spouse_info = {
-                                    "id": spouse_id,
-                                    "name": spouse_data.get(
-                                        "full_name_disp", "Unknown"
-                                    ),
-                                    "birth_year": spouse_data.get("birth_year"),
-                                    "birth_place": spouse_data.get(
-                                        "birth_place_disp", "Unknown"
-                                    ),
-                                    "death_year": spouse_data.get("death_year"),
-                                    "death_place": spouse_data.get(
-                                        "death_place_disp", "Unknown"
-                                    ),
-                                    "marriage_date": marriage_date,
-                                    "marriage_place": marriage_place,
-                                }
-                                result["spouses"].append(spouse_info)
-
-                        # Get children
-                        for chil_tag in fam_record.sub_tags("CHIL"):
-                            child_id = _normalize_id(chil_tag.value)
-                            if child_id is None:
-                                continue
-                            child_data = gedcom_data.processed_data_cache.get(
-                                child_id, {}
-                            )
-                            if child_data:
-                                child_info = {
-                                    "id": child_id,
-                                    "name": child_data.get("full_name_disp", "Unknown"),
-                                    "birth_year": child_data.get("birth_year"),
-                                    "birth_place": child_data.get(
-                                        "birth_place_disp", "Unknown"
-                                    ),
-                                    "death_year": child_data.get("death_year"),
-                                    "death_place": child_data.get(
-                                        "death_place_disp", "Unknown"
-                                    ),
-                                }
-                                result["children"].append(child_info)
+        spouses, children = _get_spouses_and_children(gedcom_data, individual_id_norm)
+        result["spouses"] = spouses
+        result["children"] = children
     except Exception as e:
-        logger.error(
-            f"Error getting family details for {individual_id_norm}: {e}", exc_info=True
-        )
+        logger.error(f"Error getting family details for {individual_id_norm}: {e}", exc_info=True)
 
     return result
 
