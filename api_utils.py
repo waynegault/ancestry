@@ -754,6 +754,168 @@ def _extract_living_status_from_api_details(
 # End of _extract_living_status_from_api_details
 
 
+# Helper functions for _extract_event_from_api_details
+
+def _build_event_keys(event_type: str) -> dict[str, str]:
+    """Build all the key names needed for event extraction."""
+    event_key_lower = event_type.lower()
+    return {
+        "suggest_year": f"{event_type}Year",
+        "suggest_place": f"{event_type}Place",
+        "facts_user": event_type,
+        "app_api": f"{event_key_lower}Date",
+        "app_api_facts": event_type,
+        "event_lower": event_key_lower,
+    }
+
+
+def _build_date_string_from_parsed_data(parsed_date_data: dict) -> Optional[str]:
+    """Build a date string from parsed date components."""
+    year = parsed_date_data.get("Year")
+    if not year:
+        return None
+
+    temp_date_str = str(year)
+    month = parsed_date_data.get("Month")
+    if month:
+        temp_date_str += f"-{str(month).zfill(2)}"
+
+    day = parsed_date_data.get("Day")
+    if day:
+        temp_date_str += f"-{str(day).zfill(2)}"
+
+    return temp_date_str
+
+
+def _try_parse_date_object(date_str: str, parser, event_type: str) -> Optional[datetime]:
+    """Try to parse a date string into a datetime object."""
+    try:
+        return parser(date_str)
+    except Exception as parse_err:
+        logger.warning(f"Failed to parse {event_type} date string '{date_str}': {parse_err}")
+        return None
+
+
+def _extract_from_person_facts(
+    facts_data: dict, facts_user_key: str, event_type: str, parser
+) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
+    """Extract event data from PersonFacts list."""
+    person_facts_list = facts_data.get("PersonFacts", [])
+    if not isinstance(person_facts_list, list):
+        return None, None, None, False
+
+    event_fact = next(
+        (
+            f
+            for f in person_facts_list
+            if isinstance(f, dict)
+            and f.get("TypeString") == facts_user_key
+            and not f.get("IsAlternate")
+        ),
+        None,
+    )
+
+    if not event_fact:
+        return None, None, None, False
+
+    date_str = event_fact.get("Date")
+    place_str = event_fact.get("Place")
+    date_obj = None
+
+    logger.debug(
+        f"Found primary {event_type} fact in PersonFacts: Date='{date_str}', Place='{place_str}'"
+    )
+
+    # Try to parse date from ParsedDate structure
+    parsed_date_data = event_fact.get("ParsedDate")
+    if isinstance(parsed_date_data, dict) and parser:
+        temp_date_str = _build_date_string_from_parsed_data(parsed_date_data)
+        if temp_date_str:
+            date_obj = _try_parse_date_object(temp_date_str, parser, event_type)
+            if date_obj:
+                logger.debug(f"Parsed {event_type} date object from ParsedDate: {date_obj}")
+
+    return date_str, place_str, date_obj, True
+
+
+def _extract_from_structured_facts(
+    facts_data: dict, app_api_facts_key: str
+) -> tuple[Optional[str], Optional[str], bool]:
+    """Extract event data from structured facts."""
+    fact_group_list = facts_data.get("facts", {}).get(app_api_facts_key, [])
+    if not fact_group_list or not isinstance(fact_group_list, list):
+        return None, None, False
+
+    fact_group = fact_group_list[0]
+    if not isinstance(fact_group, dict):
+        return None, None, False
+
+    date_str = None
+    place_str = None
+
+    date_info = fact_group.get("date", {})
+    if isinstance(date_info, dict):
+        date_str = date_info.get("normalized", date_info.get("original"))
+
+    place_info = fact_group.get("place", {})
+    if isinstance(place_info, dict):
+        place_str = place_info.get("placeName")
+
+    return date_str, place_str, True
+
+
+def _extract_from_alternative_facts(
+    facts_data: dict, app_api_key: str
+) -> tuple[Optional[str], Optional[str], bool]:
+    """Extract event data from alternative fact formats."""
+    event_fact_alt = facts_data.get(app_api_key)
+
+    if event_fact_alt and isinstance(event_fact_alt, dict):
+        date_str = event_fact_alt.get("normalized", event_fact_alt.get("date"))
+        place_str = event_fact_alt.get("place")
+        return date_str, place_str, True
+    elif isinstance(event_fact_alt, str):
+        return event_fact_alt, None, True
+
+    return None, None, False
+
+
+def _extract_from_suggest_api(
+    person_card: dict, suggest_year_key: str, suggest_place_key: str, event_type: str
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract event data from Suggest API fields."""
+    suggest_year = person_card.get(suggest_year_key)
+    suggest_place = person_card.get(suggest_place_key)
+
+    if suggest_year:
+        date_str = str(suggest_year)
+        logger.debug(
+            f"Using Suggest API keys for {event_type}: Year='{date_str}', Place='{suggest_place}'"
+        )
+        return date_str, suggest_place
+
+    return None, None
+
+
+def _extract_from_event_info_card(
+    person_card: dict, event_key_lower: str
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract event data from concatenated event info strings."""
+    event_info_card = person_card.get(event_key_lower, "")
+
+    if event_info_card and isinstance(event_info_card, str):
+        parts = re.split(r"\s+in\s+", event_info_card, maxsplit=1)
+        date_str = parts[0].strip() if parts else event_info_card
+        place_str = parts[1].strip() if len(parts) > 1 else None
+        return date_str, place_str
+    elif isinstance(event_info_card, dict):
+        date_str = event_info_card.get("date")
+        place_str = event_info_card.get("place")
+        return date_str, place_str
+
+    return None, None
+
+
 def _extract_event_from_api_details(
     event_type: str, person_card: dict, facts_data: Optional[dict]
 ) -> tuple[Optional[str], Optional[str], Optional[datetime]]:
@@ -789,125 +951,54 @@ def _extract_event_from_api_details(
     place_str: Optional[str] = None
     date_obj: Optional[datetime] = None
     parser = _parse_date
-    event_key_lower = event_type.lower()
-    suggest_year_key = f"{event_type}Year"
-    suggest_place_key = f"{event_type}Place"
-    facts_user_key = event_type
-    app_api_key = f"{event_key_lower}Date"
-    app_api_facts_key = event_type
     found_in_facts = False
+
+    # Build all the key names we'll need
+    keys = _build_event_keys(event_type)
+
+    # Try to extract from facts_data using multiple strategies
     if facts_data and isinstance(facts_data, dict):
-        person_facts_list = facts_data.get("PersonFacts", [])
-        if isinstance(person_facts_list, list):
-            event_fact = next(
-                (
-                    f
-                    for f in person_facts_list
-                    if isinstance(f, dict)
-                    and f.get("TypeString") == facts_user_key
-                    and not f.get("IsAlternate")
-                ),
-                None,
+        # Strategy 1: PersonFacts primary event facts
+        date_str, place_str, date_obj, found_in_facts = _extract_from_person_facts(
+            facts_data, keys["facts_user"], event_type, parser
+        )
+
+        # Strategy 2: Structured facts data with date/place objects
+        if not found_in_facts:
+            date_str, place_str, found_in_facts = _extract_from_structured_facts(
+                facts_data, keys["app_api_facts"]
             )
-            if event_fact:
-                date_str = event_fact.get("Date")
-                place_str = event_fact.get("Place")
-                parsed_date_data = event_fact.get("ParsedDate")
-                found_in_facts = True
-                logger.debug(
-                    f"Found primary {event_type} fact in PersonFacts: Date='{date_str}', Place='{place_str}'"
-                )
-                if isinstance(parsed_date_data, dict) and parser:
-                    year = parsed_date_data.get("Year")
-                    month = parsed_date_data.get("Month")
-                    day = parsed_date_data.get("Day")
-                    if year:
-                        try:
-                            temp_date_str = str(year)
-                            if month:
-                                temp_date_str += f"-{str(month).zfill(2)}"
-                            # End of if
-                            if day:
-                                temp_date_str += f"-{str(day).zfill(2)}"
-                            # End of if
-                            date_obj = parser(temp_date_str)
-                            logger.debug(
-                                f"Parsed {event_type} date object from ParsedDate: {date_obj}"
-                            )
-                        except Exception as dt_err:
-                            logger.warning(
-                                f"Could not parse {event_type} date from ParsedDate {parsed_date_data}: {dt_err}"
-                            )
-                        # End of try/except
-                    # End of if year
-                # End of if parsed_date_data
-            # End of if event_fact
-        # End of if
+
+        # Strategy 3: Alternative event fact formats
         if not found_in_facts:
-            fact_group_list = facts_data.get("facts", {}).get(app_api_facts_key, [])
-            if fact_group_list and isinstance(fact_group_list, list):
-                fact_group = fact_group_list[0]
-                if isinstance(fact_group, dict):
-                    date_info = fact_group.get("date", {})
-                    place_info = fact_group.get("place", {})
-                    if isinstance(date_info, dict):
-                        date_str = date_info.get(
-                            "normalized", date_info.get("original")
-                        )
-                    # End of if
-                    if isinstance(place_info, dict):
-                        place_str = place_info.get("placeName")
-                    # End of if
-                    found_in_facts = True
-                # End of if
-            # End of if
-        # End of if
-        if not found_in_facts:
-            event_fact_alt = facts_data.get(app_api_key)
-            if event_fact_alt and isinstance(event_fact_alt, dict):
-                date_str = event_fact_alt.get("normalized", event_fact_alt.get("date"))
-                place_str = event_fact_alt.get("place", place_str)
-                found_in_facts = True
-            elif isinstance(event_fact_alt, str):
-                date_str = event_fact_alt
-                found_in_facts = True
-            # End of if/elif
-        # End of if
-    # End of if
+            date_str, place_str, found_in_facts = _extract_from_alternative_facts(
+                facts_data, keys["app_api"]
+            )
+
+    # Try to extract from person_card if not found in facts_data
     if not found_in_facts and person_card:
-        suggest_year = person_card.get(suggest_year_key)
-        suggest_place = person_card.get(suggest_place_key)
-        if suggest_year:
-            date_str = str(suggest_year)
+        # Strategy 4: Suggest API year/place fields
+        suggest_date, suggest_place = _extract_from_suggest_api(
+            person_card, keys["suggest_year"], keys["suggest_place"], event_type
+        )
+
+        if suggest_date:
+            date_str = suggest_date
             place_str = suggest_place
-            logger.debug(
-                f"Using Suggest API keys for {event_type}: Year='{date_str}', Place='{place_str}'"
-            )
         else:
-            event_info_card = person_card.get(event_key_lower, "")
-            if event_info_card and isinstance(event_info_card, str):
-                parts = re.split(r"\s+in\s+", event_info_card, maxsplit=1)
-                date_str = parts[0].strip() if parts else event_info_card
-                if place_str is None and len(parts) > 1:
-                    place_str = parts[1].strip()
-                # End of if
-            elif isinstance(event_info_card, dict):
-                date_str = event_info_card.get("date", date_str)
-                if place_str is None:
-                    place_str = event_info_card.get("place", place_str)
-                # End of if
-            # End of if/elif
-        # End of if/else
-    # End of if
-    if date_obj is None and date_str and parser:
-        try:
-            date_obj = parser(date_str)
-        except Exception as parse_err:
-            logger.warning(
-                f"Failed to parse {event_type} date string '{date_str}': {parse_err}"
+            # Strategy 5: Concatenated event info strings
+            card_date, card_place = _extract_from_event_info_card(
+                person_card, keys["event_lower"]
             )
-        # End of try/except
-    # End of if
+            if card_date:
+                date_str = card_date
+            if card_place and place_str is None:
+                place_str = card_place
+
+    # Final attempt to parse date if we have a date string but no date object
+    if date_obj is None and date_str and parser:
+        date_obj = _try_parse_date_object(date_str, parser, event_type)
+
     return date_str, place_str, date_obj
 
 
