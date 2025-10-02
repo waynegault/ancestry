@@ -318,6 +318,106 @@ from action11 import _process_and_score_suggestions
 from gedcom_utils import calculate_match_score
 
 
+# Helper functions for _search_gedcom_for_names
+
+def _parse_name_parts(name: str) -> tuple[str, str]:
+    """Parse name into first name and surname."""
+    if not name or len(name.strip()) < 2:
+        return "", ""
+
+    name_parts = name.strip().split()
+    first_name = name_parts[0] if name_parts else ""
+    surname = name_parts[-1] if len(name_parts) > 1 else ""
+    return first_name, surname
+
+
+def _create_search_criteria(first_name: str, surname: str) -> Dict[str, Any]:
+    """Create search criteria from name parts."""
+    return {
+        "first_name": first_name.lower() if first_name else None,
+        "surname": surname.lower() if surname else None,
+    }
+
+
+def _get_scoring_config() -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Get scoring weights and date flexibility config."""
+    scoring_weights = config_schema.common_scoring_weights
+    date_flex = {
+        "year_flex": getattr(config_schema, "year_flexibility", 2),
+        "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
+    }
+    return scoring_weights, date_flex
+
+
+def _check_name_match(indi_data: Dict[str, Any], filter_criteria: Dict[str, Any]) -> bool:
+    """Check if individual matches name filter criteria."""
+    # Skip individuals with no name
+    if not indi_data.get("first_name") and not indi_data.get("surname"):
+        return False
+
+    # Simple OR filter: match on first name OR surname
+    fn_match = filter_criteria["first_name"] and indi_data.get("first_name", "").lower().startswith(filter_criteria["first_name"])
+    sn_match = filter_criteria["surname"] and indi_data.get("surname", "").lower().startswith(filter_criteria["surname"])
+
+    return fn_match or sn_match
+
+
+def _create_match_record(indi_id: str, indi_data: Dict[str, Any], total_score: float, field_scores: Dict[str, Any], reasons: List[str]) -> Dict[str, Any]:
+    """Create a match record from individual data."""
+    return {
+        "id": indi_id,
+        "display_id": indi_id,
+        "first_name": indi_data.get("first_name", ""),
+        "surname": indi_data.get("surname", ""),
+        "gender": indi_data.get("gender", ""),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place": indi_data.get("birth_place", ""),
+        "death_year": indi_data.get("death_year"),
+        "death_place": indi_data.get("death_place", ""),
+        "total_score": total_score,
+        "field_scores": field_scores,
+        "reasons": reasons,
+        "source": "GEDCOM",
+    }
+
+
+def _process_gedcom_individuals(gedcom_data: Any, filter_criteria: Dict[str, Any], scoring_criteria: Dict[str, Any], scoring_weights: Dict[str, Any], date_flex: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Process GEDCOM individuals and return scored matches."""
+    scored_matches = []
+
+    if not gedcom_data or not hasattr(gedcom_data, "indi_index") or not gedcom_data.indi_index:
+        return scored_matches
+
+    if not hasattr(gedcom_data.indi_index, "items"):
+        return scored_matches
+
+    # Convert to dict if needed
+    indi_index = dict(gedcom_data.indi_index) if not isinstance(gedcom_data.indi_index, dict) else gedcom_data.indi_index
+
+    for indi_id, indi_data in indi_index.items():
+        try:
+            if not _check_name_match(indi_data, filter_criteria):
+                continue
+
+            # Calculate match score
+            total_score, field_scores, reasons = calculate_match_score(
+                search_criteria=scoring_criteria,
+                candidate_processed_data=indi_data,
+                scoring_weights=scoring_weights,
+                date_flexibility=date_flex,
+            )
+
+            # Only include if score is above threshold
+            if total_score > 0:
+                match_record = _create_match_record(indi_id, indi_data, total_score, field_scores, reasons)
+                scored_matches.append(match_record)
+        except Exception as e:
+            logger.error(f"Error processing individual {indi_id}: {e}")
+            continue
+
+    return scored_matches
+
+
 def _search_gedcom_for_names(
     names: List[str], gedcom_data: Optional[Any] = None
 ) -> List[Dict[str, Any]]:
@@ -335,7 +435,7 @@ def _search_gedcom_for_names(
     Raises:
         RuntimeError: If GEDCOM utilities are not available or if the GEDCOM file is not found
     """
-    # Get the GEDCOM data (either from parameter or from cache)
+    # Get the GEDCOM data
     if gedcom_data is None:
         gedcom_data = get_gedcom_data()
         if not gedcom_data:
@@ -346,109 +446,28 @@ def _search_gedcom_for_names(
     logger.info(f"Searching GEDCOM data for: {names}")
 
     try:
-        # Prepare search criteria
         search_results = []
+        scoring_weights, date_flex = _get_scoring_config()
 
-        # For each name, create a simple search criteria and filter individuals
+        # Process each name
         for name in names:
-            if not name or len(name.strip()) < 2:
+            first_name, surname = _parse_name_parts(name)
+            if not first_name and not surname:
                 continue
 
-            # Split name into first name and surname if possible
-            name_parts = name.strip().split()
-            first_name = name_parts[0] if name_parts else ""
-            surname = name_parts[-1] if len(name_parts) > 1 else ""
-
-            # Create basic filter criteria (just names)
-            filter_criteria = {
-                "first_name": first_name.lower() if first_name else None,
-                "surname": surname.lower() if surname else None,
-            }
-
-            # Use the same criteria for scoring
+            # Create search criteria
+            filter_criteria = _create_search_criteria(first_name, surname)
             scoring_criteria = filter_criteria.copy()
 
-            # Get scoring weights from config or use defaults
-            scoring_weights = config_schema.common_scoring_weights
+            # Process GEDCOM individuals
+            scored_matches = _process_gedcom_individuals(
+                gedcom_data, filter_criteria, scoring_criteria, scoring_weights, date_flex
+            )
 
-            # Date flexibility settings with defaults
-            date_flex = {
-                "year_flex": getattr(config_schema, "year_flexibility", 2),
-                "exact_bonus": getattr(config_schema, "exact_date_bonus", 25),
-            }
-
-            # Filter and score individuals
-            scored_matches = []
-
-            # Process each individual in the GEDCOM data
-            if (
-                gedcom_data
-                and hasattr(gedcom_data, "indi_index")
-                and gedcom_data.indi_index
-                and hasattr(gedcom_data.indi_index, "items")
-            ):
-                # Convert to dict if it's not already to ensure it's iterable
-                indi_index = (
-                    dict(gedcom_data.indi_index)
-                    if not isinstance(gedcom_data.indi_index, dict)
-                    else gedcom_data.indi_index
-                )
-                for indi_id, indi_data in indi_index.items():
-                    try:
-                        # Skip individuals with no name
-                        if not indi_data.get("first_name") and not indi_data.get(
-                            "surname"
-                        ):
-                            continue
-
-                        # Simple OR filter: match on first name OR surname
-                        fn_match = filter_criteria["first_name"] and indi_data.get(
-                            "first_name", ""
-                        ).lower().startswith(filter_criteria["first_name"])
-                        sn_match = filter_criteria["surname"] and indi_data.get(
-                            "surname", ""
-                        ).lower().startswith(filter_criteria["surname"])
-
-                        if fn_match or sn_match:
-                            # Calculate match score
-                            total_score, field_scores, reasons = calculate_match_score(
-                                search_criteria=scoring_criteria,
-                                candidate_processed_data=indi_data,
-                                scoring_weights=scoring_weights,
-                                date_flexibility=date_flex,
-                            )
-
-                            # Only include if score is above threshold
-                            if total_score > 0:
-                                # Create a match record
-                                match_record = {
-                                    "id": indi_id,
-                                    "display_id": indi_id,
-                                    "first_name": indi_data.get("first_name", ""),
-                                    "surname": indi_data.get("surname", ""),
-                                    "gender": indi_data.get("gender", ""),
-                                    "birth_year": indi_data.get("birth_year"),
-                                    "birth_place": indi_data.get("birth_place", ""),
-                                    "death_year": indi_data.get("death_year"),
-                                    "death_place": indi_data.get("death_place", ""),
-                                    "total_score": total_score,
-                                    "field_scores": field_scores,
-                                    "reasons": reasons,
-                                    "source": "GEDCOM",
-                                }
-                                scored_matches.append(match_record)
-                    except Exception as e:
-                        logger.error(f"Error processing individual {indi_id}: {e}")
-                        continue
-
-            # Sort matches by score (highest first) and take top 3
+            # Sort and take top 3
             scored_matches.sort(key=lambda x: x["total_score"], reverse=True)
-            top_matches = scored_matches[:3]
+            search_results.extend(scored_matches[:3])
 
-            # Add to overall results
-            search_results.extend(top_matches)
-
-        # Return the combined results
         return search_results
 
     except Exception as e:
