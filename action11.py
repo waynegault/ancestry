@@ -31,7 +31,7 @@ import os
 import re  # Added for robust lifespan splitting
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
 # === THIRD-PARTY IMPORTS ===
