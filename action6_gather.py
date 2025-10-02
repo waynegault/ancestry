@@ -216,7 +216,7 @@ def _navigate_and_get_initial_page_data(
             raise ConnectionError(
                 "WebDriver session invalid before initial get_matches."
             )
-        result = get_matches(session_manager, db_session_for_page, start_page)
+        result = get_matches(session_manager, start_page)
         if result is None:
             matches_on_page, total_pages_from_api = [], None
             logger.error(f"Initial get_matches for page {start_page} returned None.")
@@ -365,7 +365,7 @@ def _main_page_processing_loop(
                                 f"WebDriver session invalid before get_matches page {current_page_num}."
                             )
                         result = get_matches(
-                            session_manager, db_session_for_page, current_page_num
+                            session_manager, current_page_num
                         )
                         if result is None:
                             matches_on_page_for_batch = []
@@ -495,7 +495,7 @@ def _main_page_processing_loop(
 @timeout_protection(timeout=300)
 @error_context("DNA match gathering coordination")
 def coord(  # type: ignore
-    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
+    session_manager: SessionManager, config_schema_arg: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
@@ -1154,14 +1154,13 @@ def _prepare_bulk_db_data(
                     status_for_this_match,
                     error_msg_for_this_match,
                 ) = _do_match(
-                    session,  # Pass session
                     match_list_data,
                     session_manager,
-                    existing_person,  # Pass existing_person_arg correctly
-                    prefetched_combined,  # Pass prefetched_combined_details correctly
-                    prefetched_tree,  # Pass prefetched_tree_data correctly
+                    existing_person,
+                    prefetched_combined,
+                    prefetched_tree,
                     config_schema,
-                    logger,  # Pass logger_instance correctly
+                    logger,
                 )
 
             # Step 2f: Tally status based on _do_match result
@@ -1968,6 +1967,8 @@ def _prepare_person_operation_data(
             person_op_dict,
             False,
         )  # False for person_fields_changed as it's a new person
+
+    # Person exists - prepare update dictionary
     person_data_for_update: Dict[str, Any] = {
         "_operation": "update",
         "_existing_person_id": existing_person.id,
@@ -2112,6 +2113,7 @@ def _prepare_dna_match_operation_data(
         predicted_relationship if predicted_relationship is not None else "N/A"
     )
 
+    # Check if DNA match exists and needs update
     if existing_dna_match is None:
         needs_dna_create_or_update = True
     else:
@@ -2283,6 +2285,7 @@ def _prepare_family_tree_operation_data(
             )
             view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
 
+    # Determine tree operation based on match status and existing data
     if match_in_my_tree and existing_family_tree is None:
         tree_operation = "create"
     elif match_in_my_tree and existing_family_tree is not None:
@@ -2358,13 +2361,12 @@ def _prepare_family_tree_operation_data(
 
 
 def _do_match(  # type: ignore
-    _session: SqlAlchemySession,  # Changed from _ to session
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_schema_arg: "ConfigSchema",  # Config schema argument
+    config_schema_arg: "ConfigSchema",
     logger_instance: logging.Logger,
 ) -> Tuple[
     Optional[Dict[str, Any]],
@@ -2565,7 +2567,6 @@ def _do_match(  # type: ignore
 
 def get_matches(  # type: ignore
     session_manager: SessionManager,
-    _db_session: SqlAlchemySession,  # Parameter name changed for clarity
     current_page: int = 1,
 ) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
     """
@@ -2585,10 +2586,7 @@ def get_matches(  # type: ignore
         - Total number of pages available (integer), or None if retrieval fails.
         Returns None if a critical error occurs during fetching.
     """
-    # Parameter `db_session` is unused in this function.
-    # Consider removing it if it's not planned for future use here.
-    # For now, we'll keep it to maintain the signature as per original code.
-
+    # Validate session manager
     if not isinstance(session_manager, SessionManager):
         logger.error("get_matches: Invalid SessionManager.")
         return None

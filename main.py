@@ -928,9 +928,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
 
 # Action 3 (backup_db_actn)
-def backup_db_actn(
-    session_manager: Optional[SessionManager] = None, *_
-):  # Added session_manager parameter for exec_actn compatibility (unused but required)
+def backup_db_actn(*_):
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")

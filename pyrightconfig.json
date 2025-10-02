@@ -10,7 +10,12 @@
     "**/.git/**",
     "**/build",
     "**/dist",
-    "**/*.git"
+    "**/*.git",
+    "**/*.git/**",
+    "*.git",
+    "*.git/**",
+    ".git",
+    ".git/**"
   ],
   "typeCheckingMode": "basic",
   "reportMissingImports": "none",
