@@ -30,9 +30,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple, Union
 
 # === THIRD-PARTY IMPORTS ===
-from test_framework import (
-    TestSuite,
-)
+# (none currently needed)
 
 # === LOCAL IMPORTS ===
 from api_utils import (
@@ -374,7 +372,7 @@ def search_api_for_criteria(
     suggest_results = call_suggest_api(
         session_manager=session_manager,
         owner_tree_id=tree_id,
-        owner_profile_id=owner_profile_id,
+        _owner_profile_id=owner_profile_id,
         base_url=base_url,
         search_criteria=api_search_criteria,
     )
