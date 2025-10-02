@@ -604,51 +604,69 @@ def retry_api(
 
 # End of retry_api
 
+# Helper functions for ensure_browser_open
+
+def _extract_driver_from_args(args: tuple) -> Optional[DriverType]:
+    """Extract WebDriver instance from positional arguments."""
+    if not args:
+        return None
+
+    if isinstance(args[0], SessionManager):  # type: ignore
+        return args[0].driver
+    elif isinstance(args[0], WebDriver):  # type: ignore
+        return args[0]
+
+    return None
+
+
+def _extract_driver_from_kwargs(kwargs: dict) -> Optional[DriverType]:
+    """Extract WebDriver instance from keyword arguments."""
+    # Check for direct driver argument
+    if "driver" in kwargs and isinstance(kwargs["driver"], WebDriver):  # type: ignore
+        return kwargs["driver"]
+
+    # Check for session_manager argument
+    if "session_manager" in kwargs and isinstance(kwargs["session_manager"], SessionManager):  # type: ignore
+        return kwargs["session_manager"].driver
+
+    return None
+
+
+def _find_driver_instance(args: tuple, kwargs: dict) -> Optional[DriverType]:
+    """Find WebDriver instance from args or kwargs."""
+    driver = _extract_driver_from_args(args)
+    if driver:
+        return driver
+
+    return _extract_driver_from_kwargs(kwargs)
+
+
+def _validate_driver_instance(driver_instance: Optional[DriverType], func_name: str) -> None:
+    """Validate that driver instance exists and browser is open."""
+    if not driver_instance:
+        raise TypeError(
+            f"Function '{func_name}' decorated with @ensure_browser_open requires a WebDriver instance."
+        )
+
+    if not is_browser_open(driver_instance):
+        raise WebDriverException(  # type: ignore
+            f"Browser session invalid/closed when calling function '{func_name}'"
+        )
+
+
 def ensure_browser_open(func: Callable) -> Callable:
     """Decorator to ensure browser session is valid before executing."""
 
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        session_manager_instance: SessionManagerType = None
-        driver_instance: DriverType = None
+        # Find driver instance from args or kwargs
+        driver_instance = _find_driver_instance(args, kwargs)
 
-        # Logic to find WebDriver instance (simplified)
-        if args:
-            if isinstance(args[0], SessionManager):  # type: ignore # Assume SessionManager available
-                session_manager_instance = args[0]
-                driver_instance = session_manager_instance.driver
-            elif isinstance(args[0], WebDriver):  # type: ignore # Assume WebDriver available
-                driver_instance = args[0]
-            # End of if/elif
-        # End of if
-        if not driver_instance and "driver" in kwargs:
-            if isinstance(kwargs["driver"], WebDriver):  # type: ignore
-                driver_instance = kwargs["driver"]
-            # End of if
-        # End of if
-        if not driver_instance and "session_manager" in kwargs:
-            if isinstance(kwargs["session_manager"], SessionManager):  # type: ignore
-                session_manager_instance = kwargs["session_manager"]
-                driver_instance = session_manager_instance.driver
-            # End of if
-        # End of if
+        # Validate driver instance and browser state
+        _validate_driver_instance(driver_instance, func.__name__)
 
-        # Final check and raise error if no driver found
-        if not driver_instance:
-            raise TypeError(
-                f"Function '{func.__name__}' decorated with @ensure_browser_open requires a WebDriver instance."
-            )
-        # End of if
-
-        # Check if browser is open using utility function
-        if not is_browser_open(driver_instance):
-            raise WebDriverException(  # type: ignore
-                f"Browser session invalid/closed when calling function '{func.__name__}'"
-            )
-        # End of if
         return func(*args, **kwargs)
 
-    # End of wrapper
     return wrapper
 
 # End of ensure_browser_open
