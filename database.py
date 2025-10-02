@@ -933,6 +933,113 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
 # End of create_person
 
 
+# Helper functions for create_or_update_dna_match
+
+def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[Optional[int], str]:
+    """Validate people_id from match data."""
+    people_id = match_data.get("people_id")
+    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}"
+
+    if not people_id or not isinstance(people_id, int) or people_id <= 0:
+        logger.error(f"create_or_update_dna_match: Invalid people_id {log_ref}.")
+        return None, log_ref
+
+    return people_id, log_ref
+
+
+def _validate_optional_numeric(key: str, value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
+    """Validate optional numeric field."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str) and not value.replace(".", "", 1).isdigit():
+            return None
+        return float(value) if allow_float else int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref: str) -> Optional[dict[str, Any]]:
+    """Validate and prepare DNA match data."""
+    validated_data: dict[str, Any] = {"people_id": people_id}
+
+    try:
+        # Required fields
+        validated_data["compare_link"] = match_data["compare_link"]
+        validated_data["predicted_relationship"] = match_data["predicted_relationship"]
+
+        # Validate cM_DNA
+        try:
+            cm_dna_val = int(float(match_data["cM_DNA"]))
+            if cm_dna_val < 0:
+                raise ValueError("cM cannot be negative")
+            validated_data["cM_DNA"] = cm_dna_val
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid cM_DNA value '{match_data.get('cM_DNA')}' for {log_ref}: {e}")
+            raise ValueError(f"Invalid cM_DNA value: {e}")
+    except (KeyError, ValueError, TypeError) as e:
+        logger.error(f"create_or_update_dna_match: Missing/Invalid required data for {log_ref}: {e}")
+        return None
+
+    # Optional fields
+    validated_data["shared_segments"] = _validate_optional_numeric("shared_segments", match_data.get("shared_segments"))
+    validated_data["longest_shared_segment"] = _validate_optional_numeric("longest_shared_segment", match_data.get("longest_shared_segment"), allow_float=True)
+    validated_data["meiosis"] = _validate_optional_numeric("meiosis", match_data.get("meiosis"))
+    validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side", False))
+    validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side", False))
+
+    return validated_data
+
+
+def _compare_field_values(old_value: Any, new_value: Any) -> bool:
+    """Compare old and new field values to detect changes."""
+    # Handle float comparison with tolerance
+    if isinstance(new_value, float) or isinstance(old_value, float):
+        old_float = float(old_value) if old_value is not None else None
+        new_float = float(new_value) if new_value is not None else None
+
+        if (old_float is None and new_float is not None) or (old_float is not None and new_float is None):
+            return True
+        elif old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01:
+            return True
+        else:
+            return False
+
+    # Handle boolean comparison
+    elif isinstance(new_value, bool) or isinstance(old_value, bool):
+        return bool(old_value) != bool(new_value)
+
+    # General comparison
+    elif old_value != new_value:
+        return True
+
+    return False
+
+
+def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dict[str, Any], log_ref: str) -> bool:
+    """Update existing DNA match record if changes detected."""
+    updated = False
+
+    for field, new_value in validated_data.items():
+        if field == "people_id":
+            continue
+
+        old_value = getattr(existing_dna_match, field, None)
+
+        if _compare_field_values(old_value, new_value):
+            logger.debug(f"  DNA Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')")
+            setattr(existing_dna_match, field, new_value)
+            updated = True
+
+    if updated:
+        existing_dna_match.updated_at = datetime.now(timezone.utc)
+        logger.debug(f"Updating existing DnaMatch record for {log_ref}.")
+    else:
+        logger.debug(f"Existing DnaMatch found for {log_ref}, no changes needed. Skipping.")
+
+    return updated
+
+
 def create_or_update_dna_match(
     session: Session, match_data: dict[str, Any]
 ) -> Literal["created", "updated", "skipped", "error"]:
@@ -950,136 +1057,34 @@ def create_or_update_dna_match(
         'skipped' if the record exists and no changes were needed.
         'error' if validation fails or a database error occurs.
     """
-    # Step 1: Validate people_id
-    people_id = match_data.get("people_id")
-    log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}"
-    if not people_id or not isinstance(people_id, int) or people_id <= 0:
-        logger.error(f"create_or_update_dna_match: Invalid people_id {log_ref}.")
+    # Validate people_id
+    people_id, log_ref = _validate_dna_match_people_id(match_data)
+    if not people_id:
         return "error"
 
-    # Step 2: Validate and prepare incoming data
-    validated_data: dict[str, Any] = {"people_id": people_id}
-    try:
-        # Required fields
-        validated_data["compare_link"] = match_data["compare_link"]
-        validated_data["predicted_relationship"] = match_data["predicted_relationship"]
-        try:
-            cm_dna_val = int(float(match_data["cM_DNA"]))  # Handle float strings
-            if cm_dna_val < 0:
-                raise ValueError("cM cannot be negative")
-            validated_data["cM_DNA"] = cm_dna_val
-        except (ValueError, TypeError) as e:
-            logger.error(f"Invalid cM_DNA value '{match_data.get('cM_DNA')}' for {log_ref}: {e}")
-            raise ValueError(f"Invalid cM_DNA value: {e}")
-    except (KeyError, ValueError, TypeError) as e:
-        logger.error(
-            f"create_or_update_dna_match: Missing/Invalid required data for {log_ref}: {e}"
-        )
+    # Validate and prepare data
+    validated_data = _validate_dna_match_data(match_data, people_id, log_ref)
+    if not validated_data:
         return "error"
 
-    # Optional numeric fields validation helper
-    def validate_optional_numeric(
-        _key: str, value: Any, allow_float: bool = False
-    ) -> Optional[Union[int, float]]:
-        if value is None:
-            return None
-        try:
-            if isinstance(value, str) and not value.replace(".", "", 1).isdigit():
-                return None
-            return float(value) if allow_float else int(value)
-        except (TypeError, ValueError):
-            return None
-
-    # Populate validated_data with optional fields
-    validated_data["shared_segments"] = validate_optional_numeric(
-        "shared_segments", match_data.get("shared_segments")
-    )
-    validated_data["longest_shared_segment"] = validate_optional_numeric(
-        "longest_shared_segment",
-        match_data.get("longest_shared_segment"),
-        allow_float=True,
-    )
-    validated_data["meiosis"] = validate_optional_numeric(
-        "meiosis", match_data.get("meiosis")
-    )
-    validated_data["from_my_fathers_side"] = bool(
-        match_data.get("from_my_fathers_side", False)
-    )
-    validated_data["from_my_mothers_side"] = bool(
-        match_data.get("from_my_mothers_side", False)
-    )
-
-    # Step 3: Check if DnaMatch record exists
+    # Check if record exists and update or create
     try:
-        existing_dna_match = (
-            session.query(DnaMatch).filter_by(people_id=people_id).first()
-        )
+        existing_dna_match = session.query(DnaMatch).filter_by(people_id=people_id).first()
 
         if existing_dna_match:
-            # Step 4: UPDATE existing record if changes detected
-            updated = False
-            for field, new_value in validated_data.items():
-                # Skip people_id comparison
-                if field == "people_id":
-                    continue
-                old_value = getattr(existing_dna_match, field, None)
+            updated = _update_existing_dna_match(existing_dna_match, validated_data, log_ref)
+            return "updated" if updated else "skipped"
 
-                # Handle float comparison with tolerance
-                if isinstance(new_value, float) or isinstance(old_value, float):
-                    # Treat None as 0.0 for comparison to avoid errors, but check explicitly
-                    old_float = float(old_value) if old_value is not None else None
-                    new_float = float(new_value) if new_value is not None else None
-                    if (old_float is None and new_float is not None) or (old_float is not None and new_float is None):
-                        value_changed = True
-                    elif (
-                        old_float is not None
-                        and new_float is not None
-                        and abs(old_float - new_float) > 0.01
-                    ):  # Tolerance
-                        value_changed = True
-                    else:  # Both None or difference within tolerance
-                        value_changed = False
-                # Handle boolean comparison carefully
-                elif isinstance(new_value, bool) or isinstance(old_value, bool):
-                    value_changed = bool(old_value) != bool(new_value)
-                # General comparison for other types
-                elif old_value != new_value:
-                    value_changed = True
-                else:
-                    value_changed = False
-
-                if value_changed:
-                    logger.debug(
-                        f"  DNA Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')"
-                    )
-                    setattr(existing_dna_match, field, new_value)
-                    updated = True
-
-            if updated:
-                # Use setattr to avoid type checking issues with SQLAlchemy columns
-                existing_dna_match.updated_at = datetime.now(timezone.utc)  # Update timestamp
-                logger.debug(f"Updating existing DnaMatch record for {log_ref}.")
-                # No need to session.add() for updates if object fetched within session
-                return "updated"
-            logger.debug(
-                f"Existing DnaMatch found for {log_ref}, no changes needed. Skipping."
-            )
-            return "skipped"
-        # Step 5: Create new record
+        # Create new record
         logger.debug(f"Creating new DnaMatch record for {log_ref}.")
         new_dna_match = DnaMatch(**validated_data)
         session.add(new_dna_match)
         logger.debug(f"DnaMatch record added to session for {log_ref}.")
         return "created"
 
-    # Step 6: Handle database errors
-    except (
-        IntegrityError
-    ) as ie:  # Should not happen if unique=True on people_id logic correct
+    except IntegrityError as ie:
         session.rollback()
-        logger.error(
-            f"IntegrityError create/update DNA Match {log_ref}: {ie}.", exc_info=False
-        )
+        logger.error(f"IntegrityError create/update DNA Match {log_ref}: {ie}.", exc_info=False)
         return "error"
     except SQLAlchemyError as e:
         logger.error(f"DB error create/update DNA Match {log_ref}: {e}", exc_info=True)
