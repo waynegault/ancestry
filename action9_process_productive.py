@@ -476,6 +476,98 @@ def _search_gedcom_for_names(
         raise RuntimeError(error_msg)
 
 
+# Helper functions for _search_api_for_names
+
+def _validate_api_search_inputs(
+    session_manager: Optional[SessionManager], names: Optional[List[str]]
+) -> List[str]:
+    """Validate inputs for API search and return validated names list."""
+    if not session_manager:
+        error_msg = "Session manager not provided. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    validated_names = names or []
+    if not validated_names:
+        error_msg = "No names provided for API search."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    return validated_names
+
+
+def _get_api_search_config(session_manager: SessionManager) -> tuple[str, str]:
+    """Get owner tree ID and base URL from session manager and config."""
+    owner_tree_id = getattr(session_manager, "my_tree_id", None)
+    if not owner_tree_id:
+        error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
+    if not base_url:
+        error_msg = "Ancestry URL not configured. Base URL missing."
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    return owner_tree_id, base_url
+
+
+def _parse_name_for_search(name: str) -> tuple[str, str]:
+    """Parse a name string into first name and surname components."""
+    name_parts = name.strip().split()
+    first_name = name_parts[0] if name_parts else ""
+    surname = name_parts[-1] if len(name_parts) > 1 else ""
+    return first_name, surname
+
+
+def _is_valid_name_for_search(name: str, first_name: str, surname: str) -> bool:
+    """Check if a name is valid for searching."""
+    if not name or len(name.strip()) < 2:
+        return False
+    if not first_name and not surname:
+        return False
+    return True
+
+
+def _search_single_name_via_api(
+    name: str, first_name: str, surname: str
+) -> List[Dict[str, Any]]:
+    """Search for a single name via the API and return top matches."""
+    # Create search criteria
+    search_criteria = {
+        "first_name_raw": first_name,
+        "surname_raw": surname,
+    }
+
+    # Call the API search function from action11
+    # NOTE: _search_ancestry_api function does not exist, so return empty results
+    api_results = []
+    logger.debug(f"API search functionality not available for: {name}")
+
+    if api_results is None:
+        error_msg = f"API search failed for name: {name}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Empty results are OK - just log and continue
+    if not api_results:
+        logger.info(f"API search returned no results for name: {name}")
+        return []
+
+    # Process and score the API results if they exist
+    scored_suggestions = _process_and_score_suggestions(api_results, search_criteria)
+
+    # Take top 3 results
+    top_matches = scored_suggestions[:3] if scored_suggestions else []
+
+    # Add source information
+    for match in top_matches:
+        match["source"] = "API"
+
+    return top_matches
+
+
 def _search_api_for_names(
     session_manager: Optional[SessionManager] = None,
     names: Optional[List[str]] = None,
@@ -493,87 +585,31 @@ def _search_api_for_names(
     Raises:
         RuntimeError: If API utilities are not available or if required parameters are missing
     """
-    # Check if session manager is provided
-    if not session_manager:
-        error_msg = "Session manager not provided. Cannot search Ancestry API."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    # Check if names are provided
-    names = names or []
-    if not names:
-        error_msg = "No names provided for API search."
-        logger.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    logger.info(f"Searching Ancestry API for: {names}")
+    # Validate inputs
+    validated_names = _validate_api_search_inputs(session_manager, names)
+    logger.info(f"Searching Ancestry API for: {validated_names}")
 
     try:
-        # Get owner tree ID from session manager
-        owner_tree_id = getattr(session_manager, "my_tree_id", None)
-        if not owner_tree_id:
-            error_msg = "Owner Tree ID missing. Cannot search Ancestry API."
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-
-        # Get base URL from config
-        base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
-        if not base_url:
-            error_msg = "Ancestry URL not configured. Base URL missing."
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+        # Get configuration
+        _owner_tree_id, _base_url = _get_api_search_config(session_manager)
 
         search_results = []
 
-        # For each name, create a search criteria and search the API
-        for name in names:
-            if not name or len(name.strip()) < 2:
+        # Search for each name
+        for name in validated_names:
+            # Parse name into components
+            first_name, surname = _parse_name_for_search(name)
+
+            # Validate name is searchable
+            if not _is_valid_name_for_search(name, first_name, surname):
                 continue
 
-            # Split name into first name and surname if possible
-            name_parts = name.strip().split()
-            first_name = name_parts[0] if name_parts else ""
-            surname = name_parts[-1] if len(name_parts) > 1 else ""
-
-            # Skip if both first name and surname are empty
-            if not first_name and not surname:
-                continue
-
-            # Create search criteria
-            search_criteria = {
-                "first_name_raw": first_name,
-                "surname_raw": surname,
-            }
-
-            # Call the API search function from action11
-            # NOTE: _search_ancestry_api function does not exist, so return empty results
-            api_results = []
-            logger.debug(f"API search functionality not available for: {name}")
-
-            if api_results is None:
-                error_msg = f"API search failed for name: {name}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg)
-
-            # Empty results are OK - just log and continue
-            if not api_results:
-                logger.info(f"API search returned no results for name: {name}")
-                continue
-
-            # Process and score the API results if they exist
-            scored_suggestions = _process_and_score_suggestions(
-                api_results, search_criteria
-            )
-
-            # Take top 3 results
-            top_matches = scored_suggestions[:3] if scored_suggestions else []
-
-            # Add source information
-            for match in top_matches:
-                match["source"] = "API"
+            # Search and get top matches
+            top_matches = _search_single_name_via_api(name, first_name, surname)
 
             # Add to overall results
-            search_results.extend(top_matches)  # Return the combined results
+            search_results.extend(top_matches)
+
         return search_results
 
     except Exception as e:
