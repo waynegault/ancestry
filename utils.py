@@ -174,46 +174,64 @@ def parse_cookie(cookie_string: str) -> Dict[str, str]:
 
 # End of parse_cookie
 
+
+# === ORDINAL FORMATTING HELPER FUNCTIONS ===
+
+def _get_ordinal_suffix(num: int) -> str:
+    """Get the ordinal suffix (st, nd, rd, th) for a number."""
+    # Special case for 11-13 (always 'th')
+    if 11 <= (num % 100) <= 13:
+        return "th"
+
+    # Check last digit
+    last_digit = num % 10
+    if last_digit == 1:
+        return "st"
+    elif last_digit == 2:
+        return "nd"
+    elif last_digit == 3:
+        return "rd"
+    else:
+        return "th"
+
+
+def _format_number_as_ordinal(num: int) -> str:
+    """Format a number as an ordinal string (e.g., 1 -> '1st', 2 -> '2nd')."""
+    return str(num) + _get_ordinal_suffix(num)
+
+
+def _title_case_with_lowercase_particles(text: str) -> str:
+    """Apply title case but keep certain particles lowercase (of, the, a, etc.)."""
+    words = text.title().split()
+    lowercase_particles = {"Of", "The", "A", "An", "In", "On", "At", "For", "To", "With"}
+
+    for i, word in enumerate(words):
+        # Keep particles lowercase except at start
+        if i > 0 and word in lowercase_particles:
+            words[i] = word.lower()
+
+    return " ".join(words)
+
+
 def ordinal_case(text: Union[str, int]) -> str:
     """
     Corrects ordinal suffixes (1st, 2nd, 3rd, 4th) to lowercase within a string,
     often used after applying title casing. Handles relationship terms simply.
     Accepts string or integer input for numbers.
     """
+    # Handle empty/None input
     if not text and text != 0:
         return str(text) if text is not None else ""
-    # End of if
 
+    # Try to convert to number and format as ordinal
     try:
         num = int(text)
-        if 11 <= (num % 100) <= 13:
-            suffix = "th"
-        else:
-            last_digit = num % 10
-            if last_digit == 1:
-                suffix = "st"
-            elif last_digit == 2:
-                suffix = "nd"
-            elif last_digit == 3:
-                suffix = "rd"
-            else:
-                suffix = "th"
-            # End of if/elif/else
-        # End of if/else
-        return str(num) + suffix
+        return _format_number_as_ordinal(num)
     except (ValueError, TypeError):
+        # Not a number - apply title case with lowercase particles
         if isinstance(text, str):
-            words = text.title().split()
-            lc_words = {"Of", "The", "A", "An", "In", "On", "At", "For", "To", "With"}
-            for i, word in enumerate(words):
-                if i > 0 and word in lc_words:
-                    words[i] = word.lower()
-                # End of if
-            # End of for
-            return " ".join(words)
+            return _title_case_with_lowercase_particles(text)
         return str(text)
-        # End of if/else
-    # End of try/except
 
 # End of ordinal_case
 
