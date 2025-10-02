@@ -1709,6 +1709,97 @@ def _log_summary(state: ProcessingState):
 #####################################################
 
 
+# Helper functions for _process_ai_response
+
+def _get_default_ai_response_structure() -> Dict[str, Any]:
+    """Get the default empty structure for AI response."""
+    return {
+        "extracted_data": {
+            "mentioned_names": [],
+            "mentioned_locations": [],
+            "mentioned_dates": [],
+            "potential_relationships": [],
+            "key_facts": [],
+        },
+        "suggested_tasks": [],
+    }
+
+
+def _validate_with_pydantic(ai_response: dict, log_prefix: str) -> Optional[Dict[str, Any]]:
+    """Try to validate AI response with Pydantic schema."""
+    try:
+        validated_response = AIResponse.model_validate(ai_response)
+        result = validated_response.model_dump()
+        logger.debug(f"{log_prefix}: AI response successfully validated with Pydantic schema.")
+        return result
+    except ValidationError as ve:
+        logger.warning(f"{log_prefix}: AI response validation failed: {ve}")
+        return None
+
+
+def _salvage_extracted_data(ai_response: dict, log_prefix: str) -> Dict[str, list]:
+    """Try to salvage extracted_data from malformed AI response."""
+    result = _get_default_ai_response_structure()["extracted_data"]
+
+    if "extracted_data" not in ai_response or not isinstance(ai_response["extracted_data"], dict):
+        logger.warning(f"{log_prefix}: AI response missing 'extracted_data' dictionary. Using defaults.")
+        return result
+
+    extracted_data_raw = ai_response["extracted_data"]
+
+    # Process each expected key
+    for key in result:
+        value = extracted_data_raw.get(key, [])
+
+        # Ensure it's a list and contains only strings
+        if isinstance(value, list):
+            result[key] = [
+                str(item)
+                for item in value
+                if item is not None and isinstance(item, (str, int, float))
+            ]
+        else:
+            logger.warning(f"{log_prefix}: AI response 'extracted_data.{key}' is not a list. Using empty list.")
+
+    return result
+
+
+def _salvage_suggested_tasks(ai_response: dict, log_prefix: str) -> list:
+    """Try to salvage suggested_tasks from malformed AI response."""
+    if "suggested_tasks" not in ai_response:
+        logger.warning(f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list.")
+        return []
+
+    tasks_raw = ai_response["suggested_tasks"]
+
+    if not isinstance(tasks_raw, list):
+        logger.warning(f"{log_prefix}: AI response 'suggested_tasks' is not a list. Using empty list.")
+        return []
+
+    return [
+        str(item)
+        for item in tasks_raw
+        if item is not None and isinstance(item, (str, int, float))
+    ]
+
+
+def _salvage_partial_data(ai_response: dict, log_prefix: str) -> Dict[str, Any]:
+    """Try to salvage partial data from malformed AI response."""
+    try:
+        extracted_data = _salvage_extracted_data(ai_response, log_prefix)
+        suggested_tasks = _salvage_suggested_tasks(ai_response, log_prefix)
+
+        logger.debug(f"{log_prefix}: Salvaged partial data from AI response after validation failure.")
+
+        return {
+            "extracted_data": extracted_data,
+            "suggested_tasks": suggested_tasks,
+        }
+    except Exception as e:
+        logger.error(f"{log_prefix}: Failed to salvage data from AI response: {e}", exc_info=True)
+        return _get_default_ai_response_structure()
+
+
 def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
     """
     Processes and validates the AI response using Pydantic models for robust parsing.
@@ -1725,111 +1816,26 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
         A dictionary with 'extracted_data' and 'suggested_tasks' keys, properly
         structured and validated, with empty lists as fallbacks for invalid data.
     """
-    # Initialize default result structure
-    result = {
-        "extracted_data": {
-            "mentioned_names": [],
-            "mentioned_locations": [],
-            "mentioned_dates": [],
-            "potential_relationships": [],
-            "key_facts": [],
-        },
-        "suggested_tasks": [],
-    }
-
     # Early return if response is None or not a dict
     if not ai_response or not isinstance(ai_response, dict):
-        logger.warning(
-            f"{log_prefix}: AI response is None or not a dictionary. Using default empty structure."
-        )
-        return result
+        logger.warning(f"{log_prefix}: AI response is None or not a dictionary. Using default empty structure.")
+        return _get_default_ai_response_structure()
 
     logger.debug(f"{log_prefix}: Processing AI response...")
 
     try:
         # First attempt: Try direct validation with Pydantic
-        validated_response = AIResponse.model_validate(ai_response)
+        validated_result = _validate_with_pydantic(ai_response, log_prefix)
+        if validated_result:
+            return validated_result
 
-        # If validation succeeds, convert to dict and return
-        result = validated_response.model_dump()
-        logger.debug(
-            f"{log_prefix}: AI response successfully validated with Pydantic schema."
-        )
-        return result
-
-    except ValidationError as ve:
-        # Log validation error details
-        logger.warning(f"{log_prefix}: AI response validation failed: {ve}")
-
-        # Second attempt: Try to salvage partial data with more defensive approach
-        try:
-            # Process extracted_data if it exists
-            if "extracted_data" in ai_response and isinstance(
-                ai_response["extracted_data"], dict
-            ):
-                extracted_data_raw = ai_response["extracted_data"]
-
-                # Process each expected key
-                for key in result["extracted_data"]:
-                    # Get value with fallback to empty list
-                    value = extracted_data_raw.get(key, [])
-
-                    # Ensure it's a list and contains only strings
-                    if isinstance(value, list):
-                        # Filter and convert items to strings
-                        result["extracted_data"][key] = [
-                            str(item)
-                            for item in value
-                            if item is not None and isinstance(item, (str, int, float))
-                        ]
-                    else:
-                        logger.warning(
-                            f"{log_prefix}: AI response 'extracted_data.{key}' is not a list. Using empty list."
-                        )
-            else:
-                logger.warning(
-                    f"{log_prefix}: AI response missing 'extracted_data' dictionary. Using defaults."
-                )
-
-            # Process suggested_tasks if it exists
-            if "suggested_tasks" in ai_response:
-                tasks_raw = ai_response["suggested_tasks"]
-
-                # Ensure it's a list and contains only strings
-                if isinstance(tasks_raw, list):
-                    result["suggested_tasks"] = [
-                        str(item)
-                        for item in tasks_raw
-                        if item is not None and isinstance(item, (str, int, float))
-                    ]
-                else:
-                    logger.warning(
-                        f"{log_prefix}: AI response 'suggested_tasks' is not a list. Using empty list."
-                    )
-            else:
-                logger.warning(
-                    f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list."
-                )
-
-            logger.debug(
-                f"{log_prefix}: Salvaged partial data from AI response after validation failure."
-            )
-
-        except Exception as e:
-            # If even the defensive parsing fails, log and return defaults
-            logger.error(
-                f"{log_prefix}: Failed to salvage data from AI response: {e}",
-                exc_info=True,
-            )
+        # Second attempt: Try to salvage partial data
+        return _salvage_partial_data(ai_response, log_prefix)
 
     except Exception as e:
         # Catch any other unexpected errors
-        logger.error(
-            f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True
-        )
-
-    # Return the result (either default or partially salvaged)
-    return result
+        logger.error(f"{log_prefix}: Unexpected error processing AI response: {e}", exc_info=True)
+        return _get_default_ai_response_structure()
 
 
 def _format_context_for_ai_extraction(
