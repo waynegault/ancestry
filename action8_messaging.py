@@ -2278,6 +2278,89 @@ def _process_single_person(
 
 
 # ------------------------------------------------------------------------------
+# Main Action Function Helper Functions
+# ------------------------------------------------------------------------------
+
+def _initialize_action8_counters_and_config() -> tuple[int, int, int, int, int, int, int, bool]:
+    """Initialize counters and configuration for Action 8."""
+    sent_count, acked_count, skipped_count, error_count = 0, 0, 0, 0
+    processed_in_loop = 0
+    total_candidates = 0
+    batch_num = 0
+    critical_db_error_occurred = False
+    return sent_count, acked_count, skipped_count, error_count, processed_in_loop, total_candidates, batch_num, critical_db_error_occurred
+
+
+def _initialize_resource_management() -> tuple[list[dict[str, Any]], dict[int, PersonStatusEnum], ResourceManager, ErrorCategorizer]:
+    """Initialize resource management and error categorization."""
+    db_logs_to_add_dicts: list[dict[str, Any]] = []
+    person_updates: dict[int, PersonStatusEnum] = {}
+
+    resource_manager = ResourceManager()
+    resource_manager.track_resource("db_logs_to_add_dicts", db_logs_to_add_dicts)
+    resource_manager.track_resource("person_updates", person_updates)
+
+    error_categorizer = ErrorCategorizer()
+
+    def critical_error_hook(alert_data: dict[str, Any]) -> None:
+        if alert_data['severity'] == 'critical':
+            logger.critical(f"🚨 CRITICAL ALERT: {alert_data['alert_type']} - {alert_data['message']}")
+
+    error_categorizer.add_monitoring_hook(critical_error_hook)
+
+    return db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer
+
+
+def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, Optional[str]]:
+    """Validate prerequisites for Action 8 execution."""
+    # System health check
+    if not _validate_system_health(session_manager):
+        logger.critical("🚨 Action 8: System health check failed - cannot proceed safely. Aborting.")
+        return False, None
+
+    # Get profile ID
+    profile_id = None
+    if hasattr(session_manager, "my_profile_id"):
+        profile_id = safe_column_value(session_manager, "my_profile_id", None)
+
+    if not profile_id:
+        profile_id = "TEST_PROFILE_ID_FOR_DEBUGGING"
+        logger.warning("Action 8: Using test profile ID for debugging message progression logic")
+
+    # Check message templates
+    if not MESSAGE_TEMPLATES:
+        logger.error("Action 8: Message templates not loaded.")
+        return False, None
+
+    logger.warning("Action 8: Skipping login check for debugging message progression logic")
+    return True, profile_id
+
+
+def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> tuple[Optional[dict], Optional[list], int]:
+    """Fetch message type map and candidate persons."""
+    try:
+        message_type_map, candidate_persons = _get_simple_messaging_data(db_session, session_manager)
+    except MaxApiFailuresExceededError as cascade_err:
+        logger.critical(f"🚨 CRITICAL: Session death cascade detected during prefetch: {cascade_err}")
+        return None, None, 0
+
+    if message_type_map is None or candidate_persons is None:
+        logger.error("Action 8: Failed to fetch essential messaging data. Aborting.")
+        return None, None, 0
+
+    total_candidates = len(candidate_persons)
+    if total_candidates == 0:
+        logger.warning("Action 8: No candidates found meeting messaging criteria. Finishing.\n")
+    else:
+        logger.info(f"Action 8: Found {total_candidates} candidates to process.")
+        max_messages_to_send_this_run = config_schema.max_inbox
+        if max_messages_to_send_this_run > 0:
+            logger.info(f"Action 8: Will send/ack a maximum of {max_messages_to_send_this_run} messages this run.\n")
+
+    return message_type_map, candidate_persons, total_candidates
+
+
+# ------------------------------------------------------------------------------
 # Main Action Function
 # ------------------------------------------------------------------------------
 
@@ -2304,121 +2387,46 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
     # --- Step 1: Initialization and System Health Check ---
     logger.debug("--- Starting Action 8: Send Standard Messages ---")
-
-    # Start performance monitoring
     start_advanced_monitoring()
 
-    # Visibility of mode and interval
     from contextlib import suppress
     with suppress(Exception):
         logger.info(f"Action 8: APP_MODE={getattr(config_schema, 'app_mode', 'production')}, MIN_MESSAGE_INTERVAL={MIN_MESSAGE_INTERVAL}")
 
-    # CRITICAL FIX: Comprehensive system health validation before proceeding
-    if not _validate_system_health(session_manager):
-        logger.critical("🚨 Action 8: System health check failed - cannot proceed safely. Aborting.")
+    # Validate prerequisites
+    prerequisites_valid, profile_id = _validate_action8_prerequisites(session_manager)
+    if not prerequisites_valid:
         return False
 
-    # Use safe_column_value to get profile_id
-    profile_id = None
-    if hasattr(session_manager, "my_profile_id"):
-        profile_id = safe_column_value(session_manager, "my_profile_id", None)
+    # Initialize counters and configuration
+    sent_count, acked_count, skipped_count, error_count, processed_in_loop, total_candidates, batch_num, critical_db_error_occurred = _initialize_action8_counters_and_config()
 
-    if not profile_id:
-        # TEMPORARY: Use a test profile ID for debugging message progression
-        profile_id = "TEST_PROFILE_ID_FOR_DEBUGGING"
-        logger.warning("Action 8: Using test profile ID for debugging message progression logic")
+    db_commit_batch_size = max(1, config_schema.batch_size)
+    max_messages_to_send_this_run = config_schema.max_inbox
+    overall_success = True
 
-    if not MESSAGE_TEMPLATES:
-        logger.error("Action 8: Message templates not loaded.")
-        return False
-
-    # TEMPORARY: Skip login check for debugging message progression
-    # if (
-    #     login_status(session_manager, disable_ui_fallback=True) is not True
-    # ):  # API check only for speed
-    #     logger.error("Action 8: Not logged in.")
-    #     return False
-    logger.warning("Action 8: Skipping login check for debugging message progression logic")
-
-    # Counters for summary
-    sent_count, acked_count, skipped_count, error_count = 0, 0, 0, 0
-    processed_in_loop = 0
-    # Lists for batch DB operations
-    db_logs_to_add_dicts: list[dict[str, Any]] = []  # Store prepared Log DICTIONARIES
-    person_updates: dict[int, PersonStatusEnum] = (
-        {}
-    )  # Store {person_id: new_status_enum}
-    # Configuration
-    total_candidates = 0
-    critical_db_error_occurred = False  # Track if a commit fails critically
-    batch_num = 0
-    db_commit_batch_size = max(
-        1, config_schema.batch_size
-    )  # Ensure positive batch size
-    # Limit number of messages *successfully sent* (sent + acked) in one run (0 = unlimited)
-    max_messages_to_send_this_run = config_schema.max_inbox  # Reuse MAX_INBOX setting
-    overall_success = True  # Track overall process success
-
-    # MEMORY MANAGEMENT: Set maximum memory limits for batch processing
-    MAX_BATCH_MEMORY_MB = 50  # Maximum 50MB per batch
-    MAX_BATCH_ITEMS = min(db_commit_batch_size, 100)  # Cap at 100 items per batch
+    MAX_BATCH_MEMORY_MB = 50
+    MAX_BATCH_ITEMS = min(db_commit_batch_size, 100)
     memory_usage_bytes = 0
 
-    # RESOURCE MANAGEMENT: Initialize resource manager
-    resource_manager = ResourceManager()
-    resource_manager.track_resource("db_logs_to_add_dicts", db_logs_to_add_dicts)
-    resource_manager.track_resource("person_updates", person_updates)
-
-    # ERROR CATEGORIZATION: Initialize error categorizer
-    error_categorizer = ErrorCategorizer()
-
-    # Add monitoring hook for critical errors
-    def critical_error_hook(alert_data: dict[str, Any]) -> None:
-        if alert_data['severity'] == 'critical':
-            logger.critical(f"🚨 CRITICAL ALERT: {alert_data['alert_type']} - {alert_data['message']}")
-
-    error_categorizer.add_monitoring_hook(critical_error_hook)
+    # Initialize resource management
+    db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer = _initialize_resource_management()
 
     # --- Step 2: Get DB Session and Pre-fetch Data ---
-    db_session: Optional[Session] = None  # Use Session type hint
+    db_session: Optional[Session] = None
     try:
         db_session = session_manager.get_db_conn()
         if not db_session:
-            # Log critical error if session cannot be obtained
             logger.critical("Action 8: Failed to get DB Session. Aborting.")
-            # Ensure cleanup if needed, though SessionManager handles pool
-            return False  # Abort if DB session fails
+            return False
 
-        # Get simplified messaging data (templates and candidates)
-        try:
-            message_type_map, candidate_persons = _get_simple_messaging_data(db_session, session_manager)
-        except MaxApiFailuresExceededError as cascade_err:
-            logger.critical(f"🚨 CRITICAL: Session death cascade detected during prefetch: {cascade_err}")
-            # Ensure session is returned on cascade failure
-            if db_session:
-                session_manager.return_session(db_session)
-            return False  # Hard fail on cascade detection
+        # Fetch messaging data
+        message_type_map, candidate_persons, total_candidates = _fetch_messaging_data(db_session, session_manager)
 
-        # Validate simplified data
         if message_type_map is None or candidate_persons is None:
-            logger.error("Action 8: Failed to fetch essential messaging data. Aborting.")
             if db_session:
                 session_manager.return_session(db_session)
             return False
-
-        total_candidates = len(candidate_persons)
-        if total_candidates == 0:
-            logger.warning(
-                "Action 8: No candidates found meeting messaging criteria. Finishing.\n"
-            )
-            # No candidates is considered a successful run
-        else:
-            logger.info(f"Action 8: Found {total_candidates} candidates to process.")
-            # Log limit if applicable
-            if max_messages_to_send_this_run > 0:
-                logger.info(
-                    f"Action 8: Will send/ack a maximum of {max_messages_to_send_this_run} messages this run.\n"
-                )
 
         # --- Step 3: Main Processing Loop ---
         if total_candidates > 0:
