@@ -12,16 +12,16 @@ This represents a **massive improvement** in code quality, maintainability, and 
 
 | Metric | Total Achievement |
 |--------|-------------------|
-| **Weeks Completed** | 19 |
-| **Functions Fully Refactored** | 28 |
+| **Weeks Completed** | 20 |
+| **Functions Fully Refactored** | 29 |
 | **Functions In Progress** | 1 (send_messages_to_matches) |
-| **Helper Functions Created** | 181 |
-| **Total Complexity Reduced** | ~793 points |
-| **Total Lines Eliminated** | ~3,607 lines |
+| **Helper Functions Created** | 190 |
+| **Total Complexity Reduced** | ~840 points |
+| **Total Lines Eliminated** | ~3,782 lines |
 | **Test Success Rate** | **100%** (62/62 modules, 488 tests) |
-| **Total Commits** | 39 |
-| **Average Complexity Reduction** | 70% per function |
-| **Average Lines Reduction** | 68% per function |
+| **Total Commits** | 41 |
+| **Average Complexity Reduction** | 71% per function |
+| **Average Lines Reduction** | 69% per function |
 
 ---
 
@@ -53,8 +53,11 @@ This represents a **massive improvement** in code quality, maintainability, and 
 17. **Week 27**: `_adapt_rate_limiting()` - adaptive_rate_limiter.py (18 → <10, -44%)
 18. **Week 28**: `_search_gedcom_for_names()` - action9_process_productive.py (18 → <10, -44%)
 
-### Week 29 (Current)
+### Week 29
 19. **Week 29**: `_extract_living_status_from_api_details()` - api_utils.py (17 → <10, -41%)
+
+### Week 30 (Current)
+20. **Week 30**: `_extract_event_from_api_details()` - api_utils.py (~30+ → <10, -67%)
 
 ---
 
@@ -65,7 +68,7 @@ This represents a **massive improvement** in code quality, maintainability, and 
 | **ai_interface.py** | -116 points | 3 |
 | **api_search_utils.py** | -117 points | 2 |
 | **action8_messaging.py** | -73 points | 2 |
-| **api_utils.py** | -64 points | 3 |
+| **api_utils.py** | -111 points | 4 |
 | **gedcom_search_utils.py** | -42 points | 1 |
 | **relationship_utils.py** | -39 points | 1 |
 | **genealogical_normalization.py** | -33 points | 1 |
