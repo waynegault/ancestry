@@ -563,6 +563,84 @@ def _extract_name_from_api_details(
 # End of _extract_name_from_api_details
 
 
+# Helper functions for _extract_gender_from_api_details
+
+def _try_extract_gender_from_person_info(facts_data: dict) -> Optional[str]:
+    """Try to extract gender from person info in facts_data."""
+    person_info = facts_data.get("person", {})
+    if isinstance(person_info, dict):
+        return person_info.get("gender")
+    return None
+
+
+def _try_extract_gender_from_direct_fields(facts_data: dict) -> Optional[str]:
+    """Try to extract gender from direct fields in facts_data."""
+    gender_str = facts_data.get("gender")
+    if gender_str:
+        return gender_str
+    return facts_data.get("PersonGender")
+
+
+def _try_extract_gender_from_person_facts(facts_data: dict) -> Optional[str]:
+    """Try to extract gender from PersonFacts list in facts_data."""
+    person_facts_list = facts_data.get("PersonFacts", [])
+    if not isinstance(person_facts_list, list):
+        return None
+
+    gender_fact = next(
+        (f for f in person_facts_list if isinstance(f, dict) and f.get("TypeString") == "Gender"),
+        None,
+    )
+
+    if gender_fact and gender_fact.get("Value"):
+        return gender_fact.get("Value")
+    return None
+
+
+def _extract_gender_from_facts_data(facts_data: Optional[dict]) -> Optional[str]:
+    """Extract gender from facts_data using multiple strategies."""
+    if not facts_data or not isinstance(facts_data, dict):
+        return None
+
+    # Try person info
+    gender_str = _try_extract_gender_from_person_info(facts_data)
+    if gender_str:
+        return gender_str
+
+    # Try direct fields
+    gender_str = _try_extract_gender_from_direct_fields(facts_data)
+    if gender_str:
+        return gender_str
+
+    # Try PersonFacts list
+    return _try_extract_gender_from_person_facts(facts_data)
+
+
+def _extract_gender_from_person_card(person_card: dict) -> Optional[str]:
+    """Extract gender from person_card."""
+    gender_str = person_card.get("Gender")
+    if gender_str:
+        return gender_str
+    return person_card.get("gender")
+
+
+def _normalize_gender_string(gender_str: Optional[str]) -> Optional[str]:
+    """Normalize gender string to M or F."""
+    if not gender_str or not isinstance(gender_str, str):
+        return None
+
+    gender_str_lower = gender_str.lower()
+
+    if gender_str_lower == "male":
+        return "M"
+    elif gender_str_lower == "female":
+        return "F"
+    elif gender_str_lower in ["m", "f"]:
+        return gender_str_lower.upper()
+
+    return None
+
+
 def _extract_gender_from_api_details(
     person_card: dict, facts_data: Optional[dict]
 ) -> Optional[str]:
@@ -587,53 +665,15 @@ def _extract_gender_from_api_details(
 
         Input values like "Male"/"Female" are normalized to "M"/"F".
     """
-    gender = None
-    gender_str = None
-    if facts_data and isinstance(facts_data, dict):
-        person_info = facts_data.get("person", {})
-        if isinstance(person_info, dict):
-            gender_str = person_info.get("gender")
-        # End of if
-        if not gender_str:
-            gender_str = facts_data.get("gender")
-        # End of if
-        if not gender_str:
-            gender_str = facts_data.get("PersonGender")
-        # End of if
-        if not gender_str:
-            person_facts_list = facts_data.get("PersonFacts", [])
-            if isinstance(person_facts_list, list):
-                gender_fact = next(
-                    (
-                        f
-                        for f in person_facts_list
-                        if isinstance(f, dict) and f.get("TypeString") == "Gender"
-                    ),
-                    None,
-                )
-                if gender_fact and gender_fact.get("Value"):
-                    gender_str = gender_fact.get("Value")
-                # End of if
-            # End of if
-        # End of if
-    # End of if
+    # Try to extract from facts_data first
+    gender_str = _extract_gender_from_facts_data(facts_data)
+
+    # Fall back to person_card if needed
     if not gender_str and person_card:
-        gender_str = person_card.get("Gender")
-        if not gender_str:
-            gender_str = person_card.get("gender")
-        # End of if
-    # End of if
-    if gender_str and isinstance(gender_str, str):
-        gender_str_lower = gender_str.lower()
-        if gender_str_lower == "male":
-            gender = "M"
-        elif gender_str_lower == "female":
-            gender = "F"
-        elif gender_str_lower in ["m", "f"]:
-            gender = gender_str_lower.upper()
-        # End of if/elif
-    # End of if
-    return gender
+        gender_str = _extract_gender_from_person_card(person_card)
+
+    # Normalize and return
+    return _normalize_gender_string(gender_str)
 
 
 # End of _extract_gender_from_api_details
