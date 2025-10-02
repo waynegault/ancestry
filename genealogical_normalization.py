@@ -315,6 +315,106 @@ def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
         extracted[struct_key] = struct_list
 
 
+# Helper functions for normalize_extracted_data
+
+def _ensure_structured_keys(extracted: dict[str, Any]) -> None:
+    """Ensure all structured keys exist in extracted data."""
+    for key in STRUCTURED_KEYS:
+        if key not in extracted or extracted[key] is None:
+            extracted[key] = []
+
+
+def _normalize_vital_records(vital_records: list[Any]) -> None:
+    """Validate and normalize vital records."""
+    if not isinstance(vital_records, list):
+        return
+
+    valid_events = ["birth", "death", "marriage", "baptism", "burial", "christening", "divorce"]
+
+    for record in vital_records:
+        if not isinstance(record, dict):
+            continue
+
+        # Normalize dates
+        if record.get("date"):
+            record["date"] = _validate_and_normalize_date(str(record["date"]))
+
+        # Normalize locations
+        if record.get("place"):
+            record["place"] = _validate_location(str(record["place"]))
+
+        # Validate event types
+        if record.get("event_type"):
+            event_type = str(record["event_type"]).lower().strip()
+            if event_type in valid_events:
+                record["event_type"] = event_type
+
+
+def _normalize_relationships(relationships: list[Any]) -> None:
+    """Validate and normalize relationships."""
+    if not isinstance(relationships, list):
+        return
+
+    for relationship in relationships:
+        if not isinstance(relationship, dict):
+            continue
+
+        # Normalize relationship type
+        if relationship.get("relationship"):
+            relationship["relationship"] = _validate_relationship(str(relationship["relationship"]))
+
+        # Ensure person names are properly formatted
+        for person_key in ["person1", "person2"]:
+            if relationship.get(person_key):
+                name = str(relationship[person_key]).strip()
+                # Basic name validation - ensure it's not just whitespace or numbers
+                if name and not name.isdigit() and len(name) > 1:
+                    relationship[person_key] = name
+                else:
+                    relationship[person_key] = ""
+
+
+def _normalize_locations(locations: list[Any]) -> None:
+    """Validate and normalize locations."""
+    if not isinstance(locations, list):
+        return
+
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+
+        # Normalize place names
+        if location.get("place"):
+            location["place"] = _validate_location(str(location["place"]))
+
+        # Normalize time periods
+        if location.get("time_period"):
+            location["time_period"] = _validate_and_normalize_date(str(location["time_period"]))
+
+
+def _normalize_structured_names(structured_names: list[Any]) -> None:
+    """Validate and normalize structured names."""
+    if not isinstance(structured_names, list):
+        return
+
+    for name_entry in structured_names:
+        if not isinstance(name_entry, dict):
+            continue
+
+        # Ensure full_name is properly formatted
+        if name_entry.get("full_name"):
+            full_name = str(name_entry["full_name"]).strip()
+            # Basic name validation
+            if full_name and not full_name.isdigit() and len(full_name) > 1:
+                name_entry["full_name"] = full_name
+            else:
+                name_entry["full_name"] = ""
+
+        # Ensure nicknames is a list
+        if "nicknames" not in name_entry or not isinstance(name_entry["nicknames"], list):
+            name_entry["nicknames"] = []
+
+
 def normalize_extracted_data(extracted: dict[str, Any]) -> dict[str, Any]:
     """
     Enhanced Phase 12.1: Normalize extracted_data dict with genealogical validation.
@@ -324,84 +424,16 @@ def normalize_extracted_data(extracted: dict[str, Any]) -> dict[str, Any]:
         extracted = {}
 
     # Ensure all structured keys exist
-    for key in STRUCTURED_KEYS:
-        if key not in extracted or extracted[key] is None:
-            extracted[key] = []
+    _ensure_structured_keys(extracted)
 
     # Promote legacy flat fields conservatively
     _promote_legacy_fields(extracted)
 
-    # Enhanced Phase 12.1: Apply genealogical validation and normalization
-
-    # Validate and normalize vital records
-    vital_records = extracted.get("vital_records", [])
-    if isinstance(vital_records, list):
-        for record in vital_records:
-            if isinstance(record, dict):
-                # Normalize dates
-                if record.get("date"):
-                    record["date"] = _validate_and_normalize_date(str(record["date"]))
-
-                # Normalize locations
-                if record.get("place"):
-                    record["place"] = _validate_location(str(record["place"]))
-
-                # Validate event types
-                if record.get("event_type"):
-                    event_type = str(record["event_type"]).lower().strip()
-                    valid_events = ["birth", "death", "marriage", "baptism", "burial", "christening", "divorce"]
-                    if event_type in valid_events:
-                        record["event_type"] = event_type
-
-    # Validate and normalize relationships
-    relationships = extracted.get("relationships", [])
-    if isinstance(relationships, list):
-        for relationship in relationships:
-            if isinstance(relationship, dict):
-                # Normalize relationship type
-                if relationship.get("relationship"):
-                    relationship["relationship"] = _validate_relationship(str(relationship["relationship"]))
-
-                # Ensure person names are properly formatted
-                for person_key in ["person1", "person2"]:
-                    if relationship.get(person_key):
-                        name = str(relationship[person_key]).strip()
-                        # Basic name validation - ensure it's not just whitespace or numbers
-                        if name and not name.isdigit() and len(name) > 1:
-                            relationship[person_key] = name
-                        else:
-                            relationship[person_key] = ""
-
-    # Validate and normalize locations
-    locations = extracted.get("locations", [])
-    if isinstance(locations, list):
-        for location in locations:
-            if isinstance(location, dict):
-                # Normalize place names
-                if location.get("place"):
-                    location["place"] = _validate_location(str(location["place"]))
-
-                # Normalize time periods
-                if location.get("time_period"):
-                    location["time_period"] = _validate_and_normalize_date(str(location["time_period"]))
-
-    # Validate and normalize structured names
-    structured_names = extracted.get("structured_names", [])
-    if isinstance(structured_names, list):
-        for name_entry in structured_names:
-            if isinstance(name_entry, dict):
-                # Ensure full_name is properly formatted
-                if name_entry.get("full_name"):
-                    full_name = str(name_entry["full_name"]).strip()
-                    # Basic name validation
-                    if full_name and not full_name.isdigit() and len(full_name) > 1:
-                        name_entry["full_name"] = full_name
-                    else:
-                        name_entry["full_name"] = ""
-
-                # Ensure nicknames is a list
-                if "nicknames" not in name_entry or not isinstance(name_entry["nicknames"], list):
-                    name_entry["nicknames"] = []
+    # Apply genealogical validation and normalization
+    _normalize_vital_records(extracted.get("vital_records", []))
+    _normalize_relationships(extracted.get("relationships", []))
+    _normalize_locations(extracted.get("locations", []))
+    _normalize_structured_names(extracted.get("structured_names", []))
 
     return extracted
 
