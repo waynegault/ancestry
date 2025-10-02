@@ -90,16 +90,13 @@ KEY_DATA = "data"
 # If essential ones fail, other parts of the code will raise errors.
 try:
     from requests import Response as RequestsResponse
-    from requests.adapters import HTTPAdapter
     from requests.cookies import RequestsCookieJar
     from requests.exceptions import HTTPError, JSONDecodeError, RequestException
     from selenium.common.exceptions import (
         ElementClickInterceptedException,
         ElementNotInteractableException,
-        InvalidSessionIdException,
         NoSuchCookieException,
         NoSuchElementException,
-        NoSuchWindowException,
         StaleElementReferenceException,
         TimeoutException,
         UnexpectedAlertPresentException,
@@ -110,24 +107,17 @@ try:
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.support.wait import WebDriverWait
-    from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool
-    from sqlalchemy.exc import SQLAlchemyError
-    from sqlalchemy.orm import Session, sessionmaker
-    from urllib3.util.retry import Retry
 
     # --- Local application imports ---
     # Assume these are essential or handled elsewhere if missing
-    from chromedriver import init_webdvr
-    from config import config_manager, config_schema
+    from config import config_schema
     from core_imports import get_logger
 
     # Initialize logger with standardized pattern
     logger = get_logger(__name__)
 
-    from database import Base  # Import Base for table creation
     from my_selectors import *
     from selenium_utils import (
-        export_cookies,
         is_browser_open,
         is_elem_there,
     )
@@ -227,6 +217,107 @@ def ordinal_case(text: Union[str, int]) -> str:
 
 # End of ordinal_case
 
+
+# === NAME FORMATTING HELPER FUNCTIONS ===
+
+def _remove_gedcom_slashes(name: str) -> str:
+    """Remove GEDCOM-style slashes around surnames."""
+    name = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", name)  # Middle
+    name = re.sub(r"^/([^/]+)/\s*", r"\1 ", name)  # Start
+    name = re.sub(r"\s*/([^/]+)/$", r" \1", name)  # End
+    name = re.sub(r"^/([^/]+)/$", r"\1", name)  # Only
+    return re.sub(r"\s+", " ", name).strip()
+
+
+def _format_quoted_nickname(part: str) -> Optional[str]:
+    """Format quoted nicknames like 'Betty' or 'Bo'."""
+    if part.startswith("'") and part.endswith("'") and len(part) > 2:
+        inner_content = part[1:-1]
+        return "'" + inner_content.capitalize() + "'"
+    return None
+
+
+def _format_hyphenated_name(part: str, lowercase_particles: set[str]) -> str:
+    """Format hyphenated names like Smith-Jones or van-der-Berg."""
+    hyphenated_elements = []
+    sub_parts = part.split("-")
+    for idx, sub_part in enumerate(sub_parts):
+        if idx > 0 and sub_part.lower() in lowercase_particles:
+            hyphenated_elements.append(sub_part.lower())
+        elif sub_part:
+            hyphenated_elements.append(sub_part.capitalize())
+    return "-".join(filter(None, hyphenated_elements))
+
+
+def _format_apostrophe_name(part: str) -> Optional[str]:
+    """Format names with internal apostrophes like O'Malley or D'Angelo."""
+    if "'" in part and len(part) > 1 and not (part.startswith("'") or part.endswith("'")):
+        name_pieces = part.split("'")
+        return "'".join(p.capitalize() for p in name_pieces)
+    return None
+
+
+def _format_mc_mac_prefix(part: str) -> Optional[str]:
+    """Format Mc/Mac prefixes like McDonald or MacGregor."""
+    part_lower = part.lower()
+    if part_lower.startswith("mc") and len(part) > 2:
+        return "Mc" + part[2:].capitalize()
+    if part_lower.startswith("mac") and len(part) > 3:
+        if part_lower == "mac":
+            return "Mac"
+        return "Mac" + part[3:].capitalize()
+    return None
+
+
+def _format_initial(part: str) -> Optional[str]:
+    """Format initials like J. or J."""
+    if len(part) == 2 and part.endswith(".") and part[0].isalpha():
+        return part[0].upper() + "."
+    if len(part) == 1 and part.isalpha():
+        return part.upper()
+    return None
+
+
+def _format_name_part(part: str, index: int, lowercase_particles: set[str], uppercase_exceptions: set[str]) -> str:
+    """Format a single part of a name with all special case handling."""
+    part_lower = part.lower()
+
+    # Lowercase particles (but not at start)
+    if index > 0 and part_lower in lowercase_particles:
+        return part_lower
+
+    # Uppercase exceptions (II, III, SR, JR)
+    if part.upper() in uppercase_exceptions:
+        return part.upper()
+
+    # Quoted nicknames
+    quoted = _format_quoted_nickname(part)
+    if quoted:
+        return quoted
+
+    # Hyphenated names
+    if "-" in part:
+        return _format_hyphenated_name(part, lowercase_particles)
+
+    # Apostrophe names (O'Malley)
+    apostrophe = _format_apostrophe_name(part)
+    if apostrophe:
+        return apostrophe
+
+    # Mc/Mac prefixes
+    mc_mac = _format_mc_mac_prefix(part)
+    if mc_mac:
+        return mc_mac
+
+    # Initials
+    initial = _format_initial(part)
+    if initial:
+        return initial
+
+    # Default: capitalize
+    return part.capitalize()
+
+
 def format_name(name: Optional[str]) -> str:
     """
     Formats a person's name string to title case, preserving uppercase components
@@ -234,153 +325,42 @@ def format_name(name: Optional[str]) -> str:
     Also removes GEDCOM-style slashes around surnames anywhere in the string.
     Handles common name particles and prefixes like Mc/Mac/O' and quoted nicknames.
     """
+    # Validate input
     if not name or not isinstance(name, str):
         return "Valued Relative"
-    # End of if
 
+    # Handle non-alphabetic input
     if name.isdigit() or re.fullmatch(r"[^a-zA-Z]+", name):
-        logger.debug(
-            f"Formatting name: Input '{name}' appears non-alphabetic, returning as is."
-        )
+        logger.debug(f"Formatting name: Input '{name}' appears non-alphabetic, returning as is.")
         stripped_name = name.strip()
         return stripped_name if stripped_name else "Valued Relative"
-    # End of if
 
     try:
-        cleaned_name = name.strip()
-        # Handle GEDCOM slashes more robustly
-        cleaned_name = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", cleaned_name)  # Middle
-        cleaned_name = re.sub(r"^/([^/]+)/\s*", r"\1 ", cleaned_name)  # Start
-        cleaned_name = re.sub(r"\s*/([^/]+)/$", r" \1", cleaned_name)  # End
-        cleaned_name = re.sub(r"^/([^/]+)/$", r"\1", cleaned_name)  # Only
+        # Clean and prepare name
+        cleaned_name = _remove_gedcom_slashes(name.strip())
 
-        cleaned_name = re.sub(r"\s+", " ", cleaned_name).strip()
-
-        lowercase_particles = {
-            "van",
-            "von",
-            "der",
-            "den",
-            "de",
-            "di",
-            "da",
-            "do",
-            "la",
-            "le",
-            "el",
-        }
+        # Define special case sets
+        lowercase_particles = {"van", "von", "der", "den", "de", "di", "da", "do", "la", "le", "el"}
         uppercase_exceptions = {"II", "III", "IV", "SR", "JR"}
 
+        # Format each part
         parts = cleaned_name.split()
-        formatted_parts = []
-        i = 0
-        while i < len(parts):
-            part = parts[i]
-            part_lower = part.lower()
+        formatted_parts = [
+            _format_name_part(part, i, lowercase_particles, uppercase_exceptions)
+            for i, part in enumerate(parts)
+        ]
 
-            if i > 0 and part_lower in lowercase_particles:
-                formatted_parts.append(part_lower)
-                i += 1
-                continue
-            # End of if
-
-            if part.upper() in uppercase_exceptions:
-                formatted_parts.append(part.upper())
-                i += 1
-                continue
-            # End of if
-
-            # *** NEW/MODIFIED LOGIC FOR QUOTED NICKNAMES AND APOSTROPHES ***
-            if part.startswith("'") and part.endswith("'") and len(part) > 2:
-                # Handles parts like 'Betty' or 'bo'
-                # Capitalize the content within the quotes
-                inner_content = part[1:-1]
-                formatted_parts.append("'" + inner_content.capitalize() + "'")
-                i += 1
-                continue
-            # End of if
-
-            if "-" in part:
-                hyphenated_elements = []
-                sub_parts = part.split("-")
-                for idx, sub_part in enumerate(sub_parts):
-                    if idx > 0 and sub_part.lower() in lowercase_particles:
-                        hyphenated_elements.append(sub_part.lower())
-                    elif sub_part:  # Ensure sub_part is not empty
-                        hyphenated_elements.append(sub_part.capitalize())
-                    # End of if/elif
-                # End of for
-                formatted_parts.append("-".join(filter(None, hyphenated_elements)))
-                i += 1
-                continue
-            # End of if
-
-            # Handle names like O'Malley, D'Angelo
-            if (
-                "'" in part
-                and len(part) > 1
-                and not (part.startswith("'") or part.endswith("'"))
-            ):
-                # This condition targets internal apostrophes like in O'Malley
-                # It avoids single-quoted parts like 'Betty' which are handled above.
-                name_pieces = part.split("'")
-                # Capitalize the first letter of each piece around the apostrophe
-                formatted_apostrophe_part = "'".join(
-                    p.capitalize() for p in name_pieces
-                )
-                formatted_parts.append(formatted_apostrophe_part)
-                i += 1
-                continue
-            # End of if
-
-            if part_lower.startswith("mc") and len(part) > 2:
-                formatted_parts.append("Mc" + part[2:].capitalize())
-                i += 1
-                continue
-            # End of if
-            if part_lower.startswith("mac") and len(part) > 3:
-                if part_lower == "mac":  # Handle "Mac" itself
-                    formatted_parts.append("Mac")
-                else:
-                    formatted_parts.append("Mac" + part[3:].capitalize())
-                # End of if/else
-                i += 1
-                continue
-            # End of if
-
-            if (
-                len(part) == 2 and part.endswith(".") and part[0].isalpha()
-            ):  # Initials like J.
-                formatted_parts.append(part[0].upper() + ".")
-                i += 1
-                continue
-            # End of if
-            if (
-                len(part) == 1 and part.isalpha()
-            ):  # Single letter initials without period
-                formatted_parts.append(part.upper())
-                i += 1
-                continue
-            # End of if
-
-            # Default: capitalize the part
-            formatted_parts.append(part.capitalize())
-            i += 1
-        # End of while
-
+        # Join and clean up
         final_name = " ".join(formatted_parts)
-        final_name = re.sub(
-            r"\s+", " ", final_name
-        ).strip()  # Consolidate multiple spaces
+        final_name = re.sub(r"\s+", " ", final_name).strip()
         return final_name if final_name else "Valued Relative"
+
     except Exception as e:
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
         try:
             return name.title() if isinstance(name, str) else "Valued Relative"
         except AttributeError:
             return "Valued Relative"
-        # End of try/except
-    # End of try/except
 
 # End of format_name
 
@@ -1784,10 +1764,9 @@ def make_ube(driver: DriverType) -> Optional[str]:
 
 # End of make_ube
 
-def make_newrelic(driver: DriverType) -> Optional[str]:
+def make_newrelic(_driver: DriverType) -> Optional[str]:
     # This function generates a plausible NewRelic header structure.
     # Exact values might vary, but the format is generally consistent.
-    # The driver argument is kept for potential future use but isn't strictly needed now.
     try:
         trace_id = uuid.uuid4().hex[:16]  # Shorter trace ID part
         span_id = uuid.uuid4().hex[:16]  # Span ID
@@ -1821,9 +1800,8 @@ def make_newrelic(driver: DriverType) -> Optional[str]:
 
 # End of make_newrelic
 
-def make_traceparent(driver: DriverType) -> Optional[str]:
+def make_traceparent(_driver: DriverType) -> Optional[str]:
     # Generates a W3C Trace Context traceparent header.
-    # Driver argument kept for consistency, not currently used.
     try:
         version = "00"  # Standard version
         trace_id = uuid.uuid4().hex  # Full 32-char trace ID
@@ -1838,9 +1816,8 @@ def make_traceparent(driver: DriverType) -> Optional[str]:
 
 # End of make_traceparent
 
-def make_tracestate(driver: DriverType) -> Optional[str]:
+def make_tracestate(_driver: DriverType) -> Optional[str]:
     # Generates a tracestate header, often including NewRelic state.
-    # Driver argument kept for consistency, not currently used.
     try:
         # NewRelic specific part of tracestate
         tk = "2611750"  # Corresponds to license key part in newrelic header
@@ -3239,8 +3216,6 @@ def main() -> None:
     # --- Local imports needed for main ---
     # Imports are assumed successful due to strict checks at top level
     from logging_config import setup_logging
-
-    config_manager = ConfigManager()
 
     # Re-assign the global logger for the main function's scope
     # Use INFO level to make test output cleaner
