@@ -369,43 +369,100 @@ def _score_birth_info(search_by: int, search_bp: str, cand_by: int, cand_bp: str
     return score, field_scores, reasons
 
 
+# Helper functions for _score_death_info
+
+def _score_death_year(search_dy: int, cand_dy: int, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+    """Score death year matching."""
+    if not cand_dy or not search_dy:
+        return 0, 0, []
+
+    try:
+        cand_dy_int = int(cand_dy)
+        search_dy_int = int(search_dy)
+
+        if cand_dy_int == search_dy_int:
+            return (
+                weights["death_year_match"],
+                weights["death_year_match"],
+                [f"exact death year ({cand_dy}) ({weights['death_year_match']}pts)"]
+            )
+        elif abs(cand_dy_int - search_dy_int) <= 5:
+            return (
+                weights["death_year_close"],
+                weights["death_year_close"],
+                [f"close death year ({cand_dy} vs {search_dy}) ({weights['death_year_close']}pts)"]
+            )
+    except (ValueError, TypeError):
+        pass
+
+    return 0, 0, []
+
+
+def _score_death_date_absent(search_dy: int, cand_dy: int, is_living: bool, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+    """Score when both death dates are absent."""
+    if not search_dy and not cand_dy and is_living in [False, None]:
+        return (
+            weights["death_dates_absent"],
+            weights["death_dates_absent"],
+            [f"death date absent ({weights['death_dates_absent']}pts)"]
+        )
+    return 0, 0, []
+
+
+def _score_death_place(search_dp: str, cand_dp: str, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+    """Score death place matching."""
+    if cand_dp and search_dp and search_dp in cand_dp:
+        return (
+            weights["death_place_match"],
+            weights["death_place_match"],
+            [f"death place contains ({search_dp}) ({weights['death_place_match']}pts)"]
+        )
+    return 0, 0, []
+
+
+def _score_death_bonus(dyear_score: int, ddate_score: int, dplace_score: int, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+    """Score death bonus when both date and place are present."""
+    if (dyear_score > 0 or ddate_score > 0) and dplace_score > 0:
+        return (
+            weights["death_bonus"],
+            weights["death_bonus"],
+            [f"bonus death info ({weights['death_bonus']}pts)"]
+        )
+    return 0, 0, []
+
+
 def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str, is_living: bool, weights: Dict[str, int]) -> Tuple[int, Dict[str, int], List[str]]:
     """Score death year and place matching."""
     score = 0
     field_scores = {"dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0}
     reasons = []
 
-    # Death year scoring
-    if cand_dy and search_dy:
-        try:
-            cand_dy_int = int(cand_dy)
-            search_dy_int = int(search_dy)
-            if cand_dy_int == search_dy_int:
-                score += weights["death_year_match"]
-                field_scores["dyear"] = weights["death_year_match"]
-                reasons.append(f"exact death year ({cand_dy}) ({weights['death_year_match']}pts)")
-            elif abs(cand_dy_int - search_dy_int) <= 5:
-                score += weights["death_year_close"]
-                field_scores["dyear"] = weights["death_year_close"]
-                reasons.append(f"close death year ({cand_dy} vs {search_dy}) ({weights['death_year_close']}pts)")
-        except (ValueError, TypeError):
-            pass
-    elif not search_dy and not cand_dy and is_living in [False, None]:
-        score += weights["death_dates_absent"]
-        field_scores["ddate"] = weights["death_dates_absent"]
-        reasons.append(f"death date absent ({weights['death_dates_absent']}pts)")
+    # Score death year
+    year_score, year_field_score, year_reasons = _score_death_year(search_dy, cand_dy, weights)
+    score += year_score
+    field_scores["dyear"] = year_field_score
+    reasons.extend(year_reasons)
 
-    # Death place scoring
-    if cand_dp and search_dp and search_dp in cand_dp:
-        score += weights["death_place_match"]
-        field_scores["dplace"] = weights["death_place_match"]
-        reasons.append(f"death place contains ({search_dp}) ({weights['death_place_match']}pts)")
+    # Score death date absent (if year scoring didn't apply)
+    if year_score == 0:
+        date_score, date_field_score, date_reasons = _score_death_date_absent(search_dy, cand_dy, is_living, weights)
+        score += date_score
+        field_scores["ddate"] = date_field_score
+        reasons.extend(date_reasons)
 
-    # Death bonus
-    if (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0:
-        score += weights["death_bonus"]
-        field_scores["dbonus"] = weights["death_bonus"]
-        reasons.append(f"bonus death info ({weights['death_bonus']}pts)")
+    # Score death place
+    place_score, place_field_score, place_reasons = _score_death_place(search_dp, cand_dp, weights)
+    score += place_score
+    field_scores["dplace"] = place_field_score
+    reasons.extend(place_reasons)
+
+    # Score death bonus
+    bonus_score, bonus_field_score, bonus_reasons = _score_death_bonus(
+        field_scores["dyear"], field_scores["ddate"], field_scores["dplace"], weights
+    )
+    score += bonus_score
+    field_scores["dbonus"] = bonus_field_score
+    reasons.extend(bonus_reasons)
 
     return score, field_scores, reasons
 
