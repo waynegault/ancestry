@@ -9,10 +9,7 @@ with relationship path calculations and family tree visualization.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-    is_function_available,
-)
+from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
