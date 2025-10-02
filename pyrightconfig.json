@@ -8,7 +8,8 @@
     "**/node_modules",
     "**/.git",
     "**/build",
-    "**/dist"
+    "**/dist",
+    "**/*.git"
   ],
   "typeCheckingMode": "basic",
   "reportMissingImports": true,
@@ -57,6 +58,8 @@
   "reportUnknownMemberType": "none",
   "reportMissingParameterType": "none",
   "reportMissingModuleSource": "none",
+  "reportImportCycles": "none",
+  "reportUninitializedInstanceVariable": "none",
   "reportInvalidTypeVarUse": true,
   "reportCallIssue": true,
   "reportArgumentType": "none",
