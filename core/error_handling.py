@@ -122,7 +122,7 @@ class CircuitBreaker:
                     self.success_count = 0
             raise e
 
-    def reset(self):
+    def reset(self) -> None:
         """Manually reset circuit breaker to CLOSED state."""
         with self._lock:
             self.state = CircuitState.CLOSED
@@ -558,11 +558,12 @@ class ErrorHandlerRegistry:
     to appropriate handlers based on error type.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize error handler registry with default handlers."""
         self.handlers: list[ErrorHandler] = []
         self._register_default_handlers()
 
-    def _register_default_handlers(self):
+    def _register_default_handlers(self) -> None:
         """Register default error handlers."""
         self.handlers.extend(
             [DatabaseErrorHandler(), NetworkErrorHandler(), BrowserErrorHandler()]
@@ -903,7 +904,8 @@ def error_handling_module_tests() -> bool:
 class ErrorRecoveryManager:
     """Manages circuit breakers and recovery strategies."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize fault tolerance manager with circuit breakers and recovery strategies."""
         self.circuit_breakers: dict[str, CircuitBreaker] = {}
         self.recovery_strategies: dict[str, Callable] = {}
         self._lock = threading.Lock()

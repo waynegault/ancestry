@@ -440,22 +440,22 @@ def _log_personalization_sanity_for_template(
             # DNA-related
             "estimated_relationship": lambda d: has_list(d, "dna_information"),
             "shared_dna_amount": lambda d: has_list(d, "dna_information"),
-            # Often defaulted; considered neutral
-            "dna_context": lambda _d: True,
-            "shared_ancestor_information": lambda _d: True,
-            "research_collaboration_request": lambda _d: True,
-            "personalized_response": lambda _d: True,
+            # Often defaulted; considered neutral (always True)
+            "dna_context": lambda d: True,
+            "shared_ancestor_information": lambda d: True,
+            "research_collaboration_request": lambda d: True,
+            "personalized_response": lambda d: True,
             "research_insights": lambda d: has_list(d, "vital_records") or has_list(d, "relationships"),
             "follow_up_questions": lambda d: has_list(d, "research_questions"),
             "research_topic": lambda d: has_list(d, "research_questions"),
-            "specific_research_needs": lambda _d: True,
-            "collaboration_proposal": lambda _d: True,
-            # Standard/base placeholders are handled elsewhere; ignore here
-            "name": lambda _d: True,
-            "predicted_relationship": lambda _d: True,
-            "actual_relationship": lambda _d: True,
-            "relationship_path": lambda _d: True,
-            "total_rows": lambda _d: True,
+            "specific_research_needs": lambda d: True,
+            "collaboration_proposal": lambda d: True,
+            # Standard/base placeholders are handled elsewhere; ignore here (always True)
+            "name": lambda d: True,
+            "predicted_relationship": lambda d: True,
+            "actual_relationship": lambda d: True,
+            "relationship_path": lambda d: True,
+            "total_rows": lambda d: True,
         }
 
         scored_fields = [f for f in fields_used if f in checks]
@@ -1037,263 +1037,9 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
 # ------------------------------------------------------------------------------
 # Database and Processing Helpers
 # ------------------------------------------------------------------------------
+# Note: _commit_messaging_batch was removed as dead code - replaced by _safe_commit_with_rollback
 
 
-def _commit_messaging_batch(
-    session: Session,
-    logs_to_add: list[ConversationLog],  # List of ConversationLog OBJECTS
-    person_updates: dict[int, PersonStatusEnum],  # Dict of {person_id: new_status_enum}
-    batch_num: int,
-) -> bool:
-    """
-    Commits a batch of ConversationLog entries (OUT direction) and Person status updates
-    to the database. Uses bulk insert for new logs and individual updates for existing ones.
-
-    Args:
-        session: The active SQLAlchemy database session.
-        logs_to_add: List of fully populated ConversationLog objects to add/update.
-        person_updates: Dictionary mapping Person IDs to their new PersonStatusEnum.
-        batch_num: The current batch number (for logging).
-
-    Returns:
-        True if the commit was successful, False otherwise.
-    """
-    # Step 1: Check if there's anything to commit
-    if not logs_to_add and not person_updates:
-        logger.debug(f"Batch Commit (Msg Batch {batch_num}): No data to commit.")
-        return True
-
-    # Attempting batch commit (removed verbose debug logging)
-
-    # Step 2: Perform DB operations within a transaction context
-    try:
-        with db_transn(session) as sess:  # Use the provided session in the transaction
-            log_inserts_data = []
-            log_updates_to_process = (
-                []
-            )  # List to hold tuples: (existing_log_obj, new_log_obj)
-
-            # --- Step 2a: Prepare ConversationLog data: Separate Inserts and Updates ---
-            if logs_to_add:
-                # Preparing ConversationLog entries for upsert (removed verbose debug)
-                # Extract unique keys from the input OBJECTS
-                log_keys_to_check = set()
-                valid_log_objects = []  # Store objects that have valid keys
-                for log_obj in logs_to_add:
-                    # Use our safe helper to get values
-                    conv_id = safe_column_value(log_obj, "conversation_id", None)
-                    direction = safe_column_value(log_obj, "direction", None)
-
-                    if conv_id and direction:
-                        log_keys_to_check.add((conv_id, direction))
-                        valid_log_objects.append(log_obj)
-                    else:
-                        logger.error(
-                            f"Invalid log object data (Msg Batch {batch_num}): Missing key info. Skipping log object."
-                        )
-
-                # Query for existing logs matching the keys in this batch
-                existing_logs_map: dict[
-                    tuple[str, MessageDirectionEnum], ConversationLog
-                ] = {}
-                if log_keys_to_check:
-                    existing_logs = (
-                        sess.query(ConversationLog)
-                        .filter(
-                            tuple_(
-                                ConversationLog.conversation_id,
-                                ConversationLog.direction,
-                            ).in_([(cid, denum) for cid, denum in log_keys_to_check])
-                        )
-                        .all()
-                    )
-                    existing_logs_map = {}
-                    for log in existing_logs:
-                        # Use our safe helper to get values
-                        conv_id = safe_column_value(log, "conversation_id", None)
-                        direction = safe_column_value(log, "direction", None)
-                        if conv_id and direction:
-                            existing_logs_map[(conv_id, direction)] = log
-                    # Prefetched existing ConversationLog entries (removed verbose debug)
-
-                # Process each valid log object
-                for log_object in valid_log_objects:
-                    log_key = (log_object.conversation_id, log_object.direction)
-                    existing_log = existing_logs_map.get(log_key)
-
-                    if existing_log:
-                        # Prepare for individual update by pairing existing and new objects
-                        log_updates_to_process.append((existing_log, log_object))
-                    else:
-                        # Prepare for bulk insert by converting object to dict
-                        try:
-                            insert_map = {
-                                c.key: getattr(log_object, c.key)
-                                for c in sa_inspect(log_object).mapper.column_attrs
-                                # Include None values as they might be valid states (e.g., ai_sentiment for OUT)
-                            }
-                            # Ensure Enums are handled if needed (SQLAlchemy mapping usually handles this)
-                            if isinstance(
-                                insert_map.get("direction"), MessageDirectionEnum
-                            ):
-                                insert_map["direction"] = insert_map["direction"].value
-                            # Ensure timestamp is added if missing (should be set by caller)
-                            if (
-                                "latest_timestamp" not in insert_map
-                                or insert_map["latest_timestamp"] is None
-                            ):
-                                logger.warning(
-                                    f"Timestamp missing for new log ConvID {log_object.conversation_id}. Setting to now."
-                                )
-                                insert_map["latest_timestamp"] = datetime.now(
-                                    timezone.utc
-                                )
-                            elif isinstance(insert_map["latest_timestamp"], datetime):
-                                # Ensure TZ aware UTC
-                                ts_val = insert_map["latest_timestamp"]
-                                insert_map["latest_timestamp"] = (
-                                    ts_val.astimezone(timezone.utc)
-                                    if ts_val.tzinfo
-                                    else ts_val.replace(tzinfo=timezone.utc)
-                                )
-
-                            log_inserts_data.append(insert_map)
-                        except Exception as prep_err:
-                            logger.error(
-                                f"Error preparing new log object for bulk insert (Msg Batch {batch_num}, ConvID: {log_object.conversation_id}): {prep_err}",
-                                exc_info=True,
-                            )
-
-                # --- Execute Bulk Insert ---
-                if log_inserts_data:
-                    logger.debug(
-                        f" Attempting bulk insert for {len(log_inserts_data)} ConversationLog entries..."
-                    )
-                    try:
-                        sess.bulk_insert_mappings(ConversationLog, log_inserts_data)  # type: ignore
-                        logger.debug(
-                            f" Bulk insert mappings called for {len(log_inserts_data)} logs."
-                        )
-                    except IntegrityError as ie:
-                        logger.warning(
-                            f"IntegrityError during bulk insert (likely duplicate ConvID/Direction): {ie}. Some logs might not have been inserted."
-                        )
-                        # Need robust handling if this occurs - maybe skip or attempt update?
-                    except Exception as bulk_err:
-                        logger.error(
-                            f"Error during ConversationLog bulk insert (Msg Batch {batch_num}): {bulk_err}",
-                            exc_info=True,
-                        )
-                        raise  # Rollback transaction
-
-                # --- Perform Individual Updates ---
-                updated_individually_count = 0
-                if log_updates_to_process:
-                    logger.debug(
-                        f" Processing {len(log_updates_to_process)} individual ConversationLog updates..."
-                    )
-                    for existing_log, new_data_obj in log_updates_to_process:
-                        try:
-                            has_changes = False
-                            # Compare relevant fields from the new object against the existing one
-                            fields_to_compare = [
-                                "latest_message_content",
-                                "latest_timestamp",
-                                "message_template_id",
-                                "script_message_status",
-                                "ai_sentiment",
-                            ]
-                            for field in fields_to_compare:
-                                new_value = getattr(new_data_obj, field, None)
-                                old_value = getattr(existing_log, field, None)
-                                # Handle timestamp comparison carefully (aware)
-                                if field == "latest_timestamp":
-                                    old_ts_aware = (
-                                        old_value.astimezone(timezone.utc)
-                                        if isinstance(old_value, datetime)
-                                        and old_value.tzinfo
-                                        else (
-                                            old_value.replace(tzinfo=timezone.utc)
-                                            if isinstance(old_value, datetime)
-                                            else None
-                                        )
-                                    )
-                                    new_ts_aware = (
-                                        new_value.astimezone(timezone.utc)
-                                        if isinstance(new_value, datetime)
-                                        and new_value.tzinfo
-                                        else (
-                                            new_value.replace(tzinfo=timezone.utc)
-                                            if isinstance(new_value, datetime)
-                                            else None
-                                        )
-                                    )
-                                    if new_ts_aware != old_ts_aware:
-                                        setattr(existing_log, field, new_ts_aware)
-                                        has_changes = True
-                                elif new_value != old_value:
-                                    setattr(existing_log, field, new_value)
-                                    has_changes = True
-                            # Update timestamp if any changes occurred
-                            if has_changes:
-                                existing_log.updated_at = datetime.now(timezone.utc)
-                                updated_individually_count += 1
-                        except Exception as update_err:
-                            logger.error(
-                                f"Error updating individual log ConvID {existing_log.conversation_id}/{existing_log.direction}: {update_err}",
-                                exc_info=True,
-                            )
-                    logger.debug(
-                        f" Finished {updated_individually_count} individual log updates."
-                    )
-
-            # --- Step 2b: Person Status Updates (Bulk Update - remains the same) ---
-            if person_updates:
-                update_mappings = []
-                logger.debug(
-                    f" Preparing {len(person_updates)} Person status updates..."
-                )
-                for pid, status_enum in person_updates.items():
-                    if not isinstance(status_enum, PersonStatusEnum):
-                        logger.warning(
-                            f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update."
-                        )
-                        continue
-                    update_mappings.append(
-                        {
-                            "id": pid,
-                            "status": status_enum,
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    )
-                if update_mappings:
-                    logger.debug(
-                        f" Updating {len(update_mappings)} Person statuses via bulk..."
-                    )
-                    sess.bulk_update_mappings(Person, update_mappings)  # type: ignore
-
-            logger.debug(
-                f" Exiting transaction block (Msg Batch {batch_num}, commit follows)."
-            )
-        # --- Transaction automatically commits here if no exceptions ---
-        logger.debug(f"Batch commit successful (Msg Batch {batch_num}).")
-        return True
-
-    # Step 3/4: Handle exceptions during commit
-    except IntegrityError as ie:
-        logger.error(
-            f"DB UNIQUE constraint error during messaging batch commit (Batch {batch_num}): {ie}",
-            exc_info=False,
-        )
-        return False
-    except Exception as e:
-        logger.error(
-            f"Error committing messaging batch (Batch {batch_num}): {e}", exc_info=True
-        )
-        return False
-
-
-# End of _commit_messaging_batch
 
 
 def _get_simple_messaging_data(
@@ -2650,11 +2396,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         logger.critical("🚨 Action 8: System health check failed - cannot proceed safely. Aborting.")
         return False
 
-    # Validate prerequisites
-    if not session_manager:
-        logger.error("Action 8: SessionManager missing.")
-        return False
-
     # Use safe_column_value to get profile_id
     profile_id = None
     if hasattr(session_manager, "my_profile_id"):
@@ -3204,7 +2945,7 @@ def action8_messaging_tests() -> None:
         """Test messaging system functions are available with detailed verification."""
         required_functions = [
             'safe_column_value', 'load_message_templates', 'determine_next_message_type',
-            '_commit_messaging_batch', '_get_simple_messaging_data', '_process_single_person',
+            '_safe_commit_with_rollback', '_get_simple_messaging_data', '_process_single_person',
             'send_messages_to_matches'
         ]
 
@@ -3329,9 +3070,9 @@ def action8_messaging_tests() -> None:
         suite.run_test(
             "Function availability verification",
             test_function_availability,
-            "7 messaging functions tested: safe_column_value, load_message_templates, determine_next_message_type, _commit_messaging_batch, _get_simple_messaging_data, _process_single_person, send_messages_to_matches.",
+            "7 messaging functions tested: safe_column_value, load_message_templates, determine_next_message_type, _safe_commit_with_rollback, _get_simple_messaging_data, _process_single_person, send_messages_to_matches.",
             "Test messaging system functions are available with detailed verification.",
-            "Verify safe_column_value→SQLAlchemy extraction, load_message_templates→database loading, determine_next_message_type→logic, _commit_messaging_batch→database, _get_simple_messaging_data→simplified fetching, _process_single_person→individual processing, send_messages_to_matches→main function.",
+            "Verify safe_column_value→SQLAlchemy extraction, load_message_templates→database loading, determine_next_message_type→logic, _safe_commit_with_rollback→database, _get_simple_messaging_data→simplified fetching, _process_single_person→individual processing, send_messages_to_matches→main function.",
         )
 
         suite.run_test(

@@ -172,111 +172,104 @@ if not session_manager:
 # _extract_fact_data removed - unused 77-line function
 
 
+# === SEARCH CRITERIA HELPER FUNCTIONS ===
+
+def _parse_year_from_string(date_str: str, parse_date_func: Optional[Callable]) -> tuple[Optional[int], Optional[datetime]]:
+    """Parse year from date string, trying full date parse first, then year extraction."""
+    date_obj: Optional[datetime] = None
+    year: Optional[int] = None
+
+    # Try full date parsing
+    if parse_date_func:
+        try:
+            date_obj = parse_date_func(date_str)
+            if date_obj:
+                year = date_obj.year
+                logger.debug(f"Successfully parsed date: {date_obj}, year: {year}")
+                return year, date_obj
+        except Exception as e:
+            logger.debug(f"Could not parse date with parse_date_func: {e}")
+
+    # Fallback: extract year with regex
+    logger.warning(f"Could not parse input year/date: '{date_str}'")
+    year_match = re.search(r"\b(\d{4})\b", date_str)
+    if year_match:
+        try:
+            year = int(year_match.group(1))
+            logger.debug(f"Extracted year {year} from '{date_str}' as fallback.")
+        except ValueError:
+            logger.warning(f"Could not convert extracted year '{year_match.group(1)}' to int.")
+
+    return year, date_obj
+
+
+def _get_user_input() -> Dict[str, str]:
+    """Get search criteria input from user."""
+    print("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---\n")
+    return {
+        "first_name": input("  First Name Contains: ").strip(),
+        "surname": input("  Last Name Contains: ").strip(),
+        "gender_input": input("  Gender (M/F): ").strip().upper(),
+        "dob_str": input("  Birth Year (YYYY): ").strip(),
+        "pob": input("  Birth Place Contains: ").strip(),
+        "dod_str": input("  Death Year (YYYY): ").strip() or None,
+        "pod": input("  Death Place Contains: ").strip() or None,
+    }
+
+
+def _validate_required_fields(first_name: str, surname: str) -> bool:
+    """Validate that at least first name or surname is provided."""
+    if not (first_name or surname):
+        logger.warning("API search needs First Name or Surname. Report cancelled.")
+        print("\nAPI search needs First Name or Surname. Report cancelled.")
+        return False
+    return True
+
+
 def _get_search_criteria() -> Optional[Dict[str, Any]]:
     """Gets search criteria from the user via input prompts."""
 
-    # Log and display the prompt to the user (only need to print for user interaction)
-    print("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---\n")
-
-    first_name = input("  First Name Contains: ").strip()
-    surname = input("  Last Name Contains: ").strip()
-    gender_input = input("  Gender (M/F): ").strip().upper()
-    # Initialize gender to None by default
-    gender = None
-    # Only set gender if valid input is provided
-    if gender_input and gender_input[0] in ["M", "F"]:
-        gender = gender_input[0].lower()
-    dob_str = input("  Birth Year (YYYY): ").strip()
-    pob = input("  Birth Place Contains: ").strip()
-    dod_str = input("  Death Year (YYYY): ").strip() or None
-    pod = input("  Death Place Contains: ").strip() or None
+    # Get user input
+    user_input = _get_user_input()
     print("")
 
-    if not (first_name or surname):
-        logger.warning("API search needs First Name or Surname. Report cancelled.")
-        # Use logger.info instead of duplicating with print
-        print("\nAPI search needs First Name or Surname. Report cancelled.")
+    # Validate required fields
+    if not _validate_required_fields(user_input["first_name"], user_input["surname"]):
         return None
 
+    # Parse gender
+    gender = None
+    if user_input["gender_input"] and user_input["gender_input"][0] in ["M", "F"]:
+        gender = user_input["gender_input"][0].lower()
+
+    # Parse dates
     clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
 
-    target_birth_year: Optional[int] = None
-    target_birth_date_obj: Optional[datetime] = None
-    if dob_str:
-        # First try to parse as a full date
-        if parse_date_func:
-            try:
-                target_birth_date_obj = parse_date_func(dob_str)
-            except Exception as e:
-                logger.debug(f"Could not parse date with parse_date_func: {e}")
+    target_birth_year, target_birth_date_obj = (None, None)
+    if user_input["dob_str"]:
+        target_birth_year, target_birth_date_obj = _parse_year_from_string(user_input["dob_str"], parse_date_func)
 
-        # If we have a date object, extract the year
-        if target_birth_date_obj:
-            target_birth_year = target_birth_date_obj.year
-            logger.debug(
-                f"Successfully parsed birth date: {target_birth_date_obj}, year: {target_birth_year}"
-            )
-        else:
-            # If date parsing failed, try to extract just the year
-            logger.warning(f"Could not parse input birth year/date: '{dob_str}'")
-            year_match = re.search(r"\b(\d{4})\b", dob_str)
-            if year_match:
-                try:
-                    target_birth_year = int(year_match.group(1))
-                    logger.debug(
-                        f"Extracted birth year {target_birth_year} from '{dob_str}' as fallback."
-                    )
-                except ValueError:
-                    logger.warning(
-                        f"Could not convert extracted year '{year_match.group(1)}' to int."
-                    )
+    target_death_year, target_death_date_obj = (None, None)
+    if user_input["dod_str"]:
+        target_death_year, target_death_date_obj = _parse_year_from_string(user_input["dod_str"], parse_date_func)
 
-    target_death_year: Optional[int] = None
-    target_death_date_obj: Optional[datetime] = None
-    if dod_str:
-        # First try to parse as a full date
-        if parse_date_func:
-            try:
-                target_death_date_obj = parse_date_func(dod_str)
-            except Exception as e:
-                logger.debug(f"Could not parse death date with parse_date_func: {e}")
-
-        # If we have a date object, extract the year
-        if target_death_date_obj:
-            target_death_year = target_death_date_obj.year
-            logger.debug(
-                f"Successfully parsed death date: {target_death_date_obj}, year: {target_death_year}"
-            )
-        else:
-            # If date parsing failed, try to extract just the year
-            logger.warning(f"Could not parse input death year/date: '{dod_str}'")
-            year_match = re.search(r"\b(\d{4})\b", dod_str)
-            if year_match:
-                try:
-                    target_death_year = int(year_match.group(1))
-                    logger.debug(
-                        f"Extracted death year {target_death_year} from '{dod_str}' as fallback."
-                    )
-                except ValueError:
-                    logger.warning(
-                        f"Could not convert extracted year '{year_match.group(1)}' to int."
-                    )
-
+    # Build search criteria dictionary
     search_criteria_dict = {
-        "first_name_raw": first_name,
-        "surname_raw": surname,
-        "first_name": clean_param(first_name),
-        "surname": clean_param(surname),
+        "first_name_raw": user_input["first_name"],
+        "surname_raw": user_input["surname"],
+        "first_name": clean_param(user_input["first_name"]),
+        "surname": clean_param(user_input["surname"]),
         "birth_year": target_birth_year,
         "birth_date_obj": target_birth_date_obj,
-        "birth_place": clean_param(pob),
+        "birth_place": clean_param(user_input["pob"]),
         "death_year": target_death_year,
         "death_date_obj": target_death_date_obj,
-        "death_place": clean_param(pod),
+        "death_place": clean_param(user_input["pod"]),
         "gender": gender,
     }
 
+    # Log search criteria
     log_display_map = {
         "first_name": "First Name",
         "surname": "Surname",
@@ -288,12 +281,9 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
     }
     for key, display_name in log_display_map.items():
         value = search_criteria_dict.get(key)
-        log_value = (
-            "None"
-            if value is None
-            else (f"'{value}'" if isinstance(value, str) else str(value))
-        )
+        log_value = "None" if value is None else (f"'{value}'" if isinstance(value, str) else str(value))
         logger.debug(f"  {display_name}: {log_value}")
+
     return search_criteria_dict
 
 
@@ -831,9 +821,6 @@ def _display_search_results(candidates: List[Dict], max_to_display: int):
 # Select top candidate
 def _select_top_candidate(
     scored_candidates: List[Dict],
-    _raw_suggestions: List[
-        Dict
-    ],  # Keep for potential future use? Currently unused here.
 ) -> Optional[Tuple[Dict, Dict]]:
     """Selects the highest-scoring candidate and retrieves its original raw suggestion data."""
     if not scored_candidates:
@@ -1184,7 +1171,7 @@ def _handle_search_phase(
         # Log info and display to user
         logger.info("API Search returned no results.No potential matches found.")
         return []
-    parsed_results = _parse_treesui_list_response(suggestions_raw, search_criteria)
+    parsed_results = _parse_treesui_list_response(suggestions_raw)
     if parsed_results is None:
         # Log error and display to user
         logger.error("Failed to parse API response. Error processing data.")
@@ -1209,14 +1196,12 @@ def _handle_search_phase(
 # Parsing (Definition before use in _handle_search_phase)
 def _parse_treesui_list_response(  # type: ignore
     treesui_response: List[Dict[str, Any]],
-    _search_criteria: Dict[str, Any],  # Unused but kept for API consistency
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Parses the specific TreesUI List API response provided by the user
     to extract information needed for scoring and display.
     """
     parsed_results = []
-    _parse_date_func = _parse_date if callable(_parse_date) else None  # Unused but kept for potential future use
     logger.debug(
         f"Parsing {len(treesui_response)} items from TreesUI List API response."
     )
@@ -1477,17 +1462,13 @@ def _handle_selection_phase(
         return None
     max_display_limit = getattr(config_schema, "max_candidates_to_display", 5)
     _display_search_results(scored_candidates, max_display_limit)
-    selection = _select_top_candidate(
-        scored_candidates, suggestions_to_score
-    )  # Pass suggestions_to_score for potential use? Currently unused by select func.
+    selection = _select_top_candidate(scored_candidates)
     if not selection:
         # Log error and display to user
         logger.error("Failed to select top candidate.")
         print("\nFailed to select top candidate.")
         return None
-    _selected_candidate_processed, _selected_candidate_raw = selection  # Unpacked but unused
     # Field-by-field comparison display has been removed as requested
-    pass
     return selection
 
 
@@ -1531,8 +1512,6 @@ def _handle_details_phase(
         logger.error("Cannot fetch details: Function missing.")
         print("\nError: Details fetching utility unavailable.")
         return None
-    # Construct the API URL for logging/display purposes (unused but kept for debugging)
-    _facts_api_url = f"{base_url}/family-tree/person/facts/user/{owner_profile_id}/tree/{api_tree_id}/person/{api_person_id}"
 
     # Call the API
     person_research_data = call_facts_user_api(
@@ -1597,10 +1576,6 @@ def _handle_supplementary_info_phase(
             logger.info(f"Using tree owner name from configuration: {owner_name}")
         # If not in config, try alternative config location
         elif owner_profile_id:
-            # Try to get from reference person name config (unused but kept for potential future use)
-            _alt_config_owner_name = getattr(
-                config_schema, "reference_person_name", None
-            )
             owner_name = config_owner_name if config_owner_name else "Tree Owner"
             session_manager_local.tree_owner_name = owner_name
             logger.info(f"Using tree owner name from config/default: {owner_name}")
@@ -1608,9 +1583,6 @@ def _handle_supplementary_info_phase(
     # --- Skip Family Details Section ---
     # Action 11 simplified to focus on search, scoring, and relationship calculation only
     # Family details functionality removed to keep Action 11 focused and reliable
-
-    # Get the person's name for relationship calculation (unused but kept for potential future use)
-    _person_name = selected_candidate_processed.get("name", "Unknown")
 
     # --- Family Details Section Removed ---
     # Action 11 simplified to focus on search, scoring, and relationship calculation only
@@ -2341,7 +2313,7 @@ def handle_api_report(session_manager_param=None):
     )  # Includes initial comparison display
     if not selection:
         return True  # No candidate selected or comparison failed gracefully
-    selected_candidate_processed, _selected_candidate_raw = selection  # Raw data unused
+    selected_candidate_processed, _ = selection  # Raw data unused
 
     # Phase 3: Skip detailed data fetching - Action 11 simplified
     # Phase 4: Display Relationship Path Only...
@@ -2582,7 +2554,6 @@ def get_ancestry_person_details(
 def get_ancestry_relationship_path(
     session_manager: SessionManager,
     target_person_id: str,
-    _target_tree_id: str,  # Unused but kept for API consistency
     reference_name: str = "Reference Person",
 ) -> str:
     """

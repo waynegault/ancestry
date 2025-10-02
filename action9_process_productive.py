@@ -1934,7 +1934,7 @@ def _load_templates_for_action9() -> Dict[str, str]:
 
 
 def _search_ancestry_tree(
-    _session_manager: SessionManager, extracted_data: Union[ExtractedData, List[str]]
+    extracted_data: Union[ExtractedData, List[str]]
 ) -> Dict[str, Any]:
     """
     Searches the user's tree (GEDCOM or API) for names extracted by the AI.
@@ -1984,7 +1984,7 @@ def _search_ancestry_tree(
 
 
 def _identify_and_get_person_details(
-    _session_manager: SessionManager, _extracted_data: Dict[str, Any], log_prefix: str
+    log_prefix: str
 ) -> Optional[Dict[str, Any]]:
     """
     Simplified version that returns None (no person details found).
@@ -1996,7 +1996,7 @@ def _identify_and_get_person_details(
 
 
 def _format_genealogical_data_for_ai(
-    genealogical_data: Dict[str, Any], _log_prefix: str
+    genealogical_data: Dict[str, Any]
 ) -> str:
     """
     Simplified version that formats genealogical data for AI consumption.

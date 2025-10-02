@@ -90,16 +90,20 @@ from cache_manager import (
 
 
 # Legacy compatibility decorators
-def cached_api_manager():
+def cached_api_manager() -> Callable:
+    """Return decorator for caching API manager component."""
     return cached_session_component("api_manager")
 
-def cached_browser_manager():
+def cached_browser_manager() -> Callable:
+    """Return decorator for caching browser manager component."""
     return cached_session_component("browser_manager")
 
-def cached_database_manager():
+def cached_database_manager() -> Callable:
+    """Return decorator for caching database manager component."""
     return cached_session_component("database_manager")
 
-def cached_session_validator():
+def cached_session_validator() -> Callable:
+    """Return decorator for caching session validator component."""
     return cached_session_component("session_validator")
 
 def clear_session_cache():
@@ -118,7 +122,7 @@ logger = setup_module(globals(), __name__)
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import requests

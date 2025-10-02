@@ -365,6 +365,7 @@ class InboxProcessor:
             logger.warning(f"Invalid conversation data type: {type(conv_data)}")
             return None
 
+        # Extract conversation ID
         conversation_id = str(
             conv_data.get("id", "")
         ).strip()  # Ensure string and strip whitespace
@@ -933,13 +934,10 @@ class InboxProcessor:
         # Initialize statistics and state
         self._initialize_search_stats()
 
-        # Counters and state for this run
-
         # Validate session manager state
         my_pid_lower = self._validate_session_state()
         if not my_pid_lower:
             return False
-        return None
 
     def _get_database_session_and_comparator(self) -> tuple[Optional[DbSession], Optional[str], Optional[datetime]]:
         """Get database session and create comparator for inbox processing."""
@@ -1006,94 +1004,6 @@ class InboxProcessor:
             progress_bar.refresh()
 
             return result
-
-        # Continue with the main search_inbox method
-        # --- Step 2: Get DB Session and Comparator ---
-        session: Optional[DbSession] = None
-        try:
-            session, comp_conv_id, comp_ts = self._get_database_session_and_comparator()
-            if not session:
-                return False
-
-            # --- Step 3: Setup and Run Main Loop ---
-            (
-                stop_reason,
-                total_processed_api_items,
-                ai_classified_count,
-                status_updated_count,
-                items_processed_before_stop,
-            ) = self._run_inbox_processing_loop(session, comp_conv_id, comp_ts, my_pid_lower)
-
-            # Check if loop stopped due to an error state
-            overall_success = True
-            if stop_reason and "error" in stop_reason.lower():
-                overall_success = False
-
-        # --- Step 4: Handle Outer Exceptions (Action 6/8 Pattern) ---
-        except MaxApiFailuresExceededError as api_halt_err:
-            self.stats["errors"] += 1
-            self.stats["end_time"] = datetime.now(timezone.utc)
-            logger.critical(
-                f"Halting Action 7 due to excessive critical API failures: {api_halt_err}",
-                exc_info=False,
-            )
-            overall_success = False
-        except BrowserSessionError as browser_err:
-            self.stats["errors"] += 1
-            self.stats["end_time"] = datetime.now(timezone.utc)
-            logger.critical(
-                f"Browser session error in Action 7: {browser_err}",
-                exc_info=True,
-            )
-            overall_success = False
-        except APIRateLimitError as rate_err:
-            self.stats["errors"] += 1
-            self.stats["end_time"] = datetime.now(timezone.utc)
-            logger.error(
-                f"API rate limit exceeded in Action 7: {rate_err}",
-                exc_info=False,
-            )
-            overall_success = False
-        except AuthenticationExpiredError as auth_err:
-            self.stats["errors"] += 1
-            self.stats["end_time"] = datetime.now(timezone.utc)
-            logger.error(
-                f"Authentication expired during Action 7: {auth_err}",
-                exc_info=False,
-            )
-            overall_success = False
-        except Exception as outer_e:
-            self.stats["errors"] += 1
-            self.stats["end_time"] = datetime.now(timezone.utc)
-            logger.critical(
-                f"CRITICAL error during search_inbox execution: {outer_e}",
-                exc_info=True,
-            )
-            overall_success = False
-
-        # --- Step 5: Final Logging and Cleanup ---
-        finally:
-            # Log summary of the run
-            final_stop_reason = stop_reason or (
-                "Comparator/End Reached" if overall_success else "Unknown"
-            )
-            # Use updated status_updated_count which now correctly tracks Person updates
-            self._log_unified_summary(
-                total_api_items=total_processed_api_items,
-                items_processed=items_processed_before_stop,
-                new_logs=0,  # Can no longer accurately track upserts easily, set to 0
-                ai_classified=ai_classified_count,
-                status_updates=status_updated_count,  # This count is correct
-                stop_reason=final_stop_reason,
-                max_inbox_limit=self.max_inbox_limit,
-            )
-            # Release the database session
-            if session:
-                self.session_manager.return_session(session)
-
-        # Step 6: Return overall success status
-        return overall_success
-        # End of search_inbox
 
     def get_statistics(self) -> dict[str, Any]:
         """Return processing statistics for monitoring and debugging."""
