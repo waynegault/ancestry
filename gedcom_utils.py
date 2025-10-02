@@ -207,120 +207,152 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
     return _normalize_id(id_to_normalize)
 
 
-def _get_full_name(indi: GedcomIndividualType) -> str:
-    """Safely gets formatted name, checking for .format method. V3"""
+# Helper functions for _get_full_name
+
+def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[GedcomIndividualType], str]:
+    """Validate and extract individual from input, handling wrapped values."""
     if not _is_individual(indi):
         if hasattr(indi, "value") and _is_individual(getattr(indi, "value", None)):
-            # Type ignore is needed because the type checker doesn't understand the dynamic nature
-            # of this code. We've already checked that indi.value is a valid GedcomIndividualType
-            indi = indi.value  # type: ignore
+            return indi.value, ""  # type: ignore
         else:
-            logger.warning(
-                f"_get_full_name called with non-Individual type: {type(indi)}"
-            )
-            return "Unknown (Invalid Type)"
+            logger.warning(f"_get_full_name called with non-Individual type: {type(indi)}")
+            return None, "Unknown (Invalid Type)"
 
-    # At this point, indi should be a valid GedcomIndividualType
-    # But we'll still add null checks to be safe
     if indi is None:
-        return "Unknown (None)"
+        return None, "Unknown (None)"
 
-    indi_id_log = extract_and_fix_id(indi) or "Unknown ID"
-    formatted_name = None
-    name_source = "Unknown"
+    return indi, ""
+
+
+def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+    """Try to get name using indi.name.format() method."""
+    if not hasattr(indi, "name"):
+        return None
+
+    name_rec = indi.name
+    if not name_rec or not hasattr(name_rec, "format") or not callable(name_rec.format):
+        return None
 
     try:
-        # --- Attempt 1: Use indi.name if it has .format ---
-        if hasattr(indi, "name"):
-            name_rec = indi.name
-            if name_rec and hasattr(name_rec, "format") and callable(name_rec.format):
-                try:
-                    formatted_name = name_rec.format()
-                    name_source = "indi.name.format()"
-                    logger.debug(
-                        f"Name for {indi_id_log} from {name_source}: '{formatted_name}'"
-                    )
-                except Exception as fmt_err:
-                    logger.warning(
-                        f"Error calling indi.name.format() for {indi_id_log}: {fmt_err}"
-                    )
-                    formatted_name = None  # Reset on error
+        formatted_name = name_rec.format()
+        logger.debug(f"Name for {indi_id_log} from indi.name.format(): '{formatted_name}'")
+        return formatted_name
+    except Exception as fmt_err:
+        logger.warning(f"Error calling indi.name.format() for {indi_id_log}: {fmt_err}")
+        return None
 
-        # --- Attempt 2: Use indi.sub_tag(TAG_NAME) if Attempt 1 failed and it has .format ---
-        if formatted_name is None and hasattr(indi, "sub_tag"):
-            name_tag = indi.sub_tag(TAG_NAME)
-            if (
-                name_tag
-                and hasattr(name_tag, "format")
-                and callable(getattr(name_tag, "format", None))
-            ):
-                try:
-                    # Type ignore is needed because the type checker doesn't know about format
-                    formatted_name = name_tag.format()  # type: ignore
-                    name_source = "indi.sub_tag(TAG_NAME).format()"
-                    logger.debug(
-                        f"Name for {indi_id_log} from {name_source}: '{formatted_name}'"
-                    )
-                except Exception as fmt_err:
-                    logger.warning(
-                        f"Error calling indi.sub_tag(TAG_NAME).format() for {indi_id_log}: {fmt_err}"
-                    )
-                    formatted_name = None
 
-        # --- Attempt 3: Manually combine GIVN and SURN if formatting failed ---
-        if formatted_name is None and hasattr(indi, "sub_tag"):
-            name_tag = indi.sub_tag(
-                TAG_NAME
-            )  # Get tag again or reuse from above if needed
-            if name_tag:  # Check if NAME tag exists
-                givn = (
-                    name_tag.sub_tag_value(TAG_GIVN)
-                    if hasattr(name_tag, "sub_tag_value")
-                    else None
-                )
-                surn = (
-                    name_tag.sub_tag_value(TAG_SURN)
-                    if hasattr(name_tag, "sub_tag_value")
-                    else None
-                )
-                # Combine, prioritizing surname placement
-                if givn and surn:
-                    formatted_name = f"{givn} {surn}"
-                elif givn:
-                    formatted_name = givn
-                elif surn:
-                    formatted_name = surn  # Or potentially format as /SURN/?
-                name_source = "manual GIVN/SURN combination"
-                logger.debug(
-                    f"Name for {indi_id_log} from {name_source}: '{formatted_name}'"
-                )
+def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+    """Try to get name using indi.sub_tag(TAG_NAME).format() method."""
+    if not hasattr(indi, "sub_tag"):
+        return None
 
-        # --- Attempt 4: Use indi.sub_tag_value(TAG_NAME) as last resort ---
-        if formatted_name is None and hasattr(indi, "sub_tag_value"):
-            name_val = indi.sub_tag_value(TAG_NAME)
-            if isinstance(name_val, str) and name_val.strip() and name_val != "/":
-                formatted_name = name_val
-                name_source = "indi.sub_tag_value(TAG_NAME)"
-                logger.debug(
-                    f"Name for {indi_id_log} from {name_source}: '{formatted_name}'"
-                )
+    name_tag = indi.sub_tag(TAG_NAME)
+    if not name_tag or not hasattr(name_tag, "format") or not callable(getattr(name_tag, "format", None)):
+        return None
 
-        # --- Final Cleaning and Return ---
-        if formatted_name:
-            # Apply utils.format_name for styling
-            cleaned_name = format_name(formatted_name)
-            return (
-                cleaned_name
-                if cleaned_name and cleaned_name != "Unknown"
-                else f"Unknown ({name_source} Error)"
-            )
+    try:
+        formatted_name = name_tag.format()  # type: ignore
+        logger.debug(f"Name for {indi_id_log} from indi.sub_tag(TAG_NAME).format(): '{formatted_name}'")
+        return formatted_name
+    except Exception as fmt_err:
+        logger.warning(f"Error calling indi.sub_tag(TAG_NAME).format() for {indi_id_log}: {fmt_err}")
+        return None
+
+
+def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+    """Try to manually combine GIVN and SURN tags."""
+    if not hasattr(indi, "sub_tag"):
+        return None
+
+    name_tag = indi.sub_tag(TAG_NAME)
+    if not name_tag:
+        return None
+
+    givn = name_tag.sub_tag_value(TAG_GIVN) if hasattr(name_tag, "sub_tag_value") else None
+    surn = name_tag.sub_tag_value(TAG_SURN) if hasattr(name_tag, "sub_tag_value") else None
+
+    # Combine, prioritizing surname placement
+    if givn and surn:
+        formatted_name = f"{givn} {surn}"
+    elif givn:
+        formatted_name = givn
+    elif surn:
+        formatted_name = surn
+    else:
+        return None
+
+    logger.debug(f"Name for {indi_id_log} from manual GIVN/SURN combination: '{formatted_name}'")
+    return formatted_name
+
+
+def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+    """Try to get name using indi.sub_tag_value(TAG_NAME) as last resort."""
+    if not hasattr(indi, "sub_tag_value"):
+        return None
+
+    name_val = indi.sub_tag_value(TAG_NAME)
+    if not isinstance(name_val, str) or not name_val.strip() or name_val == "/":
+        return None
+
+    logger.debug(f"Name for {indi_id_log} from indi.sub_tag_value(TAG_NAME): '{name_val}'")
+    return name_val
+
+
+def _clean_and_format_name(formatted_name: Optional[str], name_source: str) -> str:
+    """Clean and format the extracted name."""
+    if not formatted_name:
         return "Unknown (No Name Found)"
 
+    cleaned_name = format_name(formatted_name)
+    if cleaned_name and cleaned_name != "Unknown":
+        return cleaned_name
+
+    return f"Unknown ({name_source} Error)"
+
+
+def _get_full_name(indi: GedcomIndividualType) -> str:
+    """Safely gets formatted name, checking for .format method. V3"""
+    # Validate individual type
+    indi, error_msg = _validate_individual_type(indi)
+    if error_msg:
+        return error_msg
+
+    indi_id_log = extract_and_fix_id(indi) or "Unknown ID"
+
+    try:
+        # Try multiple methods to extract name, in order of preference
+        formatted_name = None
+        name_source = "Unknown"
+
+        # Attempt 1: Use indi.name.format()
+        formatted_name = _try_name_format_method(indi, indi_id_log)
+        if formatted_name:
+            name_source = "indi.name.format()"
+
+        # Attempt 2: Use indi.sub_tag(TAG_NAME).format()
+        if not formatted_name:
+            formatted_name = _try_sub_tag_format_method(indi, indi_id_log)
+            if formatted_name:
+                name_source = "indi.sub_tag(TAG_NAME).format()"
+
+        # Attempt 3: Manually combine GIVN and SURN
+        if not formatted_name:
+            formatted_name = _try_manual_name_combination(indi, indi_id_log)
+            if formatted_name:
+                name_source = "manual GIVN/SURN combination"
+
+        # Attempt 4: Use indi.sub_tag_value(TAG_NAME)
+        if not formatted_name:
+            formatted_name = _try_sub_tag_value_method(indi, indi_id_log)
+            if formatted_name:
+                name_source = "indi.sub_tag_value(TAG_NAME)"
+
+        # Clean and format the final name
+        return _clean_and_format_name(formatted_name, name_source)
+
     except Exception as e:
-        logger.error(
-            f"Unexpected error in _get_full_name for @{indi_id_log}@: {e}",
-            exc_info=True,
-        )
+        logger.error(f"Unexpected error in _get_full_name for @{indi_id_log}@: {e}", exc_info=True)
         return "Unknown (Error)"
 
 
