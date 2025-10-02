@@ -739,148 +739,142 @@ def _process_and_score_suggestions(
 # End of _process_and_score_suggestions
 
 
-# Display search results (Uses 'gender_match' key)
-def _display_search_results(candidates: List[Dict], max_to_display: int):
-    """Displays the scored search results. Uses 'gender_match' score key."""
-    if not candidates:
-        print("\nNo candidates to display.")
-        return
-    # End of if
-    display_count = min(len(candidates), max_to_display)
-    print(f"\n=== SEARCH RESULTS (Top {display_count} Matches) ===\n")
-    table_data = []
-    headers = [
-        "ID",
-        "Name",
-        "Gender",
-        "Birth",
-        "Birth Place",
-        "Death",
-        "Death Place",
-        "Total",
+# Helper functions for _display_search_results
+
+def _extract_field_scores_for_display(candidate: Dict) -> Dict[str, int]:
+    """Extract all field scores from candidate."""
+    fs = candidate.get("field_scores", {})
+    return {
+        "givn": fs.get("givn", 0),
+        "surn": fs.get("surn", 0),
+        "name_bonus": fs.get("bonus", 0),
+        "gender": fs.get("gender_match", 0),
+        "byear": fs.get("byear", 0),
+        "bdate": fs.get("bdate", 0),
+        "bplace": fs.get("bplace", 0),
+        "dyear": fs.get("dyear", 0),
+        "ddate": fs.get("ddate", 0),
+        "dplace": fs.get("dplace", 0),
+    }
+
+
+def _fix_gender_score_from_reasons(candidate: Dict, gender_score: int) -> int:
+    """Fix gender score by extracting from reasons if score is 0."""
+    if gender_score != 0:
+        return gender_score
+
+    for reason in candidate.get("reasons", []):
+        if "Gender Match" in reason:
+            match = re.search(r"Gender Match \([MF]\) \((\d+)pts\)", reason)
+            if match:
+                return int(match.group(1))
+
+    return gender_score
+
+
+def _calculate_display_bonuses(scores: Dict[str, int]) -> Dict[str, int]:
+    """Calculate display bonus values for birth and death."""
+    birth_date_component = max(scores["byear"], scores["bdate"])
+    death_date_component = max(scores["dyear"], scores["ddate"])
+
+    return {
+        "name": scores["name_bonus"],
+        "birth": 25 if (birth_date_component > 0 and scores["bplace"] > 0) else 0,
+        "death": 25 if (death_date_component > 0 and scores["dplace"] > 0) else 0,
+        "birth_date_component": birth_date_component,
+        "death_date_component": death_date_component,
+    }
+
+
+def _format_name_display_with_score(candidate: Dict, scores: Dict[str, int], bonuses: Dict[str, int]) -> str:
+    """Format name display with scores."""
+    name_disp = candidate.get("name", "N/A")
+    name_disp_short = name_disp[:30] + ("..." if len(name_disp) > 30 else "")
+
+    name_base_score = scores["givn"] + scores["surn"]
+    name_score_str = f"[{name_base_score}]"
+    if bonuses["name"] > 0:
+        name_score_str += f"[+{bonuses['name']}]"
+
+    return f"{name_disp_short} {name_score_str}"
+
+
+def _format_gender_display_with_score(candidate: Dict, gender_score: int) -> str:
+    """Format gender display with score."""
+    gender_disp_val = candidate.get("gender", "N/A")
+    gender_disp_str = str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
+    return f"{gender_disp_str} [{gender_score}]"
+
+
+def _format_birth_displays_with_scores(candidate: Dict, scores: Dict[str, int], bonuses: Dict[str, int]) -> tuple[str, str]:
+    """Format birth date and place displays with scores."""
+    # Birth date
+    bdate_disp = str(candidate.get("birth_date", "N/A"))
+    birth_score_display = f"[{bonuses['birth_date_component']}]"
+    bdate_with_score = f"{bdate_disp} {birth_score_display}"
+
+    # Birth place
+    bplace_disp_val = candidate.get("birth_place", "N/A")
+    bplace_disp_str = str(bplace_disp_val) if bplace_disp_val is not None else "N/A"
+    bplace_disp_short = bplace_disp_str[:20] + ("..." if len(bplace_disp_str) > 20 else "")
+    bplace_with_score = f"{bplace_disp_short} [{scores['bplace']}]"
+    if bonuses["birth"] > 0:
+        bplace_with_score += f" [+{bonuses['birth']}]"
+
+    return bdate_with_score, bplace_with_score
+
+
+def _format_death_displays_with_scores(candidate: Dict, scores: Dict[str, int], bonuses: Dict[str, int]) -> tuple[str, str]:
+    """Format death date and place displays with scores."""
+    # Death date
+    ddate_disp = str(candidate.get("death_date", "N/A"))
+    death_score_display = f"[{bonuses['death_date_component']}]"
+    ddate_with_score = f"{ddate_disp} {death_score_display}"
+
+    # Death place
+    dplace_disp_val = candidate.get("death_place", "N/A")
+    dplace_disp_str = str(dplace_disp_val) if dplace_disp_val is not None else "N/A"
+    dplace_disp_short = dplace_disp_str[:20] + ("..." if len(dplace_disp_str) > 20 else "")
+    dplace_with_score = f"{dplace_disp_short} [{scores['dplace']}]"
+    if bonuses["death"] > 0:
+        dplace_with_score += f" [+{bonuses['death']}]"
+
+    return ddate_with_score, dplace_with_score
+
+
+def _create_table_row_for_candidate(candidate: Dict) -> List[str]:
+    """Create a table row for a single candidate."""
+    # Extract scores
+    scores = _extract_field_scores_for_display(candidate)
+
+    # Fix gender score from reasons if needed
+    gender_score = _fix_gender_score_from_reasons(candidate, scores["gender"])
+
+    # Calculate bonuses
+    bonuses = _calculate_display_bonuses(scores)
+
+    # Format displays
+    name_with_score = _format_name_display_with_score(candidate, scores, bonuses)
+    gender_with_score = _format_gender_display_with_score(candidate, gender_score)
+    bdate_with_score, bplace_with_score = _format_birth_displays_with_scores(candidate, scores, bonuses)
+    ddate_with_score, dplace_with_score = _format_death_displays_with_scores(candidate, scores, bonuses)
+
+    total_display_score = int(candidate.get("score", 0))
+
+    return [
+        str(candidate.get("id", "N/A")),
+        name_with_score,
+        gender_with_score,
+        bdate_with_score,
+        bplace_with_score,
+        ddate_with_score,
+        dplace_with_score,
+        str(total_display_score),
     ]
-    for candidate in candidates[:display_count]:
-        fs = candidate.get("field_scores", {})
-        givn_s = fs.get("givn", 0)
-        surn_s = fs.get("surn", 0)
 
-        # Original bonus scores from field_scores
-        name_bonus_orig = fs.get("bonus", 0)
-        # birth_bonus_orig = fs.get("bbonus", 0) # Not strictly needed if we re-evaluate
-        # death_bonus_orig = fs.get("dbonus", 0) # Not strictly needed if we re-evaluate
 
-        gender_s = fs.get("gender_match", 0)
-        byear_s = fs.get("byear", 0)
-        bdate_s = fs.get("bdate", 0)
-        bplace_s = fs.get("bplace", 0)
-
-        dyear_s = fs.get("dyear", 0)
-        ddate_s = fs.get("ddate", 0)
-        dplace_s = fs.get("dplace", 0)
-
-        # Check if gender score is 0 but there's a gender match reason
-        # This logic updates gender_s and fs["gender_match"] locally if needed
-        if gender_s == 0:
-            for reason in candidate.get("reasons", []):
-                if "Gender Match" in reason:
-                    # Extract the score value from the reason text
-                    match = re.search(r"Gender Match \([MF]\) \((\d+)pts\)", reason)
-                    if match:
-                        gender_s = int(match.group(1))
-                        # Update the field_scores dictionary (locally for this iteration)
-                        fs["gender_match"] = gender_s
-                    # End of if
-                # End of if
-            # End of for
-        # End of if
-
-        # Determine display bonus values based on conditions and example's fixed bonus of 25
-        name_bonus_s_disp = name_bonus_orig  # Use the one from field_scores as it seemed correct in example
-
-        birth_date_score_component = max(byear_s, bdate_s)
-        death_date_score_component = max(dyear_s, ddate_s)
-
-        # If birth date and place both scored, birth bonus is 25 for display
-        birth_bonus_s_disp = (
-            25 if (birth_date_score_component > 0 and bplace_s > 0) else 0
-        )
-        # If death date and place both scored, death bonus is 25 for display
-        death_bonus_s_disp = (
-            25 if (death_date_score_component > 0 and dplace_s > 0) else 0
-        )
-
-        # Format display strings
-        name_disp = candidate.get("name", "N/A")
-        name_disp_short = name_disp[:30] + ("..." if len(name_disp) > 30 else "")
-
-        # Name score display - first and last name scores + bonus if both present
-        name_base_score = givn_s + surn_s
-        name_score_str = f"[{name_base_score}]"
-        if name_bonus_s_disp > 0:
-            name_score_str += f"[+{name_bonus_s_disp}]"
-        # End of if
-        name_with_score = f"{name_disp_short} {name_score_str}"
-
-        # Gender display
-        gender_disp_val = candidate.get("gender", "N/A")
-        gender_disp_str = (
-            str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
-        )
-        gender_with_score = f"{gender_disp_str} [{gender_s}]"
-
-        # Birth date display - uses birth_date_score_component
-        bdate_disp = str(candidate.get("birth_date", "N/A"))
-        birth_score_display = f"[{birth_date_score_component}]"
-        bdate_with_score = f"{bdate_disp} {birth_score_display}"
-
-        # Birth place display
-        bplace_disp_val = candidate.get("birth_place", "N/A")
-        bplace_disp_str = str(bplace_disp_val) if bplace_disp_val is not None else "N/A"
-        bplace_disp_short = bplace_disp_str[:20] + (
-            "..." if len(bplace_disp_str) > 20 else ""
-        )
-        bplace_with_score = f"{bplace_disp_short} [{bplace_s}]"
-        # Add birth bonus using birth_bonus_s_disp
-        if birth_bonus_s_disp > 0:
-            bplace_with_score += f" [+{birth_bonus_s_disp}]"
-        # End of if
-
-        # Death date display - uses death_date_score_component
-        ddate_disp = str(candidate.get("death_date", "N/A"))
-        death_score_display = f"[{death_date_score_component}]"
-        ddate_with_score = f"{ddate_disp} {death_score_display}"
-
-        # Death place display
-        dplace_disp_val = candidate.get("death_place", "N/A")
-        dplace_disp_str = str(dplace_disp_val) if dplace_disp_val is not None else "N/A"
-        dplace_disp_short = dplace_disp_str[:20] + (
-            "..." if len(dplace_disp_str) > 20 else ""
-        )
-        dplace_with_score = f"{dplace_disp_short} [{dplace_s}]"
-        # Add death bonus using death_bonus_s_disp
-        if death_bonus_s_disp > 0:
-            dplace_with_score += f" [+{death_bonus_s_disp}]"
-        # End of if
-
-        # Use the actual score from calculate_match_score instead of recalculating
-        total_display_score = int(candidate.get("score", 0))
-
-        # Append row
-        table_data.append(
-            [
-                str(candidate.get("id", "N/A")),
-                name_with_score,
-                gender_with_score,
-                bdate_with_score,
-                bplace_with_score,
-                ddate_with_score,
-                dplace_with_score,
-                str(total_display_score),  # Use the recalculated total
-            ]
-        )
-    # End of for
-
-    # Print table
+def _print_results_table(table_data: List[List[str]], headers: List[str]) -> None:
+    """Print the results table using tabulate or fallback."""
     try:
         print(tabulate(table_data, headers=headers, tablefmt="simple"))
     except Exception as tab_err:
@@ -888,11 +882,25 @@ def _display_search_results(candidates: List[Dict], max_to_display: int):
         print("\nSearch Results (Fallback):")
         print(" | ".join(headers))
         print("-" * 80)
-        for row in table_data:  # Loop to print each row
+        for row in table_data:
             print(" | ".join(map(str, row)))
-        # End of for
-    # End of try/except
     print("")
+
+
+# Display search results (Uses 'gender_match' key)
+def _display_search_results(candidates: List[Dict], max_to_display: int):
+    """Displays the scored search results. Uses 'gender_match' score key."""
+    if not candidates:
+        print("\nNo candidates to display.")
+        return
+
+    display_count = min(len(candidates), max_to_display)
+    print(f"\n=== SEARCH RESULTS (Top {display_count} Matches) ===\n")
+
+    headers = ["ID", "Name", "Gender", "Birth", "Birth Place", "Death", "Death Place", "Total"]
+    table_data = [_create_table_row_for_candidate(candidate) for candidate in candidates[:display_count]]
+
+    _print_results_table(table_data, headers)
 
 
 # End of _display_search_results
