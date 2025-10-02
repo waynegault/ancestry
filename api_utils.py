@@ -679,6 +679,46 @@ def _extract_gender_from_api_details(
 # End of _extract_gender_from_api_details
 
 
+# Helper functions for _extract_living_status_from_api_details
+
+def _try_extract_living_from_person_info(facts_data: dict) -> Optional[bool]:
+    """Try to extract living status from person info in facts_data."""
+    person_info = facts_data.get("person", {})
+    if isinstance(person_info, dict):
+        return person_info.get("isLiving")
+    return None
+
+
+def _try_extract_living_from_direct_fields(facts_data: dict) -> Optional[bool]:
+    """Try to extract living status from direct fields in facts_data."""
+    is_living = facts_data.get("isLiving")
+    if is_living is not None:
+        return is_living
+    return facts_data.get("IsPersonLiving")
+
+
+def _extract_living_from_facts_data(facts_data: Optional[dict]) -> Optional[bool]:
+    """Extract living status from facts_data using multiple strategies."""
+    if not facts_data or not isinstance(facts_data, dict):
+        return None
+
+    # Try person info
+    is_living = _try_extract_living_from_person_info(facts_data)
+    if is_living is not None:
+        return is_living
+
+    # Try direct fields
+    return _try_extract_living_from_direct_fields(facts_data)
+
+
+def _extract_living_from_person_card(person_card: dict) -> Optional[bool]:
+    """Extract living status from person_card."""
+    is_living = person_card.get("IsLiving")
+    if is_living is not None:
+        return is_living
+    return person_card.get("isLiving")
+
+
 def _extract_living_status_from_api_details(
     person_card: dict, facts_data: Optional[dict]
 ) -> Optional[bool]:
@@ -700,25 +740,14 @@ def _extract_living_status_from_api_details(
         - isLiving, IsPersonLiving (from facts_data)
         - IsLiving, isLiving (from person_card)
     """
-    is_living = None
-    if facts_data and isinstance(facts_data, dict):
-        person_info = facts_data.get("person", {})
-        if isinstance(person_info, dict):
-            is_living = person_info.get("isLiving")
-        # End of if
-        if is_living is None:
-            is_living = facts_data.get("isLiving")
-        # End of if
-        if is_living is None:
-            is_living = facts_data.get("IsPersonLiving")
-        # End of if
-    # End of if
+    # Try to extract from facts_data first
+    is_living = _extract_living_from_facts_data(facts_data)
+
+    # Fall back to person_card if needed
     if is_living is None and person_card:
-        is_living = person_card.get("IsLiving")
-        if is_living is None:
-            is_living = person_card.get("isLiving")
-        # End of if
-    # End of if
+        is_living = _extract_living_from_person_card(person_card)
+
+    # Convert to boolean if not None
     return bool(is_living) if is_living is not None else None
 
 
