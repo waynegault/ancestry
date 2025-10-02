@@ -362,6 +362,93 @@ def _update_state_after_batch(state: Dict[str, Any], page_new: int, page_updated
     )
 
 
+# Helper functions for _main_page_processing_loop
+
+def _calculate_total_matches_estimate(start_page: int, total_pages_in_run: int, initial_matches_on_page: Optional[List[Dict[str, Any]]]) -> int:
+    """Calculate total matches estimate for progress bar."""
+    total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
+
+    if start_page == 1 and initial_matches_on_page is not None:
+        total_matches_estimate = max(total_matches_estimate, len(initial_matches_on_page))
+
+    return total_matches_estimate
+
+
+def _should_fetch_page_data(current_page_num: int, start_page: int, matches_on_page_for_batch: Optional[List[Dict[str, Any]]]) -> bool:
+    """Determine if page data needs to be fetched."""
+    return not (current_page_num == start_page and matches_on_page_for_batch is not None)
+
+
+def _fetch_and_validate_page_data(
+    session_manager: SessionManager,
+    current_page_num: int,
+    state: Dict[str, Any],
+    progress_bar: Any
+) -> Optional[List[Dict[str, Any]]]:
+    """Fetch page data and validate DB session."""
+    # Get DB session with retry
+    db_session_for_page = _get_db_session_with_retry(session_manager, current_page_num, state)
+
+    if not db_session_for_page:
+        return None
+
+    # Fetch page matches
+    return _fetch_page_matches(session_manager, current_page_num, db_session_for_page, state, progress_bar)
+
+
+def _handle_empty_matches(current_page_num: int, start_page: int, state: Dict[str, Any], progress_bar: Any) -> None:
+    """Handle empty matches on a page."""
+    logger.info(f"No matches found or processed on page {current_page_num}.")
+
+    if not (current_page_num == start_page and state["total_pages_processed"] == 0):
+        progress_bar.update(MATCHES_PER_PAGE)
+
+    time.sleep(0.5)
+
+
+def _process_page_batch(
+    session_manager: SessionManager,
+    matches_on_page: List[Dict[str, Any]],
+    current_page_num: int,
+    progress_bar: Any,
+    state: Dict[str, Any]
+) -> None:
+    """Process a batch of matches and update state."""
+    # Process batch
+    page_new, page_updated, page_skipped, page_errors = _do_batch(
+        session_manager=session_manager,
+        matches_on_page=matches_on_page,
+        current_page=current_page_num,
+        progress_bar=progress_bar,
+    )
+
+    # Update state
+    _update_state_after_batch(state, page_new, page_updated, page_skipped, page_errors, progress_bar)
+
+    # Apply rate limiting
+    _adjust_delay(session_manager, current_page_num)
+    session_manager.dynamic_rate_limiter.wait()
+
+
+def _finalize_progress_bar(progress_bar: Any, state: Dict[str, Any], loop_final_success: bool) -> None:
+    """Finalize progress bar display."""
+    if not progress_bar:
+        return
+
+    progress_bar.set_postfix(
+        New=state["total_new"],
+        Upd=state["total_updated"],
+        Skip=state["total_skipped"],
+        Err=state["total_errors"],
+        refresh=True,
+    )
+
+    if progress_bar.n < progress_bar.total and loop_final_success:
+        pass  # tqdm closes itself correctly
+    elif progress_bar.n < progress_bar.total and not loop_final_success:
+        pass  # Handle incomplete progress
+
+
 def _main_page_processing_loop(
     session_manager: SessionManager,
     start_page: int,
@@ -372,19 +459,8 @@ def _main_page_processing_loop(
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
     current_page_num = start_page
-
-    # Estimate total matches for the progress bar based on pages *this run*
-    # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9, not Action 6
-    total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
-
-    if (
-        start_page == 1 and initial_matches_on_page is not None
-    ):  # If first page data already exists
-        total_matches_estimate_this_run = max(
-            total_matches_estimate_this_run, len(initial_matches_on_page)
-        )
-
-    loop_final_success = True  # Success flag for this loop's execution
+    total_matches_estimate_this_run = _calculate_total_matches_estimate(start_page, total_pages_in_run, initial_matches_on_page)
+    loop_final_success = True
 
     with logging_redirect_tqdm():
         progress_bar = tqdm(
@@ -398,9 +474,7 @@ def _main_page_processing_loop(
             ascii=False,
         )
         try:
-            matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = (
-                initial_matches_on_page
-            )
+            matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = initial_matches_on_page
 
             while current_page_num <= last_page_to_process:
                 # Check session validity
@@ -408,86 +482,46 @@ def _main_page_processing_loop(
                     loop_final_success = False
                     break
 
-                # Fetch match data unless it's the first page and data is already available
-                if not (current_page_num == start_page and matches_on_page_for_batch is not None):
-                    # Get DB session with retry
-                    db_session_for_page = _get_db_session_with_retry(session_manager, current_page_num, state)
+                # Fetch match data if needed
+                if _should_fetch_page_data(current_page_num, start_page, matches_on_page_for_batch):
+                    matches_on_page_for_batch = _fetch_and_validate_page_data(
+                        session_manager, current_page_num, state, progress_bar
+                    )
 
-                    if not db_session_for_page:
+                    if matches_on_page_for_batch is None:
                         loop_final_success, should_break = _handle_db_session_failure(
                             current_page_num, state, progress_bar, loop_final_success
                         )
                         if should_break:
                             break
                         current_page_num += 1
-                        matches_on_page_for_batch = None
                         continue
 
-                    # Fetch page matches
-                    matches_on_page_for_batch = _fetch_page_matches(
-                        session_manager, current_page_num, db_session_for_page, state, progress_bar
-                    )
-
-                    if (
-                        not matches_on_page_for_batch
-                    ):  # If fetch failed or returned empty
+                    if not matches_on_page_for_batch:
                         current_page_num += 1
-                        time.sleep(
-                            0.5 if loop_final_success else 2.0
-                        )  # Shorter sleep on success, longer on error path for this page
-                        continue  # Next page
+                        time.sleep(0.5 if loop_final_success else 2.0)
+                        continue
 
                 # Handle empty matches
                 if not matches_on_page_for_batch:
-                    logger.info(f"No matches found or processed on page {current_page_num}.")
-                    if not (current_page_num == start_page and state["total_pages_processed"] == 0):
-                        progress_bar.update(MATCHES_PER_PAGE)
+                    _handle_empty_matches(current_page_num, start_page, state, progress_bar)
                     matches_on_page_for_batch = None
                     current_page_num += 1
-                    time.sleep(0.5)
                     continue
 
-                # Process batch
-                page_new, page_updated, page_skipped, page_errors = _do_batch(
-                    session_manager=session_manager,
-                    matches_on_page=matches_on_page_for_batch,
-                    current_page=current_page_num,
-                    progress_bar=progress_bar,
-                )
+                # Process batch and update state
+                _process_page_batch(session_manager, matches_on_page_for_batch, current_page_num, progress_bar, state)
 
-                # Update state
-                _update_state_after_batch(state, page_new, page_updated, page_skipped, page_errors, progress_bar)
-
-                # Note: MAX_PRODUCTIVE_TO_PROCESS only applies to Action 9 (Process Productive Messages)
-                # Action 6 (Gather Matches) should process all matches on the configured pages
-                # The only limit for Action 6 should be MAX_PAGES, which is handled elsewhere
-
-                _adjust_delay(session_manager, current_page_num)
-                session_manager.dynamic_rate_limiter.wait()
-
-                matches_on_page_for_batch = (
-                    None  # CRITICAL: Clear for the next iteration
-                )
+                matches_on_page_for_batch = None
                 current_page_num += 1
         finally:
+            _finalize_progress_bar(progress_bar, state, loop_final_success)
+            if progress_bar and progress_bar.n < progress_bar.total and not loop_final_success:
+                # If loop ended due to error, update bar to reflect error count for remaining
+                remaining_to_mark_error = progress_bar.total - progress_bar.n
+                if remaining_to_mark_error > 0:
+                    progress_bar.update(remaining_to_mark_error)
             if progress_bar:
-                progress_bar.set_postfix(
-                    New=state["total_new"],
-                    Upd=state["total_updated"],
-                    Skip=state["total_skipped"],
-                    Err=state["total_errors"],
-                    refresh=True,
-                )
-                if progress_bar.n < progress_bar.total and loop_final_success:
-                    # If loop ended early but successfully (e.g. fewer pages than estimated)
-                    # Ensure bar reflects actual processed, not estimate.
-                    pass  # tqdm closes itself correctly.
-                elif progress_bar.n < progress_bar.total and not loop_final_success:
-                    # If loop ended due to error, update bar to reflect error count for remaining
-                    remaining_to_mark_error = progress_bar.total - progress_bar.n
-                    if remaining_to_mark_error > 0:
-                        progress_bar.update(remaining_to_mark_error)
-                        # No need to update total_errors here, already done by specific error handling
                 progress_bar.close()
                 print("", file=sys.stderr)  # Newline after bar
 
