@@ -929,6 +929,70 @@ def _prepare_base_headers(
 
 # End of _prepare_base_headers
 
+# Helper functions for _prepare_api_headers
+
+def _get_user_agent_from_browser(driver: DriverType, api_description: str) -> Optional[str]:
+    """Get User-Agent from browser using JavaScript."""
+    try:
+        ua = driver.execute_script("return navigator.userAgent;")
+        if ua and isinstance(ua, str):
+            return ua
+    except WebDriverException:  # type: ignore
+        logger.debug(f"[{api_description}] WebDriver error getting User-Agent, using default.")
+    except Exception as e:
+        logger.debug(f"[{api_description}] Error getting User-Agent: {e}, using default.")
+    return None
+
+
+def _add_origin_header(final_headers: Dict[str, str], base_headers: Dict[str, str], api_description: str) -> None:
+    """Add Origin header for relevant HTTP methods."""
+    http_method = base_headers.get("_method", "GET").upper()
+    if http_method not in ["GET", "HEAD", "OPTIONS"]:
+        try:
+            cfg = config_schema
+            parsed_base_url = urlparse(cfg.api.base_url)
+            origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
+            final_headers["Origin"] = origin_header_value
+        except Exception as parse_err:
+            logger.warning(f"[{api_description}] Could not parse BASE_URL for Origin header: {parse_err}")
+
+
+def _parse_csrf_token(csrf_token: str, api_description: str) -> str:
+    """Parse CSRF token, handling potential JSON structure."""
+    raw_token_val = csrf_token
+    if isinstance(csrf_token, str) and csrf_token.strip().startswith("{"):
+        try:
+            token_obj = json.loads(csrf_token)
+            raw_token_val = token_obj.get("csrfToken", csrf_token)
+        except json.JSONDecodeError:
+            logger.warning(f"[{api_description}] CSRF token looks like JSON but failed to parse, using raw value.")
+    return str(raw_token_val)
+
+
+def _add_csrf_token_header(final_headers: Dict[str, str], session_manager: SessionManager, api_description: str) -> None:
+    """Add CSRF token header if available."""
+    csrf_token = session_manager.csrf_token
+    if csrf_token:
+        raw_token_val = _parse_csrf_token(csrf_token, api_description)
+        final_headers["X-CSRF-Token"] = raw_token_val
+        logger.debug(f"[{api_description}] Added X-CSRF-Token header.")
+    else:
+        logger.warning(f"[{api_description}] CSRF token requested but not found in SessionManager.")
+
+
+def _add_user_id_header(final_headers: Dict[str, str], session_manager: SessionManager, api_description: str) -> None:
+    """Add User ID header conditionally."""
+    exclude_userid_for = {
+        "Ancestry Facts JSON Endpoint",
+        "Ancestry Person Picker",
+        "CSRF Token API",
+    }
+    if session_manager.my_profile_id and api_description not in exclude_userid_for:
+        final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
+    elif api_description in exclude_userid_for and session_manager.my_profile_id:
+        logger.debug(f"[{api_description}] Omitting 'ancestry-userid' header as configured.")
+
+
 def _prepare_api_headers(
     session_manager: SessionManager,  # Assume available
     driver: DriverType,
@@ -939,94 +1003,35 @@ def _prepare_api_headers(
 ) -> Dict[str, str]:
     """Generates the final headers for an API request."""
     final_headers = base_headers.copy()
-    cfg = config_schema  # Use new config system
-    ua_set = False
+    cfg = config_schema
 
-    # Get User-Agent from browser if possible (skip session validation to prevent recursion)
-    if driver and session_manager.driver:  # Simple driver check without session validation
-        try:
-            ua = driver.execute_script("return navigator.userAgent;")
-            if ua and isinstance(ua, str):
-                final_headers["User-Agent"] = ua
-                ua_set = True
-            # End of if
-        except WebDriverException:  # type: ignore
-            logger.debug(
-                f"[{api_description}] WebDriver error getting User-Agent, using default."
-            )
-        except Exception as e:
-            logger.debug(
-                f"[{api_description}] Error getting User-Agent: {e}, using default."
-            )
-        # End of try/except
-    # End of if
+    # Get User-Agent from browser if possible
+    ua = None
+    if driver and session_manager.driver:
+        ua = _get_user_agent_from_browser(driver, api_description)
 
-    # Fallback User-Agent if driver failed or wasn't available/valid
-    if not ua_set:
+    # Set User-Agent (from browser or fallback)
+    if ua:
+        final_headers["User-Agent"] = ua
+    else:
         final_headers["User-Agent"] = random.choice(cfg.api.user_agents)
-        logger.debug(
-            f"[{api_description}] Using default User-Agent: {final_headers['User-Agent']}"
-        )
-    # End of if
+        logger.debug(f"[{api_description}] Using default User-Agent: {final_headers['User-Agent']}")
 
     # Add Origin header for relevant methods
-    http_method = base_headers.get("_method", "GET").upper()
-    if add_default_origin and http_method not in ["GET", "HEAD", "OPTIONS"]:
-        try:
-            parsed_base_url = urlparse(cfg.api.base_url)
-            origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
-            final_headers["Origin"] = origin_header_value
-        except Exception as parse_err:
-            logger.warning(
-                f"[{api_description}] Could not parse BASE_URL for Origin header: {parse_err}"
-            )
-        # End of try/except
-    # End of if
+    if add_default_origin:
+        _add_origin_header(final_headers, base_headers, api_description)
 
-    # Skip dynamic header generation to prevent recursion during API requests
-    # These headers are not essential for basic API functionality
+    # Skip dynamic header generation to prevent recursion
     logger.debug(f"[{api_description}] Skipping dynamic header generation to prevent recursion.")
 
-    # Add CSRF token if requested and available
+    # Add CSRF token if requested
     if use_csrf_token:
-        csrf_token = session_manager.csrf_token
-        if csrf_token:
-            raw_token_val = csrf_token
-            # Handle potential JSON structure in token (legacy?)
-            if isinstance(csrf_token, str) and csrf_token.strip().startswith("{"):
-                try:
-                    token_obj = json.loads(csrf_token)
-                    raw_token_val = token_obj.get("csrfToken", csrf_token)
-                except json.JSONDecodeError:
-                    logger.warning(
-                        f"[{api_description}] CSRF token looks like JSON but failed to parse, using raw value."
-                    )
-                # End of try/except
-            # End of if
-            final_headers["X-CSRF-Token"] = str(raw_token_val)  # Ensure string
-            logger.debug(f"[{api_description}] Added X-CSRF-Token header.")
-        else:
-            logger.warning(
-                f"[{api_description}] CSRF token requested but not found in SessionManager."
-            )
-        # End of if/else
-    # End of if
+        _add_csrf_token_header(final_headers, session_manager, api_description)
 
-    # Add User ID header (conditionally)
-    exclude_userid_for = {  # Use set for faster lookup
-        "Ancestry Facts JSON Endpoint",
-        "Ancestry Person Picker",
-        "CSRF Token API",
-    }
-    if session_manager.my_profile_id and api_description not in exclude_userid_for:
-        final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
-    elif api_description in exclude_userid_for and session_manager.my_profile_id:
-        logger.debug(
-            f"[{api_description}] Omitting 'ancestry-userid' header as configured."
-        )
-    # End of if/elif
+    # Add User ID header conditionally
+    _add_user_id_header(final_headers, session_manager, api_description)
 
-    # Remove any headers with None values (e.g., if dynamic generation failed)
+    # Remove any headers with None values
     final_headers = {k: v for k, v in final_headers.items() if v is not None}
 
     # Remove internal _method key
