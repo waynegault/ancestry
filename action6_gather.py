@@ -494,6 +494,58 @@ def _main_page_processing_loop(
 
 # End of _main_page_processing_loop
 
+# === COORDINATION HELPER FUNCTIONS ===
+
+def _validate_session_state(session_manager: SessionManager) -> None:
+    """Validate session state before processing."""
+    if not session_manager.driver or not session_manager.driver_live or not session_manager.session_ready:
+        raise BrowserSessionError(
+            "WebDriver/Session not ready for DNA match gathering",
+            context={
+                "driver_live": session_manager.driver_live,
+                "session_ready": session_manager.session_ready,
+            },
+        )
+    if not session_manager.my_uuid:
+        raise AuthenticationExpiredError(
+            "Failed to retrieve my_uuid for DNA match gathering",
+            context={"session_state": "authenticated but no UUID"},
+        )
+
+
+def _process_initial_navigation(session_manager: SessionManager, start_page: int, state: Dict[str, Any]) -> tuple[Optional[List[Dict[str, Any]]], Optional[int], bool]:
+    """Navigate to initial page and get total pages."""
+    initial_matches, total_pages_api, initial_fetch_ok = _navigate_and_get_initial_page_data(session_manager, start_page)
+
+    if not initial_fetch_ok or total_pages_api is None:
+        logger.error("Failed to retrieve total_pages on initial fetch. Aborting.")
+        state["final_success"] = False
+        return None, None, False
+
+    state["total_pages_from_api"] = total_pages_api
+    state["matches_on_current_page"] = initial_matches if initial_matches is not None else []
+    logger.info(f"Total pages found: {total_pages_api}")
+
+    return initial_matches, total_pages_api, True
+
+
+def _calculate_processing_range(total_pages_api: int, start_page: int) -> tuple[int, int, int]:
+    """Calculate page processing range and total matches estimate."""
+    last_page_to_process, total_pages_in_run = _determine_page_processing_range(total_pages_api, start_page)
+
+    if total_pages_in_run <= 0:
+        logger.info(f"No pages to process (Start: {start_page}, End: {last_page_to_process}).")
+        return last_page_to_process, total_pages_in_run, 0
+
+    total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
+    logger.info(
+        f"Processing {total_pages_in_run} pages (approx. {total_matches_estimate} matches) "
+        f"from page {start_page} to {last_page_to_process}.\n"
+    )
+
+    return last_page_to_process, total_pages_in_run, total_matches_estimate
+
+
 # ------------------------------------------------------------------------------
 # Core Orchestration (coord) - REFACTORED
 # ------------------------------------------------------------------------------
@@ -511,64 +563,29 @@ def coord(  # type: ignore
     Handles pagination, fetches match data, compares with database, and processes.
     """
     # Step 1: Validate Session State
-    if (
-        not session_manager.driver
-        or not session_manager.driver_live
-        or not session_manager.session_ready
-    ):
-        raise BrowserSessionError(
-            "WebDriver/Session not ready for DNA match gathering",
-            context={
-                "driver_live": session_manager.driver_live,
-                "session_ready": session_manager.session_ready,
-            },
-        )
-    if not session_manager.my_uuid:
-        raise AuthenticationExpiredError(
-            "Failed to retrieve my_uuid for DNA match gathering",
-            context={"session_state": "authenticated but no UUID"},
-        )
+    _validate_session_state(session_manager)
 
     # Step 2: Initialize state
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
-    logger.debug(
-        f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---"
-    )
+    logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
 
     try:
         # Step 3: Initial Navigation and Total Pages Fetch
-        initial_matches, total_pages_api, initial_fetch_ok = (
-            _navigate_and_get_initial_page_data(session_manager, start_page)
+        initial_matches, total_pages_api, initial_fetch_ok = _process_initial_navigation(
+            session_manager, start_page, state
         )
 
-        if not initial_fetch_ok or total_pages_api is None:
-            logger.error("Failed to retrieve total_pages on initial fetch. Aborting.")
-            state["final_success"] = False
-            return False  # Critical failure if initial fetch fails
-
-        state["total_pages_from_api"] = total_pages_api
-        state["matches_on_current_page"] = (
-            initial_matches if initial_matches is not None else []
-        )
-        logger.info(f"Total pages found: {total_pages_api}")
+        if not initial_fetch_ok:
+            return False
 
         # Step 4: Determine Page Range
-        last_page_to_process, total_pages_in_run = _determine_page_processing_range(
+        last_page_to_process, total_pages_in_run, total_matches_estimate = _calculate_processing_range(
             total_pages_api, start_page
         )
 
         if total_pages_in_run <= 0:
-            logger.info(
-                f"No pages to process (Start: {start_page}, End: {last_page_to_process})."
-            )
-            return True  # Successful exit, nothing to do
-
-        total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
-        logger.info(
-            f"Processing {total_pages_in_run} pages (approx. {total_matches_estimate} matches) "
-            f"from page {start_page} to {last_page_to_process}.\n"
-        )
+            return True
 
         # Step 5: Main Processing Loop (delegated)
         # Pass only relevant parts of initial_matches to the loop
