@@ -356,144 +356,204 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
         return "Unknown (Error)"
 
 
+# Helper functions for _parse_date
+
+def _validate_and_normalize_date_string(date_str: Optional[str]) -> Optional[str]:
+    """Validate and perform initial normalization of date string."""
+    if not date_str or not isinstance(date_str, str):
+        return None
+
+    # Remove parentheses
+    if date_str.startswith("(") and date_str.endswith(")"):
+        date_str = date_str[1:-1].strip()
+
+    if not date_str:
+        logger.debug("Date string empty after removing parentheses.")
+        return None
+
+    date_str = date_str.strip().upper()
+
+    # Check for non-parseable strings
+    if re.match(r"^(UNKNOWN|\?UNKNOWN|\?|DECEASED|IN INFANCY|0)$", date_str):
+        logger.debug(f"Identified non-parseable string: '{date_str}'")
+        return None
+
+    # Check for dates without year
+    if re.fullmatch(r"^\d{1,2}\s+[A-Z]{3,}$", date_str) or re.fullmatch(r"^[A-Z]{3,}$", date_str):
+        logger.debug(f"Ignoring date string without year: '{date_str}'")
+        return None
+
+    return date_str
+
+
+def _clean_date_string(date_str: str) -> Optional[str]:
+    """Clean date string by removing keywords and normalizing format."""
+    # Remove keywords
+    keywords_to_remove = r"\b(?:MAYBE|PRIOR|CALCULATED|AROUND|BAPTISED|WFT|BTWN|BFR|SP|QTR\.?\d?|CIRCA|ABOUT:|AFTER|BEFORE)\b\.?\s*|\b(?:AGE:?\s*\d+)\b|\b(?:WIFE\s+OF.*)\b|\b(?:HUSBAND\s+OF.*)\b"
+    cleaned_str = date_str
+    previous_len = -1
+
+    while len(cleaned_str) != previous_len:
+        previous_len = len(cleaned_str)
+        cleaned_str = re.sub(keywords_to_remove, "", cleaned_str, flags=re.IGNORECASE).strip()
+
+    # Remove trailing SP
+    cleaned_str = re.sub(r"\s+SP$", "", cleaned_str).strip()
+
+    # Split on AND/OR/TO and take first part
+    cleaned_str = re.split(r"\s+(?:AND|OR|TO)\s+", cleaned_str, maxsplit=1)[0].strip()
+
+    # Handle year ranges
+    year_range_match = re.match(r"^(\d{4})\s*[-]\s*\d{4}$", cleaned_str)
+    if year_range_match:
+        cleaned_str = year_range_match.group(1)
+        logger.debug(f"Treated as year range, using first year: '{cleaned_str}'")
+
+    # Remove prefixes
+    prefixes = r"^(?:ABT|EST|CAL|INT|BEF|AFT|BET|FROM)\.?\s+"
+    cleaned_str = re.sub(prefixes, "", cleaned_str, count=1).strip()
+
+    # Remove ordinal suffixes
+    cleaned_str = re.sub(r"(\d+)(?:ST|ND|RD|TH)", r"\1", cleaned_str).strip()
+
+    # Remove BC/AD
+    cleaned_str = re.sub(r"\s+(?:BC|AD)$", "", cleaned_str).strip()
+
+    # Check for invalid year 0000
+    if re.match(r"^0{3,4}(?:[-/\s]\d{1,2}[-/\s]\d{1,2})?$", cleaned_str):
+        logger.debug(f"Treating year 0000 pattern as invalid: '{cleaned_str}'")
+        return None
+
+    # Normalize punctuation and spacing
+    cleaned_str = re.sub(r"[,;:]", " ", cleaned_str)
+    cleaned_str = re.sub(r"([A-Z]{3})\.", r"\1", cleaned_str)
+    cleaned_str = re.sub(r"([A-Z])(\d)", r"\1 \2", cleaned_str)
+    cleaned_str = re.sub(r"(\d)([A-Z])", r"\1 \2", cleaned_str)
+    cleaned_str = re.sub(r"\s+", " ", cleaned_str).strip()
+
+    if not cleaned_str:
+        logger.debug("Date string empty after cleaning")
+        return None
+
+    logger.debug(f"Cleaned date string for parsing: '{cleaned_str}'")
+    return cleaned_str
+
+
+def _try_dateparser(cleaned_str: str) -> Optional[datetime]:
+    """Try parsing with dateparser library if available."""
+    if not DATEPARSER_AVAILABLE:
+        return None
+
+    try:
+        settings = {"PREFER_DAY_OF_MONTH": "first", "REQUIRE_PARTS": ["year"]}
+        parsed_dt = dateparser.parse(cleaned_str, settings=settings)  # type: ignore
+
+        if parsed_dt:
+            logger.debug(f"dateparser succeeded for '{cleaned_str}'")
+        else:
+            logger.debug(f"dateparser returned None for '{cleaned_str}'")
+
+        return parsed_dt
+    except Exception as e:
+        logger.error(f"Error using dateparser for '{cleaned_str}': {e}", exc_info=False)
+        return None
+
+
+def _try_strptime_formats(cleaned_str: str) -> Optional[datetime]:
+    """Try parsing with various strptime formats."""
+    formats = [
+        "%d %b %Y", "%d %B %Y", "%b %Y", "%B %Y", "%Y",
+        "%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d",
+        "%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d", "%B %d %Y",
+    ]
+
+    for fmt in formats:
+        try:
+            if fmt == "%Y" and not re.fullmatch(r"\d{3,4}", cleaned_str):
+                continue
+
+            dt_naive = datetime.strptime(cleaned_str, fmt)
+            logger.debug(f"Parsed '{cleaned_str}' using strptime format '{fmt}'")
+            return dt_naive
+        except ValueError:
+            continue
+        except Exception as e:
+            logger.debug(f"Strptime error for format '{fmt}': {e}")
+            continue
+
+    return None
+
+
+def _extract_year_fallback(cleaned_str: str) -> Optional[datetime]:
+    """Extract year as fallback when full parsing fails."""
+    logger.debug(f"Full parsing failed for '{cleaned_str}', attempting year extraction.")
+
+    year_match = re.search(r"\b(\d{3,4})\b", cleaned_str)
+    if not year_match:
+        return None
+
+    year_str = year_match.group(1)
+    try:
+        year = int(year_str)
+        if 500 <= year <= datetime.now().year + 5:
+            logger.debug(f"Extracted year {year} as fallback.")
+            return datetime(year, 1, 1)
+        else:
+            logger.debug(f"Extracted year {year} out of plausible range.")
+            return None
+    except ValueError:
+        logger.debug(f"Could not convert extracted year '{year_str}' to int.")
+        return None
+
+
+def _finalize_parsed_date(parsed_dt: Optional[datetime], original_date_str: str) -> Optional[datetime]:
+    """Finalize parsed date by validating and adding timezone."""
+    if not isinstance(parsed_dt, datetime):
+        logger.warning(f"All parsing attempts failed for: '{original_date_str}'")
+        return None
+
+    if parsed_dt.year == 0:
+        logger.warning(f"Parsed date resulted in year 0, treating as invalid: '{original_date_str}'")
+        return None
+
+    if parsed_dt.tzinfo is None:
+        return parsed_dt.replace(tzinfo=timezone.utc)
+
+    return parsed_dt.astimezone(timezone.utc)
+
+
 def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
     """
     Parses various GEDCOM date formats into timezone-aware datetime objects (UTC),
     prioritizing full date parsing but falling back to extracting the first year.
     V13 - Corrected range splitting regex.
     """
-    if not date_str or not isinstance(date_str, str):
-        return None
-    original_date_str = date_str
+    original_date_str = date_str or ""
     logger.debug(f"Attempting to parse date: '{original_date_str}'")
-    if date_str.startswith("(") and date_str.endswith(")"):
-        date_str = date_str[1:-1].strip()
+
+    # Validate and normalize
+    date_str = _validate_and_normalize_date_string(date_str)
     if not date_str:
-        logger.debug("Date string empty after removing parentheses.")
         return None
-    date_str = date_str.strip().upper()
-    if re.match(r"^(UNKNOWN|\?UNKNOWN|\?|DECEASED|IN INFANCY|0)$", date_str):
-        logger.debug(
-            f"Identified non-parseable string: '{original_date_str}' -> '{date_str}'"
-        )
-        return None
-    if re.fullmatch(r"^\d{1,2}\s+[A-Z]{3,}$", date_str) or re.fullmatch(
-        r"^[A-Z]{3,}$", date_str
-    ):
-        logger.debug(
-            f"Ignoring date string without year: '{original_date_str}' -> '{date_str}'"
-        )
-        return None
-    keywords_to_remove = r"\b(?:MAYBE|PRIOR|CALCULATED|AROUND|BAPTISED|WFT|BTWN|BFR|SP|QTR\.?\d?|CIRCA|ABOUT:|AFTER|BEFORE)\b\.?\s*|\b(?:AGE:?\s*\d+)\b|\b(?:WIFE\s+OF.*)\b|\b(?:HUSBAND\s+OF.*)\b"
-    cleaned_str = date_str
-    previous_len = -1
-    while len(cleaned_str) != previous_len:
-        previous_len = len(cleaned_str)
-        cleaned_str = re.sub(
-            keywords_to_remove, "", cleaned_str, flags=re.IGNORECASE
-        ).strip()
-    cleaned_str = re.sub(r"\s+SP$", "", cleaned_str).strip()
-    cleaned_str = re.split(r"\s+(?:AND|OR|TO)\s+", cleaned_str, maxsplit=1)[
-        0
-    ].strip()  # CORRECTED SPLIT
-    year_range_match = re.match(r"^(\d{4})\s*[-]\s*\d{4}$", cleaned_str)
-    if year_range_match:
-        cleaned_str = year_range_match.group(1)
-        logger.debug(f"Treated as year range, using first year: '{cleaned_str}'")
-    prefixes = r"^(?:ABT|EST|CAL|INT|BEF|AFT|BET|FROM)\.?\s+"
-    cleaned_str = re.sub(prefixes, "", cleaned_str, count=1).strip()
-    cleaned_str = re.sub(r"(\d+)(?:ST|ND|RD|TH)", r"\1", cleaned_str).strip()
-    cleaned_str = re.sub(r"\s+(?:BC|AD)$", "", cleaned_str).strip()
-    if re.match(r"^0{3,4}(?:[-/\s]\d{1,2}[-/\s]\d{1,2})?$", cleaned_str):
-        logger.debug(
-            f"Treating year 0000 pattern as invalid: '{original_date_str}' -> '{cleaned_str}'"
-        )
-        return None
-    cleaned_str = re.sub(r"[,;:]", " ", cleaned_str)
-    cleaned_str = re.sub(r"([A-Z]{3})\.", r"\1", cleaned_str)
-    cleaned_str = re.sub(r"([A-Z])(\d)", r"\1 \2", cleaned_str)
-    cleaned_str = re.sub(r"(\d)([A-Z])", r"\1 \2", cleaned_str)
-    cleaned_str = re.sub(r"\s+", " ", cleaned_str).strip()
+
+    # Clean the date string
+    cleaned_str = _clean_date_string(date_str)
     if not cleaned_str:
-        logger.debug(f"Date string empty after cleaning: '{original_date_str}'")
         return None
-    logger.debug(f"Cleaned date string for parsing: '{cleaned_str}'")
-    parsed_dt = None
-    if DATEPARSER_AVAILABLE:
-        try:
-            # Use settings that dateparser accepts
-            # The type checker doesn't understand that dateparser.parse accepts a dict
-            settings = {"PREFER_DAY_OF_MONTH": "first", "REQUIRE_PARTS": ["year"]}
-            parsed_dt = dateparser.parse(cleaned_str, settings=settings)  # type: ignore
-            if parsed_dt:
-                logger.debug(f"dateparser succeeded for '{cleaned_str}'")
-            else:
-                logger.debug(
-                    f"dateparser returned None for '{cleaned_str}', trying strptime..."
-                )
-        except Exception as e:
-            logger.error(
-                f"Error using dateparser for '{original_date_str}' (cleaned: '{cleaned_str}'): {e}",
-                exc_info=False,
-            )
+
+    # Try parsing with dateparser
+    parsed_dt = _try_dateparser(cleaned_str)
+
+    # Try parsing with strptime formats
     if not parsed_dt:
-        formats = [
-            "%d %b %Y",
-            "%d %B %Y",
-            "%b %Y",
-            "%B %Y",
-            "%Y",
-            "%d/%m/%Y",
-            "%m/%d/%Y",
-            "%Y/%m/%d",
-            "%d-%b-%Y",
-            "%d-%m-%Y",
-            "%Y-%m-%d",
-            "%B %d %Y",
-        ]
-        for fmt in formats:
-            try:
-                if fmt == "%Y" and not re.fullmatch(r"\d{3,4}", cleaned_str):
-                    continue
-                dt_naive = datetime.strptime(cleaned_str, fmt)
-                logger.debug(f"Parsed '{cleaned_str}' using strptime format '{fmt}'")
-                parsed_dt = dt_naive
-                break
-            except ValueError:
-                continue
-            except Exception as e:
-                logger.debug(f"Strptime error for format '{fmt}': {e}")
-                continue
+        parsed_dt = _try_strptime_formats(cleaned_str)
+
+    # Try extracting year as fallback
     if not parsed_dt:
-        logger.debug(
-            f"Full parsing failed for '{cleaned_str}', attempting year extraction."
-        )
-        year_match = re.search(r"\b(\d{3,4})\b", cleaned_str)
-        if year_match:
-            year_str = year_match.group(1)
-            try:  # <<< START OF TRY BLOCK FOR YEAR EXTRACTION >>>
-                year = int(year_str)
-                if 500 <= year <= datetime.now().year + 5:
-                    logger.debug(f"Extracted year {year} as fallback.")
-                    parsed_dt = datetime(year, 1, 1)
-                else:
-                    logger.debug(f"Extracted year {year} out of plausible range.")
-            except ValueError:  # <<< CORRECTED except BLOCK >>>
-                logger.debug(f"Could not convert extracted year '{year_str}' to int.")
-            # <<< END except BLOCK >>>
-    if isinstance(parsed_dt, datetime):
-        if parsed_dt.year == 0:
-            logger.warning(
-                f"Parsed date resulted in year 0, treating as invalid: '{original_date_str}' -> {parsed_dt}"
-            )
-            return None
-        if parsed_dt.tzinfo is None:
-            return parsed_dt.replace(tzinfo=timezone.utc)
-        return parsed_dt.astimezone(timezone.utc)
-    logger.warning(
-        f"All parsing attempts failed for: '{original_date_str}' -> cleaned: '{cleaned_str}'"
-    )
-    return None
+        parsed_dt = _extract_year_fallback(cleaned_str)
+
+    # Finalize and return
+    return _finalize_parsed_date(parsed_dt, original_date_str)
 
 
 def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementation ...
