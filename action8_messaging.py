@@ -2008,6 +2008,120 @@ def _format_message_text(message_to_send_key: str, person: Person, format_data: 
     return message_text
 
 
+def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
+    """Check if message should be filtered based on app mode and testing profile."""
+    app_mode = getattr(config_schema, 'app_mode', 'production')
+    testing_profile_id_config = config_schema.testing_profile_id
+    current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
+
+    # Testing mode checks
+    if app_mode == "testing":
+        if not testing_profile_id_config:
+            logger.error(f"Testing mode active, but TESTING_PROFILE_ID not configured. Skipping {log_prefix}.")
+            return False, "skipped (config_error)"
+        elif current_profile_id != testing_profile_id_config:
+            skip_reason = f"skipped (testing_mode_filter: not {testing_profile_id_config})"
+            logger.debug(f"Testing Mode: Skipping send to {log_prefix} ({skip_reason}).")
+            return False, skip_reason
+
+    # Production mode checks
+    elif app_mode == "production" and (testing_profile_id_config and current_profile_id == testing_profile_id_config):
+        skip_reason = f"skipped (production_mode_filter: is {testing_profile_id_config})"
+        logger.debug(f"Production Mode: Skipping send to test profile {log_prefix} ({skip_reason}).")
+        return False, skip_reason
+
+    return True, ""
+
+
+def _get_existing_conversation_id(latest_out_log: Optional[ConversationLog], latest_in_log: Optional[ConversationLog]) -> Optional[str]:
+    """Get existing conversation ID from logs (prefer OUT, fallback IN)."""
+    existing_conversation_id = None
+    if latest_out_log:
+        existing_conversation_id = safe_column_value(latest_out_log, "conversation_id", None)
+
+    if existing_conversation_id is None and latest_in_log:
+        existing_conversation_id = safe_column_value(latest_in_log, "conversation_id", None)
+
+    return existing_conversation_id
+
+
+def _send_or_simulate_message(session_manager: SessionManager, person: Person, message_text: str, existing_conversation_id: Optional[str], send_message_flag: bool, skip_log_reason: str, latest_out_log: Optional[ConversationLog], latest_in_log: Optional[ConversationLog]) -> tuple[str, Optional[str]]:
+    """Send or simulate message and return status and conversation ID."""
+    if send_message_flag:
+        log_prefix_for_api = f"Action8: {person.username} #{person.id}"
+        api_success, api_result = _safe_api_call_with_validation(
+            session_manager,
+            call_send_message_api,
+            f"send_message_{person.username}",
+            session_manager,
+            person,
+            message_text,
+            existing_conversation_id,
+            log_prefix_for_api,
+        )
+
+        if api_success and api_result:
+            message_status, effective_conv_id = api_result
+        else:
+            message_status = "error (api_validation_failed)"
+            effective_conv_id = None
+            logger.warning(f"API call failed for {person.username}: validation or execution error")
+    else:
+        message_status = skip_log_reason
+        effective_conv_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
+        if effective_conv_id is None:
+            effective_conv_id = f"skipped_{uuid.uuid4()}"
+
+    return message_status, effective_conv_id
+
+
+def _prepare_conversation_log_entry(person: Person, message_to_send_key: str, message_text: str, message_status: str, template_selection_reason: str, effective_conv_id: Optional[str], message_type_map: dict[str, int], send_message_flag: bool, log_prefix: str) -> ConversationLog:
+    """Prepare new conversation log entry for database."""
+    message_template_id_to_log = message_type_map.get(message_to_send_key)
+    if not message_template_id_to_log:
+        logger.error(f"CRITICAL: MessageTemplate ID missing for key '{message_to_send_key}' for {log_prefix}.")
+        raise StopIteration("error (db_config)")
+    if not effective_conv_id:
+        logger.error(f"CRITICAL: effective_conv_id missing after successful send/simulation/skip for {log_prefix}.")
+        raise StopIteration("error (internal)")
+
+    log_content = (f"[{message_status.upper()}] {message_text}" if not send_message_flag else message_text)[:config_schema.message_truncation_length]
+    current_time_for_db = datetime.now(timezone.utc)
+    logger.debug(f"Preparing new OUT log entry for ConvID {effective_conv_id}, PersonID {person.id}")
+    enhanced_status = f"{message_status} | Template: {message_to_send_key} ({template_selection_reason})"
+
+    return ConversationLog(
+        conversation_id=effective_conv_id,
+        direction=MessageDirectionEnum.OUT,
+        people_id=person.id,
+        latest_message_content=log_content,
+        latest_timestamp=current_time_for_db,
+        ai_sentiment=None,
+        message_template_id=message_template_id_to_log,
+        script_message_status=enhanced_status,
+    )
+
+
+def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[str, Optional[tuple[int, PersonStatusEnum]]]:
+    """Determine final status string and person update based on message outcome."""
+    person_update = None
+
+    if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
+        if message_to_send_key == "User_Requested_Desist":
+            logger.debug(f"Staging Person status update to ARCHIVE for {log_prefix} (ACK sent/simulated).")
+            person_update = (person_id, PersonStatusEnum.ARCHIVE)
+            status_string = "acked"
+        elif send_message_flag:
+            status_string = "sent"
+        else:
+            status_string = "skipped"
+    else:
+        logger.warning(f"Message send failed for {log_prefix} with status '{message_status}'. No DB changes staged.")
+        status_string = "error"
+
+    return status_string, person_update
+
+
 def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
@@ -2117,169 +2231,30 @@ def _process_single_person(
         message_text = _format_message_text(message_to_send_key, person, format_data, log_prefix)
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
-        app_mode = getattr(config_schema, 'app_mode', 'production')
-        testing_profile_id_config = config_schema.testing_profile_id
-        # Use profile_id for filtering (should exist for contactable ACTIVE/DESIST persons)
-        current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
-        send_message_flag = True  # Default to sending
-        skip_log_reason = ""
-
-        # Testing mode checks
-        if app_mode == "testing":
-            # Check if testing profile ID is configured
-            if not testing_profile_id_config:
-                logger.error(
-                    f"Testing mode active, but TESTING_PROFILE_ID not configured. Skipping {log_prefix}."
-                )
-                send_message_flag = False
-                skip_log_reason = "skipped (config_error)"
-            # Check if current profile matches testing profile
-            elif current_profile_id != testing_profile_id_config:
-                send_message_flag = False
-                skip_log_reason = (
-                    f"skipped (testing_mode_filter: not {testing_profile_id_config})"
-                )
-                logger.debug(
-                    f"Testing Mode: Skipping send to {log_prefix} ({skip_log_reason})."
-                )
-
-        # Production mode checks
-        elif app_mode == "production" and (
-            testing_profile_id_config and current_profile_id == testing_profile_id_config
-        ):
-                send_message_flag = False
-                skip_log_reason = (
-                    f"skipped (production_mode_filter: is {testing_profile_id_config})"
-                )
-                logger.debug(
-                    f"Production Mode: Skipping send to test profile {log_prefix} ({skip_log_reason})."
-                )
-        # `dry_run` mode is handled internally by _send_message_via_api
+        send_message_flag, skip_log_reason = _check_mode_filtering(person, log_prefix)
 
         # --- Step 5: Send/Simulate Message ---
-        if send_message_flag:
-            logger.debug(
-                f"Processing {log_prefix}: Sending/Simulating '{message_to_send_key}' ({send_reason})..."
-            )
-            # Determine existing conversation ID (prefer OUT log, fallback IN log)
-            existing_conversation_id = None
-            if latest_out_log:
-                existing_conversation_id = safe_column_value(
-                    latest_out_log, "conversation_id", None
-                )
-
-            if existing_conversation_id is None and latest_in_log:
-                existing_conversation_id = safe_column_value(
-                    latest_in_log, "conversation_id", None
-                )
-            # Use safe API call with proactive validation
-            log_prefix_for_api = f"Action8: {person.username} #{person.id}"
-            api_success, api_result = _safe_api_call_with_validation(
-                session_manager,
-                call_send_message_api,
-                f"send_message_{person.username}",
-                session_manager,
-                person,
-                message_text,
-                existing_conversation_id,
-                log_prefix_for_api,
-            )
-
-            if api_success and api_result:
-                message_status, effective_conv_id = api_result
-            else:
-                # API call failed or validation failed
-                message_status = "error (api_validation_failed)"
-                effective_conv_id = None
-                logger.warning(f"API call failed for {person.username}: validation or execution error")
-        else:
-            # If filtered out, use the skip reason as the status for logging
-            message_status = skip_log_reason
-            # Try to get a conv ID for logging consistency, or generate placeholder
-            effective_conv_id = None
-            if latest_out_log:
-                effective_conv_id = safe_column_value(
-                    latest_out_log, "conversation_id", None
-                )
-
-            if effective_conv_id is None and latest_in_log:
-                effective_conv_id = safe_column_value(
-                    latest_in_log, "conversation_id", None
-                )
-
-            if effective_conv_id is None:
-                effective_conv_id = f"skipped_{uuid.uuid4()}"
+        existing_conversation_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
+        message_status, effective_conv_id = _send_or_simulate_message(
+            session_manager, person, message_text, existing_conversation_id,
+            send_message_flag, skip_log_reason, latest_out_log, latest_in_log
+        )
 
         # --- Step 6: Prepare Database Updates based on outcome ---
-        if message_status in (
-            "delivered OK",
-            "typed (dry_run)",
-        ) or message_status.startswith("skipped ("):
-            # Prepare new OUT log entry if message sent, simulated, or intentionally skipped by filter
-            message_template_id_to_log = message_type_map.get(message_to_send_key)
-            if (
-                not message_template_id_to_log
-            ):  # Should not happen if templates loaded correctly
-                logger.error(
-                    f"CRITICAL: MessageTemplate ID missing for key '{message_to_send_key}' for {log_prefix}."
-                )
-                raise StopIteration("error (db_config)")
-            if (
-                not effective_conv_id
-            ):  # Should be set by _send_message_via_api or placeholder
-                logger.error(
-                    f"CRITICAL: effective_conv_id missing after successful send/simulation/skip for {log_prefix}."
-                )
-                raise StopIteration("error (internal)")
-
-            # Log content: Prepend skip reason if skipped, otherwise use message text
-            log_content = (
-                f"[{message_status.upper()}] {message_text}"
-                if not send_message_flag
-                else message_text
-            )[
-                : config_schema.message_truncation_length
-            ]  # Truncate
-            current_time_for_db = datetime.now(timezone.utc)
-            logger.debug(
-                f"Preparing new OUT log entry for ConvID {effective_conv_id}, PersonID {person.id}"
+        if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
+            new_log_entry = _prepare_conversation_log_entry(
+                person, message_to_send_key, message_text, message_status,
+                template_selection_reason, effective_conv_id, message_type_map,
+                send_message_flag, log_prefix
             )
-            # CONSOLIDATED LOGGING: Create enhanced script_message_status with template details
-            enhanced_status = f"{message_status} | Template: {message_to_send_key} ({template_selection_reason})"
-
-            # Create the ConversationLog OBJECT directly
-            new_log_entry = ConversationLog(
-                conversation_id=effective_conv_id,
-                direction=MessageDirectionEnum.OUT,
-                people_id=person.id,
-                latest_message_content=log_content,
-                latest_timestamp=current_time_for_db,
-                ai_sentiment=None,  # Not applicable for OUT messages
-                message_template_id=message_template_id_to_log,
-                script_message_status=enhanced_status,  # CONSOLIDATED: Include template selection details
-                # updated_at handled by default/onupdate in model
+            status_string, person_update = _determine_final_status(
+                message_to_send_key, message_status, send_message_flag, person_id, log_prefix
             )
-
-            # Determine overall status and potential person status update
-            if message_to_send_key == "User_Requested_Desist":
-                # If Desist ACK sent/simulated, stage person update to ARCHIVE
-                logger.debug(
-                    f"Staging Person status update to ARCHIVE for {log_prefix} (ACK sent/simulated)."
-                )
-                person_update = (person_id, PersonStatusEnum.ARCHIVE)
-                status_string = "acked"  # Specific status for ACK
-            elif send_message_flag:
-                # Standard message sent/simulated successfully
-                status_string = "sent"
-            else:
-                # Standard message skipped by filter
-                status_string = "skipped"  # Use 'skipped' status string
         else:
-            # Handle actual send failure reported by _send_message_via_api
-            logger.warning(
-                f"Message send failed for {log_prefix} with status '{message_status}'. No DB changes staged."
-            )
-            status_string = "error"  # Indicate send error
+            logger.warning(f"Message send failed for {log_prefix} with status '{message_status}'. No DB changes staged.")
+            new_log_entry = None
+            person_update = None
+            status_string = "error"
 
         # Step 7: Return prepared updates and status
         return new_log_entry, person_update, status_string
