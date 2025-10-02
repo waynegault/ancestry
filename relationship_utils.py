@@ -239,6 +239,131 @@ def _has_direct_relationship(
 
 # --- Relationship Path Finding Functions ---
 
+# Helper functions for fast_bidirectional_bfs
+
+def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Optional[dict[str, set[str]]], id_to_children: Optional[dict[str, set[str]]]) -> bool:
+    """Validate inputs for BFS search."""
+    if start_id == end_id:
+        return False  # Special case handled by caller
+    if id_to_parents is None or id_to_children is None:
+        logger.error("[FastBiBFS] Relationship maps are None.")
+        return False
+    if not start_id or not end_id:
+        logger.error("[FastBiBFS] Start or end ID is missing.")
+        return False
+    return True
+
+
+def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple[deque, deque, dict, dict]:
+    """Initialize BFS queues and visited sets."""
+    queue_fwd = deque([(start_id, 0, [start_id])])
+    queue_bwd = deque([(end_id, 0, [end_id])])
+    visited_fwd = {start_id: (0, [start_id])}
+    visited_bwd = {end_id: (0, [end_id])}
+    return queue_fwd, queue_bwd, visited_fwd, visited_bwd
+
+
+def _check_search_limits(start_time: float, processed: int, timeout_sec: float, node_limit: int) -> bool:
+    """Check if search limits have been exceeded."""
+    if time.time() - start_time > timeout_sec:
+        logger.warning(f"[FastBiBFS] Timeout after {timeout_sec:.1f} seconds.")
+        return False
+    if processed > node_limit:
+        logger.warning(f"[FastBiBFS] Node limit ({node_limit}) reached.")
+        return False
+    return True
+
+
+def _expand_to_relatives(current_id: str, path: list[str], depth: int, visited: dict, queue: deque, id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]], is_forward: bool) -> None:
+    """Expand search to parents, children, and siblings."""
+    # Expand to parents
+    for parent_id in id_to_parents.get(current_id, set()):
+        if parent_id not in visited:
+            new_path = [*path, parent_id] if is_forward else [parent_id, *path]
+            visited[parent_id] = (depth + 1, new_path)
+            queue.append((parent_id, depth + 1, new_path))
+
+    # Expand to children
+    for child_id in id_to_children.get(current_id, set()):
+        if child_id not in visited:
+            new_path = [*path, child_id] if is_forward else [child_id, *path]
+            visited[child_id] = (depth + 1, new_path)
+            queue.append((child_id, depth + 1, new_path))
+
+    # Expand to siblings (through parent)
+    for parent_id in id_to_parents.get(current_id, set()):
+        for sibling_id in id_to_children.get(parent_id, set()):
+            if sibling_id != current_id and sibling_id not in visited:
+                if is_forward:
+                    new_path = [*path, parent_id, sibling_id]
+                else:
+                    new_path = [sibling_id, parent_id, *path]
+                visited[sibling_id] = (depth + 2, new_path)
+                queue.append((sibling_id, depth + 2, new_path))
+
+
+def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]], max_depth: int) -> int:
+    """Process forward queue and return number of nodes processed."""
+    if not queue_fwd:
+        return 0
+
+    current_id, depth, path = queue_fwd.popleft()
+
+    # Check if we've reached a node visited by backward search
+    if current_id in visited_bwd:
+        _, bwd_path = visited_bwd[current_id]
+        combined_path = path + bwd_path[1:]
+        all_paths.append(combined_path)
+        logger.debug(f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes")
+
+    # Stop expanding if we've reached max depth
+    if depth < max_depth:
+        _expand_to_relatives(current_id, path, depth, visited_fwd, queue_fwd, id_to_parents, id_to_children, is_forward=True)
+
+    return 1
+
+
+def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]], max_depth: int) -> int:
+    """Process backward queue and return number of nodes processed."""
+    if not queue_bwd:
+        return 0
+
+    current_id, depth, path = queue_bwd.popleft()
+
+    # Check if we've reached a node visited by forward search
+    if current_id in visited_fwd:
+        _, fwd_path = visited_fwd[current_id]
+        combined_path = fwd_path + path[1:]
+        all_paths.append(combined_path)
+        logger.debug(f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes")
+
+    # Stop expanding if we've reached max depth
+    if depth < max_depth:
+        _expand_to_relatives(current_id, path, depth, visited_bwd, queue_bwd, id_to_parents, id_to_children, is_forward=False)
+
+    return 1
+
+
+def _score_path(path: list[str], id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]]) -> float:
+    """Score a path based on directness of relationships."""
+    direct_relationships = 0
+    for i in range(len(path) - 1):
+        if _has_direct_relationship(path[i], path[i + 1], id_to_parents, id_to_children):
+            direct_relationships += 1
+
+    directness_score = direct_relationships / (len(path) - 1) if len(path) > 1 else 0
+    length_penalty = len(path) / 10
+    return directness_score - length_penalty
+
+
+def _select_best_path(all_paths: list[list[str]], id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]]) -> list[str]:
+    """Select the best path from all found paths."""
+    scored_paths = [(p, _score_path(p, id_to_parents, id_to_children)) for p in all_paths]
+    scored_paths.sort(key=lambda x: x[1], reverse=True)
+    best_path = scored_paths[0][0]
+    logger.debug(f"[FastBiBFS] Selected best path: {len(best_path)} nodes with score {scored_paths[0][1]:.2f}")
+    return best_path
+
 
 def fast_bidirectional_bfs(
     start_id: str,
@@ -259,179 +384,48 @@ def fast_bidirectional_bfs(
     The algorithm prioritizes shorter paths with direct relationships over longer paths.
     """
     start_time = time.time()
+
+    # Quick return for same node
     if start_id == end_id:
         return [start_id]
-    if id_to_parents is None or id_to_children is None:
-        logger.error("[FastBiBFS] Relationship maps are None.")
-        return []
-    if not start_id or not end_id:
-        logger.error("[FastBiBFS] Start or end ID is missing.")
+
+    # Validate inputs
+    if not _validate_bfs_inputs(start_id, end_id, id_to_parents, id_to_children):
         return []
 
-    # First try to find a direct relationship (parent, child, sibling)
-    # This is a quick check before running the full BFS
-    direct_path = _find_direct_relationship(
-        start_id, end_id, id_to_parents, id_to_children
-    )
+    # Try direct relationship first
+    direct_path = _find_direct_relationship(start_id, end_id, id_to_parents, id_to_children)
     if direct_path:
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
         return direct_path
 
-    # Initialize BFS queues and visited sets
-    # Forward queue from start_id
-    queue_fwd = deque([(start_id, 0, [start_id])])  # (id, depth, path)
-    # Backward queue from end_id
-    queue_bwd = deque([(end_id, 0, [end_id])])  # (id, depth, path)
-
-    # Track visited nodes and their paths
-    visited_fwd = {start_id: (0, [start_id])}  # {id: (depth, path)}
-    visited_bwd = {end_id: (0, [end_id])}  # {id: (depth, path)}
-
-    # Track all complete paths found
+    # Initialize BFS
+    queue_fwd, queue_bwd, visited_fwd, visited_bwd = _initialize_bfs_queues(start_id, end_id)
     all_paths = []
-
-    # Process nodes until we find paths or exhaust the search
     processed = 0
     logger.debug(f"[FastBiBFS] Starting BFS: {start_id} <-> {end_id}")
 
-    # Main search loop - continue until we find paths or exhaust the search
-    while queue_fwd and queue_bwd and len(all_paths) < 5:  # Limit to finding 5 paths
-        # Check timeout and node limit
-        if time.time() - start_time > timeout_sec:
-            logger.warning(f"[FastBiBFS] Timeout after {timeout_sec:.1f} seconds.")
-            break
-        if processed > node_limit:
-            logger.warning(f"[FastBiBFS] Node limit ({node_limit}) reached.")
+    # Main search loop
+    while queue_fwd and queue_bwd and len(all_paths) < 5:
+        if not _check_search_limits(start_time, processed, timeout_sec, node_limit):
             break
 
-        # Process forward queue (from start)
-        if queue_fwd:
-            current_id, depth, path = queue_fwd.popleft()
-            processed += 1
+        # Process forward queue
+        processed += _process_forward_queue(queue_fwd, visited_fwd, visited_bwd, all_paths, id_to_parents, id_to_children, max_depth)
+        if len(all_paths) >= 5:
+            break
 
-            # Check if we've reached a node visited by backward search
-            if current_id in visited_bwd:
-                # Found a meeting point - reconstruct the path
-                _, bwd_path = visited_bwd[current_id]  # depth unused
-                # Combine paths (remove duplicate meeting point)
-                combined_path = path + bwd_path[1:]
-                all_paths.append(combined_path)
-                logger.debug(
-                    f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
-                )
-                # Continue searching for potentially shorter/better paths if len(all_paths) < 5
-                if len(all_paths) >= 5:
-                    break  # Stop if we have enough paths
+        # Process backward queue
+        processed += _process_backward_queue(queue_bwd, visited_fwd, visited_bwd, all_paths, id_to_parents, id_to_children, max_depth)
+        if len(all_paths) >= 5:
+            break
 
-            # Stop expanding if we've reached max depth
-            if depth >= max_depth:
-                continue
-
-            # Expand to parents (direct relationship)
-            for parent_id in id_to_parents.get(current_id, set()):
-                if parent_id not in visited_fwd:
-                    new_path = [*path, parent_id]
-                    visited_fwd[parent_id] = (depth + 1, new_path)
-                    queue_fwd.append((parent_id, depth + 1, new_path))
-
-            # Expand to children (direct relationship)
-            for child_id in id_to_children.get(current_id, set()):
-                if child_id not in visited_fwd:
-                    new_path = [*path, child_id]
-                    visited_fwd[child_id] = (depth + 1, new_path)
-                    queue_fwd.append((child_id, depth + 1, new_path))
-
-            # Expand to siblings (through parent)
-            for parent_id in id_to_parents.get(current_id, set()):
-                for sibling_id in id_to_children.get(parent_id, set()):
-                    if sibling_id != current_id and sibling_id not in visited_fwd:
-                        # Include parent in path for proper relationship context
-                        new_path = [*path, parent_id, sibling_id]
-                        visited_fwd[sibling_id] = (
-                            depth + 2,
-                            new_path,
-                        )  # Depth increases by 2 (to parent, then to sibling)
-                        queue_fwd.append((sibling_id, depth + 2, new_path))
-
-        # Process backward queue (from end)
-        if queue_bwd:  # Check if queue_bwd is not empty
-            current_id, depth, path = queue_bwd.popleft()
-            processed += 1
-
-            # Check if we've reached a node visited by forward search
-            if current_id in visited_fwd:
-                # Found a meeting point - reconstruct the path
-                _, fwd_path = visited_fwd[current_id]  # depth unused
-                # Combine paths (remove duplicate meeting point)
-                combined_path = fwd_path + path[1:]
-                all_paths.append(combined_path)
-                logger.debug(
-                    f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
-                )
-                if len(all_paths) >= 5:
-                    break  # Stop if we have enough paths
-
-            # Stop expanding if we've reached max depth
-            if depth >= max_depth:
-                continue
-
-            # Expand to parents (direct relationship)
-            for parent_id in id_to_parents.get(current_id, set()):
-                if parent_id not in visited_bwd:
-                    new_path = [parent_id, *path]
-                    visited_bwd[parent_id] = (depth + 1, new_path)
-                    queue_bwd.append((parent_id, depth + 1, new_path))
-
-            # Expand to children (direct relationship)
-            for child_id in id_to_children.get(current_id, set()):
-                if child_id not in visited_bwd:
-                    new_path = [child_id, *path]
-                    visited_bwd[child_id] = (depth + 1, new_path)
-                    queue_bwd.append((child_id, depth + 1, new_path))
-
-            # Expand to siblings (through parent)
-            for parent_id in id_to_parents.get(current_id, set()):
-                for sibling_id in id_to_children.get(parent_id, set()):
-                    if sibling_id != current_id and sibling_id not in visited_bwd:
-                        # Include parent in path for proper relationship context
-                        new_path = [sibling_id, parent_id, *path]
-                        visited_bwd[sibling_id] = (depth + 2, new_path)
-                        queue_bwd.append((sibling_id, depth + 2, new_path))
-
-    # If we found paths, select the best one
+    # Select best path if found
     if all_paths:
-        # Score paths based on directness of relationships
-        scored_paths = []
-        for p in all_paths:  # Renamed path to p to avoid conflict with outer scope
-            # Check if each adjacent pair has a direct relationship
-            direct_relationships = 0
-            for i in range(len(p) - 1):
-                if _has_direct_relationship(
-                    p[i], p[i + 1], id_to_parents, id_to_children
-                ):
-                    direct_relationships += 1
+        return _select_best_path(all_paths, id_to_parents, id_to_children)
 
-            # Calculate score: prefer paths with more direct relationships and shorter length
-            directness_score = direct_relationships / (len(p) - 1) if len(p) > 1 else 0
-            length_penalty = len(p) / 10  # Slight penalty for longer paths
-            score = directness_score - length_penalty
-
-            scored_paths.append((p, score))
-
-        # Sort by score (highest first)
-        scored_paths.sort(key=lambda x: x[1], reverse=True)
-
-        # Return the path with the highest score
-        best_path = scored_paths[0][0]
-        logger.debug(
-            f"[FastBiBFS] Selected best path: {len(best_path)} nodes with score {scored_paths[0][1]:.2f}"
-        )
-        return best_path
-
-    # If we didn't find any paths
+    # No paths found
     logger.warning(f"[FastBiBFS] No paths found between {start_id} and {end_id}.")
-
-    # Fallback: Return a list containing only start and end IDs if no path found
     return [start_id, end_id]
 
 
