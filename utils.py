@@ -1646,6 +1646,163 @@ def _process_api_response(
 
 # End of _process_api_response
 
+def _handle_request_exception(
+    e: Exception,
+    attempt: int,
+    max_retries: int,
+    retries_left: int,
+    api_description: str,
+    current_delay: float,
+    backoff_factor: float,
+    max_delay: float,
+) -> tuple[bool, int, float]:
+    """
+    Handle exception during request attempt.
+    Returns (should_continue, retries_left, current_delay).
+    """
+    logger.warning(
+        f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}"
+    )
+    retries_left -= 1
+
+    if retries_left <= 0:
+        logger.error(
+            f"{api_description}: Request failed after {max_retries} attempts. Final Error: {e}",
+            exc_info=False,
+        )
+        return (False, retries_left, current_delay)
+
+    sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
+    logger.warning(
+        f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
+    )
+    time.sleep(sleep_time)
+    current_delay *= backoff_factor
+    return (True, retries_left, current_delay)
+
+
+def _process_request_attempt(
+    session_manager: SessionManager,
+    driver: DriverType,
+    url: str,
+    method: str,
+    api_description: str,
+    attempt: int,
+    headers: Optional[Dict[str, str]],
+    referer_url: Optional[str],
+    use_csrf_token: bool,
+    add_default_origin: bool,
+    timeout: Optional[int],
+    cookie_jar: Optional[RequestsCookieJar],  # type: ignore
+    allow_redirects: bool,
+    data: Optional[Dict],
+    json_data: Optional[Dict],
+    json: Optional[Dict],
+    force_text_response: bool,
+    retry_status_codes: List[int],
+    retries_left: int,
+    max_retries: int,
+    current_delay: float,
+    backoff_factor: float,
+    max_delay: float,
+) -> tuple[Optional[Any], bool, int, float, Optional[Exception]]:
+    """
+    Process a single request attempt.
+    Returns (response, should_continue, retries_left, current_delay, last_exception).
+    """
+    try:
+        # Prepare and execute the request
+        request_params = _prepare_api_request(
+            session_manager=session_manager,
+            driver=driver,
+            url=url,
+            method=method,
+            api_description=api_description,
+            attempt=attempt,
+            headers=headers,
+            referer_url=referer_url,
+            use_csrf_token=use_csrf_token,
+            add_default_origin=add_default_origin,
+            timeout=timeout,
+            cookie_jar=cookie_jar,
+            allow_redirects=allow_redirects,
+            data=data,
+            json_data=json_data,
+            json=json,
+        )
+
+        response = _execute_api_request(
+            session_manager=session_manager,
+            api_description=api_description,
+            request_params=request_params,
+            attempt=attempt,
+        )
+
+        # Handle failed request (response is None)
+        if response is None:
+            should_continue, retries_left, current_delay = _handle_failed_request_response(
+                retries_left, max_retries, api_description, current_delay, backoff_factor, attempt, max_delay
+            )
+            if not should_continue:
+                return (None, False, retries_left, current_delay, None)
+            return (None, True, retries_left, current_delay, None)
+
+        # Check response status
+        status = response.status_code
+        reason = response.reason
+
+        # Handle retryable status codes
+        if status in retry_status_codes:
+            should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
+                response, status, reason, retries_left, max_retries, api_description,
+                attempt, current_delay, backoff_factor, max_delay, session_manager
+            )
+            if not should_continue:
+                return (return_response, False, retries_left, current_delay, None)
+            last_exception = HTTPError(f"{status} Error", response=response)  # type: ignore
+            return (None, True, retries_left, current_delay, last_exception)
+
+        # Handle redirects
+        redirect_response = _handle_redirect_response(
+            response, status, reason, request_params["allow_redirects"], api_description
+        )
+        if redirect_response is not None:
+            return (redirect_response, False, retries_left, current_delay, None)
+
+        # Handle non-retryable error status codes
+        if not response.ok:
+            error_response = _handle_error_status(response, status, reason, api_description, session_manager)
+            return (error_response, False, retries_left, current_delay, None)
+
+        # Process successful response
+        if response.ok:
+            logger.debug(f"{api_description}: Successful response ({status} {reason}).")
+            session_manager.dynamic_rate_limiter.decrease_delay()
+            processed_response = _process_api_response(
+                response=response,
+                api_description=api_description,
+                force_text_response=force_text_response,
+            )
+            return (processed_response, False, retries_left, current_delay, None)
+
+    except RequestException as e:  # type: ignore
+        should_continue, retries_left, current_delay = _handle_request_exception(
+            e, attempt, max_retries, retries_left, api_description, current_delay, backoff_factor, max_delay
+        )
+        if not should_continue:
+            return (None, False, retries_left, current_delay, e)
+        return (None, True, retries_left, current_delay, e)
+
+    except Exception as e:
+        logger.critical(
+            f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
+            exc_info=True,
+        )
+        return (None, False, retries_left, current_delay, None)
+
+    return (None, True, retries_left, current_delay, None)
+
+
 def _execute_request_with_retries(
     session_manager: SessionManager,
     driver: DriverType,
@@ -1681,108 +1838,21 @@ def _execute_request_with_retries(
             f"[_api_req LOOP ENTRY] api_description: '{api_description}', attempt: {attempt}/{max_retries}, retries_left: {retries_left}"
         )
 
-        try:
-            # Prepare and execute the request
-            request_params = _prepare_api_request(
-                session_manager=session_manager,
-                driver=driver,
-                url=url,
-                method=method,
-                api_description=api_description,
-                attempt=attempt,
-                headers=headers,
-                referer_url=referer_url,
-                use_csrf_token=use_csrf_token,
-                add_default_origin=add_default_origin,
-                timeout=timeout,
-                cookie_jar=cookie_jar,
-                allow_redirects=allow_redirects,
-                data=data,
-                json_data=json_data,
-                json=json,
-            )
+        result, should_continue, retries_left, current_delay, exception = _process_request_attempt(
+            session_manager, driver, url, method, api_description, attempt,
+            headers, referer_url, use_csrf_token, add_default_origin, timeout,
+            cookie_jar, allow_redirects, data, json_data, json, force_text_response,
+            retry_status_codes, retries_left, max_retries, current_delay, backoff_factor, max_delay
+        )
 
-            response = _execute_api_request(
-                session_manager=session_manager,
-                api_description=api_description,
-                request_params=request_params,
-                attempt=attempt,
-            )
+        if exception:
+            last_exception = exception
 
-            # Handle failed request (response is None)
-            if response is None:
-                should_continue, retries_left, current_delay = _handle_failed_request_response(
-                    retries_left, max_retries, api_description, current_delay, backoff_factor, attempt, max_delay
-                )
-                if not should_continue:
-                    return None
-                continue
+        if not should_continue:
+            return result
 
-            # Check response status
-            status = response.status_code
-            reason = response.reason
-
-            # Handle retryable status codes
-            if status in retry_status_codes:
-                should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
-                    response, status, reason, retries_left, max_retries, api_description,
-                    attempt, current_delay, backoff_factor, max_delay, session_manager
-                )
-                if not should_continue:
-                    return return_response
-                last_exception = HTTPError(f"{status} Error", response=response)  # type: ignore
-                continue
-
-            # Handle redirects
-            redirect_response = _handle_redirect_response(
-                response, status, reason, request_params["allow_redirects"], api_description
-            )
-            if redirect_response is not None:
-                return redirect_response
-
-            # Handle non-retryable error status codes
-            if not response.ok:
-                return _handle_error_status(response, status, reason, api_description, session_manager)
-
-            # Process successful response
-            if response.ok:
-                logger.debug(f"{api_description}: Successful response ({status} {reason}).")
-                session_manager.dynamic_rate_limiter.decrease_delay()
-                return _process_api_response(
-                    response=response,
-                    api_description=api_description,
-                    force_text_response=force_text_response,
-                )
-
-        # Handle exceptions during the request attempt
-        except RequestException as e:  # type: ignore
-            logger.warning(
-                f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}"
-            )
-            retries_left -= 1
-            last_exception = e
-            if retries_left <= 0:
-                logger.error(
-                    f"{api_description}: Request failed after {max_retries} attempts. Final Error: {e}",
-                    exc_info=False,
-                )
-                return None
-            sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
-            logger.warning(
-                f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
-            )
-            time.sleep(sleep_time)
-            current_delay *= backoff_factor
-            continue
-        except Exception as e:
-            logger.critical(
-                f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
-                exc_info=True,
-            )
-            return None
-
-        # If we get here, the request was successful and processed
-        break
+        if result is not None:
+            response = result
 
     # Should only be reached if loop completes without success
     if response is None:
