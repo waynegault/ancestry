@@ -3170,6 +3170,56 @@ def _handle_webdriver_exception(
     return ("continue", driver)
 
 
+def _validate_post_navigation(
+    driver: WebDriver,  # type: ignore
+    landed_url_base: str,
+    target_url_base: str,
+    signin_page_url_base: str,
+    selector: str,
+    element_timeout: int,
+    unavailability_selectors: Dict[str, Tuple[str, int]],
+    session_manager: SessionManagerType,
+) -> Tuple[str, Optional[WebDriver]]:  # type: ignore
+    """
+    Validate navigation after landing on page.
+    Returns (action, driver) where action is 'success', 'fail', or 'continue'.
+    """
+    # Check for MFA page
+    if _check_for_mfa_page(driver):
+        logger.error("Landed on MFA page unexpectedly during navigation. Navigation failed.")
+        return ("fail", driver)
+
+    # Check for Login page
+    if _check_for_login_page(driver, target_url_base, signin_page_url_base):
+        login_action = _handle_login_redirect(session_manager)
+        if login_action == "retry":
+            return ("continue", driver)
+        elif login_action in ("fail", "no_manager"):
+            return ("fail", driver)
+
+    # Check if landed on an unexpected URL
+    if landed_url_base != target_url_base:
+        if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
+            return ("success", driver)
+
+        mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
+        if mismatch_action == "fail":
+            return ("fail", driver)
+        elif mismatch_action == "continue":
+            return ("continue", driver)
+
+    # --- Final Check: Element on Page ---
+    element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
+    if element_result == "success":
+        return ("success", driver)
+    elif element_result == "fail":
+        return ("fail", driver)
+    elif element_result == "continue":
+        return ("continue", driver)
+
+    return ("continue", driver)
+
+
 def _perform_navigation_attempt(
     driver: WebDriver,  # type: ignore
     url: str,
@@ -3202,38 +3252,11 @@ def _perform_navigation_attempt(
         if landed_url_base is None:
             return ("continue", driver)
 
-        # Check for MFA page
-        if _check_for_mfa_page(driver):
-            logger.error("Landed on MFA page unexpectedly during navigation. Navigation failed.")
-            return ("fail", driver)
-
-        # Check for Login page
-        if _check_for_login_page(driver, target_url_base, signin_page_url_base):
-            login_action = _handle_login_redirect(session_manager)
-            if login_action == "retry":
-                return ("continue", driver)
-            elif login_action in ("fail", "no_manager"):
-                return ("fail", driver)
-
-        # Check if landed on an unexpected URL
-        if landed_url_base != target_url_base:
-            if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
-                return ("success", driver)
-
-            mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
-            if mismatch_action == "fail":
-                return ("fail", driver)
-            elif mismatch_action == "continue":
-                return ("continue", driver)
-
-        # --- Final Check: Element on Page ---
-        element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
-        if element_result == "success":
-            return ("success", driver)
-        elif element_result == "fail":
-            return ("fail", driver)
-        elif element_result == "continue":
-            return ("continue", driver)
+        # Validate post-navigation state
+        return _validate_post_navigation(
+            driver, landed_url_base, target_url_base, signin_page_url_base,
+            selector, element_timeout, unavailability_selectors, session_manager
+        )
 
     except UnexpectedAlertPresentException:  # type: ignore
         alert_action = _handle_navigation_alert(driver, attempt)
