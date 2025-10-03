@@ -1183,10 +1183,10 @@ def test_error_handling() -> None:
     """Test basic error handling and safe execution patterns."""
 
     # Test safe_execute with simple function
-    def safe_func():
+    def safe_func() -> str:
         return "success"
 
-    def failing_func():
+    def failing_func() -> None:
         raise ValueError("Test error")
 
     if "safe_execute" in globals():
@@ -1251,10 +1251,10 @@ def test_error_recovery() -> None:
     """Test error recovery and fallback mechanisms."""
 
     # Test error recovery with failing function
-    def failing_func():
+    def failing_func() -> None:
         raise ValueError("test error")
 
-    def successful_func():
+    def successful_func() -> str:
         return "success"
 
     if "safe_execute" in globals():
