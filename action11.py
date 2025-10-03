@@ -1120,6 +1120,115 @@ def _extract_best_name_from_details(
 
 # --- Phase Handler Functions ---
 
+# Helper functions for _call_direct_treesui_list_api
+
+def _validate_treesui_api_parameters(
+    session_manager_local: SessionManager,
+    owner_tree_id: str,
+    base_url: str,
+) -> bool:
+    """Validate required parameters for TreesUI API call."""
+    if not session_manager_local or not owner_tree_id or not base_url:
+        logger.error("Missing required parameters for direct TreesUI List API call")
+        return False
+    return True
+
+
+def _validate_requests_session(session_manager_local: SessionManager) -> bool:
+    """Validate that requests session is available for API calls."""
+    if (
+        not hasattr(session_manager_local, "_requests_session")
+        or not session_manager_local._requests_session
+    ):
+        logger.error("No requests session available for direct TreesUI List API call.")
+        print("Error: API session not available. Cannot contact Ancestry API.")
+        return False
+    return True
+
+
+def _build_treesui_api_url(
+    base_url: str,
+    owner_tree_id: str,
+    search_criteria: Dict[str, Any],
+) -> str:
+    """Build TreesUI List API URL with search parameters."""
+    first_name = search_criteria.get("first_name_raw", "")
+    surname = search_criteria.get("surname_raw", "")
+    params = {"sort": "sname,gname", "limit": "100", "fields": "NAMES,EVENTS,GENDER"}
+    if first_name:
+        params["fn"] = first_name
+    if surname:
+        params["ln"] = surname
+    encoded_params = urlencode(params, quote_via=quote)
+    return f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?{encoded_params}"
+
+
+def _get_api_cookies(session_manager_local: SessionManager) -> Optional[Dict]:
+    """Get cookies for API call from session manager."""
+    cookies = None
+    if (
+        hasattr(session_manager_local, "_requests_session")
+        and session_manager_local._requests_session
+    ):
+        cookies = session_manager_local._requests_session.cookies
+    elif session_manager_local.driver and session_manager_local.is_sess_valid():
+        logger.warning("Using cookies from Selenium session for direct API call.")
+        try:
+            selenium_cookies = session_manager_local.driver.get_cookies()
+            cookies = {c["name"]: c["value"] for c in selenium_cookies}
+        except Exception as cookie_err:
+            logger.error(f"Failed to get cookies from Selenium: {cookie_err}")
+            cookies = {}
+
+    if not cookies:
+        logger.error("No session cookies available for API call.")
+
+    return cookies
+
+
+def _build_treesui_api_headers(base_url: str, owner_tree_id: str) -> Dict[str, str]:
+    """Build headers for TreesUI API request."""
+    return {
+        "Accept": "application/json",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Referer": f"{base_url}/family-tree/tree/{owner_tree_id}/family",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+
+def _handle_treesui_api_response(response: requests.Response) -> Optional[List[Dict]]:
+    """Handle TreesUI API response and extract data."""
+    logger.debug(f"API Response Status Code: {response.status_code}")
+
+    if response.status_code == 200:
+        try:
+            data = response.json()
+            if isinstance(data, list):
+                return data
+            logger.error(f"API call OK but response not JSON list. Type: {type(data)}")
+            logger.debug(f"API Response Text: {response.text[:500]}")
+            print("Error: API returned unexpected data format.")
+            return None
+        except json.JSONDecodeError as json_err:
+            logger.error(f"Failed to parse JSON response (200 OK): {json_err}")
+            logger.debug(f"API Response Text: {response.text[:1000]}")
+            print("Error: Could not understand data from Ancestry.")
+            return None
+    elif response.status_code in [401, 403]:
+        logger.error(
+            f"API call failed: {response.status_code} (Unauthorized/Forbidden). Check session."
+        )
+        print(f"Error: Access denied ({response.status_code}). Session invalid?")
+        return None
+    else:
+        logger.error(f"API call failed with status code: {response.status_code}")
+        logger.debug(f"API Response Text: {response.text[:500]}")
+        print(f"Error: Ancestry API returned error ({response.status_code}).")
+        return None
+
 
 # API Call (Correct definition order)
 def _call_direct_treesui_list_api(
@@ -1131,100 +1240,37 @@ def _call_direct_treesui_list_api(
     """
     Directly calls the TreesUI List API with the specific format requested.
     """
-    if not session_manager_local or not owner_tree_id or not base_url:
-        logger.error("Missing required parameters for direct TreesUI List API call")
+    # Validate parameters
+    if not _validate_treesui_api_parameters(session_manager_local, owner_tree_id, base_url):
         return None
 
-    # Check if the session has a requests session available for API calls
-    # This is more appropriate than checking if the browser session is valid
-    if (
-        not hasattr(session_manager_local, "_requests_session")
-        or not session_manager_local._requests_session
-    ):
-        logger.error("No requests session available for direct TreesUI List API call.")
-        print("Error: API session not available. Cannot contact Ancestry API.")
+    # Validate requests session
+    if not _validate_requests_session(session_manager_local):
         return None
 
-    first_name = search_criteria.get("first_name_raw", "")
-    surname = search_criteria.get("surname_raw", "")
-    params = {"sort": "sname,gname", "limit": "100", "fields": "NAMES,EVENTS,GENDER"}
-    if first_name:
-        params["fn"] = first_name
-    if surname:
-        params["ln"] = surname
-    encoded_params = urlencode(params, quote_via=quote)
-    api_url = (
-        f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?{encoded_params}"
-    )
-
-    # Print the API URL to the console
+    # Build API URL
+    api_url = _build_treesui_api_url(base_url, owner_tree_id, search_criteria)
     logger.debug(f"\nAPI URL Called: {api_url}\n")
 
-    api_timeout = 10  # Use a fixed timeout value
+    api_timeout = 10
 
     try:
-        cookies = None
-        if (
-            hasattr(session_manager_local, "_requests_session")
-            and session_manager_local._requests_session
-        ):
-            cookies = session_manager_local._requests_session.cookies
-        elif session_manager_local.driver and session_manager_local.is_sess_valid():
-            logger.warning("Using cookies from Selenium session for direct API call.")
-            try:
-                selenium_cookies = session_manager_local.driver.get_cookies()
-                cookies = {c["name"]: c["value"] for c in selenium_cookies}
-            except Exception as cookie_err:
-                logger.error(f"Failed to get cookies from Selenium: {cookie_err}")
-                cookies = {}
-        if not cookies:
-            logger.error("No session cookies available for API call.")
+        # Get cookies
+        cookies = _get_api_cookies(session_manager_local)
 
-        headers = {
-            "Accept": "application/json",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            "Referer": f"{base_url}/family-tree/tree/{owner_tree_id}/family",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "X-Requested-With": "XMLHttpRequest",
-        }
+        # Build headers
+        headers = _build_treesui_api_headers(base_url, owner_tree_id)
         logger.debug(f"API Request Headers: {headers}")
         if cookies:
             logger.debug(f"API Request Cookies (keys): {list(cookies.keys())}")
 
+        # Execute request
         response = requests.get(
             api_url, headers=headers, cookies=cookies, timeout=api_timeout
         )
-        logger.debug(f"API Response Status Code: {response.status_code}")
 
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                if isinstance(data, list):
-                    return data
-                logger.error(
-                    f"API call OK but response not JSON list. Type: {type(data)}"
-                )
-                logger.debug(f"API Response Text: {response.text[:500]}")
-                print("Error: API returned unexpected data format.")
-                return None
-            except json.JSONDecodeError as json_err:
-                logger.error(f"Failed to parse JSON response (200 OK): {json_err}")
-                logger.debug(f"API Response Text: {response.text[:1000]}")
-                print("Error: Could not understand data from Ancestry.")
-                return None
-        elif response.status_code in [401, 403]:
-            logger.error(
-                f"API call failed: {response.status_code} (Unauthorized/Forbidden). Check session."
-            )
-            print(f"Error: Access denied ({response.status_code}). Session invalid?")
-            return None
-        else:
-            logger.error(f"API call failed with status code: {response.status_code}")
-            logger.debug(f"API Response Text: {response.text[:500]}")
-            print(f"Error: Ancestry API returned error ({response.status_code}).")
-            return None
+        # Handle response
+        return _handle_treesui_api_response(response)
 
     except requests.exceptions.Timeout:
         logger.error(f"API call timed out after {api_timeout}s")
