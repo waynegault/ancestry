@@ -2826,6 +2826,266 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
 # ------------------------------------------------------------------------------------
 # Navigation Functions (Remains in utils.py)
 # ------------------------------------------------------------------------------------
+
+def _validate_nav_inputs(driver: WebDriver, url: str) -> bool:  # type: ignore
+    """Validate navigation inputs."""
+    if not driver:
+        logger.error("Navigation failed: WebDriver instance is None.")
+        return False
+    if not url or not isinstance(url, str):
+        logger.error(f"Navigation failed: Target URL '{url}' is invalid.")
+        return False
+    return True
+
+
+def _parse_and_normalize_url(url: str) -> Optional[str]:
+    """Parse and normalize URL to base form."""
+    try:
+        target_url_parsed = urlparse(url)
+        target_url_base = urlunparse(
+            (
+                target_url_parsed.scheme,
+                target_url_parsed.netloc,
+                target_url_parsed.path.rstrip("/"),
+                "",
+                "",
+                "",
+            )
+        ).rstrip("/")
+        return target_url_base
+    except ValueError as url_parse_err:
+        logger.error(f"Failed to parse target URL '{url}': {url_parse_err}")
+        return None
+
+
+def _check_browser_session(
+    driver: WebDriver,  # type: ignore
+    session_manager: SessionManagerType,
+    attempt: int,
+) -> Optional[WebDriver]:  # type: ignore
+    """Check browser session and restart if needed. Returns driver or None if failed."""
+    if not is_browser_open(driver):
+        logger.error(
+            f"Navigation failed (Attempt {attempt}): Browser session invalid before nav."
+        )
+        if session_manager:
+            logger.warning("Attempting session restart...")
+            if session_manager.restart_sess():
+                logger.info("Session restarted. Retrying navigation...")
+                driver_instance = session_manager.driver
+                if driver_instance is not None:
+                    return driver_instance
+                logger.error("Session restart reported success but driver is still None.")
+                return None
+            logger.error("Session restart failed. Cannot navigate.")
+            return None
+        logger.error("Session invalid and no SessionManager provided for restart.")
+        return None
+    return driver
+
+
+def _execute_navigation(driver: WebDriver, url: str, page_timeout: int) -> None:  # type: ignore
+    """Execute navigation and wait for page ready state."""
+    logger.debug(f"Executing driver.get('{url}')...")
+    driver.get(url)
+    WebDriverWait(driver, page_timeout).until(  # type: ignore
+        lambda d: d.execute_script("return document.readyState") in ["complete", "interactive"]
+    )
+    time.sleep(random.uniform(0.5, 1.5))
+
+
+def _get_landed_url_base(driver: WebDriver, attempt: int) -> Optional[str]:  # type: ignore
+    """Get and normalize the current URL after navigation."""
+    try:
+        landed_url = driver.current_url
+        landed_url_parsed = urlparse(landed_url)
+        landed_url_base = urlunparse(
+            (
+                landed_url_parsed.scheme,
+                landed_url_parsed.netloc,
+                landed_url_parsed.path.rstrip("/"),
+                "",
+                "",
+                "",
+            )
+        ).rstrip("/")
+        logger.debug(f"Landed on URL base: {landed_url_base}")
+        return landed_url_base
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"Failed to get current URL after get() (Attempt {attempt}): {e}. Retrying.")
+        return None
+
+
+def _check_for_mfa_page(driver: WebDriver) -> bool:  # type: ignore
+    """Check if currently on MFA page."""
+    try:
+        WebDriverWait(driver, 1).until(  # type: ignore
+            EC.visibility_of_element_located(  # type: ignore
+                (By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)  # type: ignore
+            )
+        )
+        return True
+    except (TimeoutException, NoSuchElementException):  # type: ignore
+        return False
+    except WebDriverException as e:  # type: ignore
+        logger.warning(f"WebDriverException checking for MFA header: {e}")
+        return False
+
+
+def _check_for_login_page(driver: WebDriver, target_url_base: str, signin_page_url_base: str) -> bool:  # type: ignore
+    """Check if currently on login page (only if not intentionally navigating there)."""
+    if target_url_base == signin_page_url_base:
+        return False
+    try:
+        WebDriverWait(driver, 1).until(  # type: ignore
+            EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
+        )
+        return True
+    except (TimeoutException, NoSuchElementException):  # type: ignore
+        return False
+    except WebDriverException as e:  # type: ignore
+        logger.warning(f"WebDriverException checking for Login username input: {e}")
+        return False
+
+
+def _handle_login_redirect(session_manager: SessionManagerType) -> str:
+    """Handle unexpected login page redirect. Returns 'retry', 'fail', or 'no_manager'."""
+    if not session_manager:
+        logger.error("Landed on login page, no SessionManager provided for re-login attempt.")
+        return "no_manager"
+
+    logger.warning("Landed on Login page unexpectedly. Checking login status first...")
+    login_stat = login_status(session_manager, disable_ui_fallback=True)
+    if login_stat is True:
+        logger.info("Login status OK after landing on login page redirect. Retrying original navigation.")
+        return "retry"
+
+    logger.info("Not logged in according to API. Attempting re-login...")
+    login_result_str = log_in(session_manager)
+    if login_result_str == "LOGIN_SUCCEEDED":
+        logger.info("Re-login successful. Retrying original navigation...")
+        return "retry"
+
+    logger.error(f"Re-login attempt failed ({login_result_str}). Cannot complete navigation.")
+    return "fail"
+
+
+def _check_signin_redirect(
+    target_url_base: str,
+    landed_url_base: str,
+    signin_page_url_base: str,
+    session_manager: SessionManagerType,
+) -> bool:
+    """Check if redirect from signin to base URL is valid. Returns True if valid redirect."""
+    is_signin_to_base_redirect = (
+        target_url_base == signin_page_url_base
+        and landed_url_base == urlparse(config_schema.api.base_url).path.rstrip("/")
+    )
+    if is_signin_to_base_redirect:
+        logger.debug("Redirected from signin page to base URL. Verifying login status...")
+        time.sleep(1)
+        if session_manager and login_status(session_manager, disable_ui_fallback=True) is True:
+            logger.info("Redirect after signin confirmed as logged in. Considering original navigation target 'signin' successful.")
+            return True
+    return False
+
+
+def _handle_url_mismatch(
+    driver: WebDriver,  # type: ignore
+    landed_url_base: str,
+    target_url_base: str,
+    unavailability_selectors: Dict[str, Tuple[str, int]],
+) -> str:
+    """Handle landing on unexpected URL. Returns 'continue', 'fail', or 'success'."""
+    logger.warning(f"Navigation landed on unexpected URL base: '{landed_url_base}' (Expected: '{target_url_base}')")
+    action, wait_time = _check_for_unavailability(driver, unavailability_selectors)
+    if action == "skip":
+        logger.error("Page no longer available message found. Skipping.")
+        return "fail"
+    if action == "refresh":
+        logger.info(f"Temporary unavailability message found. Waiting {wait_time}s and retrying...")
+        time.sleep(wait_time)
+        return "continue"
+    logger.warning("Wrong URL, no specific unavailability message found. Retrying navigation.")
+    return "continue"
+
+
+def _wait_for_element(
+    driver: WebDriver,  # type: ignore
+    selector: str,
+    element_timeout: int,
+    unavailability_selectors: Dict[str, Tuple[str, int]],
+) -> str:
+    """Wait for target element. Returns 'success', 'continue', or 'fail'."""
+    wait_selector = selector if selector else "body"
+    logger.debug(f"On correct URL base. Waiting up to {element_timeout}s for selector: '{wait_selector}'")
+    try:
+        WebDriverWait(driver, element_timeout).until(  # type: ignore
+            EC.visibility_of_element_located((By.CSS_SELECTOR, wait_selector))  # type: ignore
+        )
+        logger.debug(f"Navigation successful and element '{wait_selector}' found.")
+        return "success"
+    except TimeoutException:  # type: ignore
+        current_url_on_timeout = "Unknown"
+        try:
+            current_url_on_timeout = driver.current_url
+        except Exception:
+            pass
+        logger.warning(f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout} (URL base was correct).")
+
+        action, wait_time = _check_for_unavailability(driver, unavailability_selectors)
+        if action == "skip":
+            return "fail"
+        if action == "refresh":
+            time.sleep(wait_time)
+            return "continue"
+        logger.warning("Timeout on selector, no unavailability message. Retrying navigation.")
+        return "continue"
+    except WebDriverException as el_wait_err:  # type: ignore
+        logger.error(f"WebDriverException waiting for selector '{wait_selector}': {el_wait_err}")
+        return "continue"
+
+
+def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:  # type: ignore
+    """Handle unexpected alert. Returns 'continue' or 'fail'."""
+    alert_text = "N/A"
+    try:
+        # Try to get alert text if available
+        alert = driver.switch_to.alert
+        alert_text = alert.text
+    except AttributeError:
+        pass
+    logger.warning(f"Unexpected alert detected (Attempt {attempt}): {alert_text}")
+    try:
+        driver.switch_to.alert.accept()
+        logger.info("Accepted unexpected alert.")
+        return "continue"
+    except Exception as accept_e:
+        logger.error(f"Failed to accept unexpected alert: {accept_e}")
+        return "fail"
+
+
+def _handle_webdriver_exception(
+    driver: WebDriver,  # type: ignore
+    session_manager: SessionManagerType,
+    attempt: int,
+) -> Tuple[str, Optional[WebDriver]]:  # type: ignore
+    """Handle WebDriver exception. Returns (action, driver) where action is 'continue' or 'fail'."""
+    if session_manager and not is_browser_open(driver):
+        logger.error("WebDriver session invalid after exception. Attempting restart...")
+        if session_manager.restart_sess():
+            logger.info("Session restarted. Retrying navigation...")
+            driver_instance = session_manager.driver
+            if driver_instance is not None:
+                return ("continue", driver_instance)
+            return ("fail", None)
+        logger.error("Session restart failed. Cannot complete navigation.")
+        return ("fail", None)
+    logger.warning("WebDriverException occurred, session seems valid or no restart possible. Waiting before retry.")
+    time.sleep(random.uniform(2, 4))
+    return ("continue", driver)
+
+
 def nav_to_page(
     driver: WebDriver,  # type: ignore
     url: str,
@@ -2846,36 +3106,19 @@ def nav_to_page(
     Returns:
         True if navigation succeeded and the selector was found, False otherwise.
     """
-    if not driver:
-        logger.error("Navigation failed: WebDriver instance is None.")
+    # Validate inputs
+    if not _validate_nav_inputs(driver, url):
         return False
-    # End of if
-    if not url or not isinstance(url, str):
-        logger.error(f"Navigation failed: Target URL '{url}' is invalid.")
-        return False
-    # End of if
 
+    # Parse and normalize URL
+    target_url_base = _parse_and_normalize_url(url)
+    if target_url_base is None:
+        return False
+
+    # Get configuration
     max_attempts = config_schema.api.max_retries
     page_timeout = config_schema.selenium.page_load_timeout
     element_timeout = config_schema.selenium.explicit_wait
-
-    # Normalize target URL base (scheme, netloc, path) for comparison
-    try:
-        target_url_parsed = urlparse(url)
-        target_url_base = urlunparse(
-            (
-                target_url_parsed.scheme,
-                target_url_parsed.netloc,
-                target_url_parsed.path.rstrip("/"),
-                "",
-                "",
-                "",
-            )
-        ).rstrip("/")
-    except ValueError as url_parse_err:
-        logger.error(f"Failed to parse target URL '{url}': {url_parse_err}")
-        return False
-    # End of try/except
 
     # Define common problematic URLs/selectors
     signin_page_url_base = urljoin(config_schema.api.base_url, "account/signin").rstrip("/")
@@ -2888,317 +3131,79 @@ def nav_to_page(
 
     for attempt in range(1, max_attempts + 1):
         logger.debug(f"Navigation Attempt {attempt}/{max_attempts} to: {url}")
-        landed_url = ""
-        landed_url_base = ""
 
         try:
             # --- Pre-Navigation Checks ---
-            if not is_browser_open(driver):
-                logger.error(
-                    f"Navigation failed (Attempt {attempt}): Browser session invalid before nav."
-                )
-                if session_manager:
-                    logger.warning("Attempting session restart...")
-                    if session_manager.restart_sess():
-                        logger.info("Session restarted. Retrying navigation...")
-                        # Get the new driver instance with type assertion
-                        driver_instance = session_manager.driver
-                        if driver_instance is not None:
-                            driver = driver_instance  # Only assign if not None
-                        if not driver:  # Check if restart actually provided a driver
-                            logger.error(
-                                "Session restart reported success but driver is still None."
-                            )
-                            return False
-                        # End of if
-                        continue  # Retry navigation with new driver
-                    logger.error("Session restart failed. Cannot navigate.")
-                    return False  # Unrecoverable
-                    # End of if/else restart
-                logger.error(
-                    "Session invalid and no SessionManager provided for restart."
-                )
-                return False  # Unrecoverable
-                # End of if/else session_manager
-            # End of if not is_browser_open
+            driver_check = _check_browser_session(driver, session_manager, attempt)
+            if driver_check is None:
+                return False
+            if driver_check != driver:
+                driver = driver_check
+                continue
 
             # --- Navigation Execution ---
-            logger.debug(f"Executing driver.get('{url}')...")
-            driver.get(url)
-
-            # Wait for document ready state (basic page load signal)
-            WebDriverWait(driver, page_timeout).until(  # type: ignore
-                lambda d: d.execute_script("return document.readyState")
-                in ["complete", "interactive"]
-            )
-            # Small pause allowing JS/redirects to potentially trigger
-            time.sleep(random.uniform(0.5, 1.5))
+            _execute_navigation(driver, url, page_timeout)
 
             # --- Post-Navigation Checks ---
-            try:
-                landed_url = driver.current_url
-                landed_url_parsed = urlparse(landed_url)
-                landed_url_base = urlunparse(
-                    (
-                        landed_url_parsed.scheme,
-                        landed_url_parsed.netloc,
-                        landed_url_parsed.path.rstrip("/"),
-                        "",
-                        "",
-                        "",
-                    )
-                ).rstrip("/")
-                logger.debug(f"Landed on URL base: {landed_url_base}")
-            except WebDriverException as e:  # type: ignore
-                logger.error(
-                    f"Failed to get current URL after get() (Attempt {attempt}): {e}. Retrying."
-                )
-                continue  # Retry the navigation attempt
-            # End of try/except
+            landed_url_base = _get_landed_url_base(driver, attempt)
+            if landed_url_base is None:
+                continue
 
             # Check for MFA page
-            is_on_mfa_page = False
-            try:
-                # Use short wait, presence is enough
-                WebDriverWait(driver, 1).until(  # type: ignore
-                    EC.visibility_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)  # type: ignore
-                    )
-                )
-                is_on_mfa_page = True
-            except (TimeoutException, NoSuchElementException):  # type: ignore
-                pass  # Expected if not on MFA page
-            except WebDriverException as e:  # type: ignore
-                logger.warning(f"WebDriverException checking for MFA header: {e}")
-            # End of try/except
+            if _check_for_mfa_page(driver):
+                logger.error("Landed on MFA page unexpectedly during navigation. Navigation failed.")
+                return False
 
-            if is_on_mfa_page:
-                logger.error(
-                    "Landed on MFA page unexpectedly during navigation. Navigation failed."
-                )
-                # Should not attempt re-login here, indicates a prior login state issue
-                return False  # Fail navigation
-            # End of if
-
-            # Check for Login page (only if *not* intentionally navigating there)
-            is_on_login_page = False
-            if (
-                target_url_base != signin_page_url_base
-            ):  # Don't check if login is the target
-                try:
-                    # Check if username input exists (strong indicator of login page)
-                    WebDriverWait(driver, 1).until(  # type: ignore
-                        EC.visibility_of_element_located(  # type: ignore
-                            (By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR)  # type: ignore
-                        )
-                    )
-                    is_on_login_page = True
-                except (TimeoutException, NoSuchElementException):  # type: ignore
-                    pass  # Expected if not on login page
-                except WebDriverException as e:  # type: ignore
-                    logger.warning(
-                        f"WebDriverException checking for Login username input: {e}"
-                    )
-                # End of try/except
-            # End of if target_url_base != signin_page_url_base
-
-            if is_on_login_page:
-                logger.warning(
-                    "Landed on Login page unexpectedly. Checking login status first..."
-                )
-                if session_manager:
-                    # First check if we're already logged in (API might say yes even if UI shows login page)
-                    login_stat = login_status(
-                        session_manager, disable_ui_fallback=True
-                    )  # API check only for speed
-                    if login_stat is True:
-                        logger.info(
-                            "Login status OK after landing on login page redirect. Retrying original navigation."
-                        )
-                        continue  # Retry original nav_to_page call
-                    # Attempt automated login
-                    logger.info(
-                        "Not logged in according to API. Attempting re-login..."
-                    )
-                    login_result_str = log_in(session_manager)
-                    if login_result_str == "LOGIN_SUCCEEDED":
-                        logger.info(
-                            "Re-login successful. Retrying original navigation..."
-                        )
-                        continue  # Retry original nav_to_page call
-                    logger.error(
-                        f"Re-login attempt failed ({login_result_str}). Cannot complete navigation."
-                    )
-                    return False  # Fail navigation if re-login fails
-                        # End of if/else login_result_str
-                    # End of if/else login_stat
-                logger.error(
-                    "Landed on login page, no SessionManager provided for re-login attempt."
-                )
-                return False  # Fail navigation
-                # End of if/else session_manager
-            # End of if is_on_login_page
+            # Check for Login page
+            if _check_for_login_page(driver, target_url_base, signin_page_url_base):
+                login_action = _handle_login_redirect(session_manager)
+                if login_action == "retry":
+                    continue
+                elif login_action in ("fail", "no_manager"):
+                    return False
 
             # Check if landed on an unexpected URL (and not login/mfa)
-            # Allow for slight variations (e.g., trailing slash) via base comparison
             if landed_url_base != target_url_base:
-                # Check if it's a known redirect (e.g., signin page redirecting to base URL after successful login)
-                is_signin_to_base_redirect = (
-                    target_url_base == signin_page_url_base
-                    and landed_url_base
-                    == urlparse(config_schema.api.base_url).path.rstrip("/")
-                )
-                if is_signin_to_base_redirect:
-                    logger.debug(
-                        "Redirected from signin page to base URL. Verifying login status..."
-                    )
-                    time.sleep(1)  # Allow settling
-                    if (
-                        session_manager
-                        and login_status(session_manager, disable_ui_fallback=True)
-                        is True
-                    ):  # API check only for speed
-                        logger.info(
-                            "Redirect after signin confirmed as logged in. Considering original navigation target 'signin' successful."
-                        )
-                        return True  # Treat as success if login was the goal and we are now logged in
-                    # End of if
-                # End of if is_signin_to_base_redirect
+                # Check if it's a known redirect
+                if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
+                    return True
 
-                # If not the known redirect, check for unavailability messages
-                logger.warning(
-                    f"Navigation landed on unexpected URL base: '{landed_url_base}' (Expected: '{target_url_base}')"
-                )
-                action, wait_time = _check_for_unavailability(
-                    driver, unavailability_selectors
-                )
-                if action == "skip":
-                    logger.error("Page no longer available message found. Skipping.")
-                    return False  # Fail navigation
-                if action == "refresh":
-                    logger.info(
-                        f"Temporary unavailability message found. Waiting {wait_time}s and retrying..."
-                    )
-                    time.sleep(wait_time)
-                    continue  # Retry navigation attempt
-                # Wrong URL, no specific message, likely a redirect issue
-                logger.warning(
-                    "Wrong URL, no specific unavailability message found. Retrying navigation."
-                )
-                continue  # Retry navigation attempt
-                # End of if/elif/else action
-            # End of if landed_url_base != target_url_base
+                # Handle URL mismatch
+                mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
+                if mismatch_action == "fail":
+                    return False
+                elif mismatch_action == "continue":
+                    continue
 
             # --- Final Check: Element on Page ---
-            # If we reached here, we are on the correct URL base (or handled redirects)
-            wait_selector = (
-                selector if selector else "body"
-            )  # Default to body if no selector provided
-            logger.debug(
-                f"On correct URL base. Waiting up to {element_timeout}s for selector: '{wait_selector}'"
-            )
-            try:
-                WebDriverWait(driver, element_timeout).until(  # type: ignore
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, wait_selector))  # type: ignore
-                )
-                logger.debug(
-                    f"Navigation successful and element '{wait_selector}' found on: {url}"
-                )
-                return True  # Success!
-
-            except TimeoutException:  # type: ignore
-                # Correct URL, but target element didn't appear
-                current_url_on_timeout = "Unknown"
-                try:
-                    current_url_on_timeout = driver.current_url
-                except Exception:
-                    pass
-                # End of try/except
-                logger.warning(
-                    f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout} (URL base was correct)."
-                )
-
-                # Check again for unavailability messages that might have appeared late
-                action, wait_time = _check_for_unavailability(
-                    driver, unavailability_selectors
-                )
-                if action == "skip":
-                    return False
-                if action == "refresh":
-                    time.sleep(wait_time)
-                    continue  # Retry navigation
-                # End of if/elif
-
-                logger.warning(
-                    "Timeout on selector, no unavailability message. Retrying navigation."
-                )
-                continue  # Retry navigation attempt
-
-            except (
-                WebDriverException
-            ) as el_wait_err:  # Catch errors during element wait # type: ignore
-                logger.error(
-                    f"WebDriverException waiting for selector '{wait_selector}': {el_wait_err}"
-                )
-                continue  # Retry navigation
-            # End of try/except for final check
+            element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
+            if element_result == "success":
+                return True
+            elif element_result == "fail":
+                return False
+            elif element_result == "continue":
+                continue
 
         # --- Handle Exceptions During Navigation Attempt ---
-        except UnexpectedAlertPresentException as alert_e:  # type: ignore
-            alert_text = "N/A"
-            try:
-                alert_text = alert_e.alert_text  # type: ignore
-            except AttributeError:
-                pass
-            # End of try/except
-            logger.warning(
-                f"Unexpected alert detected (Attempt {attempt}): {alert_text}"
-            )
-            try:
-                driver.switch_to.alert.accept()
-                logger.info("Accepted unexpected alert.")
-            except Exception as accept_e:
-                logger.error(f"Failed to accept unexpected alert: {accept_e}")
-                return False  # Fail if alert cannot be handled
-            # End of try/except
-            continue  # Retry navigation after handling alert
+        except UnexpectedAlertPresentException:  # type: ignore
+            alert_action = _handle_navigation_alert(driver, attempt)
+            if alert_action == "fail":
+                return False
+            continue
 
         except WebDriverException as wd_e:  # type: ignore
-            logger.error(
-                f"WebDriverException during navigation (Attempt {attempt}): {wd_e}",
-                exc_info=False,
-            )
-            if session_manager and not is_browser_open(driver):
-                logger.error(
-                    "WebDriver session invalid after exception. Attempting restart..."
-                )
-                if session_manager.restart_sess():
-                    logger.info("Session restarted. Retrying navigation...")
-                    # Get the new driver instance with type assertion
-                    driver_instance = session_manager.driver
-                    if driver_instance is not None:
-                        driver = driver_instance  # Only assign if not None
-                    if not driver:
-                        return False  # Fail if restart didn't provide driver
-                    # End of if
-                    continue  # Retry navigation
-                logger.error("Session restart failed. Cannot complete navigation.")
-                return False  # Unrecoverable
-                # End of if/else restart
-            logger.warning(
-                "WebDriverException occurred, session seems valid or no restart possible. Waiting before retry."
-            )
+            logger.error(f"WebDriverException during navigation (Attempt {attempt}): {wd_e}", exc_info=False)
+            wd_action, new_driver = _handle_webdriver_exception(driver, session_manager, attempt)
+            if wd_action == "fail":
+                return False
+            if new_driver is not None:
+                driver = new_driver
+            continue
+
+        except Exception as e:
+            logger.error(f"Unexpected error during navigation (Attempt {attempt}): {e}", exc_info=True)
             time.sleep(random.uniform(2, 4))
-            continue  # Retry navigation attempt
-            # End of if/else session_manager
-        except Exception as e:  # Catch other unexpected errors
-            logger.error(
-                f"Unexpected error during navigation (Attempt {attempt}): {e}",
-                exc_info=True,
-            )
-            time.sleep(random.uniform(2, 4))  # Wait before retry
-            continue  # Retry navigation attempt
-        # End of try/except block for navigation attempt
+            continue
 
     # --- Failed After All Attempts ---
     logger.critical(
