@@ -763,33 +763,51 @@ class MessagePersonalizer:
 
         return "Understanding family migration patterns helps piece together our shared ancestry."
 
+    def _extract_year_from_date(self, date: str) -> Optional[int]:
+        """Extract 4-digit year from date string."""
+        for part in date.split():
+            if part.isdigit() and len(part) == 4:
+                year = int(part)
+                if 1800 <= year <= 1950:
+                    return year
+        return None
+
+    def _get_historical_context_for_location(self, year: int, place: str, event_type: str) -> Optional[str]:
+        """Get historical context based on year and location."""
+        if "Scotland" in place and 1840 <= year <= 1920:
+            return f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods."
+        elif "Ireland" in place and 1845 <= year <= 1855:
+            return f"The {event_type} in {place} around {year} was during the Irish Potato Famine era."
+        elif 1914 <= year <= 1918:
+            return f"The {year} timeframe was during World War I, which affected many family records."
+        return None
+
+    def _analyze_vital_record_context(self, record: dict[str, Any]) -> Optional[str]:
+        """Analyze historical context for a single vital record."""
+        if not isinstance(record, dict):
+            return None
+
+        date = record.get("date", "")
+        place = record.get("place", "")
+        event_type = record.get("event_type", "")
+
+        if not (date and place):
+            return None
+
+        year = self._extract_year_from_date(date)
+        if year:
+            return self._get_historical_context_for_location(year, place, event_type)
+        return None
+
     def _create_historical_context_analysis(self, extracted_data: dict[str, Any]) -> str:
         """Create historical context based on dates and locations."""
         vital_records = extracted_data.get("vital_records", [])
-        historical_contexts = []
 
         for record in vital_records[:2]:
-            if isinstance(record, dict):
-                date = record.get("date", "")
-                place = record.get("place", "")
-                event_type = record.get("event_type", "")
+            context = self._analyze_vital_record_context(record)
+            if context:
+                return context
 
-                if date and place:
-                    # Extract year for historical context
-                    for part in date.split():
-                        if part.isdigit() and len(part) == 4:
-                            year = int(part)
-                            if 1800 <= year <= 1950:
-                                if "Scotland" in place and 1840 <= year <= 1920:
-                                    historical_contexts.append(f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods.")
-                                elif "Ireland" in place and 1845 <= year <= 1855:
-                                    historical_contexts.append(f"The {event_type} in {place} around {year} was during the Irish Potato Famine era.")
-                                elif year >= 1914 and year <= 1918:
-                                    historical_contexts.append(f"The {year} timeframe was during World War I, which affected many family records.")
-                            break
-
-        if historical_contexts:
-            return historical_contexts[0]
         return "Understanding the historical context of our family events helps explain migration and life decisions."
 
     def _create_record_availability_assessment(self, extracted_data: dict[str, Any]) -> str:
