@@ -1646,47 +1646,30 @@ def _process_api_response(
 
 # End of _process_api_response
 
-def _api_req(
-    url: str,
+def _execute_request_with_retries(
+    session_manager: SessionManager,
     driver: DriverType,
-    session_manager: SessionManager,  # type: ignore
-    method: str = "GET",
-    data: Optional[Dict] = None,
-    json_data: Optional[Dict] = None,
-    json: Optional[Dict] = None,
-    use_csrf_token: bool = True,
-    headers: Optional[Dict[str, str]] = None,
-    referer_url: Optional[str] = None,
-    api_description: str = "API Call",
-    timeout: Optional[int] = None,
-    cookie_jar: Optional[RequestsCookieJar] = None,  # type: ignore
-    allow_redirects: bool = True,
-    force_text_response: bool = False,
-    add_default_origin: bool = True,
+    url: str,
+    method: str,
+    api_description: str,
+    max_retries: int,
+    initial_delay: float,
+    backoff_factor: float,
+    max_delay: float,
+    retry_status_codes: List[int],
+    headers: Optional[Dict[str, str]],
+    referer_url: Optional[str],
+    use_csrf_token: bool,
+    add_default_origin: bool,
+    timeout: Optional[int],
+    cookie_jar: Optional[RequestsCookieJar],  # type: ignore
+    allow_redirects: bool,
+    data: Optional[Dict],
+    json_data: Optional[Dict],
+    json: Optional[Dict],
+    force_text_response: bool,
 ) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
-    """
-    Makes an HTTP request using the shared requests.Session from SessionManager.
-    Handles dynamic header generation, cookie synchronization, rate limiting,
-    retries, and basic response processing. Includes enhanced logging.
-
-    Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
-             or Response object on non-retryable error/redirect disabled.
-    """
-    logger.debug(f"[_api_req ENTRY] api_description: '{api_description}', url: {url}")
-
-    # Validate prerequisites
-    if not _validate_api_req_prerequisites(session_manager, api_description):
-        return None
-
-    # Get retry configuration
-    max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
-
-    logger.debug(
-        f"[_api_req PRE-LOOP] api_description: '{api_description}', max_retries: {max_retries}, "
-        f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
-    )
-
-    # Execute request with retry loop
+    """Execute API request with retry logic."""
     retries_left = max_retries
     last_exception: Optional[Exception] = None
     response: RequestsResponseTypeOptional = None
@@ -1801,89 +1784,150 @@ def _api_req(
         # If we get here, the request was successful and processed
         break
 
-    # Diagnostic log: Function exit
-    logger.debug(
-        f"[_api_req EXIT] api_description: '{api_description}', attempts: {max_retries - retries_left + 1}/{max_retries}"
-    )
-
     # Should only be reached if loop completes without success
     if response is None:
-        logger.error(
-            f"{api_description}: Exited retry loop. Last Exception: {last_exception}."
-        )
+        logger.error(f"{api_description}: Exited retry loop. Last Exception: {last_exception}.")
         return None
 
     # Return the last response (this should be a non-retryable error response)
+    logger.debug(f"[_api_req '{api_description}'] Returning last Response object (Status: {response.status_code}).")
+    return response
+
+
+def _api_req(
+    url: str,
+    driver: DriverType,
+    session_manager: SessionManager,  # type: ignore
+    method: str = "GET",
+    data: Optional[Dict] = None,
+    json_data: Optional[Dict] = None,
+    json: Optional[Dict] = None,
+    use_csrf_token: bool = True,
+    headers: Optional[Dict[str, str]] = None,
+    referer_url: Optional[str] = None,
+    api_description: str = "API Call",
+    timeout: Optional[int] = None,
+    cookie_jar: Optional[RequestsCookieJar] = None,  # type: ignore
+    allow_redirects: bool = True,
+    force_text_response: bool = False,
+    add_default_origin: bool = True,
+) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
+    """
+    Makes an HTTP request using the shared requests.Session from SessionManager.
+    Handles dynamic header generation, cookie synchronization, rate limiting,
+    retries, and basic response processing. Includes enhanced logging.
+
+    Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
+             or Response object on non-retryable error/redirect disabled.
+    """
+    logger.debug(f"[_api_req ENTRY] api_description: '{api_description}', url: {url}")
+
+    # Validate prerequisites
+    if not _validate_api_req_prerequisites(session_manager, api_description):
+        return None
+
+    # Get retry configuration
+    max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
+
     logger.debug(
-        f"[_api_req '{api_description}'] Returning last Response object (Status: {response.status_code})."
+        f"[_api_req PRE-LOOP] api_description: '{api_description}', max_retries: {max_retries}, "
+        f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
     )
+
+    # Execute request with retry loop
+    response = _execute_request_with_retries(
+        session_manager=session_manager,
+        driver=driver,
+        url=url,
+        method=method,
+        api_description=api_description,
+        max_retries=max_retries,
+        initial_delay=initial_delay,
+        backoff_factor=backoff_factor,
+        max_delay=max_delay,
+        retry_status_codes=retry_status_codes,
+        headers=headers,
+        referer_url=referer_url,
+        use_csrf_token=use_csrf_token,
+        add_default_origin=add_default_origin,
+        timeout=timeout,
+        cookie_jar=cookie_jar,
+        allow_redirects=allow_redirects,
+        data=data,
+        json_data=json_data,
+        json=json,
+        force_text_response=force_text_response,
+    )
+
+    logger.debug(f"[_api_req EXIT] api_description: '{api_description}'")
     return response
 
 # End of _api_req
 
-def make_ube(driver: DriverType) -> Optional[str]:
+# Helper functions for make_ube
+
+def _validate_driver_session(driver: DriverType) -> bool:
+    """Validate that driver session is active."""
     if not driver:
-        return None
-    # End of if
+        return False
     try:
         _ = driver.title  # Quick check for session validity
+        return True
     except WebDriverException as e:  # type: ignore
-        logger.warning(
-            f"Cannot generate UBE header: Session invalid/unresponsive ({type(e).__name__})."
-        )
-        return None
-    # End of try/except
+        logger.warning(f"Cannot generate UBE header: Session invalid/unresponsive ({type(e).__name__}).")
+        return False
 
-    ancsessionid: Optional[str] = None
+
+def _get_ancsessionid_cookie(driver: DriverType) -> Optional[str]:
+    """Get ANCSESSIONID cookie value from driver."""
     try:
         # Try fetching specific cookie first
         cookie_obj = driver.get_cookie("ANCSESSIONID")
         if cookie_obj and isinstance(cookie_obj, dict) and "value" in cookie_obj:
-            ancsessionid = cookie_obj["value"]
-        elif ancsessionid is None:  # Fallback to getting all cookies if specific fails
-            cookies_dict = {
-                c["name"]: c["value"]
-                for c in driver.get_cookies()
-                if isinstance(c, dict) and "name" in c
-            }
-            ancsessionid = cookies_dict.get("ANCSESSIONID")
-        # End of if/elif
+            return cookie_obj["value"]
+
+        # Fallback to getting all cookies
+        cookies_dict = {
+            c["name"]: c["value"]
+            for c in driver.get_cookies()
+            if isinstance(c, dict) and "name" in c
+        }
+        ancsessionid = cookies_dict.get("ANCSESSIONID")
+
         if not ancsessionid:
             logger.warning("ANCSESSIONID cookie not found. Cannot generate UBE header.")
             return None
-        # End of if
+        return ancsessionid
     except (NoSuchCookieException, WebDriverException) as cookie_e:  # type: ignore
         logger.warning(f"Error getting ANCSESSIONID cookie for UBE header: {cookie_e}")
         return None
     except Exception as e:
-        logger.error(
-            f"Unexpected error getting ANCSESSIONID for UBE: {e}", exc_info=True
-        )
+        logger.error(f"Unexpected error getting ANCSESSIONID for UBE: {e}", exc_info=True)
         return None
-    # End of try/except
 
-    # Construct UBE data payload
-    event_id = (
-        "00000000-0000-0000-0000-000000000000"  # Typically zero GUID for this header
-    )
-    correlated_id = str(uuid.uuid4())  # Unique ID for this interaction
-    screen_name_standard = (
-        "ancestry : uk : en : dna-matches-ui : match-list : 1"  # Example
-    )
-    screen_name_legacy = "ancestry uk : dnamatches-matchlistui : list"  # Example
-    user_consent = "necessary|preference|performance|analytics1st|analytics3rd|advertising1st|advertising3rd|attribution3rd"  # Example consent string
-    ube_data = {
+
+def _build_ube_payload(ancsessionid: str) -> Dict[str, str]:
+    """Build UBE data payload."""
+    event_id = "00000000-0000-0000-0000-000000000000"
+    correlated_id = str(uuid.uuid4())
+    screen_name_standard = "ancestry : uk : en : dna-matches-ui : match-list : 1"
+    screen_name_legacy = "ancestry uk : dnamatches-matchlistui : list"
+    user_consent = "necessary|preference|performance|analytics1st|analytics3rd|advertising1st|advertising3rd|attribution3rd"
+
+    return {
         "eventId": event_id,
         "correlatedScreenViewedId": correlated_id,
         "correlatedSessionId": ancsessionid,
         "screenNameStandard": screen_name_standard,
         "screenNameLegacy": screen_name_legacy,
         "userConsent": user_consent,
-        "vendors": "adobemc",  # Example
-        "vendorConfigurations": "{}",  # Usually empty JSON string
+        "vendors": "adobemc",
+        "vendorConfigurations": "{}",
     }
 
-    # Encode the payload
+
+def _encode_ube_payload(ube_data: Dict[str, str]) -> Optional[str]:
+    """Encode UBE payload to base64."""
     try:
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
         encoded_payload = base64.b64encode(json_payload).decode("utf-8")
@@ -1894,7 +1938,19 @@ def make_ube(driver: DriverType) -> Optional[str]:
     except Exception as e:
         logger.error(f"Unexpected error encoding UBE header: {e}", exc_info=True)
         return None
-    # End of try/except
+
+
+def make_ube(driver: DriverType) -> Optional[str]:
+    """Generate UBE header for Ancestry API requests."""
+    if not _validate_driver_session(driver):
+        return None
+
+    ancsessionid = _get_ancsessionid_cookie(driver)
+    if not ancsessionid:
+        return None
+
+    ube_data = _build_ube_payload(ancsessionid)
+    return _encode_ube_payload(ube_data)
 
 # End of make_ube
 
@@ -1975,185 +2031,154 @@ def make_tracestate(_driver: DriverType) -> Optional[str]:
 # ----------------------------------------------------------------------------
 TWO_STEP_VERIFICATION_HEADER_SELECTOR = "h1.two-step-verification-header"
 
+# Helper functions for handle_twoFA
+
+def _wait_for_2fa_header(driver: WebDriver, element_wait: WebDriverWait, session_manager: SessionManager) -> bool:  # type: ignore
+    """Wait for 2FA page header to appear."""
+    try:
+        logger.debug(f"Waiting for 2FA page header using selector: '{TWO_STEP_VERIFICATION_HEADER_SELECTOR}'")
+        element_wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))  # type: ignore
+        )
+        logger.debug("2FA page header detected.")
+        return True
+    except TimeoutException:  # type: ignore
+        logger.debug("Did not detect 2FA page header within timeout.")
+        if login_status(session_manager, disable_ui_fallback=True) is True:
+            logger.info("User appears logged in after checking for 2FA page. Assuming 2FA handled/skipped.")
+            return True
+        logger.warning("Assuming 2FA not required or page didn't load correctly (header missing).")
+        return False
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"WebDriverException waiting for 2FA header: {e}")
+        return False
+
+
+def _click_sms_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:  # type: ignore
+    """Try clicking the SMS 'Send Code' button."""
+    try:
+        logger.debug(f"Waiting for 2FA 'Send Code' (SMS) button: '{TWO_FA_SMS_SELECTOR}'")
+        sms_button_clickable = short_wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, TWO_FA_SMS_SELECTOR))  # type: ignore
+        )
+        if sms_button_clickable:
+            logger.debug("Attempting to click 'Send Code' button using JavaScript...")
+            try:
+                driver.execute_script("arguments[0].click();", sms_button_clickable)
+                logger.debug("'Send Code' button clicked.")
+                return _wait_for_code_input_field(driver)
+            except WebDriverException as click_err:  # type: ignore
+                logger.error(f"Error clicking 'Send Code' button via JS: {click_err}")
+                return False
+        else:
+            logger.error("'Send Code' button found but reported as not clickable by Selenium.")
+            return False
+    except TimeoutException:  # type: ignore
+        logger.error("Timeout finding or waiting for clickability of the 2FA 'Send Code' button.")
+        return False
+    except ElementNotInteractableException:  # type: ignore
+        logger.error("'Send Code' button not interactable (potentially obscured).")
+        return False
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"WebDriverException interacting with 2FA 'Send Code' button: {e}", exc_info=False)
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error clicking 2FA 'Send Code' button: {e}", exc_info=True)
+        return False
+
+
+def _wait_for_code_input_field(driver: WebDriver) -> bool:  # type: ignore
+    """Wait for 2FA code input field to appear after clicking Send Code."""
+    try:
+        logger.debug(f"Waiting for 2FA code input field: '{TWO_FA_CODE_INPUT_SELECTOR}'")
+        WebDriverWait(driver, 5).until(  # type: ignore
+            EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_FA_CODE_INPUT_SELECTOR))  # type: ignore
+        )
+        logger.debug("Code input field appeared after clicking 'Send Code'.")
+        return True
+    except TimeoutException:  # type: ignore
+        logger.warning("Code input field did not appear/become visible after clicking 'Send Code'.")
+        return False
+    except WebDriverException as e_input:  # type: ignore
+        logger.error(f"Error waiting for 2FA code input field: {e_input}. Check selector: {TWO_FA_CODE_INPUT_SELECTOR}")
+        return False
+
+
+def _wait_for_user_2fa_action(driver: WebDriver, code_entry_timeout: int) -> bool:  # type: ignore
+    """Wait for user to manually enter 2FA code and submit."""
+    logger.warning(f"Waiting up to {code_entry_timeout}s for user to manually enter 2FA code and submit...")
+    start_time = time.time()
+
+    while time.time() - start_time < code_entry_timeout:
+        try:
+            # Check if the 2FA header is GONE (indicates page change/submission)
+            WebDriverWait(driver, 0.5).until_not(  # type: ignore
+                EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))  # type: ignore
+            )
+            logger.info("2FA page elements disappeared, assuming user submitted code.")
+            return True
+        except TimeoutException:  # type: ignore
+            time.sleep(2)  # Check every 2 seconds
+        except NoSuchElementException:  # type: ignore
+            logger.info("2FA header element no longer present.")
+            return True
+        except WebDriverException as e:  # type: ignore
+            logger.error(f"WebDriver error checking for 2FA header during wait: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error checking for 2FA header during wait: {e}")
+            return False
+
+    logger.error(f"Timed out ({code_entry_timeout}s) waiting for user 2FA action (page did not change).")
+    return False
+
+
+def _verify_2fa_completion(session_manager: SessionManager) -> bool:
+    """Verify that 2FA was completed successfully by checking login status."""
+    logger.info("Re-checking login status after potential 2FA submission...")
+    time.sleep(1)  # Allow page to settle
+    final_status = login_status(session_manager, disable_ui_fallback=False)
+    if final_status is True:
+        logger.info("User completed 2FA successfully (login confirmed after page change).")
+        return True
+    logger.error("2FA page disappeared, but final login status check failed or returned False.")
+    return False
+
+
 @time_wait("Handle 2FA Page")
 def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
     if session_manager.driver is None:
         logger.error("handle_twoFA: SessionManager driver is None. Cannot proceed.")
         return False
-    # End of if
+
     driver = session_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
     short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
-    try:
-        print(
-            "Two-factor authentication required. Please check your email or phone for a verification code."
-        )
-        logger.debug("Handling Two-Factor Authentication (2FA)...")
-        try:
-            logger.debug(
-                f"Waiting for 2FA page header using selector: '{TWO_STEP_VERIFICATION_HEADER_SELECTOR}'"
-            )
-            element_wait.until(
-                EC.visibility_of_element_located(  # type: ignore
-                    (By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)  # type: ignore
-                )
-            )
-            logger.debug("2FA page header detected.")
-        except TimeoutException:  # type: ignore
-            logger.debug("Did not detect 2FA page header within timeout.")
-            if (
-                login_status(session_manager, disable_ui_fallback=True) is True
-            ):  # API check only for speed
-                logger.info(
-                    "User appears logged in after checking for 2FA page. Assuming 2FA handled/skipped."
-                )
-                return True
-            # End of if
-            logger.warning(
-                "Assuming 2FA not required or page didn't load correctly (header missing)."
-            )
-            return False  # Return False if 2FA page wasn't detected and not logged in
-        except WebDriverException as e:  # type: ignore
-            logger.error(f"WebDriverException waiting for 2FA header: {e}")
-            return False
-        # End of try/except
 
-        # Handle cookie consent banner if present on 2FA page
+    try:
+        print("Two-factor authentication required. Please check your email or phone for a verification code.")
+        logger.debug("Handling Two-Factor Authentication (2FA)...")
+
+        # Wait for 2FA page header
+        if not _wait_for_2fa_header(driver, element_wait, session_manager):
+            return False
+
+        # Handle cookie consent banner if present
         logger.debug("Checking for cookie consent banner on 2FA page...")
         if not consent(driver):
             logger.warning("Failed to handle consent banner on 2FA page, but continuing anyway.")
-        # End of if
 
-        # Try clicking SMS button
-        try:
-            logger.debug(f"Waiting for 2FA 'Send Code' (SMS) button: '{TWO_FA_SMS_SELECTOR}'")  # type: ignore
-            sms_button_clickable = short_wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, TWO_FA_SMS_SELECTOR))  # type: ignore
-            )
-            if sms_button_clickable:
-                logger.debug(
-                    "Attempting to click 'Send Code' button using JavaScript..."
-                )
-                try:
-                    driver.execute_script("arguments[0].click();", sms_button_clickable)
-                    logger.debug("'Send Code' button clicked.")
-                    # Wait briefly for code input field to potentially appear
-                    try:
-                        logger.debug(f"Waiting for 2FA code input field: '{TWO_FA_CODE_INPUT_SELECTOR}'")  # type: ignore
-                        WebDriverWait(driver, 5).until(  # type: ignore
-                            EC.visibility_of_element_located(  # type: ignore
-                                (By.CSS_SELECTOR, TWO_FA_CODE_INPUT_SELECTOR)  # type: ignore
-                            )
-                        )
-                        logger.debug(
-                            "Code input field appeared after clicking 'Send Code'."
-                        )
-                    except TimeoutException:  # type: ignore
-                        logger.warning(
-                            "Code input field did not appear/become visible after clicking 'Send Code'."
-                        )
-                    except WebDriverException as e_input:  # type: ignore
-                        logger.error(f"Error waiting for 2FA code input field: {e_input}. Check selector: {TWO_FA_CODE_INPUT_SELECTOR}")  # type: ignore
-                    # End of inner try/except
-                except WebDriverException as click_err:  # type: ignore
-                    logger.error(
-                        f"Error clicking 'Send Code' button via JS: {click_err}"
-                    )
-                    # Don't return False yet, proceed to wait for manual entry
-                # End of try/except
-            else:
-                # This case should be rare if element_to_be_clickable succeeded
-                logger.error(
-                    "'Send Code' button found but reported as not clickable by Selenium."
-                )
-                # Proceed to wait for manual entry anyway
-            # End of if/else sms_button_clickable
-        except TimeoutException:  # type: ignore
-            logger.error(
-                "Timeout finding or waiting for clickability of the 2FA 'Send Code' button."
-            )
-            # Proceed to wait for manual entry
-        except ElementNotInteractableException:  # type: ignore
-            logger.error("'Send Code' button not interactable (potentially obscured).")
-            # Proceed to wait for manual entry
-        except WebDriverException as e:  # type: ignore
-            logger.error(
-                f"WebDriverException interacting with 2FA 'Send Code' button: {e}",
-                exc_info=False,
-            )
-            # Proceed to wait for manual entry
-        except Exception as e:
-            logger.error(
-                f"Unexpected error clicking 2FA 'Send Code' button: {e}", exc_info=True
-            )
-            # Proceed to wait for manual entry
-        # End of try/except block for clicking SMS button
+        # Try clicking SMS button (non-critical, continue if fails)
+        _click_sms_button(driver, short_wait)
 
-        # Wait for user action (manual code entry and submission)
+        # Wait for user action
         code_entry_timeout = config_schema.selenium.two_fa_code_entry_timeout
-        logger.warning(
-            f"Waiting up to {code_entry_timeout}s for user to manually enter 2FA code and submit..."
-        )
-        start_time = time.time()
-        user_action_detected = False
-        while time.time() - start_time < code_entry_timeout:
-            try:
-                # Check if the 2FA header is GONE (indicates page change/submission)
-                WebDriverWait(driver, 0.5).until_not(  # type: ignore
-                    EC.visibility_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)  # type: ignore
-                    )
-                )
-                logger.info(
-                    "2FA page elements disappeared, assuming user submitted code."
-                )
-                user_action_detected = True
-                break  # Exit wait loop
-            except TimeoutException:  # type: ignore
-                # Header still present, continue waiting
-                time.sleep(2)  # Check every 2 seconds
-            except NoSuchElementException:  # type: ignore
-                # Header element gone, assume submitted
-                logger.info("2FA header element no longer present.")
-                user_action_detected = True
-                break  # Exit wait loop
-            except WebDriverException as e:  # type: ignore
-                # Handle potential errors during the check
-                logger.error(
-                    f"WebDriver error checking for 2FA header during wait: {e}"
-                )
-                # If session dies here, login_status check later will fail
-                break  # Exit wait loop on error
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error checking for 2FA header during wait: {e}"
-                )
-                break  # Exit wait loop on error
-            # End of try/except
-        # End of while loop
+        user_action_detected = _wait_for_user_2fa_action(driver, code_entry_timeout)
 
-        # Final check after waiting
+        # Verify completion
         if user_action_detected:
-            logger.info("Re-checking login status after potential 2FA submission...")
-            time.sleep(1)  # Allow page to settle
-            final_status = login_status(
-                session_manager, disable_ui_fallback=False
-            )  # Use UI fallback for reliability
-            if final_status is True:
-                logger.info(
-                    "User completed 2FA successfully (login confirmed after page change)."
-                )
-                return True
-            logger.error(
-                "2FA page disappeared, but final login status check failed or returned False."
-            )
-            return False
-            # End of if/else
-        logger.error(
-            f"Timed out ({code_entry_timeout}s) waiting for user 2FA action (page did not change)."
-        )
+            return _verify_2fa_completion(session_manager)
         return False
-        # End of if/else user_action_detected
 
     except WebDriverException as e:  # type: ignore
         logger.error(f"WebDriverException during 2FA handling: {e}")
