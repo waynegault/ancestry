@@ -433,6 +433,94 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
         return None
 
 
+# Helper functions for cache_gedcom_processed_data
+
+def _create_cache_keys(gedcom_path: str) -> dict[str, str]:
+    """Create cache keys based on file path and modification time."""
+    from pathlib import Path
+    file_mtime = Path(gedcom_path).stat().st_mtime
+    path_hash = hashlib.md5(str(gedcom_path).encode()).hexdigest()[:8]
+    mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
+
+    return {
+        "processed_data": f"gedcom_processed_{path_hash}_{mtime_hash}",
+        "indi_index": f"gedcom_indi_index_{path_hash}_{mtime_hash}",
+        "family_maps": f"gedcom_family_maps_{path_hash}_{mtime_hash}",
+    }
+
+
+def _serialize_processed_data_item(value: dict[str, Any]) -> dict[str, Any]:
+    """Serialize a single processed data item."""
+    serializable_item = {}
+    for item_key, item_value in value.items():
+        # Convert datetime objects to ISO strings for serialization
+        if hasattr(item_value, "isoformat"):  # datetime objects
+            serializable_item[item_key] = item_value.isoformat()
+        elif isinstance(item_value, (str, int, float, bool, list, tuple, type(None))):
+            serializable_item[item_key] = item_value
+        else:
+            # Skip non-serializable objects
+            logger.debug(
+                f"Skipping non-serializable object in processed_data_cache: {item_key} = {type(item_value)}"
+            )
+    return serializable_item
+
+
+def _serialize_processed_data_cache(processed_data_cache: dict[str, Any]) -> dict[str, Any]:
+    """Create a serializable version of processed_data_cache."""
+    serializable_processed_data = {}
+    for key, value in processed_data_cache.items():
+        if isinstance(value, dict):
+            serializable_processed_data[key] = _serialize_processed_data_item(value)
+        elif isinstance(value, (str, int, float, bool, list, tuple, type(None))):
+            serializable_processed_data[key] = value
+    return serializable_processed_data
+
+
+def _serialize_indi_index_object(value: Any) -> Optional[dict[str, Any]]:
+    """Serialize a complex object from indi_index."""
+    if not hasattr(value, "__dict__"):
+        return None
+
+    obj_dict = {}
+    for attr, attr_value in value.__dict__.items():
+        if isinstance(attr_value, (str, int, float, bool, list, dict, tuple, type(None))):
+            obj_dict[attr] = attr_value
+
+    return obj_dict if obj_dict else None
+
+
+def _serialize_indi_index(indi_index: dict[str, Any]) -> dict[str, Any]:
+    """Create a serializable version of indi_index."""
+    serializable_indi_index = {}
+    for key, value in indi_index.items():
+        # Only cache primitive data types and avoid GedcomReader references
+        if isinstance(value, (str, int, float, bool, list, dict, tuple, type(None))):
+            serializable_indi_index[key] = value
+        else:
+            # For complex objects, try to extract serializable data
+            try:
+                obj_dict = _serialize_indi_index_object(value)
+                if obj_dict:
+                    serializable_indi_index[key] = obj_dict
+            except Exception:
+                # Skip non-serializable objects
+                pass
+    return serializable_indi_index
+
+
+def _cache_family_relationship_maps(gedcom_data: Any, cache_key: str) -> None:
+    """Cache family relationship maps."""
+    family_data = {}
+    if hasattr(gedcom_data, "id_to_parents"):
+        family_data["id_to_parents"] = gedcom_data.id_to_parents
+    if hasattr(gedcom_data, "id_to_children"):
+        family_data["id_to_children"] = gedcom_data.id_to_children
+
+    if family_data:
+        warm_cache_with_data(cache_key, family_data, expire=86400)
+
+
 def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
     """
     Cache the processed data from a GedcomData instance for faster subsequent access.
@@ -449,103 +537,32 @@ def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
         return False
 
     try:
-        # Create cache key based on file path and modification time
-        from pathlib import Path
-        file_mtime = Path(gedcom_path).stat().st_mtime
-        path_hash = hashlib.md5(str(gedcom_path).encode()).hexdigest()[:8]
-        mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
+        # Create cache keys
+        cache_keys = _create_cache_keys(gedcom_path)
 
-        # Cache different components separately for efficiency
-        cache_keys = {
-            "processed_data": f"gedcom_processed_{path_hash}_{mtime_hash}",
-            "indi_index": f"gedcom_indi_index_{path_hash}_{mtime_hash}",
-            "family_maps": f"gedcom_family_maps_{path_hash}_{mtime_hash}",
-        }
-
-        # Cache processed data - ensure it's serializable
+        # Cache processed data
         if hasattr(gedcom_data, "processed_data_cache"):
-            # Create a serializable version of processed_data_cache
-            serializable_processed_data = {}
-            for key, value in gedcom_data.processed_data_cache.items():
-                if isinstance(value, dict):
-                    serializable_item = {}
-                    for item_key, item_value in value.items():
-                        # Convert datetime objects to ISO strings for serialization
-                        if hasattr(item_value, "isoformat"):  # datetime objects
-                            serializable_item[item_key] = item_value.isoformat()
-                        elif isinstance(
-                            item_value, (str, int, float, bool, list, tuple, type(None))
-                        ):
-                            serializable_item[item_key] = item_value
-                        else:
-                            # Skip non-serializable objects
-                            logger.debug(
-                                f"Skipping non-serializable object in processed_data_cache: {item_key} = {type(item_value)}"
-                            )
-                    serializable_processed_data[key] = serializable_item
-                elif isinstance(
-                    value, (str, int, float, bool, list, tuple, type(None))
-                ):
-                    serializable_processed_data[key] = value
-
+            serializable_processed_data = _serialize_processed_data_cache(
+                gedcom_data.processed_data_cache
+            )
             warm_cache_with_data(
                 cache_keys["processed_data"],
                 serializable_processed_data,
                 expire=86400,
             )
 
-        # Cache individual index - filter out non-serializable objects
+        # Cache individual index
         if hasattr(gedcom_data, "indi_index"):
-            # Create a serializable version of indi_index
-            serializable_indi_index = {}
-            for key, value in gedcom_data.indi_index.items():
-                # Only cache primitive data types and avoid GedcomReader references
-                if isinstance(
-                    value, (str, int, float, bool, list, dict, tuple, type(None))
-                ):
-                    serializable_indi_index[key] = value
-                else:
-                    # For complex objects, try to extract serializable data
-                    try:
-                        # Check if it's a simple object with serializable attributes
-                        if hasattr(value, "__dict__"):
-                            obj_dict = {}
-                            for attr, attr_value in value.__dict__.items():
-                                if isinstance(
-                                    attr_value,
-                                    (
-                                        str,
-                                        int,
-                                        float,
-                                        bool,
-                                        list,
-                                        dict,
-                                        tuple,
-                                        type(None),
-                                    ),
-                                ):
-                                    obj_dict[attr] = attr_value
-                            if obj_dict:  # Only store if we have serializable data
-                                serializable_indi_index[key] = obj_dict
-                    except Exception:
-                        # Skip non-serializable objects
-                        pass
-
+            serializable_indi_index = _serialize_indi_index(gedcom_data.indi_index)
             if serializable_indi_index:
                 warm_cache_with_data(
                     cache_keys["indi_index"], serializable_indi_index, expire=86400
                 )
 
         # Cache family relationship maps
-        family_data = {}
-        if hasattr(gedcom_data, "id_to_parents"):
-            family_data["id_to_parents"] = gedcom_data.id_to_parents
-        if hasattr(gedcom_data, "id_to_children"):
-            family_data["id_to_children"] = gedcom_data.id_to_children
+        _cache_family_relationship_maps(gedcom_data, cache_keys["family_maps"])
 
-        if family_data:
-            warm_cache_with_data(cache_keys["family_maps"], family_data, expire=86400)
-
+        from pathlib import Path
         logger.info(
             f"Successfully cached GEDCOM processed data for {Path(gedcom_path).name}"
         )
