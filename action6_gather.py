@@ -1411,6 +1411,170 @@ def _validate_no_duplicate_profile_ids(insert_data: List[Dict[str, Any]]) -> Non
         )
 
 
+def _bulk_update_persons(session: SqlAlchemySession, person_updates: List[Dict[str, Any]]) -> None:
+    """Bulk update Person records."""
+    if not person_updates:
+        logger.debug("No Person updates needed for this batch.")
+        return
+
+    update_mappings = []
+    for p_data in person_updates:
+        existing_id = p_data.get("_existing_person_id")
+        if not existing_id:
+            logger.warning(f"Skipping person update (UUID {p_data.get('uuid')}): Missing '_existing_person_id'.")
+            continue
+
+        update_dict = {
+            k: v
+            for k, v in p_data.items()
+            if not k.startswith("_") and k not in ["uuid", "profile_id"]
+        }
+
+        if "status" in update_dict and isinstance(update_dict["status"], PersonStatusEnum):
+            update_dict["status"] = update_dict["status"].value
+
+        update_dict["id"] = existing_id
+        update_dict["updated_at"] = datetime.now(timezone.utc)
+
+        if len(update_dict) > 2:
+            update_mappings.append(update_dict)
+
+    if update_mappings:
+        logger.debug(f"Bulk updating {len(update_mappings)} Person records...")
+        session.bulk_update_mappings(Person, update_mappings)  # type: ignore
+        logger.debug("Bulk update Persons called.")
+    else:
+        logger.debug("No valid Person updates to perform.")
+
+
+def _get_existing_dna_matches_map(session: SqlAlchemySession, all_person_ids_map: Dict[str, int]) -> Dict[int, int]:
+    """Query existing DnaMatch records for people in this batch."""
+    people_ids_in_batch = {pid for pid in all_person_ids_map.values() if pid is not None}
+
+    if not people_ids_in_batch:
+        return {}
+
+    existing_matches = (
+        session.query(DnaMatch.people_id, DnaMatch.id)
+        .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
+        .all()
+    )
+    existing_dna_matches_map = dict(existing_matches)
+    logger.debug(f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch.")
+
+    return existing_dna_matches_map
+
+
+def _process_dna_match_operations(
+    dna_match_ops: List[Dict[str, Any]],
+    all_person_ids_map: Dict[str, int],
+    existing_dna_matches_map: Dict[int, int]
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Process DNA match operations and separate into inserts and updates."""
+    dna_insert_data = []
+    dna_update_mappings = []
+
+    for dna_data in dna_match_ops:
+        person_uuid = dna_data.get("uuid")
+        person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
+
+        if not person_id:
+            logger.warning(f"Skipping DNA Match op (UUID {person_uuid}): Corresponding Person ID not found in map.")
+            continue
+
+        # Prepare data dictionary (exclude internal keys)
+        op_data = {k: v for k, v in dna_data.items() if not k.startswith("_") and k != "uuid"}
+        op_data["people_id"] = person_id
+
+        # Check if a DnaMatch record already exists for this person_id
+        existing_match_id = existing_dna_matches_map.get(person_id)
+
+        if existing_match_id:
+            # Prepare for UPDATE
+            update_map = op_data.copy()
+            update_map["id"] = existing_match_id
+            update_map["updated_at"] = datetime.now(timezone.utc)
+
+            if len(update_map) > 3:
+                dna_update_mappings.append(update_map)
+            else:
+                logger.debug(f"Skipping DnaMatch update for PersonID {person_id}: No changed fields.")
+        else:
+            # Prepare for INSERT
+            insert_map = op_data.copy()
+            insert_map.setdefault("created_at", datetime.now(timezone.utc))
+            insert_map.setdefault("updated_at", datetime.now(timezone.utc))
+            dna_insert_data.append(insert_map)
+
+    return dna_insert_data, dna_update_mappings
+
+
+def _bulk_upsert_dna_matches(
+    session: SqlAlchemySession,
+    dna_match_ops: List[Dict[str, Any]],
+    all_person_ids_map: Dict[str, int]
+) -> None:
+    """Bulk upsert DnaMatch records (separate insert/update)."""
+    if not dna_match_ops:
+        logger.debug("No DnaMatch operations prepared.")
+        return
+
+    # Get existing DnaMatch records
+    existing_dna_matches_map = _get_existing_dna_matches_map(session, all_person_ids_map)
+
+    # Process operations and separate into inserts and updates
+    dna_insert_data, dna_update_mappings = _process_dna_match_operations(
+        dna_match_ops, all_person_ids_map, existing_dna_matches_map
+    )
+
+    # Perform Bulk Insert
+    if dna_insert_data:
+        logger.debug(f"Bulk inserting {len(dna_insert_data)} DnaMatch records...")
+        session.bulk_insert_mappings(DnaMatch, dna_insert_data)  # type: ignore
+        logger.debug("Bulk insert DnaMatches called.")
+    else:
+        logger.debug("No new DnaMatch records to insert.")
+
+    # Perform Bulk Update
+    if dna_update_mappings:
+        logger.debug(f"Bulk updating {len(dna_update_mappings)} DnaMatch records...")
+        session.bulk_update_mappings(DnaMatch, dna_update_mappings)  # type: ignore
+        logger.debug("Bulk update DnaMatches called.")
+    else:
+        logger.debug("No existing DnaMatch records to update.")
+
+
+def _create_master_person_id_map(
+    created_person_map: Dict[str, int],
+    person_updates: List[Dict[str, Any]],
+    prepared_bulk_data: List[Dict[str, Any]],
+    existing_persons_map: Dict[str, Person]
+) -> Dict[str, int]:
+    """Create master ID map for linking related records."""
+    all_person_ids_map: Dict[str, int] = created_person_map.copy()
+
+    # Add IDs from person updates
+    for p_update_data in person_updates:
+        if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
+            all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+
+    # Add IDs from existing persons map
+    processed_uuids = {
+        p["person"]["uuid"]
+        for p in prepared_bulk_data
+        if p.get("person") and p["person"].get("uuid")
+    }
+
+    for uuid_processed in processed_uuids:
+        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
+            person = existing_persons_map[uuid_processed]
+            person_id_val = getattr(person, "id", None)
+            if person_id_val is not None:
+                all_person_ids_map[uuid_processed] = person_id_val
+
+    return all_person_ids_map
+
+
 def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: List[Dict[str, Any]]) -> Dict[str, int]:
     """Bulk insert Person records and return mapping of UUID to new Person ID."""
     created_person_map: Dict[str, int] = {}
@@ -1502,150 +1666,19 @@ def _execute_bulk_db_operations(
         # Step 3: Person Creates - De-duplicate and prepare
         person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
 
-        # Bulk Insert Persons
+        # Step 3: Bulk Insert Persons
         created_person_map = _bulk_insert_persons(session, person_creates_filtered)
 
-        # --- Step 4: Person Updates ---
-        if person_updates:
-            update_mappings = []
-            for p_data in person_updates:
-                existing_id = p_data.get("_existing_person_id")
-                if not existing_id:
-                    logger.warning(
-                        f"Skipping person update (UUID {p_data.get('uuid')}): Missing '_existing_person_id'."
-                    )
-                    continue
-                update_dict = {
-                    k: v
-                    for k, v in p_data.items()
-                    if not k.startswith("_") and k not in ["uuid", "profile_id"]
-                }
-                if "status" in update_dict and isinstance(
-                    update_dict["status"], PersonStatusEnum
-                ):
-                    update_dict["status"] = update_dict["status"].value
-                update_dict["id"] = existing_id
-                update_dict["updated_at"] = datetime.now(timezone.utc)
-                if len(update_dict) > 2:
-                    update_mappings.append(update_dict)
+        # Step 4: Bulk Update Persons
+        _bulk_update_persons(session, person_updates)
 
-            if update_mappings:
-                logger.debug(f"Bulk updating {len(update_mappings)} Person records...")
-                session.bulk_update_mappings(Person, update_mappings)  # type: ignore
-                logger.debug("Bulk update Persons called.")
-            else:
-                logger.debug("No valid Person updates to perform.")
-        else:
-            logger.debug("No Person updates needed for this batch.")
+        # Step 5: Create Master ID Map (for linking related records)
+        all_person_ids_map = _create_master_person_id_map(
+            created_person_map, person_updates, prepared_bulk_data, existing_persons_map
+        )
 
-        # --- Step 5: Create Master ID Map (for linking related records) ---
-        all_person_ids_map: Dict[str, int] = created_person_map.copy()
-        for p_update_data in person_updates:
-            if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
-                all_person_ids_map[p_update_data["uuid"]] = p_update_data[
-                    "_existing_person_id"
-                ]
-        processed_uuids = {
-            p["person"]["uuid"]
-            for p in prepared_bulk_data
-            if p.get("person") and p["person"].get("uuid")
-        }
-        for uuid_processed in processed_uuids:
-            if uuid_processed not in all_person_ids_map and existing_persons_map.get(
-                uuid_processed
-            ):
-                person = existing_persons_map[uuid_processed]
-                # Get the id value directly from the SQLAlchemy object
-                person_id_val = getattr(person, "id", None)
-                if person_id_val is not None:
-                    all_person_ids_map[uuid_processed] = person_id_val
-
-        # --- Step 6: DnaMatch Bulk Upsert (REVISED: Separate Insert/Update) ---
-        if dna_match_ops:
-            dna_insert_data = []
-            dna_update_mappings = []  # List for bulk updates
-            # Query existing DnaMatch records for people in this batch to determine insert vs update
-            people_ids_in_batch = {
-                pid for pid in all_person_ids_map.values() if pid is not None
-            }
-            existing_dna_matches_map = {}
-            if people_ids_in_batch:
-                existing_matches = (
-                    session.query(DnaMatch.people_id, DnaMatch.id)
-                    .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
-                    .all()
-                )
-                existing_dna_matches_map = dict(existing_matches)
-                logger.debug(
-                    f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
-                )
-
-            for dna_data in dna_match_ops:  # Process each prepared DNA operation
-                person_uuid = dna_data.get("uuid")  # Use UUID to find person ID
-                person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
-
-                if not person_id:
-                    logger.warning(
-                        f"Skipping DNA Match op (UUID {person_uuid}): Corresponding Person ID not found in map."
-                    )
-                    continue
-
-                # Prepare data dictionary (exclude internal keys)
-                op_data = {
-                    k: v
-                    for k, v in dna_data.items()
-                    if not k.startswith("_") and k != "uuid"
-                }
-                op_data["people_id"] = person_id  # Ensure people_id is set
-
-                # Check if a DnaMatch record already exists for this person_id
-                existing_match_id = existing_dna_matches_map.get(person_id)
-
-                if existing_match_id:
-                    # Prepare for UPDATE
-                    update_map = op_data.copy()
-                    update_map["id"] = (
-                        existing_match_id  # Add primary key for update mapping
-                    )
-                    update_map["updated_at"] = datetime.now(
-                        timezone.utc
-                    )  # Set update timestamp
-                    # Add to update list only if there are fields other than id/people_id/updated_at
-                    if len(update_map) > 3:
-                        dna_update_mappings.append(update_map)
-                    else:
-                        logger.debug(
-                            f"Skipping DnaMatch update for PersonID {person_id}: No changed fields."
-                        )
-                else:
-                    # Prepare for INSERT
-                    insert_map = op_data.copy()
-                    # created_at/updated_at handled by defaults or set explicitly if needed
-                    insert_map.setdefault("created_at", datetime.now(timezone.utc))
-                    insert_map.setdefault("updated_at", datetime.now(timezone.utc))
-                    dna_insert_data.append(insert_map)
-
-            # Perform Bulk Insert
-            if dna_insert_data:
-                logger.debug(
-                    f"Bulk inserting {len(dna_insert_data)} DnaMatch records..."
-                )
-                session.bulk_insert_mappings(DnaMatch, dna_insert_data)  # type: ignore
-                logger.debug("Bulk insert DnaMatches called.")
-            else:
-                logger.debug("No new DnaMatch records to insert.")
-
-            # Perform Bulk Update
-            if dna_update_mappings:
-                logger.debug(
-                    f"Bulk updating {len(dna_update_mappings)} DnaMatch records..."
-                )
-                session.bulk_update_mappings(DnaMatch, dna_update_mappings)  # type: ignore
-                logger.debug("Bulk update DnaMatches called.")
-            else:
-                logger.debug("No existing DnaMatch records to update.")
-        else:
-            logger.debug("No DnaMatch operations prepared.")
+        # Step 6: DnaMatch Bulk Upsert
+        _bulk_upsert_dna_matches(session, dna_match_ops, all_person_ids_map)
 
         # --- Step 7: FamilyTree Bulk Upsert ---
         tree_creates = [
