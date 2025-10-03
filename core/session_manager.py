@@ -108,7 +108,7 @@ def cached_session_validator() -> Callable:
     """Return decorator for caching session validator component."""
     return cached_session_component("session_validator")
 
-def clear_session_cache():
+def clear_session_cache() -> bool:
     """Legacy function for clearing session cache"""
     try:
         manager = get_unified_cache_manager()
