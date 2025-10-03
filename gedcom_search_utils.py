@@ -656,12 +656,85 @@ def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str
     }
 
 
+# Helper functions for _get_spouses_and_children
+
+def _validate_gedcom_data_for_family(gedcom_data: GedcomData) -> bool:
+    """Validate that gedcom_data has required attributes for family processing."""
+    return (hasattr(gedcom_data, "reader") and gedcom_data.reader and
+            hasattr(gedcom_data, "indi_index") and gedcom_data.indi_index)
+
+
+def _get_family_record(gedcom_data: GedcomData, fam_id: str) -> Any:
+    """Get family record using various methods with error handling."""
+    fam_record = None
+
+    try:
+        if hasattr(gedcom_data.reader, "fam_dict"):
+            fam_dict = getattr(gedcom_data.reader, "fam_dict", None)
+            if fam_dict:
+                fam_record = fam_dict.get(fam_id)
+
+        if not fam_record and hasattr(gedcom_data.reader, "get_family"):
+            get_family = getattr(gedcom_data.reader, "get_family", None)
+            if get_family:
+                fam_record = get_family(fam_id)
+    except Exception:
+        fam_record = None
+
+    return fam_record
+
+
+def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> Optional[str]:
+    """Extract spouse ID from family record."""
+    husb_tag = fam_record.sub_tag("HUSB")
+    wife_tag = fam_record.sub_tag("WIFE")
+
+    if husb_tag and husb_tag.value != individual_id_norm:
+        return _normalize_id(husb_tag.value)
+    elif wife_tag and wife_tag.value != individual_id_norm:
+        return _normalize_id(wife_tag.value)
+
+    return None
+
+
+def _extract_children_from_family(fam_record: Any, gedcom_data: GedcomData) -> list[dict[str, Any]]:
+    """Extract children information from family record."""
+    children = []
+
+    for chil_tag in fam_record.sub_tags("CHIL"):
+        child_id = _normalize_id(chil_tag.value)
+        if child_id is None:
+            continue
+        child_info = _get_child_info(gedcom_data, child_id)
+        if child_info:
+            children.append(child_info)
+
+    return children
+
+
+def _process_family_record(gedcom_data: GedcomData, fam_record: Any, individual_id_norm: str) -> tuple[Optional[dict[str, Any]], list[dict[str, Any]]]:
+    """Process a single family record to extract spouse and children."""
+    spouse_info = None
+    children = []
+
+    # Get spouse
+    spouse_id = _extract_spouse_from_family(fam_record, individual_id_norm)
+    if spouse_id:
+        spouse_info = _get_spouse_info(gedcom_data, spouse_id, fam_record)
+
+    # Get children
+    children = _extract_children_from_family(fam_record, gedcom_data)
+
+    return spouse_info, children
+
+
 def _get_spouses_and_children(gedcom_data: GedcomData, individual_id_norm: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Get spouses and children information."""
     spouses = []
     children = []
 
-    if not (hasattr(gedcom_data, "reader") and gedcom_data.reader and hasattr(gedcom_data, "indi_index") and gedcom_data.indi_index):
+    # Validate gedcom_data has required attributes
+    if not _validate_gedcom_data_for_family(gedcom_data):
         return spouses, children
 
     # Get the individual record
@@ -669,49 +742,18 @@ def _get_spouses_and_children(gedcom_data: GedcomData, individual_id_norm: str) 
     if not indi_record:
         return spouses, children
 
-    # Get family records where this individual is a spouse
+    # Process each family where this individual is a spouse
     for fam_link in indi_record.sub_tags("FAMS"):
         fam_id = fam_link.value
-        fam_record = None
-
-        # Try to get family record using various methods (with error handling)
-        try:
-            if hasattr(gedcom_data.reader, "fam_dict"):
-                fam_dict = getattr(gedcom_data.reader, "fam_dict", None)
-                if fam_dict:
-                    fam_record = fam_dict.get(fam_id)
-
-            if not fam_record and hasattr(gedcom_data.reader, "get_family"):
-                get_family = getattr(gedcom_data.reader, "get_family", None)
-                if get_family:
-                    fam_record = get_family(fam_id)
-        except Exception:
-            fam_record = None
+        fam_record = _get_family_record(gedcom_data, fam_id)
 
         if fam_record:
-            # Get spouse
-            husb_tag = fam_record.sub_tag("HUSB")
-            wife_tag = fam_record.sub_tag("WIFE")
+            spouse_info, family_children = _process_family_record(gedcom_data, fam_record, individual_id_norm)
 
-            spouse_id = None
-            if husb_tag and husb_tag.value != individual_id_norm:
-                spouse_id = _normalize_id(husb_tag.value)
-            elif wife_tag and wife_tag.value != individual_id_norm:
-                spouse_id = _normalize_id(wife_tag.value)
+            if spouse_info:
+                spouses.append(spouse_info)
 
-            if spouse_id:
-                spouse_info = _get_spouse_info(gedcom_data, spouse_id, fam_record)
-                if spouse_info:
-                    spouses.append(spouse_info)
-
-            # Get children
-            for chil_tag in fam_record.sub_tags("CHIL"):
-                child_id = _normalize_id(chil_tag.value)
-                if child_id is None:
-                    continue
-                child_info = _get_child_info(gedcom_data, child_id)
-                if child_info:
-                    children.append(child_info)
+            children.extend(family_children)
 
     return spouses, children
 
