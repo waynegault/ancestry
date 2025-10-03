@@ -290,18 +290,10 @@ class MessagePersonalizer:
 
         return []
 
-    def _select_optimal_personalization_functions(self, extracted_data: dict[str, Any]) -> list[str]:
-        """Select optimal personalization functions based on data availability and effectiveness."""
-        selected_functions = []
-
-        # Always include basic functions
-        basic_functions = ["shared_ancestors", "genealogical_context", "research_focus"]
-        selected_functions.extend(basic_functions)
-
-        # Add functions based on data availability
+    def _add_data_based_functions(self, extracted_data: dict[str, Any], selected_functions: list[str]) -> None:
+        """Add personalization functions based on available data."""
         if extracted_data.get("dna_information"):
             dna_functions = ["dna_segment_analysis", "dna_ethnicity_correlation", "estimated_relationship", "shared_dna_amount"]
-            # Select best performing DNA function
             best_dna_func = self._get_best_performing_function(dna_functions)
             if best_dna_func:
                 selected_functions.append(best_dna_func)
@@ -324,13 +316,21 @@ class MessagePersonalizer:
         if extracted_data.get("relationships"):
             selected_functions.append("family_size_analysis")
 
-        # Add advanced functions based on effectiveness
+    def _add_advanced_functions(self, selected_functions: list[str]) -> None:
+        """Add advanced functions based on effectiveness."""
         advanced_functions = ["surname_distribution_analysis", "document_preservation_likelihood"]
         for func in advanced_functions:
             if self._is_function_effective(func):
                 selected_functions.append(func)
 
-        return list(set(selected_functions))  # Remove duplicates
+    def _select_optimal_personalization_functions(self, extracted_data: dict[str, Any]) -> list[str]:
+        """Select optimal personalization functions based on data availability and effectiveness."""
+        selected_functions = ["shared_ancestors", "genealogical_context", "research_focus"]
+
+        self._add_data_based_functions(extracted_data, selected_functions)
+        self._add_advanced_functions(selected_functions)
+
+        return list(set(selected_functions))
 
     def _get_best_performing_function(self, function_list: list[str]) -> Optional[str]:
         """Get the best performing function from a list based on effectiveness data."""
