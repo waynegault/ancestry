@@ -295,6 +295,186 @@ def matches_year_criterion(
     return abs(criterion - value) <= year_range
 
 
+# Helper functions for search_gedcom_for_criteria
+
+def _load_or_get_gedcom_data(
+    gedcom_data: Optional[GedcomData],
+    gedcom_path: Optional[str],
+) -> GedcomData:
+    """Load or retrieve GEDCOM data from cache or file."""
+    if gedcom_data:
+        return gedcom_data
+
+    # Try cached data first
+    if _CACHED_GEDCOM_DATA is not None:
+        logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
+        return _CACHED_GEDCOM_DATA
+
+    # Determine GEDCOM path
+    if not gedcom_path:
+        gedcom_path = (
+            str(config_schema.database.gedcom_file_path)
+            if config_schema
+            else str(Path(__file__).parent / "Data" / "family.ged")
+        )
+
+    if not gedcom_path or not Path(gedcom_path).exists():
+        raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+
+    # Load GEDCOM data
+    return load_gedcom_data(Path(str(gedcom_path)))
+
+
+def _validate_gedcom_data(gedcom_data: Optional[GedcomData]) -> None:
+    """Validate that GEDCOM data is loaded and has processed cache."""
+    if not gedcom_data or not getattr(gedcom_data, "processed_data_cache", None):
+        raise MissingConfigError("Failed to load GEDCOM data or processed cache is empty")
+
+
+def _prepare_search_criteria(search_criteria: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Prepare scoring and filter criteria from search criteria."""
+    scoring_criteria = {}
+    filter_criteria = {}
+
+    # Copy provided criteria to scoring criteria
+    scoring_keys = [
+        "first_name", "surname", "gender", "birth_year", "birth_place",
+        "birth_date_obj", "death_year", "death_place", "death_date_obj",
+    ]
+    for key in scoring_keys:
+        if key in search_criteria and search_criteria[key] is not None:
+            scoring_criteria[key] = search_criteria[key]
+
+    # Create filter criteria (subset of scoring criteria)
+    filter_keys = ["first_name", "surname", "gender", "birth_year", "birth_place"]
+    for key in filter_keys:
+        if key in scoring_criteria:
+            filter_criteria[key] = scoring_criteria[key]
+
+    return scoring_criteria, filter_criteria
+
+
+def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Get scoring weights and date flexibility configuration."""
+    # Get scoring weights
+    if config_schema:
+        scoring_weights = dict(config_schema.common_scoring_weights)
+    else:
+        scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+
+    # Get date flexibility
+    date_flex_value = (
+        config_schema.date_flexibility
+        if config_schema
+        else DEFAULT_CONFIG["DATE_FLEXIBILITY"]["year_match_range"]
+    )
+
+    # Convert to dict format expected by calculate_match_score
+    if isinstance(date_flex_value, (int, float)):
+        date_flex = {"year_match_range": int(date_flex_value)}
+    elif isinstance(date_flex_value, dict):
+        date_flex = date_flex_value
+    else:
+        date_flex = {"year_match_range": 10}
+
+    # Extract year range
+    if isinstance(date_flex, (int, float)):
+        year_range = int(date_flex)
+    elif isinstance(date_flex, dict):
+        year_range = date_flex.get("year_match_range", 10)
+    else:
+        year_range = 10
+
+    return scoring_weights, date_flex, year_range
+
+
+def _extract_individual_filter_values(indi_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract values needed for filtering from individual data."""
+    return {
+        "givn_lower": indi_data.get("first_name", "").lower(),
+        "surn_lower": indi_data.get("surname", "").lower(),
+        "sex_lower": indi_data.get("gender_norm"),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place_lower": (
+            indi_data.get("birth_place_disp", "").lower()
+            if indi_data.get("birth_place_disp")
+            else None
+        ),
+        "death_date_obj": indi_data.get("death_date_obj"),
+    }
+
+
+def _evaluate_or_filter(
+    filter_criteria: dict[str, Any],
+    filter_values: dict[str, Any],
+    year_range: int,
+) -> bool:
+    """Evaluate OR filter for an individual."""
+    fn_match = matches_criterion("first_name", filter_criteria, filter_values["givn_lower"])
+    sn_match = matches_criterion("surname", filter_criteria, filter_values["surn_lower"])
+    gender_match = bool(
+        filter_criteria.get("gender")
+        and filter_values["sex_lower"]
+        and filter_criteria["gender"] == filter_values["sex_lower"]
+    )
+    bp_match = matches_criterion("birth_place", filter_criteria, filter_values["birth_place_lower"])
+    by_match = matches_year_criterion("birth_year", filter_criteria, filter_values["birth_year"], year_range)
+    alive_match = filter_values["death_date_obj"] is None
+
+    return fn_match or sn_match or gender_match or bp_match or by_match or alive_match
+
+
+def _calculate_cached_score(
+    scoring_criteria: dict[str, Any],
+    indi_data: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: dict[str, Any],
+    score_cache: dict[tuple, tuple],
+) -> tuple[float, dict[str, Any], list[str]]:
+    """Calculate match score with caching."""
+    criterion_hash = hash(json.dumps(scoring_criteria, sort_keys=True))
+    candidate_hash = hash(json.dumps(str(indi_data), sort_keys=True))
+    cache_key = (criterion_hash, candidate_hash)
+
+    if cache_key not in score_cache:
+        total_score, field_scores, reasons = calculate_match_score(
+            search_criteria=scoring_criteria,
+            candidate_processed_data=indi_data,
+            scoring_weights=scoring_weights,
+            date_flexibility=date_flex,
+        )
+        score_cache[cache_key] = (total_score, field_scores, reasons)
+    else:
+        total_score, field_scores, reasons = score_cache[cache_key]
+
+    return total_score, field_scores, reasons
+
+
+def _create_match_record(
+    indi_id: str,
+    indi_data: dict[str, Any],
+    total_score: float,
+    field_scores: dict[str, Any],
+    reasons: list[str],
+) -> dict[str, Any]:
+    """Create a match record from individual data and scores."""
+    return {
+        "id": indi_id,
+        "display_id": indi_id,
+        "first_name": indi_data.get("first_name", ""),
+        "surname": indi_data.get("surname", ""),
+        "gender": indi_data.get("gender", ""),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place": indi_data.get("birth_place", ""),
+        "death_year": indi_data.get("death_year"),
+        "death_place": indi_data.get("death_place", ""),
+        "total_score": total_score,
+        "field_scores": field_scores,
+        "reasons": reasons,
+        "source": "GEDCOM",
+    }
+
+
 def search_gedcom_for_criteria(
     search_criteria: dict[str, Any],
     max_results: int = 10,
@@ -313,163 +493,38 @@ def search_gedcom_for_criteria(
     Returns:
         List of dictionaries containing match information, sorted by score (highest first)
     """
-    # Step 1: Ensure we have GEDCOM data
-    if not gedcom_data:
-        # Try to use the cached GEDCOM data first
-        if _CACHED_GEDCOM_DATA is not None:
-            logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
-            gedcom_data = _CACHED_GEDCOM_DATA
-        else:
-            if not gedcom_path:
-                # Try to get path from config
-                gedcom_path = (
-                    str(config_schema.database.gedcom_file_path)
-                    if config_schema
-                    else str(Path(__file__).parent / "Data" / "family.ged")
-                )
-            if not gedcom_path or not Path(gedcom_path).exists():
-                raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+    # Load and validate GEDCOM data
+    gedcom_data = _load_or_get_gedcom_data(gedcom_data, gedcom_path)
+    _validate_gedcom_data(gedcom_data)
 
-            # Load GEDCOM data
-            gedcom_data = load_gedcom_data(Path(str(gedcom_path)))
+    # Prepare search criteria
+    scoring_criteria, filter_criteria = _prepare_search_criteria(search_criteria)
 
-    if not gedcom_data or not getattr(gedcom_data, "processed_data_cache", None):
-        raise MissingConfigError(
-            "Failed to load GEDCOM data or processed cache is empty"
-        )
+    # Get scoring configuration
+    scoring_weights, date_flex, year_range = _get_scoring_configuration()
 
-    # Step 2: Prepare scoring and filter criteria
-    scoring_criteria = {}
-    filter_criteria = {}
-
-    # Copy provided criteria to scoring criteria
-    for key in [
-        "first_name",
-        "surname",
-        "gender",
-        "birth_year",
-        "birth_place",
-        "birth_date_obj",
-        "death_year",
-        "death_place",
-        "death_date_obj",
-    ]:
-        if key in search_criteria and search_criteria[key] is not None:
-            scoring_criteria[key] = search_criteria[key]
-
-    # Create filter criteria (subset of scoring criteria)
-    for key in ["first_name", "surname", "gender", "birth_year", "birth_place"]:
-        if key in scoring_criteria:
-            filter_criteria[key] = scoring_criteria[
-                key
-            ]  # Step 3: Get configuration values    if config_schema:
-        scoring_weights = dict(config_schema.common_scoring_weights)
-    scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
-    date_flex_value = (
-        config_schema.date_flexibility
-        if config_schema
-        else DEFAULT_CONFIG["DATE_FLEXIBILITY"]["year_match_range"]
-    )
-
-    # Convert to dict format expected by calculate_match_score
-    if isinstance(date_flex_value, (int, float)):
-        date_flex = {"year_match_range": int(date_flex_value)}
-    elif isinstance(date_flex_value, dict):
-        date_flex = date_flex_value
-    else:
-        date_flex = {
-            "year_match_range": 10
-        }  # Handle both old and new date_flex formats
-    if isinstance(date_flex, (int, float)):
-        # New config format - date_flex is a float/int representing years
-        year_range = int(date_flex)
-    elif isinstance(date_flex, dict):
-        year_range = date_flex.get("year_match_range", 10)
-    else:
-        year_range = 10
-
-    # Step 4: Filter and score individuals
+    # Filter and score individuals
     scored_matches = []
-    score_cache = {}  # Cache for score calculations
+    score_cache = {}
 
-    # Process each individual in the GEDCOM data
     for indi_id, indi_data in gedcom_data.processed_data_cache.items():
         try:
-            # Extract needed values for filtering
-            givn_lower = indi_data.get("first_name", "").lower()
-            surn_lower = indi_data.get("surname", "").lower()
-            sex_lower = indi_data.get("gender_norm")
-            birth_year = indi_data.get("birth_year")
-            birth_place_lower = (
-                indi_data.get("birth_place_disp", "").lower()
-                if indi_data.get("birth_place_disp")
-                else None
-            )
-            death_date_obj = indi_data.get("death_date_obj")
+            # Extract filter values
+            filter_values = _extract_individual_filter_values(indi_data)
 
-            # Evaluate OR Filter
-            fn_match_filter = matches_criterion(
-                "first_name", filter_criteria, givn_lower
-            )
-            sn_match_filter = matches_criterion("surname", filter_criteria, surn_lower)
-            gender_match_filter = bool(
-                filter_criteria.get("gender")
-                and sex_lower
-                and filter_criteria["gender"] == sex_lower
-            )
-            bp_match_filter = matches_criterion(
-                "birth_place", filter_criteria, birth_place_lower
-            )
-            by_match_filter = matches_year_criterion(
-                "birth_year", filter_criteria, birth_year, year_range
-            )
-            alive_match = death_date_obj is None
+            # Evaluate OR filter
+            if not _evaluate_or_filter(filter_criteria, filter_values, year_range):
+                continue
 
-            passes_or_filter = (
-                fn_match_filter
-                or sn_match_filter
-                or gender_match_filter
-                or bp_match_filter
-                or by_match_filter
-                or alive_match
+            # Calculate match score
+            total_score, field_scores, reasons = _calculate_cached_score(
+                scoring_criteria, indi_data, scoring_weights, date_flex, score_cache
             )
 
-            if passes_or_filter:
-                # Calculate match score
-                criterion_hash = hash(json.dumps(scoring_criteria, sort_keys=True))
-                candidate_hash = hash(json.dumps(str(indi_data), sort_keys=True))
-                cache_key = (criterion_hash, candidate_hash)
-
-                if cache_key not in score_cache:
-                    total_score, field_scores, reasons = calculate_match_score(
-                        search_criteria=scoring_criteria,
-                        candidate_processed_data=indi_data,
-                        scoring_weights=scoring_weights,
-                        date_flexibility=date_flex,
-                    )
-                    score_cache[cache_key] = (total_score, field_scores, reasons)
-                else:
-                    total_score, field_scores, reasons = score_cache[cache_key]
-
-                # Only include if score is above threshold
-                if total_score > 0:
-                    # Create a match record
-                    match_record = {
-                        "id": indi_id,
-                        "display_id": indi_id,
-                        "first_name": indi_data.get("first_name", ""),
-                        "surname": indi_data.get("surname", ""),
-                        "gender": indi_data.get("gender", ""),
-                        "birth_year": indi_data.get("birth_year"),
-                        "birth_place": indi_data.get("birth_place", ""),
-                        "death_year": indi_data.get("death_year"),
-                        "death_place": indi_data.get("death_place", ""),
-                        "total_score": total_score,
-                        "field_scores": field_scores,
-                        "reasons": reasons,
-                        "source": "GEDCOM",
-                    }
-                    scored_matches.append(match_record)
+            # Only include if score is above threshold
+            if total_score > 0:
+                match_record = _create_match_record(indi_id, indi_data, total_score, field_scores, reasons)
+                scored_matches.append(match_record)
         except Exception as e:
             logger.error(f"Error processing individual {indi_id}: {e}")
             continue
