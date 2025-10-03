@@ -403,7 +403,45 @@ def _handle_rate_limit_error(session_manager: SessionManager) -> None:
             pass
 
 
-@cached_api_call("ai", ttl=1800)  # Cache AI model responses for 30 minutes
+def _route_ai_provider_call(
+    provider: str, system_prompt: str, user_content: str,
+    max_tokens: int, temperature: float, response_format_type: Optional[str]
+) -> Optional[str]:
+    """Route call to appropriate AI provider."""
+    if provider == "deepseek":
+        return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    elif provider == "gemini":
+        return _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
+    else:
+        logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
+        return None
+
+def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager) -> None:
+    """Handle AI API exceptions with appropriate logging and actions."""
+    if isinstance(e, AuthenticationError):
+        logger.error(f"AI Authentication Error ({provider}): {e}")
+    elif isinstance(e, RateLimitError):
+        logger.error(f"AI Rate Limit Error ({provider}): {e}")
+        _handle_rate_limit_error(session_manager)
+    elif isinstance(e, APIConnectionError):
+        logger.error(f"AI Connection Error ({provider}): {e}")
+    elif isinstance(e, APIError):
+        logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
+    elif isinstance(e, google_exceptions.PermissionDenied):
+        logger.error(f"Gemini Permission Denied: {e}")
+    elif isinstance(e, google_exceptions.ResourceExhausted):
+        logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
+        _handle_rate_limit_error(session_manager)
+    elif isinstance(e, google_exceptions.GoogleAPIError):
+        logger.error(f"Google API Error (Gemini): {e}")
+    elif isinstance(e, AttributeError):
+        logger.critical(f"AttributeError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
+    elif isinstance(e, NameError):
+        logger.critical(f"NameError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
+    else:
+        logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
+
+@cached_api_call("ai", ttl=1800)
 def _call_ai_model(
     provider: str,
     system_prompt: str,
@@ -411,7 +449,7 @@ def _call_ai_model(
     session_manager: SessionManager,
     max_tokens: int,
     temperature: float,
-    response_format_type: Optional[str] = None,  # e.g., "json_object" for DeepSeek
+    response_format_type: Optional[str] = None,
 ) -> Optional[str]:
     """
     Private helper to call the specified AI model.
@@ -419,44 +457,13 @@ def _call_ai_model(
     """
     logger.debug(f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}")
 
-    # Apply rate limiting
     _apply_rate_limiting(session_manager, provider)
 
-    ai_response_text: Optional[str] = None
-
     try:
-        if provider == "deepseek":
-            ai_response_text = _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-        elif provider == "gemini":
-            ai_response_text = _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
-        else:
-            logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
-            return None
-
-    except AuthenticationError as e:  # type: ignore
-        logger.error(f"AI Authentication Error ({provider}): {e}")
-    except RateLimitError as e:  # type: ignore
-        logger.error(f"AI Rate Limit Error ({provider}): {e}")
-        _handle_rate_limit_error(session_manager)
-    except APIConnectionError as e:  # type: ignore
-        logger.error(f"AI Connection Error ({provider}): {e}")
-    except APIError as e:  # type: ignore
-        logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
-    except google_exceptions.PermissionDenied as e:  # type: ignore
-        logger.error(f"Gemini Permission Denied: {e}")
-    except google_exceptions.ResourceExhausted as e:  # type: ignore
-        logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
-        _handle_rate_limit_error(session_manager)
-    except google_exceptions.GoogleAPIError as e:  # type: ignore
-        logger.error(f"Google API Error (Gemini): {e}")
-    except AttributeError as ae:
-        logger.critical(f"AttributeError during AI call ({provider}): {ae}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
-    except NameError as ne:
-        logger.critical(f"NameError during AI call ({provider}): {ne}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
+        return _route_ai_provider_call(provider, system_prompt, user_content, max_tokens, temperature, response_format_type)
     except Exception as e:
-        logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
-
-    return ai_response_text
+        _handle_ai_exceptions(e, provider, session_manager)
+        return None
 
 
 # End of _call_ai_model
