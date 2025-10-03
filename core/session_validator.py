@@ -294,6 +294,32 @@ class SessionValidator:
             logger.error(f"Unexpected error checking URL: {e}", exc_info=True)
             return False
 
+    def _should_skip_cookie_check(self, action_name: Optional[str]) -> tuple[bool, Optional[str]]:
+        """Determine if cookie check should be skipped for this action."""
+        if not action_name:
+            return False, None
+
+        # Map of action patterns to skip reasons
+        skip_patterns = {
+            "coord": "Action 6 - cookies will be available after navigation",
+            "srch_inbox": "Action 7 - API login verification is sufficient",
+            "send_messages": "Action 8 - API login verification is sufficient",
+            "process_productive": "Action 9 - API login verification is sufficient",
+            "main": "Action 10 - Local file operation",
+            "gedcom": "Action 10 - Local file operation",
+            "run_action11": "Action 11 - API-based operation",
+            "api_report": "Action 11 - API-based operation",
+            "refresh": "Browser refresh verification - deferring to later checks",
+        }
+
+        action_lower = action_name.lower()
+        for pattern, reason in skip_patterns.items():
+            if pattern in action_lower:
+                logger.debug(f"Skipping essential cookies check for {reason}")
+                return True, None
+
+        return False, None
+
     def _check_essential_cookies(self, browser_manager, action_name: Optional[str] = None) -> tuple[bool, Optional[str]]:
         """
         Check for essential cookies.
@@ -305,47 +331,11 @@ class SessionValidator:
         Returns:
             Tuple of (success, error_message)
         """
-        essential_cookies = ["OptanonConsent", "trees"]  # Add more as needed
+        essential_cookies = ["OptanonConsent", "trees"]
 
-        # For Action 6 (DNA match gathering), cookies may not be available until visiting the matches page
-        # Skip cookie check for Action 6 since it will navigate to the correct page later
-        if action_name and "coord" in action_name:
-            logger.debug("Skipping essential cookies check for Action 6 - cookies will be available after navigation")
-            return True, None
-
-        # For Action 7 (Search Inbox), cookies may not be immediately available but login verification works
-        # Skip cookie check for Action 7 since API login verification is sufficient
-        if action_name and "srch_inbox" in action_name:
-            logger.debug("Skipping essential cookies check for Action 7 - API login verification is sufficient")
-            return True, None
-
-        # For Action 8 (Send Messages), cookies may not be immediately available but login verification works
-        # Skip cookie check for Action 8 since API login verification is sufficient
-        if action_name and "send_messages" in action_name:
-            logger.debug("Skipping essential cookies check for Action 8 - API login verification is sufficient")
-            return True, None
-
-        # For Action 9 (Process Productive Messages), cookies may not be immediately available but login verification works
-        # Skip cookie check for Action 9 since API login verification is sufficient
-        if action_name and "process_productive" in action_name:
-            logger.debug("Skipping essential cookies check for Action 9 - API login verification is sufficient")
-            return True, None
-
-        # For Action 10 (GEDCOM Report), this is a local file operation that doesn't require cookies
-        # Skip cookie check for Action 10 since it works with local GEDCOM files
-        if action_name and ("main" in action_name or "gedcom" in action_name.lower()):
-            logger.debug("Skipping essential cookies check for Action 10 - Local file operation")
-            return True, None
-
-        # For Action 11 (API Report), this is an API-based operation that doesn't require browser cookies
-        # Skip cookie check for Action 11 since it uses API calls for data retrieval
-        if action_name and ("run_action11" in action_name or "api_report" in action_name.lower()):
-            logger.debug("Skipping essential cookies check for Action 11 - API-based operation")
-            return True, None
-
-        # During browser refresh verification, relax the essential cookie requirement
-        if action_name and ("refresh" in action_name.lower()):
-            logger.debug("Relaxing essential cookies check during browser refresh verification - deferring to later checks")
+        # Check if we should skip cookie check for this action
+        should_skip, skip_reason = self._should_skip_cookie_check(action_name)
+        if should_skip:
             return True, None
 
         try:
