@@ -1681,6 +1681,64 @@ def _handle_request_exception(
     return (True, retries_left, current_delay)
 
 
+def _handle_response_status(
+    response: Any,
+    retries_left: int,
+    max_retries: int,
+    api_description: str,
+    attempt: int,
+    current_delay: float,
+    backoff_factor: float,
+    max_delay: float,
+    retry_status_codes: List[int],
+    session_manager: SessionManager,
+    force_text_response: bool,
+    request_params: Dict[str, Any],
+) -> tuple[Optional[Any], bool, int, float, Optional[Exception]]:
+    """
+    Handle response status codes and return appropriate result.
+    Returns (response, should_continue, retries_left, current_delay, last_exception).
+    """
+    status = response.status_code
+    reason = response.reason
+
+    # Handle retryable status codes
+    if status in retry_status_codes:
+        should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
+            response, status, reason, retries_left, max_retries, api_description,
+            attempt, current_delay, backoff_factor, max_delay, session_manager
+        )
+        if not should_continue:
+            return (return_response, False, retries_left, current_delay, None)
+        last_exception = HTTPError(f"{status} Error", response=response)  # type: ignore
+        return (None, True, retries_left, current_delay, last_exception)
+
+    # Handle redirects
+    redirect_response = _handle_redirect_response(
+        response, status, reason, request_params["allow_redirects"], api_description
+    )
+    if redirect_response is not None:
+        return (redirect_response, False, retries_left, current_delay, None)
+
+    # Handle non-retryable error status codes
+    if not response.ok:
+        error_response = _handle_error_status(response, status, reason, api_description, session_manager)
+        return (error_response, False, retries_left, current_delay, None)
+
+    # Process successful response
+    if response.ok:
+        logger.debug(f"{api_description}: Successful response ({status} {reason}).")
+        session_manager.dynamic_rate_limiter.decrease_delay()
+        processed_response = _process_api_response(
+            response=response,
+            api_description=api_description,
+            force_text_response=force_text_response,
+        )
+        return (processed_response, False, retries_left, current_delay, None)
+
+    return (None, True, retries_left, current_delay, None)
+
+
 def _process_request_attempt(
     session_manager: SessionManager,
     driver: DriverType,
@@ -1747,43 +1805,12 @@ def _process_request_attempt(
                 return (None, False, retries_left, current_delay, None)
             return (None, True, retries_left, current_delay, None)
 
-        # Check response status
-        status = response.status_code
-        reason = response.reason
-
-        # Handle retryable status codes
-        if status in retry_status_codes:
-            should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
-                response, status, reason, retries_left, max_retries, api_description,
-                attempt, current_delay, backoff_factor, max_delay, session_manager
-            )
-            if not should_continue:
-                return (return_response, False, retries_left, current_delay, None)
-            last_exception = HTTPError(f"{status} Error", response=response)  # type: ignore
-            return (None, True, retries_left, current_delay, last_exception)
-
-        # Handle redirects
-        redirect_response = _handle_redirect_response(
-            response, status, reason, request_params["allow_redirects"], api_description
+        # Handle response status
+        return _handle_response_status(
+            response, retries_left, max_retries, api_description, attempt,
+            current_delay, backoff_factor, max_delay, retry_status_codes,
+            session_manager, force_text_response, request_params
         )
-        if redirect_response is not None:
-            return (redirect_response, False, retries_left, current_delay, None)
-
-        # Handle non-retryable error status codes
-        if not response.ok:
-            error_response = _handle_error_status(response, status, reason, api_description, session_manager)
-            return (error_response, False, retries_left, current_delay, None)
-
-        # Process successful response
-        if response.ok:
-            logger.debug(f"{api_description}: Successful response ({status} {reason}).")
-            session_manager.dynamic_rate_limiter.decrease_delay()
-            processed_response = _process_api_response(
-                response=response,
-                api_description=api_description,
-                force_text_response=force_text_response,
-            )
-            return (processed_response, False, retries_left, current_delay, None)
 
     except RequestException as e:  # type: ignore
         should_continue, retries_left, current_delay = _handle_request_exception(
