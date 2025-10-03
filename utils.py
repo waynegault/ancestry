@@ -2693,8 +2693,92 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
 
 # End of log_in
 
+def _validate_login_status_inputs(session_manager: SessionManager) -> Optional[bool]:
+    """Validate session manager for login status check."""
+    if not hasattr(session_manager, 'is_sess_valid') or not hasattr(session_manager, 'driver'):
+        logger.error(f"Invalid argument: Expected SessionManager-like object, got {type(session_manager)}.")
+        return None
+
+    if not session_manager.is_sess_valid():
+        logger.debug("Session is invalid, user cannot be logged in.")
+        return False
+
+    if session_manager.driver is None:
+        logger.error("Login status check: Driver is None within SessionManager.")
+        return None
+
+    return True  # Valid
+
+def _perform_api_login_check(session_manager: SessionManager) -> Optional[bool]:
+    """Perform API-based login status check."""
+    logger.debug("Performing primary API-based login status check...")
+    try:
+        session_manager._sync_cookies()
+        api_check_result = session_manager.api_manager.verify_api_login_status()
+
+        if api_check_result is True:
+            logger.debug("API login check confirmed user is logged in.")
+            return True
+        if api_check_result is False:
+            logger.debug("API login check confirmed user is NOT logged in.")
+            return False
+
+        logger.warning("API login check returned ambiguous result (None).")
+        return None
+    except Exception as e:
+        logger.error(f"Exception during API login check: {e}", exc_info=True)
+        return None
+
+def _check_ui_login_indicators(driver: Any) -> Optional[bool]:
+    """Check UI for login indicators."""
+    # Check for logged-in element
+    logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR
+    logger.debug(f"Checking for logged-in indicator: '{logged_in_selector}'")
+    ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)
+
+    if ui_element_present:
+        logger.debug("UI check: Logged-in indicator found. User is logged in.")
+        return True
+
+    # Check for login button
+    login_button_selector = LOG_IN_BUTTON_SELECTOR
+    logger.debug(f"Checking for login button: '{login_button_selector}'")
+    login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=3)
+
+    if login_button_present:
+        logger.debug("UI check: Login button found. User is NOT logged in.")
+        return False
+
+    return None  # Inconclusive
+
+def _perform_ui_login_check_with_navigation(driver: Any) -> bool:
+    """Perform UI login check with navigation fallback."""
+    result = _check_ui_login_indicators(driver)
+    if result is not None:
+        return result
+
+    # Navigate to base URL for clearer check
+    logger.debug("UI check inconclusive. Navigating to base URL for clearer check...")
+    try:
+        current_url = driver.current_url
+        base_url = config_schema.api.base_url
+
+        if not current_url.startswith(base_url):
+            driver.get(base_url)
+            time.sleep(2)
+
+            result = _check_ui_login_indicators(driver)
+            if result is not None:
+                return result
+    except Exception as nav_e:
+        logger.warning(f"Error during navigation for secondary UI check: {nav_e}")
+
+    # Default to False for security
+    logger.debug("UI check still inconclusive after all checks. Defaulting to NOT logged in for security.")
+    return False
+
 # Login Status Check Function
-@retry(MAX_RETRIES=2)  # Add retry in case of transient API issues during check
+@retry(MAX_RETRIES=2)
 def login_status(session_manager: SessionManager, disable_ui_fallback: bool = False) -> Optional[bool]:  # type: ignore
     """
     Checks if the user is currently logged in. Prioritizes API check, with optional UI fallback.
@@ -2706,143 +2790,36 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
     Returns:
         True if logged in, False if not logged in, None if the check fails critically.
     """
-    # --- Validate arguments and session state ---
-    # Check if session_manager has the expected attributes instead of isinstance check
-    if not hasattr(session_manager, 'is_sess_valid') or not hasattr(session_manager, 'driver'):
-        logger.error(
-            f"Invalid argument: Expected SessionManager-like object, got {type(session_manager)}."
-        )
-        return None  # Critical argument error
-    # End of if
-
-    if not session_manager.is_sess_valid():
-        logger.debug("Session is invalid, user cannot be logged in.")
-        return False  # Cannot be logged in if session is invalid
-    # End of if
+    # Validate inputs
+    validation_result = _validate_login_status_inputs(session_manager)
+    if validation_result is not True:
+        return validation_result
 
     driver = session_manager.driver
-    if driver is None:
-        logger.error("Login status check: Driver is None within SessionManager.")
-        return None  # Critical state error
-    # End of if
 
-    # --- Primary Check: API Verification ---
-    logger.debug("Performing primary API-based login status check...")
-    try:
-        # Sync cookies before API check to ensure latest state
-        session_manager._sync_cookies()
+    # Perform API check
+    api_check_result = _perform_api_login_check(session_manager)
+    if api_check_result is not None:
+        return api_check_result
 
-        # Perform API check
-        api_check_result = session_manager.api_manager.verify_api_login_status()
-
-        # If API check is definitive, return its result
-        if api_check_result is True:
-            logger.debug("API login check confirmed user is logged in.")
-            return True
-        if api_check_result is False:
-            logger.debug("API login check confirmed user is NOT logged in.")
-            return False
-        # End of if/elif
-
-        logger.warning("API login check returned ambiguous result (None).")
-    except Exception as e:
-        logger.error(f"Exception during API login check: {e}", exc_info=True)
-        api_check_result = None  # Ensure we continue to UI fallback
-    # End of try/except
-
-    # If API check is ambiguous (None) and UI fallback is disabled, return None
-    if api_check_result is None and disable_ui_fallback:
-        logger.warning(
-            "API login check was ambiguous and UI fallback is disabled. Status unknown."
-        )
+    # If API check is ambiguous and UI fallback is disabled, return None
+    if disable_ui_fallback:
+        logger.warning("API login check was ambiguous and UI fallback is disabled. Status unknown.")
         return None
-    # End of if
 
-    # --- Secondary Check: UI Verification (Fallback) ---
+    # Perform UI check
     logger.debug("Performing fallback UI-based login status check...")
     try:
-        # Check 1: Presence of a known logged-in element (most reliable indicator)
-        logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR  # type: ignore # Assumes defined in my_selectors
-        logger.debug(f"Checking for logged-in indicator: '{logged_in_selector}'")
-
-        # Use helper function is_elem_there for robust check
-        ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)  # type: ignore
-
-        if ui_element_present:
-            logger.debug("UI check: Logged-in indicator found. User is logged in.")
-            return True
-        # End of if
-
-        # Check 2: Presence of login button (if present, definitely not logged in)
-        login_button_selector = LOG_IN_BUTTON_SELECTOR  # type: ignore # Assumes defined in my_selectors
-        logger.debug(f"Checking for login button: '{login_button_selector}'")
-
-        # Use helper function is_elem_there for robust check
-        login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=3)  # type: ignore
-
-        if login_button_present:
-            logger.debug("UI check: Login button found. User is NOT logged in.")
-            return False
-        # End of if
-
-        # Check 3: Navigate to base URL and check again if both checks were inconclusive
-        if not ui_element_present and not login_button_present:
-            logger.debug(
-                "UI check inconclusive. Navigating to base URL for clearer check..."
-            )
-            try:
-                current_url = driver.current_url
-                base_url = config_schema.api.base_url
-
-                # Only navigate if not already on base URL
-                if not current_url.startswith(base_url):
-                    driver.get(base_url)
-                    time.sleep(2)  # Allow page to load
-
-                    # Check again after navigation
-                    ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)  # type: ignore
-                    if ui_element_present:
-                        logger.debug(
-                            "UI check after navigation: Logged-in indicator found. User is logged in."
-                        )
-                        return True
-                    # End of if
-
-                    login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=3)  # type: ignore
-                    if login_button_present:
-                        logger.debug(
-                            "UI check after navigation: Login button found. User is NOT logged in."
-                        )
-                        return False
-                    # End of if
-                # End of if
-            except Exception as nav_e:
-                logger.warning(
-                    f"Error during navigation for secondary UI check: {nav_e}"
-                )
-                # Continue to default return
-            # End of try/except
-        # End of if
-
-        # Default to False in ambiguous cases for security reasons
-        logger.debug(
-            "UI check still inconclusive after all checks. Defaulting to NOT logged in for security."
-        )
-        return False
-
-    except WebDriverException as e:  # type: ignore
+        return _perform_ui_login_check_with_navigation(driver)
+    except WebDriverException as e:
         logger.error(f"WebDriverException during UI login_status check: {e}")
         if not is_browser_open(driver):
             logger.warning("Browser appears to be closed. Closing session.")
-            session_manager.close_sess()  # Close the dead session
-        # End of if
-        return None  # Return None on critical WebDriver error during check
-    except Exception as e:  # Catch other unexpected errors
-        logger.error(
-            f"Unexpected error during UI login_status check: {e}", exc_info=True
-        )
+            session_manager.close_sess()
         return None
-    # End of try/except UI check
+    except Exception as e:
+        logger.error(f"Unexpected error during UI login_status check: {e}", exc_info=True)
+        return None
 
 # End of login_status
 
