@@ -2362,6 +2362,178 @@ def _display_relationship_result(
         _display_unexpected_state(selected_name, api_called_for_rel)
 
 
+# Helper functions for handle_api_report - Phase 1: Dependency and Session Validation
+
+def _check_dependencies() -> Tuple[bool, List[str]]:
+    """Check if all required dependencies are available."""
+    dependencies = [
+        ("Core Utils", CORE_UTILS_AVAILABLE),
+        ("API Utils", API_UTILS_AVAILABLE),
+        ("Gedcom Utils", GEDCOM_UTILS_AVAILABLE),
+        ("Config", config_schema),
+        ("Session Manager", session_manager),
+    ]
+
+    missing = [name for name, available in dependencies if not available]
+    return len(missing) == 0, missing
+
+
+def _validate_browser_session() -> bool:
+    """Validate that browser session is available."""
+    logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
+    logger.debug(f"Session manager driver: {session_manager.driver}")
+    logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
+
+    if not session_manager.driver:
+        logger.error(f"Browser session not available. Session manager: {session_manager}, Driver: {session_manager.driver}")
+        print("\nERROR: Browser session not available.")
+        return False
+
+    logger.debug("Browser session is available and ready.")
+    return True
+
+
+def _refresh_cookies_from_browser() -> bool:
+    """Refresh cookies in requests session from browser session."""
+    if not session_manager.driver:
+        return False
+
+    try:
+        selenium_cookies = session_manager.driver.get_cookies()
+        for cookie in selenium_cookies:
+            session_manager._requests_session.cookies.set(
+                cookie["name"], cookie["value"]
+            )
+        logger.debug("Successfully refreshed cookies from browser session.")
+        return True
+    except Exception as cookie_err:
+        logger.error(f"Failed to refresh cookies from browser: {cookie_err}")
+        print(f"\nERROR: Failed to refresh cookies: {cookie_err}")
+        return False
+
+
+def _validate_requests_session() -> bool:
+    """Validate that requests session exists."""
+    if not hasattr(session_manager, "_requests_session") or not session_manager._requests_session:
+        logger.error("No requests session available for API calls.")
+        print("\nERROR: API session not available. Please ensure you are logged in to Ancestry.")
+        return False
+    return True
+
+
+def _validate_cookies_available() -> bool:
+    """Validate that cookies are available in requests session."""
+    if not session_manager._requests_session.cookies:
+        logger.error("Still no cookies available after refresh attempt.")
+        print("\nERROR: Failed to obtain authentication cookies. Please restart the application.")
+        return False
+    return True
+
+
+# Helper functions for handle_api_report - Phase 2: Login and Cookie Management
+
+def _handle_logged_in_user() -> bool:
+    """Handle case where user is already logged in - refresh cookies."""
+    logger.debug("User is already logged in. Refreshing cookies...")
+
+    if not _validate_requests_session():
+        return False
+
+    if not _refresh_cookies_from_browser():
+        return False
+
+    if not _validate_cookies_available():
+        return False
+
+    logger.debug("Successfully refreshed authentication cookies.")
+    return True
+
+
+def _attempt_browser_login() -> bool:
+    """Attempt to log in via browser and refresh cookies."""
+    from utils import log_in, login_status
+
+    # First check if we're already logged in
+    login_stat = login_status(session_manager, disable_ui_fallback=True)
+    if login_stat is True:
+        logger.info("User is already logged in. No need to navigate to sign-in page.")
+
+        # Refresh the cookies in the requests session
+        if not _refresh_cookies_from_browser():
+            return False
+
+        return True
+    else:
+        # Try to log in
+        login_result = log_in(session_manager)
+        if login_result != "LOGIN_SUCCEEDED":
+            logger.error(f"Failed to log in: {login_result}")
+            print(f"\nERROR: Failed to log in: {login_result}")
+            return False
+
+        return True
+
+
+def _initialize_session_with_login() -> bool:
+    """Initialize session with authentication cookies via login."""
+    logger.warning("No cookies available in the requests session. Need to log in.")
+
+    # Try to initialize the session with authentication cookies
+    print("\nAttempting to log in to Ancestry...")
+    try:
+        # Try to start the browser session
+        if not session_manager.start_browser(action_name="API Report Browser Init"):
+            logger.error("Failed to start browser session.")
+            print("\nERROR: Failed to start browser session.")
+            return False
+
+        # Attempt login
+        if not _attempt_browser_login():
+            return False
+
+        # Check if we now have cookies
+        if not session_manager._requests_session.cookies:
+            logger.error("Still no cookies available after login attempt.")
+            print("\nERROR: Still no cookies available after login attempt.")
+            return False
+
+        print("\nSuccessfully initialized session with authentication cookies.")
+        logger.info("Successfully initialized session with authentication cookies.")
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing session: {e}")
+        print(f"\nERROR: Error initializing session: {e}")
+        return False
+
+
+def _handle_not_logged_in_user() -> bool:
+    """Handle case where user is not logged in."""
+    if not _validate_requests_session():
+        return False
+
+    # Check if we have cookies in the requests session
+    if not session_manager._requests_session.cookies:
+        return _initialize_session_with_login()
+    else:
+        # We have cookies, so we're good to go
+        logger.info("Session already has authentication cookies.")
+        return True
+
+
+def _ensure_authenticated_session() -> bool:
+    """Ensure we have an authenticated session with valid cookies."""
+    from utils import login_status
+
+    # Check login status
+    login_stat = login_status(session_manager, disable_ui_fallback=True)
+
+    # If we're already logged in, refresh the cookies
+    if login_stat is True:
+        return _handle_logged_in_user()
+    else:
+        return _handle_not_logged_in_user()
+
+
 def _handle_supplementary_info_phase(
     person_research_data: Optional[Dict],
     selected_candidate_processed: Dict,
@@ -2489,176 +2661,24 @@ def handle_api_report(session_manager_param=None):
     if session_manager_param:
         session_manager = session_manager_param
         logger.debug("Using session_manager passed by framework.")
-    # Dependency Checks...
-    if not all(
-        [
-            CORE_UTILS_AVAILABLE,
-            API_UTILS_AVAILABLE,
-            GEDCOM_UTILS_AVAILABLE,
-            config_schema,  # Use config_schema instead of undefined config_instance
-            session_manager,
-        ]
-    ):
-        missing = [
-            m
-            for m, v in [
-                ("Core Utils", CORE_UTILS_AVAILABLE),
-                ("API Utils", API_UTILS_AVAILABLE),
-                ("Gedcom Utils", GEDCOM_UTILS_AVAILABLE),
-                (
-                    "Config",
-                    config_schema,
-                ),  # Use config_schema instead of config_instance and selenium_config
-                ("Session Manager", session_manager),
-            ]
-            if not v
-        ]
-        logger.critical(
-            f"handle_api_report: Dependencies missing: {', '.join(missing)}."
-        )
-        print(
-            f"\nCRITICAL ERROR: Dependencies unavailable ({', '.join(missing)}). Check logs."
-        )
+
+    # Dependency Checks
+    dependencies_ok, missing = _check_dependencies()
+    if not dependencies_ok:
+        logger.critical(f"handle_api_report: Dependencies missing: {', '.join(missing)}.")
+        print(f"\nCRITICAL ERROR: Dependencies unavailable ({', '.join(missing)}). Check logs.")
         return False
-    # Session Setup...
-    # Session is already initialized by exec_actn framework
+
+    # Session Setup
     logger.debug("Using session initialized by action execution framework.")
 
-    # Check if we're already logged in
-    from utils import login_status
-
-    # Browser session should be started by exec_actn framework
-    logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
-    logger.debug(f"Session manager driver: {session_manager.driver}")
-    logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
-
-    if not session_manager.driver:
-        logger.error(f"Browser session not available. Session manager: {session_manager}, Driver: {session_manager.driver}")
-        print("\nERROR: Browser session not available.")
+    # Browser Session Validation
+    if not _validate_browser_session():
         return False
-    logger.debug("Browser session is available and ready.")
 
-    # Check login status
-    login_stat = login_status(session_manager, disable_ui_fallback=True)
-
-    # If we're already logged in, refresh the cookies
-    if login_stat is True:
-        logger.debug("User is already logged in. Refreshing cookies...")
-
-        # Ensure we have a requests session
-        if (
-            not hasattr(session_manager, "_requests_session")
-            or not session_manager._requests_session
-        ):
-            logger.error("No requests session available despite being logged in.")
-            print("\nERROR: API session not available. Please restart the application.")
-            return False
-
-        # Refresh the cookies in the requests session
-        if session_manager.driver:
-            try:
-                selenium_cookies = session_manager.driver.get_cookies()
-                for cookie in selenium_cookies:
-                    session_manager._requests_session.cookies.set(
-                        cookie["name"], cookie["value"]
-                    )
-                logger.debug("Successfully refreshed cookies from browser session.")
-            except Exception as cookie_err:
-                logger.error(f"Failed to refresh cookies from browser: {cookie_err}")
-                print(f"\nERROR: Failed to refresh cookies: {cookie_err}")
-                return False
-
-        # If we still don't have cookies, something is wrong
-        if not session_manager._requests_session.cookies:
-            logger.error("Still no cookies available after refresh attempt.")
-            print(
-                "\nERROR: Failed to obtain authentication cookies. Please restart the application."
-            )
-            return False
-
-        # If we get here, we have successfully refreshed the cookies
-        logger.debug("Successfully refreshed authentication cookies.")
-    else:
-        # We're not logged in, so check if we have a requests session
-        if (
-            not hasattr(session_manager, "_requests_session")
-            or not session_manager._requests_session
-        ):
-            logger.error("No requests session available for API calls.")
-            print(
-                "\nERROR: API session not available. Please ensure you are logged in to Ancestry."
-            )
-            return False
-
-        # Check if we have cookies in the requests session
-        if not session_manager._requests_session.cookies:
-            logger.warning(
-                "No cookies available in the requests session. Need to log in."
-            )
-
-            # Try to initialize the session with authentication cookies
-            print("\nAttempting to log in to Ancestry...")
-            try:
-                # Try to start the browser session
-                if not session_manager.start_browser(
-                    action_name="API Report Browser Init"
-                ):
-                    logger.error("Failed to start browser session.")
-                    print("\nERROR: Failed to start browser session.")
-                    return False
-
-                # First check if we're already logged in
-                from utils import log_in, login_status
-
-                login_stat = login_status(session_manager, disable_ui_fallback=True)
-                if login_stat is True:
-                    logger.info(
-                        "User is already logged in. No need to navigate to sign-in page."
-                    )
-
-                    # Refresh the cookies in the requests session
-                    if session_manager.driver:
-                        try:
-                            selenium_cookies = session_manager.driver.get_cookies()
-                            for cookie in selenium_cookies:
-                                session_manager._requests_session.cookies.set(
-                                    cookie["name"], cookie["value"]
-                                )
-                            logger.info(
-                                "Successfully refreshed cookies from browser session."
-                            )
-                        except Exception as cookie_err:
-                            logger.error(
-                                f"Failed to refresh cookies from browser: {cookie_err}"
-                            )
-
-                    # Set login result to success
-                    login_result = "LOGIN_SUCCEEDED"
-                else:
-                    # Try to log in
-                    login_result = log_in(session_manager)
-                    if login_result != "LOGIN_SUCCEEDED":
-                        logger.error(f"Failed to log in: {login_result}")
-                        print(f"\nERROR: Failed to log in: {login_result}")
-                        return False
-
-                # Check if we now have cookies
-                if not session_manager._requests_session.cookies:
-                    logger.error("Still no cookies available after login attempt.")
-                    print("\nERROR: Still no cookies available after login attempt.")
-                    return False
-
-                print("\nSuccessfully initialized session with authentication cookies.")
-            except Exception as e:
-                logger.error(f"Error initializing session: {e}")
-                print(f"\nERROR: Error initializing session: {e}")
-                return False
-
-            # If we get here, we have successfully initialized the session with cookies
-            logger.info("Successfully initialized session with authentication cookies.")
-        else:
-            # We have cookies, so we're good to go
-            logger.info("Session already has authentication cookies.")
+    # Ensure Authenticated Session
+    if not _ensure_authenticated_session():
+        return False
 
     # Phase 1: Search...
     search_criteria = _get_search_criteria()
