@@ -256,6 +256,126 @@ def ensure_caching_initialized() -> None:
 # End of ensure_caching_initialized
 
 
+# Helper functions for exec_actn
+
+def _determine_browser_requirement(action_name: str) -> bool:
+    """Determine if action requires a browser."""
+    browserless_actions = [
+        "all_but_first_actn",
+        "reset_db_actn",
+        "backup_db_actn",
+        "restore_db_actn",
+        "run_action10",
+    ]
+    return action_name not in browserless_actions
+
+
+def _determine_required_state(action_name: str, requires_browser: bool) -> str:
+    """Determine the required session state for the action."""
+    if not requires_browser:
+        return "db_ready"
+    if action_name == "check_login_actn":
+        return "driver_ready"
+    return "session_ready"
+
+
+def _ensure_required_state(session_manager: SessionManager, required_state: str, action_name: str, choice: str) -> bool:
+    """Ensure the required session state is achieved."""
+    if required_state == "db_ready":
+        return session_manager.ensure_db_ready()
+    elif required_state == "driver_ready":
+        return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+    elif required_state == "session_ready":
+        skip_csrf = (choice == "11")
+        return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
+    return True
+
+
+def _prepare_action_arguments(action_func, session_manager: SessionManager, args: tuple) -> tuple:
+    """Prepare arguments for action function call."""
+    func_sig = inspect.signature(action_func)
+    pass_session_manager = "session_manager" in func_sig.parameters
+    action_name = action_func.__name__
+
+    # Handle keyword args specifically for coord function
+    if action_name in ["coord", "coord_action"] and "start" in func_sig.parameters:
+        start_val = 1
+        int_args = [a for a in args if isinstance(a, int)]
+        if int_args:
+            start_val = int_args[-1]
+        kwargs_for_action = {"start": start_val}
+
+        coord_args = []
+        if pass_session_manager:
+            coord_args.append(session_manager)
+        if action_name == "coord_action" and "config_schema" in func_sig.parameters:
+            coord_args.append(config)
+
+        return coord_args, kwargs_for_action
+    else:
+        # General case
+        final_args = []
+        if pass_session_manager:
+            final_args.append(session_manager)
+        final_args.extend(args)
+        return final_args, {}
+
+
+def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict):
+    """Execute the action function with prepared arguments."""
+    if kwargs:
+        return action_func(*prepared_args, **kwargs)
+    else:
+        return action_func(*prepared_args)
+
+
+def _should_close_session(action_result, action_exception, close_sess_after: bool, action_name: str) -> bool:
+    """Determine if session should be closed."""
+    if action_result is False or action_exception is not None:
+        logger.warning(f"Action '{action_name}' failed or raised exception. Closing session.")
+        return True
+    elif close_sess_after:
+        logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
+        return True
+    return False
+
+
+def _log_performance_metrics(start_time: float, process, mem_before: float, choice: str, action_name: str):
+    """Log performance metrics for the action."""
+    duration = time.time() - start_time
+    hours, remainder = divmod(duration, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
+
+    try:
+        mem_after = process.memory_info().rss / (1024 * 1024)
+        mem_used = mem_after - mem_before
+        mem_log = f"Memory used: {mem_used:.1f} MB"
+    except Exception as mem_err:
+        mem_log = f"Memory usage unavailable: {mem_err}"
+
+    logger.info("------------------------------------------")
+    logger.info(f"Action {choice} ({action_name}) finished.")
+    logger.info(f"Duration: {formatted_duration}")
+    logger.info(mem_log)
+    logger.info("------------------------------------------\n")
+
+
+def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str):
+    """Perform session cleanup based on action result."""
+    if should_close and isinstance(session_manager, SessionManager):
+        if session_manager.browser_needed and session_manager.driver_live:
+            logger.debug("Closing browser session...")
+            session_manager.close_browser()
+            logger.debug("Browser session closed. DB connections kept.")
+        elif should_close and action_name in ["all_but_first_actn"]:
+            logger.debug("Closing all connections including database...")
+            session_manager.close_sess(keep_db=False)
+            logger.debug("All connections closed.")
+    elif isinstance(session_manager, SessionManager) and session_manager.driver_live and not should_close:
+        logger.debug(f"Keeping session live after '{action_name}'.")
+
+
 def exec_actn(
     action_func,
     session_manager: SessionManager,
@@ -281,7 +401,7 @@ def exec_actn(
     start_time = time.time()
     action_name = action_func.__name__
 
-    # --- Performance Logging Setup ---
+    # Performance Logging Setup
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
 
@@ -290,165 +410,47 @@ def exec_actn(
     logger.info("------------------------------------------")
 
     action_result = None
-    action_exception = None  # Store exception if one occurs
+    action_exception = None
 
-    # Determine if the action requires a browser
-    browserless_actions = [
-        "all_but_first_actn",
-        "reset_db_actn",
-        "backup_db_actn",
-        "restore_db_actn",
-        "run_action10",  # GEDCOM Report (Local File)
-        # "run_action11_wrapper",  # API Report (Ancestry Online) - Removed: needs browser session
-    ]
-
-    # Set browser_needed flag based on action
-    requires_browser = action_name not in browserless_actions
+    # Determine browser requirement and required state
+    requires_browser = _determine_browser_requirement(action_name)
     session_manager.browser_needed = requires_browser
-
-    # Determine the required session state for the action
-    required_state = "none"  # Default for actions that don't need any special state
-
-    if requires_browser:
-        # Special case for check_login_actn: only needs driver, not full session
-        if action_name == "check_login_actn":
-            required_state = "driver_ready"  # Browser started, but no login required
-        else:
-            required_state = "session_ready"  # Full session with browser
-    else:
-        required_state = "db_ready"  # Database-only session
+    required_state = _determine_required_state(action_name, requires_browser)
 
     try:
-        # --- Ensure Required State ---
-        state_ok = True
-        if required_state == "db_ready":
-            state_ok = session_manager.ensure_db_ready()
-        elif required_state == "driver_ready":
-            # For check_login_actn: only ensure browser is started, no login attempts
-            state_ok = session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
-        elif required_state == "session_ready":
-            # Skip CSRF token validation for Action 11 (only uses Tree Ladder API)
-            skip_csrf = (choice == "11")
-            state_ok = session_manager.ensure_session_ready(
-                action_name=f"{action_name} - Setup", skip_csrf=skip_csrf
-            )
-
+        # Ensure Required State
+        state_ok = _ensure_required_state(session_manager, required_state, action_name, choice)
         if not state_ok:
-            # Log specific state failure before raising generic exception
-            logger.error(
-                f"Failed to achieve required state '{required_state}' for action '{action_name}'."
-            )
-            raise Exception(
-                f"Setup failed: Could not achieve state '{required_state}'."
-            )
+            logger.error(f"Failed to achieve required state '{required_state}' for action '{action_name}'.")
+            raise Exception(f"Setup failed: Could not achieve state '{required_state}'.")
 
-        # --- Execute Action ---
-        # Prepare arguments for action function call
-        func_sig = inspect.signature(action_func)
-        pass_session_manager = "session_manager" in func_sig.parameters
-
-        final_args = []
-        if pass_session_manager:
-            final_args.append(session_manager)
-        final_args.extend(args)
-
-        # Handle keyword args specifically for coord function
-        if action_name in ["coord", "coord_action"] and "start" in func_sig.parameters:
-            start_val = 1
-            int_args = [a for a in args if isinstance(a, int)]
-            if int_args:
-                start_val = int_args[-1]
-            kwargs_for_action = {"start": start_val}
-            # Prepare coord specific positional args
-            coord_args = []
-            if pass_session_manager:
-                coord_args.append(session_manager)
-            # coord_action also needs config_schema
-            if action_name == "coord_action" and "config_schema" in func_sig.parameters:
-                coord_args.append(config)  # Pass the global config
-            # Call with prepared positional args and keyword args
-            action_result = action_func(*coord_args, **kwargs_for_action)
-        else:
-            # General case - call with the assembled final_args list
-            action_result = action_func(*final_args)
+        # Execute Action
+        prepared_args, kwargs = _prepare_action_arguments(action_func, session_manager, args)
+        action_result = _execute_action_function(action_func, prepared_args, kwargs)
 
     except Exception as e:
-        # Log exception details and mark action as failure
         logger.error(f"Exception during action {action_name}: {e}", exc_info=True)
         action_result = False
         action_exception = e
 
     finally:
-        # --- Session Closing Logic (Simplified) ---
-        should_close = False
-        if action_result is False or action_exception is not None:
-            # Close session if action failed or raised exception
-            logger.warning(
-                f"Action '{action_name}' failed or raised exception. Closing session."
-            )
-            should_close = True
-        elif close_sess_after:
-            # Close session if explicitly requested
-            logger.debug(
-                f"Closing session after '{action_name}' as requested by caller (close_sess_after=True)."
-            )
-            should_close = True
+        # Session Closing Logic
+        should_close = _should_close_session(action_result, action_exception, close_sess_after, action_name)
 
-        # --- Performance Logging ---
-        duration = time.time() - start_time
-        hours, remainder = divmod(duration, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
-        # Recalculate memory usage safely
-        try:
-            mem_after = process.memory_info().rss / (1024 * 1024)
-            mem_used = mem_after - mem_before
-            mem_log = f"Memory used: {mem_used:.1f} MB"
-        except Exception as mem_err:
-            mem_log = f"Memory usage unavailable: {mem_err}"
-
+        # Performance Logging
         print(" ")  # Spacer
-
-        # Restore old footer style
         if action_result is False:
             logger.debug(f"Action {choice} ({action_name}) reported failure.")
         elif action_exception is not None:
-            logger.debug(
-                f"Action {choice} ({action_name}) failed due to exception: {type(action_exception).__name__}."
-            )
+            logger.debug(f"Action {choice} ({action_name}) failed due to exception: {type(action_exception).__name__}.")
 
-        # --- Return Action Result ---
-        # Return True only if action completed without exception AND didn't return False explicitly
         final_outcome = action_result is not False and action_exception is None
-        logger.debug(
-            f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n"
-        )
+        logger.debug(f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n")
 
-        logger.info("------------------------------------------")
-        logger.info(f"Action {choice} ({action_name}) finished.")
-        logger.info(f"Duration: {formatted_duration}")
-        logger.info(mem_log)
-        logger.info("------------------------------------------\n")
+        _log_performance_metrics(start_time, process, mem_before, choice, action_name)
 
-        # Perform cleanup AFTER footer to prevent logs bleeding after completion
-        if should_close and isinstance(session_manager, SessionManager):
-            if session_manager.browser_needed and session_manager.driver_live:
-                logger.debug("Closing browser session...")
-                # Close browser but keep DB connections for most actions
-                session_manager.close_browser()
-                logger.debug("Browser session closed. DB connections kept.")
-            elif should_close and action_name in ["all_but_first_actn"]:
-                # For specific actions, close everything including DB
-                logger.debug("Closing all connections including database...")
-                session_manager.close_sess(keep_db=False)
-                logger.debug("All connections closed.")
-        # Log if session is kept open
-        elif (
-            isinstance(session_manager, SessionManager)
-            and session_manager.driver_live
-            and not should_close
-        ):
-            logger.debug(f"Keeping session live after '{action_name}'.")
+        # Perform cleanup
+        _perform_session_cleanup(session_manager, should_close, action_name)
 
     return final_outcome
 
