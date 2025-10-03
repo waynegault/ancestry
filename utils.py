@@ -3197,6 +3197,35 @@ def _handle_webdriver_exception(
     return ("continue", driver)
 
 
+def _check_url_mismatch_and_handle(
+    driver: WebDriver,  # type: ignore
+    landed_url_base: str,
+    target_url_base: str,
+    signin_page_url_base: str,
+    unavailability_selectors: Dict[str, Tuple[str, int]],
+    session_manager: SessionManagerType,
+) -> Tuple[str, Optional[WebDriver]]:  # type: ignore
+    """
+    Check for URL mismatch and handle appropriately.
+    Returns (action, driver) where action is 'success', 'fail', 'continue', or None.
+    """
+    if landed_url_base == target_url_base:
+        return (None, driver)  # type: ignore  # No mismatch, continue with normal flow
+
+    # Check if signin redirect is acceptable
+    if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
+        return ("success", driver)
+
+    # Handle URL mismatch
+    mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
+    if mismatch_action == "fail":
+        return ("fail", driver)
+    elif mismatch_action == "continue":
+        return ("continue", driver)
+
+    return (None, driver)  # type: ignore  # Continue with normal flow
+
+
 def _validate_post_navigation(
     driver: WebDriver,  # type: ignore
     landed_url_base: str,
@@ -3224,16 +3253,13 @@ def _validate_post_navigation(
         elif login_action in ("fail", "no_manager"):
             return ("fail", driver)
 
-    # Check if landed on an unexpected URL
-    if landed_url_base != target_url_base:
-        if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
-            return ("success", driver)
-
-        mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
-        if mismatch_action == "fail":
-            return ("fail", driver)
-        elif mismatch_action == "continue":
-            return ("continue", driver)
+    # Check for URL mismatch
+    url_check_result, driver = _check_url_mismatch_and_handle(
+        driver, landed_url_base, target_url_base, signin_page_url_base,
+        unavailability_selectors, session_manager
+    )
+    if url_check_result is not None:
+        return (url_check_result, driver)
 
     # --- Final Check: Element on Page ---
     element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
