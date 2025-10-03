@@ -460,8 +460,82 @@ class InboxProcessor:
 
     # End of _extract_conversation_info
 
-    @cached_api_call("ancestry", ttl=600)  # 10-minute cache for conversation context
-    @retry_api(max_retries=2)  # Allow retries for fetching context
+    def _validate_context_fetch_inputs(self, conversation_id: str) -> bool:
+        """Validate inputs for conversation context fetch."""
+        if not conversation_id:
+            logger.warning("_fetch_conversation_context: No conversation_id provided.")
+            return False
+
+        if not self.session_manager or not self.session_manager.my_profile_id:
+            logger.error("_fetch_conversation_context: SessionManager or profile ID missing.")
+            return False
+
+        if not self.session_manager.is_sess_valid():
+            logger.error(f"_fetch_conversation_context: Session invalid fetching context for ConvID {conversation_id}.")
+            raise WebDriverException(f"Session invalid fetching context ConvID {conversation_id}")
+
+        return True
+
+    def _build_context_api_request(self, conversation_id: str) -> tuple[str, dict[str, str]]:
+        """Build API URL and headers for context fetch."""
+        api_base = urljoin(getattr(config_schema.api, "base_url", ""), "/app-api/express/v2/")
+        limit = self.ai_context_msg_count
+        api_description = "Fetch Conversation Context"
+
+        # Prepare headers
+        contextual_headers = getattr(config_schema.api, "contextual_headers", {}).get(api_description, {})
+        if isinstance(contextual_headers, dict):
+            headers = contextual_headers.copy()
+        else:
+            headers = {}
+            logger.warning(f"Expected dict for contextual headers, got {type(contextual_headers)}")
+
+        # Set ancestry-userid
+        if "ancestry-userid" in headers:
+            headers["ancestry-userid"] = self.session_manager.my_profile_id.upper()
+
+        # Remove None values
+        headers = {k: v for k, v in headers.items() if v is not None}
+
+        url = f"{api_base}conversations/{conversation_id}/messages?limit={limit}"
+        return url, headers
+
+    def _process_context_messages(
+        self, messages_batch: list, conversation_id: str
+    ) -> list[dict[str, Any]]:
+        """Process and format message data from API response."""
+        context_messages: list[dict[str, Any]] = []
+
+        for msg_data in messages_batch:
+            if not isinstance(msg_data, dict):
+                continue
+
+            # Parse timestamp
+            ts_unix = msg_data.get("created")
+            msg_timestamp: Optional[datetime] = None
+            if isinstance(ts_unix, (int, float)):
+                try:
+                    msg_timestamp = datetime.fromtimestamp(ts_unix, tz=timezone.utc)
+                except Exception as ts_err:
+                    logger.warning(f"Error parsing timestamp {ts_unix} in ConvID {conversation_id}: {ts_err}")
+
+            # Prepare standardized message dictionary
+            processed_msg = {
+                "content": str(msg_data.get("content", "")),
+                "author": str(msg_data.get("author", "")).lower(),
+                "timestamp": msg_timestamp,
+                "conversation_id": conversation_id,
+            }
+            context_messages.append(processed_msg)
+
+        # Sort by timestamp (oldest first)
+        return sorted(
+            context_messages,
+            key=lambda x: x.get("timestamp") or datetime.min.replace(tzinfo=timezone.utc),
+        )
+
+    @cached_api_call("ancestry", ttl=600)
+    @retry_api(max_retries=2)
     def _fetch_conversation_context(
         self, conversation_id: str
     ) -> Optional[list[dict[str, Any]]]:
@@ -480,129 +554,49 @@ class InboxProcessor:
         Raises:
             WebDriverException: If the session becomes invalid during the API call.
         """
-        # Step 1: Validate inputs and session state
-        if not conversation_id:
-            logger.warning("_fetch_conversation_context: No conversation_id provided.")
+        # Validate inputs
+        if not self._validate_context_fetch_inputs(conversation_id):
             return None
-        if not self.session_manager or not self.session_manager.my_profile_id:
-            logger.error(
-                "_fetch_conversation_context: SessionManager or profile ID missing."
-            )
-            return None
-        if not self.session_manager.is_sess_valid():
-            logger.error(
-                f"_fetch_conversation_context: Session invalid fetching context for ConvID {conversation_id}."
-            )
-            raise WebDriverException(
-                f"Session invalid fetching context ConvID {conversation_id}"
-            )
 
-        # Step 2: Construct API URL and Headers
-        context_messages: list[dict[str, Any]] = []
-        api_base = urljoin(
-            getattr(config_schema.api, "base_url", ""), "/app-api/express/v2/"
-        )
-        limit = self.ai_context_msg_count  # Get limit from config
+        # Build API request
+        url, headers = self._build_context_api_request(conversation_id)
         api_description = "Fetch Conversation Context"
-        # Prepare headers (using contextual headers where possible)
-        contextual_headers = getattr(config_schema.api, "contextual_headers", {}).get(
-            api_description, {}
-        )
-        if isinstance(contextual_headers, dict):
-            headers = contextual_headers.copy()
-        else:
-            headers = {}
-            logger.warning(
-                f"Expected dict for contextual headers, got {type(contextual_headers)}"
-            )
-        # Ensure ancestry-userid is set correctly
-        if "ancestry-userid" in headers:
-            headers["ancestry-userid"] = self.session_manager.my_profile_id.upper()
-        # Remove any keys with None values to ensure type Dict[str, str]
-        headers = {k: v for k, v in headers.items() if v is not None}
-        # Construct URL
-        url = f"{api_base}conversations/{conversation_id}/messages?limit={limit}"
-        # Fetching context for conversation (removed verbose debug)
 
-        # Step 3: Make API call and apply rate limiting wait first
         try:
-            # Apply rate limit wait *before* the call
+            # Apply rate limiting
             limiter = cast(Any, getattr(self, "dynamic_rate_limiter", None))
             limiter.wait() if limiter is not None else 0.0
-            # Optional: log wait time if significant
-            # if wait_time > 0.1: logger.debug(f"Rate limit wait for context fetch: {wait_time:.2f}s")
 
+            # Make API call
             response_data = _api_req(
                 url=url,
                 driver=self.session_manager.driver,
                 session_manager=self.session_manager,
                 method="GET",
                 headers=headers,
-                use_csrf_token=False,  # Not typically needed
+                use_csrf_token=False,
                 api_description=api_description,
             )
 
-            # Step 4: Process the response
+            # Validate response
             if not isinstance(response_data, dict):
-                logger.warning(
-                    f"{api_description}: Bad response type {type(response_data)} for ConvID {conversation_id}."
-                )
-                return None  # Failed fetch
+                logger.warning(f"{api_description}: Bad response type {type(response_data)} for ConvID {conversation_id}.")
+                return None
 
             messages_batch = response_data.get("messages", [])
             if not isinstance(messages_batch, list):
-                logger.warning(
-                    f"{api_description}: 'messages' key not a list for ConvID {conversation_id}."
-                )
-                return None  # Invalid structure
+                logger.warning(f"{api_description}: 'messages' key not a list for ConvID {conversation_id}.")
+                return None
 
-            # Step 5: Extract and format message details
-            for msg_data in messages_batch:
-                if not isinstance(msg_data, dict):
-                    continue  # Skip invalid entries
-                ts_unix = msg_data.get("created")
-                msg_timestamp: Optional[datetime] = None
-                if isinstance(ts_unix, (int, float)):
-                    try:
-                        msg_timestamp = datetime.fromtimestamp(
-                            ts_unix, tz=timezone.utc
-                        )  # Convert to aware datetime
-                    except Exception as ts_err:
-                        logger.warning(
-                            f"Error parsing timestamp {ts_unix} in ConvID {conversation_id}: {ts_err}"
-                        )
+            # Process messages
+            return self._process_context_messages(messages_batch, conversation_id)
 
-                # Prepare standardized message dictionary
-                processed_msg = {
-                    "content": str(msg_data.get("content", "")),  # Ensure string
-                    "author": str(
-                        msg_data.get("author", "")
-                    ).lower(),  # Store author ID lowercase
-                    "timestamp": msg_timestamp,  # Store aware datetime or None
-                    "conversation_id": conversation_id,  # Add conversation ID for context
-                }
-                context_messages.append(processed_msg)
-
-            # Step 6: Sort messages by timestamp (oldest first) for correct context order
-            return sorted(
-                context_messages,
-                # Provide default datetime for sorting if timestamp is None
-                key=lambda x: x.get("timestamp")
-                or datetime.min.replace(tzinfo=timezone.utc),
-            )
-
-        # Step 7: Handle exceptions
         except WebDriverException as e:
-            logger.error(
-                f"WebDriverException fetching context for ConvID {conversation_id}: {e}"
-            )
-            raise  # Re-raise for retry_api
+            logger.error(f"WebDriverException fetching context for ConvID {conversation_id}: {e}")
+            raise
         except Exception as e:
-            logger.error(
-                f"Unexpected error fetching context for ConvID {conversation_id}: {e}",
-                exc_info=True,
-            )
-            return None  # Return None on unexpected errors
+            logger.error(f"Unexpected error fetching context for ConvID {conversation_id}: {e}", exc_info=True)
+            return None
 
     # End of _fetch_conversation_context
 
