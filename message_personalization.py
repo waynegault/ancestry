@@ -438,6 +438,27 @@ class MessagePersonalizer:
             return f"{ancestor_names[0]} and {ancestor_names[1]}"
         return f"{', '.join(ancestor_names[:-1])}, and {ancestor_names[-1]}"
 
+    def _format_single_vital_record(self, record: dict[str, Any]) -> Optional[str]:
+        """Format a single vital record detail."""
+        if not isinstance(record, dict):
+            return None
+
+        person = record.get("person", "")
+        event_type = record.get("event_type", "")
+        date = record.get("date", "")
+        place = record.get("place", "")
+
+        if not person or not (date or place):
+            return None
+
+        detail_parts = [person]
+        if event_type and date:
+            detail_parts.append(f"{event_type} {date}")
+        if place:
+            detail_parts.append(f"in {place}")
+
+        return " ".join(detail_parts)
+
     def _format_ancestor_details(self, extracted_data: dict[str, Any]) -> str:
         """Format detailed ancestor information."""
         vital_records = extracted_data.get("vital_records", [])
@@ -445,24 +466,12 @@ class MessagePersonalizer:
             return ""
 
         details = []
-        for record in vital_records[:2]:  # Limit to 2 most relevant records
-            if isinstance(record, dict):
-                person = record.get("person", "")
-                event_type = record.get("event_type", "")
-                date = record.get("date", "")
-                place = record.get("place", "")
+        for record in vital_records[:2]:
+            formatted = self._format_single_vital_record(record)
+            if formatted:
+                details.append(formatted)
 
-                if person and (date or place):
-                    detail_parts = [person]
-                    if event_type and date:
-                        detail_parts.append(f"{event_type} {date}")
-                    if place:
-                        detail_parts.append(f"in {place}")
-                    details.append(" ".join(detail_parts))
-
-        if details:
-            return f" ({'; '.join(details)})"
-        return ""
+        return f" ({'; '.join(details)})" if details else ""
 
     def _create_genealogical_context(self, extracted_data: dict[str, Any]) -> str:
         """Create genealogical context paragraph."""
