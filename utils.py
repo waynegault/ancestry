@@ -1381,6 +1381,195 @@ def _execute_api_request(
 
 # End of _execute_api_request
 
+# Helper functions for _api_req
+
+def _validate_api_req_prerequisites(
+    session_manager: SessionManager,
+    api_description: str,
+) -> bool:
+    """Validate prerequisites for API request."""
+    if not session_manager or not session_manager._requests_session:
+        logger.error(
+            f"{api_description}: Aborting - SessionManager or internal requests_session missing."
+        )
+        return False
+
+    if not config_schema:
+        logger.error(f"{api_description}: Aborting - Config schema not loaded.")
+        return False
+
+    return True
+
+
+def _get_retry_configuration() -> tuple[int, float, float, float, set[int]]:
+    """Get retry configuration from config schema."""
+    cfg = config_schema.api
+    max_retries = cfg.max_retries
+    initial_delay = cfg.initial_delay
+    backoff_factor = cfg.retry_backoff_factor
+    max_delay = cfg.max_delay
+    retry_status_codes = set(cfg.retry_status_codes)
+
+    return max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes
+
+
+def _calculate_retry_sleep_time(
+    current_delay: float,
+    backoff_factor: float,
+    attempt: int,
+    max_delay: float,
+) -> float:
+    """Calculate sleep time for retry with exponential backoff and jitter."""
+    sleep_time = min(
+        current_delay * (backoff_factor ** (attempt - 1)), max_delay
+    ) + random.uniform(0, 0.2)
+    return max(0.1, sleep_time)
+
+
+def _handle_failed_request_response(
+    retries_left: int,
+    max_retries: int,
+    api_description: str,
+    current_delay: float,
+    backoff_factor: float,
+    attempt: int,
+    max_delay: float,
+) -> tuple[bool, int, float]:
+    """
+    Handle failed request response (None).
+
+    Returns:
+        Tuple of (should_continue, new_retries_left, new_current_delay)
+    """
+    retries_left -= 1
+    if retries_left <= 0:
+        logger.error(
+            f"{api_description}: Request failed after {max_retries} attempts."
+        )
+        return False, retries_left, current_delay
+
+    sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
+    logger.warning(
+        f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+    )
+    time.sleep(sleep_time)
+    new_delay = current_delay * backoff_factor
+    return True, retries_left, new_delay
+
+
+def _handle_retryable_status(
+    response: RequestsResponseTypeOptional,
+    status: int,
+    reason: str,
+    retries_left: int,
+    max_retries: int,
+    api_description: str,
+    attempt: int,
+    current_delay: float,
+    backoff_factor: float,
+    max_delay: float,
+    session_manager: SessionManager,
+) -> tuple[bool, Optional[RequestsResponseTypeOptional], int, float]:
+    """
+    Handle retryable status codes.
+
+    Returns:
+        Tuple of (should_continue, response_to_return, new_retries_left, new_current_delay)
+    """
+    retries_left -= 1
+    logger.warning(
+        f"[_api_req Attempt {attempt} '{api_description}'] Received retryable status: {status} {reason}"
+    )
+
+    if retries_left <= 0:
+        logger.error(
+            f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Returning Response object."
+        )
+        try:
+            logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
+        except Exception:
+            pass
+        return False, response, retries_left, current_delay
+
+    sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
+
+    if status == 429:  # Too Many Requests
+        session_manager.dynamic_rate_limiter.increase_delay()
+
+    logger.warning(
+        f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+    )
+    try:
+        logger.debug(f"   << Response Text (Retry): {response.text[:500]}...")
+    except Exception:
+        pass
+
+    time.sleep(sleep_time)
+    new_delay = current_delay * backoff_factor
+    return True, None, retries_left, new_delay
+
+
+def _handle_redirect_response(
+    response: RequestsResponseTypeOptional,
+    status: int,
+    reason: str,
+    allow_redirects: bool,
+    api_description: str,
+) -> Optional[RequestsResponseTypeOptional]:
+    """Handle redirect responses (3xx status codes)."""
+    if 300 <= status < 400:
+        if not allow_redirects:
+            logger.warning(
+                f"{api_description}: Status {status} {reason} (Redirects Disabled). Returning Response object."
+            )
+        else:
+            logger.warning(
+                f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
+            )
+        logger.debug(f"   << Redirect Location: {response.headers.get('Location')}")
+        return response
+    return None
+
+
+def _handle_error_status(
+    response: RequestsResponseTypeOptional,
+    status: int,
+    reason: str,
+    api_description: str,
+    session_manager: SessionManager,
+) -> RequestsResponseTypeOptional:
+    """Handle non-retryable error status codes."""
+    # For login verification API, use debug level for 401/403 errors
+    if api_description == "API Login Verification (header/dna)" and status in [401, 403]:
+        logger.debug(
+            f"[_api_req '{api_description}'] Received expected status: {status} {reason}"
+        )
+    else:
+        logger.warning(
+            f"[_api_req '{api_description}'] Received NON-retryable error status: {status} {reason}"
+        )
+
+    if status in [401, 403]:
+        if api_description == "API Login Verification (header/dna)":
+            logger.debug(
+                f"{api_description}: API call returned {status} {reason}. User not logged in."
+            )
+        else:
+            logger.warning(
+                f"{api_description}: API call failed {status} {reason}. Session expired/invalid?"
+            )
+        session_manager.session_ready = False
+    else:
+        logger.error(f"{api_description}: Non-retryable error: {status} {reason}.")
+
+    try:
+        logger.debug(f"   << Error Response Text: {response.text[:500]}...")
+    except Exception:
+        pass
+
+    return response
+
+
 def _process_api_response(
     response: RequestsResponseTypeOptional,
     api_description: str,
@@ -1483,37 +1672,21 @@ def _api_req(
     Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
              or Response object on non-retryable error/redirect disabled.
     """
-    # --- Diagnostic Log: Function Entry ---
     logger.debug(f"[_api_req ENTRY] api_description: '{api_description}', url: {url}")
 
-    # --- Step 1: Validate prerequisites ---
-    if not session_manager or not session_manager._requests_session:
-        logger.error(
-            f"{api_description}: Aborting - SessionManager or internal requests_session missing."
-        )
+    # Validate prerequisites
+    if not _validate_api_req_prerequisites(session_manager, api_description):
         return None
-    # End of if
-    if not config_schema:
-        logger.error(f"{api_description}: Aborting - Config schema not loaded.")
-        return None
-    # End of if
 
-    cfg = config_schema.api
+    # Get retry configuration
+    max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
 
-    # --- Step 2: Get Retry Configuration ---
-    max_retries = cfg.max_retries
-    initial_delay = cfg.initial_delay
-    backoff_factor = cfg.retry_backoff_factor
-    max_delay = cfg.max_delay
-    retry_status_codes = set(cfg.retry_status_codes)
-
-    # --- Diagnostic Log: Retry Params ---
     logger.debug(
         f"[_api_req PRE-LOOP] api_description: '{api_description}', max_retries: {max_retries}, "
         f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
     )
 
-    # --- Step 3: Execute Request with Retry Loop ---
+    # Execute request with retry loop
     retries_left = max_retries
     last_exception: Optional[Exception] = None
     response: RequestsResponseTypeOptional = None
@@ -1521,13 +1694,12 @@ def _api_req(
 
     while retries_left > 0:
         attempt = max_retries - retries_left + 1
-        # --- Diagnostic Log: Loop Entry ---
         logger.debug(
             f"[_api_req LOOP ENTRY] api_description: '{api_description}', attempt: {attempt}/{max_retries}, retries_left: {retries_left}"
         )
 
         try:
-            # --- Step 3.1: Prepare the request ---
+            # Prepare and execute the request
             request_params = _prepare_api_request(
                 session_manager=session_manager,
                 driver=driver,
@@ -1544,10 +1716,9 @@ def _api_req(
                 allow_redirects=allow_redirects,
                 data=data,
                 json_data=json_data,
-                json=json,  # Pass the json parameter if provided
+                json=json,
             )
 
-            # --- Step 3.2: Execute the request ---
             response = _execute_api_request(
                 session_manager=session_manager,
                 api_description=api_description,
@@ -1555,149 +1726,52 @@ def _api_req(
                 attempt=attempt,
             )
 
-            # If request failed with an exception, response will be None
+            # Handle failed request (response is None)
             if response is None:
-                retries_left -= 1
-                if retries_left <= 0:
-                    logger.error(
-                        f"{api_description}: Request failed after {max_retries} attempts."
-                    )
-                    return None
-                sleep_time = min(
-                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                ) + random.uniform(0, 0.2)
-                sleep_time = max(0.1, sleep_time)
-                logger.warning(
-                    f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+                should_continue, retries_left, current_delay = _handle_failed_request_response(
+                    retries_left, max_retries, api_description, current_delay, backoff_factor, attempt, max_delay
                 )
-                time.sleep(sleep_time)
-                current_delay *= backoff_factor
-                continue  # Go to next iteration of the while loop
-                # End of if/else retries_left
-            # End of if response is None
+                if not should_continue:
+                    return None
+                continue
 
-            # --- Step 3.3: Check for retryable status codes ---
+            # Check response status
             status = response.status_code
             reason = response.reason
 
+            # Handle retryable status codes
             if status in retry_status_codes:
-                retries_left -= 1
-                logger.warning(
-                    f"[_api_req Attempt {attempt} '{api_description}'] Received retryable status: {status} {reason}"
+                should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
+                    response, status, reason, retries_left, max_retries, api_description,
+                    attempt, current_delay, backoff_factor, max_delay, session_manager
                 )
+                if not should_continue:
+                    return return_response
                 last_exception = HTTPError(f"{status} Error", response=response)  # type: ignore
-                if retries_left <= 0:
-                    logger.error(
-                        f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Returning Response object."
-                    )
-                    try:
-                        logger.debug(
-                            f"   << Final Response Text (Retry Fail): {response.text[:500]}..."
-                        )
-                    except Exception:
-                        pass
-                    # End of try/except
-                    return response
-                sleep_time = min(
-                    current_delay * (backoff_factor ** (attempt - 1)), max_delay
-                ) + random.uniform(0, 0.2)
-                sleep_time = max(0.1, sleep_time)
-                if status == 429:  # Too Many Requests
-                    session_manager.dynamic_rate_limiter.increase_delay()
-                # End of if
-                logger.warning(
-                    f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
-                )
-                try:
-                    logger.debug(
-                        f"   << Response Text (Retry): {response.text[:500]}..."
-                    )
-                except Exception:
-                    pass
-                # End of try/except
-                time.sleep(sleep_time)
-                current_delay *= backoff_factor
-                continue  # Go to next iteration of the while loop
-                # End of if/else retries_left
-            # End of if status in retry_status_codes
+                continue
 
-            # --- Step 3.4: Handle redirects ---
-            # Handle redirects if allow_redirects is False
-            if 300 <= status < 400 and not request_params["allow_redirects"]:
-                logger.warning(
-                    f"{api_description}: Status {status} {reason} (Redirects Disabled). Returning Response object."
-                )
-                logger.debug(
-                    f"   << Redirect Location: {response.headers.get('Location')}"
-                )
-                return response
-            # End of if
+            # Handle redirects
+            redirect_response = _handle_redirect_response(
+                response, status, reason, request_params["allow_redirects"], api_description
+            )
+            if redirect_response is not None:
+                return redirect_response
 
-            # Handle unexpected redirects if allow_redirects is True (should have been followed)
-            if 300 <= status < 400 and request_params["allow_redirects"]:
-                logger.warning(
-                    f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
-                )
-                logger.debug(
-                    f"   << Redirect Location: {response.headers.get('Location')}"
-                )
-                return response
-            # End of if
-
-            # --- Step 3.5: Handle non-retryable error status codes ---
+            # Handle non-retryable error status codes
             if not response.ok:
-                # For login verification API, use debug level for 401/403 errors
-                if (
-                    api_description == "API Login Verification (header/dna)"
-                    and status in [401, 403]
-                ):
-                    logger.debug(
-                        f"[_api_req Attempt {attempt} '{api_description}'] Received expected status: {status} {reason}"
-                    )
-                else:
-                    logger.warning(
-                        f"[_api_req Attempt {attempt} '{api_description}'] Received NON-retryable error status: {status} {reason}"
-                    )
-                if status in [401, 403]:
-                    # For login verification API, don't log a warning as this is expected when not logged in
-                    if api_description == "API Login Verification (header/dna)":
-                        logger.debug(
-                            f"{api_description}: API call returned {status} {reason}. User not logged in."
-                        )
-                    else:
-                        logger.warning(
-                            f"{api_description}: API call failed {status} {reason}. Session expired/invalid?"
-                        )
-                    session_manager.session_ready = False  # Mark session as not ready
-                else:
-                    logger.error(
-                        f"{api_description}: Non-retryable error: {status} {reason}."
-                    )
-                # End of if/else
-                try:
-                    logger.debug(f"   << Error Response Text: {response.text[:500]}...")
-                except Exception:
-                    pass
-                # End of try/except
-                return response  # Return the Response object for the caller to handle
-            # End of if not response.ok
+                return _handle_error_status(response, status, reason, api_description, session_manager)
 
-            # --- Step 3.6: Process successful response ---
+            # Process successful response
             if response.ok:
-                logger.debug(
-                    f"{api_description}: Successful response ({status} {reason})."
-                )
-                session_manager.dynamic_rate_limiter.decrease_delay()  # Success, decrease future delay
-
-                # Process the response
+                logger.debug(f"{api_description}: Successful response ({status} {reason}).")
+                session_manager.dynamic_rate_limiter.decrease_delay()
                 return _process_api_response(
                     response=response,
                     api_description=api_description,
                     force_text_response=force_text_response,
                 )
-            # End of if response.ok
 
-        # --- Handle exceptions during the request attempt ---
+        # Handle exceptions during the request attempt
         except RequestException as e:  # type: ignore
             logger.warning(
                 f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}"
@@ -1709,42 +1783,35 @@ def _api_req(
                     f"{api_description}: Request failed after {max_retries} attempts. Final Error: {e}",
                     exc_info=False,
                 )
-                return None  # Return None after all retries fail for network errors
-            sleep_time = min(
-                current_delay * (backoff_factor ** (attempt - 1)), max_delay
-            ) + random.uniform(0, 0.2)
-            sleep_time = max(0.1, sleep_time)
+                return None
+            sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
             logger.warning(
                 f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
             )
             time.sleep(sleep_time)
             current_delay *= backoff_factor
-            continue  # Go to next attempt
-            # End of if/else retries_left
+            continue
         except Exception as e:
             logger.critical(
                 f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
                 exc_info=True,
             )
-            return None  # Return None on unexpected errors within the loop
-        # End of try/except block for request attempt
+            return None
 
         # If we get here, the request was successful and processed
-        break  # Exit the retry loop
-    # End of while retries_left > 0
+        break
 
-    # --- Diagnostic Log: Function Exit ---
+    # Diagnostic log: Function exit
     logger.debug(
         f"[_api_req EXIT] api_description: '{api_description}', attempts: {max_retries - retries_left + 1}/{max_retries}"
     )
 
-    # --- Should only be reached if loop completes without success (e.g., retries exhausted) ---
+    # Should only be reached if loop completes without success
     if response is None:
         logger.error(
             f"{api_description}: Exited retry loop. Last Exception: {last_exception}."
         )
         return None
-    # End of if
 
     # Return the last response (this should be a non-retryable error response)
     logger.debug(
