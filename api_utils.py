@@ -1212,6 +1212,208 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=5, recovery_timeout=60)
+# Helper functions for call_suggest_api
+
+def _validate_suggest_api_inputs(session_manager: "SessionManager", owner_tree_id: str):
+    """Validate inputs for suggest API call."""
+    if not callable(_api_req):
+        logger.critical("Suggest API call failed: _api_req function unavailable (Import Failed?).")
+        raise AncestryException(
+            "_api_req function not available from utils - Check module imports and dependencies"
+        )
+
+    if not isinstance(session_manager, SessionManager) and not hasattr(session_manager, "is_sess_valid"):  # type: ignore[unreachable]
+        raise AncestryException(
+            "Invalid SessionManager passed to suggest API - Provide a valid SessionManager instance"
+        )
+
+    if not owner_tree_id:
+        raise AncestryException("owner_tree_id is required for suggest API - Provide a valid tree ID")
+
+
+def _apply_rate_limiting(api_description: str):
+    """Apply rate limiting if available."""
+    if api_rate_limiter and PYDANTIC_AVAILABLE:
+        if not api_rate_limiter.can_make_request():
+            wait_time = api_rate_limiter.wait_time_until_available()
+            logger.warning(f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s")
+            import time
+            time.sleep(wait_time)
+        api_rate_limiter.record_request()
+
+
+def _build_suggest_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> str:
+    """Build suggest API URL with search parameters."""
+    first_name_raw = search_criteria.get("first_name_raw", "")
+    surname_raw = search_criteria.get("surname_raw", "")
+    birth_year = search_criteria.get("birth_year")
+
+    suggest_params_list = ["isHideVeiledRecords=false"]
+    if first_name_raw:
+        suggest_params_list.append(f"partialFirstName={quote(first_name_raw)}")
+    if surname_raw:
+        suggest_params_list.append(f"partialLastName={quote(surname_raw)}")
+    if birth_year:
+        suggest_params_list.append(f"birthYear={birth_year}")
+
+    suggest_params = "&".join(suggest_params_list)
+    formatted_path = API_PATH_PERSON_PICKER_SUGGEST.format(tree_id=owner_tree_id)
+    return urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{suggest_params}"
+
+
+def _validate_suggest_response(suggest_response: Any, api_description: str) -> Optional[list[dict[str, Any]]]:
+    """Validate and process suggest API response."""
+    if isinstance(suggest_response, list):
+        if PYDANTIC_AVAILABLE and suggest_response:
+            validated_results = []
+            validation_errors = 0
+
+            for item in suggest_response:
+                try:
+                    validated_item = PersonSuggestResponse(**item)
+                    validated_results.append(validated_item.dict(exclude_none=True))
+                except Exception as validation_err:
+                    validation_errors += 1
+                    logger.debug(f"Response validation warning for item: {validation_err}")
+                    validated_results.append(item)
+
+            if validation_errors > 0:
+                logger.warning(
+                    f"Response validation: {validation_errors}/{len(suggest_response)} items had validation issues"
+                )
+
+            return validated_results
+        return suggest_response
+
+    if suggest_response is None:
+        return None
+
+    logger.error(f"{api_description} call using _api_req returned unexpected type: {type(suggest_response)}")
+    logger.debug(f"Unexpected Response Content: {str(suggest_response)[:500]}")
+    return None
+
+
+def _make_suggest_api_request(
+    suggest_url: str,
+    session_manager: "SessionManager",
+    owner_facts_referer: str,
+    timeout: int,
+    api_description: str
+) -> Any:
+    """Make a single suggest API request."""
+    custom_headers = {
+        "Accept": "application/json",
+        "Referer": owner_facts_referer,
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    }
+
+    return _api_req(
+        url=suggest_url,
+        driver=session_manager.driver,
+        session_manager=session_manager,
+        method="GET",
+        api_description=api_description,
+        headers=custom_headers,
+        referer_url=owner_facts_referer,
+        timeout=timeout,
+        use_csrf_token=False,
+    )
+
+
+def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):
+    """Handle timeout exception for suggest API."""
+    timeout_error = NetworkTimeoutError(
+        f"API request timed out after {timeout}s",
+        context={
+            "api": api_description,
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+            "timeout": timeout,
+            "url": suggest_url,
+        },
+        recovery_hint="Check network connectivity and try again",
+    )
+    logger.warning(str(timeout_error))
+    if attempt == max_attempts:
+        raise timeout_error from timeout_err
+
+
+def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str):
+    """Handle rate limit (429) exception for suggest API."""
+    import time
+    rate_limit_delay = 5.0 * (2 ** (attempt - 1))
+    rate_limit_delay = min(rate_limit_delay, 300.0)
+    logger.warning(
+        f"Rate limit (429) on {api_description}, attempt {attempt}/{max_attempts}. "
+        f"Waiting {rate_limit_delay:.1f}s before retry..."
+    )
+    time.sleep(rate_limit_delay)
+    if attempt == max_attempts:
+        raise APIRateLimitError(
+            f"API rate limit exceeded after {max_attempts} attempts: {req_err}",
+            context={"api": api_description, "url": suggest_url, "final_delay": rate_limit_delay},
+        ) from req_err
+
+
+def _try_direct_suggest_fallback(
+    suggest_url: str,
+    session_manager: "SessionManager",
+    owner_facts_referer: str,
+    api_description: str
+) -> Optional[list[dict[str, Any]]]:
+    """Try direct requests fallback for suggest API."""
+    logger.warning(f"{api_description} failed via _api_req. Attempting direct requests fallback.")
+    direct_response_obj = None
+
+    try:
+        cookies = {}
+        if session_manager._requests_session:
+            cookies = session_manager._requests_session.cookies.get_dict()
+
+        direct_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": owner_facts_referer,
+            "X-Requested-With": "XMLHttpRequest",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+        }
+
+        logger.debug(f"Direct request URL: {suggest_url}")
+        logger.debug(f"Direct request headers: {direct_headers}")
+        logger.debug(f"Direct request cookies: {list(cookies.keys())}")
+
+        direct_timeout = _get_api_timeout(30)
+        direct_response_obj = requests.get(suggest_url, headers=direct_headers, cookies=cookies, timeout=direct_timeout)
+
+        if direct_response_obj.status_code == 200:
+            direct_data = direct_response_obj.json()
+            if isinstance(direct_data, list):
+                logger.info(f"Direct request fallback successful! Found {len(direct_data)} results.")
+                return direct_data
+            logger.warning(f"Direct request succeeded (200 OK) but returned non-list data: {type(direct_data)}")
+            logger.debug(f"Direct Response content: {str(direct_data)[:500]}")
+        else:
+            logger.warning(f"Direct request fallback failed: Status {direct_response_obj.status_code}")
+            logger.debug(f"Direct Response content: {direct_response_obj.text[:500]}")
+
+    except requests.exceptions.Timeout:
+        logger.error(f"Direct request fallback timed out after {direct_timeout} seconds")
+    except json.JSONDecodeError as json_err:
+        logger.error(f"Direct request fallback failed to decode JSON: {json_err}")
+        if direct_response_obj:
+            logger.debug(f"Direct Response content: {direct_response_obj.text[:500]}")
+    except Exception as direct_err:
+        logger.error(f"Direct request fallback failed with error: {direct_err}", exc_info=True)
+
+    return None
+
+
 @timeout_protection(timeout=180)  # 3 minutes for complex API calls
 @error_context("Ancestry Suggest API Call")
 def call_suggest_api(
@@ -1222,168 +1424,57 @@ def call_suggest_api(
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
 ) -> Optional[list[dict[str, Any]]]:
-    # Validate inputs and raise appropriate exceptions
-    if not callable(_api_req):
-        logger.critical(
-            "Suggest API call failed: _api_req function unavailable (Import Failed?)."
-        )
-        raise AncestryException(
-            "_api_req function not available from utils - Check module imports and dependencies"
-        )
-
-    if not isinstance(session_manager, SessionManager) and not hasattr(
-        session_manager, "is_sess_valid"
-    ):  # type: ignore[unreachable]
-        raise AncestryException(
-            "Invalid SessionManager passed to suggest API - Provide a valid SessionManager instance"
-        )
-
-    if not owner_tree_id:
-        raise AncestryException(
-            "owner_tree_id is required for suggest API - Provide a valid tree ID"
-        )
+    # Validate inputs
+    _validate_suggest_api_inputs(session_manager, owner_tree_id)
 
     api_description = "Suggest API"
 
-    # Apply rate limiting if available
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
+    # Apply rate limiting
+    _apply_rate_limiting(api_description)
 
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
-
-    first_name_raw = search_criteria.get("first_name_raw", "")
-    surname_raw = search_criteria.get("surname_raw", "")
-    birth_year = search_criteria.get("birth_year")
-    suggest_params_list = ["isHideVeiledRecords=false"]
-    if first_name_raw:
-        suggest_params_list.append(f"partialFirstName={quote(first_name_raw)}")
-    # End of if
-    if surname_raw:
-        suggest_params_list.append(f"partialLastName={quote(surname_raw)}")
-    # End of if
-    if birth_year:
-        suggest_params_list.append(f"birthYear={birth_year}")
-    # End of if
-    suggest_params = "&".join(suggest_params_list)
-    formatted_path = API_PATH_PERSON_PICKER_SUGGEST.format(tree_id=owner_tree_id)
-    suggest_url = (
-        urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{suggest_params}"
-    )
+    # Build URL
+    suggest_url = _build_suggest_url(owner_tree_id, base_url, search_criteria)
     owner_facts_referer = _get_owner_referer(session_manager, base_url)
+
     timeouts_used = timeouts if timeouts else [20, 30, 60]
     max_attempts = len(timeouts_used)
     logger.info(f"Attempting {api_description} search: {suggest_url}")
 
     suggest_response = None
     for attempt, timeout in enumerate(timeouts_used, 1):
-        logger.debug(
-            f"{api_description} attempt {attempt}/{max_attempts} with timeout {timeout}s"
-        )
+        logger.debug(f"{api_description} attempt {attempt}/{max_attempts} with timeout {timeout}s")
+
         try:
-            custom_headers = {
-                "Accept": "application/json",
-                "Referer": owner_facts_referer,
-                "Cache-Control": "no-cache",
-                "Pragma": "no-cache",
-                "X-Requested-With": "XMLHttpRequest",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            }
-            suggest_response = _api_req(
-                url=suggest_url,
-                driver=session_manager.driver,
-                session_manager=session_manager,
-                method="GET",
-                api_description=api_description,
-                headers=custom_headers,
-                referer_url=owner_facts_referer,
-                timeout=timeout,
-                use_csrf_token=False,
+            suggest_response = _make_suggest_api_request(
+                suggest_url, session_manager, owner_facts_referer, timeout, api_description
             )
-            if isinstance(suggest_response, list):
-                # Validate response with Pydantic if available
-                if PYDANTIC_AVAILABLE and suggest_response:
-                    validated_results = []
-                    validation_errors = 0
 
-                    for item in suggest_response:
-                        try:
-                            validated_item = PersonSuggestResponse(**item)
-                            validated_results.append(
-                                validated_item.dict(exclude_none=True)
-                            )
-                        except Exception as validation_err:
-                            validation_errors += 1
-                            logger.debug(
-                                f"Response validation warning for item: {validation_err}"
-                            )
-                            # Keep original item if validation fails
-                            validated_results.append(item)
-
-                    if validation_errors > 0:
-                        logger.warning(
-                            f"Response validation: {validation_errors}/{len(suggest_response)} items had validation issues"
-                        )
-
-                    suggest_response = validated_results
-
+            validated_response = _validate_suggest_response(suggest_response, api_description)
+            if validated_response is not None:
                 logger.info(
-                    f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}), found {len(suggest_response)} results."
+                    f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}), "
+                    f"found {len(validated_response)} results."
                 )
-                return suggest_response
+                return validated_response
+
             if suggest_response is None:
-                logger.warning(
-                    f"{api_description} call using _api_req returned None on attempt {attempt}/{max_attempts}."
-                )
+                logger.warning(f"{api_description} call using _api_req returned None on attempt {attempt}/{max_attempts}.")
             else:
-                logger.error(
-                    f"{api_description} call using _api_req returned unexpected type: {type(suggest_response)}"
-                )
-                logger.debug(
-                    f"Unexpected Response Content: {str(suggest_response)[:500]}"
-                )
                 suggest_response = None
                 break
-            # End of if/elif/else
+
         except requests.exceptions.Timeout as timeout_err:
-            timeout_error = NetworkTimeoutError(
-                f"API request timed out after {timeout}s",
-                context={
-                    "api": api_description,
-                    "attempt": attempt,
-                    "max_attempts": max_attempts,
-                    "timeout": timeout,
-                    "url": suggest_url,
-                },
-                recovery_hint="Check network connectivity and try again",
-            )
-            logger.warning(str(timeout_error))
-            if attempt == max_attempts:
-                raise timeout_error from timeout_err
+            _handle_suggest_timeout(timeout, attempt, max_attempts, suggest_url, api_description, timeout_err)
+
         except requests.exceptions.RequestException as req_err:
             if "rate limit" in str(req_err).lower() or "429" in str(req_err):
-                # Enhanced 429 handling with progressive backoff
-                import time
-                rate_limit_delay = 5.0 * (2 ** (attempt - 1))  # Progressive backoff starting at 5 seconds
-                rate_limit_delay = min(rate_limit_delay, 300.0)  # Cap at 5 minutes
-                logger.warning(f"Rate limit (429) on {api_description}, attempt {attempt}/{max_attempts}. "
-                             f"Waiting {rate_limit_delay:.1f}s before retry...")
-                time.sleep(rate_limit_delay)
-                if attempt == max_attempts:
-                    raise APIRateLimitError(
-                        f"API rate limit exceeded after {max_attempts} attempts: {req_err}",
-                        context={"api": api_description, "url": suggest_url, "final_delay": rate_limit_delay},
-                    ) from req_err
-                continue  # Retry the request after delay
+                _handle_suggest_rate_limit(req_err, attempt, max_attempts, api_description, suggest_url)
+                continue
             raise NetworkTimeoutError(
                 f"Network request failed: {req_err}",
                 context={"api": api_description, "url": suggest_url},
             ) from req_err
+
         except Exception as api_err:
             logger.error(
                 f"{api_description} _api_req call failed on attempt {attempt}/{max_attempts}: {api_err}",
@@ -1392,85 +1483,16 @@ def call_suggest_api(
             if attempt == max_attempts:
                 raise RetryableError(
                     f"API call failed after {max_attempts} attempts: {api_err}",
-                    context={
-                        "api": api_description,
-                        "attempts": max_attempts,
-                        "url": suggest_url,
-                    },
+                    context={"api": api_description, "attempts": max_attempts, "url": suggest_url},
                 ) from api_err
             suggest_response = None
             continue
-        # End of try/except
-    # End of for
 
+    # Try direct fallback if all attempts failed
     if suggest_response is None:
-        logger.warning(
-            f"{api_description} failed via _api_req. Attempting direct requests fallback."
-        )
-        direct_response_obj = None
-        try:
-            cookies = {}
-            if session_manager._requests_session:
-                cookies = session_manager._requests_session.cookies.get_dict()
-            # End of if
-            direct_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": owner_facts_referer,
-                "X-Requested-With": "XMLHttpRequest",
-                "Cache-Control": "no-cache",
-                "Pragma": "no-cache",
-                "Connection": "keep-alive",
-            }
-            logger.debug(f"Direct request URL: {suggest_url}")
-            logger.debug(f"Direct request headers: {direct_headers}")
-            logger.debug(f"Direct request cookies: {list(cookies.keys())}")
-            direct_timeout = _get_api_timeout(30)
-            direct_response_obj = requests.get(
-                suggest_url,
-                headers=direct_headers,
-                cookies=cookies,
-                timeout=direct_timeout,
-            )
-            if direct_response_obj.status_code == 200:
-                direct_data = direct_response_obj.json()
-                if isinstance(direct_data, list):
-                    logger.info(
-                        f"Direct request fallback successful! Found {len(direct_data)} results."
-                    )
-                    return direct_data
-                logger.warning(
-                    f"Direct request succeeded (200 OK) but returned non-list data: {type(direct_data)}"
-                )
-                logger.debug(f"Direct Response content: {str(direct_data)[:500]}")
-                # End of if/else
-            else:
-                logger.warning(
-                    f"Direct request fallback failed: Status {direct_response_obj.status_code}"
-                )
-                logger.debug(
-                    f"Direct Response content: {direct_response_obj.text[:500]}"
-                )
-            # End of if/else
-        except requests.exceptions.Timeout:
-            logger.error(
-                f"Direct request fallback timed out after {direct_timeout} seconds"
-            )
-        except json.JSONDecodeError as json_err:
-            logger.error(f"Direct request fallback failed to decode JSON: {json_err}")
-            if direct_response_obj:
-                logger.debug(
-                    f"Direct Response content: {direct_response_obj.text[:500]}"
-                )
-            # End of if
-        except Exception as direct_err:
-            logger.error(
-                f"Direct request fallback failed with error: {direct_err}",
-                exc_info=True,
-            )
-        # End of try/except
-    # End of if
+        direct_result = _try_direct_suggest_fallback(suggest_url, session_manager, owner_facts_referer, api_description)
+        if direct_result is not None:
+            return direct_result
 
     logger.error(f"{api_description} failed after all attempts and fallback.")
     return None
