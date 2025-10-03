@@ -1775,6 +1775,244 @@ def _handle_details_phase(
 
 # End of _handle_details_phase
 
+# Helper functions for _handle_supplementary_info_phase - Phase 1: Base Info Retrieval
+
+def _get_base_owner_info(session_manager_local: SessionManager) -> Tuple[str, Optional[str], Optional[str], str]:
+    """Get base URL and owner information from session manager."""
+    base_url = config_schema.api.base_url.rstrip("/")
+    owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
+    owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
+    owner_name = getattr(session_manager_local, "tree_owner_name", "the Tree Owner")
+    return base_url, owner_tree_id, owner_profile_id, owner_name
+
+
+def _resolve_owner_tree_id(session_manager_local: SessionManager, owner_tree_id: Optional[str]) -> Optional[str]:
+    """Resolve owner tree ID from config if missing."""
+    if not owner_tree_id:
+        config_tree_id = getattr(config_schema.api, "tree_id", None)
+        if config_tree_id:
+            session_manager_local.my_tree_id = config_tree_id
+            logger.info(f"Using tree ID from configuration: {config_tree_id}")
+            return config_tree_id
+    return owner_tree_id
+
+
+def _resolve_owner_profile_id(session_manager_local: SessionManager, owner_profile_id: Optional[str]) -> Optional[str]:
+    """Resolve owner profile ID from environment if missing."""
+    if not owner_profile_id:
+        env_profile_id = os.environ.get("MY_PROFILE_ID")
+        if env_profile_id:
+            session_manager_local.my_profile_id = env_profile_id
+            logger.info(f"Using profile ID from environment variables: {env_profile_id}")
+            return env_profile_id
+    return owner_profile_id
+
+
+def _resolve_owner_name(session_manager_local: SessionManager, owner_name: str, owner_profile_id: Optional[str]) -> str:
+    """Resolve owner name from config if missing."""
+    if owner_name == "the Tree Owner":
+        config_owner_name = getattr(config_schema, "user_name", None)
+        if config_owner_name and config_owner_name != "Tree Owner":
+            session_manager_local.tree_owner_name = config_owner_name
+            logger.info(f"Using tree owner name from configuration: {config_owner_name}")
+            return config_owner_name
+        elif owner_profile_id:
+            resolved_name = config_owner_name if config_owner_name else "Tree Owner"
+            session_manager_local.tree_owner_name = resolved_name
+            logger.info(f"Using tree owner name from config/default: {resolved_name}")
+            return resolved_name
+    return owner_name
+
+
+# Helper functions for _handle_supplementary_info_phase - Phase 2: ID Extraction
+
+def _extract_ids_from_detailed_data(
+    person_research_data: Dict,
+    selected_candidate_processed: Dict,
+) -> Tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
+    """Extract IDs from detailed person research data."""
+    logger.debug("Attempting to extract relationship IDs from detailed person_research_data...")
+
+    raw_cand_for_name_fallback = selected_candidate_processed.get("raw_data", {})
+    temp_person_id = person_research_data.get("PersonId")
+    temp_tree_id = person_research_data.get("TreeId")
+    temp_global_id = person_research_data.get("UserId")
+    temp_name = _extract_best_name_from_details(person_research_data, raw_cand_for_name_fallback)
+
+    essential_ids_found = bool((temp_person_id and temp_tree_id) or temp_global_id)
+
+    if essential_ids_found:
+        logger.debug(
+            f"Using IDs from Detailed Fetch: Name='{temp_name}', PersonID='{temp_person_id}', "
+            f"TreeID='{temp_tree_id}', GlobalID='{temp_global_id}'"
+        )
+        return temp_person_id, temp_tree_id, temp_global_id, temp_name, True, "Detailed Fetch Success"
+    else:
+        logger.debug("Detailed data fetched, but essential relationship IDs missing. Will attempt fallback.")
+        return None, None, None, "Selected Person", False, "Detailed Fetch Failed (Missing IDs)"
+
+
+def _extract_ids_from_raw_suggestion(
+    selected_candidate_processed: Dict,
+) -> Tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
+    """Extract IDs from raw suggestion data as fallback."""
+    logger.debug("Attempting to extract relationship IDs from raw suggestion data (Fallback)...")
+
+    raw_data = selected_candidate_processed.get("raw_data", {})
+    parsed_sugg = selected_candidate_processed.get("parsed_suggestion", {})
+
+    if not raw_data:
+        logger.error("Critical: Cannot find raw_data for fallback to get relationship IDs.")
+        return None, None, None, "Selected Person", False, "Fallback Failed (No Raw Data)"
+
+    temp_person_id = raw_data.get("PersonId")
+    temp_tree_id = raw_data.get("TreeId")
+    temp_global_id = raw_data.get("UserId")
+    temp_name = parsed_sugg.get("full_name_disp", raw_data.get("FullName", "Selected Match"))
+
+    essential_ids_found = bool((temp_person_id and temp_tree_id) or temp_global_id)
+
+    if essential_ids_found:
+        logger.debug(
+            f"Using IDs from Raw Suggestion Fallback: Name='{temp_name}', PersonID='{temp_person_id}', "
+            f"TreeID='{temp_tree_id}', GlobalID='{temp_global_id}'"
+        )
+        return temp_person_id, temp_tree_id, temp_global_id, temp_name, True, "Raw Suggestion Fallback Success"
+    else:
+        logger.error("Fallback failed: Raw suggestion data also missing essential relationship IDs.")
+        return None, None, None, "Selected Person", False, "Fallback Failed (Missing IDs)"
+
+
+def _extract_selected_person_ids(
+    person_research_data: Optional[Dict],
+    selected_candidate_processed: Dict,
+) -> Tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
+    """Extract selected person IDs from detailed data or raw suggestion fallback."""
+    # Attempt 1: Extract from detailed person_research_data
+    if person_research_data:
+        person_id, tree_id, global_id, name, found, source = _extract_ids_from_detailed_data(
+            person_research_data, selected_candidate_processed
+        )
+        if found:
+            return person_id, tree_id, global_id, name, found, source
+    else:
+        logger.debug("Detailed person_research_data not available. Will attempt fallback for relationship IDs.")
+        source = "Detailed Fetch Skipped (No Data)"
+
+    # Attempt 2: Fallback to raw suggestion data
+    return _extract_ids_from_raw_suggestion(selected_candidate_processed)
+
+
+def _log_final_ids(
+    owner_tree_id: Optional[str],
+    owner_profile_id: Optional[str],
+    selected_name: str,
+    selected_person_tree_id: Optional[str],
+    selected_tree_id: Optional[str],
+    selected_person_global_id: Optional[str],
+    source_of_ids: str,
+) -> None:
+    """Log final IDs being used for relationship calculation."""
+    logger.debug(f"Final IDs for relationship check (Source: {source_of_ids}):")
+    logger.debug(f"  Owner Tree ID         : {owner_tree_id} (Type: {type(owner_tree_id)})")
+    logger.debug(f"  Owner Profile ID      : {owner_profile_id} (Type: {type(owner_profile_id)})")
+    logger.debug(f"  Selected Person Name  : {selected_name} (Type: {type(selected_name)})")
+    logger.debug(
+        f"  Selected PersonTreeID : {selected_person_tree_id} "
+        f"(Person's ID within a tree, Type: {type(selected_person_tree_id)})"
+    )
+    logger.debug(
+        f"  Selected TreeID       : {selected_tree_id} "
+        f"(The tree this person belongs to, Type: {type(selected_tree_id)})"
+    )
+    logger.debug(
+        f"  Selected Global ID    : {selected_person_global_id} "
+        f"(Often UserID/ProfileID, Type: {type(selected_person_global_id)})"
+    )
+
+
+# Helper functions for _handle_supplementary_info_phase - Phase 3: Relationship Calculation Method
+
+def _determine_relationship_calculation_method(
+    essential_ids_found: bool,
+    owner_tree_id: Optional[str],
+    owner_profile_id: Optional[str],
+    selected_person_tree_id: Optional[str],
+    selected_tree_id: Optional[str],
+    selected_person_global_id: Optional[str],
+) -> Tuple[bool, bool, bool, Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Determine which relationship calculation method to use."""
+    can_attempt_calculation = essential_ids_found
+    owner_tree_id_str = str(owner_tree_id) if owner_tree_id else None
+    selected_tree_id_str = str(selected_tree_id) if selected_tree_id else None
+    owner_profile_id_str = str(owner_profile_id).upper() if owner_profile_id else None
+    selected_global_id_str = str(selected_person_global_id).upper() if selected_person_global_id else None
+
+    is_owner = False
+    can_calc_tree_ladder = False
+    can_calc_discovery_api = False
+
+    if can_attempt_calculation:
+        # Check if selected person is the tree owner
+        is_owner = bool(
+            selected_global_id_str
+            and owner_profile_id_str
+            and selected_global_id_str == owner_profile_id_str
+        )
+
+        # Conditions for using Tree Ladder API (/getladder)
+        can_calc_tree_ladder = bool(
+            owner_tree_id_str
+            and selected_tree_id_str
+            and selected_person_tree_id
+            and selected_tree_id_str == owner_tree_id_str
+        )
+
+        # Conditions for using Discovery Relationship API
+        can_calc_discovery_api = bool(
+            selected_person_global_id and owner_profile_id_str
+        )
+
+    return (
+        is_owner,
+        can_calc_tree_ladder,
+        can_calc_discovery_api,
+        owner_tree_id_str,
+        selected_tree_id_str,
+        owner_profile_id_str,
+        selected_global_id_str,
+    )
+
+
+def _log_relationship_calculation_checks(
+    can_attempt_calculation: bool,
+    is_owner: bool,
+    can_calc_tree_ladder: bool,
+    can_calc_discovery_api: bool,
+    owner_tree_id_str: Optional[str],
+    selected_tree_id_str: Optional[str],
+    owner_profile_id_str: Optional[str],
+    selected_global_id_str: Optional[str],
+    selected_person_tree_id: Optional[str],
+    source_of_ids: str,
+) -> None:
+    """Log relationship calculation method checks."""
+    logger.debug(f"Relationship calculation checks (Source: {source_of_ids}):")
+    logger.debug(f"  Can Attempt Calc?     : {can_attempt_calculation}")
+    logger.debug(
+        f"  is_owner              : {is_owner} "
+        f"(OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')"
+    )
+    logger.debug(
+        f"  can_calc_tree_ladder  : {can_calc_tree_ladder} "
+        f"(OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', "
+        f"SelectedP_in_Tree exists?={bool(selected_person_tree_id)})"
+    )
+    logger.debug(
+        f"  can_calc_discovery_api: {can_calc_discovery_api} "
+        f"(OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})"
+    )
+
 
 def _handle_supplementary_info_phase(
     person_research_data: Optional[Dict],
@@ -1786,222 +2024,75 @@ def _handle_supplementary_info_phase(
     Family details functionality removed to keep Action 11 focused and reliable.
     """
     # --- Get Base Info ---
-    base_url = config_schema.api.base_url.rstrip("/")
-    owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
-    owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
-    owner_name = getattr(session_manager_local, "tree_owner_name", "the Tree Owner")
+    base_url, owner_tree_id, owner_profile_id, owner_name = _get_base_owner_info(session_manager_local)
 
-    # Check if owner_tree_id is missing and try to get it from config
-    if not owner_tree_id:
-        config_tree_id = getattr(config_schema.api, "tree_id", None)
-        if config_tree_id:
-            owner_tree_id = config_tree_id
-            # Update the session manager with the tree ID from config
-            session_manager_local.my_tree_id = owner_tree_id
-            logger.info(f"Using tree ID from configuration: {owner_tree_id}")
-
-    # Check if owner_profile_id is missing and try to get it from environment variables
-    if not owner_profile_id:
-        env_profile_id = os.environ.get("MY_PROFILE_ID")
-        if env_profile_id:
-            owner_profile_id = env_profile_id
-            # Update the session manager with the profile ID from environment
-            session_manager_local.my_profile_id = owner_profile_id
-            logger.info(
-                f"Using profile ID from environment variables: {owner_profile_id}"
-            )
-
-    # Check if owner_name is missing and try to get it from environment variables
-    if owner_name == "the Tree Owner":
-        # Try to get from config first
-        config_owner_name = getattr(config_schema, "user_name", None)
-        if (
-            config_owner_name and config_owner_name != "Tree Owner"
-        ):  # Don't use generic default
-            owner_name = config_owner_name
-            # Update the session manager with the owner name from config
-            session_manager_local.tree_owner_name = owner_name
-            logger.info(f"Using tree owner name from configuration: {owner_name}")
-        # If not in config, try alternative config location
-        elif owner_profile_id:
-            owner_name = config_owner_name if config_owner_name else "Tree Owner"
-            session_manager_local.tree_owner_name = owner_name
-            logger.info(f"Using tree owner name from config/default: {owner_name}")
+    # Resolve missing owner information
+    owner_tree_id = _resolve_owner_tree_id(session_manager_local, owner_tree_id)
+    owner_profile_id = _resolve_owner_profile_id(session_manager_local, owner_profile_id)
+    owner_name = _resolve_owner_name(session_manager_local, owner_name, owner_profile_id)
 
     # --- Skip Family Details Section ---
     # Action 11 simplified to focus on search, scoring, and relationship calculation only
-    # Family details functionality removed to keep Action 11 focused and reliable
 
-    # --- Family Details Section Removed ---
-    # Action 11 simplified to focus on search, scoring, and relationship calculation only
-
-    # --- Prepare for Relationship Calculation ---
-    # We'll print the header in the formatted path, so don't print it here
-    # print(f"\n===Relationship Path to {owner_name}===")
-
-    # Initialize variables
-    selected_person_tree_id = None
-    selected_person_global_id = None
-    selected_tree_id = None
-    selected_name = "Selected Person"
-    source_of_ids = "Not Attempted"
-    essential_ids_found = False
-
-    # Attempt 1: Extract from detailed person_research_data
-    if person_research_data:
-        logger.debug(
-            "Attempting to extract relationship IDs from detailed person_research_data..."
-        )
-        source_of_ids = "Detailed Fetch Attempt"
-        raw_cand_for_name_fallback = selected_candidate_processed.get("raw_data", {})
-        temp_person_id = person_research_data.get("PersonId")
-        temp_tree_id = person_research_data.get("TreeId")
-        temp_global_id = person_research_data.get("UserId")
-        temp_name = _extract_best_name_from_details(
-            person_research_data, raw_cand_for_name_fallback
-        )
-        essential_ids_found = bool((temp_person_id and temp_tree_id) or temp_global_id)
-
-        if essential_ids_found:
-            selected_person_tree_id = temp_person_id
-            selected_tree_id = temp_tree_id
-            selected_person_global_id = temp_global_id
-            selected_name = temp_name
-            source_of_ids = "Detailed Fetch Success"
-            logger.debug(
-                f"Using IDs from Detailed Fetch: Name='{selected_name}', PersonID='{selected_person_tree_id}', TreeID='{selected_tree_id}', GlobalID='{selected_person_global_id}'"
-            )
-        else:
-            source_of_ids = "Detailed Fetch Failed (Missing IDs)"
-            logger.debug(
-                "Detailed data fetched, but essential relationship IDs missing. Will attempt fallback."
-            )
-    else:
-        source_of_ids = "Detailed Fetch Skipped (No Data)"
-        logger.debug(
-            "Detailed person_research_data not available. Will attempt fallback for relationship IDs."
-        )
-
-    # Attempt 2: Fallback to raw suggestion data if primary attempt failed
-    if not essential_ids_found:
-        logger.debug(
-            "Attempting to extract relationship IDs from raw suggestion data (Fallback)..."
-        )
-        raw_data = selected_candidate_processed.get("raw_data", {})
-        parsed_sugg = selected_candidate_processed.get("parsed_suggestion", {})
-        if raw_data:
-            temp_person_id = raw_data.get("PersonId")
-            temp_tree_id = raw_data.get("TreeId")
-            temp_global_id = raw_data.get(
-                "UserId"
-            )  # Assuming UserId might be in raw_data for some cases
-            temp_name = parsed_sugg.get(
-                "full_name_disp", raw_data.get("FullName", "Selected Match")
-            )
-            essential_ids_found = bool(
-                (temp_person_id and temp_tree_id) or temp_global_id
-            )
-            if essential_ids_found:
-                selected_person_tree_id = temp_person_id
-                selected_tree_id = temp_tree_id
-                selected_person_global_id = temp_global_id
-                selected_name = temp_name
-                source_of_ids = "Raw Suggestion Fallback Success"
-                logger.debug(
-                    f"Using IDs from Raw Suggestion Fallback: Name='{selected_name}', PersonID='{selected_person_tree_id}', TreeID='{selected_tree_id}', GlobalID='{selected_person_global_id}'"
-                )
-            else:
-                source_of_ids = "Fallback Failed (Missing IDs)"
-                logger.error(
-                    "Fallback failed: Raw suggestion data also missing essential relationship IDs."
-                )
-        else:
-            source_of_ids = "Fallback Failed (No Raw Data)"
-            logger.error(
-                "Critical: Cannot find raw_data for fallback to get relationship IDs."
-            )
-    # End of if not essential_ids_found
+    # --- Extract Selected Person IDs ---
+    (
+        selected_person_tree_id,
+        selected_tree_id,
+        selected_person_global_id,
+        selected_name,
+        essential_ids_found,
+        source_of_ids,
+    ) = _extract_selected_person_ids(person_research_data, selected_candidate_processed)
 
     # --- Log Final IDs Being Used ---
-    logger.debug(f"Final IDs for relationship check (Source: {source_of_ids}):")
-    logger.debug(
-        f"  Owner Tree ID         : {owner_tree_id} (Type: {type(owner_tree_id)})"
-    )
-    logger.debug(
-        f"  Owner Profile ID      : {owner_profile_id} (Type: {type(owner_profile_id)})"
-    )
-    logger.debug(
-        f"  Selected Person Name  : {selected_name} (Type: {type(selected_name)})"
-    )
-    logger.debug(
-        f"  Selected PersonTreeID : {selected_person_tree_id} (Person's ID within a tree, Type: {type(selected_person_tree_id)})"
-    )
-    logger.debug(
-        f"  Selected TreeID       : {selected_tree_id} (The tree this person belongs to, Type: {type(selected_tree_id)})"
-    )
-    logger.debug(
-        f"  Selected Global ID    : {selected_person_global_id} (Often UserID/ProfileID, Type: {type(selected_person_global_id)})"
+    _log_final_ids(
+        owner_tree_id,
+        owner_profile_id,
+        selected_name,
+        selected_person_tree_id,
+        selected_tree_id,
+        selected_person_global_id,
+        source_of_ids,
     )
 
     # --- Determine Relationship Calculation Method ---
+    (
+        is_owner,
+        can_calc_tree_ladder,
+        can_calc_discovery_api,
+        owner_tree_id_str,
+        selected_tree_id_str,
+        owner_profile_id_str,
+        selected_global_id_str,
+    ) = _determine_relationship_calculation_method(
+        essential_ids_found,
+        owner_tree_id,
+        owner_profile_id,
+        selected_person_tree_id,
+        selected_tree_id,
+        selected_person_global_id,
+    )
+
     can_attempt_calculation = essential_ids_found
-    owner_tree_id_str = str(owner_tree_id) if owner_tree_id else None
-    selected_tree_id_str = (
-        str(selected_tree_id) if selected_tree_id else None
-    )  # The tree ID of the selected person
-    owner_profile_id_str = str(owner_profile_id).upper() if owner_profile_id else None
-    selected_global_id_str = (
-        str(selected_person_global_id).upper() if selected_person_global_id else None
+
+    _log_relationship_calculation_checks(
+        can_attempt_calculation,
+        is_owner,
+        can_calc_tree_ladder,
+        can_calc_discovery_api,
+        owner_tree_id_str,
+        selected_tree_id_str,
+        owner_profile_id_str,
+        selected_global_id_str,
+        selected_person_tree_id,
+        source_of_ids,
     )
 
-    is_owner = False
-    can_calc_tree_ladder = False  # Using /getladder for same-tree relationships
-    can_calc_discovery_api = (
-        False  # Using Discovery API for cross-tree or general profile relationships
-    )
-
+    # Initialize relationship calculation variables
     relationship_result_data = None
-    api_called_for_rel = "None"  # Renamed for clarity
+    api_called_for_rel = "None"
     formatted_path = None
     calculation_performed = False
-
-    if can_attempt_calculation:
-        # Check if selected person is the tree owner
-        is_owner = bool(
-            selected_global_id_str  # Selected person's global ID
-            and owner_profile_id_str  # Owner's global ID (from session)
-            and selected_global_id_str == owner_profile_id_str
-        )
-
-        # Conditions for using Tree Ladder API (/getladder)
-        # Requires both selected person and owner to be in the *same tree* (owner_tree_id_str).
-        # selected_person_tree_id is the ID of the person *within that tree*.
-        can_calc_tree_ladder = bool(
-            owner_tree_id_str  # Owner's tree ID must be known
-            and selected_tree_id_str  # Selected person's tree ID must be known
-            and selected_person_tree_id  # Selected person's ID *within their tree* must be known
-            and selected_tree_id_str
-            == owner_tree_id_str  # Crucially, they must be in the same tree
-        )
-
-        # Conditions for using Discovery Relationship API
-        # Requires global IDs (Profile IDs/UserIDs) for both selected person and owner.
-        can_calc_discovery_api = bool(
-            selected_person_global_id and owner_profile_id_str
-        )
-    # End of if can_attempt_calculation
-
-    logger.debug(f"Relationship calculation checks (Source: {source_of_ids}):")
-    logger.debug(f"  Can Attempt Calc?     : {can_attempt_calculation}")
-    logger.debug(
-        f"  is_owner              : {is_owner} (OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')"
-    )
-    logger.debug(
-        f"  can_calc_tree_ladder  : {can_calc_tree_ladder} (OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', SelectedP_in_Tree exists?={bool(selected_person_tree_id)})"
-    )
-    logger.debug(
-        f"  can_calc_discovery_api: {can_calc_discovery_api} (OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})"
-    )
 
     # --- Directly Call API and Format/Print Relationship ---
     if is_owner:
