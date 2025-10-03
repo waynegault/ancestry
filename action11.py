@@ -999,60 +999,101 @@ def _select_top_candidate(
 
 # _display_initial_comparison removed - unused 242-line display function
 
+# Helper functions for _extract_best_name_from_details
+
+def _try_person_full_name(person_research_data: Dict) -> Optional[str]:
+    """Try to extract name from PersonFullName field."""
+    person_full_name = person_research_data.get("PersonFullName")
+    if person_full_name and person_full_name != "Valued Relative":
+        logger.debug(f"Using PersonFullName: '{person_full_name}'")
+        return person_full_name
+    return None
+
+
+def _try_name_fact(person_research_data: Dict) -> Optional[str]:
+    """Try to extract name from PersonFacts Name fact."""
+    person_facts_list = person_research_data.get("PersonFacts", [])
+    if not isinstance(person_facts_list, list):
+        return None
+
+    name_fact = next(
+        (
+            f
+            for f in person_facts_list
+            if isinstance(f, dict)
+            and f.get("TypeString") == "Name"
+            and not f.get("IsAlternate")
+        ),
+        None,
+    )
+
+    if (
+        name_fact
+        and name_fact.get("Value")
+        and name_fact.get("Value") != "Valued Relative"
+    ):
+        name = name_fact.get("Value", "Unknown")
+        logger.debug(f"Using Name Fact: '{name}'")
+        return name
+
+    return None
+
+
+def _try_constructed_name(person_research_data: Dict) -> Optional[str]:
+    """Try to construct name from FirstName and LastName fields."""
+    first_name_comp = person_research_data.get("FirstName", "")
+    last_name_comp = person_research_data.get("LastName", "")
+
+    if first_name_comp or last_name_comp:
+        constructed_name = f"{first_name_comp} {last_name_comp}".strip()
+        if constructed_name and len(constructed_name) > 1:
+            logger.debug(f"Using Constructed Name: '{constructed_name}'")
+            return constructed_name
+
+    return None
+
+
+def _try_fallback_suggestion_name(candidate_raw: Dict) -> Optional[str]:
+    """Try to use fallback suggestion name from candidate."""
+    cand_name = candidate_raw.get("FullName")
+    if cand_name and cand_name != "Unknown":
+        logger.debug(f"Using Fallback Suggestion Name: '{cand_name}'")
+        return cand_name
+    return None
+
+
+def _format_extracted_name(name: str) -> str:
+    """Format extracted name using name formatter."""
+    name_formatter = format_name if callable(format_name) else lambda x: str(x).title()
+
+    if not name or name == "Valued Relative":
+        return "Unknown"
+    elif callable(name_formatter):
+        return name_formatter(name)
+    else:
+        return name
+
 
 # Detailed Info Extraction (Only called if proceeding to supplementary info)
 def _extract_best_name_from_details(
     person_research_data: Dict, candidate_raw: Dict
 ) -> str:
     """Extracts the best available name from detailed API response."""
-    best_name = "Unknown"
-    name_formatter = format_name if callable(format_name) else lambda x: str(x).title()
     logger.debug(
         f"_extract_best_name (Detail): Input keys={list(person_research_data.keys())}"
     )
-    person_full_name = person_research_data.get("PersonFullName")
-    if person_full_name and person_full_name != "Valued Relative":
-        best_name = person_full_name
-        logger.debug(f"Using PersonFullName: '{best_name}'")
-    if best_name == "Unknown":
-        person_facts_list = person_research_data.get("PersonFacts", [])
-        if isinstance(person_facts_list, list):
-            name_fact = next(
-                (
-                    f
-                    for f in person_facts_list
-                    if isinstance(f, dict)
-                    and f.get("TypeString") == "Name"
-                    and not f.get("IsAlternate")
-                ),
-                None,
-            )
-            if (
-                name_fact
-                and name_fact.get("Value")
-                and name_fact.get("Value") != "Valued Relative"
-            ):
-                best_name = name_fact.get("Value", "Unknown")
-                logger.debug(f"Using Name Fact: '{best_name}'")
-    if best_name == "Unknown":
-        first_name_comp = person_research_data.get("FirstName", "")
-        last_name_comp = person_research_data.get("LastName", "")
-        constructed_name = ""
-        if first_name_comp or last_name_comp:
-            constructed_name = f"{first_name_comp} {last_name_comp}".strip()
-        if constructed_name and len(constructed_name) > 1:
-            best_name = constructed_name
-            logger.debug(f"Using Constructed Name: '{best_name}'")
-    if best_name == "Unknown":
-        cand_name = candidate_raw.get("FullName")  # Fallback to initial suggestion name
-        if cand_name and cand_name != "Unknown":
-            best_name = cand_name
-            logger.debug(f"Using Fallback Suggestion Name: '{best_name}'")
-    if not best_name or best_name == "Valued Relative":
-        best_name = "Unknown"
-    elif callable(name_formatter):
-        best_name = name_formatter(best_name)
-    return best_name
+
+    # Try extraction methods in order of preference
+    best_name = (
+        _try_person_full_name(person_research_data)
+        or _try_name_fact(person_research_data)
+        or _try_constructed_name(person_research_data)
+        or _try_fallback_suggestion_name(candidate_raw)
+        or "Unknown"
+    )
+
+    # Format and return the extracted name
+    return _format_extracted_name(best_name)
 
 
 # End of _extract_best_name_from_details
