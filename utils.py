@@ -2698,6 +2698,58 @@ def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_ur
     return "LOGIN_FAILED_STATUS_CHECK_ERROR"
 
 # Login Main Function
+def _execute_login_flow(
+    driver: Any,
+    session_manager: SessionManager,
+    signin_url: str,
+) -> str:
+    """Execute the main login flow. Returns status string."""
+    # Navigate to sign-in page
+    nav_result = _navigate_to_signin(driver, session_manager, signin_url)
+    if nav_result:
+        return nav_result
+
+    # Handle consent banner
+    if not consent(driver):
+        logger.warning("Failed to handle consent banner, login might be impacted.")
+
+    # Enter credentials
+    if not enter_creds(driver):
+        logger.error("Failed during credential entry or submission.")
+        error_result = _check_for_login_errors(driver)
+        return error_result if error_result else "LOGIN_FAILED_CREDS_ENTRY"
+
+    # Wait for page change
+    logger.debug("Credentials submitted. Waiting for potential page change...")
+    time.sleep(random.uniform(3.0, 5.0))
+
+    # Check for 2FA
+    two_fa_present, early_result = _detect_2fa_page(driver, session_manager)
+    if early_result:
+        return early_result
+
+    # Handle 2FA or verify login
+    if two_fa_present:
+        return _handle_2fa_flow(session_manager)
+    else:
+        return _verify_login_no_2fa(driver, session_manager, signin_url)
+
+
+def _handle_login_exception(e: Exception, driver: Any) -> str:
+    """Handle exceptions during login. Returns error status string."""
+    if isinstance(e, TimeoutException):
+        logger.error(f"Timeout during login process: {e}", exc_info=False)
+        return "LOGIN_FAILED_TIMEOUT"
+    elif isinstance(e, WebDriverException):
+        logger.error(f"WebDriverException during login: {e}", exc_info=False)
+        if not is_browser_open(driver):
+            logger.error("Session became invalid during login.")
+        return "LOGIN_FAILED_WEBDRIVER"
+    else:
+        logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
+        return "LOGIN_FAILED_UNEXPECTED"
+
+
 def log_in(session_manager: SessionManager) -> str:  # type: ignore
     """
     Automates the login process: navigates to signin, handles consent,
@@ -2719,47 +2771,9 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
     signin_url = urljoin(config_schema.api.base_url, "account/signin")
 
     try:
-        # Navigate to sign-in page
-        nav_result = _navigate_to_signin(driver, session_manager, signin_url)
-        if nav_result:
-            return nav_result
-
-        # Handle consent banner
-        if not consent(driver):
-            logger.warning("Failed to handle consent banner, login might be impacted.")
-
-        # Enter credentials
-        if not enter_creds(driver):
-            logger.error("Failed during credential entry or submission.")
-            error_result = _check_for_login_errors(driver)
-            return error_result if error_result else "LOGIN_FAILED_CREDS_ENTRY"
-
-        # Wait for page change
-        logger.debug("Credentials submitted. Waiting for potential page change...")
-        time.sleep(random.uniform(3.0, 5.0))
-
-        # Check for 2FA
-        two_fa_present, early_result = _detect_2fa_page(driver, session_manager)
-        if early_result:
-            return early_result
-
-        # Handle 2FA or verify login
-        if two_fa_present:
-            return _handle_2fa_flow(session_manager)
-        else:
-            return _verify_login_no_2fa(driver, session_manager, signin_url)
-
-    except TimeoutException as e:
-        logger.error(f"Timeout during login process: {e}", exc_info=False)
-        return "LOGIN_FAILED_TIMEOUT"
-    except WebDriverException as e:
-        logger.error(f"WebDriverException during login: {e}", exc_info=False)
-        if not is_browser_open(driver):
-            logger.error("Session became invalid during login.")
-        return "LOGIN_FAILED_WEBDRIVER"
+        return _execute_login_flow(driver, session_manager, signin_url)
     except Exception as e:
-        logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
-        return "LOGIN_FAILED_UNEXPECTED"
+        return _handle_login_exception(e, driver)
 
 # End of log_in
 
