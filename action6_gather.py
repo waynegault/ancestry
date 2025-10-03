@@ -1341,6 +1341,130 @@ def _prepare_bulk_db_data(
 # End of _prepare_bulk_db_data
 
 
+def _separate_operations_by_type(prepared_bulk_data: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Separate prepared data by operation type and table."""
+    person_creates_raw = [
+        d["person"]
+        for d in prepared_bulk_data
+        if d.get("person") and d["person"]["_operation"] == "create"
+    ]
+    person_updates = [
+        d["person"]
+        for d in prepared_bulk_data
+        if d.get("person") and d["person"]["_operation"] == "update"
+    ]
+    dna_match_ops = [
+        d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")
+    ]
+    family_tree_ops = [
+        d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")
+    ]
+    return person_creates_raw, person_updates, dna_match_ops, family_tree_ops
+
+
+def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """De-duplicate Person Creates based on Profile ID before bulk insert."""
+    if not person_creates_raw:
+        logger.debug("No unique Person records to bulk insert.")
+        return []
+
+    logger.debug(f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID...")
+    person_creates_filtered = []
+    seen_profile_ids: Set[str] = set()
+    skipped_duplicates = 0
+
+    for p_data in person_creates_raw:
+        profile_id = p_data.get("profile_id")
+        uuid_for_log = p_data.get("uuid")
+
+        if profile_id is None:
+            person_creates_filtered.append(p_data)
+        elif profile_id not in seen_profile_ids:
+            person_creates_filtered.append(p_data)
+            seen_profile_ids.add(profile_id)
+        else:
+            logger.warning(f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log}).")
+            skipped_duplicates += 1
+
+    if skipped_duplicates > 0:
+        logger.info(f"Skipped {skipped_duplicates} duplicate person creates in this batch.")
+    logger.debug(f"Proceeding with {len(person_creates_filtered)} unique person creates.")
+
+    return person_creates_filtered
+
+
+def _validate_no_duplicate_profile_ids(insert_data: List[Dict[str, Any]]) -> None:
+    """Validate that there are no duplicate profile IDs in the insert data."""
+    final_profile_ids = {
+        item.get("profile_id") for item in insert_data if item.get("profile_id")
+    }
+    if len(final_profile_ids) != sum(1 for item in insert_data if item.get("profile_id")):
+        logger.error("CRITICAL: Duplicate non-NULL profile IDs DETECTED post-filter! Aborting bulk insert.")
+        id_counts = Counter(item.get("profile_id") for item in insert_data if item.get("profile_id"))
+        duplicates = {pid: count for pid, count in id_counts.items() if count > 1}
+        logger.error(f"Duplicate Profile IDs in filtered list: {duplicates}")
+        dup_exception = ValueError(f"Duplicate profile IDs: {duplicates}")
+        raise IntegrityError(
+            "Duplicate profile IDs found pre-bulk insert",
+            params=str(duplicates),
+            orig=dup_exception,
+        )
+
+
+def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Bulk insert Person records and return mapping of UUID to new Person ID."""
+    created_person_map: Dict[str, int] = {}
+
+    if not person_creates_filtered:
+        logger.debug("No unique Person records to bulk insert.")
+        return created_person_map
+
+    logger.debug(f"Preparing {len(person_creates_filtered)} Person records for bulk insert...")
+
+    # Prepare list of dictionaries for bulk_insert_mappings
+    insert_data = [
+        {k: v for k, v in p.items() if not k.startswith("_")}
+        for p in person_creates_filtered
+    ]
+
+    # Convert status Enum to its value for bulk insertion
+    for item_data in insert_data:
+        if "status" in item_data and isinstance(item_data["status"], PersonStatusEnum):
+            item_data["status"] = item_data["status"].value
+
+    # Validate no duplicates
+    _validate_no_duplicate_profile_ids(insert_data)
+
+    # Perform bulk insert
+    logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
+    session.bulk_insert_mappings(Person, insert_data)  # type: ignore
+    logger.debug("Bulk insert Persons called.")
+
+    # Get newly created IDs
+    session.flush()
+    logger.debug("Session flushed to assign Person IDs.")
+    inserted_uuids = [p_data["uuid"] for p_data in insert_data if p_data.get("uuid")]
+
+    if inserted_uuids:
+        logger.debug(f"Querying IDs for {len(inserted_uuids)} inserted UUIDs...")
+        newly_inserted_persons = (
+            session.query(Person.id, Person.uuid)
+            .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
+            .all()
+        )
+        created_person_map = {p_uuid: p_id for p_id, p_uuid in newly_inserted_persons}
+        logger.debug(f"Mapped {len(created_person_map)} new Person IDs.")
+
+        if len(created_person_map) != len(inserted_uuids):
+            logger.error(
+                f"CRITICAL: ID map count mismatch! Expected {len(inserted_uuids)}, got {len(created_person_map)}. Some IDs might be missing."
+            )
+    else:
+        logger.warning("No UUIDs available in insert_data to query back IDs.")
+
+    return created_person_map
+
+
 def _execute_bulk_db_operations(
     session: SqlAlchemySession,
     prepared_bulk_data: List[Dict[str, Any]],
@@ -1373,138 +1497,13 @@ def _execute_bulk_db_operations(
 
     try:
         # Step 2: Separate data by operation type (create/update) and table
-        # Person Operations
-        person_creates_raw = [
-            d["person"]
-            for d in prepared_bulk_data
-            if d.get("person") and d["person"]["_operation"] == "create"
-        ]
-        person_updates = [
-            d["person"]
-            for d in prepared_bulk_data
-            if d.get("person") and d["person"]["_operation"] == "update"
-        ]
-        # DnaMatch/FamilyTree Operations (Assume create/update logic handled in _do_match prep)
-        dna_match_ops = [
-            d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")
-        ]
-        family_tree_ops = [
-            d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")
-        ]
+        person_creates_raw, person_updates, dna_match_ops, family_tree_ops = _separate_operations_by_type(prepared_bulk_data)
 
-        created_person_map: Dict[str, int] = {}  # Maps UUID -> new Person ID
+        # Step 3: Person Creates - De-duplicate and prepare
+        person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
 
-        # --- Step 3: Person Creates ---
-        # De-duplicate Person Creates based on Profile ID before bulk insert
-        person_creates_filtered = []
-        seen_profile_ids: Set[str] = (
-            set()
-        )  # Track non-null profile IDs seen in this batch
-        skipped_duplicates = 0
-        if person_creates_raw:
-            logger.debug(
-                f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID..."
-            )
-            for p_data in person_creates_raw:
-                profile_id = p_data.get(
-                    "profile_id"
-                )  # Already uppercase from prep if exists
-                uuid_for_log = p_data.get("uuid")  # For logging skipped items
-                if profile_id is None:
-                    person_creates_filtered.append(
-                        p_data
-                    )  # Allow creates with null profile ID
-                elif profile_id not in seen_profile_ids:
-                    person_creates_filtered.append(p_data)
-                    seen_profile_ids.add(profile_id)
-                else:
-                    logger.warning(
-                        f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log})."
-                    )
-                    skipped_duplicates += 1
-            if skipped_duplicates > 0:
-                logger.info(
-                    f"Skipped {skipped_duplicates} duplicate person creates in this batch."
-                )
-            logger.debug(
-                f"Proceeding with {len(person_creates_filtered)} unique person creates."
-            )
-
-        # Bulk Insert Persons (if any unique creates remain)
-        if person_creates_filtered:
-            logger.debug(
-                f"Preparing {len(person_creates_filtered)} Person records for bulk insert..."
-            )
-            # Prepare list of dictionaries for bulk_insert_mappings
-            insert_data = [
-                {k: v for k, v in p.items() if not k.startswith("_")}
-                for p in person_creates_filtered
-            ]
-            # Convert status Enum to its value for bulk insertion
-            for item_data in insert_data:
-                if "status" in item_data and isinstance(
-                    item_data["status"], PersonStatusEnum
-                ):
-                    item_data["status"] = item_data["status"].value
-            # Final check for duplicates *within the filtered list* (shouldn't happen if de-dup logic is right)
-            final_profile_ids = {
-                item.get("profile_id") for item in insert_data if item.get("profile_id")
-            }
-            if len(final_profile_ids) != sum(
-                1 for item in insert_data if item.get("profile_id")
-            ):
-                logger.error(
-                    "CRITICAL: Duplicate non-NULL profile IDs DETECTED post-filter! Aborting bulk insert."
-                )
-                id_counts = Counter(
-                    item.get("profile_id")
-                    for item in insert_data
-                    if item.get("profile_id")
-                )
-                duplicates = {
-                    pid: count for pid, count in id_counts.items() if count > 1
-                }
-                logger.error(f"Duplicate Profile IDs in filtered list: {duplicates}")
-                # Create a proper exception to pass as orig
-                dup_exception = ValueError(f"Duplicate profile IDs: {duplicates}")
-                raise IntegrityError(
-                    "Duplicate profile IDs found pre-bulk insert",
-                    params=str(duplicates),
-                    orig=dup_exception,
-                )
-
-            # Perform bulk insert
-            logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
-            session.bulk_insert_mappings(Person, insert_data)  # type: ignore
-            logger.debug("Bulk insert Persons called.")
-
-            # --- Get newly created IDs ---
-            session.flush()
-            logger.debug("Session flushed to assign Person IDs.")
-            inserted_uuids = [
-                p_data["uuid"] for p_data in insert_data if p_data.get("uuid")
-            ]
-            if inserted_uuids:
-                logger.debug(
-                    f"Querying IDs for {len(inserted_uuids)} inserted UUIDs..."
-                )
-                newly_inserted_persons = (
-                    session.query(Person.id, Person.uuid)
-                    .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
-                    .all()
-                )
-                created_person_map = {
-                    p_uuid: p_id for p_id, p_uuid in newly_inserted_persons
-                }
-                logger.debug(f"Mapped {len(created_person_map)} new Person IDs.")
-                if len(created_person_map) != len(inserted_uuids):
-                    logger.error(
-                        f"CRITICAL: ID map count mismatch! Expected {len(inserted_uuids)}, got {len(created_person_map)}. Some IDs might be missing."
-                    )
-            else:
-                logger.warning("No UUIDs available in insert_data to query back IDs.")
-        else:
-            logger.debug("No unique Person records to bulk insert.")
+        # Bulk Insert Persons
+        created_person_map = _bulk_insert_persons(session, person_creates_filtered)
 
         # --- Step 4: Person Updates ---
         if person_updates:
