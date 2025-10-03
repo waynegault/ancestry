@@ -576,59 +576,98 @@ def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementati
     return cleaned if cleaned else "N/A"
 
 
+def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Optional[GedcomIndividualType]:
+    """Validate and normalize individual to ensure it's a valid GedcomIndividualType."""
+    if not _is_individual(individual):
+        if hasattr(individual, "value") and _is_individual(getattr(individual, "value", None)):
+            # Type ignore is needed because the type checker doesn't understand the dynamic nature
+            # of this code. We've already checked that individual.value is a valid GedcomIndividualType
+            return individual.value  # type: ignore
+        else:
+            logger.warning(f"_get_event_info invalid input type: {type(individual)}")
+            return None
+
+    if individual is None:
+        return None
+
+    return individual
+
+
+def _extract_event_record(individual: GedcomIndividualType, event_tag: str, indi_id_log: str) -> Optional[Any]:
+    """Extract event record from individual."""
+    # Add null check before calling sub_tag
+    if not hasattr(individual, "sub_tag"):
+        logger.warning(f"Individual {indi_id_log} has no sub_tag method")
+        return None
+
+    event_record = individual.sub_tag(event_tag.upper())
+    if not event_record:
+        return None
+
+    # Add null check before calling sub_tag on event_record
+    if not hasattr(event_record, "sub_tag"):
+        logger.warning(f"Event record for {indi_id_log} has no sub_tag method")
+        return None
+
+    return event_record
+
+
+def _extract_date_from_event(event_record: Any) -> tuple[Optional[datetime], str]:
+    """Extract date information from event record."""
+    date_obj: Optional[datetime] = None
+    date_str: str = "N/A"
+
+    date_tag = event_record.sub_tag(TAG_DATE)
+    raw_date_val = getattr(date_tag, "value", None) if date_tag else None
+
+    if isinstance(raw_date_val, str) and raw_date_val.strip():
+        date_str = raw_date_val.strip()
+        date_obj = _parse_date(date_str)
+    elif raw_date_val is not None:
+        date_str = str(raw_date_val)
+        date_obj = _parse_date(date_str)
+
+    return date_obj, date_str
+
+
+def _extract_place_from_event(event_record: Any) -> str:
+    """Extract place information from event record."""
+    place_str: str = "N/A"
+
+    place_tag = event_record.sub_tag(TAG_PLACE)
+    raw_place_val = getattr(place_tag, "value", None) if place_tag else None
+
+    if isinstance(raw_place_val, str) and raw_place_val.strip():
+        place_str = raw_place_val.strip()
+    elif raw_place_val is not None:
+        place_str = str(raw_place_val)
+
+    return place_str
+
+
 def _get_event_info(
     individual: GedcomIndividualType, event_tag: str
 ) -> tuple[Optional[datetime], str, str]:  # ... implementation ...
     date_obj: Optional[datetime] = None
     date_str: str = "N/A"
     place_str: str = "N/A"
-    if not _is_individual(individual):
-        if hasattr(individual, "value") and _is_individual(
-            getattr(individual, "value", None)
-        ):
-            # Type ignore is needed because the type checker doesn't understand the dynamic nature
-            # of this code. We've already checked that individual.value is a valid GedcomIndividualType
-            individual = individual.value  # type: ignore
-        else:
-            logger.warning(f"_get_event_info invalid input type: {type(individual)}")
-            return date_obj, date_str, place_str
 
-    # At this point, individual should be a valid GedcomIndividualType
-    # But we'll still add null checks to be safe
+    # Validate and normalize individual
+    individual = _validate_and_normalize_individual(individual)
     if individual is None:
         return date_obj, date_str, place_str
 
     indi_id_log = extract_and_fix_id(individual) or "Unknown ID"
     try:
-        # Add null check before calling sub_tag
-        if not hasattr(individual, "sub_tag"):
-            logger.warning(f"Individual {indi_id_log} has no sub_tag method")
-            return date_obj, date_str, place_str
-
-        event_record = individual.sub_tag(event_tag.upper())
+        # Extract event record
+        event_record = _extract_event_record(individual, event_tag, indi_id_log)
         if not event_record:
             return date_obj, date_str, place_str
 
-        # Add null check before calling sub_tag on event_record
-        if not hasattr(event_record, "sub_tag"):
-            logger.warning(f"Event record for {indi_id_log} has no sub_tag method")
-            return date_obj, date_str, place_str
+        # Extract date and place information
+        date_obj, date_str = _extract_date_from_event(event_record)
+        place_str = _extract_place_from_event(event_record)
 
-        date_tag = event_record.sub_tag(TAG_DATE)
-        raw_date_val = getattr(date_tag, "value", None) if date_tag else None
-        if isinstance(raw_date_val, str) and raw_date_val.strip():
-            date_str = raw_date_val.strip()
-            date_obj = _parse_date(date_str)
-        elif raw_date_val is not None:
-            date_str = str(raw_date_val)
-            date_obj = _parse_date(date_str)
-
-        place_tag = event_record.sub_tag(TAG_PLACE)
-        raw_place_val = getattr(place_tag, "value", None) if place_tag else None
-        if isinstance(raw_place_val, str) and raw_place_val.strip():
-            place_str = raw_place_val.strip()
-        elif raw_place_val is not None:
-            place_str = str(raw_place_val)
     except AttributeError as ae:
         logger.debug(
             f"Attribute error getting event '{event_tag}' for {indi_id_log}: {ae}"
