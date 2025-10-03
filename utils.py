@@ -2516,6 +2516,117 @@ def consent(driver: WebDriver) -> bool:  # type: ignore
 
 # End of consent
 
+def _check_initial_login_status(session_manager: SessionManager) -> Optional[str]:
+    """Check if already logged in before attempting login."""
+    initial_status = login_status(session_manager, disable_ui_fallback=True)
+    if initial_status is True:
+        print("Already logged in. No need to sign in again.")
+        return "LOGIN_SUCCEEDED"
+    return None
+
+def _navigate_to_signin(driver: Any, session_manager: SessionManager, signin_url: str) -> Optional[str]:
+    """Navigate to sign-in page and verify."""
+    if not nav_to_page(driver, signin_url, USERNAME_INPUT_SELECTOR, session_manager):
+        logger.debug("Navigation to sign-in page failed/redirected. Checking login status...")
+        current_status = login_status(session_manager, disable_ui_fallback=True)
+        if current_status is True:
+            logger.info("Detected as already logged in during navigation attempt. Login considered successful.")
+            return "LOGIN_SUCCEEDED"
+        logger.error("Failed to navigate to login page (and not logged in).")
+        return "LOGIN_FAILED_NAVIGATION"
+    logger.debug("Successfully navigated to sign-in page.")
+    return None
+
+def _check_for_login_errors(driver: Any) -> Optional[str]:
+    """Check for specific or generic login error messages."""
+    try:
+        WebDriverWait(driver, 1).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR))
+        )
+        logger.error("Login failed: Specific 'Invalid Credentials' alert detected.")
+        return "LOGIN_FAILED_BAD_CREDS"
+    except TimeoutException:
+        try:
+            alert_element = WebDriverWait(driver, 0.5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.alert[role='alert']"))
+            )
+            alert_text = alert_element.text if alert_element and alert_element.text else "Unknown error"
+            logger.error(f"Login failed: Generic alert found: '{alert_text}'.")
+            return "LOGIN_FAILED_ERROR_DISPLAYED"
+        except TimeoutException:
+            logger.error("Login failed: Credential entry failed, but no specific or generic alert found.")
+            return "LOGIN_FAILED_CREDS_ENTRY"
+        except WebDriverException as alert_err:
+            logger.warning(f"Error checking for generic login error message: {alert_err}")
+            return "LOGIN_FAILED_CREDS_ENTRY"
+    except WebDriverException as alert_err:
+        logger.warning(f"Error checking for specific login error message: {alert_err}")
+        return "LOGIN_FAILED_CREDS_ENTRY"
+
+def _detect_2fa_page(driver: Any, session_manager: SessionManager) -> tuple[bool, Optional[str]]:
+    """Detect if 2FA page is present."""
+    try:
+        WebDriverWait(driver, 5).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))
+        )
+        logger.info("Two-step verification page detected.")
+        return True, None
+    except TimeoutException:
+        logger.debug("Two-step verification page not detected.")
+        return False, None
+    except WebDriverException as e:
+        logger.error(f"WebDriver error checking for 2FA page: {e}")
+        status = login_status(session_manager, disable_ui_fallback=True)
+        if status is True:
+            return False, "LOGIN_SUCCEEDED"
+        if status is False:
+            return False, "LOGIN_FAILED_UNKNOWN"
+        return False, "LOGIN_FAILED_STATUS_CHECK_ERROR"
+
+def _handle_2fa_flow(session_manager: SessionManager) -> str:
+    """Handle 2FA verification flow."""
+    if handle_twoFA(session_manager):
+        logger.info("Two-step verification handled successfully.")
+        if login_status(session_manager) is True:
+            print("\n✓ Two-factor authentication completed successfully!")
+            return "LOGIN_SUCCEEDED"
+        logger.error("Login status check failed AFTER successful 2FA handling report.")
+        return "LOGIN_FAILED_POST_2FA_VERIFY"
+    logger.error("Two-step verification handling failed.")
+    return "LOGIN_FAILED_2FA_HANDLING"
+
+def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_url: str) -> str:
+    """Verify login when no 2FA is detected."""
+    logger.debug("Checking login status directly (no 2FA detected)...")
+    login_check_result = login_status(session_manager, disable_ui_fallback=False)
+
+    if login_check_result is True:
+        print("\n✓ Login successful!")
+        return "LOGIN_SUCCEEDED"
+
+    if login_check_result is False:
+        print("\n✗ Login failed. Please check your credentials.")
+        logger.error("Direct login check failed. Checking for error messages again...")
+
+        # Check for errors again
+        error_result = _check_for_login_errors(driver)
+        if error_result:
+            return error_result
+
+        # Check if still on login page
+        try:
+            if driver.current_url.startswith(signin_url):
+                logger.error("Login failed: Still on login page (post-check), no error message found.")
+                return "LOGIN_FAILED_STUCK_ON_LOGIN"
+            logger.error("Login failed: Status False, no 2FA, no error msg, not on login page.")
+            return "LOGIN_FAILED_UNKNOWN"
+        except WebDriverException:
+            logger.error("Login failed: Status False, WebDriverException getting URL.")
+            return "LOGIN_FAILED_WEBDRIVER"
+
+    logger.error("Login failed: Critical error during final login status check.")
+    return "LOGIN_FAILED_STATUS_CHECK_ERROR"
+
 # Login Main Function
 def log_in(session_manager: SessionManager) -> str:  # type: ignore
     """
@@ -2529,249 +2640,56 @@ def log_in(session_manager: SessionManager) -> str:  # type: ignore
     if not driver:
         logger.error("Login failed: WebDriver not available in SessionManager.")
         return "LOGIN_ERROR_NO_DRIVER"
-    # End of if
 
-    # First check if already logged in before attempting navigation
-    # We'll always check login status here for simplicity and reliability
-    initial_status = login_status(
-        session_manager, disable_ui_fallback=True
-    )  # API check only for speed
-    if initial_status is True:
-        print("Already logged in. No need to sign in again.")
-        return "LOGIN_SUCCEEDED"
-    # End of if
+    # Check if already logged in
+    initial_result = _check_initial_login_status(session_manager)
+    if initial_result:
+        return initial_result
 
     signin_url = urljoin(config_schema.api.base_url, "account/signin")
 
     try:
-        # --- Step 1: Navigate to Sign-in Page ---
-        # Wait for username input as indication of page load
-        if not nav_to_page(
-            driver, signin_url, USERNAME_INPUT_SELECTOR, session_manager  # type: ignore
-        ):
-            # Navigation failed or redirected. Check if already logged in.
-            logger.debug(
-                "Navigation to sign-in page failed/redirected. Checking login status..."
-            )
-            current_status = login_status(
-                session_manager, disable_ui_fallback=True
-            )  # API check only for speed
-            if current_status is True:
-                logger.info(
-                    "Detected as already logged in during navigation attempt. Login considered successful."
-                )
-                return "LOGIN_SUCCEEDED"
-            logger.error("Failed to navigate to login page (and not logged in).")
-            return "LOGIN_FAILED_NAVIGATION"
-            # End of if/else
-        # End of if
-        logger.debug("Successfully navigated to sign-in page.")
+        # Navigate to sign-in page
+        nav_result = _navigate_to_signin(driver, session_manager, signin_url)
+        if nav_result:
+            return nav_result
 
-        # --- Step 2: Handle Consent Banner ---
+        # Handle consent banner
         if not consent(driver):
             logger.warning("Failed to handle consent banner, login might be impacted.")
-            # Continue anyway, maybe it wasn't essential
-        # End of if
 
-        # --- Step 3: Enter Credentials ---
+        # Enter credentials
         if not enter_creds(driver):
             logger.error("Failed during credential entry or submission.")
-            # Check for specific error messages on the page
-            try:
-                # Check for specific 'invalid credentials' message
-                WebDriverWait(driver, 1).until(  # type: ignore
-                    EC.presence_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR)  # type: ignore
-                    )
-                )
-                logger.error(
-                    "Login failed: Specific 'Invalid Credentials' alert detected."
-                )
-                return "LOGIN_FAILED_BAD_CREDS"
-            except TimeoutException:  # type: ignore
-                # Check for any generic alert box
-                generic_alert_selector = "div.alert[role='alert']"  # Example
-                try:
-                    alert_element = WebDriverWait(driver, 0.5).until(  # type: ignore
-                        EC.presence_of_element_located(  # type: ignore
-                            (By.CSS_SELECTOR, generic_alert_selector)  # type: ignore
-                        )
-                    )
-                    alert_text = (
-                        alert_element.text
-                        if alert_element and alert_element.text
-                        else "Unknown error"
-                    )
-                    logger.error(f"Login failed: Generic alert found: '{alert_text}'.")
-                    return "LOGIN_FAILED_ERROR_DISPLAYED"
-                except TimeoutException:  # type: ignore
-                    logger.error(
-                        "Login failed: Credential entry failed, but no specific or generic alert found."
-                    )
-                    return "LOGIN_FAILED_CREDS_ENTRY"  # Credential entry itself failed
-                except (
-                    WebDriverException
-                ) as alert_err:  # Handle errors checking for alerts # type: ignore
-                    logger.warning(
-                        f"Error checking for generic login error message: {alert_err}"
-                    )
-                    return "LOGIN_FAILED_CREDS_ENTRY"  # Assume cred entry failed
-                # End of try/except generic alert
-            except (
-                WebDriverException
-            ) as alert_err:  # Handle errors checking for specific alert # type: ignore
-                logger.warning(
-                    f"Error checking for specific login error message: {alert_err}"
-                )
-                return "LOGIN_FAILED_CREDS_ENTRY"
-            # End of try/except specific alert
-        # End of if not enter_creds
+            error_result = _check_for_login_errors(driver)
+            return error_result if error_result else "LOGIN_FAILED_CREDS_ENTRY"
 
-        # --- Step 4: Wait and Check for 2FA ---
+        # Wait for page change
         logger.debug("Credentials submitted. Waiting for potential page change...")
-        time.sleep(random.uniform(3.0, 5.0))  # Allow time for redirect or 2FA page load
+        time.sleep(random.uniform(3.0, 5.0))
 
-        two_fa_present = False
-        try:
-            # Check if the 2FA header is now visible
-            WebDriverWait(driver, 5).until(  # type: ignore
-                EC.visibility_of_element_located(  # type: ignore
-                    (By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)  # type: ignore
-                )
-            )
-            two_fa_present = True
-            logger.info("Two-step verification page detected.")
-        except TimeoutException:  # type: ignore
-            logger.debug("Two-step verification page not detected.")
-            two_fa_present = False
-        except WebDriverException as e:  # type: ignore
-            logger.error(f"WebDriver error checking for 2FA page: {e}")
-            # If error checking, verify login status as fallback
-            status = login_status(
-                session_manager, disable_ui_fallback=True
-            )  # API check only for speed
-            if status is True:
-                return "LOGIN_SUCCEEDED"
-            if status is False:
-                return "LOGIN_FAILED_UNKNOWN"  # Error + not logged in
-            return "LOGIN_FAILED_STATUS_CHECK_ERROR"  # Critical status check error
-            # End of if/elif/else
-        # End of try/except
+        # Check for 2FA
+        two_fa_present, early_result = _detect_2fa_page(driver, session_manager)
+        if early_result:
+            return early_result
 
-        # --- Step 5: Handle 2FA or Verify Login ---
+        # Handle 2FA or verify login
         if two_fa_present:
-            if handle_twoFA(session_manager):
-                logger.info("Two-step verification handled successfully.")
-                # Re-verify login status after 2FA
-                if login_status(session_manager) is True:
-                    print("\n✓ Two-factor authentication completed successfully!")
-                    return "LOGIN_SUCCEEDED"
-                logger.error(
-                    "Login status check failed AFTER successful 2FA handling report."
-                )
-                return "LOGIN_FAILED_POST_2FA_VERIFY"
-                # End of if/else
-            logger.error("Two-step verification handling failed.")
-            return "LOGIN_FAILED_2FA_HANDLING"
-            # End of if/else handle_twoFA
-        # No 2FA detected, check login status directly
-        logger.debug("Checking login status directly (no 2FA detected)...")
-        login_check_result = login_status(
-            session_manager, disable_ui_fallback=False
-        )  # Use UI fallback for reliability
-        if login_check_result is True:
-            print("\n✓ Login successful!")
-            return "LOGIN_SUCCEEDED"
-        if login_check_result is False:
-            # Verify why it failed if no 2FA was shown
-            print("\n✗ Login failed. Please check your credentials.")
-            logger.error(
-                "Direct login check failed. Checking for error messages again..."
-            )
-            try:
-                # Check specific error again
-                WebDriverWait(driver, 1).until(  # type: ignore
-                    EC.presence_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR)  # type: ignore
-                    )
-                )
-                logger.error(
-                    "Login failed: Specific 'Invalid Credentials' alert found (post-check)."
-                )
-                return "LOGIN_FAILED_BAD_CREDS"
-            except TimeoutException:  # type: ignore
-                # Check generic error again
-                generic_alert_selector = "div.alert[role='alert']"
-                try:
-                    alert_element = WebDriverWait(driver, 0.5).until(  # type: ignore
-                        EC.presence_of_element_located(  # type: ignore
-                            (By.CSS_SELECTOR, generic_alert_selector)  # type: ignore
-                        )
-                    )
-                    alert_text = (
-                        alert_element.text if alert_element else "Unknown error"
-                    )
-                    logger.error(
-                        f"Login failed: Generic alert found (post-check): '{alert_text}'."
-                    )
-                    return "LOGIN_FAILED_ERROR_DISPLAYED"
-                except TimeoutException:  # type: ignore
-                    # Still on login page?
-                    try:
-                        if driver.current_url.startswith(signin_url):
-                            logger.error(
-                                "Login failed: Still on login page (post-check), no error message found."
-                            )
-                            return "LOGIN_FAILED_STUCK_ON_LOGIN"
-                        logger.error(
-                            "Login failed: Status False, no 2FA, no error msg, not on login page."
-                        )
-                        return "LOGIN_FAILED_UNKNOWN"
-                        # End of if/else
-                    except WebDriverException:  # type: ignore
-                        logger.error(
-                            "Login failed: Status False, WebDriverException getting URL."
-                        )
-                        return "LOGIN_FAILED_WEBDRIVER"  # Session likely dead
-                    # End of try/except get URL
-                except (
-                    WebDriverException
-                ) as alert_err:  # Error checking generic alert # type: ignore
-                    logger.error(
-                        f"Login failed: Error checking for generic alert (post-check): {alert_err}"
-                    )
-                    return "LOGIN_FAILED_UNKNOWN"
-                # End of try/except generic alert
-            except (
-                WebDriverException
-            ) as alert_err:  # Error checking specific alert # type: ignore
-                logger.error(
-                    f"Login failed: Error checking for specific alert (post-check): {alert_err}"
-                )
-                return "LOGIN_FAILED_UNKNOWN"
-            # End of try/except specific alert
-        else:  # login_status returned None
-            logger.error(
-                "Login failed: Critical error during final login status check."
-            )
-            return "LOGIN_FAILED_STATUS_CHECK_ERROR"
-            # End of if/elif/else login_check_result
-        # End of if/else two_fa_present
+            return _handle_2fa_flow(session_manager)
+        else:
+            return _verify_login_no_2fa(driver, session_manager, signin_url)
 
-    # --- Catch errors during the overall login process ---
-    except TimeoutException as e:  # type: ignore
+    except TimeoutException as e:
         logger.error(f"Timeout during login process: {e}", exc_info=False)
         return "LOGIN_FAILED_TIMEOUT"
-    except WebDriverException as e:  # type: ignore
+    except WebDriverException as e:
         logger.error(f"WebDriverException during login: {e}", exc_info=False)
         if not is_browser_open(driver):
             logger.error("Session became invalid during login.")
-        # End of if
         return "LOGIN_FAILED_WEBDRIVER"
     except Exception as e:
         logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
         return "LOGIN_FAILED_UNEXPECTED"
-    # End of try/except login process
 
 # End of log_in
 
