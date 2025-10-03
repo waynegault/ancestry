@@ -110,6 +110,58 @@ This document summarizes the comprehensive refactoring sprint conducted to impro
 
 ---
 
+### 6. **utils.py** (Partial Refactoring - Still needs work)
+
+#### Function 1: `log_in()`
+- **Complexity**: 31 → <10 (-68%)
+- **Lines**: ~257 → ~62 (-76%)
+- **Helper Methods Created**: 6
+  - `_check_initial_login_status()` - Check if already logged in
+  - `_navigate_to_signin()` - Navigate to sign-in page
+  - `_check_for_login_errors()` - Check for error messages
+  - `_detect_2fa_page()` - Detect 2FA page
+  - `_handle_2fa_flow()` - Handle 2FA verification
+  - `_verify_login_no_2fa()` - Verify login without 2FA
+
+#### Function 2: `login_status()`
+- **Complexity**: 21 → <10 (-52%)
+- **Lines**: ~150 → ~42 (-72%)
+- **Helper Methods Created**: 4
+  - `_validate_login_status_inputs()` - Validate session manager
+  - `_perform_api_login_check()` - Perform API login check
+  - `_check_ui_login_indicators()` - Check UI indicators
+  - `_perform_ui_login_check_with_navigation()` - UI check with navigation
+
+**Total for utils.py**:
+- **Complexity Reduction**: -32 points
+- **Lines Eliminated**: ~303 lines
+- **Quality Score**: Still 0.0/100 (needs more work - `nav_to_page` complexity 45)
+
+---
+
+### 7. **action8_messaging.py** ⭐ **NOW ABOVE 70!**
+
+#### Function 1: `_update_counters_and_collect_data()`
+- **Complexity**: 13 → <10 (-23%)
+- **Lines**: ~45 → ~15 (-67%)
+- **Helper Methods Created**: 4
+  - `_prepare_log_dict()` - Convert log object to dict
+  - `_handle_sent_status()` - Handle sent status
+  - `_handle_acked_status()` - Handle acknowledged status
+  - `_handle_error_or_skip_status()` - Handle error/skip status
+
+#### Function 2: `_process_single_person()`
+- **Complexity**: 12 → <10 (-17%)
+- **Helper Methods Created**: 1
+  - `_handle_person_status()` - Handle person status logic
+
+**Total for action8_messaging.py**:
+- **Complexity Reduction**: -5 points
+- **Lines Eliminated**: ~56 lines
+- **Quality Score**: 62.6/100 → **73.4/100** (+17%) ✅ **NOW ABOVE 70!**
+
+---
+
 ## Previous Sprint Work (Weeks 44-49)
 
 ### **action11.py** (Already Above 70)
@@ -127,18 +179,19 @@ This document summarizes the comprehensive refactoring sprint conducted to impro
 ## Sprint Statistics
 
 ### Current Sprint
-- **Files Refactored**: 5
-- **Functions Refactored**: 9
-- **Helper Functions Created**: 23
-- **Total Complexity Reduction**: ~65 points
-- **Total Lines Eliminated**: ~723 lines
-- **Git Commits**: 8
+- **Files Refactored**: 7
+- **Functions Refactored**: 14
+- **Helper Functions Created**: 38
+- **Total Complexity Reduction**: ~103 points
+- **Total Lines Eliminated**: ~984 lines
+- **Git Commits**: 14
+- **Files Moved Above 70**: 2 (action7_inbox.py, action8_messaging.py)
 
 ### Combined with Previous Sprints
-- **Total Functions Refactored**: 15
-- **Total Helper Functions Created**: 83
-- **Total Complexity Reduction**: ~234 points
-- **Total Lines Eliminated**: ~1,751 lines
+- **Total Functions Refactored**: 20
+- **Total Helper Functions Created**: 98
+- **Total Complexity Reduction**: ~272 points
+- **Total Lines Eliminated**: ~2,012 lines
 
 ---
 
