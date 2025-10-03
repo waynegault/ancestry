@@ -782,6 +782,90 @@ def run_core_workflow_action(session_manager, *_):
 
 
 # Action 2 (reset_db_actn)
+def _truncate_all_tables(temp_manager: SessionManager) -> bool:
+    """Truncate all tables in the database."""
+    logger.debug("Truncating all tables...")
+    truncate_session = temp_manager.get_db_conn()
+    if not truncate_session:
+        logger.critical("Failed to get session for truncating tables. Reset aborted.")
+        return False
+
+    try:
+        with db_transn(truncate_session) as sess:
+            # Delete all records from tables in reverse order of dependencies
+            sess.query(ConversationLog).delete(synchronize_session=False)
+            sess.query(DnaMatch).delete(synchronize_session=False)
+            sess.query(FamilyTree).delete(synchronize_session=False)
+            sess.query(Person).delete(synchronize_session=False)
+            # Keep MessageType table intact
+        temp_manager.return_session(truncate_session)
+        logger.debug("All tables truncated successfully.")
+        return True
+    except Exception as e:
+        logger.error(f"Error truncating tables: {e}", exc_info=True)
+        temp_manager.return_session(truncate_session)
+        return False
+
+
+def _reinitialize_database_schema(temp_manager: SessionManager) -> bool:
+    """Re-initialize database schema."""
+    logger.debug("Re-initializing database schema...")
+    try:
+        # This will create a new engine and session factory pointing to the file path
+        temp_manager.db_manager._initialize_engine_and_session()
+        if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
+            raise SQLAlchemyError("Failed to initialize DB engine/session for recreation!")
+
+        # This will recreate the tables in the existing file
+        Base.metadata.create_all(temp_manager.db_manager.engine)
+        logger.debug("Database schema recreated successfully.")
+        return True
+    except Exception as e:
+        logger.error(f"Error reinitializing database schema: {e}", exc_info=True)
+        return False
+
+
+def _seed_message_templates(recreation_session: Any) -> bool:
+    """Seed message templates from messages.json."""
+    logger.debug("Seeding message_types table...")
+    script_dir = Path(__file__).resolve().parent
+    messages_file = script_dir / "messages.json"
+
+    if not messages_file.exists():
+        logger.warning("'messages.json' not found. Cannot seed MessageTypes.")
+        return False
+
+    try:
+        with messages_file.open("r", encoding="utf-8") as f:
+            messages_data = json.load(f)
+
+        if not isinstance(messages_data, dict):
+            logger.error("'messages.json' has incorrect format. Cannot seed.")
+            return False
+
+        with db_transn(recreation_session) as sess:
+            # First check if there are any existing message templates
+            existing_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
+
+            if existing_count > 0:
+                logger.debug(f"Found {existing_count} existing message templates. Skipping seeding.")
+            else:
+                # Only add message templates if none exist
+                templates_to_add = [MessageTemplate(template_name=name) for name in messages_data]
+                if templates_to_add:
+                    sess.add_all(templates_to_add)
+                    logger.debug(f"Added {len(templates_to_add)} message templates.")
+                else:
+                    logger.warning("No message templates found in messages.json to seed.")
+
+        count = recreation_session.query(func.count(MessageTemplate.id)).scalar() or 0
+        logger.debug(f"MessageTemplate seeding complete. Total templates in DB: {count}")
+        return True
+    except Exception as e:
+        logger.error(f"Error seeding message templates: {e}", exc_info=True)
+        return False
+
+
 def reset_db_actn(session_manager: SessionManager, *_):
     """
     Action to COMPLETELY reset the database by deleting the file. Browserless.
@@ -820,85 +904,19 @@ def reset_db_actn(session_manager: SessionManager, *_):
             temp_manager = SessionManager()
 
             # Step 1: Truncate all tables
-            logger.debug("Truncating all tables...")
-            truncate_session = temp_manager.get_db_conn()
-            if truncate_session:
-                with db_transn(truncate_session) as sess:
-                    # Delete all records from tables in reverse order of dependencies
-                    sess.query(ConversationLog).delete(synchronize_session=False)
-                    sess.query(DnaMatch).delete(synchronize_session=False)
-                    sess.query(FamilyTree).delete(synchronize_session=False)
-                    sess.query(Person).delete(synchronize_session=False)
-                    # Keep MessageType table intact
-                temp_manager.return_session(truncate_session)
-                logger.debug("All tables truncated successfully.")
-            else:
-                logger.critical("Failed to get session for truncating tables. Reset aborted.")
+            if not _truncate_all_tables(temp_manager):
                 return False
 
-            # Step 2: Re-initialize database schema (reuse same temp_manager)
-            logger.debug("Re-initializing database schema...")
-            # This will create a new engine and session factory pointing to the file path
-            temp_manager.db_manager._initialize_engine_and_session()
-            if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
-                raise SQLAlchemyError(
-                    "Failed to initialize DB engine/session for recreation!"
-                )
+            # Step 2: Re-initialize database schema
+            if not _reinitialize_database_schema(temp_manager):
+                return False
 
-            # This will recreate the tables in the existing file
-            Base.metadata.create_all(temp_manager.db_manager.engine)
-            logger.debug("Database schema recreated successfully.")
-
-            # --- Seed MessageType Table ---
+            # Step 3: Seed MessageType Table
             recreation_session = temp_manager.get_db_conn()
             if not recreation_session:
                 raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
 
-            logger.debug("Seeding message_types table...")
-            script_dir = Path(__file__).resolve().parent
-            messages_file = script_dir / "messages.json"
-            if messages_file.exists():
-                with messages_file.open("r", encoding="utf-8") as f:
-                    messages_data = json.load(f)
-                if isinstance(messages_data, dict):
-                    # Use the session from the temporary manager
-                    with db_transn(recreation_session) as sess:
-                        # First check if there are any existing message templates
-                        existing_count = (
-                            sess.query(func.count(MessageTemplate.id)).scalar() or 0
-                        )
-
-                        if existing_count > 0:
-                            logger.debug(
-                                f"Found {existing_count} existing message templates. Skipping seeding."
-                            )
-                        else:
-                            # Only add message templates if none exist
-                            templates_to_add = [
-                                MessageTemplate(template_name=name) for name in messages_data
-                            ]
-                            if templates_to_add:
-                                sess.add_all(templates_to_add)
-                                logger.debug(
-                                    f"Added {len(templates_to_add)} message templates."
-                                )
-                            else:
-                                logger.warning(
-                                    "No message templates found in messages.json to seed."
-                                )
-
-                    count = (
-                        recreation_session.query(func.count(MessageTemplate.id)).scalar()
-                        or 0
-                    )
-                    logger.debug(
-                        f"MessageTemplate seeding complete. Total templates in DB: {count}"
-                    )
-                else:
-                    logger.error("'messages.json' has incorrect format. Cannot seed.")
-            else:
-                logger.warning("'messages.json' not found. Cannot seed MessageTypes.")
-            # --- End Seeding ---
+            _seed_message_templates(recreation_session)
 
             reset_successful = True
             logger.info("Database reset completed successfully.")
