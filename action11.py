@@ -2240,6 +2240,128 @@ def _handle_discovery_api_call(
     return formatted_path, True, api_called_for_rel
 
 
+# Helper functions for _handle_supplementary_info_phase - Phase 5: Formatting and Display
+
+def _is_error_message(formatted_path: str) -> bool:
+    """Check if formatted path is an error message."""
+    known_error_starts_tuple = (
+        "(No relationship",
+        "(Could not parse",
+        "(API returned error",
+        "(Relationship HTML structure",
+        "(Unsupported API response",
+        "(Error processing relationship",
+        "(Cannot parse relationship path",
+        "(Could not find, decode, or parse",
+        "(Could not find sufficient relationship",
+        "(Failed to retrieve data",
+        "(Error formatting relationship",
+        "(Error: Formatting function unavailable",
+        "(Discovery API:",
+        "(Discovery path found but invalid",
+        "(No valid relationship path items found",
+    )
+    return any(formatted_path.startswith(err_start) for err_start in known_error_starts_tuple)
+
+
+def _clean_formatted_path(formatted_path: str, owner_name: str) -> str:
+    """Clean formatted path by removing duplicate headers and replacing Unknown."""
+    display_owner_name = owner_name if owner_name else "Tree Owner"
+
+    # Remove the header line from the formatted path to avoid duplicate headers
+    if "===Relationship Path to" in formatted_path:
+        path_lines = formatted_path.split("\n")
+        if len(path_lines) > 1:
+            formatted_path = "\n".join(path_lines[1:])
+            # Replace "Unknown's" with owner name
+            formatted_path = formatted_path.replace("Unknown's", f"{display_owner_name}'s")
+
+    return formatted_path
+
+
+def _display_formatted_path(
+    formatted_path: str,
+    owner_name: str,
+    api_called_for_rel: str,
+) -> None:
+    """Display formatted relationship path."""
+    display_owner_name = owner_name if owner_name else "Tree Owner"
+    print(f"=== Relationship Path to {display_owner_name} ===\n")
+
+    if _is_error_message(formatted_path):
+        # This is an error message, print it as such
+        print(f"  {formatted_path}")
+        logger.warning(
+            f"Relationship path calculation resulted in message/error: {formatted_path} "
+            f"(API called: {api_called_for_rel})"
+        )
+    else:
+        # This is a successfully formatted path
+        cleaned_path = _clean_formatted_path(formatted_path, owner_name)
+        print(f"{cleaned_path}\n")
+        logger.debug(f"Successfully displayed relationship path via {api_called_for_rel}.")
+
+
+def _display_calculation_failure(
+    can_attempt_calculation: bool,
+    selected_name: str,
+    source_of_ids: str,
+) -> None:
+    """Display failure message when calculation could not be performed."""
+    default_fail_message = f"(Could not calculate relationship path for {selected_name})"
+    print(f"  {default_fail_message}")
+
+    if not can_attempt_calculation:
+        reason_detail = "  Reason: Essential IDs missing from detailed data and fallback data."
+        print(reason_detail)
+        logger.error(
+            f"{default_fail_message}. {reason_detail.strip()} (Source of IDs: {source_of_ids})."
+        )
+    else:
+        reason_detail = "  Reason: Calculation conditions not met (e.g., tree mismatch, API data issue)."
+        print(reason_detail)
+        logger.error(
+            f"{default_fail_message}. {reason_detail.strip()} (Source of IDs: {source_of_ids}). "
+            f"Check prior logs for API call failures."
+        )
+
+
+def _display_unexpected_state(
+    selected_name: str,
+    api_called_for_rel: str,
+) -> None:
+    """Display message for unexpected state where calculation performed but no path generated."""
+    logger.error(
+        f"Unexpected state: Calculation performed for {selected_name} via {api_called_for_rel}, "
+        f"but no formatted path or error message was generated."
+    )
+    print(
+        f"  (Relationship path for {selected_name} could not be determined or displayed "
+        f"via {api_called_for_rel})."
+    )
+
+
+def _display_relationship_result(
+    formatted_path: Optional[str],
+    is_owner: bool,
+    calculation_performed: bool,
+    can_attempt_calculation: bool,
+    owner_name: str,
+    selected_name: str,
+    api_called_for_rel: str,
+    source_of_ids: str,
+) -> None:
+    """Display final relationship result or failure message."""
+    print("")  # Add spacing
+
+    if formatted_path:
+        _display_formatted_path(formatted_path, owner_name, api_called_for_rel)
+    elif not is_owner and not calculation_performed:
+        _display_calculation_failure(can_attempt_calculation, selected_name, source_of_ids)
+    elif not is_owner and calculation_performed and not formatted_path:
+        _display_unexpected_state(selected_name, api_called_for_rel)
+
+
 def _handle_supplementary_info_phase(
     person_research_data: Optional[Dict],
     selected_candidate_processed: Dict,
@@ -2343,102 +2465,17 @@ def _handle_supplementary_info_phase(
             owner_name,
         )
 
-    # --- Print Final Result or Failure Message ---
-    # A blank line is already added by the initial header print if family info was displayed.
-    # If no family info, this adds a space.
-    print("")
-
-    if formatted_path:
-        # First, print a clear header indicating which API source was used        # Use a default value for owner_name if it's None
-        display_owner_name = owner_name if owner_name else "Tree Owner"
-        print(
-                f"=== Relationship Path to {display_owner_name} ===\n"
-            )
-
-        # Check if the formatted_path itself indicates an error/fallback condition
-        # These are common error prefixes from format_api_relationship_path or API call failures
-        known_error_starts_tuple = (
-            "(No relationship",
-            "(Could not parse",
-            "(API returned error",
-            "(Relationship HTML structure",
-            "(Unsupported API response",
-            "(Error processing relationship",
-            "(Cannot parse relationship path",
-            "(Could not find, decode, or parse",
-            "(Could not find sufficient relationship",
-            "(Failed to retrieve data",
-            "(Error formatting relationship",
-            "(Error: Formatting function unavailable",
-            "(Discovery API:",
-            "(Discovery path found but invalid",
-            "(No valid relationship path items found",
-        )
-        if any(
-            formatted_path.startswith(err_start)
-            for err_start in known_error_starts_tuple
-        ):
-            # This is an error message, print it as such
-            print(f"  {formatted_path}")  # Indent error messages for clarity
-            logger.warning(
-                f"Relationship path calculation resulted in message/error: {formatted_path} (API called: {api_called_for_rel})"
-            )
-        else:
-            # This is a successfully formatted path, print it directly
-            # The API URL is printed by the respective call_..._api function in api_utils.
-
-            # Remove the header line from the formatted path to avoid duplicate headers
-            # and replace "Unknown" with the owner name in the relationship description
-            if "===Relationship Path to" in formatted_path:
-                # Split the path by newlines and remove the first line (header)
-                path_lines = formatted_path.split("\n")
-                if len(path_lines) > 1:
-                    # Remove the header line
-                    formatted_path = "\n".join(path_lines[1:])
-
-                    # Replace "Unknown's" with "{owner_name}'s" in the relationship description
-                    formatted_path = formatted_path.replace(
-                        "Unknown's", f"{display_owner_name}'s"
-                    )
-
-            print(f"{formatted_path}\n")  # Add a newline after the path for spacing
-            logger.debug(
-                f"Successfully displayed relationship path via {api_called_for_rel}."
-            )
-        # End of if/else known_error_starts_tuple
-    elif not is_owner and not calculation_performed:
-        # This case means no calculation method was viable, or essential IDs were missing
-        default_fail_message = (
-            f"(Could not calculate relationship path for {selected_name})"
-        )
-        print(f"  {default_fail_message}")  # Indent for clarity
-        if not can_attempt_calculation:
-            reason_detail = (
-                "  Reason: Essential IDs missing from detailed data and fallback data."
-            )
-            print(reason_detail)
-            logger.error(
-                f"{default_fail_message}. {reason_detail.strip()} (Source of IDs: {source_of_ids})."
-            )
-        else:  # Calculation was attempted but conditions not met for any method, or API failed silently earlier
-            reason_detail = "  Reason: Calculation conditions not met (e.g., tree mismatch, API data issue)."
-            print(reason_detail)
-            logger.error(
-                f"{default_fail_message}. {reason_detail.strip()} (Source of IDs: {source_of_ids}). Check prior logs for API call failures."
-            )
-        # End of if/else can_attempt_calculation
-    elif not is_owner and calculation_performed and not formatted_path:
-        # This means an API was called, data might have been returned, but formatting failed to produce a path
-        # or the API explicitly returned no path (e.g. discovery API with no direct link).
-        # The `formatted_path` should have been set to an error message in these cases by the logic above.
-        # This block is a fallback for an unexpected state.
-        logger.error(
-            f"Unexpected state: Calculation performed for {selected_name} via {api_called_for_rel}, but no formatted path or error message was generated."
-        )
-        print(
-            f"  (Relationship path for {selected_name} could not be determined or displayed via {api_called_for_rel})."
-        )
-    # End of if/elif/elif for printing result
+    # --- Display Final Result or Failure Message ---
+    _display_relationship_result(
+        formatted_path,
+        is_owner,
+        calculation_performed,
+        can_attempt_calculation,
+        owner_name,
+        selected_name,
+        api_called_for_rel,
+        source_of_ids,
+    )
 
 
 # End of _handle_supplementary_info_phase
