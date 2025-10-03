@@ -1330,85 +1330,89 @@ def _call_direct_treesui_list_api(
 # End of _call_direct_treesui_list_api
 
 
-# Search Phase (Includes Limit, Calls API func defined above)
-def _handle_search_phase(
-    session_manager_local: SessionManager,
-    search_criteria: Dict[str, Any],
-) -> Optional[List[Dict]]:
-    """Handles the API search phase using the direct TreesUI List API."""
-    owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
-    base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
+# Helper functions for _handle_search_phase
 
-    # Check if owner_tree_id is missing and try to get it from config
-    if not owner_tree_id:
-        # Try to get tree ID from config
-        config_tree_id = getattr(config_schema.api, "tree_id", None)
-        if config_tree_id:
-            owner_tree_id = config_tree_id
-            # Update the session manager with the tree ID from config
-            session_manager_local.my_tree_id = owner_tree_id
-            logger.info(f"Using tree ID from configuration: {owner_tree_id}")
+def _get_tree_id_from_config() -> Optional[str]:
+    """Get tree ID from configuration."""
+    config_tree_id = getattr(config_schema.api, "tree_id", None)
+    if config_tree_id:
+        logger.info(f"Using tree ID from configuration: {config_tree_id}")
+        return config_tree_id
+    return None
+
+
+def _get_tree_id_from_api(session_manager_local: SessionManager) -> Optional[str]:
+    """Get tree ID from API using tree name."""
+    tree_name = config_schema.api.tree_name
+    if not tree_name:
+        return None
+
+    logger.info(f"Attempting to retrieve tree ID for tree name: {tree_name}")
+    try:
+        owner_tree_id = session_manager_local.get_my_tree_id()
+        if owner_tree_id:
+            logger.info(f"Successfully retrieved tree ID: {owner_tree_id}")
+            return owner_tree_id
         else:
-            # Try to get tree ID from session manager's API call
-            tree_name = config_schema.api.tree_name
-            if tree_name:
-                logger.info(
-                    f"Attempting to retrieve tree ID for tree name: {tree_name}"
-                )
-                try:
-                    # Try to retrieve the tree ID using the session manager
-                    owner_tree_id = session_manager_local.get_my_tree_id()
-                    if owner_tree_id:
-                        logger.info(f"Successfully retrieved tree ID: {owner_tree_id}")
-                        # Update the session manager with the retrieved tree ID
-                        session_manager_local.my_tree_id = owner_tree_id
-                    else:
-                        logger.warning(
-                            f"Failed to retrieve tree ID for tree name: {tree_name}"
-                        )
-                except Exception as e:
-                    logger.error(f"Error retrieving tree ID: {e}")
+            logger.warning(f"Failed to retrieve tree ID for tree name: {tree_name}")
+            return None
+    except Exception as e:
+        logger.error(f"Error retrieving tree ID: {e}")
+        return None
 
-        # If still no tree ID, use a default or prompt the user
-        if not owner_tree_id:
-            # Prompt the user for a tree ID
-            print("\nTree ID is required for searching. Please enter a tree ID:")
-            user_tree_id = input("Tree ID: ").strip()
-            if user_tree_id:
-                owner_tree_id = user_tree_id
-                # Update the session manager with the user-provided tree ID
-                session_manager_local.my_tree_id = owner_tree_id
-                logger.info(f"Using user-provided tree ID: {owner_tree_id}")
-            else:
-                # Log error and display to user
-                logger.error("Owner Tree ID missing and no input provided.")
-                print("Error: Tree ID is required for searching. Operation cancelled.")
-                return None
 
+def _get_tree_id_from_user() -> Optional[str]:
+    """Prompt user for tree ID."""
+    print("\nTree ID is required for searching. Please enter a tree ID:")
+    user_tree_id = input("Tree ID: ").strip()
+    if user_tree_id:
+        logger.info(f"Using user-provided tree ID: {user_tree_id}")
+        return user_tree_id
+    else:
+        logger.error("Owner Tree ID missing and no input provided.")
+        print("Error: Tree ID is required for searching. Operation cancelled.")
+        return None
+
+
+def _resolve_owner_tree_id(session_manager_local: SessionManager) -> Optional[str]:
+    """Resolve owner tree ID from session manager, config, API, or user input."""
+    # First check session manager
+    owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
+    if owner_tree_id:
+        return owner_tree_id
+
+    # Try to get from config
+    owner_tree_id = _get_tree_id_from_config()
+    if owner_tree_id:
+        session_manager_local.my_tree_id = owner_tree_id
+        return owner_tree_id
+
+    # Try to get from API
+    owner_tree_id = _get_tree_id_from_api(session_manager_local)
+    if owner_tree_id:
+        session_manager_local.my_tree_id = owner_tree_id
+        return owner_tree_id
+
+    # Finally, prompt user
+    owner_tree_id = _get_tree_id_from_user()
+    if owner_tree_id:
+        session_manager_local.my_tree_id = owner_tree_id
+        return owner_tree_id
+
+    return None
+
+
+def _validate_base_url(base_url: str) -> bool:
+    """Validate that base URL is configured."""
     if not base_url:
-        # Log error and display to user
         logger.error("ERROR: Ancestry URL not configured.. Base URL missing.")
         print("Error: Ancestry URL not configured. Operation cancelled.")
-        return None
+        return False
+    return True
 
-    # This call now works because the function is defined above
-    suggestions_raw = _call_direct_treesui_list_api(
-        session_manager_local, owner_tree_id, search_criteria, base_url
-    )
-    if suggestions_raw is None:
-        # Log error and display to user
-        logger.error("API search failed.")
-        return None  # Error logged previously
-    if not suggestions_raw:
-        # Log info and display to user
-        logger.info("API Search returned no results.No potential matches found.")
-        return []
-    parsed_results = _parse_treesui_list_response(suggestions_raw)
-    if parsed_results is None:
-        # Log error and display to user
-        logger.error("Failed to parse API response. Error processing data.")
-        return None
-    # Limit suggestions based on config
+
+def _limit_search_results(parsed_results: List[Dict]) -> List[Dict]:
+    """Limit search results based on configuration."""
     max_score_limit = getattr(config_schema, "max_suggestions_to_score", 100)
     if (
         isinstance(max_score_limit, int)
@@ -1420,6 +1424,44 @@ def _handle_search_phase(
         )
         return parsed_results[:max_score_limit]
     return parsed_results
+
+
+# Search Phase (Includes Limit, Calls API func defined above)
+def _handle_search_phase(
+    session_manager_local: SessionManager,
+    search_criteria: Dict[str, Any],
+) -> Optional[List[Dict]]:
+    """Handles the API search phase using the direct TreesUI List API."""
+    base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
+
+    # Resolve owner tree ID
+    owner_tree_id = _resolve_owner_tree_id(session_manager_local)
+    if not owner_tree_id:
+        return None
+
+    # Validate base URL
+    if not _validate_base_url(base_url):
+        return None
+
+    # Call API to get suggestions
+    suggestions_raw = _call_direct_treesui_list_api(
+        session_manager_local, owner_tree_id, search_criteria, base_url
+    )
+    if suggestions_raw is None:
+        logger.error("API search failed.")
+        return None
+    if not suggestions_raw:
+        logger.info("API Search returned no results.No potential matches found.")
+        return []
+
+    # Parse API response
+    parsed_results = _parse_treesui_list_response(suggestions_raw)
+    if parsed_results is None:
+        logger.error("Failed to parse API response. Error processing data.")
+        return None
+
+    # Limit results based on config
+    return _limit_search_results(parsed_results)
 
 
 # End of _handle_search_phase
