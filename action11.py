@@ -2014,6 +2014,232 @@ def _log_relationship_calculation_checks(
     )
 
 
+# Helper functions for _handle_supplementary_info_phase - Phase 4: API Call Logic
+
+def _handle_owner_relationship(selected_name: str, owner_name: str) -> Tuple[str, bool]:
+    """Handle case where selected person is the tree owner."""
+    print(f"=== Relationship Path to {owner_name} ===")
+    print(f"  {selected_name} is the tree owner ({owner_name}).")
+    logger.info(f"{selected_name} is Tree Owner. No relationship path calculation needed.")
+    formatted_path = f"{selected_name} is the tree owner."
+    return formatted_path, True
+
+
+def _parse_jsonp_response(relationship_result_data: str) -> Optional[Dict]:
+    """Parse JSONP response to extract JSON data."""
+    jsonp_match = re.search(r"no\((.*)\)", relationship_result_data)
+    if not jsonp_match:
+        logger.error("JSONP format not recognized")
+        return None
+
+    json_str = jsonp_match.group(1)
+    try:
+        json_data = json.loads(json_str)
+        return {
+            "html": json_data.get("html", ""),
+            "status": json_data.get("status", "unknown"),
+            "message": json_data.get("message", ""),
+        }
+    except json.JSONDecodeError as json_err:
+        logger.error(f"Error parsing JSON from JSONP: {json_err}")
+        return None
+
+
+def _extract_relationship_data_from_html(html_content: str) -> List[Dict]:
+    """Extract relationship data from HTML content using BeautifulSoup."""
+    relationship_data = []
+
+    if not html_content or not isinstance(html_content, str):
+        return relationship_data
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    list_items = soup.find_all("li")
+
+    for item in list_items:
+        # Skip icon items
+        if item.get("aria-hidden") == "true":
+            continue
+
+        # Extract name
+        name_elem = item.find("b")
+        name = name_elem.get_text() if name_elem else item.get_text()
+
+        # Extract relationship description
+        rel_elem = item.find("i")
+        relationship = rel_elem.get_text() if rel_elem else ""
+
+        # Extract lifespan
+        text = item.get_text()
+        lifespan_match = re.search(r"(\d{4})-(\d{4}|\-)", text)
+        lifespan = lifespan_match.group(0) if lifespan_match else ""
+
+        relationship_data.append({
+            "name": name,
+            "relationship": relationship,
+            "lifespan": lifespan,
+        })
+
+    return relationship_data
+
+
+def _format_tree_ladder_path(
+    api_response_dict: Dict,
+    selected_name: str,
+    owner_name: str,
+) -> Optional[str]:
+    """Format relationship path from Tree Ladder API response."""
+    try:
+        sn_str = str(selected_name) if selected_name else "Unknown"
+        on_str = str(owner_name) if owner_name else "Unknown"
+
+        # Get raw formatted path
+        raw_formatted_path = format_api_relationship_path(api_response_dict, on_str, sn_str)
+        logger.debug(f"Raw formatted path from format_api_relationship_path:\n{raw_formatted_path}")
+
+        # Extract relationship data from HTML
+        html_content = api_response_dict.get("html", "")
+        relationship_data = _extract_relationship_data_from_html(html_content)
+
+        # Convert to unified format and format
+        unified_path = convert_api_path_to_unified_format(relationship_data, sn_str)
+        formatted_path = format_relationship_path_unified(unified_path, sn_str, on_str, None)
+
+        return formatted_path
+    except Exception as e:
+        logger.error(f"Error formatting relationship path: {e}", exc_info=True)
+        # Fall back to raw formatted path
+        return format_api_relationship_path(api_response_dict, on_str, sn_str)
+
+
+def _handle_tree_ladder_api_call(
+    session_manager_local: SessionManager,
+    base_url: str,
+    owner_tree_id_str: str,
+    selected_person_tree_id: str,
+    selected_name: str,
+    owner_name: str,
+) -> Tuple[Optional[str], bool, str]:
+    """Handle Tree Ladder API call and formatting."""
+    api_called_for_rel = "Tree Ladder (/getladder)"
+    logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
+
+    sp_tree_id_str = str(selected_person_tree_id)
+    ot_id_str = str(owner_tree_id_str)
+
+    ladder_api_url = f"{base_url}/family-tree/person/tree/{ot_id_str}/person/{sp_tree_id_str}/getladder?callback=no"
+    logger.debug(f"\nLadder API URL: {ladder_api_url}\n")
+
+    relationship_result_data = call_getladder_api(session_manager_local, ot_id_str, sp_tree_id_str, base_url)
+
+    if not relationship_result_data:
+        logger.warning(f"{api_called_for_rel} API call failed or returned no data.")
+        return f"(Failed to retrieve data from {api_called_for_rel} API)", False, api_called_for_rel
+
+    if not callable(format_api_relationship_path):
+        logger.error("format_api_relationship_path function not available.")
+        return "(Error: Formatting function for relationship path unavailable)", True, api_called_for_rel
+
+    # Parse JSONP response
+    api_response_dict = _parse_jsonp_response(relationship_result_data)
+    if not api_response_dict:
+        return "(JSONP format not recognized)", True, api_called_for_rel
+
+    # Format the path
+    formatted_path = _format_tree_ladder_path(api_response_dict, selected_name, owner_name)
+    if not formatted_path:
+        return f"(Error formatting relationship path from {api_called_for_rel})", True, api_called_for_rel
+
+    return formatted_path, True, api_called_for_rel
+
+
+def _format_discovery_api_path_fallback(
+    discovery_api_response: Dict,
+    selected_name: str,
+    owner_name: str,
+) -> str:
+    """Format Discovery API path using fallback formatter."""
+    path_steps = discovery_api_response.get("path", [])
+    path_display_lines = [f"  {selected_name}"]
+    name_formatter_local = format_name if callable(format_name) else lambda x: str(x).title()
+
+    for step in path_steps:
+        step_name_raw = step.get("name", "?")
+        step_rel_raw = step.get("relationship", "related to").capitalize()
+        path_display_lines.append(f"  -> {step_rel_raw} is {name_formatter_local(step_name_raw)}")
+
+    path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
+    return "\n".join(path_display_lines)
+
+
+def _format_discovery_api_path(
+    discovery_api_response: Dict,
+    selected_name: str,
+    owner_name: str,
+) -> Optional[str]:
+    """Format relationship path from Discovery API response."""
+    try:
+        # Convert to unified format
+        unified_path = convert_discovery_api_path_to_unified_format(discovery_api_response, selected_name)
+
+        if unified_path:
+            formatted_path = format_relationship_path_unified(unified_path, selected_name, owner_name, None)
+            logger.debug("Discovery API path formatted using unified formatter")
+            return formatted_path
+        else:
+            logger.warning("Failed to convert Discovery API path to unified format")
+            # Fallback to simple formatting
+            formatted_path = _format_discovery_api_path_fallback(discovery_api_response, selected_name, owner_name)
+            logger.debug("Discovery API path constructed using fallback formatter")
+            return formatted_path
+    except Exception as e:
+        logger.error(f"Error formatting Discovery API path: {e}", exc_info=True)
+        # Fallback to simple formatting
+        formatted_path = _format_discovery_api_path_fallback(discovery_api_response, selected_name, owner_name)
+        logger.debug(f"Discovery API path constructed using fallback formatter after error: {e}")
+        return formatted_path
+
+
+def _handle_discovery_api_call(
+    session_manager_local: SessionManager,
+    base_url: str,
+    selected_person_global_id: str,
+    owner_profile_id_str: str,
+    selected_name: str,
+    owner_name: str,
+) -> Tuple[Optional[str], bool, str]:
+    """Handle Discovery Relationship API call and formatting."""
+    api_called_for_rel = "Discovery Relationship API"
+    logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
+
+    sp_global_id_str = str(selected_person_global_id)
+    op_id_str = str(owner_profile_id_str)
+
+    discovery_api_response = call_discovery_relationship_api(
+        session_manager_local,
+        sp_global_id_str,
+        op_id_str,
+        base_url,
+        timeout=30,
+    )
+
+    if not discovery_api_response or not isinstance(discovery_api_response, dict):
+        logger.warning(f"{api_called_for_rel} API call failed or returned invalid data.")
+        return f"(Failed to retrieve or parse data from {api_called_for_rel} API)", False, api_called_for_rel
+
+    # Format the path
+    formatted_path = _format_discovery_api_path(discovery_api_response, selected_name, owner_name)
+
+    # Check for message in API response if no path was found
+    if "message" in discovery_api_response and not formatted_path:
+        formatted_path = f"(Discovery API: {discovery_api_response.get('message', 'No direct path found')})"
+        logger.warning(f"Discovery API response: {formatted_path}")
+    elif not formatted_path:
+        formatted_path = "(Discovery API: Path data missing or in unexpected format)"
+        logger.warning(f"Discovery API response structure unexpected: {discovery_api_response}")
+
+    return formatted_path, True, api_called_for_rel
+
+
 def _handle_supplementary_info_phase(
     person_research_data: Optional[Dict],
     selected_candidate_processed: Dict,
@@ -2089,271 +2315,33 @@ def _handle_supplementary_info_phase(
     )
 
     # Initialize relationship calculation variables
-    relationship_result_data = None
     api_called_for_rel = "None"
     formatted_path = None
     calculation_performed = False
 
     # --- Directly Call API and Format/Print Relationship ---
     if is_owner:
-        # No API call needed, print message directly
-        print(f"=== Relationship Path to {owner_name} ===")
-        print(f"  {selected_name} is the tree owner ({owner_name}).")
-        logger.info(
-            f"{selected_name} is Tree Owner. No relationship path calculation needed."
-        )
-        calculation_performed = True  # Technically, a "calculation" of "is owner"
-        # formatted_path can remain None, or set to a specific string if preferred.
-        formatted_path = f"{selected_name} is the tree owner."
+        formatted_path, calculation_performed = _handle_owner_relationship(selected_name, owner_name)
 
     elif can_calc_tree_ladder:
-        api_called_for_rel = "Tree Ladder (/getladder)"
-        logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
-        # API URL is printed by call_getladder_api itself
-        # Ensure IDs are strings for the API call
-        sp_tree_id_str = str(selected_person_tree_id)  # Person's ID in the tree
-        ot_id_str = str(owner_tree_id_str)  # The tree ID they are both in
-
-        # Get the ladder API URL for logging purposes
-        ladder_api_url = f"{base_url}/family-tree/person/tree/{ot_id_str}/person/{sp_tree_id_str}/getladder?callback=no"
-        logger.debug(f"\nLadder API URL: {ladder_api_url}\n")
-
-        relationship_result_data = call_getladder_api(
-            session_manager_local, ot_id_str, sp_tree_id_str, base_url
+        formatted_path, calculation_performed, api_called_for_rel = _handle_tree_ladder_api_call(
+            session_manager_local,
+            base_url,
+            owner_tree_id_str,
+            selected_person_tree_id,
+            selected_name,
+            owner_name,
         )
-        if relationship_result_data:  # Successfully got data (string HTML/JSONP)
-            calculation_performed = True
-            if callable(format_api_relationship_path):
-                try:
-                    # First, convert the JSONP response to a proper dictionary
-                    # The response is in the format: no({...}) where ... is the JSON data
-                    jsonp_match = re.search(r"no\((.*)\)", relationship_result_data)
-                    if jsonp_match:
-                        json_str = jsonp_match.group(1)
-                        try:
-                            json_data = json.loads(json_str)
-                            # Create a dictionary with the HTML content and status
-                            api_response_dict = {
-                                "html": json_data.get("html", ""),
-                                "status": json_data.get("status", "unknown"),
-                                "message": json_data.get("message", ""),
-                            }
-
-                            # Use the unified relationship path formatter
-                            sn_str = str(selected_name) if selected_name else "Unknown"
-                            on_str = str(owner_name) if owner_name else "Unknown"
-
-                            # First extract relationship data from the API response
-                            relationship_data = []
-
-                            # Use the standard API relationship path formatter to get the raw data
-                            raw_formatted_path = format_api_relationship_path(
-                                api_response_dict, on_str, sn_str
-                            )
-
-                            # Log the raw formatted path for debugging
-                            logger.debug(
-                                f"Raw formatted path from format_api_relationship_path:\n{raw_formatted_path}"
-                            )
-
-                            # Extract relationship data from the HTML content
-                            try:
-                                # Parse the HTML content to extract relationship data
-                                html_content = api_response_dict.get("html", "")
-                                if html_content and isinstance(html_content, str):
-                                    # Use BeautifulSoup to parse the HTML
-                                    soup = BeautifulSoup(html_content, "html.parser")
-
-                                    # Find all list items
-                                    list_items = soup.find_all("li")
-                                    for item in list_items:
-                                        # Skip icon items
-                                        if item.get("aria-hidden") == "true":
-                                            continue
-
-                                        # Extract name, relationship, and lifespan
-                                        name_elem = item.find("b")
-                                        name = (
-                                            name_elem.get_text()
-                                            if name_elem
-                                            else item.get_text()
-                                        )
-
-                                        # Extract relationship description
-                                        rel_elem = item.find("i")
-                                        relationship = (
-                                            rel_elem.get_text() if rel_elem else ""
-                                        )
-
-                                        # Extract lifespan
-                                        text = item.get_text()
-                                        lifespan_match = re.search(
-                                            r"(\d{4})-(\d{4}|\-)", text
-                                        )
-                                        lifespan = (
-                                            lifespan_match.group(0)
-                                            if lifespan_match
-                                            else ""
-                                        )
-
-                                        relationship_data.append(
-                                            {
-                                                "name": name,
-                                                "relationship": relationship,
-                                                "lifespan": lifespan,
-                                            }
-                                        )
-
-                                # Convert the API data to the unified format
-                                unified_path = convert_api_path_to_unified_format(
-                                    relationship_data, sn_str
-                                )
-
-                                # Format the path using the unified formatter
-                                formatted_path = format_relationship_path_unified(
-                                    unified_path, sn_str, on_str, None
-                                )
-
-                                # We don't need to manually add birth/death years anymore
-                                # The unified formatter handles this automatically
-                            except Exception as e:
-                                logger.error(
-                                    f"Error formatting relationship path: {e}",
-                                    exc_info=True,
-                                )
-                                # Fall back to the raw formatted path if conversion fails
-                                formatted_path = raw_formatted_path
-                        except json.JSONDecodeError as json_err:
-                            logger.error(f"Error parsing JSON from JSONP: {json_err}")
-                            formatted_path = (
-                                f"(Error parsing JSON from JSONP: {json_err})"
-                            )
-                    else:
-                        logger.error("JSONP format not recognized")
-                        formatted_path = "(JSONP format not recognized)"
-                except Exception as fmt_err:
-                    logger.error(
-                        f"Error formatting {api_called_for_rel} data: {fmt_err}",
-                        exc_info=True,
-                    )
-                    formatted_path = f"(Error formatting relationship path from {api_called_for_rel}: {fmt_err})"
-                # End of try/except
-            else:  # format_api_relationship_path not callable (should not happen with guards)
-                logger.error("format_api_relationship_path function not available.")
-                formatted_path = (
-                    "(Error: Formatting function for relationship path unavailable)"
-                )
-            # End of if/else callable
-        else:  # call_getladder_api failed or returned None
-            logger.warning(f"{api_called_for_rel} API call failed or returned no data.")
-            formatted_path = f"(Failed to retrieve data from {api_called_for_rel} API)"
-        # End of if/else relationship_result_data
 
     elif can_calc_discovery_api:
-        # This branch is for when Tree Ladder cannot be used (e.g., different trees, or selected person is not in owner's tree)
-        # but global IDs are available.
-        api_called_for_rel = "Discovery Relationship API"
-        logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
-        # API URL is printed by call_discovery_relationship_api itself
-        sp_global_id_str = str(selected_person_global_id)
-        op_id_str = str(owner_profile_id_str)  # Ensure it's a string
-
-        # Call the Discovery API with timeout parameter
-        discovery_api_response = call_discovery_relationship_api(
+        formatted_path, calculation_performed, api_called_for_rel = _handle_discovery_api_call(
             session_manager_local,
-            sp_global_id_str,
-            op_id_str,
             base_url,
-            timeout=30,  # Use a 30-second timeout for this API call
+            selected_person_global_id,
+            owner_profile_id_str,
+            selected_name,
+            owner_name,
         )
-
-        if discovery_api_response and isinstance(discovery_api_response, dict):
-            calculation_performed = True
-            # Use the unified relationship path formatter for Discovery API
-            try:
-                # Convert the Discovery API response to the unified format
-                unified_path = convert_discovery_api_path_to_unified_format(
-                    discovery_api_response, selected_name
-                )
-
-                # Format the path using the unified formatter
-                if unified_path:
-                    formatted_path = format_relationship_path_unified(
-                        unified_path, selected_name, owner_name, None
-                    )
-                    logger.debug(
-                        "Discovery API path formatted using unified formatter"
-                    )
-                else:
-                    logger.warning(
-                        "Failed to convert Discovery API path to unified format"
-                    )
-                    # Fallback to simple formatting
-                    path_steps = discovery_api_response.get("path", [])
-                    path_display_lines = [f"  {selected_name}"]
-                    name_formatter_local = (
-                        format_name
-                        if callable(format_name)
-                        else lambda x: str(x).title()
-                    )
-                    # _get_relationship_term is not available here, so use raw relationship string
-                    for step in path_steps:
-                        step_name_raw = step.get("name", "?")
-                        step_rel_raw = step.get(
-                            "relationship", "related to"
-                        ).capitalize()
-                        path_display_lines.append(
-                            f"  -> {step_rel_raw} is {name_formatter_local(step_name_raw)}"
-                        )
-                    # End of for
-                    path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
-                    formatted_path = "\n".join(path_display_lines)
-                    logger.debug(
-                        "Discovery API path constructed using fallback formatter"
-                    )
-            except Exception as e:
-                logger.error(f"Error formatting Discovery API path: {e}", exc_info=True)
-                # Fallback to simple formatting
-                path_steps = discovery_api_response.get("path", [])
-                path_display_lines = [f"  {selected_name}"]
-                name_formatter_local = (
-                    format_name if callable(format_name) else lambda x: str(x).title()
-                )
-                for step in path_steps:
-                    step_name_raw = step.get("name", "?")
-                    step_rel_raw = step.get("relationship", "related to").capitalize()
-                    path_display_lines.append(
-                        f"  -> {step_rel_raw} is {name_formatter_local(step_name_raw)}"
-                    )
-                # End of for
-                path_display_lines.append(f"  -> {owner_name} (Tree Owner / You)")
-                formatted_path = "\n".join(path_display_lines)
-                logger.debug(
-                    f"Discovery API path constructed using fallback formatter after error: {e}"
-                )
-            # End of try/except
-
-            # Check for message in the API response if no path was found
-            if "message" in discovery_api_response and not formatted_path:
-                formatted_path = f"(Discovery API: {discovery_api_response.get('message', 'No direct path found')})"
-                logger.warning(f"Discovery API response: {formatted_path}")
-            elif not formatted_path:
-                formatted_path = (
-                    "(Discovery API: Path data missing or in unexpected format)"
-                )
-                logger.warning(
-                    f"Discovery API response structure unexpected: {discovery_api_response}"
-                )
-            # End of if/elif/else path processing
-        else:  # call_discovery_relationship_api failed or returned non-dict
-            logger.warning(
-                f"{api_called_for_rel} API call failed or returned invalid data."
-            )
-            formatted_path = (
-                f"(Failed to retrieve or parse data from {api_called_for_rel} API)"
-            )
-        # End of if/else discovery_api_response
-    # End of if/elif/elif for calculation method
 
     # --- Print Final Result or Failure Message ---
     # A blank line is already added by the initial header print if family info was displayed.
