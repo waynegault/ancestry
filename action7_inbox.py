@@ -645,6 +645,112 @@ class InboxProcessor:
 
     # End of _format_context_for_ai
 
+    def _lookup_person_in_db(
+        self, session: DbSession, profile_id: str, log_ref: str
+    ) -> Optional[Person]:
+        """Look up person in database by profile ID."""
+        try:
+            person = (
+                session.query(Person)
+                .filter(
+                    func.upper(Person.profile_id) == profile_id.upper(),
+                    Person.deleted_at.is_(None),
+                )
+                .first()
+            )
+            return person
+        except SQLAlchemyError as e:
+            logger.error(f"DB error looking up Person {log_ref}: {e}", exc_info=True)
+            return None
+
+    def _update_existing_person(
+        self, session: DbSession, person: Person, username_to_use: str, profile_id: str, log_ref: str
+    ) -> Literal["updated", "skipped", "error"]:
+        """Update existing person record if needed."""
+        updated = False
+
+        # Update username if needed
+        formatted_username = format_name(username_to_use)
+        current_username = safe_column_value(person, "username", "Unknown")
+        if current_username == "Unknown" or current_username != formatted_username:
+            logger.debug(
+                f"Updating username for {log_ref} from '{current_username}' to '{formatted_username}'."
+            )
+            person.username = formatted_username
+            updated = True
+
+        # Update message link if needed
+        correct_message_link = urljoin(
+            getattr(config_schema.api, "base_url", ""),
+            f"/messaging/?p={profile_id.upper()}",
+        )
+        current_message_link = safe_column_value(person, "message_link", None)
+        if current_message_link != correct_message_link:
+            logger.debug(f"Updating message link for {log_ref}.")
+            person.message_link = correct_message_link
+            updated = True
+
+        if updated:
+            person.updated_at = datetime.now(timezone.utc)
+            try:
+                session.add(person)
+                session.flush()
+                logger.debug(f"Successfully staged updates for Person {log_ref} (ID: {person.id}).")
+                return "updated"
+            except (IntegrityError, SQLAlchemyError) as upd_err:
+                logger.error(f"DB error flushing update for Person {log_ref}: {upd_err}")
+                session.rollback()
+                return "error"
+
+        return "skipped"
+
+    def _create_new_person(
+        self, session: DbSession, profile_id: str, username_to_use: str, log_ref: str
+    ) -> tuple[Optional[Person], Literal["new", "error"]]:
+        """Create new person record in database."""
+        logger.debug(f"Person {log_ref} not found. Creating new record...")
+
+        new_person_data = {
+            "profile_id": profile_id.upper(),
+            "username": format_name(username_to_use),
+            "message_link": urljoin(
+                getattr(config_schema.api, "base_url", ""),
+                f"/messaging/?p={profile_id.upper()}",
+            ),
+            "status": PersonStatusEnum.ACTIVE,
+            "first_name": None,
+            "contactable": True,
+            "last_logged_in": None,
+            "administrator_profile_id": None,
+            "administrator_username": None,
+            "gender": None,
+            "birth_year": None,
+            "in_my_tree": False,
+            "uuid": None,
+        }
+
+        try:
+            new_person = Person(**new_person_data)
+            session.add(new_person)
+            session.flush()
+
+            if safe_column_value(new_person, "id") is None:
+                logger.error(f"ID not assigned after flush for new person {log_ref}! Rolling back.")
+                session.rollback()
+                return None, "error"
+
+            logger.debug(f"Created new Person ID {new_person.id} for {log_ref}.")
+            return new_person, "new"
+
+        except (IntegrityError, SQLAlchemyError) as create_err:
+            logger.error(f"DB error creating Person {log_ref}: {create_err}")
+            session.rollback()
+            return None, "error"
+        except Exception as e:
+            logger.critical(f"Unexpected error creating Person {log_ref}: {e}", exc_info=True)
+            session.rollback()
+            return None, "error"
+
     def _lookup_or_create_person(
         self,
         session: DbSession,
@@ -655,8 +761,7 @@ class InboxProcessor:
     ) -> tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
         """
         Looks up a Person by profile_id. If found, checks for updates (username,
-        message_link). If not found, creates a new Person record, fetching additional
-        profile details (first name, contactable, last login) via API if possible.
+        message_link). If not found, creates a new Person record.
 
         Args:
             session: The active SQLAlchemy database session.
@@ -670,155 +775,32 @@ class InboxProcessor:
             - The found or newly created Person object (or None on error).
             - A status string: 'new', 'updated', 'skipped', 'error'.
         """
-        # Step 1: Basic validation
+        # Validate input
         if not profile_id or profile_id == "UNKNOWN":
             logger.warning("_lookup_or_create_person: Invalid profile_id provided.")
             return None, "error"
-        username_to_use = username or "Unknown"  # Ensure username is not None
+
+        username_to_use = username or "Unknown"
         log_ref = f"ProfileID={profile_id}/User='{username_to_use}' (ConvID: {conversation_id or 'N/A'})"
 
-        person: Optional[Person] = None
-        status: Literal["new", "updated", "skipped", "error"] = (
-            "error"  # Default status
-        )
-
-        # Step 2: Determine if lookup is needed or use prefetched person
+        # Get or lookup person
         if existing_person_arg:
             person = existing_person_arg
-            # Using prefetched Person (removed verbose debug)
         else:
-            # If not prefetched, query DB by profile ID
-            try:
-                # Prefetched person not found - querying DB (removed verbose debug)
-                # Robust lookup: match by normalized profile_id (uppercase)
-                person = (
-                    session.query(Person)
-                    .filter(
-                        func.upper(Person.profile_id) == profile_id.upper(),
-                        Person.deleted_at.is_(None),
-                    )
-                    .first()
-                )
-            except SQLAlchemyError as e:
-                logger.error(
-                    f"DB error looking up Person {log_ref}: {e}", exc_info=True
-                )
-                return None, "error"  # DB error during lookup
+            person = self._lookup_person_in_db(session, profile_id, log_ref)
+            if person is None and not existing_person_arg:
+                # DB error occurred during lookup
+                return None, "error"
 
-        # Step 3: Process based on whether person was found
+        # Process based on whether person exists
         if person:
-            # --- Person Exists: Check for Updates ---
-            updated = False
-            # Update username only if current is 'Unknown' or different (use formatted name)
-            formatted_username = format_name(username_to_use)
-            current_username = safe_column_value(person, "username", "Unknown")
-            if current_username == "Unknown" or current_username != formatted_username:
-                logger.debug(
-                    f"Updating username for {log_ref} from '{current_username}' to '{formatted_username}'."
-                )
-                person.username = formatted_username
-                updated = True
-            # Update message link if missing or different
-            correct_message_link = urljoin(
-                getattr(config_schema.api, "base_url", ""),
-                f"/messaging/?p={profile_id.upper()}",
-            )
-            current_message_link = safe_column_value(person, "message_link", None)
-            if current_message_link != correct_message_link:
-                logger.debug(f"Updating message link for {log_ref}.")
-                person.message_link = correct_message_link
-                updated = True
-            # Optional: Add logic here to fetch details and update other fields if they are NULL
-
-            if updated:
-                person.updated_at = datetime.now(timezone.utc)  # Set update timestamp
-                try:
-                    session.add(person)  # Ensure updates are staged
-                    session.flush()  # Apply update within the transaction
-                    status = "updated"
-                    logger.debug(
-                        f"Successfully staged updates for Person {log_ref} (ID: {person.id})."
-                    )
-                except (IntegrityError, SQLAlchemyError) as upd_err:
-                    logger.error(
-                        f"DB error flushing update for Person {log_ref}: {upd_err}"
-                    )
-                    session.rollback()  # Rollback on flush error
-                    return None, "error"
-            else:
-                status = "skipped"  # No updates needed
-                # logger.debug(f"No updates needed for existing Person {log_ref} (ID: {person.id}).")
-
+            status = self._update_existing_person(session, person, username_to_use, profile_id, log_ref)
+            if status == "error":
+                return None, "error"
+            return person, status
         else:
-            # --- Person Not Found: Create New ---
-            logger.debug(f"Person {log_ref} not found. Creating new record...")
-            # Skip fetching additional details via API (function no longer available)
-            profile_details = None
-
-            # Prepare data for new Person object
-            new_person_data = {
-                "profile_id": profile_id.upper(),
-                "username": format_name(username_to_use),  # Use formatted username
-                "message_link": urljoin(
-                    getattr(config_schema.api, "base_url", ""),
-                    f"/messaging/?p={profile_id.upper()}",
-                ),
-                "status": PersonStatusEnum.ACTIVE,  # Default status
-                # Initialize other fields to defaults or None
-                "first_name": None,
-                "contactable": True,
-                "last_logged_in": None,
-                "administrator_profile_id": None,
-                "administrator_username": None,
-                "gender": None,
-                "birth_year": None,
-                "in_my_tree": False,
-                "uuid": None,  # UUID might be added later by Action 6
-            }
-            # Populate with fetched details if available
-            if profile_details:
-                logger.debug(
-                    f"Populating new person {log_ref} with fetched profile details."
-                )
-                new_person_data["first_name"] = profile_details.get("first_name")
-                new_person_data["contactable"] = bool(
-                    profile_details.get("contactable", False)
-                )  # Default False if fetch fails
-                new_person_data["last_logged_in"] = profile_details.get(
-                    "last_logged_in_dt"
-                )
-            else:
-                logger.debug(
-                    f"Could not fetch profile details for new person {log_ref}. Using defaults."
-                )
-
-            # Create and add the new Person
-            try:
-                new_person = Person(**new_person_data)
-                session.add(new_person)
-                session.flush()  # Flush to get ID assigned immediately
-                if safe_column_value(new_person, "id") is None:
-                    logger.error(
-                        f"ID not assigned after flush for new person {log_ref}! Rolling back."
-                    )
-                    session.rollback()
-                    return None, "error"
-                person = new_person  # Assign the newly created person object
-                status = "new"
-                logger.debug(f"Created new Person ID {person.id} for {log_ref}.")
-            except (IntegrityError, SQLAlchemyError) as create_err:
-                logger.error(f"DB error creating Person {log_ref}: {create_err}")
-                session.rollback()  # Rollback on creation error
-                return None, "error"
-            except Exception as e:
-                logger.critical(
-                    f"Unexpected error creating Person {log_ref}: {e}", exc_info=True
-                )
-                session.rollback()
-                return None, "error"
-
-        # Step 4: Return the person object and status
-        return person, status
+            person, status = self._create_new_person(session, profile_id, username_to_use, log_ref)
+            return person, status
 
     # End of _lookup_or_create_person
 
