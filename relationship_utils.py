@@ -656,44 +656,14 @@ def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]
         return []
 
 
-def format_api_relationship_path(
-    api_response_data: Union[str, dict, None],
-    owner_name: str,
-    target_name: str,
-    relationship_type: str = "relative",
-) -> str:
-    """
-    Parses relationship data from Ancestry APIs and formats it into a readable path.
-    Handles getladder API HTML/JSONP response.
-    Uses format_name and ordinal_case from utils.py.
+def _try_json_api_format(json_data: Optional[dict], target_name: str, owner_name: str) -> Optional[str]:
+    """Try to format relationship from Discovery API JSON format."""
+    if not json_data:
+        return None
+    return _format_discovery_api_path(json_data, target_name, owner_name)
 
-    The output format is standardized to match the unified format:
-
-    ===Relationship Path to Owner Name===
-    Target Name (birth-death) is Owner Name's relationship:
-
-    - Person 1's relationship is Person 2 (birth-death)
-    - Person 2's relationship is Person 3 (birth-death)
-    ...
-    """
-    # Validate input
-    if not api_response_data:
-        logger.warning("format_api_relationship_path: Received empty API response data.")
-        return "(No relationship data received from API)"
-
-    # Extract HTML and JSON from response
-    html_content_raw, json_data = _extract_html_from_response(api_response_data)
-
-    if html_content_raw is None and json_data is None:
-        return "(Error parsing API response)"
-
-    # Try Discovery API JSON format first
-    if json_data:
-        discovery_result = _format_discovery_api_path(json_data, target_name, owner_name)
-        if discovery_result:
-            return discovery_result
-
-    # Check if we have HTML content
+def _try_html_formats(html_content_raw: Optional[str], target_name: str, owner_name: str, relationship_type: str) -> str:
+    """Try to format relationship from HTML content."""
     if not html_content_raw:
         logger.warning("No HTML content found in API response.")
         return "(No relationship HTML content found in API response)"
@@ -720,9 +690,45 @@ def format_api_relationship_path(
     if not unified_path:
         return "(Error: Could not convert relationship data to unified format)"
 
-    return format_relationship_path_unified(
-        unified_path, target_name, owner_name, relationship_type
-    )
+    return format_relationship_path_unified(unified_path, target_name, owner_name, relationship_type)
+
+def format_api_relationship_path(
+    api_response_data: Union[str, dict, None],
+    owner_name: str,
+    target_name: str,
+    relationship_type: str = "relative",
+) -> str:
+    """
+    Parses relationship data from Ancestry APIs and formats it into a readable path.
+    Handles getladder API HTML/JSONP response.
+    Uses format_name and ordinal_case from utils.py.
+
+    The output format is standardized to match the unified format:
+
+    ===Relationship Path to Owner Name===
+    Target Name (birth-death) is Owner Name's relationship:
+
+    - Person 1's relationship is Person 2 (birth-death)
+    - Person 2's relationship is Person 3 (birth-death)
+    ...
+    """
+    if not api_response_data:
+        logger.warning("format_api_relationship_path: Received empty API response data.")
+        return "(No relationship data received from API)"
+
+    # Extract HTML and JSON from response
+    html_content_raw, json_data = _extract_html_from_response(api_response_data)
+
+    if html_content_raw is None and json_data is None:
+        return "(Error parsing API response)"
+
+    # Try Discovery API JSON format first
+    json_result = _try_json_api_format(json_data, target_name, owner_name)
+    if json_result:
+        return json_result
+
+    # Try HTML formats
+    return _try_html_formats(html_content_raw, target_name, owner_name, relationship_type)
 
 
 def convert_gedcom_path_to_unified_format(
