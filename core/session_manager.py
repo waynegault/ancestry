@@ -1220,6 +1220,91 @@ class SessionManager:
 
         return False
 
+    def _check_browser_basic_health(self) -> Optional[str]:
+        """
+        Check basic browser health (session, URL, cookies).
+        Returns "unhealthy" if issues found, None if healthy.
+        """
+        # Check 1: Basic browser session validity
+        if not self.browser_manager.is_session_valid():
+            logger.info("🔍 Browser health check: Session invalid - immediate refresh needed")
+            return "unhealthy"
+
+        # Check 2: Test basic browser responsiveness
+        try:
+            current_url = self.driver.current_url
+            if not current_url or "about:blank" in current_url:
+                logger.info("🔍 Browser health check: Invalid URL state - immediate refresh needed")
+                return "unhealthy"
+        except Exception as url_exc:
+            logger.info(f"🔍 Browser health check: URL access failed - immediate refresh needed: {url_exc}")
+            return "unhealthy"
+
+        # Check 3: Test cookie access
+        try:
+            cookies = self.driver.get_cookies()
+            if not isinstance(cookies, list):
+                logger.info("🔍 Browser health check: Cookie access failed - immediate refresh needed")
+                return "unhealthy"
+        except Exception as cookie_exc:
+            logger.info(f"🔍 Browser health check: Cookie retrieval failed - immediate refresh needed: {cookie_exc}")
+            return "unhealthy"
+
+        return None  # All basic checks passed
+
+    def _check_browser_advanced_health(self, current_url: str) -> Optional[str]:
+        """
+        Check advanced browser health (domain, JavaScript, service).
+        Returns "unhealthy" if issues found, None if healthy.
+        """
+        # Check 4: Verify we're on the correct domain
+        try:
+            base_url = config_schema.api.base_url
+            if base_url and not current_url.startswith(base_url):
+                logger.info(f"🔍 Browser health check: Wrong domain ({current_url}) - refresh needed")
+                return "unhealthy"
+        except Exception:
+            pass  # Non-critical check
+
+        # Check 5: Test JavaScript execution capability
+        try:
+            js_result = self.driver.execute_script("return document.readyState;")
+            if js_result != "complete":
+                logger.info(f"🔍 Browser health check: Page not ready ({js_result}) - refresh needed")
+                return "unhealthy"
+        except Exception as js_exc:
+            logger.info(f"🔍 Browser health check: JavaScript execution failed - refresh needed: {js_exc}")
+            return "unhealthy"
+
+        # Check 6: Verify browser process is still running
+        try:
+            if hasattr(self.driver, 'service') and hasattr(self.driver.service, 'is_connectable'):
+                if not self.driver.service.is_connectable():
+                    logger.info("🔍 Browser health check: Service not connectable - refresh needed")
+                    return "unhealthy"
+        except Exception:
+            pass  # Non-critical check
+
+        return None  # All advanced checks passed
+
+    def _assess_browser_freshness(self) -> str:
+        """
+        Assess if browser is fresh enough to skip refresh.
+        Returns "healthy_skip_refresh" or "healthy_allow_refresh".
+        """
+        current_time = time.time()
+        browser_age = current_time - self.browser_health_monitor['browser_start_time']
+        pages_processed = self.browser_health_monitor['pages_since_refresh']
+
+        # If browser is very young and hasn't processed many pages, skip refresh
+        if browser_age < 600 and pages_processed < 10:  # Less than 10 minutes and 10 pages
+            logger.debug("🔍 Browser health check: Browser is very healthy and young - skip refresh")
+            return "healthy_skip_refresh"
+
+        # All health checks passed - browser is healthy but allow refresh based on other criteria
+        logger.debug("🔍 Browser health check: All checks passed - browser is healthy, allow refresh")
+        return "healthy_allow_refresh"
+
     def _browser_health_precheck(self) -> str:
         """
         Perform comprehensive browser health assessment to determine refresh necessity.
@@ -1230,72 +1315,21 @@ class SessionManager:
                  "healthy_allow_refresh" if browser is healthy but refresh can proceed based on other criteria
         """
         try:
-            # Check 1: Basic browser session validity
-            if not self.browser_manager.is_session_valid():
-                logger.info("🔍 Browser health check: Session invalid - immediate refresh needed")
+            # Check basic browser health
+            basic_health = self._check_browser_basic_health()
+            if basic_health == "unhealthy":
                 return "unhealthy"
 
-            # Check 2: Test basic browser responsiveness
-            try:
-                current_url = self.driver.current_url
-                if not current_url or "about:blank" in current_url:
-                    logger.info("🔍 Browser health check: Invalid URL state - immediate refresh needed")
-                    return "unhealthy"
-            except Exception as url_exc:
-                logger.info(f"🔍 Browser health check: URL access failed - immediate refresh needed: {url_exc}")
+            # Get current URL for advanced checks
+            current_url = self.driver.current_url
+
+            # Check advanced browser health
+            advanced_health = self._check_browser_advanced_health(current_url)
+            if advanced_health == "unhealthy":
                 return "unhealthy"
 
-            # Check 3: Test cookie access (this was the failing operation in the error logs)
-            try:
-                cookies = self.driver.get_cookies()
-                if not isinstance(cookies, list):
-                    logger.info("🔍 Browser health check: Cookie access failed - immediate refresh needed")
-                    return "unhealthy"
-            except Exception as cookie_exc:
-                logger.info(f"🔍 Browser health check: Cookie retrieval failed - immediate refresh needed: {cookie_exc}")
-                return "unhealthy"
-
-            # Check 4: Verify we're on the correct domain
-            try:
-                base_url = config_schema.api.base_url
-                if base_url and not current_url.startswith(base_url):
-                    logger.info(f"🔍 Browser health check: Wrong domain ({current_url}) - refresh needed")
-                    return "unhealthy"
-            except Exception:
-                pass  # Non-critical check
-
-            # Check 5: Test JavaScript execution capability
-            try:
-                js_result = self.driver.execute_script("return document.readyState;")
-                if js_result != "complete":
-                    logger.info(f"🔍 Browser health check: Page not ready ({js_result}) - refresh needed")
-                    return "unhealthy"
-            except Exception as js_exc:
-                logger.info(f"🔍 Browser health check: JavaScript execution failed - refresh needed: {js_exc}")
-                return "unhealthy"
-
-            # Check 6: Verify browser process is still running (if possible)
-            try:
-                if hasattr(self.driver, 'service') and hasattr(self.driver.service, 'is_connectable'):
-                    if not self.driver.service.is_connectable():
-                        logger.info("🔍 Browser health check: Service not connectable - refresh needed")
-                        return "unhealthy"
-            except Exception:
-                pass  # Non-critical check
-
-            # Check 7: Assess if browser is very healthy and refresh can be skipped
-            current_time = time.time()
-            browser_age = current_time - self.browser_health_monitor['browser_start_time']
-            pages_processed = self.browser_health_monitor['pages_since_refresh']
-
-            # If browser is very young and hasn't processed many pages, skip refresh
-            if browser_age < 600 and pages_processed < 10:  # Less than 10 minutes and 10 pages
-                logger.debug("🔍 Browser health check: Browser is very healthy and young - skip refresh")
-                return "healthy_skip_refresh"
-
-            # All health checks passed - browser is healthy but allow refresh based on other criteria
-            logger.debug("🔍 Browser health check: All checks passed - browser is healthy, allow refresh")
-            return "healthy_allow_refresh"
+            # Assess browser freshness
+            return self._assess_browser_freshness()
 
         except Exception as health_exc:
             logger.warning(f"🔍 Browser health check failed with exception - immediate refresh needed: {health_exc}")
