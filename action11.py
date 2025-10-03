@@ -1424,6 +1424,196 @@ def _handle_search_phase(
 
 # End of _handle_search_phase
 
+# Helper functions for _parse_treesui_list_response
+
+def _extract_gid_parts(person_raw: Dict, idx: int) -> Optional[Tuple[str, str]]:
+    """Extract person_id and tree_id from gid field."""
+    gid_data = person_raw.get("gid", {}).get("v", "")
+
+    if not isinstance(gid_data, str) or ":" not in gid_data:
+        logger.warning(f"Item {idx}: Missing or invalid gid data: {gid_data}")
+        return None
+
+    parts = gid_data.split(":")
+    if len(parts) < 3:
+        logger.warning(f"Item {idx}: Invalid gid format: {gid_data}")
+        return None
+
+    person_id = parts[0]
+    tree_id = parts[2]
+    logger.debug(f"Item {idx}: IDs={person_id},{tree_id}")
+    return person_id, tree_id
+
+
+def _extract_name_parts(person_raw: Dict, idx: int) -> Tuple[str, str, str]:
+    """Extract first name, surname, and full name from Names field."""
+    first_name_part = ""
+    surname_part = ""
+    full_name = "Unknown"
+
+    names_list = person_raw.get("Names", [])
+    if not isinstance(names_list, list) or not names_list:
+        logger.warning(f"Item {idx}: Names list issue: {names_list}")
+        return first_name_part, surname_part, full_name
+
+    name_obj = names_list[0]
+    if not isinstance(name_obj, dict):
+        logger.warning(f"Item {idx}: Name obj not dict: {name_obj}")
+        return first_name_part, surname_part, full_name
+
+    first_name_part = name_obj.get("g", "").strip()
+    surname_part = name_obj.get("s", "").strip()
+
+    if first_name_part and surname_part:
+        full_name = f"{first_name_part} {surname_part}"
+    elif first_name_part:
+        full_name = first_name_part
+    elif surname_part:
+        full_name = surname_part
+
+    logger.debug(f"Item {idx}: Name='{full_name}'")
+    return first_name_part, surname_part, full_name
+
+
+def _extract_gender(person_raw: Dict, idx: int) -> Optional[str]:
+    """Extract gender from Genders array or 'l' field."""
+    # Try Genders array first
+    genders_list = person_raw.get("Genders", [])
+    if isinstance(genders_list, list) and genders_list:
+        gender_obj = genders_list[0]
+        if isinstance(gender_obj, dict) and "g" in gender_obj:
+            gender = gender_obj.get("g", "").lower()
+            logger.debug(f"Item {idx}: Gender from Genders array='{gender}'")
+            return gender
+
+    # Fallback to 'l' field
+    gender_flag = person_raw.get("l")
+    if isinstance(gender_flag, bool):
+        gender = "f" if gender_flag else "m"
+        logger.debug(f"Item {idx}: Gender from 'l' field='{gender}'")
+        return gender
+
+    logger.warning(f"Item {idx}: No gender information available")
+    return None
+
+
+def _calculate_place_detail_score(event: Dict) -> int:
+    """Calculate place detail score based on comma count."""
+    place = event.get("p", "")
+    if not place:
+        return 0
+    # Count commas as a simple measure of detail level
+    comma_count = place.count(",")
+    # Add 1 to avoid zero scores for places without commas
+    return comma_count + 1
+
+
+def _select_best_event(events: List[Dict], event_type: str) -> Optional[Dict]:
+    """Select best event from list based on alternate status and place detail."""
+    if not events:
+        return None
+
+    # Prioritize non-alternate events
+    non_alternate_events = [e for e in events if e.get("pa") is False]
+    events_to_process = non_alternate_events if non_alternate_events else events
+
+    # Sort by place detail (higher score first)
+    events_to_process.sort(key=_calculate_place_detail_score, reverse=True)
+
+    return events_to_process[0]
+
+
+def _extract_year_from_date(date_str: Optional[str], idx: int, event_type: str) -> Optional[int]:
+    """Extract year from date string."""
+    if not date_str:
+        return None
+
+    year_match = re.search(r"\b(\d{4})\b", date_str)
+    if year_match:
+        try:
+            return int(year_match.group(1))
+        except ValueError:
+            logger.warning(
+                f"Item {idx}: Bad {event_type} year convert: '{year_match.group(1)}'"
+            )
+    return None
+
+
+def _extract_birth_info(events_list: List[Dict], idx: int) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+    """Extract birth year, date, and place from events list."""
+    birth_events = [e for e in events_list if isinstance(e, dict) and e.get("t") == "Birth"]
+
+    if not birth_events:
+        return None, None, None
+
+    best_birth = _select_best_event(birth_events, "Birth")
+    if not best_birth:
+        return None, None, None
+
+    # Extract date information
+    norm_date = best_birth.get("nd")
+    disp_date = best_birth.get("d")
+    birth_date_str = norm_date if norm_date else disp_date
+
+    # Extract year
+    birth_year = _extract_year_from_date(birth_date_str, idx, "birth")
+
+    # Extract place
+    birth_place = best_birth.get("p", "").strip() if best_birth.get("p") else None
+
+    # Log selection
+    logger.debug(
+        f"Item {idx}: Selected birth event - Date: '{birth_date_str}', "
+        f"Place: '{birth_place}', Year: {birth_year}, "
+        f"Alternate: {best_birth.get('pa')}, "
+        f"Detail score: {_calculate_place_detail_score(best_birth)}"
+    )
+
+    # Log all available birth events if multiple
+    if len(birth_events) > 1:
+        logger.debug(f"Item {idx}: Multiple birth events available ({len(birth_events)}):")
+        for i, event in enumerate(birth_events):
+            logger.debug(
+                f"  Birth event {i+1}: Date: '{event.get('d')}', "
+                f"Place: '{event.get('p')}', "
+                f"Alternate: {event.get('pa')}, "
+                f"Detail score: {_calculate_place_detail_score(event)}"
+            )
+
+    return birth_year, birth_date_str, birth_place
+
+
+def _extract_death_info(events_list: List[Dict], idx: int) -> Tuple[Optional[int], Optional[str], Optional[str], bool]:
+    """Extract death year, date, place, and living status from events list."""
+    death_events = [e for e in events_list if isinstance(e, dict) and e.get("t") == "Death"]
+
+    if not death_events:
+        return None, None, None, True  # is_living = True
+
+    best_death = _select_best_event(death_events, "Death")
+    if not best_death:
+        return None, None, None, True
+
+    # Extract date information
+    norm_date = best_death.get("nd")
+    disp_date = best_death.get("d")
+    death_date_str = norm_date if norm_date else disp_date
+
+    # Extract year
+    death_year = _extract_year_from_date(death_date_str, idx, "death")
+
+    # Extract place
+    death_place = best_death.get("p", "").strip() if best_death.get("p") else None
+
+    # Log selection
+    logger.debug(
+        f"Item {idx}: Selected death event - Date: '{death_date_str}', "
+        f"Place: '{death_place}', Year: {death_year}, "
+        f"Alternate: {best_death.get('pa')}"
+    )
+
+    return death_year, death_date_str, death_place, False  # is_living = False
+
 
 # Parsing (Definition before use in _handle_search_phase)
 def _parse_treesui_list_response(  # type: ignore
@@ -1437,213 +1627,39 @@ def _parse_treesui_list_response(  # type: ignore
     logger.debug(
         f"Parsing {len(treesui_response)} items from TreesUI List API response."
     )
+
     for idx, person_raw in enumerate(treesui_response):
         if not isinstance(person_raw, dict):
             logger.warning(f"Skipping item {idx}: Not dict")
             continue
+
         try:
-            # GID
-            gid_data = person_raw.get("gid", {}).get("v", "")
-            person_id = None
-            tree_id = None
-            if isinstance(gid_data, str) and ":" in gid_data:
-                parts = gid_data.split(":")
-                if len(parts) >= 3:
-                    person_id = parts[0]
-                    tree_id = parts[2]
-                    logger.debug(f"Item {idx}: IDs={person_id},{tree_id}")
-                else:
-                    logger.warning(f"Item {idx}: Invalid gid format: {gid_data}")
-                    continue  # Skip this person if IDs cannot be extracted
-            else:
-                logger.warning(f"Item {idx}: Missing or invalid gid data: {gid_data}")
-                continue  # Skip this person if IDs cannot be extracted
+            # Extract GID parts
+            gid_result = _extract_gid_parts(person_raw, idx)
+            if not gid_result:
+                continue
+            person_id, tree_id = gid_result
 
-            # Name
-            first_name_part = ""
-            surname_part = ""
-            full_name = "Unknown"
-            names_list = person_raw.get("Names", [])
-            if isinstance(names_list, list) and names_list:
-                name_obj = names_list[0]
-                if isinstance(name_obj, dict):
-                    first_name_part = name_obj.get("g", "").strip()
-                    surname_part = name_obj.get("s", "").strip()
-                    if first_name_part and surname_part:
-                        full_name = f"{first_name_part} {surname_part}"
-                    elif first_name_part:
-                        full_name = first_name_part
-                    elif surname_part:
-                        full_name = surname_part
-                    logger.debug(f"Item {idx}: Name='{full_name}'")
-                else:
-                    logger.warning(f"Item {idx}: Name obj not dict: {name_obj}")
-            else:
-                logger.warning(f"Item {idx}: Names list issue: {names_list}")
+            # Extract name parts
+            first_name_part, surname_part, full_name = _extract_name_parts(person_raw, idx)
 
-            # Gender - First try to get from Genders array, then fallback to 'l' field
-            gender = None
-            genders_list = person_raw.get("Genders", [])
-            if isinstance(genders_list, list) and genders_list:
-                gender_obj = genders_list[0]
-                if isinstance(gender_obj, dict) and "g" in gender_obj:
-                    gender = gender_obj.get("g", "").lower()
-                    logger.debug(f"Item {idx}: Gender from Genders array='{gender}'")
+            # Extract gender
+            gender = _extract_gender(person_raw, idx)
 
-            # Fallback to 'l' field if Genders array didn't provide a value
-            if not gender:
-                gender_flag = person_raw.get("l")
-                if isinstance(gender_flag, bool):
-                    gender = "f" if gender_flag else "m"
-                    logger.debug(f"Item {idx}: Gender from 'l' field='{gender}'")
-                else:
-                    logger.warning(f"Item {idx}: No gender information available")
-
-            # Events
-            birth_year = None
-            birth_date_str = None
-            birth_place = None
-            death_year = None
-            death_date_str = None
-            death_place = None
-            is_living = True
+            # Extract events
             events_list = person_raw.get("Events", [])
 
-            # Store all birth events to select the best one
-            birth_events = []
-            death_events = []
-
             if isinstance(events_list, list):
-                # First pass: collect all birth and death events
-                for event in events_list:
-                    if not isinstance(event, dict):
-                        logger.warning(f"Item {idx}: Invalid event item")
-                        continue
+                # Extract birth information
+                birth_year, birth_date_str, birth_place = _extract_birth_info(events_list, idx)
 
-                    event_type = event.get("t")
-                    if event_type == "Birth":
-                        birth_events.append(event)
-                    elif event_type == "Death":
-                        death_events.append(event)
-
-                # Process birth events - prioritize based on completeness and non-alternate status
-                if birth_events:
-                    # Sort birth events by priority:
-                    # 1. Non-alternate events (pa=false) over alternate events (pa=true)
-                    # 2. Events with normalized dates (nd field) over those without
-                    # 3. Events with more detailed place information (more commas in place name)
-
-                    # First, prioritize by alternate status
-                    non_alternate_births = [
-                        e for e in birth_events if e.get("pa") is False
-                    ]
-                    births_to_process = (
-                        non_alternate_births if non_alternate_births else birth_events
-                    )
-
-                    # Then prioritize by place detail (count commas as a simple heuristic for detail)
-                    def place_detail_score(event):
-                        place = event.get("p", "")
-                        if not place:
-                            return 0
-                        # Count commas as a simple measure of detail level
-                        comma_count = place.count(",")
-                        # Add 1 to avoid zero scores for places without commas
-                        return comma_count + 1
-
-                    # Sort by place detail (higher score first)
-                    births_to_process.sort(key=place_detail_score, reverse=True)
-
-                    # Use the highest priority birth event
-                    best_birth = births_to_process[0]
-
-                    # Extract date information
-                    norm_date = best_birth.get("nd")
-                    disp_date = best_birth.get("d")
-                    birth_date_str = norm_date if norm_date else disp_date
-
-                    if birth_date_str:
-                        year_match = re.search(r"\b(\d{4})\b", birth_date_str)
-                        if year_match:
-                            try:
-                                birth_year = int(year_match.group(1))
-                            except ValueError:
-                                logger.warning(
-                                    f"Item {idx}: Bad birth year convert: '{year_match.group(1)}'"
-                                )
-
-                    # Extract place information
-                    birth_place = (
-                        best_birth.get("p", "").strip() if best_birth.get("p") else None
-                    )
-
-                    # Log the selected birth event details
-                    logger.debug(
-                        f"Item {idx}: Selected birth event - Date: '{birth_date_str}', "
-                        f"Place: '{birth_place}', Year: {birth_year}, "
-                        f"Alternate: {best_birth.get('pa')}, "
-                        f"Detail score: {place_detail_score(best_birth)}"
-                    )
-
-                    # Log all available birth events for debugging
-                    if len(birth_events) > 1:
-                        logger.debug(
-                            f"Item {idx}: Multiple birth events available ({len(birth_events)}):"
-                        )
-                        for i, event in enumerate(birth_events):
-                            logger.debug(
-                                f"  Birth event {i+1}: Date: '{event.get('d')}', "
-                                f"Place: '{event.get('p')}', "
-                                f"Alternate: {event.get('pa')}, "
-                                f"Detail score: {place_detail_score(event)}"
-                            )
-
-                # Process death events - similar approach as birth events
-                if death_events:
-                    is_living = False
-
-                    # Prioritize non-alternate death events
-                    non_alternate_deaths = [
-                        e for e in death_events if e.get("pa") is False
-                    ]
-                    deaths_to_process = (
-                        non_alternate_deaths if non_alternate_deaths else death_events
-                    )
-
-                    # Use the same place detail scoring function as for births
-                    deaths_to_process.sort(key=place_detail_score, reverse=True)
-
-                    # Use the highest priority death event
-                    best_death = deaths_to_process[0]
-
-                    # Extract date information
-                    norm_date = best_death.get("nd")
-                    disp_date = best_death.get("d")
-                    death_date_str = norm_date if norm_date else disp_date
-
-                    if death_date_str:
-                        year_match = re.search(r"\b(\d{4})\b", death_date_str)
-                        if year_match:
-                            try:
-                                death_year = int(year_match.group(1))
-                            except ValueError:
-                                logger.warning(
-                                    f"Item {idx}: Bad death year convert: '{year_match.group(1)}'"
-                                )
-
-                    # Extract place information
-                    death_place = (
-                        best_death.get("p", "").strip() if best_death.get("p") else None
-                    )
-
-                    # Log the selected death event details
-                    logger.debug(
-                        f"Item {idx}: Selected death event - Date: '{death_date_str}', "
-                        f"Place: '{death_place}', Year: {death_year}, "
-                        f"Alternate: {best_death.get('pa')}"
-                    )
+                # Extract death information
+                death_year, death_date_str, death_place, is_living = _extract_death_info(events_list, idx)
             else:
                 logger.warning(f"Item {idx}: Events key issue: {events_list}")
+                birth_year = birth_date_str = birth_place = None
+                death_year = death_date_str = death_place = None
+                is_living = True
 
             # Construct suggestion dict
             suggestion = {
