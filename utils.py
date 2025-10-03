@@ -3489,6 +3489,34 @@ def main() -> None:
     # --- Test Runner Helper ---
     test_results: List[Tuple[str, str, str]] = []  # Ensure type hint
 
+    def _validate_test_result(
+        result: Any, expect_none: bool, expected_type: Optional[type]
+    ) -> Tuple[bool, str]:
+        """
+        Validate test result against expectations.
+        Returns (assertion_passed, message).
+        """
+        if expect_none:
+            assertion_passed = result is None
+            message = "" if assertion_passed else f"Expected None, got {type(result)}"
+            return (assertion_passed, message)
+
+        if expected_type is not None:
+            assertion_passed = isinstance(result, expected_type)
+            message = "" if assertion_passed else f"Expected type {expected_type.__name__}, got {type(result)}"
+            return (assertion_passed, message)
+
+        if isinstance(result, bool):
+            assertion_passed = result  # Lambda returned True/False directly
+            message = "" if assertion_passed else "Assertion in test function failed (returned False)"
+            return (assertion_passed, message)
+
+        if result is None:  # Implicit None usually means success if no exception
+            return (True, "")
+
+        # Any other non-None result is treated as PASS if no exception
+        return (True, "")
+
     def _run_test(
         test_name: str, test_func: Callable, *args, **kwargs
     ) -> Tuple[str, str, str]:
@@ -3502,30 +3530,8 @@ def main() -> None:
         try:
             result = test_func(*args, **kwargs)  # Pass cleaned kwargs
 
-            # Determine PASS/FAIL based on result and expectations
-            assertion_passed = False
-            if expect_none:
-                assertion_passed = result is None
-                if not assertion_passed:
-                    message = f"Expected None, got {type(result)}"
-            elif expected_type is not None:
-                assertion_passed = isinstance(result, expected_type)
-                if not assertion_passed:
-                    message = (
-                        f"Expected type {expected_type.__name__}, got {type(result)}"
-                    )
-            elif isinstance(result, bool):
-                assertion_passed = result  # Lambda returned True/False directly
-                if not assertion_passed:
-                    message = "Assertion in test function failed (returned False)"
-            elif result is None:  # Implicit None usually means success if no exception
-                assertion_passed = True
-            elif (
-                result is not None
-            ):  # Any other non-None result is treated as PASS if no exception
-                assertion_passed = True
-            # End of if/elif chain for assertion check
-
+            # Validate test result
+            assertion_passed, message = _validate_test_result(result, expect_none, expected_type)
             status = "PASS" if assertion_passed else "FAIL"
 
         except Exception as e:
