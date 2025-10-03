@@ -604,6 +604,133 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 # end of action 0 (all_but_first_actn)
 
 
+# Helper functions for run_core_workflow_action
+
+def _run_action6_gather(session_manager) -> bool:
+    """Run Action 6: Gather Matches."""
+    logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
+    print("Starting DNA match gathering from page 1...")
+    gather_result = coord_action(session_manager, config, start=1)
+    if gather_result is False:
+        logger.error("Action 6 FAILED.")
+        print("ERROR: Match gathering failed. Check logs for details.")
+        return False
+    logger.info("Action 6 OK.")
+    print("✓ Match gathering completed successfully.")
+    return True
+
+
+def _run_action7_inbox(session_manager) -> bool:
+    """Run Action 7: Search Inbox."""
+    logger.info("--- Running Action 7: Search Inbox ---")
+    inbox_url = urljoin(config.api.base_url, "/messaging/")
+    logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
+
+    try:
+        if not nav_to_page(
+            session_manager.driver,
+            inbox_url,
+            "div.messaging-container",
+            session_manager,
+        ):
+            logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
+            print("ERROR: Could not navigate to inbox page. Check network connection.")
+            return False
+
+        logger.debug("Navigation to inbox page successful.")
+        time.sleep(2)
+
+        logger.debug("Running inbox search...")
+        inbox_processor = InboxProcessor(session_manager=session_manager)
+        search_result = inbox_processor.search_inbox()
+
+        if search_result is False:
+            logger.error("Action 7 FAILED - Inbox search returned failure.")
+            print("ERROR: Inbox search failed. Check logs for details.")
+            return False
+
+        logger.info("Action 7 OK.")
+        print("✓ Inbox search completed successfully.")
+        return True
+
+    except Exception as inbox_error:
+        logger.error(f"Action 7 FAILED with exception: {inbox_error}", exc_info=True)
+        print(f"ERROR during inbox search: {inbox_error}")
+        return False
+
+
+def _run_action9_process_productive(session_manager) -> bool:
+    """Run Action 9: Process Productive Messages."""
+    logger.info("--- Running Action 9: Process Productive Messages ---")
+    logger.debug("Navigating to Base URL for Action 9...")
+
+    try:
+        if not nav_to_page(
+            session_manager.driver,
+            config.api.base_url,
+            WAIT_FOR_PAGE_SELECTOR,
+            session_manager,
+        ):
+            logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
+            print("ERROR: Could not navigate to base URL. Check network connection.")
+            return False
+
+        logger.debug("Navigation to base URL successful. Processing productive messages...")
+        time.sleep(2)
+
+        process_result = process_productive_messages(session_manager)
+
+        if process_result is False:
+            logger.error("Action 9 FAILED - Productive message processing returned failure.")
+            print("ERROR: Productive message processing failed. Check logs for details.")
+            return False
+
+        logger.info("Action 9 OK.")
+        print("✓ Productive message processing completed successfully.")
+        return True
+
+    except Exception as process_error:
+        logger.error(f"Action 9 FAILED with exception: {process_error}", exc_info=True)
+        print(f"ERROR during productive message processing: {process_error}")
+        return False
+
+
+def _run_action8_send_messages(session_manager) -> bool:
+    """Run Action 8: Send Messages."""
+    logger.info("--- Running Action 8: Send Messages ---")
+    logger.debug("Navigating to Base URL for Action 8...")
+
+    try:
+        if not nav_to_page(
+            session_manager.driver,
+            config.api.base_url,
+            WAIT_FOR_PAGE_SELECTOR,
+            session_manager,
+        ):
+            logger.error("Action 8 nav FAILED - Could not navigate to base URL.")
+            print("ERROR: Could not navigate to base URL. Check network connection.")
+            return False
+
+        logger.debug("Navigation to base URL successful. Sending messages...")
+        time.sleep(2)
+
+        send_result = send_messages_to_matches(session_manager)
+
+        if send_result is False:
+            logger.error("Action 8 FAILED - Message sending returned failure.")
+            print("ERROR: Message sending failed. Check logs for details.")
+            return False
+
+        logger.info("Action 8 OK.")
+        print("✓ Message sending completed successfully.")
+        return True
+
+    except Exception as message_error:
+        logger.error(f"Action 8 FAILED with exception: {message_error}", exc_info=True)
+        print(f"ERROR during message sending: {message_error}")
+        return False
+
+
 # Action 1
 def run_core_workflow_action(session_manager, *_):
     """
@@ -611,166 +738,40 @@ def run_core_workflow_action(session_manager, *_):
     Optionally runs Action 6 (Gather) first if configured.
     Relies on exec_actn ensuring session is ready beforehand.
     """
-    # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
         logger.error("Cannot run core workflow: Session not ready.")
         return False
 
     try:
-        # --- Action 6 (Optional) ---
-        # Check if Action 6 should be included in the workflow
+        # Run Action 6 if configured
         run_action6 = config.include_action6_in_workflow
         if run_action6:
-            logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-            print("Starting DNA match gathering from page 1...")
-            # Call the coord_action function which wraps the coord function
-            gather_result = coord_action(session_manager, config, start=1)
-            if gather_result is False:
-                logger.error("Action 6 FAILED.")
-                print("ERROR: Match gathering failed. Check logs for details.")
-                return False
-            logger.info("Action 6 OK.")
-            print("✓ Match gathering completed successfully.")
-
-        # --- Action 7 ---
-        logger.info("--- Running Action 7: Search Inbox ---")
-        inbox_url = urljoin(config.api.base_url, "/messaging/")
-        logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
-
-        # Use a more reliable selector that exists on the messaging page
-        # First try to navigate to the inbox page
-        try:
-            if not nav_to_page(
-                session_manager.driver,
-                inbox_url,
-                "div.messaging-container",  # More general selector for the messaging container
-                session_manager,
-            ):
-                logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
-                print(
-                    "ERROR: Could not navigate to inbox page. Check network connection."
-                )
+            if not _run_action6_gather(session_manager):
                 return False
 
-            logger.debug("Navigation to inbox page successful.")
-
-            # Add a short delay to ensure page is fully loaded
-            time.sleep(2)
-
-            # Now run the inbox processor
-            logger.debug("Running inbox search...")
-            inbox_processor = InboxProcessor(session_manager=session_manager)
-            search_result = inbox_processor.search_inbox()
-
-            if search_result is False:
-                logger.error("Action 7 FAILED - Inbox search returned failure.")
-                print("ERROR: Inbox search failed. Check logs for details.")
-                return False
-            logger.info("Action 7 OK.")
-            print("✓ Inbox search completed successfully.")
-        except Exception as inbox_error:
-            logger.error(
-                f"Action 7 FAILED with exception: {inbox_error}", exc_info=True
-            )
-            print(f"ERROR during inbox search: {inbox_error}")
+        # Run Action 7
+        if not _run_action7_inbox(session_manager):
             return False
 
-        # --- Action 9 ---
-        logger.info("--- Running Action 9: Process Productive Messages ---")
-        logger.debug("Navigating to Base URL for Action 9...")
-
-        try:
-            if not nav_to_page(
-                session_manager.driver,
-                config.api.base_url,
-                WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
-                session_manager,
-            ):
-                logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
-                print(
-                    "ERROR: Could not navigate to base URL. Check network connection."
-                )
-                return False
-
-            logger.debug(
-                "Navigation to base URL successful. Processing productive messages..."
-            )
-
-            # Add a short delay to ensure page is fully loaded
-            time.sleep(2)
-
-            # Process productive messages
-            process_result = process_productive_messages(session_manager)
-
-            if process_result is False:
-                logger.error(
-                    "Action 9 FAILED - Productive message processing returned failure."
-                )
-                print(
-                    "ERROR: Productive message processing failed. Check logs for details."
-                )
-                return False
-            logger.info("Action 9 OK.")
-            print("✓ Productive message processing completed successfully.")
-        except Exception as process_error:
-            logger.error(
-                f"Action 9 FAILED with exception: {process_error}", exc_info=True
-            )
-            print(f"ERROR during productive message processing: {process_error}")
+        # Run Action 9
+        if not _run_action9_process_productive(session_manager):
             return False
 
-        # --- Action 8 ---
-        logger.info("--- Running Action 8: Send Messages ---")
-        logger.debug("Navigating to Base URL for Action 8...")
-
-        try:
-            if not nav_to_page(
-                session_manager.driver,
-                config.api.base_url,
-                WAIT_FOR_PAGE_SELECTOR,  # Use a general page load selector
-                session_manager,
-            ):
-                logger.error("Action 8 nav FAILED - Could not navigate to base URL.")
-                print(
-                    "ERROR: Could not navigate to base URL. Check network connection."
-                )
-                return False
-
-            logger.debug("Navigation to base URL successful. Sending messages...")
-
-            # Add a short delay to ensure page is fully loaded
-            time.sleep(2)
-
-            # send_messages_to_matches expects session_manager
-            send_result = send_messages_to_matches(session_manager)
-
-            if send_result is False:
-                logger.error("Action 8 FAILED - Message sending returned failure.")
-                print("ERROR: Message sending failed. Check logs for details.")
-                return False
-            logger.info("Action 8 OK.")
-            print("✓ Message sending completed successfully.")
-        except Exception as message_error:
-            logger.error(
-                f"Action 8 FAILED with exception: {message_error}", exc_info=True
-            )
-            print(f"ERROR during message sending: {message_error}")
+        # Run Action 8
+        if not _run_action8_send_messages(session_manager):
             return False
 
-        # Determine which actions were run for the success message
+        # Build success message
         action_sequence = []
         if run_action6:
             action_sequence.append("6")
         action_sequence.extend(["7", "9", "8"])
         action_sequence_str = "-".join(action_sequence)
 
-        logger.info(
-            f"Core Workflow (Actions {action_sequence_str}) finished successfully."
-        )
-        print(
-            f"\n✓ Core Workflow (Actions {action_sequence_str}) completed successfully."
-        )
+        logger.info(f"Core Workflow (Actions {action_sequence_str}) finished successfully.")
+        print(f"\n✓ Core Workflow (Actions {action_sequence_str}) completed successfully.")
         return True
+
     except Exception as e:
         logger.error(f"Critical error during core workflow: {e}", exc_info=True)
         print(f"CRITICAL ERROR during core workflow: {e}")
