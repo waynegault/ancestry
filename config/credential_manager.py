@@ -52,7 +52,7 @@ class CredentialManager:
         self._security_manager = None
         self._credentials_cache: Optional[dict[str, str]] = None
 
-    def _get_security_manager(self):
+    def _get_security_manager(self) -> Optional[Any]:
         """Get SecurityManager instance, importing only when needed."""
         if self._security_manager is None:
             try:
