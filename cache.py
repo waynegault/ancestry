@@ -549,6 +549,81 @@ def invalidate_related_caches(
     return results
 
 
+def _collect_base_cache_stats(coordination_stats: dict[str, Any]) -> tuple[int, int]:
+    """Collect base cache statistics. Returns (total_hits, total_requests)."""
+    total_hits = 0
+    total_requests = 0
+
+    try:
+        base_stats = get_cache_stats()
+        coordination_stats["modules"]["base"] = base_stats
+
+        hits = base_stats.get("hits", 0)
+        misses = base_stats.get("misses", 0)
+        total_hits += hits
+        total_requests += hits + misses
+        coordination_stats["total_entries"] += base_stats.get("size", 0)
+        coordination_stats["total_volume"] += base_stats.get("volume", 0)
+    except Exception as e:
+        logger.debug(f"Error getting base cache stats for coordination: {e}")
+        coordination_stats["modules"]["base"] = {"error": str(e)}
+
+    return total_hits, total_requests
+
+
+def _collect_gedcom_cache_stats(coordination_stats: dict[str, Any]) -> None:
+    """Collect GEDCOM cache statistics."""
+    try:
+        from gedcom_cache import get_gedcom_cache_info
+
+        gedcom_stats = get_gedcom_cache_info()
+        coordination_stats["modules"]["gedcom"] = gedcom_stats
+
+        memory_entries = gedcom_stats.get("memory_cache_entries", 0)
+        coordination_stats["total_entries"] += memory_entries
+    except ImportError:
+        coordination_stats["modules"]["gedcom"] = {"status": "not_available"}
+    except Exception as e:
+        logger.debug(f"Error getting GEDCOM cache stats for coordination: {e}")
+        coordination_stats["modules"]["gedcom"] = {"error": str(e)}
+
+
+def _collect_api_cache_stats(coordination_stats: dict[str, Any]) -> None:
+    """Collect API cache statistics."""
+    try:
+        from cache_manager import get_api_cache_stats
+
+        api_stats = get_api_cache_stats()
+        coordination_stats["modules"]["api"] = api_stats
+
+        api_entries = api_stats.get("api_responses_cached", 0)
+        ai_entries = api_stats.get("api_cache_hits", 0)
+        db_entries = api_stats.get("api_cache_misses", 0)
+        coordination_stats["total_entries"] += api_entries + ai_entries + db_entries
+    except ImportError:
+        coordination_stats["modules"]["api"] = {"status": "not_available"}
+    except Exception as e:
+        logger.debug(f"Error getting API cache stats for coordination: {e}")
+        coordination_stats["modules"]["api"] = {"error": str(e)}
+
+
+def _determine_cross_module_health(coordination_stats: dict[str, Any]) -> str:
+    """Determine cross-module health based on available modules."""
+    available_modules = len([
+        m for m in coordination_stats["modules"].values()
+        if "error" not in m and m.get("status") != "not_available"
+    ])
+
+    if available_modules >= 3:
+        return "excellent"
+    elif available_modules >= 2:
+        return "good"
+    elif available_modules >= 1:
+        return "limited"
+    else:
+        return "critical"
+
+
 def get_cache_coordination_stats() -> dict[str, Any]:
     """
     Get comprehensive statistics for cache coordination across modules.
@@ -566,82 +641,16 @@ def get_cache_coordination_stats() -> dict[str, Any]:
     }
 
     # Collect stats from available modules
-    total_hits = 0
-    total_requests = 0
-
-    # Base cache stats
-    try:
-        base_stats = get_cache_stats()
-        coordination_stats["modules"]["base"] = base_stats
-
-        hits = base_stats.get("hits", 0)
-        misses = base_stats.get("misses", 0)
-        total_hits += hits
-        total_requests += hits + misses
-        coordination_stats["total_entries"] += base_stats.get("size", 0)
-        coordination_stats["total_volume"] += base_stats.get("volume", 0)
-
-    except Exception as e:
-        logger.debug(f"Error getting base cache stats for coordination: {e}")
-        coordination_stats["modules"]["base"] = {"error": str(e)}
-
-    # GEDCOM cache stats
-    try:
-        from gedcom_cache import get_gedcom_cache_info
-
-        gedcom_stats = get_gedcom_cache_info()
-        coordination_stats["modules"]["gedcom"] = gedcom_stats
-
-        # Add to totals if available
-        memory_entries = gedcom_stats.get("memory_cache_entries", 0)
-        coordination_stats["total_entries"] += memory_entries
-
-    except ImportError:
-        coordination_stats["modules"]["gedcom"] = {"status": "not_available"}
-    except Exception as e:
-        logger.debug(f"Error getting GEDCOM cache stats for coordination: {e}")
-        coordination_stats["modules"]["gedcom"] = {"error": str(e)}
-
-    # API cache stats
-    try:
-        from cache_manager import get_api_cache_stats
-
-        api_stats = get_api_cache_stats()
-        coordination_stats["modules"]["api"] = api_stats
-
-        # Add to totals if available
-        api_entries = api_stats.get("api_responses_cached", 0)
-        ai_entries = api_stats.get("api_cache_hits", 0)
-        db_entries = api_stats.get("api_cache_misses", 0)
-        coordination_stats["total_entries"] += api_entries + ai_entries + db_entries
-
-    except ImportError:
-        coordination_stats["modules"]["api"] = {"status": "not_available"}
-    except Exception as e:
-        logger.debug(f"Error getting API cache stats for coordination: {e}")
-        coordination_stats["modules"]["api"] = {"error": str(e)}
+    total_hits, total_requests = _collect_base_cache_stats(coordination_stats)
+    _collect_gedcom_cache_stats(coordination_stats)
+    _collect_api_cache_stats(coordination_stats)
 
     # Calculate overall metrics
     if total_requests > 0:
         coordination_stats["overall_hit_rate"] = (total_hits / total_requests) * 100
 
     # Determine cross-module health
-    available_modules = len(
-        [
-            m
-            for m in coordination_stats["modules"].values()
-            if "error" not in m and m.get("status") != "not_available"
-        ]
-    )
-
-    if available_modules >= 3:
-        coordination_stats["cross_module_health"] = "excellent"
-    elif available_modules >= 2:
-        coordination_stats["cross_module_health"] = "good"
-    elif available_modules >= 1:
-        coordination_stats["cross_module_health"] = "limited"
-    else:
-        coordination_stats["cross_module_health"] = "critical"
+    coordination_stats["cross_module_health"] = _determine_cross_module_health(coordination_stats)
 
     return coordination_stats
 
