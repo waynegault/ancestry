@@ -121,7 +121,7 @@ class SessionComponentCache(BaseCacheModule):
     Dramatically reduces session manager initialization time through intelligent component reuse.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._active_sessions: dict[str, weakref.ReferenceType] = {}
         self._session_lock = threading.Lock()
         self._stats = {
@@ -227,7 +227,7 @@ class APICacheManager(BaseCacheModule):
     Handles caching for various API services including Ancestry, AI, and database queries.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._stats = {
             "api_cache_hits": 0,
             "api_cache_misses": 0,
@@ -320,7 +320,7 @@ class SystemCacheManager(BaseCacheModule):
     Extends session cache patterns for system-wide performance optimization.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._memory_stats = {
             "gc_collections": 0,
             "memory_freed_mb": 0.0,
@@ -407,7 +407,7 @@ class UnifiedCacheManager:
     Provides a single interface for session, API, and system caching.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.session_cache = SessionComponentCache()
         self.api_cache = APICacheManager()
         self.system_cache = SystemCacheManager()
