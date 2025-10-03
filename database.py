@@ -780,6 +780,106 @@ def db_transn(session: Session):
 # --- Create ---
 
 
+# Helper functions for create_person
+
+def _validate_person_required_fields(person_data: dict[str, Any]) -> bool:
+    """Validate required fields for person creation."""
+    required_keys = ("username",)
+    if not all(key in person_data and person_data[key] is not None for key in required_keys):
+        logger.warning(f"create_person: Missing required data (username). Data: {person_data}")
+        return False
+    return True
+
+
+def _prepare_person_identifiers(person_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], str, str]:
+    """Prepare and normalize person identifiers."""
+    profile_id_raw = person_data.get("profile_id")
+    profile_id_upper = profile_id_raw.upper() if profile_id_raw else None
+    uuid_raw = person_data.get("uuid")
+    uuid_upper = str(uuid_raw).upper() if uuid_raw else None
+    username = person_data["username"]
+    log_ref = f"UUID={uuid_upper or 'NULL'} / ProfileID={profile_id_upper or 'NULL'} / User='{username}'"
+    return profile_id_upper, uuid_upper, username, log_ref
+
+
+def _check_existing_person(session: Session, profile_id_upper: Optional[str], uuid_upper: Optional[str], log_ref: str) -> bool:
+    """Check if person already exists by profile_id or uuid. Returns True if exists."""
+    if profile_id_upper:
+        existing_by_profile = session.query(Person.id).filter(Person.profile_id == profile_id_upper).scalar()
+        if existing_by_profile:
+            logger.error(f"Create FAILED {log_ref}: Profile ID already exists (ID {existing_by_profile}).")
+            return True
+
+    if uuid_upper:
+        existing_by_uuid = session.query(Person.id).filter(Person.uuid == uuid_upper).scalar()
+        if existing_by_uuid:
+            logger.error(f"Create FAILED {log_ref}: UUID already exists (ID {existing_by_uuid}).")
+            return True
+
+    return False
+
+
+def _prepare_person_datetime(person_data: dict[str, Any]) -> Optional[datetime]:
+    """Prepare datetime field with timezone awareness."""
+    last_logged_in_dt = person_data.get("last_logged_in")
+    if isinstance(last_logged_in_dt, datetime) and last_logged_in_dt.tzinfo is None:
+        return last_logged_in_dt.replace(tzinfo=timezone.utc)
+    return last_logged_in_dt
+
+
+def _prepare_person_status(person_data: dict[str, Any], log_ref: str) -> PersonStatusEnum:
+    """Prepare and validate person status enum."""
+    status_value = person_data.get("status", PersonStatusEnum.ACTIVE)
+
+    if isinstance(status_value, PersonStatusEnum):
+        return status_value
+
+    try:
+        return PersonStatusEnum(str(status_value).upper())
+    except ValueError:
+        logger.warning(f"Invalid status '{status_value}' for {log_ref}, defaulting to ACTIVE.")
+        return PersonStatusEnum.ACTIVE
+
+
+def _build_person_args(person_data: dict[str, Any], uuid_upper: Optional[str], profile_id_upper: Optional[str],
+                       username: str, last_logged_in_dt: Optional[datetime], status_enum: PersonStatusEnum) -> dict[str, Any]:
+    """Build arguments dictionary for Person model."""
+    return {
+        "uuid": uuid_upper,
+        "profile_id": profile_id_upper,
+        "username": username,
+        "administrator_profile_id": (
+            person_data.get("administrator_profile_id", "").upper()
+            if person_data.get("administrator_profile_id")
+            else None
+        ),
+        "administrator_username": person_data.get("administrator_username"),
+        "message_link": person_data.get("message_link"),
+        "in_my_tree": bool(person_data.get("in_my_tree", False)),
+        "status": status_enum,
+        "first_name": person_data.get("first_name"),
+        "gender": person_data.get("gender"),
+        "birth_year": person_data.get("birth_year"),
+        "contactable": bool(person_data.get("contactable", True)),
+        "last_logged_in": last_logged_in_dt,
+    }
+
+
+def _get_person_id_after_creation(session: Session, new_person: Person, log_ref: str) -> int:
+    """Get person ID after creation with error handling."""
+    if new_person.id is None:
+        logger.error(f"ID not assigned after flush for {log_ref}! Rolling back.")
+        session.rollback()
+        return 0
+
+    try:
+        person_id = session.scalar(select(Person.id).where(Person.id == new_person.id))
+        return person_id if person_id is not None else 0
+    except Exception as e:
+        logger.warning(f"Error getting person ID: {e}")
+        return 0
+
+
 def create_person(session: Session, person_data: dict[str, Any]) -> int:
     """
     Creates a new Person record in the database.
@@ -795,139 +895,54 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
         The integer ID of the newly created Person, or 0 on failure or if
         a duplicate (based on UUID or Profile ID) already exists.
     """
-    # Step 1: Basic validation of required fields
-    required_keys = ("username",)  # UUID/ProfileID can be nullable initially
-    if not all(
-        key in person_data and person_data[key] is not None for key in required_keys
-    ):
-        logger.warning(
-            f"create_person: Missing required data (username). Data: {person_data}"
-        )
+    # Step 1: Validate required fields
+    if not _validate_person_required_fields(person_data):
         return 0
 
-    # Step 2: Prepare identifiers and log reference
-    profile_id_raw = person_data.get("profile_id")
-    profile_id_upper = profile_id_raw.upper() if profile_id_raw else None
-    uuid_raw = person_data.get("uuid")
-    uuid_upper = str(uuid_raw).upper() if uuid_raw else None
-    username = person_data["username"]
-    log_ref = f"UUID={uuid_upper or 'NULL'} / ProfileID={profile_id_upper or 'NULL'} / User='{username}'"
+    # Step 2: Prepare identifiers
+    profile_id_upper, uuid_upper, username, log_ref = _prepare_person_identifiers(person_data)
 
-    # Step 3: Pre-check for existing records (improves logging, not strictly necessary due to constraints)
+    # Step 3: Check for existing records
     try:
-        if profile_id_upper:
-            existing_by_profile = (
-                session.query(Person.id)
-                .filter(Person.profile_id == profile_id_upper)
-                .scalar()
-            )
-            if existing_by_profile:
-                logger.error(
-                    f"Create FAILED {log_ref}: Profile ID already exists (ID {existing_by_profile})."
-                )
-                return 0  # Return 0 to indicate failure due to duplicate
-        if uuid_upper:
-            existing_by_uuid = (
-                session.query(Person.id).filter(Person.uuid == uuid_upper).scalar()
-            )
-            if existing_by_uuid:
-                logger.error(
-                    f"Create FAILED {log_ref}: UUID already exists (ID {existing_by_uuid})."
-                )
-                return 0  # Return 0 to indicate failure due to duplicate
+        if _check_existing_person(session, profile_id_upper, uuid_upper, log_ref):
+            return 0
 
-        # Step 4: Prepare data for the new Person object
+        # Step 4: Prepare data for new Person
         logger.debug(f"Proceeding with Person creation for {log_ref}.")
-        # Ensure datetime objects are timezone-aware (UTC)
-        last_logged_in_dt = person_data.get("last_logged_in")
-        if isinstance(last_logged_in_dt, datetime) and last_logged_in_dt.tzinfo is None:
-            last_logged_in_dt = last_logged_in_dt.replace(tzinfo=timezone.utc)
-        # Handle status enum conversion
-        status_value = person_data.get(
-            "status", PersonStatusEnum.ACTIVE
-        )  # Default to ACTIVE
-        if isinstance(status_value, PersonStatusEnum):
-            status_enum = status_value
-        else:
-            try:
-                status_enum = PersonStatusEnum(
-                    str(status_value).upper()
-                )  # Try conversion
-            except ValueError:
-                logger.warning(
-                    f"Invalid status '{status_value}' for {log_ref}, defaulting to ACTIVE."
-                )
-                status_enum = PersonStatusEnum.ACTIVE
+        last_logged_in_dt = _prepare_person_datetime(person_data)
+        status_enum = _prepare_person_status(person_data, log_ref)
+        new_person_args = _build_person_args(person_data, uuid_upper, profile_id_upper, username, last_logged_in_dt, status_enum)
 
-        # Map input data to Person model attributes
-        new_person_args = {
-            "uuid": uuid_upper,
-            "profile_id": profile_id_upper,
-            "username": username,
-            "administrator_profile_id": (
-                person_data.get("administrator_profile_id", "").upper()
-                if person_data.get("administrator_profile_id")
-                else None
-            ),
-            "administrator_username": person_data.get("administrator_username"),
-            "message_link": person_data.get("message_link"),
-            "in_my_tree": bool(person_data.get("in_my_tree", False)),
-            "status": status_enum,
-            "first_name": person_data.get("first_name"),
-            "gender": person_data.get("gender"),
-            "birth_year": person_data.get("birth_year"),
-            "contactable": bool(person_data.get("contactable", True)),  # Default True
-            "last_logged_in": last_logged_in_dt,
-        }
-
-        # Step 5: Create and add the new Person object
+        # Step 5: Create and add the new Person
         new_person = Person(**new_person_args)
         session.add(new_person)
-        session.flush()  # Flush to assign ID and trigger constraints immediately
+        session.flush()
 
-        # Step 6: Verify ID assignment and return
-        if new_person.id is None:
-            # Should not happen if flush succeeds without error, but safety check
-            logger.error(f"ID not assigned after flush for {log_ref}! Rolling back.")
-            session.rollback()  # Explicit rollback on unexpected failure
-            return 0
-        # Get the ID safely using SQLAlchemy's inspection API
-        person_id = 0
-        try:
-            # Use the SQLAlchemy inspection API to get the actual value
-            person_id = session.scalar(
-                select(Person.id).where(Person.id == new_person.id)
-            )
-            if person_id is None:
-                person_id = 0
-        except Exception as e:
-            logger.warning(f"Error getting person ID: {e}")
-            person_id = 0
-
+        # Step 6: Get and return person ID
+        person_id = _get_person_id_after_creation(session, new_person, log_ref)
         logger.debug(f"Created Person ID {person_id} for {log_ref}.")
-        return person_id  # Return the new ID as int
+        return person_id
 
-    # Step 7: Handle specific database errors
+    # Step 7: Handle database errors
     except IntegrityError as ie:
-        # Catch UNIQUE constraint violations (redundant with pre-check but safe)
         session.rollback()
         logger.error(f"IntegrityError create_person {log_ref}: {ie}.", exc_info=False)
-        return 0  # Return 0 on integrity error
+        return 0
     except SQLAlchemyError as e:
         logger.error(f"DB error create_person {log_ref}: {e}", exc_info=True)
         try:
-            session.rollback()  # Attempt rollback
+            session.rollback()
         except Exception:
             pass
-        return 0  # Return 0 on general DB error
+        return 0
     # Step 8: Handle unexpected errors
     except Exception as e:
         logger.critical(f"Unexpected error create_person {log_ref}: {e}", exc_info=True)
         try:
-            session.rollback()  # Attempt rollback
+            session.rollback()
         except Exception:
             pass
-        return 0  # Return 0 on critical error
+        return 0
 
 
 # End of create_person
