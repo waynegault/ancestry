@@ -1335,6 +1335,64 @@ class SessionManager:
             logger.warning(f"🔍 Browser health check failed with exception - immediate refresh needed: {health_exc}")
             return "unhealthy"
 
+    def _perform_browser_warmup(self) -> None:
+        """Perform browser warm-up sequence after refresh."""
+        try:
+            from utils import nav_to_page
+            nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
+            # Prefer built-in CSRF retrieval/precache to avoid attribute errors
+            _ = self.get_csrf()
+            _ = self.get_my_tree_id()
+            nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees")
+        except Exception as warm_exc:
+            logger.debug(f"Warm-up sequence encountered a non-fatal issue: {warm_exc}")
+
+    def _update_browser_health_after_refresh(self, start_time: float) -> None:
+        """Update browser health tracking after successful refresh."""
+        current_time = time.time()
+        self.browser_health_monitor['last_browser_refresh'] = current_time
+        self.browser_health_monitor['browser_start_time'] = current_time
+        old_page_count = self.browser_health_monitor['pages_since_refresh']
+        self.browser_health_monitor['pages_since_refresh'] = 0
+
+        duration = current_time - start_time
+        logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (atomic_browser_replacement)")
+        logger.debug(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s")
+
+    def _attempt_browser_refresh(self, attempt: int, max_attempts: int, start_time: float) -> bool:
+        """
+        Attempt a single browser refresh.
+        Returns True if successful, False otherwise.
+        """
+        logger.debug(f"🔄 Browser refresh attempt {attempt}/{max_attempts}...")
+
+        try:
+            # CRITICAL FIX: Use atomic browser replacement instead of close→sleep→start
+            logger.debug(f"🔄 Attempting atomic browser replacement (attempt {attempt})")
+            success = self._atomic_browser_replacement(f"Proactive Refresh - Attempt {attempt}")
+
+            if not success:
+                logger.warning(f"❌ Browser refresh attempt {attempt}: Atomic browser replacement failed")
+                return False
+
+            # Warm-up sequence to ensure cookies and CSRF are populated
+            self._perform_browser_warmup()
+
+            # Perform full session readiness check
+            session_ready = self.ensure_session_ready(f"Browser Refresh Verification - Attempt {attempt}")
+
+            if session_ready:
+                # Update browser health tracking
+                self._update_browser_health_after_refresh(start_time)
+                return True
+
+            logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
+            return False
+
+        except Exception as attempt_exc:
+            logger.error(f"❌ Browser refresh attempt {attempt} exception: {attempt_exc}")
+            return False
+
     def perform_proactive_browser_refresh(self) -> bool:
         """
         Perform proactive browser refresh to prevent browser death.
@@ -1357,54 +1415,19 @@ class SessionManager:
             logger.debug("🔄 Starting proactive browser refresh...")
 
             for attempt in range(1, max_attempts + 1):
-                logger.debug(f"🔄 Browser refresh attempt {attempt}/{max_attempts}...")
+                # Attempt browser refresh
+                success = self._attempt_browser_refresh(attempt, max_attempts, start_time)
 
-                try:
-                    # CRITICAL FIX: Use atomic browser replacement instead of close→sleep→start
-                    logger.debug(f"🔄 Attempting atomic browser replacement (attempt {attempt})")
-                    success = self._atomic_browser_replacement(f"Proactive Refresh - Attempt {attempt}")
+                if success:
+                    # Clear refresh flag on success
+                    if 'refresh_in_progress' in self.session_health_monitor:
+                        self.session_health_monitor['refresh_in_progress'].clear()
+                    return True
 
-                    if success:
-                        # Warm-up sequence to ensure cookies and CSRF are populated
-                        try:
-                            from utils import nav_to_page
-                            nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
-                            # Prefer built-in CSRF retrieval/precache to avoid attribute errors
-                            _ = self.get_csrf()
-                            _ = self.get_my_tree_id()
-                            nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees")
-                        except Exception as warm_exc:
-                            logger.debug(f"Warm-up sequence encountered a non-fatal issue: {warm_exc}")
-
-                        # Perform full session readiness check (validator will relax cookie rule during refresh)
-                        session_ready = self.ensure_session_ready(f"Browser Refresh Verification - Attempt {attempt}")
-
-                        if session_ready:
-                            # Update browser health tracking
-                            current_time = time.time()
-                            self.browser_health_monitor['last_browser_refresh'] = current_time
-                            self.browser_health_monitor['browser_start_time'] = current_time
-                            old_page_count = self.browser_health_monitor['pages_since_refresh']
-                            self.browser_health_monitor['pages_since_refresh'] = 0
-
-                            duration = current_time - start_time
-                            logger.debug(f"🔄 Browser page count RESET: {old_page_count} → 0 (atomic_browser_replacement)")
-                            logger.debug(f"✅ Proactive browser refresh completed successfully in {duration:.1f}s (attempt {attempt})")
-                            # Clear refresh flag on success
-                            if 'refresh_in_progress' in self.session_health_monitor:
-                                self.session_health_monitor['refresh_in_progress'].clear()
-                            return True
-                        logger.warning(f"❌ Browser refresh attempt {attempt}: Session readiness check failed")
-                    else:
-                        logger.warning(f"❌ Browser refresh attempt {attempt}: Atomic browser replacement failed")
-
-                except Exception as attempt_exc:
-                    logger.error(f"❌ Browser refresh attempt {attempt} exception: {attempt_exc}")
-                finally:
-                    # Ensure flag is cleared if we exit attempts without success
-                    if attempt == max_attempts:
-                        if 'refresh_in_progress' in self.session_health_monitor:
-                            self.session_health_monitor['refresh_in_progress'].clear()
+                # Ensure flag is cleared if we exit attempts without success
+                if attempt == max_attempts:
+                    if 'refresh_in_progress' in self.session_health_monitor:
+                        self.session_health_monitor['refresh_in_progress'].clear()
 
                 # Wait before next attempt (except on last attempt)
                 if attempt < max_attempts:
