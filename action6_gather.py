@@ -1509,6 +1509,80 @@ def _process_dna_match_operations(
     return dna_insert_data, dna_update_mappings
 
 
+def _bulk_insert_family_trees(
+    session: SqlAlchemySession,
+    tree_creates: List[Dict[str, Any]],
+    all_person_ids_map: Dict[str, int]
+) -> None:
+    """Bulk insert FamilyTree records."""
+    if not tree_creates:
+        logger.debug("No FamilyTree creates prepared.")
+        return
+
+    tree_insert_data = []
+    for tree_data in tree_creates:
+        person_uuid = tree_data.get("uuid")
+        person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
+
+        if person_id:
+            insert_dict = {k: v for k, v in tree_data.items() if not k.startswith("_")}
+            insert_dict["people_id"] = person_id
+            insert_dict.pop("uuid", None)  # Remove uuid before insert
+            tree_insert_data.append(insert_dict)
+        else:
+            logger.warning(f"Skipping FamilyTree create op (UUID {person_uuid}): Person ID not found.")
+
+    if tree_insert_data:
+        logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
+        session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
+        logger.debug("Bulk insert FamilyTrees called.")
+    else:
+        logger.debug("No valid FamilyTree records to insert.")
+
+
+def _bulk_update_family_trees(session: SqlAlchemySession, tree_updates: List[Dict[str, Any]]) -> None:
+    """Bulk update FamilyTree records."""
+    if not tree_updates:
+        logger.debug("No FamilyTree updates prepared.")
+        return
+
+    tree_update_mappings = []
+    for tree_data in tree_updates:
+        existing_tree_id = tree_data.get("_existing_tree_id")
+        if not existing_tree_id:
+            logger.warning(f"Skipping FamilyTree update op (UUID {tree_data.get('uuid')}): Missing '_existing_tree_id'.")
+            continue
+
+        update_dict_tree = {
+            k: v for k, v in tree_data.items() if not k.startswith("_") and k != "uuid"
+        }
+        update_dict_tree["id"] = existing_tree_id
+        update_dict_tree["updated_at"] = datetime.now(timezone.utc)
+
+        if len(update_dict_tree) > 2:
+            tree_update_mappings.append(update_dict_tree)
+
+    if tree_update_mappings:
+        logger.debug(f"Bulk updating {len(tree_update_mappings)} FamilyTree records...")
+        session.bulk_update_mappings(FamilyTree, tree_update_mappings)  # type: ignore
+        logger.debug("Bulk update FamilyTrees called.")
+    else:
+        logger.debug("No valid FamilyTree updates.")
+
+
+def _bulk_upsert_family_trees(
+    session: SqlAlchemySession,
+    family_tree_ops: List[Dict[str, Any]],
+    all_person_ids_map: Dict[str, int]
+) -> None:
+    """Bulk upsert FamilyTree records (separate insert/update)."""
+    tree_creates = [op for op in family_tree_ops if op.get("_operation") == "create"]
+    tree_updates = [op for op in family_tree_ops if op.get("_operation") == "update"]
+
+    _bulk_insert_family_trees(session, tree_creates, all_person_ids_map)
+    _bulk_update_family_trees(session, tree_updates)
+
+
 def _bulk_upsert_dna_matches(
     session: SqlAlchemySession,
     dna_match_ops: List[Dict[str, Any]],
@@ -1680,69 +1754,8 @@ def _execute_bulk_db_operations(
         # Step 6: DnaMatch Bulk Upsert
         _bulk_upsert_dna_matches(session, dna_match_ops, all_person_ids_map)
 
-        # --- Step 7: FamilyTree Bulk Upsert ---
-        tree_creates = [
-            op for op in family_tree_ops if op.get("_operation") == "create"
-        ]
-        tree_updates = [
-            op for op in family_tree_ops if op.get("_operation") == "update"
-        ]
-
-        if tree_creates:
-            tree_insert_data = []
-            for tree_data in tree_creates:
-                person_uuid = tree_data.get("uuid")
-                person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
-                if person_id:
-                    insert_dict = {
-                        k: v for k, v in tree_data.items() if not k.startswith("_")
-                    }
-                    insert_dict["people_id"] = person_id
-                    insert_dict.pop("uuid", None)  # Remove uuid before insert
-                    tree_insert_data.append(insert_dict)
-                else:
-                    logger.warning(
-                        f"Skipping FamilyTree create op (UUID {person_uuid}): Person ID not found."
-                    )
-            if tree_insert_data:
-                logger.debug(
-                    f"Bulk inserting {len(tree_insert_data)} FamilyTree records..."
-                )
-                session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
-                logger.debug("Bulk insert FamilyTrees called.")
-            else:
-                logger.debug("No valid FamilyTree records to insert.")
-        else:
-            logger.debug("No FamilyTree creates prepared.")
-
-        if tree_updates:
-            tree_update_mappings = []
-            for tree_data in tree_updates:
-                existing_tree_id = tree_data.get("_existing_tree_id")
-                if not existing_tree_id:
-                    logger.warning(
-                        f"Skipping FamilyTree update op (UUID {tree_data.get('uuid')}): Missing '_existing_tree_id'."
-                    )
-                    continue
-                update_dict_tree = {
-                    k: v
-                    for k, v in tree_data.items()
-                    if not k.startswith("_") and k != "uuid"
-                }
-                update_dict_tree["id"] = existing_tree_id
-                update_dict_tree["updated_at"] = datetime.now(timezone.utc)
-                if len(update_dict_tree) > 2:
-                    tree_update_mappings.append(update_dict_tree)
-            if tree_update_mappings:
-                logger.debug(
-                    f"Bulk updating {len(tree_update_mappings)} FamilyTree records..."
-                )
-                session.bulk_update_mappings(FamilyTree, tree_update_mappings)  # type: ignore
-                logger.debug("Bulk update FamilyTrees called.")
-            else:
-                logger.debug("No valid FamilyTree updates.")
-        else:
-            logger.debug("No FamilyTree updates prepared.")
+        # Step 7: FamilyTree Bulk Upsert
+        _bulk_upsert_family_trees(session, family_tree_ops, all_person_ids_map)
 
         # Step 8: Log success
         bulk_duration = time.time() - bulk_start_time
