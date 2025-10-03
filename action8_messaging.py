@@ -2122,6 +2122,36 @@ def _determine_final_status(message_to_send_key: str, message_status: str, send_
     return status_string, person_update
 
 
+def _handle_person_status(
+    person: Person, log_prefix: str, latest_in_log: Optional[ConversationLog],
+    latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str],
+    message_type_map: dict[str, int]
+) -> tuple[Optional[str], str, str, Optional[Any], Optional[Any]]:
+    """Handle person status and determine message to send."""
+    person_status = safe_column_value(person, "status", None)
+
+    if person_status == PersonStatusEnum.DESIST:
+        message_to_send_key, send_reason = _handle_desist_status(person, log_prefix, latest_out_log, message_type_map)
+        return message_to_send_key, send_reason, "Unknown", None, None
+
+    if person_status == PersonStatusEnum.ACTIVE:
+        logger.debug(f"{log_prefix}: Status is ACTIVE. Checking messaging rules...")
+
+        # Check messaging rules
+        _check_reply_received(latest_in_log, latest_out_log, log_prefix)
+        _check_message_interval(latest_out_log, log_prefix)
+
+        # Determine message
+        message_to_send_key, template_selection_reason = _determine_message_to_send(
+            person, latest_out_log, latest_out_template_key, log_prefix
+        )
+
+        return message_to_send_key, "Standard Sequence", template_selection_reason, person.dna_match, person.family_tree
+
+    # Unexpected status
+    logger.error(f"Unexpected status '{getattr(person.status, 'name', 'UNKNOWN')}' encountered for {log_prefix}. Skipping.")
+    raise StopIteration("error (unexpected_status)")
+
 def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
@@ -2192,35 +2222,9 @@ def _process_single_person(
         _check_person_eligibility(person, log_prefix)
 
         # --- Step 2: Determine Action based on Status (DESIST vs ACTIVE) ---
-        person_status = safe_column_value(person, "status", None)
-
-        # Handle DESIST status
-        if person_status == PersonStatusEnum.DESIST:
-            message_to_send_key, send_reason = _handle_desist_status(person, log_prefix, latest_out_log, message_type_map)
-
-        elif person_status == PersonStatusEnum.ACTIVE:
-            # Handle ACTIVE status: Check rules for sending standard messages
-            logger.debug(f"{log_prefix}: Status is ACTIVE. Checking messaging rules...")
-
-            # Rule 1: Check if reply received since last script message
-            _check_reply_received(latest_in_log, latest_out_log, log_prefix)
-
-            # Rule 2: Check time interval since last script message
-            _check_message_interval(latest_out_log, log_prefix)
-
-            # Rule 3: Determine next message type in sequence
-            message_to_send_key, template_selection_reason = _determine_message_to_send(person, latest_out_log, latest_out_template_key, log_prefix)
-            send_reason = "Standard Sequence"
-
-            # Prepare data for message formatting
-            dna_match = person.dna_match
-            family_tree = person.family_tree
-
-        else:  # Should not happen if prefetch filters correctly
-            logger.error(
-                f"Unexpected status '{getattr(person.status, 'name', 'UNKNOWN')}' encountered for {log_prefix}. Skipping."
-            )
-            raise StopIteration("error (unexpected_status)")
+        message_to_send_key, send_reason, template_selection_reason, dna_match, family_tree = _handle_person_status(
+            person, log_prefix, latest_in_log, latest_out_log, latest_out_template_key, message_type_map
+        )
 
         # --- Step 3: Format the Selected Message ---
         if not message_to_send_key or message_to_send_key not in MESSAGE_TEMPLATES:
