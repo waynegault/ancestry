@@ -346,6 +346,78 @@ class InboxProcessor:
 
     # End of _get_all_conversations_api
 
+    def _validate_conversation_data(self, conv_data: dict[str, Any]) -> Optional[tuple[str, dict]]:
+        """Validate conversation data and extract basic info."""
+        if not isinstance(conv_data, dict):
+            logger.warning(f"Invalid conversation data type: {type(conv_data)}")
+            return None
+
+        conversation_id = str(conv_data.get("id", "")).strip()
+        last_message_data = conv_data.get("last_message", {})
+
+        if not conversation_id or not isinstance(last_message_data, dict):
+            logger.warning(
+                f"Skipping conversation data due to missing ID or last_message: ID='{conversation_id}', "
+                f"last_message type={type(last_message_data)}"
+            )
+            return None
+
+        return conversation_id, last_message_data
+
+    def _parse_message_timestamp(self, last_message_data: dict, conversation_id: str) -> Optional[datetime]:
+        """Parse and validate message timestamp."""
+        last_msg_ts_unix = last_message_data.get("created")
+
+        if not isinstance(last_msg_ts_unix, (int, float)):
+            if last_msg_ts_unix is not None:
+                logger.warning(f"Invalid timestamp type for ConvID {conversation_id}: {type(last_msg_ts_unix)}")
+            return None
+
+        try:
+            min_ts, max_ts = 946684800, 4102444800  # Jan 1 2000 to Jan 1 2100
+            if min_ts <= last_msg_ts_unix <= max_ts:
+                return datetime.fromtimestamp(last_msg_ts_unix, tz=timezone.utc)
+            logger.warning(f"Timestamp {last_msg_ts_unix} out of reasonable range for ConvID {conversation_id}")
+        except (ValueError, TypeError, OSError) as ts_err:
+            logger.warning(f"Error converting timestamp {last_msg_ts_unix} for ConvID {conversation_id}: {ts_err}")
+
+        return None
+
+    def _find_other_participant(
+        self, members: list, my_profile_id: str, conversation_id: str
+    ) -> Optional[tuple[str, str]]:
+        """Find the other participant in the conversation."""
+        if not isinstance(members, list):
+            logger.warning(f"Members not a list for ConvID {conversation_id}: {type(members)}")
+            return None
+
+        if len(members) < 2:
+            logger.warning(f"Insufficient members ({len(members)}) for ConvID {conversation_id}")
+            return None
+
+        my_pid_lower = str(my_profile_id).lower().strip()
+
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+
+            member_user_id = member.get("user_id")
+            if not member_user_id:
+                continue
+
+            member_user_id_str = str(member_user_id).lower().strip()
+
+            if member_user_id_str and member_user_id_str != my_pid_lower:
+                profile_id = str(member_user_id).upper().strip()
+                username = str(member.get("display_name", "Unknown")).strip()
+                return profile_id, username
+
+        logger.warning(
+            f"Could not identify other participant in ConvID {conversation_id}. "
+            f"Members count: {len(members) if isinstance(members, list) else 'N/A'}"
+        )
+        return None
+
     def _extract_conversation_info(
         self, conv_data: dict[str, Any], my_profile_id: str
     ) -> Optional[dict[str, Any]]:
@@ -360,88 +432,25 @@ class InboxProcessor:
             A dictionary containing 'conversation_id', 'profile_id', 'username',
             and 'last_message_timestamp', or None if essential data is missing.
         """
-        # Step 1: Enhanced validation of input structure
-        if not isinstance(conv_data, dict):
-            logger.warning(f"Invalid conversation data type: {type(conv_data)}")
+        # Validate conversation data
+        validation_result = self._validate_conversation_data(conv_data)
+        if validation_result is None:
             return None
 
-        # Extract conversation ID
-        conversation_id = str(
-            conv_data.get("id", "")
-        ).strip()  # Ensure string and strip whitespace
-        last_message_data = conv_data.get("last_message", {})
+        conversation_id, last_message_data = validation_result
 
-        if not conversation_id or not isinstance(last_message_data, dict):
-            logger.warning(
-                f"Skipping conversation data due to missing ID or last_message: ID='{conversation_id}', last_message type={type(last_message_data)}"
-            )
-            return None
+        # Parse timestamp
+        last_msg_ts_aware = self._parse_message_timestamp(last_message_data, conversation_id)
 
-        # Step 2: Enhanced timestamp validation and parsing
-        last_msg_ts_unix = last_message_data.get("created")
-        last_msg_ts_aware: Optional[datetime] = None
-
-        if isinstance(last_msg_ts_unix, (int, float)):
-            try:
-                # More restrictive timestamp validation (2000-2100)
-                min_ts, max_ts = 946684800, 4102444800  # Jan 1 2000 to Jan 1 2100
-                if min_ts <= last_msg_ts_unix <= max_ts:
-                    last_msg_ts_aware = datetime.fromtimestamp(
-                        last_msg_ts_unix, tz=timezone.utc
-                    )
-                else:
-                    logger.warning(
-                        f"Timestamp {last_msg_ts_unix} out of reasonable range for ConvID {conversation_id}"
-                    )
-            except (ValueError, TypeError, OSError) as ts_err:
-                logger.warning(
-                    f"Error converting timestamp {last_msg_ts_unix} for ConvID {conversation_id}: {ts_err}"
-                )
-        elif last_msg_ts_unix is not None:  # Log if present but wrong type
-            logger.warning(
-                f"Invalid timestamp type for ConvID {conversation_id}: {type(last_msg_ts_unix)}"
-            )
-
-        # Step 3: Enhanced member identification with better error handling
-        username = "Unknown"
-        profile_id = "UNKNOWN"
-        other_member_found = False
+        # Find other participant
         members = conv_data.get("members", [])
-        my_pid_lower = str(my_profile_id).lower().strip()
+        participant_info = self._find_other_participant(members, my_profile_id, conversation_id)
+        if participant_info is None:
+            return None
 
-        if not isinstance(members, list):
-            logger.warning(
-                f"Members not a list for ConvID {conversation_id}: {type(members)}"
-            )
-            return None  # Return None for invalid member data
-        if len(members) < 2:
-            logger.warning(
-                f"Insufficient members ({len(members)}) for ConvID {conversation_id}"
-            )
-            return None  # Return None for insufficient members
-        for member in members:
-            if not isinstance(member, dict):
-                continue
-            member_user_id = member.get("user_id")
-            if not member_user_id:
-                continue
+        profile_id, username = participant_info
 
-            member_user_id_str = str(member_user_id).lower().strip()
-
-            # Check if this member is not the script user
-            if member_user_id_str and member_user_id_str != my_pid_lower:
-                profile_id = str(member_user_id).upper().strip()
-                username = str(member.get("display_name", "Unknown")).strip()
-                other_member_found = True
-                break
-
-        if not other_member_found:
-            logger.warning(
-                f"Could not identify other participant in ConvID {conversation_id}. Members count: {len(members) if isinstance(members, list) else 'N/A'}"
-            )
-            return None  # Return None if we can't identify the other participant
-
-        # Step 4: Return validated data
+        # Return validated data
         return {
             "conversation_id": conversation_id,
             "profile_id": profile_id,
