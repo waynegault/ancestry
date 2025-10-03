@@ -3086,6 +3086,92 @@ def _handle_webdriver_exception(
     return ("continue", driver)
 
 
+def _perform_navigation_attempt(
+    driver: WebDriver,  # type: ignore
+    url: str,
+    selector: str,
+    target_url_base: str,
+    signin_page_url_base: str,
+    unavailability_selectors: Dict[str, Tuple[str, int]],
+    session_manager: SessionManagerType,
+    attempt: int,
+    page_timeout: int,
+    element_timeout: int,
+) -> Tuple[str, Optional[WebDriver]]:  # type: ignore
+    """
+    Perform a single navigation attempt.
+    Returns (action, driver) where action is 'success', 'fail', 'continue', or 'retry'.
+    """
+    try:
+        # --- Pre-Navigation Checks ---
+        driver_check = _check_browser_session(driver, session_manager, attempt)
+        if driver_check is None:
+            return ("fail", driver)
+        if driver_check != driver:
+            return ("retry", driver_check)
+
+        # --- Navigation Execution ---
+        _execute_navigation(driver, url, page_timeout)
+
+        # --- Post-Navigation Checks ---
+        landed_url_base = _get_landed_url_base(driver, attempt)
+        if landed_url_base is None:
+            return ("continue", driver)
+
+        # Check for MFA page
+        if _check_for_mfa_page(driver):
+            logger.error("Landed on MFA page unexpectedly during navigation. Navigation failed.")
+            return ("fail", driver)
+
+        # Check for Login page
+        if _check_for_login_page(driver, target_url_base, signin_page_url_base):
+            login_action = _handle_login_redirect(session_manager)
+            if login_action == "retry":
+                return ("continue", driver)
+            elif login_action in ("fail", "no_manager"):
+                return ("fail", driver)
+
+        # Check if landed on an unexpected URL
+        if landed_url_base != target_url_base:
+            if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
+                return ("success", driver)
+
+            mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
+            if mismatch_action == "fail":
+                return ("fail", driver)
+            elif mismatch_action == "continue":
+                return ("continue", driver)
+
+        # --- Final Check: Element on Page ---
+        element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
+        if element_result == "success":
+            return ("success", driver)
+        elif element_result == "fail":
+            return ("fail", driver)
+        elif element_result == "continue":
+            return ("continue", driver)
+
+    except UnexpectedAlertPresentException:  # type: ignore
+        alert_action = _handle_navigation_alert(driver, attempt)
+        if alert_action == "fail":
+            return ("fail", driver)
+        return ("continue", driver)
+
+    except WebDriverException as wd_e:  # type: ignore
+        logger.error(f"WebDriverException during navigation (Attempt {attempt}): {wd_e}", exc_info=False)
+        wd_action, new_driver = _handle_webdriver_exception(driver, session_manager, attempt)
+        if wd_action == "fail":
+            return ("fail", driver)
+        return ("continue", new_driver if new_driver else driver)
+
+    except Exception as e:
+        logger.error(f"Unexpected error during navigation (Attempt {attempt}): {e}", exc_info=True)
+        time.sleep(random.uniform(2, 4))
+        return ("continue", driver)
+
+    return ("continue", driver)
+
+
 def nav_to_page(
     driver: WebDriver,  # type: ignore
     url: str,
@@ -3132,77 +3218,20 @@ def nav_to_page(
     for attempt in range(1, max_attempts + 1):
         logger.debug(f"Navigation Attempt {attempt}/{max_attempts} to: {url}")
 
-        try:
-            # --- Pre-Navigation Checks ---
-            driver_check = _check_browser_session(driver, session_manager, attempt)
-            if driver_check is None:
-                return False
-            if driver_check != driver:
-                driver = driver_check
-                continue
+        action, new_driver = _perform_navigation_attempt(
+            driver, url, selector, target_url_base, signin_page_url_base,
+            unavailability_selectors, session_manager, attempt, page_timeout, element_timeout
+        )
 
-            # --- Navigation Execution ---
-            _execute_navigation(driver, url, page_timeout)
-
-            # --- Post-Navigation Checks ---
-            landed_url_base = _get_landed_url_base(driver, attempt)
-            if landed_url_base is None:
-                continue
-
-            # Check for MFA page
-            if _check_for_mfa_page(driver):
-                logger.error("Landed on MFA page unexpectedly during navigation. Navigation failed.")
-                return False
-
-            # Check for Login page
-            if _check_for_login_page(driver, target_url_base, signin_page_url_base):
-                login_action = _handle_login_redirect(session_manager)
-                if login_action == "retry":
-                    continue
-                elif login_action in ("fail", "no_manager"):
-                    return False
-
-            # Check if landed on an unexpected URL (and not login/mfa)
-            if landed_url_base != target_url_base:
-                # Check if it's a known redirect
-                if _check_signin_redirect(target_url_base, landed_url_base, signin_page_url_base, session_manager):
-                    return True
-
-                # Handle URL mismatch
-                mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
-                if mismatch_action == "fail":
-                    return False
-                elif mismatch_action == "continue":
-                    continue
-
-            # --- Final Check: Element on Page ---
-            element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
-            if element_result == "success":
-                return True
-            elif element_result == "fail":
-                return False
-            elif element_result == "continue":
-                continue
-
-        # --- Handle Exceptions During Navigation Attempt ---
-        except UnexpectedAlertPresentException:  # type: ignore
-            alert_action = _handle_navigation_alert(driver, attempt)
-            if alert_action == "fail":
-                return False
+        if action == "success":
+            return True
+        elif action == "fail":
+            return False
+        elif action == "retry":
+            driver = new_driver if new_driver else driver
             continue
-
-        except WebDriverException as wd_e:  # type: ignore
-            logger.error(f"WebDriverException during navigation (Attempt {attempt}): {wd_e}", exc_info=False)
-            wd_action, new_driver = _handle_webdriver_exception(driver, session_manager, attempt)
-            if wd_action == "fail":
-                return False
-            if new_driver is not None:
-                driver = new_driver
-            continue
-
-        except Exception as e:
-            logger.error(f"Unexpected error during navigation (Attempt {attempt}): {e}", exc_info=True)
-            time.sleep(random.uniform(2, 4))
+        elif action == "continue":
+            driver = new_driver if new_driver else driver
             continue
 
     # --- Failed After All Attempts ---
