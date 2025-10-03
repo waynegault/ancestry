@@ -88,7 +88,7 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self._lock = threading.Lock()
 
-    def call(self, func: Callable, *args, **kwargs):
+    def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
         """Execute function with circuit breaker protection."""
         with self._lock:
             if self.state == CircuitState.OPEN:
@@ -161,7 +161,7 @@ class AncestryError(AncestryException):
 class RetryableError(AncestryException):
     """Exception that indicates the operation can be retried."""
 
-    def __init__(self, message: str = "Operation can be retried", **kwargs):
+    def __init__(self, message: str = "Operation can be retried", **kwargs: Any) -> None:
         super().__init__(message)
         self.message = message
         self.retry_after = kwargs.get('retry_after')
@@ -173,7 +173,7 @@ class RetryableError(AncestryException):
 class FatalError(AncestryException):
     """Exception that indicates the operation should not be retried."""
 
-    def __init__(self, message: str = "Fatal error occurred", **kwargs):
+    def __init__(self, message: str = "Fatal error occurred", **kwargs: Any) -> None:
         super().__init__(message)
         self.message = message
         self.context = kwargs.get('context', {})
@@ -183,7 +183,7 @@ class FatalError(AncestryException):
 class APIRateLimitError(RetryableError):
     """Exception for API rate limit errors."""
 
-    def __init__(self, message: str = "API rate limit exceeded", **kwargs):
+    def __init__(self, message: str = "API rate limit exceeded", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.retry_after = kwargs.get('retry_after', 60)
 
@@ -191,7 +191,7 @@ class APIRateLimitError(RetryableError):
 class NetworkTimeoutError(RetryableError):
     """Exception for network timeout errors."""
 
-    def __init__(self, message: str = "Network timeout occurred", **kwargs):
+    def __init__(self, message: str = "Network timeout occurred", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.timeout_duration = kwargs.get('timeout_duration')
 
@@ -199,7 +199,7 @@ class NetworkTimeoutError(RetryableError):
 class DatabaseConnectionError(RetryableError):
     """Exception for database connection errors."""
 
-    def __init__(self, message: str = "Database connection failed", **kwargs):
+    def __init__(self, message: str = "Database connection failed", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.connection_string = kwargs.get('connection_string')
         self.error_code = kwargs.get('error_code', 'DB_CONNECTION_FAILED')
@@ -208,7 +208,7 @@ class DatabaseConnectionError(RetryableError):
 class DataValidationError(FatalError):
     """Exception for data validation errors."""
 
-    def __init__(self, message: str = "Data validation failed", **kwargs):
+    def __init__(self, message: str = "Data validation failed", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.validation_errors = kwargs.get('validation_errors', [])
 
@@ -216,7 +216,7 @@ class DataValidationError(FatalError):
 class MissingConfigError(FatalError):
     """Exception for missing configuration errors."""
 
-    def __init__(self, message: str = "Required configuration is missing", **kwargs):
+    def __init__(self, message: str = "Required configuration is missing", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.missing_keys = kwargs.get('missing_keys', [])
 
@@ -224,7 +224,7 @@ class MissingConfigError(FatalError):
 class AuthenticationExpiredError(RetryableError):
     """Exception for expired authentication errors."""
 
-    def __init__(self, message: str = "Authentication has expired", **kwargs):
+    def __init__(self, message: str = "Authentication has expired", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.expired_at = kwargs.get('expired_at')
 
@@ -232,7 +232,7 @@ class AuthenticationExpiredError(RetryableError):
 class BrowserSessionError(RetryableError):
     """Exception for browser session errors."""
 
-    def __init__(self, message: str = "Browser session error occurred", **kwargs):
+    def __init__(self, message: str = "Browser session error occurred", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.session_id = kwargs.get('session_id')
 
@@ -240,7 +240,7 @@ class BrowserSessionError(RetryableError):
 class MaxApiFailuresExceededError(FatalError):
     """Exception for exceeding maximum API failures."""
 
-    def __init__(self, message: str = "Maximum API failures exceeded", **kwargs):
+    def __init__(self, message: str = "Maximum API failures exceeded", **kwargs: Any) -> None:
         super().__init__(message, **kwargs)
         self.failure_count = kwargs.get('failure_count', 0)
         self.max_failures = kwargs.get('max_failures', 0)
@@ -641,7 +641,7 @@ def handle_error(
     return _error_registry.handle_error(error, context, fallback_category)
 
 
-def register_error_handler(handler: ErrorHandler):
+def register_error_handler(handler: ErrorHandler) -> None:
     """Register a custom error handler globally."""
     _error_registry.register_handler(handler)
 
@@ -751,12 +751,12 @@ class ErrorContext:
         self.log_success = log_success
         self.start_time = None
 
-    def __enter__(self):
+    def __enter__(self) -> "ErrorContext":
         self.start_time = time.time()
         logger.debug(f"Starting operation: {self.operation_name}")
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> bool:
         duration = time.time() - self.start_time if self.start_time else 0
 
         if exc_type is not None:
@@ -931,7 +931,7 @@ class ErrorRecoveryManager:
                 name: cb.get_stats() for name, cb in self.circuit_breakers.items()
             }
 
-    def reset_all_circuit_breakers(self):
+    def reset_all_circuit_breakers(self) -> None:
         """Reset all circuit breakers to CLOSED state."""
         with self._lock:
             for cb in self.circuit_breakers.values():
@@ -1007,7 +1007,7 @@ def circuit_breaker(
     return decorator
 
 
-def timeout_protection(timeout: int = 30):
+def timeout_protection(timeout: int = 30) -> Callable:
     """Decorator for timeout protection (cross-platform)."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -1078,7 +1078,7 @@ def graceful_degradation(
     return decorator
 
 
-def error_context(context_name: str = "", **context_data):
+def error_context(context_name: str = "", **context_data: Any) -> Callable:
     """Decorator to add context to errors."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -1109,7 +1109,7 @@ def with_circuit_breaker(
     return decorator
 
 
-def with_recovery(recovery_strategy: Callable):
+def with_recovery(recovery_strategy: Callable) -> Callable:
     """Decorator to add recovery strategy to functions."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
