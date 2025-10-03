@@ -162,7 +162,7 @@ This document summarizes the comprehensive refactoring sprint conducted to impro
 
 ---
 
-### 8. **ai_interface.py** ⭐ **NOW ABOVE 70!**
+### 8. **ai_interface.py** ⭐ **NOW ABOVE 70!** (75.9/100)
 
 #### Function 1: `_call_ai_model()`
 - **Complexity**: 13 → <10 (-23%)
@@ -185,7 +185,7 @@ This document summarizes the comprehensive refactoring sprint conducted to impro
 
 ---
 
-### 9. **message_personalization.py** (Very close to 70!)
+### 9. **message_personalization.py** ⭐ **NOW ABOVE 70!** (75.6/100)
 
 #### Function 1: `_select_optimal_personalization_functions()`
 - **Complexity**: 11 → <10 (-9%)
@@ -200,10 +200,64 @@ This document summarizes the comprehensive refactoring sprint conducted to impro
 - **Helper Methods Created**: 1
   - `_format_single_vital_record()` - Format single vital record
 
+#### Function 3: `_create_historical_context_analysis()`
+- **Complexity**: 16 → <10 (-38%)
+- **Lines**: ~28 → ~10 (-64%)
+- **Helper Methods Created**: 3
+  - `_extract_year_from_date()` - Extract year from date string
+  - `_get_historical_context_for_location()` - Get context for location
+  - `_analyze_vital_record_context()` - Analyze single record
+
 **Total for message_personalization.py**:
-- **Complexity Reduction**: -2 points
-- **Lines Eliminated**: ~43 lines
-- **Quality Score**: 58.1/100 → **69.8/100** (+20%) - Very close to 70!
+- **Complexity Reduction**: -8 points
+- **Lines Eliminated**: ~61 lines
+- **Quality Score**: 58.1/100 → **75.6/100** (+30%) ✅ **NOW ABOVE 70!**
+
+---
+
+### 10. **relationship_utils.py** (Significantly Improved - 59.5/100)
+
+#### Function 1: `format_name()`
+- **Complexity**: 13 → <10 (-23%)
+- **Lines**: ~45 → ~17 (-62%)
+- **Helper Methods Created**: 2
+  - `_clean_gedcom_slashes()` - Remove GEDCOM slashes
+  - `_format_single_word()` - Format single word
+
+#### Function 2: `_extract_person_from_list_item()`
+- **Complexity**: 13 → <10 (-23%)
+- **Lines**: ~59 → ~10 (-83%)
+- **Helper Methods Created**: 4
+  - `_should_skip_list_item()` - Check if item should be skipped
+  - `_extract_name_from_item()` - Extract name from item
+  - `_extract_relationship_from_item()` - Extract relationship
+  - `_extract_lifespan_from_item()` - Extract lifespan
+
+#### Function 3: `format_api_relationship_path()`
+- **Complexity**: 11 → <10 (-9%)
+- **Lines**: ~67 → ~25 (-63%)
+- **Helper Methods Created**: 2
+  - `_try_json_api_format()` - Try JSON API format
+  - `_try_html_formats()` - Try HTML formats
+
+**Total for relationship_utils.py**:
+- **Complexity Reduction**: -7 points
+- **Lines Eliminated**: ~119 lines
+- **Quality Score**: 40.7/100 → **59.5/100** (+46%)
+
+---
+
+### 11. **core/error_handling.py** (Improved - 8.5/100)
+
+Added type hints to multiple functions:
+- `__enter__`, `__exit__`, `reset_all_circuit_breakers`
+- `register_error_handler`, `timeout_protection`, `error_context`, `with_recovery`
+- `call` method in CircuitBreaker
+- Multiple `__init__` methods in exception classes
+
+**Total for error_handling.py**:
+- **Type Hint Coverage**: 80.2% → 83.5% (+4%)
+- **Quality Score**: 0.0/100 → **8.5/100**
 
 ---
 
@@ -224,19 +278,20 @@ This document summarizes the comprehensive refactoring sprint conducted to impro
 ## Sprint Statistics
 
 ### Current Sprint
-- **Files Refactored**: 10
-- **Functions Refactored**: 20
-- **Helper Functions Created**: 47
-- **Total Complexity Reduction**: ~113 points
-- **Total Lines Eliminated**: ~1,122 lines
-- **Git Commits**: 20
-- **Files Moved Above 70**: 3 (action7_inbox.py, action8_messaging.py, ai_interface.py)
+- **Files Refactored**: 13
+- **Functions Refactored**: 26
+- **Helper Functions Created**: 56
+- **Total Complexity Reduction**: ~120 points
+- **Total Lines Eliminated**: ~1,241 lines
+- **Git Commits**: 28
+- **Files Moved Above 70**: 4 (action7_inbox.py, action8_messaging.py, ai_interface.py, message_personalization.py)
+- **Files Significantly Improved**: 2 (relationship_utils.py: 40.7→59.5, error_handling.py: 0.0→8.5)
 
 ### Combined with Previous Sprints
-- **Total Functions Refactored**: 26
-- **Total Helper Functions Created**: 107
-- **Total Complexity Reduction**: ~282 points
-- **Total Lines Eliminated**: ~2,150 lines
+- **Total Functions Refactored**: 32
+- **Total Helper Functions Created**: 116
+- **Total Complexity Reduction**: ~289 points
+- **Total Lines Eliminated**: ~2,269 lines
 
 ---
 
