@@ -1038,6 +1038,166 @@ def convert_discovery_api_path_to_unified_format(
     return result
 
 
+def _infer_gender_from_name(name: str) -> Optional[str]:
+    """Infer gender from name using common indicators."""
+    name_lower = name.lower()
+
+    # Male indicators
+    male_indicators = [
+        "mr.", "sir", "gordon", "james", "thomas", "alexander",
+        "henry", "william", "robert", "richard", "david", "john",
+        "michael", "george", "charles"
+    ]
+    if any(indicator in name_lower for indicator in male_indicators):
+        logger.debug(f"Inferred male gender for {name} based on name")
+        return "M"
+
+    # Female indicators
+    female_indicators = [
+        "mrs.", "miss", "ms.", "lady", "catherine", "margaret",
+        "mary", "jane", "elizabeth", "anne", "sarah", "emily",
+        "charlotte", "victoria"
+    ]
+    if any(indicator in name_lower for indicator in female_indicators):
+        logger.debug(f"Inferred female gender for {name} based on name")
+        return "F"
+
+    return None
+
+
+def _infer_gender_from_relationship(name: str, relationship_text: str) -> Optional[str]:
+    """Infer gender from relationship text."""
+    rel_lower = relationship_text.lower()
+
+    # Male relationship terms
+    male_terms = ["son", "father", "brother", "husband", "uncle", "grandfather", "nephew"]
+    if any(term in rel_lower for term in male_terms):
+        logger.debug(f"Inferred male gender for {name} from relationship text: {relationship_text}")
+        return "M"
+
+    # Female relationship terms
+    female_terms = ["daughter", "mother", "sister", "wife", "aunt", "grandmother", "niece"]
+    if any(term in rel_lower for term in female_terms):
+        logger.debug(f"Inferred female gender for {name} from relationship text: {relationship_text}")
+        return "F"
+
+    return None
+
+
+def _extract_years_from_lifespan(lifespan: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract birth and death years from lifespan string."""
+    if not lifespan:
+        return None, None
+
+    years_match = re.search(r"(\d{4})-(\d{4}|\bLiving\b|-)", lifespan, re.IGNORECASE)
+    if not years_match:
+        return None, None
+
+    birth_year = years_match.group(1)
+    death_year_raw = years_match.group(2)
+    death_year = None if death_year_raw in ["-", "living", "Living"] else death_year_raw
+
+    return birth_year, death_year
+
+
+def _determine_gender_for_person(
+    person_data: dict,
+    name: str,
+    relationship_data: Optional[list[dict]] = None,
+    index: int = 0
+) -> Optional[str]:
+    """Determine gender for a person using all available information."""
+    # Check explicit gender field
+    gender = person_data.get("gender", "").upper() or None
+    if gender:
+        return gender
+
+    # Try to infer from name
+    gender = _infer_gender_from_name(name)
+    if gender:
+        return gender
+
+    # Try to infer from relationship text if available
+    if relationship_data and index + 1 < len(relationship_data):
+        rel_text = relationship_data[index + 1].get("relationship", "")
+        gender = _infer_gender_from_relationship(name, rel_text)
+        if gender:
+            return gender
+
+    # Special case for Gordon Milne
+    if "gordon milne" in name.lower():
+        logger.debug("Set gender to M for Gordon Milne")
+        return "M"
+
+    return None
+
+
+def _parse_relationship_term_and_gender(relationship_text: str, person_data: dict) -> tuple[str, Optional[str]]:
+    """Parse relationship term and infer gender from relationship text."""
+    rel_lower = relationship_text.lower()
+
+    # Check explicit gender first
+    gender = person_data.get("gender", "").upper() or None
+
+    # Relationship mapping: (term, gender)
+    relationship_map = {
+        "daughter": ("daughter", "F"),
+        "son": ("son", "M"),
+        "father": ("father", "M"),
+        "mother": ("mother", "F"),
+        "brother": ("brother", "M"),
+        "sister": ("sister", "F"),
+        "husband": ("husband", "M"),
+        "wife": ("wife", "F"),
+        "uncle": ("uncle", "M"),
+        "aunt": ("aunt", "F"),
+        "grandfather": ("grandfather", "M"),
+        "grandmother": ("grandmother", "F"),
+        "nephew": ("nephew", "M"),
+        "niece": ("niece", "F"),
+    }
+
+    for term, (relationship, inferred_gender) in relationship_map.items():
+        if term in rel_lower:
+            if not gender:
+                gender = inferred_gender
+            return relationship, gender
+
+    return "relative", gender
+
+
+def _process_path_person(person_data: dict) -> dict[str, Optional[str]]:
+    """Process a single person in the relationship path."""
+    # Get and clean name
+    current_name = format_name(person_data.get("name", "Unknown"))
+    current_name = re.sub(r"\s+\d{4}.*$", "", current_name)  # Remove year suffixes
+
+    # Extract birth/death years
+    item_birth_year, item_death_year = _extract_years_from_lifespan(person_data.get("lifespan", ""))
+
+    # Parse relationship and gender
+    relationship_text = person_data.get("relationship", "")
+    relationship_term, item_gender = _parse_relationship_term_and_gender(relationship_text, person_data)
+
+    # If still no gender, try to infer from name
+    if not item_gender:
+        item_gender = _infer_gender_from_name(current_name)
+
+    # Try to extract relationship term from text if still "relative"
+    if relationship_term == "relative" and relationship_text:
+        rel_match = re.search(r"(is|are) the (.*?) of", relationship_text.lower())
+        if rel_match:
+            relationship_term = rel_match.group(2)
+
+    return {
+        "name": current_name,
+        "birth_year": item_birth_year,
+        "death_year": item_death_year,
+        "relationship": relationship_term,
+        "gender": item_gender,
+    }
+
+
 def convert_api_path_to_unified_format(
     relationship_data: list[dict], target_name: str
 ) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
@@ -1059,116 +1219,12 @@ def convert_api_path_to_unified_format(
     # Process the first person (target)
     first_person = relationship_data[0]
     target_name_display = format_name(first_person.get("name", target_name))
-    target_lifespan = first_person.get("lifespan", "")
 
     # Extract birth/death years
-    birth_year: Optional[str] = None  # Ensure type
-    death_year: Optional[str] = None  # Ensure type
+    birth_year, death_year = _extract_years_from_lifespan(first_person.get("lifespan", ""))
 
-    if target_lifespan:
-        years_match = re.search(
-            r"(\d{4})-(\d{4}|\bLiving\b|-)", target_lifespan, re.IGNORECASE
-        )  # Allow "Living"
-        if years_match:
-            birth_year = years_match.group(1)
-            death_year_raw = years_match.group(2)
-            death_year = None if death_year_raw == "-" or death_year_raw.lower() == "living" else death_year_raw
-
-    # Determine gender from name and other information
-    gender: Optional[str] = (
-        first_person.get("gender", "").upper() or None
-    )  # Ensure None if empty
-
-    # If gender is not explicitly provided, try to infer from the name
-    if not gender:
-        # Check if the name contains gender-specific titles or common names
-        name_lower = target_name_display.lower()
-
-        # Check for male indicators
-        if any(
-            male_indicator in name_lower
-            for male_indicator in [
-                "mr.",
-                "sir",
-                "gordon",
-                "james",
-                "thomas",
-                "alexander",
-                "henry",
-                "william",
-                "robert",
-                "richard",
-                "david",
-                "john",
-                "michael",
-                "george",
-                "charles",
-            ]
-        ):
-            gender = "M"
-            logger.debug(
-                f"Inferred male gender for {target_name_display} based on name"
-            )
-
-        # Check for female indicators
-        elif any(
-            female_indicator in name_lower
-            for female_indicator in [
-                "mrs.",
-                "miss",
-                "ms.",
-                "lady",
-                "catherine",
-                "margaret",
-                "mary",
-                "jane",
-                "elizabeth",
-                "anne",
-                "sarah",
-                "emily",
-                "charlotte",
-                "victoria",
-            ]
-        ):
-            gender = "F"
-            logger.debug(
-                f"Inferred female gender for {target_name_display} based on name"
-            )
-
-        # If we still don't have gender, try to infer from relationship text if available
-        if not gender and len(relationship_data) > 1:
-            rel_text = relationship_data[1].get("relationship", "").lower()
-            if (
-                "son" in rel_text
-                or "father" in rel_text
-                or "brother" in rel_text
-                or "husband" in rel_text
-                or "uncle" in rel_text
-                or "grandfather" in rel_text
-                or "nephew" in rel_text
-            ):
-                gender = "M"
-                logger.debug(
-                    f"Inferred male gender for {target_name_display} from relationship text: {rel_text}"
-                )
-            elif (
-                "daughter" in rel_text
-                or "mother" in rel_text
-                or "sister" in rel_text
-                or "wife" in rel_text
-                or "aunt" in rel_text
-                or "grandmother" in rel_text
-                or "niece" in rel_text
-            ):
-                gender = "F"
-                logger.debug(
-                    f"Inferred female gender for {target_name_display} from relationship text: {rel_text}"
-                )
-
-    # Special case for Gordon Milne
-    if "gordon milne" in target_name_display.lower():
-        gender = "M"
-        logger.debug("Set gender to M for Gordon Milne")
+    # Determine gender
+    gender = _determine_gender_for_person(first_person, target_name_display, relationship_data, 0)
 
     # Add first person to result
     result.append(
@@ -1183,177 +1239,8 @@ def convert_api_path_to_unified_format(
 
     # Process the rest of the path
     for i in range(1, len(relationship_data)):
-        current = relationship_data[i]
-
-        # Get name
-        current_name = format_name(current.get("name", "Unknown"))
-        # Remove any year suffixes like "1943-Brother Of Fraser Gault"
-        current_name = re.sub(r"\s+\d{4}.*$", "", current_name)
-
-        # Get lifespan
-        current_lifespan = current.get("lifespan", "")
-        item_birth_year: Optional[str] = None  # Ensure type
-        item_death_year: Optional[str] = None  # Ensure type
-
-        if current_lifespan:
-            years_match = re.search(
-                r"(\d{4})-(\d{4}|\bLiving\b|-)", current_lifespan, re.IGNORECASE
-            )  # Allow "Living"
-            if years_match:
-                item_birth_year = years_match.group(1)
-                death_year_raw_item = years_match.group(2)
-                if (
-                    death_year_raw_item == "-"
-                    or death_year_raw_item.lower() == "living"
-                ):
-                    item_death_year = None
-                else:
-                    item_death_year = death_year_raw_item
-
-        # Get relationship
-        relationship_term: Optional[str] = "relative"  # Ensure type
-        relationship_text = current.get("relationship", "").lower()
-
-        # Determine gender from relationship text and name
-        item_gender: Optional[str] = (
-            current.get("gender", "").upper() or None
-        )  # Ensure type
-
-        # If gender is not explicitly provided, try to infer from relationship text
-        if not item_gender:
-            if "daughter" in relationship_text:
-                relationship_term = "daughter"
-                item_gender = "F"
-            elif "son" in relationship_text:
-                relationship_term = "son"
-                item_gender = "M"
-            elif "father" in relationship_text:
-                relationship_term = "father"
-                item_gender = "M"
-            elif "mother" in relationship_text:
-                relationship_term = "mother"
-                item_gender = "F"
-            elif "brother" in relationship_text:
-                relationship_term = "brother"
-                item_gender = "M"
-            elif "sister" in relationship_text:
-                relationship_term = "sister"
-                item_gender = "F"
-            elif "husband" in relationship_text:
-                relationship_term = "husband"
-                item_gender = "M"
-            elif "wife" in relationship_text:
-                relationship_term = "wife"
-                item_gender = "F"
-            elif "uncle" in relationship_text:
-                relationship_term = "uncle"
-                item_gender = "M"
-            elif "aunt" in relationship_text:
-                relationship_term = "aunt"
-                item_gender = "F"
-            elif "grandfather" in relationship_text:
-                relationship_term = "grandfather"
-                item_gender = "M"
-            elif "grandmother" in relationship_text:
-                relationship_term = "grandmother"
-                item_gender = "F"
-            else:
-                # Try to extract the relationship term from the text
-                rel_match = re.search(r"(is|are) the (.*?) of", relationship_text)
-                if rel_match:
-                    relationship_term = rel_match.group(2)
-                    # Try to determine gender from relationship term
-                    if relationship_term in [
-                        "son",
-                        "father",
-                        "brother",
-                        "husband",
-                        "uncle",
-                        "grandfather",
-                        "nephew",
-                    ]:
-                        item_gender = "M"
-                    elif relationship_term in [
-                        "daughter",
-                        "mother",
-                        "sister",
-                        "wife",
-                        "aunt",
-                        "grandmother",
-                        "niece",
-                    ]:
-                        item_gender = "F"
-
-            # If we still don't have gender, try to infer from the name
-            if not item_gender:
-                name_lower_item = current_name.lower()
-
-                # Check for male indicators
-                if any(
-                    male_indicator in name_lower_item
-                    for male_indicator in [
-                        "mr.",
-                        "sir",
-                        "gordon",
-                        "james",
-                        "thomas",
-                        "alexander",
-                        "henry",
-                        "william",
-                        "robert",
-                        "richard",
-                        "david",
-                        "john",
-                        "michael",
-                        "george",
-                        "charles",
-                    ]
-                ):
-                    item_gender = "M"
-                    logger.debug(
-                        f"Inferred male gender for {current_name} based on name"
-                    )
-
-                # Check for female indicators
-                elif any(
-                    female_indicator in name_lower_item
-                    for female_indicator in [
-                        "mrs.",
-                        "miss",
-                        "ms.",
-                        "lady",
-                        "catherine",
-                        "margaret",
-                        "mary",
-                        "jane",
-                        "elizabeth",
-                        "anne",
-                        "sarah",
-                        "emily",
-                        "charlotte",
-                        "victoria",
-                    ]
-                ):
-                    item_gender = "F"
-                    logger.debug(
-                        f"Inferred female gender for {current_name} based on name"
-                    )
-
-        # Special case for Gordon Milne
-        if "gordon milne" in current_name.lower():
-            item_gender = "M"
-            logger.debug("Set gender to M for Gordon Milne")
-
-        # Add to result
-        result.append(
-            {
-                "name": current_name,
-                "birth_year": item_birth_year,
-                "death_year": item_death_year,
-                "relationship": relationship_term,
-                "gender": item_gender,  # Add gender information
-            }
-        )
+        person_entry = _process_path_person(relationship_data[i])
+        result.append(person_entry)
 
     return result
 
