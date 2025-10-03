@@ -542,6 +542,55 @@ class SessionManager:
         return True
 
     @timeout_protection(timeout=120)  # Increased timeout for complex operations like Action 7
+    def _check_cached_readiness(self, action_name: Optional[str]) -> Optional[bool]:
+        """Check if cached session readiness is still valid."""
+        if self._last_readiness_check is None:
+            return None
+
+        time_since_check = time.time() - self._last_readiness_check
+        cache_duration = 60
+
+        if time_since_check < cache_duration and self.session_ready:
+            if self.browser_manager.browser_needed:
+                if not self.browser_manager.is_session_valid():
+                    logger.debug(f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)")
+                    self.session_ready = False
+                    self._last_readiness_check = None
+                    return None
+                logger.debug(f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})")
+                return True
+            logger.debug(f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})")
+            return True
+        return None
+
+    def _perform_readiness_checks(self, action_name: Optional[str], skip_csrf: bool) -> bool:
+        """Perform session readiness checks."""
+        try:
+            ready_checks_ok = self.validator.perform_readiness_checks(
+                self.browser_manager, self.api_manager, self, action_name, skip_csrf=skip_csrf
+            )
+            if not ready_checks_ok:
+                logger.error("Readiness checks failed.")
+                return False
+            return True
+        except Exception as e:
+            logger.critical(f"Exception in readiness checks: {e}", exc_info=True)
+            return False
+
+    def _retrieve_session_identifiers(self) -> tuple[bool, bool]:
+        """Retrieve session identifiers and tree owner."""
+        identifiers_ok = self._retrieve_identifiers()
+        if not identifiers_ok:
+            logger.warning("Some identifiers could not be retrieved.")
+
+        owner_ok = True
+        if config_schema.api.tree_name:
+            owner_ok = self._retrieve_tree_owner()
+            if not owner_ok:
+                logger.warning("Tree owner name could not be retrieved.")
+
+        return identifiers_ok, owner_ok
+
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
     def ensure_session_ready(self, action_name: Optional[str] = None, skip_csrf: bool = False) -> bool:
@@ -559,86 +608,38 @@ class SessionManager:
             bool: True if session is ready, False otherwise
         """
         start_time = time.time()
-        # Removed duplicate logging - browser_manager will log the action
-
-        # MINIMAL FIX: Set browser_needed to True for session operations
         self.browser_manager.browser_needed = True
 
-        # PHASE 5.1: Check cached session state first
-        f"{id(self)}_{action_name or 'default'}"
+        # Check cached session state first
+        cached_result = self._check_cached_readiness(action_name)
+        if cached_result is not None:
+            return cached_result
 
-        # Try to use cached readiness state, but validate driver is still live
-        if self._last_readiness_check is not None:
-            time_since_check = time.time() - self._last_readiness_check
-            cache_duration = 60  # Use consistent 60-second cache for all actions
-            if time_since_check < cache_duration and self.session_ready:
-                # Validate that the cached state is still accurate
-                if self.browser_manager.browser_needed:
-                    if not self.browser_manager.is_session_valid():
-                        logger.debug(
-                            f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)"
-                        )
-                        self.session_ready = False
-                        self._last_readiness_check = None
-                    else:
-                        logger.debug(
-                            f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})"
-                        )
-                        return True
-                else:
-                    logger.debug(
-                        f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})"
-                    )
-                    return True
-
-        # Ensure driver is live if browser is needed (with optimization)
+        # Ensure driver is live if browser is needed
         if self.browser_manager.browser_needed and not self.browser_manager.ensure_driver_live(action_name):
             logger.error("Failed to ensure driver live.")
             self.session_ready = False
             return False
 
-        # PHASE 5.1: Optimized readiness checks with circuit breaker pattern
-        try:
-            ready_checks_ok = self.validator.perform_readiness_checks(
-                self.browser_manager, self.api_manager, self, action_name, skip_csrf=skip_csrf
-            )
-
-            if not ready_checks_ok:
-                logger.error("Readiness checks failed.")
-                self.session_ready = False
-                return False
-
-        except Exception as e:
-            logger.critical(f"Exception in readiness checks: {e}", exc_info=True)
+        # Perform readiness checks
+        ready_checks_ok = self._perform_readiness_checks(action_name, skip_csrf)
+        if not ready_checks_ok:
             self.session_ready = False
             return False
 
-        # PHASE 5.1: Optimized identifier retrieval with caching
-        identifiers_ok = self._retrieve_identifiers()
-        if not identifiers_ok:
-            logger.warning("Some identifiers could not be retrieved.")
+        # Retrieve identifiers and tree owner
+        identifiers_ok, owner_ok = self._retrieve_session_identifiers()
 
-        # Retrieve tree owner if configured (with caching)
-        owner_ok = True
-        if config_schema.api.tree_name:
-            owner_ok = self._retrieve_tree_owner()
-            if not owner_ok:
-                logger.warning("Tree owner name could not be retrieved.")
-
-        # ⚡ OPTIMIZATION 1: Pre-cache CSRF token during session setup
+        # Pre-cache CSRF token during session setup
         if ready_checks_ok and identifiers_ok:
             self._precache_csrf_token()
 
         # Set session ready status
         self.session_ready = ready_checks_ok and identifiers_ok and owner_ok
-
-        # PHASE 5.1: Cache the readiness check result
         self._last_readiness_check = time.time()
 
         check_time = time.time() - start_time
-        logger.debug(
-            f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}"
-        )
+        logger.debug(f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}")
         return self.session_ready
 
     def verify_sess(self) -> bool:
