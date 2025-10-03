@@ -59,7 +59,7 @@ class GenealogicalTaskGenerator:
     Creates actionable, specific tasks that improve research productivity.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the task generator with templates and configuration."""
         self.task_templates = self._load_task_templates()
         self.task_config = self._load_task_configuration()
