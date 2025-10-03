@@ -95,7 +95,7 @@ class OptimizationResult:
 class SmartQueryOptimizer:
     """Analyzes and optimizes database query performance."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.query_cache = {}
         self.slow_queries = deque(maxlen=100)
         self.query_stats = defaultdict(lambda: {"count": 0, "total_time": 0.0, "avg_time": 0.0})
@@ -169,7 +169,7 @@ class SmartQueryOptimizer:
 class MemoryPressureMonitor:
     """Proactively monitors and manages memory usage."""
 
-    def __init__(self, pressure_threshold: float = 85.0):
+    def __init__(self, pressure_threshold: float = 85.0) -> None:
         self.pressure_threshold = pressure_threshold
         self.monitoring = False
         self.optimization_history = []
@@ -245,7 +245,7 @@ class MemoryPressureMonitor:
 class APIBatchCoordinator:
     """Coordinates and optimizes API request batching."""
 
-    def __init__(self, batch_size: int = 10, batch_timeout: float = 1.0):
+    def __init__(self, batch_size: int = 10, batch_timeout: float = 1.0) -> None:
         self.batch_size = batch_size
         self.batch_timeout = batch_timeout
         self.pending_requests = defaultdict(list)
@@ -319,7 +319,7 @@ class APIBatchCoordinator:
 class ModuleLoadOptimizer:
     """Optimizes module loading and initialization times."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.load_times = {}
         self.optimization_applied = set()
         self._lock = threading.Lock()
@@ -383,7 +383,7 @@ class ModuleLoadOptimizer:
 class PerformanceOptimizer:
     """Main performance optimization coordinator."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.query_optimizer = SmartQueryOptimizer()
         self.memory_monitor = MemoryPressureMonitor()
         self.batch_coordinator = APIBatchCoordinator()
