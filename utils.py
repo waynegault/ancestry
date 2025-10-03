@@ -2196,339 +2196,322 @@ def handle_twoFA(session_manager: SessionManager) -> bool:  # type: ignore
 
 # End of handle_twoFA
 
+# Helper functions for enter_creds
+
+def _clear_input_field(driver: WebDriver, input_element, field_name: str) -> bool:
+    """Clear an input field robustly."""
+    try:
+        input_element.click()
+        time.sleep(0.1)
+        input_element.clear()
+        time.sleep(0.1)
+        driver.execute_script("arguments[0].value = '';", input_element)
+        time.sleep(0.1)
+        return True
+    except (ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
+        logger.warning(f"Issue clicking/clearing {field_name} field ({type(e).__name__}). Proceeding cautiously.")
+        return True
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"WebDriverException clicking/clearing {field_name}: {e}. Aborting.")
+        return False
+
+
+def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
+    """Enter username into the login form."""
+    logger.debug(f"Waiting for username input: '{USERNAME_INPUT_SELECTOR}'...")  # type: ignore
+    username_input = element_wait.until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
+    )
+    logger.debug("Username input field found.")
+
+    if not _clear_input_field(driver, username_input, "username"):
+        return False
+
+    ancestry_username = config_schema.api.username
+    if not ancestry_username:
+        raise ValueError("ANCESTRY_USERNAME configuration is missing.")
+
+    logger.debug("Entering username...")
+    username_input.send_keys(ancestry_username)
+    logger.debug("Username entered.")
+    time.sleep(random.uniform(0.2, 0.4))
+    return True
+
+
+def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
+    """Click the Next button in two-step login flow."""
+    logger.debug("Looking for Next/Continue button after username...")
+    try:
+        next_button = short_wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
+        )
+        logger.debug("Next button found, attempting to click...")
+
+        try:
+            driver.execute_script("arguments[0].click();", next_button)
+            logger.debug("Next button clicked via JavaScript.")
+            logger.info("Next button clicked, waiting for password field to appear...")
+            time.sleep(random.uniform(2.0, 3.0))
+            return True
+        except WebDriverException as js_err:  # type: ignore
+            logger.warning(f"JS click failed: {js_err}, trying standard click...")
+            try:
+                next_button.click()
+                logger.debug("Next button clicked successfully (standard click).")
+                time.sleep(random.uniform(2.0, 3.0))
+                return True
+            except (ElementClickInterceptedException, ElementNotInteractableException) as e:  # type: ignore
+                logger.error(f"Both click methods failed: {e}")
+                return False
+    except TimeoutException:  # type: ignore
+        logger.debug("Next button not found, assuming single-step login (password field already visible).")
+        return True
+    except WebDriverException as e:  # type: ignore
+        logger.warning(f"Error finding Next button: {e}. Continuing anyway.")
+        return True
+
+
+def _enter_password(driver: WebDriver, element_wait: WebDriverWait) -> tuple[bool, Any]:
+    """Enter password into the login form."""
+    logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")  # type: ignore
+    try:
+        password_input = element_wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+        )
+    except TimeoutException:  # type: ignore
+        logger.error("Password field did not appear after clicking Next. Retrying with longer wait...")
+        password_input = WebDriverWait(driver, 30).until(  # type: ignore
+            EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+        )
+
+    logger.debug("Password input field found.")
+
+    if not _clear_input_field(driver, password_input, "password"):
+        return False, None
+
+    ancestry_password = config_schema.api.password
+    if not ancestry_password:
+        raise ValueError("ANCESTRY_PASSWORD configuration is missing.")
+
+    logger.debug("Entering password: ***")
+    password_input.send_keys(ancestry_password)
+    logger.debug("Password entered.")
+    time.sleep(random.uniform(0.3, 0.6))
+    return True, password_input
+
+
+def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input) -> bool:
+    """Click the sign in button or use fallback methods."""
+    sign_in_button = None
+    try:
+        logger.debug(f"Waiting for sign in button presence: '{SIGN_IN_BUTTON_SELECTOR}'...")  # type: ignore
+        WebDriverWait(driver, 5).until(  # type: ignore
+            EC.presence_of_element_located((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
+        )
+        logger.debug("Waiting for sign in button clickability...")
+        sign_in_button = short_wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
+        )
+        logger.debug("Sign in button located and deemed clickable.")
+    except TimeoutException:  # type: ignore
+        logger.error("Sign in button not found or not clickable within timeout.")
+        logger.warning("Attempting fallback: Sending RETURN key to password field.")
+        try:
+            password_input.send_keys(Keys.RETURN)
+            logger.info("Fallback RETURN key sent to password field.")
+            return True
+        except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
+            logger.error(f"Failed to send RETURN key: {key_e}")
+            return False
+    except WebDriverException as find_e:  # type: ignore
+        logger.error(f"Unexpected WebDriver error finding sign in button: {find_e}")
+        return False
+
+    if not sign_in_button:
+        return False
+
+    # Try standard click
+    try:
+        logger.debug("Attempting standard click on sign in button...")
+        sign_in_button.click()
+        logger.debug("Standard click executed.")
+        return True
+    except (ElementClickInterceptedException, ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
+        logger.warning(f"Standard click failed ({type(e).__name__}). Trying JS click...")
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"WebDriver error during standard click: {e}. Trying JS click...")
+
+    # Try JavaScript click
+    try:
+        logger.debug("Attempting JavaScript click on sign in button...")
+        driver.execute_script("arguments[0].click();", sign_in_button)
+        logger.info("JavaScript click executed.")
+        return True
+    except WebDriverException as js_click_e:  # type: ignore
+        logger.error(f"Error during JavaScript click: {js_click_e}")
+
+    # Try RETURN key as final fallback
+    logger.warning("Both standard and JS clicks failed. Attempting fallback: Sending RETURN key.")
+    try:
+        password_input.send_keys(Keys.RETURN)
+        logger.info("Fallback RETURN key sent to password field after failed clicks.")
+        return True
+    except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
+        logger.error(f"Failed to send RETURN key as final fallback: {key_e}")
+        return False
+
+
 def enter_creds(driver: WebDriver) -> bool:  # type: ignore
+    """Enter credentials and sign in to Ancestry."""
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
-    short_wait = WebDriverWait(driver, 5)  # Short wait for quick checks
-    time.sleep(random.uniform(0.5, 1.0))  # Small random wait
+    short_wait = WebDriverWait(driver, 5)
+    time.sleep(random.uniform(0.5, 1.0))
+
     try:
         logger.debug("Entering Credentials and Signing In...")
 
-        # --- Username ---
-        logger.debug(f"Waiting for username input: '{USERNAME_INPUT_SELECTOR}'...")  # type: ignore
-        username_input = element_wait.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
-        )
-        logger.debug("Username input field found.")
-        try:
-            # Attempt to clear field robustly
-            username_input.click()
-            time.sleep(0.1)
-            username_input.clear()
-            time.sleep(0.1)
-            # JS clear as fallback/additional measure
-            driver.execute_script("arguments[0].value = '';", username_input)
-            time.sleep(0.1)
-        except (ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
-            logger.warning(
-                f"Issue clicking/clearing username field ({type(e).__name__}). Proceeding cautiously."
-            )
-        except WebDriverException as e:  # type: ignore
-            logger.error(
-                f"WebDriverException clicking/clearing username: {e}. Aborting."
-            )
+        # Enter username
+        if not _enter_username(driver, element_wait):
             return False
-        # End of try/except
 
-        # Check config value exists
-        ancestry_username = config_schema.api.username
-        if not ancestry_username:
-            raise ValueError("ANCESTRY_USERNAME configuration is missing.")
-        # End of if
-        logger.debug("Entering username...")
-        username_input.send_keys(ancestry_username)
-        logger.debug("Username entered.")
-        time.sleep(random.uniform(0.2, 0.4))
-
-        # --- Click Next Button (two-step login flow) ---
-        logger.debug("Looking for Next/Continue button after username...")
-        next_clicked = False
-        try:
-            # The sign in button might say "Next" on the first step
-            next_button = short_wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
-            )
-            logger.debug("Next button found, attempting to click...")
-
-            # Try multiple click methods
-            try:
-                # First try: JavaScript click (more reliable when elements might be obscured)
-                driver.execute_script("arguments[0].click();", next_button)
-                logger.debug("Next button clicked via JavaScript.")
-                next_clicked = True
-            except WebDriverException as js_err:  # type: ignore
-                logger.warning(f"JS click failed: {js_err}, trying standard click...")
-                try:
-                    next_button.click()
-                    logger.debug("Next button clicked successfully (standard click).")
-                    next_clicked = True
-                except (ElementClickInterceptedException, ElementNotInteractableException) as e:  # type: ignore
-                    logger.error(f"Both click methods failed: {e}")
-
-            if next_clicked:
-                logger.info("Next button clicked, waiting for password field to appear...")
-                time.sleep(random.uniform(2.0, 3.0))  # Wait for password field to appear
-        except TimeoutException:  # type: ignore
-            logger.debug("Next button not found, assuming single-step login (password field already visible).")
-        except WebDriverException as e:  # type: ignore
-            logger.warning(f"Error finding Next button: {e}. Continuing anyway.")
-        # End of try/except
-
-        # --- Password ---
-        logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")  # type: ignore
-        try:
-            password_input = element_wait.until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
-            )
-        except TimeoutException:  # type: ignore
-            logger.error("Password field did not appear after clicking Next. Retrying with longer wait...")
-            # Try one more time with a longer wait
-            password_input = WebDriverWait(driver, 30).until(  # type: ignore
-                EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
-            )
-        logger.debug("Password input field found.")
-        try:
-            # Attempt to clear field robustly
-            password_input.click()
-            time.sleep(0.1)
-            password_input.clear()
-            time.sleep(0.1)
-            driver.execute_script("arguments[0].value = '';", password_input)
-            time.sleep(0.1)
-        except (ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
-            logger.warning(
-                f"Issue clicking/clearing password field ({type(e).__name__}). Proceeding cautiously."
-            )
-        except WebDriverException as e:  # type: ignore
-            logger.error(
-                f"WebDriverException clicking/clearing password: {e}. Aborting."
-            )
+        # Click Next button (two-step login)
+        if not _click_next_button(driver, short_wait):
             return False
-        # End of try/except
 
-        # Check config value exists
-        ancestry_password = config_schema.api.password
-        if not ancestry_password:
-            raise ValueError("ANCESTRY_PASSWORD configuration is missing.")
-        # End of if
-        logger.debug("Entering password: ***")
-        password_input.send_keys(ancestry_password)
-        logger.debug("Password entered.")
-        time.sleep(random.uniform(0.3, 0.6))
-
-        # --- Sign In Button ---
-        sign_in_button = None
-        try:
-            logger.debug(f"Waiting for sign in button presence: '{SIGN_IN_BUTTON_SELECTOR}'...")  # type: ignore
-            WebDriverWait(driver, 5).until(  # type: ignore
-                EC.presence_of_element_located((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
-            )
-            logger.debug("Waiting for sign in button clickability...")
-            sign_in_button = short_wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
-            )
-            logger.debug("Sign in button located and deemed clickable.")
-        except TimeoutException:  # type: ignore
-            logger.error("Sign in button not found or not clickable within timeout.")
-            logger.warning("Attempting fallback: Sending RETURN key to password field.")
-            try:
-                password_input.send_keys(Keys.RETURN)
-                logger.info("Fallback RETURN key sent to password field.")
-                return True  # Assume submission worked
-            except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
-                logger.error(f"Failed to send RETURN key: {key_e}")
-                return False  # Fallback also failed
-            # End of try/except
-        except WebDriverException as find_e:  # type: ignore
-            logger.error(f"Unexpected WebDriver error finding sign in button: {find_e}")
+        # Enter password
+        password_ok, password_input = _enter_password(driver, element_wait)
+        if not password_ok:
             return False
-        # End of try/except
 
-        # Click button using multiple methods if needed
-        click_successful = False
-        if sign_in_button:
-            # Attempt 1: Standard click
-            try:
-                logger.debug("Attempting standard click on sign in button...")
-                sign_in_button.click()
-                logger.debug("Standard click executed.")
-                click_successful = True
-            except (ElementClickInterceptedException, ElementNotInteractableException, StaleElementReferenceException) as click_intercept_err:  # type: ignore
-                logger.warning(
-                    f"Standard click failed ({type(click_intercept_err).__name__}). Trying JS click..."
-                )
-            except WebDriverException as click_err:  # type: ignore
-                logger.error(
-                    f"WebDriver error during standard click: {click_err}. Trying JS click..."
-                )
-            # End of try/except standard click
-
-            # Attempt 2: JavaScript click (if standard failed)
-            if not click_successful:
-                try:
-                    logger.debug("Attempting JavaScript click on sign in button...")
-                    driver.execute_script("arguments[0].click();", sign_in_button)
-                    logger.info("JavaScript click executed.")
-                    click_successful = True
-                except WebDriverException as js_click_e:  # type: ignore
-                    logger.error(f"Error during JavaScript click: {js_click_e}")
-                # End of try/except JS click
-            # End of if not click_successful
-
-            # Attempt 3: Send RETURN key (if clicks failed)
-            if not click_successful:
-                logger.warning(
-                    "Both standard and JS clicks failed. Attempting fallback: Sending RETURN key."
-                )
-                try:
-                    # Send to password field as it likely still has focus
-                    password_input.send_keys(Keys.RETURN)
-                    logger.info(
-                        "Fallback RETURN key sent to password field after failed clicks."
-                    )
-                    click_successful = True
-                except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
-                    logger.error(
-                        f"Failed to send RETURN key as final fallback: {key_e}"
-                    )
-                # End of try/except RETURN key
-            # End of if not click_successful (after JS)
-        # End of if sign_in_button
-
-        return click_successful  # Return True if any click/submit method seemed to work
+        # Click sign in button
+        return _click_sign_in_button(driver, short_wait, password_input)
 
     except (TimeoutException, NoSuchElementException) as e:  # type: ignore
-        logger.error(
-            f"Timeout or Element not found finding username/password field: {e}"
-        )
+        logger.error(f"Timeout or Element not found finding username/password field: {e}")
         return False
-    except ValueError as ve:  # Catch missing config
+    except ValueError as ve:
         logger.critical(f"Configuration Error: {ve}")
-        # Re-raise config error as it's critical
         raise ve
     except WebDriverException as e:  # type: ignore
         logger.error(f"WebDriver error entering credentials: {e}")
         if not is_browser_open(driver):
             logger.error("Session invalid during credential entry.")
-        # End of if
         return False
     except Exception as e:
         logger.error(f"Unexpected error entering credentials: {e}", exc_info=True)
         return False
-    # End of try/except
 
 # End of enter_creds
 
-@retry(MAX_RETRIES=2, BACKOFF_FACTOR=1, MAX_DELAY=3)  # Add retry for consent handling
+# Helper functions for consent
+
+def _find_consent_banner(driver: WebDriver) -> Optional[Any]:
+    """Find the cookie consent banner if present."""
+    logger.debug(f"Checking for cookie consent overlay: '{COOKIE_BANNER_SELECTOR}'")  # type: ignore
+    try:
+        overlay_element = WebDriverWait(driver, 3).until(  # type: ignore
+            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
+        )
+        logger.debug("Cookie consent overlay DETECTED.")
+        return overlay_element
+    except TimeoutException:  # type: ignore
+        logger.debug("Cookie consent overlay not found. Assuming no consent needed.")
+        return None
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"Error checking for consent banner: {e}")
+        raise
+
+
+def _click_accept_button_standard(driver: WebDriver, accept_button) -> bool:
+    """Try standard click on accept button."""
+    try:
+        accept_button.click()
+        logger.info("Clicked accept button successfully.")
+        WebDriverWait(driver, 2).until_not(  # type: ignore
+            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
+        )
+        logger.debug("Consent overlay gone after clicking accept button.")
+        return True
+    except ElementClickInterceptedException:  # type: ignore
+        logger.warning("Click intercepted for accept button, trying JS click...")
+        return False
+    except (TimeoutException, NoSuchElementException):  # type: ignore
+        logger.debug("Consent overlay likely gone after standard click (verification timed out/not found).")
+        return True
+    except WebDriverException as click_err:  # type: ignore
+        logger.error(f"Error during standard click on accept button: {click_err}. Trying JS click...")
+        return False
+
+
+def _click_accept_button_js(driver: WebDriver, accept_button) -> bool:
+    """Try JavaScript click on accept button."""
+    try:
+        logger.debug("Attempting JS click on accept button...")
+        driver.execute_script("arguments[0].click();", accept_button)
+        logger.info("Clicked accept button via JS successfully.")
+        WebDriverWait(driver, 2).until_not(  # type: ignore
+            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
+        )
+        logger.debug("Consent overlay gone after JS clicking accept button.")
+        return True
+    except (TimeoutException, NoSuchElementException):  # type: ignore
+        logger.debug("Consent overlay likely gone after JS click (verification timed out/not found).")
+        return True
+    except WebDriverException as js_click_err:  # type: ignore
+        logger.error(f"Failed JS click for accept button: {js_click_err}")
+        return False
+
+
+def _handle_consent_button(driver: WebDriver) -> bool:
+    """Handle clicking the consent accept button."""
+    logger.debug(f"Trying specific accept button: '{CONSENT_ACCEPT_BUTTON_SELECTOR}'")
+    try:
+        accept_button = WebDriverWait(driver, 3).until(  # type: ignore
+            EC.element_to_be_clickable((By.CSS_SELECTOR, CONSENT_ACCEPT_BUTTON_SELECTOR))  # type: ignore
+        )
+        logger.info("Found specific clickable accept button.")
+
+        # Try standard click first
+        if _click_accept_button_standard(driver, accept_button):
+            return True
+
+        # Try JS click as fallback
+        return _click_accept_button_js(driver, accept_button)
+
+    except TimeoutException:  # type: ignore
+        logger.warning(f"Specific accept button '{CONSENT_ACCEPT_BUTTON_SELECTOR}' not found or not clickable.")
+        return False
+    except WebDriverException as find_err:  # type: ignore
+        logger.error(f"Error finding/clicking specific accept button: {find_err}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error handling consent button: {e}", exc_info=True)
+        return False
+
+
+@retry(MAX_RETRIES=2, BACKOFF_FACTOR=1, MAX_DELAY=3)
 def consent(driver: WebDriver) -> bool:  # type: ignore
     """Handles the cookie consent banner if present."""
     if not driver:
         logger.error("consent: WebDriver instance is None.")
         return False
-    # End of if
 
-    logger.debug(f"Checking for cookie consent overlay: '{COOKIE_BANNER_SELECTOR}'")  # type: ignore
-    overlay_element = None
+    # Find consent banner
     try:
-        # Use a short wait to find the banner
-        overlay_element = WebDriverWait(driver, 3).until(  # type: ignore
-            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
-        )
-        logger.debug("Cookie consent overlay DETECTED.")
-    except TimeoutException:  # type: ignore
-        logger.debug("Cookie consent overlay not found. Assuming no consent needed.")
-        return True  # No banner, proceed
-    except WebDriverException as e:  # Catch errors finding element # type: ignore
-        logger.error(f"Error checking for consent banner: {e}")
-        return False  # Indicate failure if check fails
-    # End of try/except
+        overlay_element = _find_consent_banner(driver)
+    except WebDriverException:
+        return False
 
-    # If overlay detected, try clicking the accept button (don't use JS removal)
-    if overlay_element:
-        logger.debug(
-            f"JS removal failed/skipped. Trying specific accept button: '{CONSENT_ACCEPT_BUTTON_SELECTOR}'"
-        )
-        try:
-            # Wait for the button to be clickable
-            accept_button = WebDriverWait(driver, 3).until(  # type: ignore
-                EC.element_to_be_clickable(  # type: ignore
-                    (By.CSS_SELECTOR, CONSENT_ACCEPT_BUTTON_SELECTOR)  # type: ignore
-                )
-            )
-            logger.info("Found specific clickable accept button.")
+    # No banner found
+    if overlay_element is None:
+        return True
 
-            # Try standard click first
-            try:
-                accept_button.click()
-                logger.info("Clicked accept button successfully.")
-                # Verify removal
-                WebDriverWait(driver, 2).until_not(  # type: ignore
-                    EC.presence_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)  # type: ignore
-                    )
-                )
-                logger.debug("Consent overlay gone after clicking accept button.")
-                return True  # Success
-            except ElementClickInterceptedException:  # type: ignore
-                logger.warning(
-                    "Click intercepted for accept button, trying JS click..."
-                )
-                # Fall through to JS click attempt
-            except (
-                TimeoutException,
-                NoSuchElementException,
-            ):  # If overlay gone after click # type: ignore
-                logger.debug(
-                    "Consent overlay likely gone after standard click (verification timed out/not found)."
-                )
-                return True
-            except WebDriverException as click_err:  # type: ignore
-                logger.error(
-                    f"Error during standard click on accept button: {click_err}. Trying JS click..."
-                )
-            # End of try/except standard click
+    # Try to handle the consent button
+    if _handle_consent_button(driver):
+        return True
 
-            # Try JS click as fallback
-            try:
-                logger.debug("Attempting JS click on accept button...")
-                driver.execute_script("arguments[0].click();", accept_button)
-                logger.info("Clicked accept button via JS successfully.")
-                # Verify removal
-                WebDriverWait(driver, 2).until_not(  # type: ignore
-                    EC.presence_of_element_located(  # type: ignore
-                        (By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR)  # type: ignore
-                    )
-                )
-                logger.debug("Consent overlay gone after JS clicking accept button.")
-                return True  # Success
-            except (
-                TimeoutException,
-                NoSuchElementException,
-            ):  # If overlay gone after JS click # type: ignore
-                logger.debug(
-                    "Consent overlay likely gone after JS click (verification timed out/not found)."
-                )
-                return True
-            except WebDriverException as js_click_err:  # type: ignore
-                logger.error(f"Failed JS click for accept button: {js_click_err}")
-            # End of try/except JS click
-
-        except TimeoutException:  # type: ignore
-            logger.warning(
-                f"Specific accept button '{CONSENT_ACCEPT_BUTTON_SELECTOR}' not found or not clickable."
-            )
-        except (
-            WebDriverException
-        ) as find_err:  # Catch errors finding/interacting # type: ignore
-            logger.error(f"Error finding/clicking specific accept button: {find_err}")
-        except Exception as e:  # Catch other unexpected errors
-            logger.error(
-                f"Unexpected error handling consent button: {e}", exc_info=True
-            )
-        # End of try/except button click block
-    # End of if not removed_via_js
-
-    # If both JS removal and button click failed
-    logger.error("Could not remove consent overlay via JS or button click.")
+    # If button click failed
+    logger.error("Could not remove consent overlay via button click.")
     return False
 
 # End of consent
