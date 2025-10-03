@@ -619,21 +619,17 @@ def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any]
         pass
 
 
-def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: dict[str, Any]) -> dict[str, Any]:
-    """Attempt to salvage flat structure by transforming to expected nested structure."""
-    salvaged = default_empty_result.copy()
-
-    if not isinstance(parsed_json, dict):
-        return salvaged
-
-    # Handle expected nested structure
+def _check_nested_structure(parsed_json: dict[str, Any], salvaged: dict[str, Any]) -> bool:
+    """Check if JSON already has expected nested structure."""
     if "extracted_data" in parsed_json and isinstance(parsed_json["extracted_data"], dict):
         salvaged["extracted_data"] = parsed_json["extracted_data"]
     if "suggested_tasks" in parsed_json and isinstance(parsed_json["suggested_tasks"], list):
         salvaged["suggested_tasks"] = parsed_json["suggested_tasks"]
-        return salvaged
+        return True
+    return False
 
-    # Handle flat structure and transform to nested
+def _transform_flat_to_nested(parsed_json: dict[str, Any]) -> dict[str, Any]:
+    """Transform flat structure to nested structure."""
     extracted_data = {}
     key_mapping = {
         "mentioned_names": "mentioned_names",
@@ -656,12 +652,26 @@ def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: d
         if key not in extracted_data:
             extracted_data[key] = []
 
-    salvaged["extracted_data"] = extracted_data
     logger.info(
         f"Successfully transformed flat structure to nested. Extracted {len(extracted_data.get('mentioned_names', []))} names, "
         f"{len(extracted_data.get('mentioned_locations', []))} locations, {len(extracted_data.get('mentioned_dates', []))} dates"
     )
 
+    return extracted_data
+
+def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: dict[str, Any]) -> dict[str, Any]:
+    """Attempt to salvage flat structure by transforming to expected nested structure."""
+    salvaged = default_empty_result.copy()
+
+    if not isinstance(parsed_json, dict):
+        return salvaged
+
+    # Check for nested structure first
+    if _check_nested_structure(parsed_json, salvaged):
+        return salvaged
+
+    # Transform flat structure
+    salvaged["extracted_data"] = _transform_flat_to_nested(parsed_json)
     return salvaged
 
 
