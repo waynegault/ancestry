@@ -261,6 +261,33 @@ Added type hints to multiple functions:
 
 ---
 
+### 12. **utils.py** (Significantly Improved - nav_to_page complexity reduced)
+
+#### Function: `nav_to_page()`
+- **Complexity**: 45 → 25 (-44%)
+- **Lines**: ~385 → ~135 (-65%)
+- **Helper Functions Created**: 13
+  - `_validate_nav_inputs()` - Input validation
+  - `_parse_and_normalize_url()` - URL parsing and normalization
+  - `_check_browser_session()` - Browser session check with restart
+  - `_execute_navigation()` - Execute driver.get() and wait for ready state
+  - `_get_landed_url_base()` - Get and normalize current URL
+  - `_check_for_mfa_page()` - Check if on MFA page
+  - `_check_for_login_page()` - Check if on login page
+  - `_handle_login_redirect()` - Handle unexpected login page
+  - `_check_signin_redirect()` - Check signin redirect validity
+  - `_handle_url_mismatch()` - Handle landing on wrong URL
+  - `_wait_for_element()` - Wait for target element
+  - `_handle_navigation_alert()` - Handle unexpected alerts
+  - `_handle_webdriver_exception()` - Handle WebDriver exceptions
+
+**Total for utils.py**:
+- **Complexity Reduction**: -20 points
+- **Lines Eliminated**: ~250 lines
+- **Quality Score**: Still 0.0/100 (needs more work on other functions)
+
+---
+
 ## Previous Sprint Work (Weeks 44-49)
 
 ### **action11.py** (Already Above 70)
@@ -277,21 +304,21 @@ Added type hints to multiple functions:
 
 ## Sprint Statistics
 
-### Current Sprint
-- **Files Refactored**: 13
-- **Functions Refactored**: 26
-- **Helper Functions Created**: 56
-- **Total Complexity Reduction**: ~120 points
-- **Total Lines Eliminated**: ~1,241 lines
-- **Git Commits**: 28
+### Current Sprint (Week 51)
+- **Files Refactored**: 14
+- **Functions Refactored**: 27
+- **Helper Functions Created**: 69
+- **Total Complexity Reduction**: ~140 points
+- **Total Lines Eliminated**: ~1,491 lines
+- **Git Commits**: 29
 - **Files Moved Above 70**: 4 (action7_inbox.py, action8_messaging.py, ai_interface.py, message_personalization.py)
-- **Files Significantly Improved**: 2 (relationship_utils.py: 40.7→59.5, error_handling.py: 0.0→8.5)
+- **Files Significantly Improved**: 3 (relationship_utils.py: 40.7→59.5, error_handling.py: 0.0→8.5, utils.py nav_to_page: 45→25)
 
 ### Combined with Previous Sprints
-- **Total Functions Refactored**: 32
-- **Total Helper Functions Created**: 116
-- **Total Complexity Reduction**: ~289 points
-- **Total Lines Eliminated**: ~2,269 lines
+- **Total Functions Refactored**: 33
+- **Total Helper Functions Created**: 129
+- **Total Complexity Reduction**: ~309 points
+- **Total Lines Eliminated**: ~2,519 lines
 
 ---
 
