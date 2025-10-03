@@ -564,65 +564,65 @@ def _try_simple_text_relationship(html_content_raw: str, target_name: str, owner
     return None
 
 
-def _extract_person_from_list_item(item) -> dict[str, str]:
-    """Extract name, relationship, and lifespan from a list item."""
-    # Skip icon items - check if item is a Tag first
+def _should_skip_list_item(item) -> bool:
+    """Check if list item should be skipped."""
     try:
         if not isinstance(item, Tag):
-            return {}
+            return True
 
         is_hidden = item.get("aria-hidden") == "true"
         item_classes = item.get("class") or []
         has_icon_class = isinstance(item_classes, list) and "icon" in item_classes
 
-        if is_hidden or has_icon_class:
-            return {}
+        return is_hidden or has_icon_class
     except (AttributeError, TypeError):
         logger.debug(f"Error checking item attributes: {type(item)}")
-        return {}
+        return True
 
-    # Extract name
+def _extract_name_from_item(item) -> str:
+    """Extract name from list item."""
     try:
         name_elem = item.find("b") if isinstance(item, Tag) else None
-        name = (
-            name_elem.get_text(strip=True)
-            if name_elem and hasattr(name_elem, "get_text")
-            else (
-                str(item.string).strip()
-                if hasattr(item, "string") and item.string
-                else "Unknown"
-            )
-        )
+        if name_elem and hasattr(name_elem, "get_text"):
+            return name_elem.get_text(strip=True)
+        elif hasattr(item, "string") and item.string:
+            return str(item.string).strip()
+        return "Unknown"
     except (AttributeError, TypeError):
-        name = "Unknown"
         logger.debug(f"Error extracting name: {type(item)}")
+        return "Unknown"
 
-    # Extract relationship description
+def _extract_relationship_from_item(item) -> str:
+    """Extract relationship description from list item."""
     try:
         rel_elem = item.find("i") if isinstance(item, Tag) else None
-        relationship_desc = (
-            rel_elem.get_text(strip=True)
-            if rel_elem and hasattr(rel_elem, "get_text")
-            else ""
-        )
+        if rel_elem and hasattr(rel_elem, "get_text"):
+            return rel_elem.get_text(strip=True)
+        return ""
     except (AttributeError, TypeError):
-        relationship_desc = ""
         logger.debug(f"Error extracting relationship: {type(item)}")
+        return ""
 
-    # Extract lifespan
+def _extract_lifespan_from_item(item) -> str:
+    """Extract lifespan from list item."""
     try:
-        text_content = (
-            item.get_text(strip=True)
-            if hasattr(item, "get_text")
-            else str(item)
-        )
+        text_content = item.get_text(strip=True) if hasattr(item, "get_text") else str(item)
         lifespan_match = re.search(r"(\d{4})-(\d{4}|\bLiving\b|-)", text_content, re.IGNORECASE)
-        lifespan = lifespan_match.group(0) if lifespan_match else ""
+        return lifespan_match.group(0) if lifespan_match else ""
     except (AttributeError, TypeError):
-        lifespan = ""
         logger.debug(f"Error extracting lifespan: {type(item)}")
+        return ""
 
-    return {"name": name, "relationship": relationship_desc, "lifespan": lifespan}
+def _extract_person_from_list_item(item) -> dict[str, str]:
+    """Extract name, relationship, and lifespan from a list item."""
+    if _should_skip_list_item(item):
+        return {}
+
+    return {
+        "name": _extract_name_from_item(item),
+        "relationship": _extract_relationship_from_item(item),
+        "lifespan": _extract_lifespan_from_item(item)
+    }
 
 
 def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]:
