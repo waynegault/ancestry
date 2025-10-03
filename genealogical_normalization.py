@@ -95,6 +95,76 @@ def _dedupe_list_str(items: Any) -> list[str]:
     return out
 
 
+# Helper functions for _validate_and_normalize_date
+
+def _detect_approximate_indicator(date_str: str) -> bool:
+    """Detect if date string contains approximate indicators."""
+    approx_indicators = ["circa", "~", "about", "abt", "c.", "ca.", "before", "after", "bef", "aft"]
+    return any(indicator in date_str.lower() for indicator in approx_indicators)
+
+
+def _extract_year_from_date(date_str: str) -> Optional[str]:
+    """Extract year from date string (genealogically relevant range: 1400-2100)."""
+    year_match = re.search(r'\b(1[4-9]\d{2}|20\d{2}|21\d{2})\b', date_str)
+    return year_match.group(1) if year_match else None
+
+
+def _extract_month_from_date(date_str: str) -> Optional[str]:
+    """Extract month number from date string."""
+    month_patterns = {
+        r'\b(jan|january)\b': '01', r'\b(feb|february)\b': '02', r'\b(mar|march)\b': '03',
+        r'\b(apr|april)\b': '04', r'\b(may)\b': '05', r'\b(jun|june)\b': '06',
+        r'\b(jul|july)\b': '07', r'\b(aug|august)\b': '08', r'\b(sep|september)\b': '09',
+        r'\b(oct|october)\b': '10', r'\b(nov|november)\b': '11', r'\b(dec|december)\b': '12'
+    }
+
+    for pattern, month_num in month_patterns.items():
+        if re.search(pattern, date_str.lower()):
+            return month_num
+
+    return None
+
+
+def _extract_day_from_date(date_str: str, month: Optional[str]) -> Optional[str]:
+    """Extract day from date string if month is present."""
+    if not month:
+        return None
+
+    day_match = re.search(r'\b([0-3]?\d)\b', date_str)
+    if day_match:
+        potential_day = int(day_match.group(1))
+        if 1 <= potential_day <= 31:
+            return f"{potential_day:02d}"
+
+    return None
+
+
+def _construct_normalized_date(year: str, month: Optional[str], day: Optional[str]) -> str:
+    """Construct normalized date string from components."""
+    if day and month:
+        return f"{year}-{month}-{day}"
+    elif month:
+        return f"{year}-{month}"
+    else:
+        return year
+
+
+def _add_approximation_prefix(date_str: str, normalized: str) -> str:
+    """Add approximation indicator prefix to normalized date."""
+    if "circa" in date_str.lower() or "c." in date_str.lower():
+        return f"circa {normalized}"
+    elif "~" in date_str:
+        return f"~{normalized}"
+    elif "about" in date_str.lower() or "abt" in date_str.lower():
+        return f"about {normalized}"
+    elif "before" in date_str.lower() or "bef" in date_str.lower():
+        return f"before {normalized}"
+    elif "after" in date_str.lower() or "aft" in date_str.lower():
+        return f"after {normalized}"
+
+    return normalized
+
+
 def _validate_and_normalize_date(date_str: str) -> str:
     """
     Enhanced Phase 12.1: Validate and normalize genealogical dates.
@@ -114,62 +184,26 @@ def _validate_and_normalize_date(date_str: str) -> str:
     if not date_str:
         return ""
 
-    # Preserve approximate indicators
-    approx_indicators = ["circa", "~", "about", "abt", "c.", "ca.", "before", "after", "bef", "aft"]
-    has_approx = any(indicator in date_str.lower() for indicator in approx_indicators)
+    # Detect approximate indicators
+    has_approx = _detect_approximate_indicator(date_str)
 
-    # Extract year patterns (genealogically relevant range: 1400-2100)
-    year_match = re.search(r'\b(1[4-9]\d{2}|20\d{2}|21\d{2})\b', date_str)
-    if year_match:
-        year = year_match.group(1)
+    # Extract year
+    year = _extract_year_from_date(date_str)
+    if not year:
+        return date_str  # Return original if no recognizable year pattern
 
-        # Check for month patterns
-        month_patterns = {
-            r'\b(jan|january)\b': '01', r'\b(feb|february)\b': '02', r'\b(mar|march)\b': '03',
-            r'\b(apr|april)\b': '04', r'\b(may)\b': '05', r'\b(jun|june)\b': '06',
-            r'\b(jul|july)\b': '07', r'\b(aug|august)\b': '08', r'\b(sep|september)\b': '09',
-            r'\b(oct|october)\b': '10', r'\b(nov|november)\b': '11', r'\b(dec|december)\b': '12'
-        }
+    # Extract month and day
+    month = _extract_month_from_date(date_str)
+    day = _extract_day_from_date(date_str, month)
 
-        month = None
-        for pattern, month_num in month_patterns.items():
-            if re.search(pattern, date_str.lower()):
-                month = month_num
-                break
+    # Construct normalized date
+    normalized = _construct_normalized_date(year, month, day)
 
-        # Check for day patterns
-        day_match = re.search(r'\b([0-3]?\d)\b', date_str)
-        day = None
-        if day_match and month:
-            potential_day = int(day_match.group(1))
-            if 1 <= potential_day <= 31:
-                day = f"{potential_day:02d}"
+    # Add back approximation indicators
+    if has_approx:
+        normalized = _add_approximation_prefix(date_str, normalized)
 
-        # Construct normalized date
-        if day and month:
-            normalized = f"{year}-{month}-{day}"
-        elif month:
-            normalized = f"{year}-{month}"
-        else:
-            normalized = year
-
-        # Add back approximation indicators
-        if has_approx:
-            if "circa" in date_str.lower() or "c." in date_str.lower():
-                normalized = f"circa {normalized}"
-            elif "~" in date_str:
-                normalized = f"~{normalized}"
-            elif "about" in date_str.lower() or "abt" in date_str.lower():
-                normalized = f"about {normalized}"
-            elif "before" in date_str.lower() or "bef" in date_str.lower():
-                normalized = f"before {normalized}"
-            elif "after" in date_str.lower() or "aft" in date_str.lower():
-                normalized = f"after {normalized}"
-
-        return normalized
-
-    # Return original if no recognizable date pattern
-    return date_str
+    return normalized
 
 
 def _validate_relationship(relationship: str) -> str:
