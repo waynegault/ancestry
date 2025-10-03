@@ -81,6 +81,31 @@ def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
     return _are_spouses_orig(person1_id, person2_id, reader)
 
 
+def _clean_gedcom_slashes(name: str) -> str:
+    """Remove GEDCOM-style slashes from name."""
+    cleaned = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", name)  # Middle
+    cleaned = re.sub(r"^/([^/]+)/\s*", r"\1 ", cleaned)  # Start
+    cleaned = re.sub(r"\s*/([^/]+)/$", r" \1", cleaned)  # End
+    return cleaned
+
+def _format_single_word(word: str) -> str:
+    """Format a single word in a name."""
+    if not word:
+        return ""
+
+    # Preserve fully uppercase words (likely initials/acronyms)
+    if word.isupper() and len(word) <= 3:
+        return word
+    # Handle name particles and prefixes
+    elif word.lower() in ["mc", "mac", "o'"]:
+        return word.capitalize()
+    # Handle quoted nicknames
+    elif word.startswith('"') and word.endswith('"'):
+        return f'"{word[1:-1].title()}"'
+    # Regular title case
+    else:
+        return word.title()
+
 def format_name(name: Optional[str]) -> str:
     """
     Formats a person's name string to title case, preserving uppercase components
@@ -94,37 +119,11 @@ def format_name(name: Optional[str]) -> str:
         return name.strip()
 
     try:
-        cleaned_name = name.strip()
-        # Handle GEDCOM slashes more robustly
-        cleaned_name = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", cleaned_name)  # Middle
-        cleaned_name = re.sub(r"^/([^/]+)/\s*", r"\1 ", cleaned_name)  # Start
-        cleaned_name = re.sub(r"\s*/([^/]+)/$", r" \1", cleaned_name)  # End
-
-        # Split into words
+        cleaned_name = _clean_gedcom_slashes(name.strip())
         words = cleaned_name.split()
-        formatted_words = []
-
-        for word in words:
-            if not word:
-                continue
-
-            # Preserve fully uppercase words (likely initials/acronyms)
-            if word.isupper() and len(word) <= 3:
-                formatted_words.append(word)
-            # Handle name particles and prefixes
-            elif word.lower() in ["mc", "mac", "o'"]:
-                formatted_words.append(word.capitalize())
-            # Handle quoted nicknames
-            elif word.startswith('"') and word.endswith('"'):
-                formatted_words.append(f'"{word[1:-1].title()}"')
-            # Regular title case
-            else:
-                formatted_words.append(word.title())
-
+        formatted_words = [_format_single_word(word) for word in words if word]
         return " ".join(formatted_words)
-
     except Exception:
-        # Fallback to basic title case
         return name.title()
 
 
