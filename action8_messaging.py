@@ -2484,49 +2484,75 @@ def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
         return None
 
 
+def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:
+    """Convert log object to dict and update status if conversion fails."""
+    if not new_log_object:
+        return None, "unchanged"
+
+    log_dict = _convert_log_object_to_dict(new_log_object)
+    if log_dict is None:
+        return None, "error"
+    return log_dict, "unchanged"
+
+def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list) -> int:
+    """Handle sent status updates."""
+    if log_dict:
+        db_logs_to_add_dicts.append(log_dict)
+    return sent_count + 1
+
+def _handle_acked_status(
+    acked_count: int, log_dict: Optional[dict], person_update_tuple,
+    db_logs_to_add_dicts: list, person_updates: dict
+) -> int:
+    """Handle acknowledged status updates."""
+    if log_dict:
+        db_logs_to_add_dicts.append(log_dict)
+    if person_update_tuple:
+        person_updates[person_update_tuple[0]] = person_update_tuple[1]
+    return acked_count + 1
+
+def _handle_error_or_skip_status(
+    status: str, skipped_count: int, error_count: int, log_dict: Optional[dict],
+    db_logs_to_add_dicts: list, error_categorizer, person, overall_success: bool
+) -> tuple[int, int, bool]:
+    """Handle error or skipped status updates."""
+    category, error_type = error_categorizer.categorize_status(status)
+
+    if category == 'skipped':
+        if log_dict:
+            db_logs_to_add_dicts.append(log_dict)
+        return skipped_count + 1, error_count, overall_success
+
+    if category == 'error':
+        if error_type != 'business_logic_generic':
+            severity = 'critical' if 'cascade' in error_type or 'authentication' in error_type else 'warning'
+            error_categorizer.trigger_monitoring_alert(
+                alert_type=error_type,
+                message=f"Technical error processing {person.username}: {status}",
+                severity=severity
+            )
+        return skipped_count, error_count + 1, False
+
+    logger.warning(f"Unknown status category for {person.username}: {status}")
+    return skipped_count, error_count + 1, False
+
 def _update_counters_and_collect_data(status: str, new_log_object, person_update_tuple,
                                        sent_count: int, acked_count: int, skipped_count: int, error_count: int,
                                        db_logs_to_add_dicts: list, person_updates: dict,
                                        error_categorizer, person, overall_success: bool) -> tuple[int, int, int, int, bool]:
     """Update counters and collect database updates based on processing status."""
-    log_dict_to_add = None
-    if new_log_object:
-        log_dict_to_add = _convert_log_object_to_dict(new_log_object)
-        if log_dict_to_add is None:
-            status = "error"
+    log_dict, new_status = _prepare_log_dict(new_log_object)
+    if new_status == "error":
+        status = "error"
 
     if status == "sent":
-        sent_count += 1
-        if log_dict_to_add:
-            db_logs_to_add_dicts.append(log_dict_to_add)
+        sent_count = _handle_sent_status(sent_count, log_dict, db_logs_to_add_dicts)
     elif status == "acked":
-        acked_count += 1
-        if log_dict_to_add:
-            db_logs_to_add_dicts.append(log_dict_to_add)
-        if person_update_tuple:
-            person_updates[person_update_tuple[0]] = person_update_tuple[1]
+        acked_count = _handle_acked_status(acked_count, log_dict, person_update_tuple, db_logs_to_add_dicts, person_updates)
     else:
-        category, error_type = error_categorizer.categorize_status(status)
-
-        if category == 'skipped':
-            skipped_count += 1
-            if log_dict_to_add:
-                db_logs_to_add_dicts.append(log_dict_to_add)
-        elif category == 'error':
-            error_count += 1
-            overall_success = False
-
-            if error_type != 'business_logic_generic':
-                severity = 'critical' if 'cascade' in error_type or 'authentication' in error_type else 'warning'
-                error_categorizer.trigger_monitoring_alert(
-                    alert_type=error_type,
-                    message=f"Technical error processing {person.username}: {status}",
-                    severity=severity
-                )
-        else:
-            error_count += 1
-            overall_success = False
-            logger.warning(f"Unknown status category for {person.username}: {status}")
+        skipped_count, error_count, overall_success = _handle_error_or_skip_status(
+            status, skipped_count, error_count, log_dict, db_logs_to_add_dicts, error_categorizer, person, overall_success
+        )
 
     return sent_count, acked_count, skipped_count, error_count, overall_success
 
