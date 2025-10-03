@@ -762,6 +762,74 @@ def _lookup_existing_persons(
 
 # End of _lookup_existing_persons
 
+# Helper functions for _identify_fetch_candidates
+
+def _check_dna_data_changes(
+    match_api_data: Dict[str, Any],
+    existing_dna: Any,
+    uuid_val: str
+) -> bool:
+    """Check if DNA data has changed compared to existing record."""
+    if not existing_dna:
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): No existing DNA record.")
+        return True
+
+    try:
+        # Compare cM
+        api_cm = int(match_api_data.get("cM_DNA", 0))
+        db_cm = existing_dna.cM_DNA
+        if api_cm != db_cm:
+            logger.debug(f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})")
+            return True
+
+        # Compare segments
+        api_segments = int(match_api_data.get("numSharedSegments", 0))
+        db_segments = existing_dna.shared_segments
+        if api_segments != db_segments:
+            logger.debug(f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})")
+            return True
+
+        return False
+    except (ValueError, TypeError, AttributeError) as comp_err:
+        logger.warning(f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed.")
+        return True
+
+
+def _check_tree_status_changes(
+    api_in_tree: bool,
+    db_in_tree: bool,
+    existing_tree: Any,
+    uuid_val: str
+) -> bool:
+    """Check if tree status has changed compared to existing record."""
+    if bool(api_in_tree) != bool(db_in_tree):
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})")
+        return True
+    elif api_in_tree and not existing_tree:
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record.")
+        return True
+    return False
+
+
+def _should_fetch_match_details(
+    match_api_data: Dict[str, Any],
+    existing_person: Any
+) -> bool:
+    """Determine if match details should be fetched based on changes."""
+    uuid_val = match_api_data.get("uuid")
+
+    # Check DNA data changes
+    if _check_dna_data_changes(match_api_data, existing_person.dna_match, uuid_val):
+        return True
+
+    # Check tree status changes
+    api_in_tree = match_api_data.get("in_my_tree", False)
+    db_in_tree = existing_person.in_my_tree
+    if _check_tree_status_changes(api_in_tree, db_in_tree, existing_person.family_tree, uuid_val):
+        return True
+
+    return False
+
 
 def _identify_fetch_candidates(
     matches_on_page: List[Dict[str, Any]], existing_persons_map: Dict[str, Any]
@@ -782,7 +850,7 @@ def _identify_fetch_candidates(
         - matches_to_process_later (List[Dict]): List of match data dicts for candidates.
         - skipped_count_this_batch (int): Number of matches skipped in this batch.
     """
-    # Step 1: Initialize results
+    # Initialize results
     fetch_candidates_uuid: Set[str] = set()
     skipped_count_this_batch = 0
     matches_to_process_later: List[Dict[str, Any]] = []
@@ -790,107 +858,229 @@ def _identify_fetch_candidates(
 
     logger.debug("Identifying fetch candidates vs. skipped matches...")
 
-    # Step 2: Iterate through matches fetched from the current page
+    # Iterate through matches fetched from the current page
     for match_api_data in matches_on_page:
-        # Step 2a: Validate UUID presence
+        # Validate UUID presence
         uuid_val = match_api_data.get("uuid")
         if not uuid_val:
             logger.warning(f"Skipping match missing UUID: {match_api_data}")
             invalid_uuid_count += 1
             continue
 
-        # Step 2b: Check if this person exists in the database
-        existing_person = existing_persons_map.get(
-            uuid_val.upper()
-        )  # Use uppercase UUID
+        # Check if this person exists in the database
+        existing_person = existing_persons_map.get(uuid_val.upper())
 
         if not existing_person:
-            # --- Case 1: New Person ---
-            # Always fetch details for new people.
+            # New Person - always fetch details
             fetch_candidates_uuid.add(uuid_val)
             matches_to_process_later.append(match_api_data)
         else:
-            # --- Case 2: Existing Person ---
-            # Determine if details fetch is needed based on potential changes.
-            needs_fetch = False
-            existing_dna = existing_person.dna_match
-            existing_tree = existing_person.family_tree
-            db_in_tree = existing_person.in_my_tree
-            api_in_tree = match_api_data.get("in_my_tree", False)  # From get_matches
-
-            # Step 2c: Check for changes in core DNA list data
-            if existing_dna:
-                try:
-                    # Compare cM (integer conversion for safety)
-                    api_cm = int(match_api_data.get("cM_DNA", 0))
-                    db_cm = existing_dna.cM_DNA
-                    if api_cm != db_cm:
-                        needs_fetch = True
-                        logger.debug(
-                            f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})"
-                        )
-
-                    # Compare segments (integer conversion)
-                    api_segments = int(match_api_data.get("numSharedSegments", 0))
-                    db_segments = existing_dna.shared_segments
-                    # NOTE: Use >= comparison for segments as list view might be lower than detail view sometimes? Or stick to != ? Sticking to != for now.
-                    if api_segments != db_segments:
-                        needs_fetch = True
-                        logger.debug(
-                            f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})"
-                        )
-
-                except (ValueError, TypeError, AttributeError) as comp_err:
-                    logger.warning(
-                        f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed."
-                    )
-                    needs_fetch = True
-            else:
-                # If DNA record doesn't exist, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): No existing DNA record."
-                )
-
-            # Step 2d: Check for changes in tree status or missing tree record
-            if bool(api_in_tree) != bool(db_in_tree):
-                # If tree linkage status changed, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})"
-                )
-            elif api_in_tree and not existing_tree:
-                # If marked in tree but no DB record exists, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record."
-                )
-
-            # Step 2e: Add to fetch list or increment skipped count
-            if needs_fetch:
+            # Existing Person - check if fetch needed
+            if _should_fetch_match_details(match_api_data, existing_person):
                 fetch_candidates_uuid.add(uuid_val)
                 matches_to_process_later.append(match_api_data)
             else:
-                skipped_count_this_batch += 1  # Step 3: Log summary of identification
+                skipped_count_this_batch += 1
+
+    # Log summary
     if invalid_uuid_count > 0:
-        logger.error(
-            f"{invalid_uuid_count} matches skipped during identification due to missing UUID."
-        )
+        logger.error(f"{invalid_uuid_count} matches skipped during identification due to missing UUID.")
+
     logger.debug(
-        f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, {skipped_count_this_batch} skipped (no change detected from list view)."
+        f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, "
+        f"{skipped_count_this_batch} skipped (no change detected from list view)."
     )
 
-    # Add detailed logging about fetch candidates
     if len(fetch_candidates_uuid) == 0:
         logger.warning("No fetch candidates identified - all matches appear up-to-date in database")
     else:
-        logger.info(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")  # Show first 5
+        logger.info(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")
 
-    # Step 4: Return results
     return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
 
 
 # End of _identify_fetch_candidates
+
+# Helper functions for _perform_api_prefetches
+
+def _identify_tree_badge_ladder_candidates(
+    matches_to_process_later: List[Dict[str, Any]],
+    fetch_candidates_uuid: Set[str]
+) -> Set[str]:
+    """Identify UUIDs that need badge/ladder fetch (in_my_tree members)."""
+    uuids_for_tree_badge_ladder = {
+        match_data["uuid"]
+        for match_data in matches_to_process_later
+        if match_data.get("in_my_tree")
+        and match_data.get("uuid") in fetch_candidates_uuid
+    }
+    logger.debug(f"Identified {len(uuids_for_tree_badge_ladder)} candidates for Badge/Ladder fetch.")
+    return uuids_for_tree_badge_ladder
+
+
+def _submit_initial_api_tasks(
+    executor: ThreadPoolExecutor,
+    session_manager: SessionManager,
+    fetch_candidates_uuid: Set[str],
+    uuids_for_tree_badge_ladder: Set[str]
+) -> Dict[Any, Tuple[str, str]]:
+    """Submit initial API tasks (combined_details, relationship_prob, badge_details)."""
+    futures: Dict[Any, Tuple[str, str]] = {}
+
+    for uuid_val in fetch_candidates_uuid:
+        _ = session_manager.dynamic_rate_limiter.wait()
+        futures[executor.submit(_fetch_combined_details, session_manager, uuid_val)] = ("combined_details", uuid_val)
+
+        _ = session_manager.dynamic_rate_limiter.wait()
+        max_labels = 2
+        futures[executor.submit(_fetch_batch_relationship_prob, session_manager, uuid_val, max_labels)] = ("relationship_prob", uuid_val)
+
+    for uuid_val in uuids_for_tree_badge_ladder:
+        _ = session_manager.dynamic_rate_limiter.wait()
+        futures[executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)] = ("badge_details", uuid_val)
+
+    return futures
+
+
+def _process_api_task_result(
+    task_type: str,
+    identifier_uuid: str,
+    result: Any,
+    batch_combined_details: Dict[str, Optional[Dict[str, Any]]],
+    temp_badge_results: Dict[str, Optional[Dict[str, Any]]],
+    batch_relationship_prob_data: Dict[str, Optional[str]],
+    critical_combined_details_failures: int
+) -> int:
+    """Process a single API task result and update appropriate batch dict."""
+    if task_type == "combined_details":
+        batch_combined_details[identifier_uuid] = result
+        if result is None:
+            logger.warning(f"Critical API task '_fetch_combined_details' for {identifier_uuid} returned None.")
+            critical_combined_details_failures += 1
+    elif task_type == "badge_details":
+        temp_badge_results[identifier_uuid] = result
+    elif task_type == "relationship_prob":
+        batch_relationship_prob_data[identifier_uuid] = result
+
+    return critical_combined_details_failures
+
+
+def _handle_api_task_exception(
+    exc: Exception,
+    task_type: str,
+    identifier_uuid: str,
+    batch_combined_details: Dict[str, Optional[Dict[str, Any]]],
+    temp_badge_results: Dict[str, Optional[Dict[str, Any]]],
+    batch_relationship_prob_data: Dict[str, Optional[str]],
+    critical_combined_details_failures: int,
+    is_connection_error: bool = False
+) -> int:
+    """Handle exception from API task and update appropriate batch dict."""
+    if is_connection_error:
+        logger.error(f"ConnErr prefetch '{task_type}' {identifier_uuid}: {exc}", exc_info=False)
+    else:
+        logger.error(f"Exc prefetch '{task_type}' {identifier_uuid}: {exc}", exc_info=True)
+
+    if task_type == "combined_details":
+        critical_combined_details_failures += 1
+        batch_combined_details[identifier_uuid] = None
+    elif task_type == "badge_details":
+        temp_badge_results[identifier_uuid] = None
+    elif task_type == "relationship_prob":
+        batch_relationship_prob_data[identifier_uuid] = None
+
+    return critical_combined_details_failures
+
+
+def _check_critical_failure_threshold(
+    critical_combined_details_failures: int,
+    futures: Dict[Any, Tuple[str, str]]
+):
+    """Check if critical failure threshold exceeded and cancel remaining futures."""
+    if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
+        for f_cancel in futures:
+            if not f_cancel.done():
+                f_cancel.cancel()
+        logger.critical(
+            f"Exceeded critical API failure threshold ({critical_combined_details_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) for combined_details. Halting batch."
+        )
+        raise MaxApiFailuresExceededError(
+            f"Critical API failure threshold reached for combined_details ({critical_combined_details_failures} failures)."
+        )
+
+
+def _build_cfpid_to_uuid_map(temp_badge_results: Dict[str, Optional[Dict[str, Any]]]) -> Dict[str, str]:
+    """Build mapping from CFPID to UUID from badge results."""
+    cfpid_to_uuid_map: Dict[str, str] = {}
+    for uuid_val, badge_result_data in temp_badge_results.items():
+        if badge_result_data:
+            cfpid = badge_result_data.get("their_cfpid")
+            if cfpid:
+                cfpid_to_uuid_map[cfpid] = uuid_val
+    return cfpid_to_uuid_map
+
+
+def _submit_ladder_tasks(
+    executor: ThreadPoolExecutor,
+    session_manager: SessionManager,
+    cfpid_to_uuid_map: Dict[str, str],
+    my_tree_id: Optional[str]
+) -> Dict[Any, Tuple[str, str]]:
+    """Submit ladder API tasks for CFPIDs."""
+    ladder_futures = {}
+    if my_tree_id and cfpid_to_uuid_map:
+        cfpid_list = list(cfpid_to_uuid_map.keys())
+        logger.debug(f"Submitting Ladder tasks for {len(cfpid_list)} CFPIDs...")
+        for cfpid_item in cfpid_list:
+            _ = session_manager.dynamic_rate_limiter.wait()
+            ladder_futures[executor.submit(_fetch_batch_ladder, session_manager, cfpid_item, my_tree_id)] = ("ladder", cfpid_item)
+    return ladder_futures
+
+
+def _process_ladder_results(
+    ladder_futures: Dict[Any, Tuple[str, str]],
+    cfpid_to_uuid_map: Dict[str, str]
+) -> Dict[str, Optional[Dict[str, Any]]]:
+    """Process ladder API task results."""
+    temp_ladder_results: Dict[str, Optional[Dict[str, Any]]] = {}
+
+    logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
+    for future in as_completed(ladder_futures):
+        task_type, identifier_cfpid = ladder_futures[future]
+        uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
+        if not uuid_for_ladder:
+            logger.warning(f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID (task likely cancelled or map error).")
+            continue
+
+        try:
+            result = future.result()
+            temp_ladder_results[uuid_for_ladder] = result
+        except ConnectionError as conn_err:
+            logger.error(f"ConnErr ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {conn_err}", exc_info=False)
+            temp_ladder_results[uuid_for_ladder] = None
+        except Exception as exc:
+            logger.error(f"Exc ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {exc}", exc_info=True)
+            temp_ladder_results[uuid_for_ladder] = None
+
+    return temp_ladder_results
+
+
+def _combine_badge_and_ladder_results(
+    temp_badge_results: Dict[str, Optional[Dict[str, Any]]],
+    temp_ladder_results: Dict[str, Optional[Dict[str, Any]]]
+) -> Dict[str, Optional[Dict[str, Any]]]:
+    """Combine badge and ladder results into final tree data."""
+    batch_tree_data: Dict[str, Optional[Dict[str, Any]]] = {}
+
+    for uuid_val, badge_result in temp_badge_results.items():
+        if badge_result:
+            combined_tree_info = badge_result.copy()
+            ladder_result_for_uuid = temp_ladder_results.get(uuid_val)
+            if ladder_result_for_uuid:
+                combined_tree_info.update(ladder_result_for_uuid)
+            batch_tree_data[uuid_val] = combined_tree_info
+
+    return batch_tree_data
 
 
 def _perform_api_prefetches(
@@ -920,192 +1110,67 @@ def _perform_api_prefetches(
     Raises:
         MaxApiFailuresExceededError: If critical API failure threshold is met.
     """
+    # Initialize result dictionaries
     batch_combined_details: Dict[str, Optional[Dict[str, Any]]] = {}
-    batch_tree_data: Dict[str, Optional[Dict[str, Any]]] = (
-        {}
-    )  # Changed to Optional value
     batch_relationship_prob_data: Dict[str, Optional[str]] = {}
+    temp_badge_results: Dict[str, Optional[Dict[str, Any]]] = {}
 
     if not fetch_candidates_uuid:
         logger.warning("_perform_api_prefetches: No fetch candidates provided for API pre-fetch - returning empty results")
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
-    futures: Dict[Any, Tuple[str, str]] = {}
     fetch_start_time = time.time()
     num_candidates = len(fetch_candidates_uuid)
     my_tree_id = session_manager.my_tree_id
-
     critical_combined_details_failures = 0
 
-    logger.debug(
-        f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {THREAD_POOL_WORKERS} workers) ---"
-    )
+    logger.debug(f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {THREAD_POOL_WORKERS} workers) ---")
 
-    uuids_for_tree_badge_ladder = {
-        match_data["uuid"]
-        for match_data in matches_to_process_later
-        if match_data.get("in_my_tree")
-        and match_data.get("uuid") in fetch_candidates_uuid
-    }
-    logger.debug(
-        f"Identified {len(uuids_for_tree_badge_ladder)} candidates for Badge/Ladder fetch."
-    )
+    # Identify tree members needing badge/ladder fetch
+    uuids_for_tree_badge_ladder = _identify_tree_badge_ladder_candidates(matches_to_process_later, fetch_candidates_uuid)
 
     with ThreadPoolExecutor(max_workers=THREAD_POOL_WORKERS) as executor:
-        for uuid_val in fetch_candidates_uuid:
-            _ = session_manager.dynamic_rate_limiter.wait()
-            futures[
-                executor.submit(_fetch_combined_details, session_manager, uuid_val)
-            ] = ("combined_details", uuid_val)
+        # Submit initial API tasks
+        futures = _submit_initial_api_tasks(executor, session_manager, fetch_candidates_uuid, uuids_for_tree_badge_ladder)
 
-            _ = session_manager.dynamic_rate_limiter.wait()
-            max_labels = 2
-            futures[
-                executor.submit(
-                    _fetch_batch_relationship_prob,
-                    session_manager,
-                    uuid_val,
-                    max_labels,
-                )
-            ] = ("relationship_prob", uuid_val)
-
-        for uuid_val in uuids_for_tree_badge_ladder:
-            _ = session_manager.dynamic_rate_limiter.wait()
-            futures[
-                executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
-            ] = ("badge_details", uuid_val)
-
-        temp_badge_results: Dict[str, Optional[Dict[str, Any]]] = {}
-        temp_ladder_results: Dict[str, Optional[Dict[str, Any]]] = (
-            {}
-        )  # For ladder results before combining
-
+        # Process initial API task results
         logger.debug(f"Processing {len(futures)} initially submitted API tasks...")
         for future in as_completed(futures):
             task_type, identifier_uuid = futures[future]
             try:
                 result = future.result()
-                if task_type == "combined_details":
-                    batch_combined_details[identifier_uuid] = (
-                        result  # result can be None
-                    )
-                    if (
-                        result is None
-                    ):  # Treat None result as a failure for critical tracking
-                        logger.warning(
-                            f"Critical API task '_fetch_combined_details' for {identifier_uuid} returned None."
-                        )
-                        critical_combined_details_failures += 1
-                elif task_type == "badge_details":
-                    temp_badge_results[identifier_uuid] = result  # result can be None
-                elif task_type == "relationship_prob":
-                    batch_relationship_prob_data[identifier_uuid] = (
-                        result  # result can be None
-                    )
-
-            except (
-                ConnectionError
-            ) as conn_err:  # Includes HTTPError if raised by retry_api
-                logger.error(
-                    f"ConnErr prefetch '{task_type}' {identifier_uuid}: {conn_err}",
-                    exc_info=False,  # Keep log concise
-                )
-                if task_type == "combined_details":
-                    critical_combined_details_failures += 1
-                    batch_combined_details[identifier_uuid] = None
-                elif task_type == "badge_details":
-                    temp_badge_results[identifier_uuid] = None
-                elif task_type == "relationship_prob":
-                    batch_relationship_prob_data[identifier_uuid] = None
-            except Exception as exc:
-                logger.error(
-                    f"Exc prefetch '{task_type}' {identifier_uuid}: {exc}",
-                    exc_info=True,  # Log full traceback for unexpected errors
-                )
-                if task_type == "combined_details":
-                    # Potentially count other severe exceptions as critical if needed
-                    critical_combined_details_failures += 1
-                    batch_combined_details[identifier_uuid] = None
-                elif task_type == "badge_details":
-                    temp_badge_results[identifier_uuid] = None
-                elif task_type == "relationship_prob":
-                    batch_relationship_prob_data[identifier_uuid] = None
-
-            if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
-                # Cancel remaining futures
-                for f_cancel in futures:  # Iterate over original futures dict keys
-                    if not f_cancel.done():
-                        f_cancel.cancel()
-                logger.critical(
-                    f"Exceeded critical API failure threshold ({critical_combined_details_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) for combined_details. Halting batch."
-                )
-                raise MaxApiFailuresExceededError(
-                    f"Critical API failure threshold reached for combined_details ({critical_combined_details_failures} failures)."
-                )
-
-        cfpid_to_uuid_map: Dict[str, str] = {}
-        ladder_futures = {}
-        if my_tree_id and temp_badge_results:  # Check temp_badge_results has items
-            cfpid_list_for_ladder: List[str] = []
-            for uuid_val, badge_result_data in temp_badge_results.items():
-                if badge_result_data:  # Ensure badge_result_data is not None
-                    cfpid = badge_result_data.get("their_cfpid")
-                    if cfpid:
-                        cfpid_list_for_ladder.append(cfpid)
-                        cfpid_to_uuid_map[cfpid] = uuid_val
-
-            if cfpid_list_for_ladder:
-                logger.debug(
-                    f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs..."
-                )
-                for cfpid_item in cfpid_list_for_ladder:
-                    _ = session_manager.dynamic_rate_limiter.wait()
-                    ladder_futures[
-                        executor.submit(
-                            _fetch_batch_ladder, session_manager, cfpid_item, my_tree_id
-                        )
-                    ] = ("ladder", cfpid_item)
-
-        logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
-        for future in as_completed(ladder_futures):
-            task_type, identifier_cfpid = ladder_futures[future]
-            uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
-            if not uuid_for_ladder:
-                logger.warning(
-                    f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID (task likely cancelled or map error)."
-                )
-                continue  # Skip if cannot map back
-            try:
-                result = future.result()
-                temp_ladder_results[uuid_for_ladder] = (
-                    result  # Store ladder result, can be None
+                critical_combined_details_failures = _process_api_task_result(
+                    task_type, identifier_uuid, result,
+                    batch_combined_details, temp_badge_results, batch_relationship_prob_data,
+                    critical_combined_details_failures
                 )
             except ConnectionError as conn_err:
-                logger.error(
-                    f"ConnErr ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {conn_err}",
-                    exc_info=False,
+                critical_combined_details_failures = _handle_api_task_exception(
+                    conn_err, task_type, identifier_uuid,
+                    batch_combined_details, temp_badge_results, batch_relationship_prob_data,
+                    critical_combined_details_failures, is_connection_error=True
                 )
-                temp_ladder_results[uuid_for_ladder] = None
             except Exception as exc:
-                logger.error(
-                    f"Exc ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {exc}",
-                    exc_info=True,
+                critical_combined_details_failures = _handle_api_task_exception(
+                    exc, task_type, identifier_uuid,
+                    batch_combined_details, temp_badge_results, batch_relationship_prob_data,
+                    critical_combined_details_failures, is_connection_error=False
                 )
-                temp_ladder_results[uuid_for_ladder] = None
+
+            _check_critical_failure_threshold(critical_combined_details_failures, futures)
+
+        # Build CFPID to UUID mapping and submit ladder tasks
+        cfpid_to_uuid_map = _build_cfpid_to_uuid_map(temp_badge_results)
+        ladder_futures = _submit_ladder_tasks(executor, session_manager, cfpid_to_uuid_map, my_tree_id)
+
+        # Process ladder results
+        temp_ladder_results = _process_ladder_results(ladder_futures, cfpid_to_uuid_map)
 
     fetch_duration = time.time() - fetch_start_time
-    logger.debug(
-        f"--- Finished Parallel API Pre-fetch. Duration: {fetch_duration:.2f}s ---"
-    )
+    logger.debug(f"--- Finished Parallel API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
 
-    for uuid_val, badge_result in temp_badge_results.items():
-        if badge_result:  # Badge fetch was successful and returned data
-            combined_tree_info = badge_result.copy()
-            ladder_result_for_uuid = temp_ladder_results.get(uuid_val)
-            if ladder_result_for_uuid:  # Ladder fetch was successful and returned data
-                combined_tree_info.update(ladder_result_for_uuid)
-            batch_tree_data[uuid_val] = combined_tree_info
-        # If badge_result is None, batch_tree_data[uuid_val] will not be set, correctly defaulting to None if key missing.
+    # Combine badge and ladder results
+    batch_tree_data = _combine_badge_and_ladder_results(temp_badge_results, temp_ladder_results)
 
     return {
         "combined": batch_combined_details,
