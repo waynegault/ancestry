@@ -379,7 +379,7 @@ def cache_result(
 # --- Cache Management Utilities ---
 
 
-def clear_cache():
+def clear_cache() -> bool:
     """
     Removes all items from the disk cache.
     Attempts manual directory removal as a fallback if the cache object
@@ -440,7 +440,7 @@ def clear_cache():
 # End of clear_cache
 
 
-def close_cache():
+def close_cache() -> None:
     """Closes the diskcache connection pool gracefully."""
     # Step 1: Check if cache object exists
     if cache:
