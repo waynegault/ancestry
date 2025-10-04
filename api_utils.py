@@ -1042,9 +1042,8 @@ def _generate_person_link(
 # End of _generate_person_link
 
 
-def parse_ancestry_person_details(
-    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]] = None
-) -> dict[str, Any]:
+def _initialize_person_details(person_card: dict[str, Any]) -> dict[str, Any]:
+    """Initialize person details dictionary with default values."""
     details: dict[str, Any] = {
         "name": "Unknown",
         "birth_date": "N/A",
@@ -1055,36 +1054,31 @@ def parse_ancestry_person_details(
         "api_death_obj": None,
         "gender": None,
         "is_living": None,
-        "person_id": person_card.get("PersonId"),
-        "tree_id": person_card.get("TreeId"),
+        "person_id": person_card.get("PersonId") or person_card.get("personId"),
+        "tree_id": person_card.get("TreeId") or person_card.get("treeId"),
         "user_id": person_card.get("UserId"),
         "link": "(Link unavailable)",
     }
-    if not details["person_id"]:
-        details["person_id"] = person_card.get("personId")
-    # End of if
-    if not details["tree_id"]:
-        details["tree_id"] = person_card.get("treeId")
-    # End of if
+    return details
 
-    if facts_data and isinstance(facts_data, dict):
-        details["person_id"] = facts_data.get("PersonId", details["person_id"])
-        details["tree_id"] = facts_data.get("TreeId", details["tree_id"])
-        details["user_id"] = facts_data.get("UserId", details["user_id"])
-        if not details["user_id"]:
-            person_info = facts_data.get("person", {})
-            if isinstance(person_info, dict):
-                details["user_id"] = person_info.get("userId", details["user_id"])
-            # End of if
-        # End of if
-    # End of if
 
-    details["name"] = _extract_name_from_api_details(person_card, facts_data)
-    details["gender"] = _extract_gender_from_api_details(person_card, facts_data)
-    details["is_living"] = _extract_living_status_from_api_details(
-        person_card, facts_data
-    )
+def _update_details_from_facts(details: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> None:
+    """Update person details from facts data if available."""
+    if not facts_data or not isinstance(facts_data, dict):
+        return
 
+    details["person_id"] = facts_data.get("PersonId", details["person_id"])
+    details["tree_id"] = facts_data.get("TreeId", details["tree_id"])
+    details["user_id"] = facts_data.get("UserId", details["user_id"])
+
+    if not details["user_id"]:
+        person_info = facts_data.get("person", {})
+        if isinstance(person_info, dict):
+            details["user_id"] = person_info.get("userId", details["user_id"])
+
+
+def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> None:
+    """Extract and format birth and death dates."""
     birth_date_raw, details["birth_place"], details["api_birth_obj"] = (
         _extract_event_from_api_details("Birth", person_card, facts_data)
     )
@@ -1096,20 +1090,34 @@ def parse_ancestry_person_details(
     details["birth_date"] = cleaner(birth_date_raw) if birth_date_raw else "N/A"
     details["death_date"] = cleaner(death_date_raw) if death_date_raw else "N/A"
 
+    # Fallback to year if full date unavailable
     if details["birth_date"] == "N/A" and details["api_birth_obj"]:
         details["birth_date"] = str(details["api_birth_obj"].year)
-    # End of if
     if details["death_date"] == "N/A" and details["api_death_obj"]:
         details["death_date"] = str(details["api_death_obj"].year)
-    # End of if
 
-    base_url_for_link = (
-        config_schema.api.base_url or "https://www.ancestry.com"
-    ).rstrip("/")
 
+def parse_ancestry_person_details(
+    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]] = None
+) -> dict[str, Any]:
+    # Initialize details
+    details = _initialize_person_details(person_card)
+
+    # Update from facts data
+    _update_details_from_facts(details, facts_data)
+
+    # Extract basic attributes
+    details["name"] = _extract_name_from_api_details(person_card, facts_data)
+    details["gender"] = _extract_gender_from_api_details(person_card, facts_data)
+    details["is_living"] = _extract_living_status_from_api_details(person_card, facts_data)
+
+    # Extract and format dates
+    _extract_and_format_dates(details, person_card, facts_data)
+
+    # Generate link
+    base_url_for_link = (config_schema.api.base_url or "https://www.ancestry.com").rstrip("/")
     link_id = details["user_id"] or details["person_id"]
     link_tree_id = details["tree_id"] if not details["user_id"] else None
-
     details["link"] = _generate_person_link(link_id, link_tree_id, base_url_for_link)
 
     logger.debug(
