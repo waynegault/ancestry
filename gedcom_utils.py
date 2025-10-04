@@ -987,6 +987,149 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
 # _are_directly_related removed - unused 24-line helper function for relationship checking
 
 
+def _get_person_name_with_birth_year(indi: Optional[GedcomIndividualType], person_id: str) -> tuple[str, str]:
+    """Get person's full name and birth year string."""
+    if not indi:
+        return f"Unknown ({person_id})", ""
+
+    name = _get_full_name(indi)
+    birth_year_str = ""
+    birth_date_obj, _, _ = _get_event_info(indi, TAG_BIRTH)
+    if birth_date_obj:
+        birth_year_str = f" (b. {birth_date_obj.year})"
+
+    return name, birth_year_str
+
+
+def _get_gender_char(indi: GedcomIndividualType) -> Optional[str]:
+    """Get gender character (M/F) from individual."""
+    sex_b = getattr(indi, TAG_SEX.lower(), None)
+    if sex_b and isinstance(sex_b, str) and str(sex_b).upper() in ("M", "F"):
+        return str(sex_b).upper()[0]
+    return None
+
+
+def _determine_parent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine parent relationship phrase based on gender."""
+    parent_label = "father" if sex_char == "M" else "mother" if sex_char == "F" else "parent"
+    return f"whose {parent_label} is {name}{birth_year}"
+
+
+def _determine_child_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine child relationship phrase based on gender."""
+    child_label = "son" if sex_char == "M" else "daughter" if sex_char == "F" else "child"
+    return f"whose {child_label} is {name}{birth_year}"
+
+
+def _determine_sibling_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine sibling relationship phrase based on gender."""
+    sibling_label = "brother" if sex_char == "M" else "sister" if sex_char == "F" else "sibling"
+    return f"whose {sibling_label} is {name}{birth_year}"
+
+
+def _determine_spouse_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine spouse relationship phrase based on gender."""
+    spouse_label = "husband" if sex_char == "M" else "wife" if sex_char == "F" else "spouse"
+    return f"whose {spouse_label} is {name}{birth_year}"
+
+
+def _determine_aunt_uncle_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine aunt/uncle relationship phrase based on gender."""
+    relative_label = "uncle" if sex_char == "M" else "aunt" if sex_char == "F" else "aunt/uncle"
+    return f"whose {relative_label} is {name}{birth_year}"
+
+
+def _determine_niece_nephew_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine niece/nephew relationship phrase based on gender."""
+    relative_label = "nephew" if sex_char == "M" else "niece" if sex_char == "F" else "niece/nephew"
+    return f"whose {relative_label} is {name}{birth_year}"
+
+
+def _determine_grandparent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine grandparent relationship phrase based on gender."""
+    grandparent_label = "grandfather" if sex_char == "M" else "grandmother" if sex_char == "F" else "grandparent"
+    return f"whose {grandparent_label} is {name}{birth_year}"
+
+
+def _determine_grandchild_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine grandchild relationship phrase based on gender."""
+    grandchild_label = "grandson" if sex_char == "M" else "granddaughter" if sex_char == "F" else "grandchild"
+    return f"whose {grandchild_label} is {name}{birth_year}"
+
+
+def _determine_great_grandparent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine great-grandparent relationship phrase based on gender."""
+    grandparent_label = "great-grandfather" if sex_char == "M" else "great-grandmother" if sex_char == "F" else "great-grandparent"
+    return f"whose {grandparent_label} is {name}{birth_year}"
+
+
+def _determine_great_grandchild_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+    """Determine great-grandchild relationship phrase based on gender."""
+    grandchild_label = "great-grandson" if sex_char == "M" else "great-granddaughter" if sex_char == "F" else "great-grandchild"
+    return f"whose {grandchild_label} is {name}{birth_year}"
+
+
+def _determine_relationship_between_individuals(
+    id_a: str,
+    id_b: str,
+    indi_b: GedcomIndividualType,
+    name_b: str,
+    birth_year_b: str,
+    reader: GedcomReaderType,
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> str:
+    """Determine the relationship phrase between two individuals."""
+    sex_char = _get_gender_char(indi_b)
+
+    # Check parent relationship
+    if id_b in id_to_parents.get(id_a, set()):
+        return _determine_parent_relationship(sex_char, name_b, birth_year_b)
+
+    # Check child relationship
+    if id_b in id_to_children.get(id_a, set()):
+        return _determine_child_relationship(sex_char, name_b, birth_year_b)
+
+    # Check sibling relationship
+    if _are_siblings(id_a, id_b, id_to_parents):
+        return _determine_sibling_relationship(sex_char, name_b, birth_year_b)
+
+    # Check spouse relationship
+    if _are_spouses(id_a, id_b, reader):
+        return _determine_spouse_relationship(sex_char, name_b, birth_year_b)
+
+    # Check aunt/uncle relationship
+    if _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children):
+        return _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)
+
+    # Check niece/nephew relationship
+    if _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children):
+        return _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)
+
+    # Check cousin relationship
+    if _are_cousins(id_a, id_b, id_to_parents, id_to_children):
+        return f"whose cousin is {name_b}{birth_year_b}"
+
+    # Check grandparent relationship
+    if _is_grandparent(id_a, id_b, id_to_parents):
+        return _determine_grandparent_relationship(sex_char, name_b, birth_year_b)
+
+    # Check grandchild relationship
+    if _is_grandchild(id_a, id_b, id_to_children):
+        return _determine_grandchild_relationship(sex_char, name_b, birth_year_b)
+
+    # Check great-grandparent relationship
+    if _is_great_grandparent(id_a, id_b, id_to_parents):
+        return _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)
+
+    # Check great-grandchild relationship
+    if _is_great_grandchild(id_a, id_b, id_to_children):
+        return _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b)
+
+    # Fallback for unknown relationships
+    return f"related to {name_b}{birth_year_b}"
+
+
 def explain_relationship_path(
     path_ids: list[str],
     reader: GedcomReaderType,
@@ -1010,180 +1153,29 @@ def explain_relationship_path(
     steps: list[str] = []
     start_person_indi = indi_index.get(path_ids[0])
 
-    # Get birth year for the first person
-    birth_year_str = ""
-    if start_person_indi:
-        birth_date_obj, _, _ = _get_event_info(start_person_indi, TAG_BIRTH)
-        if birth_date_obj:
-            birth_year_str = f" (b. {birth_date_obj.year})"
-
-    start_person_name = (
-        _get_full_name(start_person_indi)
-        if start_person_indi
-        else f"Unknown ({path_ids[0]})"
-    )
-
-    # Start with the first person's name with birth year
+    # Get start person name with birth year
+    start_person_name, birth_year_str = _get_person_name_with_birth_year(start_person_indi, path_ids[0])
     full_start_name = f"{start_person_name}{birth_year_str}"
 
     # Process each pair of individuals in the path
     for i in range(len(path_ids) - 1):
         id_a, id_b = path_ids[i], path_ids[i + 1]
-        indi_a = indi_index.get(id_a)  # Person A object (previous step)
-        indi_b = indi_index.get(id_b)  # Person B object (current step in explanation)
+        indi_a = indi_index.get(id_a)
+        indi_b = indi_index.get(id_b)
 
-        # Skip if either individual is missing
+        # Handle missing individuals
         if not indi_a or not indi_b:
-            if not indi_b:
-                steps.append(f"  -> connected to Unknown Person ({id_b})")
-            else:
-                name_b = _get_full_name(indi_b)
-                birth_year_b_str = ""
-                birth_date_obj_b, _, _ = _get_event_info(indi_b, TAG_BIRTH)
-                if birth_date_obj_b:
-                    birth_year_b_str = f" (b. {birth_date_obj_b.year})"
-                steps.append(f"  -> connected to {name_b}{birth_year_b_str}")
+            name_b, birth_year_b = _get_person_name_with_birth_year(indi_b, id_b)
+            steps.append(f"  -> connected to {name_b}{birth_year_b}")
             continue
 
         # Get name and birth year for person B
-        name_b = _get_full_name(indi_b)
-        birth_year_b_str = ""
-        birth_date_obj_b, _, _ = _get_event_info(indi_b, TAG_BIRTH)
-        if birth_date_obj_b:
-            birth_year_b_str = f" (b. {birth_date_obj_b.year})"
-
-        # Determine gender of person B for labels like son/daughter etc.
-        sex_b = getattr(indi_b, TAG_SEX.lower(), None)
-        sex_b_char = (
-            str(sex_b).upper()[0]
-            if sex_b and isinstance(sex_b, str) and str(sex_b).upper() in ("M", "F")
-            else None
-        )
+        name_b, birth_year_b = _get_person_name_with_birth_year(indi_b, id_b)
 
         # Determine the relationship between A and B
-        relationship_phrase = None
-
-        # Check 1: Is B a PARENT of A?
-        if id_b in id_to_parents.get(id_a, set()):
-            parent_label = (
-                "father"
-                if sex_b_char == "M"
-                else "mother" if sex_b_char == "F" else "parent"
-            )
-            relationship_phrase = f"whose {parent_label} is {name_b}{birth_year_b_str}"
-
-        # Check 2: Is B a CHILD of A?
-        elif id_b in id_to_children.get(id_a, set()):
-            child_label = (
-                "son"
-                if sex_b_char == "M"
-                else "daughter" if sex_b_char == "F" else "child"
-            )
-            relationship_phrase = f"whose {child_label} is {name_b}{birth_year_b_str}"
-
-        # Check 3: Is B a SIBLING of A? (Share at least one parent)
-        elif _are_siblings(id_a, id_b, id_to_parents):
-            # Get the sibling label based on gender
-            sibling_label = (
-                "brother"
-                if sex_b_char == "M"
-                else "sister" if sex_b_char == "F" else "sibling"
-            )
-            relationship_phrase = f"whose {sibling_label} is {name_b}{birth_year_b_str}"
-
-        # Check 4: Is B a SPOUSE of A?
-        elif _are_spouses(id_a, id_b, reader):
-            spouse_label = (
-                "husband"
-                if sex_b_char == "M"
-                else "wife" if sex_b_char == "F" else "spouse"
-            )
-            relationship_phrase = f"whose {spouse_label} is {name_b}{birth_year_b_str}"
-
-        # Check 5: Is B an AUNT/UNCLE of A? (Sibling of parent)
-        elif _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children):
-            relative_label = (
-                "uncle"
-                if sex_b_char == "M"
-                else "aunt" if sex_b_char == "F" else "aunt/uncle"
-            )
-            relationship_phrase = (
-                f"whose {relative_label} is {name_b}{birth_year_b_str}"
-            )
-
-        # Check 6: Is B a NIECE/NEPHEW of A? (Child of sibling)
-        elif _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children):
-            relative_label = (
-                "nephew"
-                if sex_b_char == "M"
-                else "niece" if sex_b_char == "F" else "niece/nephew"
-            )
-            relationship_phrase = (
-                f"whose {relative_label} is {name_b}{birth_year_b_str}"
-            )
-
-        # Check 7: Is B a COUSIN of A? (Child of aunt/uncle)
-        elif _are_cousins(id_a, id_b, id_to_parents, id_to_children):
-            relationship_phrase = f"whose cousin is {name_b}{birth_year_b_str}"
-
-        # Check 8: Is B a GRANDPARENT of A?
-        elif _is_grandparent(id_a, id_b, id_to_parents):
-            grandparent_label = (
-                "grandfather"
-                if sex_b_char == "M"
-                else "grandmother" if sex_b_char == "F" else "grandparent"
-            )
-            relationship_phrase = (
-                f"whose {grandparent_label} is {name_b}{birth_year_b_str}"
-            )
-
-        # Check 9: Is B a GRANDCHILD of A?
-        elif _is_grandchild(id_a, id_b, id_to_children):
-            grandchild_label = (
-                "grandson"
-                if sex_b_char == "M"
-                else "granddaughter" if sex_b_char == "F" else "grandchild"
-            )
-            relationship_phrase = (
-                f"whose {grandchild_label} is {name_b}{birth_year_b_str}"
-            )
-
-        # Fallback for unknown relationships - try to determine a more specific relationship
-        if relationship_phrase is None:
-            # Check for great-grandparent relationship
-            if _is_great_grandparent(id_a, id_b, id_to_parents):
-                grandparent_label = (
-                    "great-grandfather"
-                    if sex_b_char == "M"
-                    else (
-                        "great-grandmother"
-                        if sex_b_char == "F"
-                        else "great-grandparent"
-                    )
-                )
-                relationship_phrase = (
-                    f"whose {grandparent_label} is {name_b}{birth_year_b_str}"
-                )
-
-            # Check for great-grandchild relationship
-            elif _is_great_grandchild(id_a, id_b, id_to_children):
-                grandchild_label = (
-                    "great-grandson"
-                    if sex_b_char == "M"
-                    else (
-                        "great-granddaughter"
-                        if sex_b_char == "F"
-                        else "great-grandchild"
-                    )
-                )
-                relationship_phrase = (
-                    f"whose {grandchild_label} is {name_b}{birth_year_b_str}"
-                )
-
-            # If still no relationship found, use a generic description based on position in path
-            else:
-                # For adjacent nodes, use "related to" instead of "connected to"
-                relationship_phrase = f"related to {name_b}{birth_year_b_str}"
+        relationship_phrase = _determine_relationship_between_individuals(
+            id_a, id_b, indi_b, name_b, birth_year_b, reader, id_to_parents, id_to_children
+        )
 
         steps.append(f"  -> {relationship_phrase}")
 
