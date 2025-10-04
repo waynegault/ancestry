@@ -53,7 +53,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import psutil
 
@@ -1086,8 +1086,13 @@ def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]
     return suggestions
 
 
-def main() -> bool:
-    """Comprehensive test runner with performance monitoring and optimization."""
+def _setup_test_environment() -> tuple[bool, bool, bool]:
+    """
+    Setup test environment and parse command line arguments.
+
+    Returns:
+        Tuple of (enable_fast_mode, enable_benchmark, enable_monitoring)
+    """
     # Parse command line arguments
     enable_fast_mode = "--fast" in sys.argv
     enable_benchmark = "--benchmark" in sys.argv
@@ -1099,6 +1104,11 @@ def main() -> bool:
     # Set environment variable to skip slow simulation tests (724-page workload, etc.)
     os.environ["SKIP_SLOW_TESTS"] = "true"
 
+    return enable_fast_mode, enable_benchmark, enable_monitoring
+
+
+def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool) -> None:
+    """Print test suite header with mode information."""
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
     if enable_fast_mode:
         print("🚀 FAST MODE: Parallel execution enabled")
@@ -1107,6 +1117,14 @@ def main() -> bool:
     print("=" * 60)
     print()  # Blank line
 
+
+def _run_pre_test_checks() -> bool:
+    """
+    Run linter and quality checks before tests.
+
+    Returns:
+        True if checks pass or can continue, False if critical failure
+    """
     # Run linter first for hygiene; fail fast only on safe subset
     if not run_linter():
         return False
@@ -1115,12 +1133,18 @@ def main() -> bool:
     if not run_quality_checks():
         print("⚠️  Quality checks failed - continuing with tests but consider improvements")
 
+    return True
+
+
+def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tuple[str, str]]]:
+    """
+    Discover test modules and extract their descriptions.
+
+    Returns:
+        Tuple of (discovered_modules, module_descriptions, modules_with_descriptions)
+    """
     # Auto-discover all test modules with the standardized test function
     discovered_modules = discover_test_modules()
-
-    if not discovered_modules:
-        print("⚠️  No test modules discovered with run_comprehensive_tests() function.")
-        return False
 
     # Extract descriptions from module docstrings for enhanced reporting
     module_descriptions = {}
@@ -1131,8 +1155,6 @@ def main() -> bool:
         if description:
             module_descriptions[module_name] = description
             enhanced_count += 1
-
-    total_start_time = time.time()
 
     print(
         f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced descriptions)"
@@ -1148,7 +1170,23 @@ def main() -> bool:
         for module in discovered_modules
     ]
 
-    # Run tests with appropriate method
+    return discovered_modules, module_descriptions, modules_with_descriptions
+
+
+def _execute_tests(
+    modules_with_descriptions: list[tuple[str, str]],
+    discovered_modules: list[str],
+    module_descriptions: dict[str, str],
+    enable_fast_mode: bool,
+    enable_monitoring: bool,
+    enable_benchmark: bool
+) -> tuple[list[tuple[str, str, bool]], list[Any], int, int]:
+    """
+    Execute tests in parallel or sequential mode.
+
+    Returns:
+        Tuple of (results, all_metrics, total_tests_run, passed_count)
+    """
     if enable_fast_mode:
         print("🚀 Running tests in parallel...")
         all_metrics, passed_count, total_tests_run = run_tests_parallel(modules_with_descriptions, enable_monitoring)
@@ -1171,11 +1209,17 @@ def main() -> bool:
                 all_metrics.append(metrics)
             results.append((module_name, description or f"Tests for {module_name}", success))
 
-    # Print comprehensive summary with performance metrics
-    total_duration = time.time() - total_start_time
-    if not enable_fast_mode:  # Recalculate for sequential mode
-        passed_count = sum(1 for _, _, success in results if success)
-    failed_count = len(results) - passed_count
+    return results, all_metrics, total_tests_run, passed_count
+
+
+def _print_basic_summary(
+    total_duration: float,
+    total_tests_run: int,
+    passed_count: int,
+    failed_count: int,
+    results: list[tuple[str, str, bool]]
+) -> None:
+    """Print basic test summary statistics."""
     success_rate = (passed_count / len(results)) * 100 if results else 0
 
     print(f"\n{'='* 60}")
@@ -1187,83 +1231,125 @@ def main() -> bool:
     print(f"❌ Failed: {failed_count}")
     print(f"📈 Success Rate: {success_rate:.1f}%")
 
-    # Quality summary with detailed breakdown
-    if all_metrics and any(m.quality_metrics for m in all_metrics):
-        quality_scores = [m.quality_metrics.quality_score for m in all_metrics if m.quality_metrics]
-        if quality_scores:
-            avg_quality = sum(quality_scores) / len(quality_scores)
-            below_70_count = sum(1 for score in quality_scores if score < 70)
-            below_95_count = sum(1 for score in quality_scores if 70 <= score < 95)
-            above_95_count = sum(1 for score in quality_scores if score >= 95)
 
-            print(f"🔍 Quality Score: {avg_quality:.1f}/100 avg")
-            print(f"   ✅ Above 95%: {above_95_count} modules")
-            print(f"   📊 70-95%: {below_95_count} modules")
-            print(f"   ⚠️  Below 70%: {below_70_count} modules")
+def _categorize_violation(violation: str) -> str:
+    """Categorize a quality violation by type."""
+    if "too long" in violation:
+        return "Function Length"
+    if "too complex" in violation:
+        return "Complexity"
+    if "missing type hint" in violation:
+        return "Type Hints"
+    return "Other"
 
-            # Show most common violation types
-            all_violations = []
-            for m in all_metrics:
-                if m.quality_metrics and m.quality_metrics.violations:
-                    all_violations.extend(m.quality_metrics.violations)
 
-            if all_violations:
-                violation_types = {}
-                for violation in all_violations:
-                    if "too long" in violation:
-                        violation_types["Function Length"] = violation_types.get("Function Length", 0) + 1
-                    elif "too complex" in violation:
-                        violation_types["Complexity"] = violation_types.get("Complexity", 0) + 1
-                    elif "missing type hint" in violation:
-                        violation_types["Type Hints"] = violation_types.get("Type Hints", 0) + 1
-                    else:
-                        violation_types["Other"] = violation_types.get("Other", 0) + 1
+def _collect_violations(all_metrics: list[Any]) -> list[str]:
+    """Collect all violations from metrics."""
+    all_violations = []
+    for m in all_metrics:
+        if m.quality_metrics and m.quality_metrics.violations:
+            all_violations.extend(m.quality_metrics.violations)
+    return all_violations
 
-                print("   📋 Common Issues:")
-                for vtype, count in sorted(violation_types.items(), key=lambda x: x[1], reverse=True):
-                    print(f"      {vtype}: {count} violations")
 
-    # Performance metrics and analysis
-    if enable_monitoring and all_metrics:
-        avg_memory = sum(m.memory_usage_mb for m in all_metrics) / len(all_metrics)
-        peak_memory = max(m.memory_usage_mb for m in all_metrics)
-        avg_cpu = sum(m.cpu_usage_percent for m in all_metrics) / len(all_metrics)
-        peak_cpu = max(m.cpu_usage_percent for m in all_metrics)
+def _print_violation_summary(all_violations: list[str]) -> None:
+    """Print summary of violation types."""
+    violation_types = {}
+    for violation in all_violations:
+        vtype = _categorize_violation(violation)
+        violation_types[vtype] = violation_types.get(vtype, 0) + 1
 
-        # Calculate parallel efficiency
-        sequential_time = sum(m.duration for m in all_metrics)
-        parallel_efficiency = (sequential_time / total_duration) if total_duration > 0 else 1.0
+    print("   📋 Common Issues:")
+    for vtype, count in sorted(violation_types.items(), key=lambda x: x[1], reverse=True):
+        print(f"      {vtype}: {count} violations")
 
-        print("\n📊 PERFORMANCE METRICS:")
-        print(f"   💾 Memory Usage: {avg_memory:.1f}MB avg, {peak_memory:.1f}MB peak")
-        print(f"   ⚡ CPU Usage: {avg_cpu:.1f}% avg, {peak_cpu:.1f}% peak")
-        if enable_fast_mode:
-            print(f"   🚀 Parallel Efficiency: {parallel_efficiency:.1f}x speedup")
 
-        # Create suite performance metrics
-        suite_performance = TestSuitePerformance(
-            total_duration=total_duration,
-            total_tests=total_tests_run,
-            passed_modules=passed_count,
-            failed_modules=failed_count,
-            avg_memory_usage=avg_memory,
-            peak_memory_usage=peak_memory,
-            avg_cpu_usage=avg_cpu,
-            peak_cpu_usage=peak_cpu,
-            parallel_efficiency=parallel_efficiency,
-            optimization_suggestions=analyze_performance_trends(all_metrics)
-        )
+def _print_quality_summary(all_metrics: list[Any]) -> None:
+    """Print quality metrics summary."""
+    if not all_metrics or not any(m.quality_metrics for m in all_metrics):
+        return
 
-        # Show optimization suggestions
-        if suite_performance.optimization_suggestions:
-            print("\n💡 OPTIMIZATION SUGGESTIONS:")
-            for suggestion in suite_performance.optimization_suggestions:
-                print(f"   {suggestion}")
+    quality_scores = [m.quality_metrics.quality_score for m in all_metrics if m.quality_metrics]
+    if not quality_scores:
+        return
 
-        # Save metrics for trend analysis
-        if enable_benchmark:
-            save_performance_metrics(all_metrics, suite_performance)
+    avg_quality = sum(quality_scores) / len(quality_scores)
+    below_70_count = sum(1 for score in quality_scores if score < 70)
+    below_95_count = sum(1 for score in quality_scores if 70 <= score < 95)
+    above_95_count = sum(1 for score in quality_scores if score >= 95)
 
+    print(f"🔍 Quality Score: {avg_quality:.1f}/100 avg")
+    print(f"   ✅ Above 95%: {above_95_count} modules")
+    print(f"   📊 70-95%: {below_95_count} modules")
+    print(f"   ⚠️  Below 70%: {below_70_count} modules")
+
+    # Show most common violation types
+    all_violations = _collect_violations(all_metrics)
+    if all_violations:
+        _print_violation_summary(all_violations)
+
+
+def _print_performance_metrics(
+    all_metrics: list[Any],
+    total_duration: float,
+    total_tests_run: int,
+    passed_count: int,
+    failed_count: int,
+    enable_fast_mode: bool,
+    enable_benchmark: bool
+) -> None:
+    """Print performance metrics and analysis."""
+    if not all_metrics:
+        return
+
+    avg_memory = sum(m.memory_usage_mb for m in all_metrics) / len(all_metrics)
+    peak_memory = max(m.memory_usage_mb for m in all_metrics)
+    avg_cpu = sum(m.cpu_usage_percent for m in all_metrics) / len(all_metrics)
+    peak_cpu = max(m.cpu_usage_percent for m in all_metrics)
+
+    # Calculate parallel efficiency
+    sequential_time = sum(m.duration for m in all_metrics)
+    parallel_efficiency = (sequential_time / total_duration) if total_duration > 0 else 1.0
+
+    print("\n📊 PERFORMANCE METRICS:")
+    print(f"   💾 Memory Usage: {avg_memory:.1f}MB avg, {peak_memory:.1f}MB peak")
+    print(f"   ⚡ CPU Usage: {avg_cpu:.1f}% avg, {peak_cpu:.1f}% peak")
+    if enable_fast_mode:
+        print(f"   🚀 Parallel Efficiency: {parallel_efficiency:.1f}x speedup")
+
+    # Create suite performance metrics
+    suite_performance = TestSuitePerformance(
+        total_duration=total_duration,
+        total_tests=total_tests_run,
+        passed_modules=passed_count,
+        failed_modules=failed_count,
+        avg_memory_usage=avg_memory,
+        peak_memory_usage=peak_memory,
+        avg_cpu_usage=avg_cpu,
+        peak_cpu_usage=peak_cpu,
+        parallel_efficiency=parallel_efficiency,
+        optimization_suggestions=analyze_performance_trends(all_metrics)
+    )
+
+    # Show optimization suggestions
+    if suite_performance.optimization_suggestions:
+        print("\n💡 OPTIMIZATION SUGGESTIONS:")
+        for suggestion in suite_performance.optimization_suggestions:
+            print(f"   {suggestion}")
+
+    # Save metrics for trend analysis
+    if enable_benchmark:
+        save_performance_metrics(all_metrics, suite_performance)
+
+
+def _print_final_results(
+    results: list[tuple[str, str, bool]],
+    module_descriptions: dict[str, str],
+    discovered_modules: list[str],
+    passed_count: int,
+    failed_count: int
+) -> None:
+    """Print final results summary by category."""
     # Show failed modules first if any
     if failed_count > 0:
         print("\n❌ FAILED MODULES:")
@@ -1295,6 +1381,61 @@ def main() -> bool:
     else:
         print(f"\n⚠️{failed_count} module(s) failed.")
         print("   Check individual test outputs above for details.\n")
+
+
+def main() -> bool:
+    """Comprehensive test runner with performance monitoring and optimization."""
+    # Setup environment and parse arguments
+    enable_fast_mode, enable_benchmark, enable_monitoring = _setup_test_environment()
+
+    # Print header
+    _print_test_header(enable_fast_mode, enable_benchmark)
+
+    # Run pre-test checks
+    if not _run_pre_test_checks():
+        return False
+
+    # Discover and prepare test modules
+    discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules()
+
+    if not discovered_modules:
+        print("⚠️  No test modules discovered with run_comprehensive_tests() function.")
+        return False
+
+    total_start_time = time.time()
+
+    # Execute tests
+    results, all_metrics, total_tests_run, passed_count = _execute_tests(
+        modules_with_descriptions,
+        discovered_modules,
+        module_descriptions,
+        enable_fast_mode,
+        enable_monitoring,
+        enable_benchmark
+    )
+
+    # Calculate final metrics
+    total_duration = time.time() - total_start_time
+    if not enable_fast_mode:  # Recalculate for sequential mode
+        passed_count = sum(1 for _, _, success in results if success)
+    failed_count = len(results) - passed_count
+
+    # Print all summaries
+    _print_basic_summary(total_duration, total_tests_run, passed_count, failed_count, results)
+    _print_quality_summary(all_metrics)
+
+    if enable_monitoring:
+        _print_performance_metrics(
+            all_metrics,
+            total_duration,
+            total_tests_run,
+            passed_count,
+            failed_count,
+            enable_fast_mode,
+            enable_benchmark
+        )
+
+    _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
 
     return failed_count == 0
 
