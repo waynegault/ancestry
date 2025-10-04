@@ -664,7 +664,7 @@ def error_handler(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -959,7 +959,7 @@ def retry_on_failure(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception = None
             for attempt in range(max_attempts):
                 try:
@@ -1001,7 +1001,7 @@ def circuit_breaker(
         cb = error_recovery_manager.get_circuit_breaker(func.__name__, config)
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return cb.call(func, *args, **kwargs)
         return wrapper
     return decorator
@@ -1011,7 +1011,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
     """Decorator for timeout protection (cross-platform)."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             import platform
             import threading
 
@@ -1066,7 +1066,7 @@ def graceful_degradation(
     """Decorator for graceful degradation when service fails."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -1082,7 +1082,7 @@ def error_context(context_name: str = "", **context_data: Any) -> Callable:
     """Decorator to add context to errors."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -1103,7 +1103,7 @@ def with_circuit_breaker(
         cb = error_recovery_manager.get_circuit_breaker(service_name, config)
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return cb.call(func, *args, **kwargs)
         return wrapper
     return decorator
@@ -1113,7 +1113,7 @@ def with_recovery(recovery_strategy: Callable) -> Callable:
     """Decorator to add recovery strategy to functions."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:

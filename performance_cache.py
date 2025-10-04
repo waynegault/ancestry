@@ -683,7 +683,7 @@ class FastMockDataFactory:
     """
 
     @staticmethod
-    def create_mock_gedcom_data():
+    def create_mock_gedcom_data() -> Any:
         """Create lightweight mock GEDCOM data for tests"""
         from unittest.mock import MagicMock
 
@@ -712,7 +712,7 @@ class FastMockDataFactory:
         return mock_gedcom
 
     @staticmethod
-    def create_mock_filter_criteria():
+    def create_mock_filter_criteria() -> dict[str, Any]:
         """Create mock filter criteria for tests"""
         return {
             "first_name": "John",
@@ -722,7 +722,7 @@ class FastMockDataFactory:
         }
 
     @staticmethod
-    def create_mock_scoring_criteria():
+    def create_mock_scoring_criteria() -> dict[str, Any]:
         """Create mock scoring criteria for tests"""
         return {
             "first_name": "John",

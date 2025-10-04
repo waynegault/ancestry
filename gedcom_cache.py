@@ -109,7 +109,7 @@ class LazyGedcomData:
         self._data = None
 
     @property
-    def data(self):
+    def data(self) -> Any:
         # Only load GEDCOM data when accessed
         try:
             from ged4py.parser import GedcomReader
@@ -128,7 +128,7 @@ class GedcomCacheModule(BaseCacheModule):
     Provides multi-level caching (memory + disk) for genealogical data.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.module_name = "gedcom_cache"
         self.cache_prefix = _GEDCOM_CACHE_PREFIX
