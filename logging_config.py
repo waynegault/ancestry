@@ -255,7 +255,7 @@ _logging_initialized: bool = False
 
 
 # --- Main Setup Function ---
-def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging.Logger:
+def setup_logging(log_file: str = "", log_level: str = "INFO") -> logging.Logger:
     """
     Configures the main application logger ('logger').
     Sets up file and console handlers with appropriate levels, formatters, and filters.
@@ -263,6 +263,7 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
 
     Args:
         log_file: The base name for the log file (will be placed in LOG_DIRECTORY).
+                  If empty, reads from LOG_FILE environment variable (default: "app.log").
         log_level: The desired minimum logging level (e.g., "DEBUG", "INFO")
                    for the handlers.
 
@@ -270,6 +271,10 @@ def setup_logging(log_file: str = "app.log", log_level: str = "INFO") -> logging
         The configured 'logger' instance.
     """
     global _logging_initialized
+
+    # Use LOG_FILE from .env if not specified
+    if not log_file:
+        log_file = os.getenv("LOG_FILE", "app.log")
 
     # Validate log level
     log_level_upper = log_level.upper()
