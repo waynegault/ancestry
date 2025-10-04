@@ -3684,7 +3684,7 @@ def main() -> None:
         if session_manager:
             # For testing purposes, we'll mock the browser initialization
             # This allows tests to run without an actual browser
-            def mock_start_sess():
+            def mock_start_sess() -> None:
                 # Set the necessary flags to simulate a successful session start
                 session_manager.driver_live = True
                 session_manager.browser_needed = True
@@ -3731,7 +3731,7 @@ def main() -> None:
         # 2.3 SessionManager.ensure_session_ready
         if session_manager and driver_instance and session_manager.driver_live:
             # For testing purposes, we'll mock the session readiness
-            def mock_ensure_session_ready():
+            def mock_ensure_session_ready() -> None:
                 # Set the necessary flags to simulate a ready session
                 session_manager.session_ready = True
                 session_manager.csrf_token = "mock_csrf_token"
