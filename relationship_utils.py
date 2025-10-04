@@ -1175,6 +1175,184 @@ def convert_api_path_to_unified_format(
     return result
 
 
+def _format_years_display(birth_year: Optional[str], death_year: Optional[str]) -> str:
+    """Format birth/death years into display string."""
+    if birth_year and death_year:
+        return f" ({birth_year}-{death_year})"
+    elif birth_year:
+        return f" (b. {birth_year})"
+    elif death_year:
+        return f" (d. {death_year})"
+    return ""
+
+
+def _clean_name_format(name: str) -> str:
+    """Remove Name('...') wrapper if present."""
+    if not isinstance(name, str):
+        return str(name)
+
+    if "Name(" not in name:
+        return name
+
+    # Try different regex patterns to handle various Name formats
+    name_clean = re.sub(r"Name\(['\"]([^'\"]+)['\"]\)", r"\1", name)
+    name_clean = re.sub(r"Name\('([^']+)'\)", r"\1", name_clean)
+    name_clean = re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
+    return name_clean
+
+
+def _infer_gender_from_name(name: str) -> Optional[str]:
+    """Infer gender from common name patterns."""
+    name_lower = name.lower()
+
+    # Common male names or titles
+    male_indicators = ["gordon", "james", "thomas", "alexander", "henry", "william", "mr.", "sir"]
+    if any(male_name in name_lower for male_name in male_indicators):
+        return "M"
+
+    # Common female names or titles
+    female_indicators = ["catherine", "margaret", "mary", "jane", "elizabeth", "mrs.", "lady"]
+    if any(female_name in name_lower for female_name in female_indicators):
+        return "F"
+
+    return None
+
+
+def _determine_gender_for_person(person_data: dict, name: str) -> Optional[str]:
+    """Determine gender from person data or infer from name."""
+    gender_val = person_data.get("gender", "")
+    gender = gender_val.upper() if isinstance(gender_val, str) else None
+
+    # If gender not explicitly set, try to infer from name
+    if not gender:
+        gender = _infer_gender_from_name(name)
+
+    # Special case for Gordon Milne
+    if isinstance(name, str) and "gordon milne" in name.lower():
+        gender = "M"
+        logger.debug("Forcing gender to M for Gordon Milne")
+
+        # Special case for Gordon Milne (1920-1994)
+        if "1920" in str(person_data.get("birth_year", "")):
+            logger.debug("Forcing gender to M for Gordon Milne (1920-1994)")
+
+    return gender
+
+
+def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> Optional[str]:
+    """Check for Uncle/Aunt pattern: Target's sibling is parent of owner."""
+    if len(path_data) < 3:
+        return None
+
+    if (path_data[1].get("relationship") in ["brother", "sister"] and
+        path_data[2].get("relationship") in ["son", "daughter"]):
+        gender_val = path_data[0].get("gender")
+        gender_str = str(gender_val) if gender_val is not None else ""
+        return "Uncle" if gender_str.upper() == "M" else "Aunt"
+
+    return None
+
+
+def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
+    """Check for Uncle/Aunt pattern: Through parent."""
+    if len(path_data) < 3:
+        return None
+
+    if path_data[1].get("relationship") in ["father", "mother"]:
+        if path_data[2].get("relationship") in ["son", "daughter"]:
+            gender_val = path_data[0].get("gender")
+            gender_str = str(gender_val) if gender_val is not None else ""
+            if gender_str.upper() == "M":
+                return "Uncle"
+            elif gender_str.upper() == "F":
+                return "Aunt"
+            else:
+                return "Aunt/Uncle"
+
+    return None
+
+
+def _check_grandparent_pattern(path_data: list[dict]) -> Optional[str]:
+    """Check for Grandparent pattern: Target's child is parent of owner."""
+    if len(path_data) < 3:
+        return None
+
+    if (path_data[1].get("relationship") in ["son", "daughter"] and
+        path_data[2].get("relationship") in ["son", "daughter"]):
+        # Determine gender
+        name = path_data[0].get("name", "")
+        gender = _determine_gender_for_person(path_data[0], str(name))
+
+        logger.debug(
+            f"Grandparent relationship: name={name}, gender={gender}, "
+            f"raw gender={path_data[0].get('gender')}"
+        )
+
+        if gender == "M":
+            return "Grandfather"
+        elif gender == "F":
+            return "Grandmother"
+        else:
+            return "Grandparent"
+
+    return None
+
+
+def _check_cousin_pattern(path_data: list[dict]) -> Optional[str]:
+    """Check for Cousin pattern: Target's parent's sibling's child is owner."""
+    if len(path_data) < 4:
+        return None
+
+    if (path_data[1].get("relationship") in ["father", "mother"] and
+        path_data[2].get("relationship") in ["brother", "sister"] and
+        path_data[3].get("relationship") in ["son", "daughter"]):
+        return "Cousin"
+
+    return None
+
+
+def _check_nephew_niece_pattern(path_data: list[dict]) -> Optional[str]:
+    """Check for Nephew/Niece pattern: Target's parent's child is owner."""
+    if len(path_data) < 3:
+        return None
+
+    if (path_data[1].get("relationship") in ["father", "mother"] and
+        path_data[2].get("relationship") in ["son", "daughter"]):
+        gender_val = path_data[0].get("gender")
+        target_gender = str(gender_val).upper() if gender_val is not None else ""
+
+        if target_gender == "M":
+            return "Nephew"
+        elif target_gender == "F":
+            return "Niece"
+        else:
+            return "Nephew/Niece"
+
+    return None
+
+
+def _determine_relationship_type_from_path(path_data: list[dict]) -> Optional[str]:
+    """Determine relationship type by checking various patterns."""
+    if len(path_data) < 3:
+        return None
+
+    # Try each pattern in order
+    patterns = [
+        _check_uncle_aunt_pattern_sibling,
+        _check_uncle_aunt_pattern_parent,
+        _check_grandparent_pattern,
+        _check_cousin_pattern,
+        _check_nephew_niece_pattern,
+    ]
+
+    for pattern_func in patterns:
+        result = pattern_func(path_data)
+        if result:
+            return result
+
+    return None
+
+
 def format_relationship_path_unified(
     path_data: list[dict[str, Optional[str]]],  # Value type changed to Optional[str]
     target_name: str,
@@ -1205,144 +1383,14 @@ def format_relationship_path_unified(
     target_display = target_name
 
     # Add birth/death years if available
-    years_display = ""
-    birth_year = first_person.get("birth_year")
-    death_year = first_person.get("death_year")
-
-    if birth_year and death_year:
-        years_display = f" ({birth_year}-{death_year})"
-    elif birth_year:
-        years_display = f" (b. {birth_year})"
-    elif death_year:  # Handle case where only death year is known
-        years_display = f" (d. {death_year})"
+    years_display = _format_years_display(
+        first_person.get("birth_year"),
+        first_person.get("death_year")
+    )
 
     # Determine the specific relationship type if not provided
     if relationship_type is None or relationship_type == "relative":
-        # Try to determine the relationship type based on the path
-        if len(path_data) >= 3:
-            # Check for common relationship patterns
-            # Uncle/Aunt: Target's sibling is parent of owner
-            if path_data[1].get("relationship") in ["brother", "sister"] and path_data[
-                2
-            ].get("relationship") in ["son", "daughter"]:
-                gender_val = path_data[0].get("gender")
-                gender_str = str(gender_val) if gender_val is not None else ""
-                relationship_type = "Uncle" if gender_str.upper() == "M" else "Aunt"
-            # Uncle/Aunt: Target's parent's child is parent of owner (through parent)
-            elif (
-                path_data[1].get("relationship") in ["father", "mother"]
-                and len(path_data) >= 3
-            ):
-                # This block was previously broken and contained unfinished logic.
-                # If the third person in the path is a son or daughter, and the target's gender is known, set uncle/aunt.
-                if path_data[2].get("relationship") in ["son", "daughter"]:
-                    gender_val = path_data[0].get("gender")
-                    gender_str = str(gender_val) if gender_val is not None else ""
-                    relationship_type = (
-                        "Uncle"
-                        if gender_str.upper() == "M"
-                        else "Aunt" if gender_str.upper() == "F" else "Aunt/Uncle"
-                    )
-            # Grandparent: Target's child is parent of owner
-            elif path_data[1].get("relationship") in ["son", "daughter"] and path_data[
-                2
-            ].get("relationship") in ["son", "daughter"]:
-                # Check the gender of the first person in the path
-                gender_val = path_data[0].get("gender", "")
-                gender = (
-                    gender_val.upper() if isinstance(gender_val, str) else None
-                )  # Ensure None if not a string
-                # If gender is not explicitly set, try to infer from the name
-                if not gender:
-                    name_val = path_data[0].get("name")
-                    name = str(name_val).lower() if name_val is not None else ""
-                    # Common male names or titles
-                    if any(
-                        male_name in name
-                        for male_name in [
-                            "gordon",
-                            "james",
-                            "thomas",
-                            "alexander",
-                            "henry",
-                            "william",
-                            "mr.",
-                            "sir",
-                        ]
-                    ):
-                        gender = "M"
-                    # Common female names or titles
-                    elif any(
-                        female_name in name
-                        for female_name in [
-                            "catherine",
-                            "margaret",
-                            "mary",
-                            "jane",
-                            "elizabeth",
-                            "mrs.",
-                            "lady",
-                        ]
-                    ):
-                        gender = "F"
-
-                # Debug log to see what's happening
-                logger.debug(
-                    f"Grandparent relationship: name={path_data[0].get('name')}, gender={gender}, raw gender={path_data[0].get('gender')}"
-                )
-
-                # Force gender to M for Gordon Milne
-                name_val = path_data[0].get("name")
-                if isinstance(name_val, str) and "gordon milne" in name_val.lower():
-                    gender = "M"
-                    logger.debug("Forcing gender to M for Gordon Milne")
-
-                # Special case for Gordon Milne (1920-1994)
-                name_val = path_data[0].get("name")
-                if (
-                    isinstance(name_val, str)
-                    and "gordon milne" in name_val.lower()
-                    and "1920" in str(path_data[0].get("birth_year", ""))
-                ):
-                    gender = "M"
-                    logger.debug("Forcing gender to M for Gordon Milne (1920-1994)")
-
-                relationship_type = (
-                    "Grandfather"
-                    if gender == "M"
-                    else "Grandmother" if gender == "F" else "Grandparent"
-                )  # Added fallback
-            # Cousin: Target's parent's sibling's child is owner
-            elif (
-                path_data[1].get("relationship") in ["father", "mother"]
-                and len(path_data) >= 4
-            ):
-                if path_data[2].get("relationship") in [
-                    "brother",
-                    "sister",
-                ] and path_data[3].get("relationship") in ["son", "daughter"]:
-                    relationship_type = "Cousin"
-            # Nephew/Niece: Target's parent's child is owner
-            elif path_data[1].get("relationship") in ["father", "mother"] and path_data[
-                2
-            ].get("relationship") in ["son", "daughter"]:
-                # This logic determines if TARGET is Nephew/Niece of OWNER.
-                # The current phrasing "owner_name.endswith("Gault") and "Wayne" in owner_name"
-                # seems to be a specific rule for a particular owner.
-                # A more general approach would be to check the gender of the TARGET.
-                gender_val = path_data[0].get("gender")
-                target_gender = (
-                    str(gender_val).upper() if gender_val is not None else ""
-                )
-                if target_gender == "M":
-                    relationship_type = "Nephew"
-                elif target_gender == "F":
-                    relationship_type = "Niece"
-                else:  # Fallback if gender unknown
-                    relationship_type = "Nephew/Niece"
-
-        # Default to "relative" if we couldn't determine a specific relationship
-        relationship_type = relationship_type or "relative"
+        relationship_type = _determine_relationship_type_from_path(path_data) or "relative"
 
     # Format the summary line
     summary = f"{target_display}{years_display} is {owner_name}'s {relationship_type}:"
@@ -1358,75 +1406,31 @@ def format_relationship_path_unified(
         current = path_data[i]
         next_person = path_data[i + 1]
 
-        # Get names
+        # Get names and clean them
         current_name = current.get("name", "Unknown")
         next_name = next_person.get("name", "Unknown")
+        current_name_clean = _clean_name_format(str(current_name))
+        next_name_clean = _clean_name_format(str(next_name))
 
         # Get relationship
         relationship = next_person.get("relationship", "relative")
 
-        # Format the line using possessive form
-        # Remove Name('...') if present - handle both single and double quotes
-        if isinstance(current_name, str):
-            # Try different regex patterns to handle various Name formats
-            if "Name(" in current_name:
-                current_name_clean = re.sub(
-                    r"Name\(['\"]([^'\"]+)['\"]\)", r"\1", current_name
-                )
-                current_name_clean = re.sub(
-                    r"Name\('([^']+)'\)", r"\1", current_name_clean
-                )
-                current_name_clean = re.sub(
-                    r'Name\("([^"]+)"\)', r"\1", current_name_clean
-                )
-            else:
-                current_name_clean = current_name
-        else:
-            current_name_clean = str(current_name)
-
-        if isinstance(next_name, str):
-            # Try different regex patterns to handle various Name formats
-            if "Name(" in next_name:
-                next_name_clean = re.sub(
-                    r"Name\(['\"]([^'\"]+)['\"]\)", r"\1", next_name
-                )
-                next_name_clean = re.sub(r"Name\('([^']+)'\)", r"\1", next_name_clean)
-                next_name_clean = re.sub(r'Name\("([^"]+)"\)', r"\1", next_name_clean)
-            else:
-                next_name_clean = next_name
-        else:
-            next_name_clean = str(next_name)
-
         # Format years for current person - only if we haven't seen this name before
         current_years = ""
         if current_name_clean.lower() not in seen_names:
-            current_birth = current.get("birth_year")
-            current_death = current.get("death_year")
-
-            if current_birth and current_death:
-                current_years = f" ({current_birth}-{current_death})"
-            elif current_birth:
-                current_years = f" (b. {current_birth})"
-            elif current_death:  # Handle case where only death year is known
-                current_years = f" (d. {current_death})"
-
-            # Add to seen names
+            current_years = _format_years_display(
+                current.get("birth_year"),
+                current.get("death_year")
+            )
             seen_names.add(current_name_clean.lower())
 
         # Format years for next person - only if we haven't seen this name before
         next_years = ""
         if next_name_clean.lower() not in seen_names:
-            next_birth = next_person.get("birth_year")
-            next_death = next_person.get("death_year")
-
-            if next_birth and next_death:
-                next_years = f" ({next_birth}-{next_death})"
-            elif next_birth:
-                next_years = f" (b. {next_birth})"
-            elif next_death:  # Handle case where only death year is known
-                next_years = f" (d. {next_death})"
-
-            # Add to seen names
+            next_years = _format_years_display(
+                next_person.get("birth_year"),
+                next_person.get("death_year")
+            )
             seen_names.add(next_name_clean.lower())
 
         line = f"- {current_name_clean}{current_years}'s {relationship} is {next_name_clean}{next_years}"
