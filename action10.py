@@ -1414,23 +1414,11 @@ def main() -> bool:
         return False
 
 
-@fast_test_cache
-@error_context("action10_module_tests")
-def action10_module_tests() -> bool:
-    """Comprehensive test suite for action10.py"""
-    import builtins
+def _setup_test_environment() -> tuple[Optional[str], Any]:
+    """Setup test environment and return original GEDCOM path and test suite."""
     import os
-    import time
     from pathlib import Path
-
-    from test_framework import (  # type: ignore[import-not-found]
-        Colors,
-        TestSuite,
-        clean_test_output,
-        format_score_breakdown_table,
-        format_search_criteria,
-        format_test_section_header,
-    )
+    from test_framework import TestSuite  # type: ignore[import-not-found]
 
     # Use minimal test GEDCOM for faster tests (saves ~35s)
     original_gedcom = os.getenv("GEDCOM_FILE_PATH")
@@ -1449,10 +1437,117 @@ def action10_module_tests() -> bool:
     )
     suite.start_suite()
 
+    return original_gedcom, suite
+
+
+def _teardown_test_environment(original_gedcom: Optional[str]) -> None:
+    """Restore original test environment."""
+    import os
+
+    # PHASE 4.2: Disable mock mode after tests complete
+    disable_mock_mode()
+
+    # Restore original GEDCOM path
+    if original_gedcom:
+        os.environ["GEDCOM_FILE_PATH"] = original_gedcom
+    else:
+        os.environ.pop("GEDCOM_FILE_PATH", None)
+
+
+def _debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
+    """Simple wrapper for test functions (timing removed for cleaner output)"""
+    return test_func
+
+
+def _load_test_person_data_from_env() -> dict[str, Any]:
+    """Load test person data from .env configuration."""
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    return {
+        "first_name": os.getenv("TEST_PERSON_FIRST_NAME", "Fraser"),
+        "last_name": os.getenv("TEST_PERSON_LAST_NAME", "Gault"),
+        "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
+        "gender": os.getenv("TEST_PERSON_GENDER", "m"),
+        "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
+        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235")),
+    }
+
+
+def _get_gedcom_data_or_skip() -> Optional[Any]:
+    """Get GEDCOM data or return None if not available."""
+    from test_framework import Colors  # type: ignore[import-not-found]
+
+    gedcom_data = get_cached_gedcom()
+    if not gedcom_data:
+        print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
+    return gedcom_data
+
+
+def _create_search_criteria(test_data: dict[str, Any]) -> dict[str, Any]:
+    """Create search criteria from test person data."""
+    return {
+        "first_name": test_data["first_name"].lower(),
+        "surname": test_data["last_name"].lower(),
+        "birth_year": test_data["birth_year"],
+        "gender": test_data.get("gender", "m").lower(),
+        "birth_place": test_data.get("birth_place", ""),
+    }
+
+
+def _search_for_person(gedcom_data: Any, search_criteria: dict[str, Any]) -> list[dict[str, Any]]:
+    """Search for a person in GEDCOM data using filter_and_score_individuals."""
+    from test_framework import clean_test_output  # type: ignore[import-not-found]
+
+    with clean_test_output():
+        search_results = filter_and_score_individuals(
+            gedcom_data,
+            search_criteria,
+            search_criteria,
+            dict(config_schema.common_scoring_weights),
+            {"year_match_range": 5.0}
+        )
+    return search_results
+
+
+def _validate_score_result(score: int, expected_score: int, test_name: str) -> None:
+    """Validate scoring results and print formatted output."""
+    from test_framework import Colors  # type: ignore[import-not-found]
+
+    print(f"\n{Colors.BOLD}{Colors.WHITE}✅ Test Validation:{Colors.RESET}")
+    print(f"   Score ≥ 50: {Colors.GREEN if score >= 50 else Colors.RED}{score >= 50}{Colors.RESET}")
+    print(f"   Expected score validation: {Colors.GREEN if score == expected_score else Colors.RED}{score == expected_score}{Colors.RESET} (Expected: {expected_score}, Actual: {score})")
+    print(f"   Final Score: {Colors.BOLD}{Colors.YELLOW}{score}{Colors.RESET}")
+
+    assert score >= 50, f"{test_name} should score at least 50, got {score}"
+    assert score == expected_score, f"{test_name} should score exactly {expected_score}, got {score}"
+    print(f"{Colors.GREEN}✅ {test_name} scoring algorithm test passed{Colors.RESET}")
+
+
+@fast_test_cache
+@error_context("action10_module_tests")
+def action10_module_tests() -> bool:
+    """Comprehensive test suite for action10.py"""
+    import builtins
+    import os
+    import time
+    from pathlib import Path
+
+    from test_framework import (  # type: ignore[import-not-found]
+        Colors,
+        TestSuite,
+        clean_test_output,
+        format_score_breakdown_table,
+        format_search_criteria,
+        format_test_section_header,
+    )
+
+    original_gedcom, suite = _setup_test_environment()
+
     # --- TESTS ---
-    def debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
-        """Simple wrapper for test functions (timing removed for cleaner output)"""
-        return test_func
+    debug_wrapper = _debug_wrapper
 
     def test_module_initialization() -> None:
         """Test that all required Action 10 functions are available and callable"""
@@ -1660,71 +1755,38 @@ def action10_module_tests() -> bool:
 
     def test_fraser_gault_scoring_algorithm() -> None:
         """Test match scoring algorithm with test person's real data from .env"""
-        import os
+        # Load test person data from .env
+        test_data = _load_test_person_data_from_env()
 
-        from dotenv import load_dotenv
-        load_dotenv()
-
-        # Get test person data from .env configuration
-        test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-        test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-        test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-        test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-        expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
-
-        # Load real GEDCOM data and search for the test person
-        gedcom_data = get_cached_gedcom()
+        # Load GEDCOM data or skip if not available
+        gedcom_data = _get_gedcom_data_or_skip()
         if not gedcom_data:
-            print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
             return True
 
-        # Test person's exact data from .env - using consistent test data
-        search_criteria = {
-            "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(),
-            "birth_year": test_birth_year,
-            "gender": test_gender.lower(),  # Use lowercase for scoring consistency
-            "birth_place": test_birth_place
-        }
-
+        # Create search criteria and search for person
+        search_criteria = _create_search_criteria(test_data)
         print(format_search_criteria(search_criteria))
 
-        # Search for the actual person in GEDCOM data
-        with clean_test_output():
-            search_results = filter_and_score_individuals(
-                gedcom_data, search_criteria, search_criteria,
-                dict(config_schema.common_scoring_weights),
-                {"year_match_range": 5.0}
-            )
-
+        search_results = _search_for_person(gedcom_data, search_criteria)
         if not search_results:
             print(f"{Colors.YELLOW}⚠️ Test person not found in GEDCOM, skipping scoring test{Colors.RESET}")
             return True
 
-        # Use the top result for scoring analysis
+        # Analyze scoring results
         top_result = search_results[0]
         score = top_result.get('total_score', 0)
-
-        # Get field scores from the search result
         field_scores = top_result.get('field_scores', {})
+
         if not field_scores:
             # Fallback to default scoring pattern
             field_scores = {'givn': 25, 'surn': 25, 'gender': 15, 'byear': 20, 'bdate': 0, 'bplace': 25, 'bbonus': 25, 'dyear': 0, 'ddate': 25, 'dplace': 25, 'dbonus': 25, 'bonus': 25}
 
         print(format_score_breakdown_table(field_scores, int(score)))
-
-        # Test validation using universal expected score
-        print(f"\n{Colors.BOLD}{Colors.WHITE}✅ Test Validation:{Colors.RESET}")
-        print(f"   Score ≥ 50: {Colors.GREEN if score >= 50 else Colors.RED}{score >= 50}{Colors.RESET}")
-        print(f"   Expected score validation: {Colors.GREEN if score == expected_score else Colors.RED}{score == expected_score}{Colors.RESET} (Expected: {expected_score}, Actual: {score})")
         print(f"   Has field scores: {Colors.GREEN if field_scores else Colors.RED}{bool(field_scores)}{Colors.RESET}")
-        print(f"   Final Score: {Colors.BOLD}{Colors.YELLOW}{score}{Colors.RESET}")
 
-        # Check both minimum threshold and exact expected score
-        assert score >= 50, f"{test_first_name} {test_last_name} should score at least 50, got {score}"
-        assert score == expected_score, f"{test_first_name} {test_last_name} should score exactly {expected_score}, got {score}"
-        print(f"{Colors.GREEN}✅ {test_first_name} {test_last_name} scoring algorithm test passed{Colors.RESET}")
+        # Validate results
+        test_name = f"{test_data['first_name']} {test_data['last_name']}"
+        _validate_score_result(score, test_data['expected_score'], test_name)
         return True
 
     def test_display_relatives_fraser() -> None:
@@ -2388,15 +2450,7 @@ def action10_module_tests() -> bool:
         "Calculate relationship path from test person to tree owner using bidirectional BFS and format relationship description.",
     )
 
-    # PHASE 4.2: Disable mock mode after tests complete
-    disable_mock_mode()
-
-    # Restore original GEDCOM path
-    if original_gedcom:
-        os.environ["GEDCOM_FILE_PATH"] = original_gedcom
-    else:
-        os.environ.pop("GEDCOM_FILE_PATH", None)
-
+    _teardown_test_environment(original_gedcom)
     return suite.finish_suite()
 
 

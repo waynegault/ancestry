@@ -106,19 +106,47 @@
 
 ---
 
+## ✅ TASK 3 COMPLETE: relationship_utils.py
+
+### relationship_utils.py: format_relationship_path_unified
+**Complexity Reduction**: 48 → <10 (79% reduction!)
+
+**Before**:
+- ~250 lines of complex relationship determination logic
+- Cyclomatic complexity: 48
+- Massive nested if/elif blocks
+- Duplicated name cleaning and year formatting
+
+**After**:
+- Main function: ~40 lines
+- Cyclomatic complexity: <10
+- 11 focused helper functions
+- Clean orchestration logic
+
+**Helper Functions Created**:
+1. `_format_years_display()` - Format birth/death years
+2. `_clean_name_format()` - Remove Name() wrapper
+3. `_infer_gender_from_name()` - Infer gender from common names
+4. `_determine_gender_for_person()` - Determine gender with special cases
+5. `_check_uncle_aunt_pattern_sibling()` - Uncle/Aunt via sibling
+6. `_check_uncle_aunt_pattern_parent()` - Uncle/Aunt via parent
+7. `_check_grandparent_pattern()` - Grandparent detection
+8. `_check_cousin_pattern()` - Cousin detection
+9. `_check_nephew_niece_pattern()` - Nephew/Niece detection
+10. `_determine_relationship_type_from_path()` - Orchestrate all patterns
+11. Main function simplified to orchestration
+
+**Git Commit**: b6047b6
+
+---
+
 ## 🎯 NEXT PRIORITIES
 
 ### Phase 3: High Complexity Functions (40-99 complexity)
-**Status**: Ready to start
+**Status**: 1 of 5 complete (20%)
 
-**Next 5 Tasks**:
-1. **relationship_utils.py: format_relationship_path_unified** (complexity 48)
-   - Extract generation calculation
-   - Extract relationship term selection
-   - Extract path formatting logic
-   - Estimated: 6-8 hours
-
-2. **action10.py: action10_module_tests** (complexity 52, 981 lines)
+**Next 4 Tasks**:
+1. **action10.py: action10_module_tests** (complexity 52, 981 lines) - NEXT
    - Split into separate test cases
    - Extract scoring validation
    - Extract family matching tests
@@ -167,15 +195,16 @@
 - [x] Phase 0: Foundation (100%) ✅
 - [x] Phase 1: Documentation & Baseline (100%) ✅
 - [x] Phase 2: Critical Complexity (100%) ✅ **COMPLETE!**
-- [/] Phase 3: High Complexity (0%) - READY TO START
+- [/] Phase 3: High Complexity (20%) - IN PROGRESS
 - [ ] Phase 4: Medium Complexity (0%)
 - [ ] Phase 5: Type Hints (0%)
 - [ ] Phase 6: Final Validation (0%)
 
 ### Total Progress:
-- **Tasks completed**: 2 of 31 (6.5%)
+- **Tasks completed**: 3 of 31 (9.7%)
 - **Critical functions**: 2 of 2 (100%) ✅
-- **Estimated time used**: 2 hours of 152-200 hours (1%)
+- **High complexity functions**: 1 of 5 (20%) 🔄
+- **Estimated time used**: ~3 hours of 152-200 hours (1.5%)
 - **Efficiency**: Ahead of schedule!
 
 ---
