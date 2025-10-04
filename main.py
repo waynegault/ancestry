@@ -42,6 +42,56 @@ from action10 import main as run_action10
 from action11 import run_action11
 
 
+def _load_and_validate_config_schema() -> Optional[Any]:
+    """Load and validate configuration schema."""
+    try:
+        from config import config_schema
+        if config_schema is None:
+            logger.error("config_schema is None - configuration not properly initialized")
+            return None
+        logger.debug("Configuration loaded successfully")
+        return config_schema
+    except ImportError as e:
+        logger.error(f"Could not import config_schema from config package: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error loading configuration: {e}")
+        return None
+
+
+def _check_processing_limits(config: Any) -> None:
+    """Check essential processing limits and log warnings."""
+    if config.api.max_pages <= 0:
+        logger.warning("MAX_PAGES not set or invalid - actions may process unlimited pages")
+    if config.batch_size <= 0:
+        logger.warning("BATCH_SIZE not set or invalid - actions may use large batches")
+    if config.max_productive_to_process <= 0:
+        logger.warning("MAX_PRODUCTIVE_TO_PROCESS not set - actions may process unlimited items")
+    if config.max_inbox <= 0:
+        logger.warning("MAX_INBOX not set - actions may process unlimited inbox items")
+
+
+def _check_rate_limiting_settings(config: Any) -> None:
+    """Check rate limiting settings and log warnings."""
+    if config.api.requests_per_second > 1.0:
+        logger.warning(f"requests_per_second ({config.api.requests_per_second}) may be too aggressive - consider ≤1.0")
+    if config.api.retry_backoff_factor < 2.0:
+        logger.warning(f"retry_backoff_factor ({config.api.retry_backoff_factor}) may be too low - consider ≥2.0")
+    if config.api.initial_delay < 1.0:
+        logger.warning(f"initial_delay ({config.api.initial_delay}) may be too short - consider ≥1.0")
+
+
+def _log_configuration_summary(config: Any) -> None:
+    """Log current configuration for transparency."""
+    logger.info("=== ACTION CONFIGURATION VALIDATION ===")
+    logger.info(f"MAX_PAGES: {config.api.max_pages}")
+    logger.info(f"BATCH_SIZE: {config.batch_size}")
+    logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+    logger.info(f"MAX_INBOX: {config.max_inbox}")
+    logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+    logger.info("========================================")
+
+
 # Configuration validation
 def validate_action_config() -> bool:
     """
@@ -49,52 +99,19 @@ def validate_action_config() -> bool:
     Prevents Action 6-style failures by ensuring conservative settings are applied.
     """
     try:
-        # Import and validate configuration
-        try:
-            from config import config_schema
-            if config_schema is None:
-                logger.error("config_schema is None - configuration not properly initialized")
-                return False
-            config = config_schema  # Assign the loaded configuration instance
-            logger.debug("Configuration loaded successfully")
-        except ImportError as e:
-            logger.error(f"Could not import config_schema from config package: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error loading configuration: {e}")
+        # Load and validate configuration
+        config = _load_and_validate_config_schema()
+        if config is None:
             return False
 
-        # Check essential processing limits
-        if config.api.max_pages <= 0:
-            logger.warning("MAX_PAGES not set or invalid - actions may process unlimited pages")
-
-        if config.batch_size <= 0:
-            logger.warning("BATCH_SIZE not set or invalid - actions may use large batches")
-
-        if config.max_productive_to_process <= 0:
-            logger.warning("MAX_PRODUCTIVE_TO_PROCESS not set - actions may process unlimited items")
-
-        if config.max_inbox <= 0:
-            logger.warning("MAX_INBOX not set - actions may process unlimited inbox items")
+        # Check processing limits
+        _check_processing_limits(config)
 
         # Check rate limiting settings
-        if config.api.requests_per_second > 1.0:
-            logger.warning(f"requests_per_second ({config.api.requests_per_second}) may be too aggressive - consider ≤1.0")
+        _check_rate_limiting_settings(config)
 
-        if config.api.retry_backoff_factor < 2.0:
-            logger.warning(f"retry_backoff_factor ({config.api.retry_backoff_factor}) may be too low - consider ≥2.0")
-
-        if config.api.initial_delay < 1.0:
-            logger.warning(f"initial_delay ({config.api.initial_delay}) may be too short - consider ≥1.0")
-
-        # Log current configuration for transparency
-        logger.info("=== ACTION CONFIGURATION VALIDATION ===")
-        logger.info(f"MAX_PAGES: {config.api.max_pages}")
-        logger.info(f"BATCH_SIZE: {config.batch_size}")
-        logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
-        logger.info(f"MAX_INBOX: {config.max_inbox}")
-        logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
-        logger.info("========================================")
+        # Log configuration summary
+        _log_configuration_summary(config)
 
         return True
 
