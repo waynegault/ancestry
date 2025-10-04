@@ -1177,7 +1177,7 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Any] =
 
 
 # Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager, *_):
+def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1223,7 +1223,7 @@ def srch_inbox_actn(session_manager, *_):
 
 
 # Action 8 (send_messages_action)
-def send_messages_action(session_manager, *_):
+def send_messages_action(session_manager: Any, *_: Any) -> bool:
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1281,7 +1281,7 @@ def send_messages_action(session_manager, *_):
 
 
 # Action 9 (process_productive_messages_action)
-def process_productive_messages_action(session_manager, *_):
+def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""
     # Guard clause now checks session_manager exists
     if not session_manager:
@@ -1327,7 +1327,7 @@ def process_productive_messages_action(session_manager, *_):
 
 
 # Action 11 (run_action11_wrapper)
-def run_action11_wrapper(session_manager, *_):
+def run_action11_wrapper(session_manager: Any, *_: Any) -> bool:
     """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
     logger.debug("Starting API Report...")
     try:
@@ -1346,11 +1346,8 @@ def run_action11_wrapper(session_manager, *_):
 # End of run_action11_wrapper
 
 
-def main() -> None:
-    global logger, session_manager  # Ensure global logger can be modified
-    session_manager = None  # Initialize session_manager
-
-    # Ensure terminal window has focus on Windows
+def _set_windows_console_focus() -> None:
+    """Ensure terminal window has focus on Windows."""
     try:
         if os.name == 'nt':  # Windows
             import ctypes
@@ -1368,6 +1365,321 @@ def main() -> None:
     except Exception:
         pass  # Silently ignore focus errors
 
+
+def _print_config_error_message() -> None:
+    """Print detailed configuration error message and exit."""
+    logger.critical("Configuration validation failed - unable to proceed")
+    print("\n❌ CONFIGURATION ERROR:")
+    print("   Critical configuration validation failed.")
+    print("   This usually means missing credentials or configuration files.")
+    print("")
+    print("💡 SOLUTIONS:")
+    print("\n🔒 Recommended: Use the secure credential manager")
+    print("   python credentials.py")
+
+    print("\n📋 Alternative options:")
+    print(
+        "   1. Run 'sec. Setup Security (Encrypt Credentials)' from main menu"
+    )
+    print("   2. Copy .env.example to .env and add your credentials")
+    print("   3. Ensure the required security dependencies are installed:")
+    print("      pip install cryptography keyring")
+
+    print("\n📚 For detailed instructions:")
+    print("   See ENV_IMPORT_GUIDE.md")
+
+    print("\n⚠️ Security Note:")
+    print("   The secure credential manager requires:")
+    print("   - cryptography package (for encryption)")
+    print("   - keyring package (for secure key storage)")
+
+    print("\nExiting application...")
+    sys.exit(1)
+
+
+def _check_action_confirmation(choice: str) -> bool:
+    """
+    Check if action requires confirmation and get user confirmation.
+
+    Returns:
+        True if action should proceed, False if cancelled
+    """
+    confirm_actions = {
+        "0": "Delete all people except specific profile ID",
+        "2": "COMPLETELY reset the database (deletes data)",
+        "4": "Restore database from backup (overwrites data)",
+    }
+
+    if choice in confirm_actions:
+        action_desc = confirm_actions[choice]
+        confirm = (
+            input(
+                f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): "
+            )
+            .strip()
+            .lower()
+        )
+        if confirm not in ["yes", "y"]:
+            print("Action cancelled.\n")
+            return False
+        print(" ")  # Newline after confirmation
+
+    return True
+
+
+def _run_main_tests() -> None:
+    """Run Main.py Internal Tests."""
+    try:
+        print("\n" + "=" * 60)
+        print("RUNNING MAIN.PY INTERNAL TESTS")
+        print("=" * 60)
+        result = run_comprehensive_tests()
+        if result:
+            print("\n🎉 All main.py tests completed successfully!")
+        else:
+            print("\n⚠️ Some main.py tests failed. Check output above.")
+    except Exception as e:
+        logger.error(f"Error running main.py tests: {e}")
+        print(f"Error running main.py tests: {e}")
+    print("\nReturning to main menu...")
+    input("Press Enter to continue...")
+
+
+def _run_all_tests() -> None:
+    """Run All Module Tests."""
+    try:
+        import subprocess
+
+        print("\n" + "=" * 60)
+        print("RUNNING ALL MODULE TESTS")
+        print("=" * 60)
+        result = subprocess.run(
+            [sys.executable, "run_all_tests.py"],
+            check=False, capture_output=False,
+            text=True,
+        )
+        if result.returncode == 0:
+            print("\n🎉 All module tests completed successfully!")
+        else:
+            print(f"\n⚠️ Some tests failed (exit code: {result.returncode})")
+    except FileNotFoundError:
+        print("Error: run_all_tests.py not found in current directory.")
+    except Exception as e:
+        logger.error(f"Error running all tests: {e}")
+        print(f"Error running all tests: {e}")
+    print("\nReturning to main menu...")
+    input("Press Enter to continue...")
+
+
+def _run_credential_manager() -> None:
+    """Setup Security (Encrypt Credentials)."""
+    try:
+        from credentials import UnifiedCredentialManager
+
+        print("\n" + "=" * 50)
+        print("CREDENTIAL MANAGEMENT")
+        print("=" * 50)
+        manager = UnifiedCredentialManager()
+        manager.run()
+    except ImportError as e:
+        logger.error(f"Error importing credentials manager: {e}")
+        print("\n❌ Error: Unable to use the credential manager.")
+
+        if "No module named 'cryptography'" in str(e) or "No module named 'keyring'" in str(e):
+            print("\n" + "=" * 60)
+            print("       SECURITY DEPENDENCIES MISSING")
+            print("=" * 60)
+            print("\nRequired security packages are not installed:")
+            print("  - cryptography: For secure encryption/decryption")
+            print("  - keyring: For secure storage of master keys")
+
+            print("\n📋 Installation Instructions:")
+            print("  1. Install required packages:")
+            print("     pip install cryptography keyring")
+            print("     - OR -")
+            print("     pip install -r requirements.txt")
+
+            if os.name != "nt":  # Not Windows
+                print("\n  For Linux/macOS users, you may also need:")
+                print("     pip install keyrings.alt")
+                print(
+                    "     Some Linux distributions may require: sudo apt-get install python3-dbus"
+                )
+
+            print("\n📚 For more information, see:")
+            print("  - ENV_IMPORT_GUIDE.md")
+            print("  - SECURITY_STREAMLINED.md")
+        else:
+            print(
+                "Error: credentials.py not found or has other import issues."
+            )
+            print(f"Details: {e}")
+            print(
+                "\nPlease check that all files are in the correct location."
+            )
+    except Exception as e:
+        logger.error(f"Error running credential manager: {e}")
+        print(f"Error running credential manager: {e}")
+    print("\nReturning to main menu...")
+    input("Press Enter to continue...")
+
+
+def _show_cache_statistics() -> None:
+    """Show cache statistics."""
+    try:
+        logger.info("Cache statistics feature currently unavailable")
+        print("Cache statistics feature currently unavailable.")
+    except Exception as e:
+        logger.error(f"Error displaying cache statistics: {e}")
+        print("Error displaying cache statistics. Check logs for details.")
+
+
+def _toggle_log_level() -> None:
+    """Toggle console log level between DEBUG and INFO."""
+    global logger
+    os.system("cls" if os.name == "nt" else "clear")
+    if logger and logger.handlers:
+        console_handler = None
+        for handler in logger.handlers:
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and handler.stream == sys.stderr
+            ):
+                console_handler = handler
+                break
+        if console_handler:
+            current_level = console_handler.level
+            new_level = (
+                logging.DEBUG
+                if current_level > logging.DEBUG
+                else logging.INFO
+            )
+            new_level_name = logging.getLevelName(new_level)
+            # Re-call setup_logging to potentially update filters etc. too
+            logger = setup_logging(log_level=new_level_name)
+            logger.info(f"Console log level toggled to: {new_level_name}")
+        else:
+            logger.warning(
+                "Could not find console handler to toggle level."
+            )
+    else:
+        print(
+            "WARNING: Logger not ready or has no handlers.", file=sys.stderr
+        )
+
+
+def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> bool:
+    """
+    Dispatch menu action based on user choice.
+
+    Returns:
+        True to continue menu loop, False to exit
+    """
+    global logger
+
+    # --- Database-only actions (no browser needed) ---
+    if choice in ["0", "2", "3", "4"]:
+        if choice == "0":
+            exec_actn(all_but_first_actn, session_manager, choice)
+        elif choice == "2":
+            exec_actn(reset_db_actn, session_manager, choice)
+        elif choice == "3":
+            exec_actn(backup_db_actn, session_manager, choice)
+        elif choice == "4":
+            exec_actn(restore_db_actn, session_manager, choice)
+        return True
+
+    # --- Browser-required actions ---
+    if choice == "1":
+        ensure_caching_initialized()
+        exec_actn(run_core_workflow_action, session_manager, choice, close_sess_after=True)
+        return True
+
+    if choice == "5":
+        exec_actn(check_login_actn, session_manager, choice)
+        return True
+
+    if choice.startswith("6"):
+        parts = choice.split()
+        start_val = 1
+        if len(parts) > 1:
+            try:
+                start_arg = int(parts[1])
+                start_val = start_arg if start_arg > 0 else 1
+            except ValueError:
+                logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
+                print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
+
+        print(f"Starting DNA match gathering from page {start_val}...")
+        exec_actn(coord_action, session_manager, "6", False, config, start_val)
+        return True
+
+    if choice == "7":
+        exec_actn(srch_inbox_actn, session_manager, choice)
+        return True
+
+    if choice == "8":
+        exec_actn(send_messages_action, session_manager, choice)
+        return True
+
+    if choice == "9":
+        ensure_caching_initialized()
+        exec_actn(process_productive_messages_action, session_manager, choice)
+        return True
+
+    if choice == "10":
+        ensure_caching_initialized()
+        exec_actn(run_action10, session_manager, choice)
+        return True
+
+    if choice == "11":
+        ensure_caching_initialized()
+        exec_actn(run_action11_wrapper, session_manager, choice)
+        return True
+
+    # --- Test Options ---
+    if choice == "test":
+        _run_main_tests()
+        return True
+
+    if choice == "testall":
+        _run_all_tests()
+        return True
+
+    # --- Meta Options ---
+    if choice == "sec":
+        _run_credential_manager()
+        return True
+
+    if choice == "s":
+        _show_cache_statistics()
+        return True
+
+    if choice == "t":
+        _toggle_log_level()
+        return True
+
+    if choice == "c":
+        os.system("cls" if os.name == "nt" else "clear")
+        return True
+
+    if choice == "q":
+        os.system("cls" if os.name == "nt" else "clear")
+        print("Exiting.")
+        return False
+
+    # Handle invalid choices
+    print("Invalid choice.\n")
+    return True
+
+
+def main() -> None:
+    global logger, session_manager  # Ensure global logger can be modified
+    session_manager = None  # Initialize session_manager
+
+    # Ensure terminal window has focus on Windows
+    _set_windows_console_focus()
+
     try:
         print("")
         # --- Logging Setup ---
@@ -1378,33 +1690,7 @@ def main() -> None:
         validate_action_config()
 
         if config is None:
-            logger.critical("Configuration validation failed - unable to proceed")
-            print("\n❌ CONFIGURATION ERROR:")
-            print("   Critical configuration validation failed.")
-            print("   This usually means missing credentials or configuration files.")
-            print("")
-            print("💡 SOLUTIONS:")
-            print("\n🔒 Recommended: Use the secure credential manager")
-            print("   python credentials.py")
-
-            print("\n📋 Alternative options:")
-            print(
-                "   1. Run 'sec. Setup Security (Encrypt Credentials)' from main menu"
-            )
-            print("   2. Copy .env.example to .env and add your credentials")
-            print("   3. Ensure the required security dependencies are installed:")
-            print("      pip install cryptography keyring")
-
-            print("\n📚 For detailed instructions:")
-            print("   See ENV_IMPORT_GUIDE.md")
-
-            print("\n⚠️ Security Note:")
-            print("   The secure credential manager requires:")
-            print("   - cryptography package (for encryption)")
-            print("   - keyring package (for secure key storage)")
-
-            print("\nExiting application...")
-            sys.exit(1)
+            _print_config_error_message()
 
         # --- Instantiate SessionManager ---
         session_manager = SessionManager()  # No browser started by default
@@ -1414,248 +1700,13 @@ def main() -> None:
             choice = menu()
             print("")
 
-            # --- Confirmation dictionary ---
-            confirm_actions = {
-                "0": "Delete all people except specific profile ID",
-                "2": "COMPLETELY reset the database (deletes data)",
-                "4": "Restore database from backup (overwrites data)",
-            }
-
             # --- Confirmation Check ---
-            if choice in confirm_actions:
-                action_desc = confirm_actions[choice]
-                confirm = (
-                    input(
-                        f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): "
-                    )
-                    .strip()
-                    .lower()
-                )
-                if confirm not in ["yes", "y"]:
-                    print("Action cancelled.\n")
-                    continue
-                print(" ")  # Newline after confirmation
+            if not _check_action_confirmation(choice):
+                continue
 
             # --- Action Dispatching ---
-            # Note: Removed most close_sess_after=False as the default is now to keep open.
-            # Added close_sess_after=True only where explicit closure after action is desired.
-
-            # --- Database-only actions (no browser needed) ---
-            if choice in ["0", "2", "3", "4"]:
-                # For database-only actions, we can use the main session_manager
-                # The exec_actn function will set browser_needed=False based on the action
-
-                if choice == "0":
-                    # Confirmation handled above
-                    exec_actn(all_but_first_actn, session_manager, choice)
-                elif choice == "2":
-                    # Confirmation handled above
-                    exec_actn(reset_db_actn, session_manager, choice)
-                elif choice == "3":
-                    exec_actn(
-                        backup_db_actn, session_manager, choice
-                    )  # Run through exec_actn for consistent logging
-                elif choice == "4":
-                    # Confirmation handled above
-                    exec_actn(restore_db_actn, session_manager, choice)
-
-            # --- Browser-required actions ---
-            elif choice == "1":
-                # Initialize caching for GEDCOM operations (needed for action 9 in workflow)
-                ensure_caching_initialized()
-                # exec_actn will set browser_needed=True based on the action
-                exec_actn(
-                    run_core_workflow_action,
-                    session_manager,
-                    choice,
-                    close_sess_after=True,
-                )  # Close after full sequence
-            elif choice == "5":
-                exec_actn(check_login_actn, session_manager, choice)  # API-only check
-            elif choice.startswith("6"):
-                parts = choice.split()
-                start_val = 1
-                if len(parts) > 1:
-                    try:
-                        start_arg = int(parts[1])
-                        start_val = start_arg if start_arg > 0 else 1
-                    except ValueError:
-                        logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
-                        print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
-
-                print(f"Starting DNA match gathering from page {start_val}...")
-                # Call exec_actn with the correct parameters
-                exec_actn(
-                    coord_action,
-                    session_manager,
-                    "6",
-                    False,  # don't close session after
-                    config,
-                    start_val,
-                )  # Keep open
-            elif choice == "7":
-                exec_actn(srch_inbox_actn, session_manager, choice)  # Keep open
-            elif choice == "8":
-                exec_actn(send_messages_action, session_manager, choice)  # Keep open
-            elif choice == "9":
-                # Initialize caching for GEDCOM operations
-                ensure_caching_initialized()
-                exec_actn(
-                    process_productive_messages_action, session_manager, choice
-                )  # Keep open
-            elif choice == "10":
-                # Initialize caching for GEDCOM operations
-                ensure_caching_initialized()
-                exec_actn(run_action10, session_manager, choice)
-            elif choice == "11":
-                # Initialize caching for GEDCOM operations
-                ensure_caching_initialized()
-                # Use the wrapper function to run Action 11 through exec_actn
-                exec_actn(run_action11_wrapper, session_manager, choice)
-            # --- Test Options ---
-            elif choice == "test":
-                # Run Main.py Internal Tests
-                try:
-                    print("\n" + "=" * 60)
-                    print("RUNNING MAIN.PY INTERNAL TESTS")
-                    print("=" * 60)
-                    result = run_comprehensive_tests()
-                    if result:
-                        print("\n🎉 All main.py tests completed successfully!")
-                    else:
-                        print("\n⚠️ Some main.py tests failed. Check output above.")
-                except Exception as e:
-                    logger.error(f"Error running main.py tests: {e}")
-                    print(f"Error running main.py tests: {e}")
-                print("\nReturning to main menu...")
-                input("Press Enter to continue...")
-            elif choice == "testall":
-                # Run All Module Tests
-                try:
-                    import subprocess
-
-                    print("\n" + "=" * 60)
-                    print("RUNNING ALL MODULE TESTS")
-                    print("=" * 60)
-                    result = subprocess.run(
-                        [sys.executable, "run_all_tests.py"],
-                        check=False, capture_output=False,
-                        text=True,
-                    )
-                    if result.returncode == 0:
-                        print("\n🎉 All module tests completed successfully!")
-                    else:
-                        print(f"\n⚠️ Some tests failed (exit code: {result.returncode})")
-                except FileNotFoundError:
-                    print("Error: run_all_tests.py not found in current directory.")
-                except Exception as e:
-                    logger.error(f"Error running all tests: {e}")
-                    print(f"Error running all tests: {e}")
-                print("\nReturning to main menu...")
-                input("Press Enter to continue...")
-            # --- Meta Options ---
-            elif choice == "sec":
-                # Setup Security (Encrypt Credentials)
-                try:
-                    from credentials import UnifiedCredentialManager
-
-                    print("\n" + "=" * 50)
-                    print("CREDENTIAL MANAGEMENT")
-                    print("=" * 50)
-                    manager = UnifiedCredentialManager()
-                    manager.run()
-                except ImportError as e:
-                    logger.error(f"Error importing credentials manager: {e}")
-                    print("\n❌ Error: Unable to use the credential manager.")
-
-                    if "No module named 'cryptography'" in str(
-                        e
-                    ) or "No module named 'keyring'" in str(e):
-                        print("\n" + "=" * 60)
-                        print("       SECURITY DEPENDENCIES MISSING")
-                        print("=" * 60)
-                        print("\nRequired security packages are not installed:")
-                        print("  - cryptography: For secure encryption/decryption")
-                        print("  - keyring: For secure storage of master keys")
-
-                        print("\n📋 Installation Instructions:")
-                        print("  1. Install required packages:")
-                        print("     pip install cryptography keyring")
-                        print("     - OR -")
-                        print("     pip install -r requirements.txt")
-
-                        if os.name != "nt":  # Not Windows
-                            print("\n  For Linux/macOS users, you may also need:")
-                            print("     pip install keyrings.alt")
-                            print(
-                                "     Some Linux distributions may require: sudo apt-get install python3-dbus"
-                            )
-
-                        print("\n📚 For more information, see:")
-                        print("  - ENV_IMPORT_GUIDE.md")
-                        print("  - SECURITY_STREAMLINED.md")
-                    else:
-                        print(
-                            "Error: credentials.py not found or has other import issues."
-                        )
-                        print(f"Details: {e}")
-                        print(
-                            "\nPlease check that all files are in the correct location."
-                        )
-                except Exception as e:
-                    logger.error(f"Error running credential manager: {e}")
-                    print(f"Error running credential manager: {e}")
-                print("\nReturning to main menu...")
-                input("Press Enter to continue...")
-            elif choice == "s":
-                # Show cache statistics
-                try:
-                    logger.info("Cache statistics feature currently unavailable")
-                    print("Cache statistics feature currently unavailable.")
-                except Exception as e:
-                    logger.error(f"Error displaying cache statistics: {e}")
-                    print("Error displaying cache statistics. Check logs for details.")
-            elif choice == "t":
-                os.system("cls" if os.name == "nt" else "clear")
-                if logger and logger.handlers:
-                    console_handler = None
-                    for handler in logger.handlers:
-                        if (
-                            isinstance(handler, logging.StreamHandler)
-                            and handler.stream == sys.stderr
-                        ):
-                            console_handler = handler
-                            break
-                    if console_handler:
-                        current_level = console_handler.level
-                        new_level = (
-                            logging.DEBUG
-                            if current_level > logging.DEBUG
-                            else logging.INFO
-                        )
-                        new_level_name = logging.getLevelName(new_level)
-                        # Re-call setup_logging to potentially update filters etc. too
-                        logger = setup_logging(log_level=new_level_name)
-                        logger.info(f"Console log level toggled to: {new_level_name}")
-                    else:
-                        logger.warning(
-                            "Could not find console handler to toggle level."
-                        )
-                else:
-                    print(
-                        "WARNING: Logger not ready or has no handlers.", file=sys.stderr
-                    )
-            elif choice == "c":
-                os.system("cls" if os.name == "nt" else "clear")
-            elif choice == "q":
-                os.system("cls" if os.name == "nt" else "clear")
-                print("Exiting.")
-                break
-            # Handle invalid choices
-            elif choice not in confirm_actions:  # Avoid double 'invalid' message
-                print("Invalid choice.\n")
-
-            # No need to track if driver became live anymore
+            if not _dispatch_menu_action(choice, session_manager, config):
+                break  # Exit requested
 
     except KeyboardInterrupt:
         os.system("cls" if os.name == "nt" else "clear")
