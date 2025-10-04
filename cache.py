@@ -950,7 +950,7 @@ class IntelligentCacheWarmer:
     and proactively loads frequently accessed data.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.usage_patterns: dict[str, dict[str, Any]] = {}
         self.warming_history: list[dict[str, Any]] = []
         self.predictive_cache_keys: set[str] = set()
