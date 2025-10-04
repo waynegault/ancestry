@@ -2051,77 +2051,77 @@ def make_ube(driver: DriverType) -> Optional[str]:
 
 # End of make_ube
 
-def make_newrelic(_driver: DriverType) -> Optional[str]:
-    # This function generates a plausible NewRelic header structure.
-    # Exact values might vary, but the format is generally consistent.
-    try:
-        trace_id = uuid.uuid4().hex[:16]  # Shorter trace ID part
-        span_id = uuid.uuid4().hex[:16]  # Span ID
-        # These IDs seem static or tied to Ancestry's NewRelic account/app
-        account_id = "1690570"
-        app_id = "1588726612"
-        license_key_part = "2611750"  # Obfuscated/partial license key part
+# NewRelic constants (shared across multiple header functions)
+_NEWRELIC_ACCOUNT_ID = "1690570"
+_NEWRELIC_APP_ID = "1588726612"
+_NEWRELIC_LICENSE_KEY = "2611750"
 
-        newrelic_data = {
-            "v": [0, 1],  # Version info
-            "d": {
-                "ty": "Browser",  # Type
-                "ac": account_id,
-                "ap": app_id,
-                "id": span_id,
-                "tr": trace_id,
-                "ti": int(time.time() * 1000),  # Timestamp in ms
-                "tk": license_key_part,
-            },
-        }
-        json_payload = json.dumps(newrelic_data, separators=(",", ":")).encode("utf-8")
-        encoded_payload = base64.b64encode(json_payload).decode("utf-8")
-        return encoded_payload
+
+def _generate_newrelic_payload() -> str:
+    """Generate NewRelic header payload."""
+    trace_id = uuid.uuid4().hex[:16]
+    span_id = uuid.uuid4().hex[:16]
+
+    newrelic_data = {
+        "v": [0, 1],
+        "d": {
+            "ty": "Browser",
+            "ac": _NEWRELIC_ACCOUNT_ID,
+            "ap": _NEWRELIC_APP_ID,
+            "id": span_id,
+            "tr": trace_id,
+            "ti": int(time.time() * 1000),
+            "tk": _NEWRELIC_LICENSE_KEY,
+        },
+    }
+    json_payload = json.dumps(newrelic_data, separators=(",", ":")).encode("utf-8")
+    return base64.b64encode(json_payload).decode("utf-8")
+
+
+def _generate_traceparent_value() -> str:
+    """Generate W3C Trace Context traceparent header value."""
+    version = "00"
+    trace_id = uuid.uuid4().hex
+    parent_id = uuid.uuid4().hex[:16]
+    flags = "01"
+    return f"{version}-{trace_id}-{parent_id}-{flags}"
+
+
+def _generate_tracestate_value() -> str:
+    """Generate tracestate header value with NewRelic state."""
+    span_id = uuid.uuid4().hex[:16]
+    timestamp = int(time.time() * 1000)
+    return f"{_NEWRELIC_LICENSE_KEY}@nr=0-1-{_NEWRELIC_ACCOUNT_ID}-{_NEWRELIC_APP_ID}-{span_id}----{timestamp}"
+
+
+def make_newrelic(_driver: DriverType) -> Optional[str]:
+    """Generate NewRelic header for Ancestry API requests."""
+    try:
+        return _generate_newrelic_payload()
     except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
         logger.error(f"Error generating NewRelic header: {encode_e}", exc_info=True)
         return None
     except Exception as e:
         logger.error(f"Unexpected error generating NewRelic header: {e}", exc_info=True)
         return None
-    # End of try/except
 
-# End of make_newrelic
 
 def make_traceparent(_driver: DriverType) -> Optional[str]:
-    # Generates a W3C Trace Context traceparent header.
+    """Generate W3C Trace Context traceparent header."""
     try:
-        version = "00"  # Standard version
-        trace_id = uuid.uuid4().hex  # Full 32-char trace ID
-        parent_id = uuid.uuid4().hex[:16]  # 16-char parent/span ID
-        flags = "01"  # Sampled flag (usually 01)
-        traceparent = f"{version}-{trace_id}-{parent_id}-{flags}"
-        return traceparent
+        return _generate_traceparent_value()
     except Exception as e:
         logger.error(f"Error generating traceparent header: {e}", exc_info=True)
         return None
-    # End of try/except
 
-# End of make_traceparent
 
 def make_tracestate(_driver: DriverType) -> Optional[str]:
-    # Generates a tracestate header, often including NewRelic state.
+    """Generate tracestate header with NewRelic state."""
     try:
-        # NewRelic specific part of tracestate
-        tk = "2611750"  # Corresponds to license key part in newrelic header
-        account_id = "1690570"
-        app_id = "1588726612"
-        span_id = uuid.uuid4().hex[:16]  # Another span ID
-        timestamp = int(time.time() * 1000)
-        # Format follows NewRelic's tracestate structure
-        tracestate = f"{tk}@nr=0-1-{account_id}-{app_id}-{span_id}----{timestamp}"
-        # Other vendors could potentially be added, comma-separated
-        return tracestate
+        return _generate_tracestate_value()
     except Exception as e:
         logger.error(f"Error generating tracestate header: {e}", exc_info=True)
         return None
-    # End of try/except
-
-# End of make_tracestate
 
 # ----------------------------------------------------------------------------
 # Login Functions (Remain in utils.py)
