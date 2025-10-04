@@ -24,7 +24,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -1041,6 +1041,55 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
 # end of Action 4
 
 
+def _display_session_info(session_manager: SessionManager) -> None:
+    """Display session information if available."""
+    if session_manager.my_profile_id:
+        print(f"  Profile ID: {session_manager.my_profile_id}")
+    if session_manager.tree_owner_name:
+        print(f"  Account: {session_manager.tree_owner_name}")
+
+
+def _handle_logged_in_status(session_manager: SessionManager) -> bool:
+    """Handle the case when user is already logged in."""
+    print("\n✓ You are currently logged in to Ancestry.")
+    _display_session_info(session_manager)
+    return True
+
+
+def _verify_login_success(session_manager: SessionManager) -> bool:
+    """Verify login was successful and display session info."""
+    final_status = login_status(session_manager, disable_ui_fallback=False)
+    if final_status is True:
+        print("✓ Login verification confirmed.")
+        _display_session_info(session_manager)
+        return True
+    print("⚠️  Login appeared successful but verification failed.")
+    return False
+
+
+def _attempt_login(session_manager: SessionManager) -> bool:
+    """Attempt to log in with stored credentials."""
+    print("\n✗ You are NOT currently logged in to Ancestry.")
+    print("  Attempting to log in with stored credentials...")
+
+    try:
+        login_result = log_in(session_manager)
+
+        if login_result:
+            print("✓ Login successful!")
+            return _verify_login_success(session_manager)
+
+        print("✗ Login failed. Please check your credentials.")
+        print("  You can update credentials using the 'sec' option in the main menu.")
+        return False
+
+    except Exception as login_e:
+        logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
+        print(f"✗ Login failed with error: {login_e}")
+        print("  You can update credentials using the 'sec' option in the main menu.")
+        return False
+
+
 # Action 5 (check_login_actn)
 def check_login_actn(session_manager: SessionManager, *_) -> bool:
     """
@@ -1068,45 +1117,9 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
         )  # Use UI fallback for reliability
 
         if status is True:
-            print("\n✓ You are currently logged in to Ancestry.")
-            # Display additional session info if available
-            if session_manager.my_profile_id:
-                print(f"  Profile ID: {session_manager.my_profile_id}")
-            if session_manager.tree_owner_name:
-                print(f"  Account: {session_manager.tree_owner_name}")
-            return True
-        if status is False:
-            print("\n✗ You are NOT currently logged in to Ancestry.")
-            print("  Attempting to log in with stored credentials...")
-
-            # Attempt login using the session manager's login functionality
-            try:
-                login_result = log_in(session_manager)
-
-                if login_result:
-                    print("✓ Login successful!")
-                    # Check status again after login
-                    final_status = login_status(session_manager, disable_ui_fallback=False)
-                    if final_status is True:
-                        print("✓ Login verification confirmed.")
-                        # Display session info if available
-                        if session_manager.my_profile_id:
-                            print(f"  Profile ID: {session_manager.my_profile_id}")
-                        if session_manager.tree_owner_name:
-                            print(f"  Account: {session_manager.tree_owner_name}")
-                        return True
-                    print("⚠️  Login appeared successful but verification failed.")
-                    return False
-                print("✗ Login failed. Please check your credentials.")
-                print("  You can update credentials using the 'sec' option in the main menu.")
-                return False
-
-            except Exception as login_e:
-                logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
-                print(f"✗ Login failed with error: {login_e}")
-                print("  You can update credentials using the 'sec' option in the main menu.")
-                return False
-
+            return _handle_logged_in_status(session_manager)
+        elif status is False:
+            return _attempt_login(session_manager)
         else:  # Status is None
             print("\n? Unable to determine login status due to a technical error.")
             print("  This may indicate a browser or network issue.")
