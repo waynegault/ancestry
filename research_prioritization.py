@@ -734,82 +734,98 @@ class IntelligentResearchPrioritizer:
             return "high"
         return "medium"
 
+    def _get_priority_adjustment(self, priority: str) -> float:
+        """Calculate probability adjustment based on priority level."""
+        if priority == "critical":
+            return 0.25  # Critical gaps often have more evidence
+        elif priority == "high":
+            return 0.2
+        elif priority == "medium":
+            return 0.15
+        elif priority == "low":
+            return 0.05
+        return 0.0
+
+    def _get_gap_type_adjustment(self, gap_type: str) -> float:
+        """Calculate probability adjustment based on gap type."""
+        gap_type_adjustments = {
+            "missing_dates": 0.15,  # Dates often found in multiple record types
+            "missing_places": 0.12,  # Places often documented in various records
+            "missing_parents": 0.08,  # More challenging but often achievable
+            "missing_spouse": 0.10,  # Marriage records often well-documented
+            "missing_children": 0.06,  # Can be challenging due to infant mortality
+            "missing_occupation": 0.18,  # Often found in census and directories
+        }
+        return gap_type_adjustments.get(gap_type, 0.0)
+
+    def _get_time_period_adjustment(self, time_period: str) -> float:
+        """Calculate probability adjustment based on time period."""
+        if not time_period:
+            return 0.0
+
+        if "18" in time_period:  # 1800s
+            if "180" in time_period or "181" in time_period:  # Early 1800s
+                return -0.1
+            else:  # Later 1800s
+                return 0.05
+        elif "19" in time_period:  # 1900s
+            return 0.1  # Better record keeping
+        elif "17" in time_period:  # 1700s
+            return -0.2  # Much more challenging
+
+        return 0.0
+
+    def _get_location_adjustment(self, location: str) -> float:
+        """Calculate probability adjustment based on location."""
+        if not location:
+            return 0.0
+
+        location_lower = location.lower()
+
+        if any(term in location_lower for term in ['england', 'scotland', 'ireland']):
+            return 0.08  # Good record keeping traditions
+        elif any(term in location_lower for term in ['massachusetts', 'connecticut', 'new hampshire']):
+            return 0.12  # Excellent early American records
+        elif any(term in location_lower for term in ['virginia', 'north carolina', 'south carolina']):
+            return -0.05  # Some record loss from wars
+        elif any(term in location_lower for term in ['frontier', 'territory', 'west']):
+            return -0.1  # Frontier areas had less record keeping
+
+        return 0.0
+
+    def _get_evidence_quality_adjustment(self, evidence_quality: str) -> float:
+        """Calculate probability adjustment based on evidence quality."""
+        if evidence_quality == "high":
+            return 0.15
+        elif evidence_quality == "medium":
+            return 0.08
+        elif evidence_quality == "low":
+            return -0.05
+        return 0.0
+
+    def _get_difficulty_adjustment(self, difficulty: str) -> float:
+        """Calculate probability adjustment based on research difficulty."""
+        if difficulty == "easy":
+            return 0.2
+        elif difficulty == "medium":
+            return 0.05
+        elif difficulty == "hard":
+            return -0.15
+        elif difficulty == "very_hard":
+            return -0.25
+        return 0.0
+
     def _estimate_success_probability(self, gap: dict[str, Any]) -> float:
         """Estimate probability of successfully filling a gap using genealogical research factors."""
-        gap_type = gap.get("gap_type", "")
-        priority = gap.get("priority", "low")
-
         base_probability = 0.4  # Start with realistic baseline
 
-        # Priority level impact on success probability
-        if priority == "critical":
-            base_probability += 0.25  # Critical gaps often have more evidence
-        elif priority == "high":
-            base_probability += 0.2
-        elif priority == "medium":
-            base_probability += 0.15
-        elif priority == "low":
-            base_probability += 0.05
-
-        # Gap type success probability based on genealogical research experience
-        if gap_type == "missing_dates":
-            base_probability += 0.15  # Dates often found in multiple record types
-        elif gap_type == "missing_places":
-            base_probability += 0.12  # Places often documented in various records
-        elif gap_type == "missing_parents":
-            base_probability += 0.08  # More challenging but often achievable
-        elif gap_type == "missing_spouse":
-            base_probability += 0.10  # Marriage records often well-documented
-        elif gap_type == "missing_children":
-            base_probability += 0.06  # Can be challenging due to infant mortality
-        elif gap_type == "missing_occupation":
-            base_probability += 0.18  # Often found in census and directories
-
-        # Time period impact (older records are harder to find)
-        time_period = gap.get("time_period", "")
-        if time_period:
-            if "18" in time_period:  # 1800s
-                if "180" in time_period or "181" in time_period:  # Early 1800s
-                    base_probability -= 0.1
-                else:  # Later 1800s
-                    base_probability += 0.05
-            elif "19" in time_period:  # 1900s
-                base_probability += 0.1  # Better record keeping
-            elif "17" in time_period:  # 1700s
-                base_probability -= 0.2  # Much more challenging
-
-        # Location impact on success probability
-        location = gap.get("location", "")
-        if location:
-            location_lower = location.lower()
-            if any(term in location_lower for term in ['england', 'scotland', 'ireland']):
-                base_probability += 0.08  # Good record keeping traditions
-            elif any(term in location_lower for term in ['massachusetts', 'connecticut', 'new hampshire']):
-                base_probability += 0.12  # Excellent early American records
-            elif any(term in location_lower for term in ['virginia', 'north carolina', 'south carolina']):
-                base_probability -= 0.05  # Some record loss from wars
-            elif any(term in location_lower for term in ['frontier', 'territory', 'west']):
-                base_probability -= 0.1  # Frontier areas had less record keeping
-
-        # Available evidence quality impact
-        evidence_quality = gap.get("evidence_quality", "low")
-        if evidence_quality == "high":
-            base_probability += 0.15
-        elif evidence_quality == "medium":
-            base_probability += 0.08
-        elif evidence_quality == "low":
-            base_probability -= 0.05
-
-        # Research difficulty adjustment
-        difficulty = gap.get("research_difficulty", "medium")
-        if difficulty == "easy":
-            base_probability += 0.2
-        elif difficulty == "medium":
-            base_probability += 0.05
-        elif difficulty == "hard":
-            base_probability -= 0.15
-        elif difficulty == "very_hard":
-            base_probability -= 0.25
+        # Apply all adjustments
+        base_probability += self._get_priority_adjustment(gap.get("priority", "low"))
+        base_probability += self._get_gap_type_adjustment(gap.get("gap_type", ""))
+        base_probability += self._get_time_period_adjustment(gap.get("time_period", ""))
+        base_probability += self._get_location_adjustment(gap.get("location", ""))
+        base_probability += self._get_evidence_quality_adjustment(gap.get("evidence_quality", "low"))
+        base_probability += self._get_difficulty_adjustment(gap.get("research_difficulty", "medium"))
 
         return min(1.0, max(0.1, base_probability))  # Keep between 10% and 100%
 
