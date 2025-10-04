@@ -292,7 +292,7 @@ class CredentialManager:
 
         return credentials
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """Clear the credentials cache."""
         self._credentials_cache = None
         logger.debug("Credentials cache cleared")

@@ -749,7 +749,7 @@ def _run_action8_send_messages(session_manager) -> bool:
 
 
 # Action 1
-def run_core_workflow_action(session_manager, *_):
+def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
     """
     Action to run the core workflow sequence: Action 7 (Inbox) → Action 9 (Process Productive) → Action 8 (Send Messages).
     Optionally runs Action 6 (Gather) first if configured.
@@ -966,7 +966,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
 
 # Action 3 (backup_db_actn)
-def backup_db_actn(*_):
+def backup_db_actn(*_: Any) -> bool:
     """Action to backup the database. Browserless."""
     try:
         logger.debug("Starting DB backup...")
@@ -1137,7 +1137,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (coord_action wrapper)
-def coord_action(session_manager, config_schema=None, start=1):
+def coord_action(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.

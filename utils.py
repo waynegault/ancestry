@@ -3794,16 +3794,16 @@ def main() -> None:
         # 3.1 Header Generation (make_*)
         if session_ready_for_section_3:
             # For testing purposes, we'll mock the header generation functions
-            def mock_make_ube():
+            def mock_make_ube() -> str:
                 return "mock_ube_header_base64_encoded"
 
-            def mock_make_newrelic():
+            def mock_make_newrelic() -> str:
                 return "mock_newrelic_header_base64_encoded"
 
-            def mock_make_traceparent():
+            def mock_make_traceparent() -> str:
                 return "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 
-            def mock_make_tracestate():
+            def mock_make_tracestate() -> str:
                 return "2611750@nr=0-1-1690570-1588726612-b7ad6b7169203331----1620000000000"
 
             # Test by calling the mock functions
