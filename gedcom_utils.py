@@ -1127,6 +1127,63 @@ def _determine_great_grandchild_relationship(sex_char: Optional[str], name: str,
     return f"whose {grandchild_label} is {name}{birth_year}"
 
 
+def _check_relationship_type(
+    relationship_type: str,
+    id_a: str,
+    id_b: str,
+    sex_char: str,
+    name_b: str,
+    birth_year_b: str,
+    reader: GedcomReaderType,
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> Optional[str]:
+    """
+    Check a specific relationship type and return the relationship phrase if matched.
+
+    Returns None if the relationship type doesn't match.
+    """
+    # Direct parent/child relationships
+    if relationship_type == "parent" and id_b in id_to_parents.get(id_a, set()):
+        return _determine_parent_relationship(sex_char, name_b, birth_year_b)
+
+    if relationship_type == "child" and id_b in id_to_children.get(id_a, set()):
+        return _determine_child_relationship(sex_char, name_b, birth_year_b)
+
+    # Sibling and spouse relationships
+    if relationship_type == "sibling" and _are_siblings(id_a, id_b, id_to_parents):
+        return _determine_sibling_relationship(sex_char, name_b, birth_year_b)
+
+    if relationship_type == "spouse" and _are_spouses(id_a, id_b, reader):
+        return _determine_spouse_relationship(sex_char, name_b, birth_year_b)
+
+    # Extended family relationships
+    if relationship_type == "aunt_uncle" and _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children):
+        return _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)
+
+    if relationship_type == "niece_nephew" and _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children):
+        return _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)
+
+    if relationship_type == "cousin" and _are_cousins(id_a, id_b, id_to_parents, id_to_children):
+        return f"whose cousin is {name_b}{birth_year_b}"
+
+    # Grandparent/grandchild relationships
+    if relationship_type == "grandparent" and _is_grandparent(id_a, id_b, id_to_parents):
+        return _determine_grandparent_relationship(sex_char, name_b, birth_year_b)
+
+    if relationship_type == "grandchild" and _is_grandchild(id_a, id_b, id_to_children):
+        return _determine_grandchild_relationship(sex_char, name_b, birth_year_b)
+
+    # Great-grandparent/great-grandchild relationships
+    if relationship_type == "great_grandparent" and _is_great_grandparent(id_a, id_b, id_to_parents):
+        return _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)
+
+    if relationship_type == "great_grandchild" and _is_great_grandchild(id_a, id_b, id_to_children):
+        return _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b)
+
+    return None
+
+
 def _determine_relationship_between_individuals(
     id_a: str,
     id_b: str,
@@ -1140,49 +1197,22 @@ def _determine_relationship_between_individuals(
     """Determine the relationship phrase between two individuals."""
     sex_char = _get_gender_char(indi_b)
 
-    # Check parent relationship
-    if id_b in id_to_parents.get(id_a, set()):
-        return _determine_parent_relationship(sex_char, name_b, birth_year_b)
+    # Define relationship types to check in priority order
+    relationship_types = [
+        "parent", "child", "sibling", "spouse",
+        "aunt_uncle", "niece_nephew", "cousin",
+        "grandparent", "grandchild",
+        "great_grandparent", "great_grandchild"
+    ]
 
-    # Check child relationship
-    if id_b in id_to_children.get(id_a, set()):
-        return _determine_child_relationship(sex_char, name_b, birth_year_b)
-
-    # Check sibling relationship
-    if _are_siblings(id_a, id_b, id_to_parents):
-        return _determine_sibling_relationship(sex_char, name_b, birth_year_b)
-
-    # Check spouse relationship
-    if _are_spouses(id_a, id_b, reader):
-        return _determine_spouse_relationship(sex_char, name_b, birth_year_b)
-
-    # Check aunt/uncle relationship
-    if _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children):
-        return _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)
-
-    # Check niece/nephew relationship
-    if _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children):
-        return _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)
-
-    # Check cousin relationship
-    if _are_cousins(id_a, id_b, id_to_parents, id_to_children):
-        return f"whose cousin is {name_b}{birth_year_b}"
-
-    # Check grandparent relationship
-    if _is_grandparent(id_a, id_b, id_to_parents):
-        return _determine_grandparent_relationship(sex_char, name_b, birth_year_b)
-
-    # Check grandchild relationship
-    if _is_grandchild(id_a, id_b, id_to_children):
-        return _determine_grandchild_relationship(sex_char, name_b, birth_year_b)
-
-    # Check great-grandparent relationship
-    if _is_great_grandparent(id_a, id_b, id_to_parents):
-        return _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)
-
-    # Check great-grandchild relationship
-    if _is_great_grandchild(id_a, id_b, id_to_children):
-        return _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b)
+    # Check each relationship type
+    for rel_type in relationship_types:
+        result = _check_relationship_type(
+            rel_type, id_a, id_b, sex_char, name_b, birth_year_b,
+            reader, id_to_parents, id_to_children
+        )
+        if result:
+            return result
 
     # Fallback for unknown relationships
     return f"related to {name_b}{birth_year_b}"
