@@ -250,6 +250,53 @@ class SecurityManager:
             logger.error(f"Failed to decrypt credentials: {e}")
             return None
 
+    def _extract_credentials_from_env(self, env_path: Path, sensitive_keys: list[str]) -> dict[str, str]:
+        """Extract sensitive credentials from .env file."""
+        credentials = {}
+        with env_path.open() as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip().strip("'\"")
+
+                    if key in sensitive_keys and value:
+                        credentials[key] = value
+        return credentials
+
+    def _merge_with_existing_credentials(self, credentials: dict[str, str]) -> dict[str, str]:
+        """Merge new credentials with existing encrypted credentials."""
+        existing_creds = self.decrypt_credentials()
+        if existing_creds is not None:
+            logger.info(f"Found {len(existing_creds)} existing encrypted credentials")
+            existing_creds.update(credentials)
+            logger.info(f"Merged credentials, total: {len(existing_creds)}")
+            return existing_creds
+        return credentials
+
+    def _handle_encrypted_file_mismatch(self) -> None:
+        """Handle case where encrypted file exists but can't be decrypted."""
+        if not self.credentials_file.exists():
+            return
+
+        logger.warning("Encrypted credentials file exists but cannot be decrypted")
+        logger.warning("This usually means a master key mismatch")
+        logger.info("Creating backup and replacing with new credentials")
+
+        backup_path = Path(f"{self.credentials_file}.backup")
+        if backup_path.exists():
+            backup_path.unlink()
+        self.credentials_file.rename(backup_path)
+        logger.info(f"Backed up old encrypted file to {backup_path}")
+
+    def _backup_and_clean_env_file(self, env_path: Path, sensitive_keys: list[str]) -> None:
+        """Backup original .env file and create cleaned version."""
+        backup_path = env_path.with_suffix(".env.backup")
+        env_path.rename(backup_path)
+        logger.info(f"Backed up original .env file to {backup_path}")
+        self._create_secure_env_file(env_path, backup_path, sensitive_keys)
+
     def migrate_env_credentials(self, env_file_path: str = ".env") -> bool:
         """
         Migrate plaintext credentials from .env file to encrypted storage.
@@ -266,7 +313,6 @@ class SecurityManager:
             logger.warning(f"Environment file {env_file_path} not found")
             return False
 
-        credentials = {}
         sensitive_keys = [
             "ANCESTRY_USERNAME",
             "ANCESTRY_PASSWORD",
@@ -275,58 +321,24 @@ class SecurityManager:
         ]
 
         try:
-            # Read .env file and extract sensitive credentials
-            with Path(env_path).open() as f:
-                for line in f:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        key, value = line.split("=", 1)
-                        key = key.strip()
-                        value = value.strip().strip("'\"")
-
-                        if key in sensitive_keys and value:
-                            credentials[key] = value
-
+            # Extract credentials from .env file
+            credentials = self._extract_credentials_from_env(env_path, sensitive_keys)
             if not credentials:
                 logger.info("No sensitive credentials found in .env file")
                 return True
 
-            # Check if encrypted credentials already exist and can be decrypted
-            existing_creds = self.decrypt_credentials()
-            if existing_creds is not None:
-                logger.info(
-                    f"Found {len(existing_creds)} existing encrypted credentials"
-                )
-                # Merge with new credentials from .env
-                existing_creds.update(credentials)
-                credentials = existing_creds
-                logger.info(f"Merged credentials, total: {len(credentials)}")
-            elif self.credentials_file.exists():
-                # Encrypted file exists but can't be decrypted (key mismatch)
-                logger.warning(
-                    "Encrypted credentials file exists but cannot be decrypted"
-                )
-                logger.warning("This usually means a master key mismatch")
-                logger.info("Creating backup and replacing with new credentials")
+            # Merge with existing encrypted credentials
+            credentials = self._merge_with_existing_credentials(credentials)
 
-                # Backup the old encrypted file
-                backup_path = Path(f"{self.credentials_file}.backup")
-                if backup_path.exists():
-                    backup_path.unlink()  # Remove old backup
-                self.credentials_file.rename(backup_path)
-                logger.info(f"Backed up old encrypted file to {backup_path}")
+            # Handle encrypted file mismatch if needed
+            self._handle_encrypted_file_mismatch()
 
-            # Encrypt and store credentials (this will create a new file)
+            # Encrypt and store credentials
             if not self.encrypt_credentials(credentials):
                 return False
 
-            # Create backup of original .env file
-            backup_path = env_path.with_suffix(".env.backup")
-            env_path.rename(backup_path)
-            logger.info(f"Backed up original .env file to {backup_path}")
-
-            # Create new .env file with credentials removed
-            self._create_secure_env_file(env_path, backup_path, sensitive_keys)
+            # Backup and clean .env file
+            self._backup_and_clean_env_file(env_path, sensitive_keys)
 
             logger.info(
                 f"Successfully migrated {len(credentials)} credentials to encrypted storage"
