@@ -1579,6 +1579,56 @@ class SessionManager:
             logger.warning(f"Memory check failed: {e}")
             return True  # Allow operation if check fails
 
+    def _test_browser_navigation(self, browser_manager) -> bool:
+        """Test browser navigation capability."""
+        try:
+            from utils import nav_to_page
+            base_url = config_schema.api.base_url
+            if base_url:
+                nav_success = nav_to_page(browser_manager.driver, base_url)
+                if not nav_success:
+                    logger.warning("❌ Browser failed navigation test")
+                    return False
+            return True
+        except Exception as nav_exc:
+            logger.warning(f"❌ Navigation test failed: {nav_exc}")
+            return False
+
+    def _test_cookie_access(self, browser_manager) -> bool:
+        """Test browser cookie access."""
+        try:
+            cookies = browser_manager.driver.get_cookies()
+            if not isinstance(cookies, list):
+                logger.warning("❌ Browser cookie access failed")
+                return False
+            return True
+        except Exception as cookie_exc:
+            logger.warning(f"❌ Cookie access test failed: {cookie_exc}")
+            return False
+
+    def _test_javascript_execution(self, browser_manager) -> bool:
+        """Test browser JavaScript execution."""
+        try:
+            js_result = browser_manager.driver.execute_script("return document.readyState;")
+            if js_result != "complete":
+                logger.warning(f"❌ JavaScript execution test failed: {js_result}")
+                return False
+            return True
+        except Exception as js_exc:
+            logger.warning(f"❌ JavaScript test failed: {js_exc}")
+            return False
+
+    def _test_authentication_state(self, browser_manager) -> bool:
+        """Test browser authentication state."""
+        try:
+            current_url = browser_manager.driver.current_url
+            if current_url and "login" in current_url.lower():
+                logger.warning("❌ Browser appears to be on login page - authentication lost")
+                return False
+            return True
+        except Exception:
+            return True  # Non-critical test
+
     def _verify_session_continuity(self, new_browser_manager, old_browser_manager) -> bool:
         """Comprehensive verification that new browser maintains session continuity."""
         try:
@@ -1590,47 +1640,20 @@ class SessionManager:
                 return False
 
             # Test 2: Navigation capability
-            try:
-                from utils import nav_to_page
-                base_url = config_schema.api.base_url
-                if base_url:
-                    nav_success = nav_to_page(new_browser_manager.driver, base_url)
-                    if not nav_success:
-                        logger.warning("❌ New browser failed navigation test")
-                        return False
-            except Exception as nav_exc:
-                logger.warning(f"❌ Navigation test failed: {nav_exc}")
+            if not self._test_browser_navigation(new_browser_manager):
                 return False
 
-            # Test 3: Cookie access (the original failing operation)
-            try:
-                cookies = new_browser_manager.driver.get_cookies()
-                if not isinstance(cookies, list):
-                    logger.warning("❌ New browser cookie access failed")
-                    return False
-            except Exception as cookie_exc:
-                logger.warning(f"❌ Cookie access test failed: {cookie_exc}")
+            # Test 3: Cookie access
+            if not self._test_cookie_access(new_browser_manager):
                 return False
 
             # Test 4: JavaScript execution
-            try:
-                js_result = new_browser_manager.driver.execute_script("return document.readyState;")
-                if js_result != "complete":
-                    logger.warning(f"❌ JavaScript execution test failed: {js_result}")
-                    return False
-            except Exception as js_exc:
-                logger.warning(f"❌ JavaScript test failed: {js_exc}")
+            if not self._test_javascript_execution(new_browser_manager):
                 return False
 
-            # Test 5: Authentication state verification (if possible)
-            try:
-                # Check if we're on the correct domain and not redirected to login
-                current_url = new_browser_manager.driver.current_url
-                if current_url and "login" in current_url.lower():
-                    logger.warning("❌ New browser appears to be on login page - authentication lost")
-                    return False
-            except Exception:
-                pass  # Non-critical test
+            # Test 5: Authentication state verification
+            if not self._test_authentication_state(new_browser_manager):
+                return False
 
             logger.debug("✅ Session continuity verification passed")
             return True
