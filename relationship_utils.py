@@ -731,6 +731,95 @@ def format_api_relationship_path(
     return _try_html_formats(html_content_raw, target_name, owner_name, relationship_type)
 
 
+def _extract_person_basic_info(indi: Any) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
+    """Extract basic information from a GEDCOM individual."""
+    name = _get_full_name(indi)
+
+    birth_date_obj, _, _ = _get_event_info(indi, TAG_BIRTH)
+    death_date_obj, _, _ = _get_event_info(indi, TAG_DEATH)
+
+    birth_year = str(birth_date_obj.year) if birth_date_obj else None
+    death_year = str(death_date_obj.year) if death_date_obj else None
+
+    # Get gender
+    sex_tag = indi.sub_tag(TAG_SEX)
+    sex_char: Optional[str] = None
+    if sex_tag and hasattr(sex_tag, "value") and sex_tag.value is not None:
+        sex_val = str(sex_tag.value).upper()
+        if sex_val in ("M", "F"):
+            sex_char = sex_val
+
+    return name, birth_year, death_year, sex_char
+
+
+def _create_person_dict(name: str, birth_year: Optional[str], death_year: Optional[str],
+                        relationship: Optional[str], gender: Optional[str]) -> dict[str, Optional[str]]:
+    """Create a person dictionary for unified format."""
+    return {
+        "name": name,
+        "birth_year": birth_year,
+        "death_year": death_year,
+        "relationship": relationship,
+        "gender": gender,
+    }
+
+
+def _determine_gedcom_relationship(
+    prev_id: str,
+    current_id: str,
+    sex_char: Optional[str],
+    reader: Any,
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> str:
+    """Determine relationship between two individuals in GEDCOM path."""
+    # Check if current is a PARENT of prev
+    if current_id in id_to_parents.get(prev_id, set()):
+        return "father" if sex_char == "M" else "mother" if sex_char == "F" else "parent"
+
+    # Check if current is a CHILD of prev
+    if current_id in id_to_children.get(prev_id, set()):
+        return "son" if sex_char == "M" else "daughter" if sex_char == "F" else "child"
+
+    # Check if current is a SIBLING of prev
+    if _are_siblings(prev_id, current_id, id_to_parents):
+        return "brother" if sex_char == "M" else "sister" if sex_char == "F" else "sibling"
+
+    # Check if current is a SPOUSE of prev
+    if _are_spouses(prev_id, current_id, reader):
+        return "husband" if sex_char == "M" else "wife" if sex_char == "F" else "spouse"
+
+    # Check for grandparent
+    if _is_grandparent(prev_id, current_id, id_to_parents):
+        return "grandfather" if sex_char == "M" else "grandmother" if sex_char == "F" else "grandparent"
+
+    # Check for grandchild
+    if _is_grandchild(prev_id, current_id, id_to_children):
+        return "grandson" if sex_char == "M" else "granddaughter" if sex_char == "F" else "grandchild"
+
+    # Check for great-grandparent
+    if _is_great_grandparent(prev_id, current_id, id_to_parents):
+        return "great-grandfather" if sex_char == "M" else "great-grandmother" if sex_char == "F" else "great-grandparent"
+
+    # Check for great-grandchild
+    if _is_great_grandchild(prev_id, current_id, id_to_children):
+        return "great-grandson" if sex_char == "M" else "great-granddaughter" if sex_char == "F" else "great-grandchild"
+
+    # Check for aunt/uncle
+    if _is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children):
+        return "uncle" if sex_char == "M" else "aunt" if sex_char == "F" else "aunt/uncle"
+
+    # Check for niece/nephew
+    if _is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children):
+        return "nephew" if sex_char == "M" else "niece" if sex_char == "F" else "niece/nephew"
+
+    # Check for cousins
+    if _are_cousins(prev_id, current_id, id_to_parents, id_to_children):
+        return "cousin"
+
+    return "relative"
+
+
 def convert_gedcom_path_to_unified_format(
     path_ids: list[str],
     reader: Any,
@@ -754,54 +843,17 @@ def convert_gedcom_path_to_unified_format(
     if not path_ids or len(path_ids) < 2:
         return []
 
-    result: list[dict[str, Optional[str]]] = []  # Ensure list type
+    result: list[dict[str, Optional[str]]] = []
 
     # Process the first person (no relationship)
     first_id = path_ids[0]
     first_indi = indi_index.get(first_id)
 
     if first_indi:
-        # Get name
-        first_name = _get_full_name(first_indi)
-
-        # Get birth/death years
-        birth_date_obj, _, _ = _get_event_info(first_indi, TAG_BIRTH)
-        death_date_obj, _, _ = _get_event_info(first_indi, TAG_DEATH)
-
-        birth_year = str(birth_date_obj.year) if birth_date_obj else None
-        death_year = str(death_date_obj.year) if death_date_obj else None
-
-        # Get gender
-        sex_tag = first_indi.sub_tag(TAG_SEX)  # Use imported constant
-        sex_char: Optional[str] = None  # Ensure type
-        if (
-            sex_tag and hasattr(sex_tag, "value") and sex_tag.value is not None
-        ):  # Check value is not None
-            sex_val = str(sex_tag.value).upper()
-            if sex_val in ("M", "F"):
-                sex_char = sex_val
-
-        # Add to result
-        result.append(
-            {
-                "name": first_name,
-                "birth_year": birth_year,
-                "death_year": death_year,
-                "relationship": None,  # First person has no relationship to previous person
-                "gender": sex_char,  # Add gender information
-            }
-        )
+        name, birth_year, death_year, sex_char = _extract_person_basic_info(first_indi)
+        result.append(_create_person_dict(name, birth_year, death_year, None, sex_char))
     else:
-        # Handle missing first person
-        result.append(
-            {
-                "name": f"Unknown ({first_id})",
-                "birth_year": None,
-                "death_year": None,
-                "relationship": None,
-                "gender": None,
-            }
-        )
+        result.append(_create_person_dict(f"Unknown ({first_id})", None, None, None, None))
 
     # Process the rest of the path
     for i in range(1, len(path_ids)):
@@ -809,125 +861,59 @@ def convert_gedcom_path_to_unified_format(
         current_indi = indi_index.get(current_id)
 
         if not current_indi:
-            # Handle missing person
-            result.append(
-                {
-                    "name": f"Unknown ({current_id})",
-                    "birth_year": None,
-                    "death_year": None,
-                    "relationship": "relative",
-                    "gender": None,
-                }
-            )
+            result.append(_create_person_dict(f"Unknown ({current_id})", None, None, "relative", None))
             continue
 
-        # Get name
-        current_name = _get_full_name(current_indi)
-
-        # Get birth/death years
-        birth_date_obj, _, _ = _get_event_info(current_indi, TAG_BIRTH)
-        death_date_obj, _, _ = _get_event_info(current_indi, TAG_DEATH)
-
-        birth_year = str(birth_date_obj.year) if birth_date_obj else None
-        death_year = str(death_date_obj.year) if death_date_obj else None
-
-        # Determine gender for relationship terms
-        sex_tag = current_indi.sub_tag(TAG_SEX)  # Use imported constant
-        sex_char = None
-        if (
-            sex_tag and hasattr(sex_tag, "value") and sex_tag.value is not None
-        ):  # Check value is not None
-            sex_val = str(sex_tag.value).upper()
-            if sex_val in ("M", "F"):
-                sex_char = sex_val
+        # Extract person info
+        name, birth_year, death_year, sex_char = _extract_person_basic_info(current_indi)
 
         # Determine relationship
-        relationship: Optional[str] = "relative"  # Default
-
-        # Check if current is a PARENT of prev
-        if current_id in id_to_parents.get(prev_id, set()):
-            relationship = (
-                "father"
-                if sex_char == "M"
-                else "mother" if sex_char == "F" else "parent"
-            )
-        # Check if current is a CHILD of prev
-        elif current_id in id_to_children.get(prev_id, set()):
-            relationship = (
-                "son" if sex_char == "M" else "daughter" if sex_char == "F" else "child"
-            )
-        # Check if current is a SIBLING of prev
-        elif _are_siblings(prev_id, current_id, id_to_parents):
-            relationship = (
-                "brother"
-                if sex_char == "M"
-                else "sister" if sex_char == "F" else "sibling"
-            )
-        # Check if current is a SPOUSE of prev
-        elif _are_spouses(prev_id, current_id, reader):
-            relationship = (
-                "husband"
-                if sex_char == "M"
-                else "wife" if sex_char == "F" else "spouse"
-            )
-        # Check for grandparent
-        elif _is_grandparent(prev_id, current_id, id_to_parents):
-            relationship = (
-                "grandfather"
-                if sex_char == "M"
-                else "grandmother" if sex_char == "F" else "grandparent"
-            )
-        # Check for grandchild
-        elif _is_grandchild(prev_id, current_id, id_to_children):
-            relationship = (
-                "grandson"
-                if sex_char == "M"
-                else "granddaughter" if sex_char == "F" else "grandchild"
-            )
-        # Check for great-grandparent
-        elif _is_great_grandparent(prev_id, current_id, id_to_parents):
-            relationship = (
-                "great-grandfather"
-                if sex_char == "M"
-                else "great-grandmother" if sex_char == "F" else "great-grandparent"
-            )
-        # Check for great-grandchild
-        elif _is_great_grandchild(prev_id, current_id, id_to_children):
-            relationship = (
-                "great-grandson"
-                if sex_char == "M"
-                else "great-granddaughter" if sex_char == "F" else "great-grandchild"
-            )
-        # Check for aunt/uncle
-        elif _is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children):
-            relationship = (
-                "uncle"
-                if sex_char == "M"
-                else "aunt" if sex_char == "F" else "aunt/uncle"
-            )
-        # Check for niece/nephew
-        elif _is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children):
-            relationship = (
-                "nephew"
-                if sex_char == "M"
-                else "niece" if sex_char == "F" else "niece/nephew"
-            )
-        # Check for cousins
-        elif _are_cousins(prev_id, current_id, id_to_parents, id_to_children):
-            relationship = "cousin"
-
-        # Add to result
-        result.append(
-            {
-                "name": current_name,
-                "birth_year": birth_year,
-                "death_year": death_year,
-                "relationship": relationship,
-                "gender": sex_char,  # Add gender information
-            }
+        relationship = _determine_gedcom_relationship(
+            prev_id, current_id, sex_char, reader, id_to_parents, id_to_children
         )
 
+        # Add to result
+        result.append(_create_person_dict(name, birth_year, death_year, relationship, sex_char))
+
     return result
+
+
+def _parse_discovery_relationship(relationship_text: str) -> tuple[str, Optional[str]]:
+    """Parse Discovery API relationship text to extract relationship term and gender."""
+    relationship_term: str = "relative"
+    gender: Optional[str] = None
+
+    rel_lower = relationship_text.lower()
+
+    # Check for specific relationship terms with gender
+    if "daughter" in rel_lower:
+        relationship_term, gender = "daughter", "F"
+    elif "son" in rel_lower:
+        relationship_term, gender = "son", "M"
+    elif "father" in rel_lower:
+        relationship_term, gender = "father", "M"
+    elif "mother" in rel_lower:
+        relationship_term, gender = "mother", "F"
+    elif "brother" in rel_lower:
+        relationship_term, gender = "brother", "M"
+    elif "sister" in rel_lower:
+        relationship_term, gender = "sister", "F"
+    elif "husband" in rel_lower:
+        relationship_term, gender = "husband", "M"
+    elif "wife" in rel_lower:
+        relationship_term, gender = "wife", "F"
+    else:
+        # Try to extract the relationship term from the text
+        rel_match = re.search(r"(is|are) the (.*?) of", rel_lower)
+        if rel_match:
+            relationship_term = rel_match.group(2)
+            # Try to determine gender from relationship term
+            if relationship_term in ["son", "father", "brother", "husband"]:
+                gender = "M"
+            elif relationship_term in ["daughter", "mother", "sister", "wife"]:
+                gender = "F"
+
+    return relationship_term, gender
 
 
 def convert_discovery_api_path_to_unified_format(
@@ -956,22 +942,11 @@ def convert_discovery_api_path_to_unified_format(
         logger.warning("Discovery API path is not a valid list or is empty")
         return []
 
-    result: list[dict[str, Optional[str]]] = []  # Ensure list type
+    result: list[dict[str, Optional[str]]] = []
 
     # Process the first person (target)
-    # The Discovery API doesn't include the target person in the path, so we add them manually
     target_name_display = format_name(target_name)
-
-    # Add first person to result
-    result.append(
-        {
-            "name": target_name_display,
-            "birth_year": None,  # Discovery API doesn't provide birth/death years
-            "death_year": None,
-            "relationship": None,  # First person has no relationship to previous person
-            "gender": None,  # Discovery API doesn't provide gender information
-        }
-    )
+    result.append(_create_person_dict(target_name_display, None, None, None, None))
 
     # Process each step in the path
     for step in path_steps:
@@ -983,57 +958,12 @@ def convert_discovery_api_path_to_unified_format(
         step_name = step.get("name", "Unknown")
         current_name = format_name(step_name)
 
-        # Get relationship
-        relationship_term: Optional[str] = "relative"  # Ensure type
-        relationship_text = step.get("relationship", "").lower()
-
-        # Determine gender and relationship term from relationship text
-        gender: Optional[str] = None  # Ensure type
-        if "daughter" in relationship_text:
-            relationship_term = "daughter"
-            gender = "F"
-        elif "son" in relationship_text:
-            relationship_term = "son"
-            gender = "M"
-        elif "father" in relationship_text:
-            relationship_term = "father"
-            gender = "M"
-        elif "mother" in relationship_text:
-            relationship_term = "mother"
-            gender = "F"
-        elif "brother" in relationship_text:
-            relationship_term = "brother"
-            gender = "M"
-        elif "sister" in relationship_text:
-            relationship_term = "sister"
-            gender = "F"
-        elif "husband" in relationship_text:
-            relationship_term = "husband"
-            gender = "M"
-        elif "wife" in relationship_text:
-            relationship_term = "wife"
-            gender = "F"
-        else:
-            # Try to extract the relationship term from the text
-            rel_match = re.search(r"(is|are) the (.*?) of", relationship_text)
-            if rel_match:
-                relationship_term = rel_match.group(2)
-                # Try to determine gender from relationship term
-                if relationship_term in ["son", "father", "brother", "husband"]:
-                    gender = "M"
-                elif relationship_term in ["daughter", "mother", "sister", "wife"]:
-                    gender = "F"
+        # Parse relationship
+        relationship_text = step.get("relationship", "")
+        relationship_term, gender = _parse_discovery_relationship(relationship_text)
 
         # Add to result
-        result.append(
-            {
-                "name": current_name,
-                "birth_year": None,  # Discovery API doesn't provide birth/death years
-                "death_year": None,
-                "relationship": relationship_term,
-                "gender": gender,
-            }
-        )
+        result.append(_create_person_dict(current_name, None, None, relationship_term, gender))
 
     return result
 
