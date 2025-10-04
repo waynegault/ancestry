@@ -1398,6 +1398,86 @@ class InboxProcessor:
                 f"Skip={skipped_count} Err={error_count}"
             )
 
+    def _get_db_timestamp_for_comparison(
+        self,
+        existing_conv_logs: dict[tuple[str, str], ConversationLog],
+        api_conv_id: str,
+        direction: MessageDirectionEnum,
+        min_aware_dt: datetime,
+    ) -> datetime:
+        """Get database timestamp for comparison with API timestamp."""
+        db_log = existing_conv_logs.get((api_conv_id, direction.name), None)
+        if db_log:
+            return safe_column_value(db_log, "latest_timestamp") or min_aware_dt
+        return min_aware_dt
+
+    def _process_in_message(
+        self,
+        latest_ctx_in: Optional[dict],
+        api_conv_id: str,
+        people_id: int,
+        existing_conv_logs: dict[tuple[str, str], ConversationLog],
+        min_aware_dt: datetime,
+        context_messages: list[dict],
+        my_pid_lower: str,
+        conv_log_upserts_dicts: list[dict],
+        person_updates: dict[int, dict],
+        ai_classified_count: int,
+    ) -> int:
+        """Process incoming message and return updated AI classification count."""
+        if not latest_ctx_in:
+            return ai_classified_count
+
+        ctx_ts_in_aware = latest_ctx_in.get("timestamp")
+        db_latest_ts_in_compare = self._get_db_timestamp_for_comparison(
+            existing_conv_logs, api_conv_id, MessageDirectionEnum.IN, min_aware_dt
+        )
+
+        if ctx_ts_in_aware and ctx_ts_in_aware > db_latest_ts_in_compare:
+            ai_sentiment_result = self._classify_message_with_ai(
+                context_messages, my_pid_lower, api_conv_id
+            )
+
+            if ai_sentiment_result:
+                ai_classified_count += 1
+            else:
+                logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
+
+            upsert_dict_in = self._create_conversation_log_upsert(
+                api_conv_id, MessageDirectionEnum.IN, people_id,
+                latest_ctx_in.get("content", ""), ctx_ts_in_aware, ai_sentiment_result,
+            )
+            conv_log_upserts_dicts.append(upsert_dict_in)
+
+            self._update_person_status_from_ai(ai_sentiment_result, people_id, person_updates)
+
+        return ai_classified_count
+
+    def _process_out_message(
+        self,
+        latest_ctx_out: Optional[dict],
+        api_conv_id: str,
+        people_id: int,
+        existing_conv_logs: dict[tuple[str, str], ConversationLog],
+        min_aware_dt: datetime,
+        conv_log_upserts_dicts: list[dict],
+    ) -> None:
+        """Process outgoing message."""
+        if not latest_ctx_out:
+            return
+
+        ctx_ts_out_aware = latest_ctx_out.get("timestamp")
+        db_latest_ts_out_compare = self._get_db_timestamp_for_comparison(
+            existing_conv_logs, api_conv_id, MessageDirectionEnum.OUT, min_aware_dt
+        )
+
+        if ctx_ts_out_aware and ctx_ts_out_aware > db_latest_ts_out_compare:
+            upsert_dict_out = self._create_conversation_log_upsert(
+                api_conv_id, MessageDirectionEnum.OUT, people_id,
+                latest_ctx_out.get("content", ""), ctx_ts_out_aware,
+            )
+            conv_log_upserts_dicts.append(upsert_dict_out)
+
     def _process_conversations_in_batch(
         self,
         session: DbSession,
@@ -1496,54 +1576,17 @@ class InboxProcessor:
             # Find latest IN and OUT messages
             latest_ctx_in, latest_ctx_out = self._find_latest_messages(context_messages, my_pid_lower)
 
-            ai_sentiment_result: Optional[str] = None
+            # Process IN and OUT messages
+            ai_classified_count = self._process_in_message(
+                latest_ctx_in, api_conv_id, people_id, existing_conv_logs,
+                min_aware_dt, context_messages, my_pid_lower,
+                conv_log_upserts_dicts, person_updates, ai_classified_count
+            )
 
-            # Process IN message
-            if latest_ctx_in:
-                ctx_ts_in_aware = latest_ctx_in.get("timestamp")
-                db_ts_in_for_compare = existing_conv_logs.get(
-                    (api_conv_id, MessageDirectionEnum.IN.name), None
-                )
-                db_latest_ts_in_compare = (
-                    safe_column_value(db_ts_in_for_compare, "latest_timestamp")
-                    if db_ts_in_for_compare else min_aware_dt
-                )
-
-                if ctx_ts_in_aware and ctx_ts_in_aware > db_latest_ts_in_compare:
-                    ai_sentiment_result = self._classify_message_with_ai(
-                        context_messages, my_pid_lower, api_conv_id
-                    )
-
-                    if ai_sentiment_result:
-                        ai_classified_count += 1
-                    else:
-                        logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
-
-                    upsert_dict_in = self._create_conversation_log_upsert(
-                        api_conv_id, MessageDirectionEnum.IN, people_id,
-                        latest_ctx_in.get("content", ""), ctx_ts_in_aware, ai_sentiment_result,
-                    )
-                    conv_log_upserts_dicts.append(upsert_dict_in)
-
-                    self._update_person_status_from_ai(ai_sentiment_result, people_id, person_updates)
-
-            # Process OUT message
-            if latest_ctx_out:
-                ctx_ts_out_aware = latest_ctx_out.get("timestamp")
-                db_ts_out_for_compare = existing_conv_logs.get(
-                    (api_conv_id, MessageDirectionEnum.OUT.name), None
-                )
-                db_latest_ts_out_compare = (
-                    safe_column_value(db_ts_out_for_compare, "latest_timestamp")
-                    if db_ts_out_for_compare else min_aware_dt
-                )
-
-                if ctx_ts_out_aware and ctx_ts_out_aware > db_latest_ts_out_compare:
-                    upsert_dict_out = self._create_conversation_log_upsert(
-                        api_conv_id, MessageDirectionEnum.OUT, people_id,
-                        latest_ctx_out.get("content", ""), ctx_ts_out_aware,
-                    )
-                    conv_log_upserts_dicts.append(upsert_dict_out)
+            self._process_out_message(
+                latest_ctx_out, api_conv_id, people_id, existing_conv_logs,
+                min_aware_dt, conv_log_upserts_dicts
+            )
 
             # Update progress bar with stats
             self._update_progress_bar_stats(
