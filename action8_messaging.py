@@ -2951,8 +2951,6 @@ def _process_all_candidates(
     MAX_BATCH_ITEMS: int,
 ) -> dict:
     """Process all candidate persons for messaging. Returns dict with counters and results."""
-    from tqdm.auto import tqdm
-    from tqdm.contrib.logging import logging_redirect_tqdm
 
     # Initialize counters
     sent_count = 0
