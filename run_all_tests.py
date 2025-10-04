@@ -343,6 +343,106 @@ def discover_test_modules() -> list[str]:
     return sorted(test_modules)
 
 
+def _should_skip_line(stripped: str) -> bool:
+    """Check if a line should be skipped when parsing docstrings."""
+    return stripped.startswith('#') or not stripped
+
+
+def _extract_docstring_start(stripped: str, docstring_lines: list[str]) -> bool:
+    """Extract content after opening docstring quotes. Returns True if docstring started."""
+    if '"""' not in stripped:
+        return False
+
+    # Extract content after opening quotes
+    after_quotes = stripped.split('"""', 1)[1].strip()
+    if after_quotes:
+        docstring_lines.append(after_quotes)
+    return True
+
+
+def _extract_docstring_end(stripped: str, docstring_lines: list[str]) -> bool:
+    """Extract content before closing docstring quotes. Returns True if docstring ended."""
+    if '"""' not in stripped:
+        return False
+
+    # End of docstring - extract content before closing quotes
+    before_quotes = stripped.split('"""')[0].strip()
+    if before_quotes:
+        docstring_lines.append(before_quotes)
+    return True
+
+
+def _parse_docstring_lines(lines: list[str]) -> list[str]:
+    """Parse file lines to extract docstring content."""
+    in_docstring = False
+    docstring_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Skip shebang and comments at the top
+        if _should_skip_line(stripped):
+            continue
+
+        # Look for start of docstring
+        if not in_docstring:
+            if _extract_docstring_start(stripped, docstring_lines):
+                in_docstring = True
+            continue
+
+        # If we're in docstring, collect lines until closing quotes
+        if _extract_docstring_end(stripped, docstring_lines):
+            break
+
+        # Regular docstring line
+        if stripped:
+            docstring_lines.append(stripped)
+
+    return docstring_lines
+
+
+def _is_valid_description_line(line: str) -> bool:
+    """Check if a line is a valid description (not a separator, long enough)."""
+    return line and not line.startswith('=') and len(line) > 10
+
+
+def _clean_description_text(description: str, module_base: str) -> str:
+    """Clean up description text by removing redundant patterns."""
+    # Remove leading dashes and clean up
+    if description.startswith('-'):
+        description = description[1:].strip()
+    if description.startswith('.py'):
+        description = description[3:].strip()
+
+    # Remove redundant module name patterns
+    words_to_remove = [module_base.lower(), 'module', 'py']
+    for word in words_to_remove:
+        if description.lower().startswith(word):
+            description = description[len(word):].strip()
+            if description.startswith('-'):
+                description = description[1:].strip()
+
+    return description
+
+
+def _extract_first_meaningful_line(docstring_lines: list[str], module_path: str) -> str | None:
+    """Extract the first meaningful line from docstring as description."""
+    module_base = module_path.replace('.py', '').replace('/', '').replace('\\', '')
+
+    for line in docstring_lines:
+        if not _is_valid_description_line(line):
+            continue
+
+        # Clean up common patterns
+        description = line.replace(module_base, '').strip()
+        description = description.replace(' - ', ' - ').strip()
+        description = _clean_description_text(description, module_base)
+
+        return description
+
+    return None
+
+
 def extract_module_description(module_path: str) -> str | None:
     """Extract the first line of a module's docstring for use as description."""
     try:
@@ -351,64 +451,13 @@ def extract_module_description(module_path: str) -> str | None:
         with Path(module_path).open(encoding='utf-8') as f:
             content = f.read()
 
-        # Look for triple-quoted docstring after any initial comments/shebang
+        # Parse docstring from file content
         lines = content.split('\n')
-        in_docstring = False
-        docstring_lines = []
-
-        for line in lines:
-            stripped = line.strip()
-
-            # Skip shebang and comments at the top
-            if stripped.startswith('#') or not stripped:
-                continue
-
-            # Look for start of docstring
-            if not in_docstring and '"""' in stripped:
-                in_docstring = True
-                # Extract content after opening quotes
-                after_quotes = stripped.split('"""', 1)[1].strip()
-                if after_quotes:
-                    docstring_lines.append(after_quotes)
-                continue
-
-            # If we're in docstring, collect lines until closing quotes
-            if in_docstring:
-                if '"""' in stripped:
-                    # End of docstring - extract content before closing quotes
-                    before_quotes = stripped.split('"""')[0].strip()
-                    if before_quotes:
-                        docstring_lines.append(before_quotes)
-                    break
-                # Regular docstring line
-                if stripped:
-                    docstring_lines.append(stripped)
+        docstring_lines = _parse_docstring_lines(lines)
 
         # Return the first meaningful line as description
         if docstring_lines:
-            # Look for the first line that looks like a title/description
-            for line in docstring_lines:
-                if line and not line.startswith('=') and len(line) > 10:
-                    # Clean up common patterns
-                    module_base = module_path.replace('.py', '').replace('/', '').replace('\\', '')
-                    description = line.replace(module_base, '').strip()
-                    description = description.replace(' - ', ' - ').strip()
-
-                    # Remove leading dashes and clean up
-                    if description.startswith('-'):
-                        description = description[1:].strip()
-                    if description.startswith('.py'):
-                        description = description[3:].strip()
-
-                    # Remove redundant module name patterns
-                    words_to_remove = [module_base.lower(), 'module', 'py']
-                    for word in words_to_remove:
-                        if description.lower().startswith(word):
-                            description = description[len(word):].strip()
-                            if description.startswith('-'):
-                                description = description[1:].strip()
-
-                    return description
+            return _extract_first_meaningful_line(docstring_lines, module_path)
 
         return None
 
