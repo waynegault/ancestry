@@ -1182,6 +1182,78 @@ def _perform_api_prefetches(
 # End of _perform_api_prefetches
 
 
+def _retrieve_prefetched_data_for_match(
+    uuid_val: str,
+    prefetched_data: Dict[str, Dict[str, Any]]
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[str]]:
+    """Retrieve prefetched data for a specific match UUID."""
+    prefetched_combined = prefetched_data.get("combined", {}).get(uuid_val)
+    prefetched_tree = prefetched_data.get("tree", {}).get(uuid_val)
+    prefetched_rel_prob = prefetched_data.get("rel_prob", {}).get(uuid_val)
+    return prefetched_combined, prefetched_tree, prefetched_rel_prob
+
+
+def _validate_match_uuid(match_list_data: Dict[str, Any]) -> str:
+    """Validate and return match UUID, raise ValueError if missing."""
+    uuid_val = match_list_data.get("uuid")
+    if not uuid_val:
+        logger.error("Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping.")
+        raise ValueError("Missing UUID")
+    return uuid_val
+
+
+def _process_single_match(
+    match_list_data: Dict[str, Any],
+    session_manager: SessionManager,
+    existing_persons_map: Dict[str, Person],
+    prefetched_data: Dict[str, Dict[str, Any]],
+    log_ref_short: str
+) -> Tuple[Optional[Dict[str, Any]], str, Optional[str]]:
+    """Process a single match and return prepared data, status, and error message."""
+    # Validate UUID
+    uuid_val = _validate_match_uuid(match_list_data)
+
+    # Retrieve existing person and prefetched data
+    existing_person = existing_persons_map.get(uuid_val.upper())
+    prefetched_combined, prefetched_tree, prefetched_rel_prob = _retrieve_prefetched_data_for_match(
+        uuid_val, prefetched_data
+    )
+
+    # Add relationship probability to match dict
+    match_list_data["predicted_relationship"] = prefetched_rel_prob
+
+    # Check WebDriver session validity
+    if not session_manager.is_sess_valid():
+        logger.error(f"WebDriver session invalid before calling _do_match for {log_ref_short}. Treating as error.")
+        return None, "error", "WebDriver session invalid"
+
+    # Call _do_match to prepare the bulk dictionary structure
+    return _do_match(
+        match_list_data,
+        session_manager,
+        existing_person,
+        prefetched_combined,
+        prefetched_tree,
+        config_schema,
+        logger,
+    )
+
+
+def _update_page_statuses(
+    status_for_this_match: str,
+    page_statuses: Dict[str, int],
+    log_ref_short: str
+) -> None:
+    """Update page statuses based on match processing result."""
+    if status_for_this_match in ["new", "updated", "error"]:
+        page_statuses[status_for_this_match] += 1
+    elif status_for_this_match == "skipped":
+        logger.debug(f"_do_match returned 'skipped' for {log_ref_short}. Not counted in page new/updated/error.")
+    else:
+        logger.error(f"Unknown status '{status_for_this_match}' from _do_match for {log_ref_short}. Counting as error.")
+        page_statuses["error"] += 1
+
+
 def _prepare_bulk_db_data(
     session: SqlAlchemySession,
     session_manager: SessionManager,
@@ -1234,81 +1306,20 @@ def _prepare_bulk_db_data(
         uuid_val = match_list_data.get("uuid")
         log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
         prepared_data_for_this_match: Optional[Dict[str, Any]] = None
-        status_for_this_match: Literal["new", "updated", "skipped", "error"] = (
-            "error"  # Default to error
-        )
+        status_for_this_match: Literal["new", "updated", "skipped", "error"] = "error"
         error_msg_for_this_match: Optional[str] = None
 
         try:
-            # Step 2a: Basic validation
-            if not uuid_val:
-                logger.error(
-                    "Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping."
-                )
-                status_for_this_match = "error"
-                error_msg_for_this_match = "Missing UUID"
-                raise ValueError("Missing UUID")  # Stop processing this item
+            # Process single match
+            prepared_data_for_this_match, status_for_this_match, error_msg_for_this_match = _process_single_match(
+                match_list_data, session_manager, existing_persons_map, prefetched_data, log_ref_short
+            )
 
-            # Step 2b: Retrieve existing person and prefetched data
-            existing_person = existing_persons_map.get(uuid_val.upper())
-            prefetched_combined = prefetched_data.get("combined", {}).get(
-                uuid_val
-            )  # Can be None
-            prefetched_tree = prefetched_data.get("tree", {}).get(
-                uuid_val
-            )  # Can be None
-            prefetched_rel_prob = prefetched_data.get("rel_prob", {}).get(
-                uuid_val
-            )  # Can be None
+            # Update page statuses
+            _update_page_statuses(status_for_this_match, page_statuses, log_ref_short)
 
-            # Step 2c: Add relationship probability to match dict *before* calling _do_match
-            # _do_match and its helpers should handle predicted_relationship potentially being None
-            match_list_data["predicted_relationship"] = prefetched_rel_prob
-
-            # Step 2d: Check WebDriver session validity before calling _do_match
-            if not session_manager.is_sess_valid():
-                logger.error(
-                    f"WebDriver session invalid before calling _do_match for {log_ref_short}. Treating as error."
-                )
-                status_for_this_match = "error"
-                error_msg_for_this_match = "WebDriver session invalid"
-                # Need to raise an exception or handle this state appropriately to stop/skip
-                # For now, let it proceed but the status is error.
-            else:
-                # Step 2e: Call _do_match to compare data and prepare the bulk dictionary structure
-                (
-                    prepared_data_for_this_match,
-                    status_for_this_match,
-                    error_msg_for_this_match,
-                ) = _do_match(
-                    match_list_data,
-                    session_manager,
-                    existing_person,
-                    prefetched_combined,
-                    prefetched_tree,
-                    config_schema,
-                    logger,
-                )
-
-            # Step 2f: Tally status based on _do_match result
-            if status_for_this_match in ["new", "updated", "error"]:
-                page_statuses[status_for_this_match] += 1
-            elif status_for_this_match == "skipped":
-                # This path should ideally not be hit if _do_match determines status correctly based on changes
-                logger.debug(  # Changed to debug as it's an expected outcome if no changes
-                    f"_do_match returned 'skipped' for {log_ref_short}. Not counted in page new/updated/error."
-                )
-            else:  # Handle unknown status string
-                logger.error(
-                    f"Unknown status '{status_for_this_match}' from _do_match for {log_ref_short}. Counting as error."
-                )
-                page_statuses["error"] += 1
-
-            # Step 2g: Append valid prepared data to the bulk list
-            if (
-                status_for_this_match not in ["error", "skipped"]
-                and prepared_data_for_this_match
-            ):
+            # Append valid prepared data to the bulk list
+            if status_for_this_match not in ["error", "skipped"] and prepared_data_for_this_match:
                 prepared_bulk_data.append(prepared_data_for_this_match)
             elif status_for_this_match == "error":
                 logger.error(
