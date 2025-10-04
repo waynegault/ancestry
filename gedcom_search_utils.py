@@ -861,6 +861,67 @@ def get_gedcom_family_details(
     return result
 
 
+def _load_or_get_gedcom_data(
+    gedcom_data: Optional[GedcomData],
+    gedcom_path: Optional[str]
+) -> Optional[GedcomData]:
+    """Load or retrieve GEDCOM data from cache or file."""
+    if gedcom_data:
+        return gedcom_data
+
+    # Try to use the cached GEDCOM data first
+    if _CACHED_GEDCOM_DATA is not None:
+        logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
+        return _CACHED_GEDCOM_DATA
+
+    # Determine GEDCOM path
+    if not gedcom_path:
+        gedcom_path = (
+            str(config_schema.database.gedcom_file_path)
+            if config_schema
+            else str(Path(__file__).parent / "Data" / "family.ged")
+        )
+
+    if gedcom_path and not Path(gedcom_path).exists():
+        return None
+
+    # Load GEDCOM data
+    return load_gedcom_data(Path(str(gedcom_path))) if gedcom_path else None
+
+
+def _get_reference_id() -> Optional[str]:
+    """Get reference person ID from config."""
+    return config_schema.reference_person_id if config_schema else None
+
+
+def _get_individual_name(individual_id_norm: str, gedcom_data: GedcomData) -> str:
+    """Get individual name from GEDCOM data."""
+    if individual_id_norm and individual_id_norm in gedcom_data.processed_data_cache:
+        individual_data = gedcom_data.processed_data_cache[individual_id_norm]
+        return individual_data.get("full_name_disp", "Individual")
+    return "Individual"
+
+
+def _find_relationship_path(
+    individual_id_norm: str,
+    reference_id_norm: str,
+    gedcom_data: GedcomData
+) -> list[str]:
+    """Find relationship path between two individuals."""
+    if not (individual_id_norm and reference_id_norm):
+        return []
+
+    return fast_bidirectional_bfs(
+        individual_id_norm,
+        reference_id_norm,
+        gedcom_data.id_to_parents,
+        gedcom_data.id_to_children,
+        max_depth=25,
+        node_limit=150000,
+        timeout_sec=45,
+    )
+
+
 def get_gedcom_relationship_path(
     individual_id: str,
     reference_id: Optional[str] = None,
@@ -881,63 +942,27 @@ def get_gedcom_relationship_path(
     Returns:
         Formatted relationship path string
     """
-    # Step 1: Ensure we have GEDCOM data
-    if not gedcom_data:
-        # Try to use the cached GEDCOM data first
-        if _CACHED_GEDCOM_DATA is not None:
-            logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
-            gedcom_data = _CACHED_GEDCOM_DATA
-        else:
-            if not gedcom_path:
-                # Try to get path from config
-                gedcom_path = (
-                    str(config_schema.database.gedcom_file_path)
-                    if config_schema
-                    else str(Path(__file__).parent / "Data" / "family.ged")
-                )
-            if gedcom_path and not Path(gedcom_path).exists():
-                return f"(GEDCOM file not found at {gedcom_path})"
-
-            # Load GEDCOM data
-            gedcom_data = (
-                load_gedcom_data(Path(str(gedcom_path))) if gedcom_path else None
-            )
-
+    # Load or get GEDCOM data
+    gedcom_data = _load_or_get_gedcom_data(gedcom_data, gedcom_path)
     if not gedcom_data:
         return "(Failed to load GEDCOM data)"
 
-    # Step 2: Normalize individual ID
-    individual_id_norm = _normalize_id(
-        individual_id
-    )  # Step 3: Get reference ID if not provided
+    # Normalize individual ID
+    individual_id_norm = _normalize_id(individual_id)
+
+    # Get reference ID
     if not reference_id:
-        reference_id = config_schema.reference_person_id if config_schema else None
+        reference_id = _get_reference_id()
     if not reference_id:
         return "(Reference person ID not available)"
 
     reference_id_norm = _normalize_id(reference_id)
 
-    # Step 4: Get individual name
-    individual_name = "Individual"
-    if individual_id_norm and individual_id_norm in gedcom_data.processed_data_cache:
-        individual_data = gedcom_data.processed_data_cache[individual_id_norm]
-        individual_name = individual_data.get("full_name_disp", "Individual")
+    # Get individual name
+    individual_name = _get_individual_name(individual_id_norm, gedcom_data)
 
-    # Step 5: Get relationship path using fast_bidirectional_bfs
-    if individual_id_norm and reference_id_norm:
-        # Find the relationship path using the consolidated function
-        path_ids = fast_bidirectional_bfs(
-            individual_id_norm,
-            reference_id_norm,
-            gedcom_data.id_to_parents,
-            gedcom_data.id_to_children,
-            max_depth=25,
-            node_limit=150000,
-            timeout_sec=45,
-        )
-    else:
-        path_ids = []
-
+    # Find relationship path
+    path_ids = _find_relationship_path(individual_id_norm, reference_id_norm, gedcom_data)
     if not path_ids:
         return f"(No relationship path found between {individual_name} and {reference_name})"
 
@@ -1231,6 +1256,59 @@ def test_error_recovery():
     assert True, "Error recovery should handle exceptions gracefully"
 
 
+def _print_match_details(i: int, match: dict[str, Any]) -> None:
+    """Print detailed information for a single match."""
+    print(f"{i}. ID: {match.get('id', 'Unknown')}")
+    print(f"   Name: {match.get('first_name', '')} {match.get('surname', '')}")
+    print(f"   Birth Year: {match.get('birth_year', 'Unknown')}")
+    print(f"   Birth Place: {match.get('birth_place', 'Unknown')}")
+    print(f"   Gender: {match.get('gender', 'Unknown')}")
+    print(f"   Death Year: {match.get('death_year', 'Unknown')}")
+    print(f"   Match Score: {match.get('total_score', 0)}")
+
+    # Show detailed scoring for top match
+    if i == 1 and match.get("field_scores"):
+        print(f"   Field Scores: {match.get('field_scores', {})}")
+        print(f"   Reasons: {match.get('reasons', [])}")
+
+    print()
+
+
+def _print_family_details(match_id: str) -> None:
+    """Print family details for a match."""
+    family_details = get_gedcom_family_details(match_id)
+    if not family_details:
+        return
+
+    print("   Family Details:")
+    if family_details.get("parents"):
+        print(f"   - Parents: {len(family_details['parents'])}")
+    if family_details.get("spouses"):
+        print(f"   - Spouses: {len(family_details['spouses'])}")
+    if family_details.get("children"):
+        print(f"   - Children: {len(family_details['children'])}")
+    if family_details.get("siblings"):
+        print(f"   - Siblings: {len(family_details['siblings'])}")
+    print()
+
+
+def _perform_broader_search() -> None:
+    """Perform broader search without birth year."""
+    print("No matches found for Frances Milne born 1947.")
+    print("\nTrying broader search...")
+
+    broader_criteria = {"first_name": "Frances", "surname": "Milne"}
+    broader_results = search_gedcom_for_criteria(broader_criteria, max_results=5)
+
+    if broader_results:
+        print(f"Found {len(broader_results)} matches for just 'Frances Milne':")
+        for i, match in enumerate(broader_results, 1):
+            birth_year = match.get("birth_year", "Unknown")
+            print(f"{i}. Frances Milne (b. {birth_year}) - Score: {match.get('total_score', 0)}")
+    else:
+        print("No matches found even for broader 'Frances Milne' search.")
+
+
 def search_frances_milne_demo() -> None:
     """
     Demonstrate searching for Frances Milne born 1947 with detailed output.
@@ -1256,56 +1334,13 @@ def search_frances_milne_demo() -> None:
             print(f"Found {len(results)} potential matches:\n")
 
             for i, match in enumerate(results, 1):
-                print(f"{i}. ID: {match.get('id', 'Unknown')}")
-                print(
-                    f"   Name: {match.get('first_name', '')} {match.get('surname', '')}"
-                )
-                print(f"   Birth Year: {match.get('birth_year', 'Unknown')}")
-                print(f"   Birth Place: {match.get('birth_place', 'Unknown')}")
-                print(f"   Gender: {match.get('gender', 'Unknown')}")
-                print(f"   Death Year: {match.get('death_year', 'Unknown')}")
-                print(f"   Match Score: {match.get('total_score', 0)}")
-
-                # Show detailed scoring for top match
-                if i == 1 and match.get("field_scores"):
-                    print(f"   Field Scores: {match.get('field_scores', {})}")
-                    print(f"   Reasons: {match.get('reasons', [])}")
-
-                print()
+                _print_match_details(i, match)
 
                 # Get family details for top matches
                 if i <= 2:
-                    family_details = get_gedcom_family_details(match["id"])
-                    if family_details:
-                        print("   Family Details:")
-                        if family_details.get("parents"):
-                            print(f"   - Parents: {len(family_details['parents'])}")
-                        if family_details.get("spouses"):
-                            print(f"   - Spouses: {len(family_details['spouses'])}")
-                        if family_details.get("children"):
-                            print(f"   - Children: {len(family_details['children'])}")
-                        if family_details.get("siblings"):
-                            print(f"   - Siblings: {len(family_details['siblings'])}")
-                        print()
+                    _print_family_details(match["id"])
         else:
-            print("No matches found for Frances Milne born 1947.")
-            print("\nTrying broader search...")
-
-            # Try just name without birth year
-            broader_criteria = {"first_name": "Frances", "surname": "Milne"}
-            broader_results = search_gedcom_for_criteria(
-                broader_criteria, max_results=5
-            )
-
-            if broader_results:
-                print(f"Found {len(broader_results)} matches for just 'Frances Milne':")
-                for i, match in enumerate(broader_results, 1):
-                    birth_year = match.get("birth_year", "Unknown")
-                    print(
-                        f"{i}. Frances Milne (b. {birth_year}) - Score: {match.get('total_score', 0)}"
-                    )
-            else:
-                print("No matches found even for broader 'Frances Milne' search.")
+            _perform_broader_search()
 
     except Exception as e:
         print(f"Error during Frances Milne search: {e!s}")
