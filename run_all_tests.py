@@ -416,27 +416,20 @@ def extract_module_description(module_path: str) -> str | None:
         return None
 
 
-def run_module_tests(
-    module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
-) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
-    """Run tests for a specific module with optional performance monitoring."""
-    import re  # Ensure re is available in function scope
-
-    # Initialize performance monitoring
-    monitor = PerformanceMonitor() if enable_monitoring else None
-    metrics = None
-    # Show description for consistency - avoid repeating module name
+def _generate_module_description(module_name: str, description: str | None = None) -> str:
+    """Generate a meaningful description for a module based on its name."""
     if description:
-        print(f"   📝 {description}")
-    # Create a meaningful description based on module name instead of just repeating it
-    elif "core/" in module_name:
+        return description
+
+    # Create a meaningful description based on module name
+    if "core/" in module_name:
         component = (
             module_name.replace("core/", "")
             .replace(".py", "")
             .replace("_", " ")
             .title()
         )
-        print(f"   📝 Core {component} functionality")
+        return f"Core {component} functionality"
     elif "config/" in module_name:
         component = (
             module_name.replace("config/", "")
@@ -444,25 +437,322 @@ def run_module_tests(
             .replace("_", " ")
             .title()
         )
-        print(f"   📝 Configuration {component} management")
+        return f"Configuration {component} management"
     elif "action" in module_name:
         action_name = module_name.replace(".py", "").replace("_", " ").title()
-        print(f"   📝 {action_name} automation")
+        return f"{action_name} automation"
     elif module_name.endswith("_utils.py"):
         util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
-        print(f"   📝 {util_type} utility functions")
+        return f"{util_type} utility functions"
     elif module_name.endswith("_manager.py"):
         manager_type = (
             module_name.replace("_manager.py", "").replace("_", " ").title()
         )
-        print(f"   📝 {manager_type} management system")
+        return f"{manager_type} management system"
     elif module_name.endswith("_cache.py"):
         cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
-        print(f"   📝 {cache_type} caching system")
+        return f"{cache_type} caching system"
     else:
-        # Generic fallback that's more descriptive than just repeating the filename
+        # Generic fallback
         clean_name = module_name.replace(".py", "").replace("_", " ").title()
-        print(f"   📝 {clean_name} module functionality")
+        return f"{clean_name} module functionality"
+
+
+def _try_pattern_passed_failed(stdout_lines: list[str]) -> str:
+    """Pattern 1: Look for '✅ Passed: X' and '❌ Failed: Y'."""
+    for line in stdout_lines:
+        if "✅ Passed:" in line:
+            try:
+                passed = int(line.split("✅ Passed:")[1].split()[0])
+                failed = 0
+                # Look for failed count in same line or nearby lines
+                if "❌ Failed:" in line:
+                    failed = int(line.split("❌ Failed:")[1].split()[0])
+                else:
+                    # Check other lines for failed count
+                    for other_line in stdout_lines:
+                        if "❌ Failed:" in other_line:
+                            failed = int(other_line.split("❌ Failed:")[1].split()[0])
+                            break
+                return f"{passed + failed} tests"
+            except (ValueError, IndexError):
+                continue
+    return "Unknown"
+
+
+def _try_pattern_tests_passed(stdout_lines: list[str]) -> str:
+    """Pattern 2: Look for 'X/Y tests passed' or 'Results: X/Y'."""
+    for line in stdout_lines:
+        if "tests passed" in line and "/" in line:
+            try:
+                # Extract from "📊 Results: 3/3 tests passed"
+                parts = line.split("/")
+                if len(parts) >= 2:
+                    total = parts[1].split()[0]
+                    return f"{total} tests"
+            except (ValueError, IndexError):
+                continue
+    return "Unknown"
+
+
+def _try_pattern_passed_failed_ansi(stdout_lines: list[str]) -> str:
+    """Pattern 3: Look for Passed/Failed format with ANSI cleanup."""
+    import re
+    passed_count = None
+    failed_count = None
+    for line in stdout_lines:
+        # Remove ANSI color codes and whitespace
+        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+
+        if "✅ Passed:" in clean_line:
+            try:
+                passed_count = int(clean_line.split("✅ Passed:")[1].strip())
+            except (ValueError, IndexError):
+                continue
+        elif "❌ Failed:" in clean_line:
+            try:
+                failed_count = int(clean_line.split("❌ Failed:")[1].strip())
+            except (ValueError, IndexError):
+                continue
+
+    if passed_count is not None and failed_count is not None:
+        return f"{passed_count + failed_count} tests"
+    elif passed_count is not None:
+        return f"{passed_count}+ tests"
+    return "Unknown"
+
+
+def _try_pattern_unittest_ran(stdout_lines: list[str]) -> str:
+    """Pattern 4: Look for Python unittest format 'Ran X tests in Y.Zs'."""
+    import re
+    for line in stdout_lines:
+        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        if "Ran" in clean_line and "tests in" in clean_line:
+            try:
+                # Extract from "Ran 24 tests in 0.458s"
+                parts = clean_line.split()
+                ran_index = parts.index("Ran")
+                if ran_index + 1 < len(parts):
+                    count = int(parts[ran_index + 1])
+                    return f"{count} tests"
+            except (ValueError, IndexError):
+                continue
+    return "Unknown"
+
+
+def _try_pattern_numbered_tests(stdout_lines: list[str]) -> str:
+    """Pattern 5: Look for numbered test patterns like 'Test 1:', 'Test 2:', etc."""
+    import re
+    test_numbers = set()
+    for line in stdout_lines:
+        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        # Look for patterns like "📋 Test 1:", "Test 2:", "• Test 3:"
+        match = re.search(
+            r"(?:�|•|\*|-|\d+\.?)\s*Test\s+(\d+):",
+            clean_line,
+            re.IGNORECASE,
+        )
+        if match:
+            test_numbers.add(int(match.group(1)))
+
+    if test_numbers:
+        return f"{len(test_numbers)} tests"
+    return "Unknown"
+
+
+def _try_pattern_number_followed_by_test(stdout_lines: list[str]) -> str:
+    """Pattern 6: Look for any number followed by 'test' or 'tests'."""
+    import re
+    for line in stdout_lines:
+        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        # Look for patterns like "5 tests", "10 test cases", "3 test functions"
+        match = re.search(
+            r"(\d+)\s+tests?(?:\s+(?:cases?|functions?|passed|completed))?",
+            clean_line,
+            re.IGNORECASE,
+        )
+        if match:
+            count = int(match.group(1))
+            return f"{count} tests"
+    return "Unknown"
+
+
+def _try_pattern_all_tests_completed(stdout_lines: list[str]) -> str:
+    """Pattern 7: Look for test completion messages with counts."""
+    import re
+    for line in stdout_lines:
+        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        # Look for patterns like "All X tests passed", "X operations completed"
+        match = re.search(
+            r"(?:All|Total)\s+(\d+)\s+(?:tests?|operations?|checks?)\s+(?:passed|completed|successful)",
+            clean_line,
+            re.IGNORECASE,
+        )
+        if match:
+            count = int(match.group(1))
+            return f"{count} tests"
+    return "Unknown"
+
+
+def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
+    """Pattern 8: Look for 'ALL TESTS PASSED' with counts."""
+    for line in stdout_lines:
+        if "ALL TESTS PASSED" in line or "Status: ALL TESTS PASSED" in line:
+            # Look for nearby lines with test counts
+            for other_line in stdout_lines:
+                if "Passed:" in other_line and other_line.count(":") >= 1:
+                    try:
+                        count = int(other_line.split("Passed:")[1].split()[0])
+                        return f"{count} tests"
+                    except (ValueError, IndexError):
+                        continue
+            break
+    return "Unknown"
+
+
+def _extract_test_count_from_output(all_output_lines: list[str]) -> str:
+    """Extract test count from output using multiple patterns."""
+    if not all_output_lines:
+        return "Unknown"
+
+    # Try each pattern in order
+    patterns = [
+        _try_pattern_passed_failed,
+        _try_pattern_tests_passed,
+        _try_pattern_passed_failed_ansi,
+        _try_pattern_unittest_ran,
+        _try_pattern_numbered_tests,
+        _try_pattern_number_followed_by_test,
+        _try_pattern_all_tests_completed,
+        _try_pattern_all_tests_passed_with_counts,
+    ]
+
+    for pattern_func in patterns:
+        result = pattern_func(all_output_lines)
+        if result != "Unknown":
+            return result
+
+    return "Unknown"
+
+
+def _check_for_failures_in_output(success: bool, stdout: str) -> bool:
+    """Check output for failure indicators."""
+    if not success or not stdout:
+        return success
+
+    failure_indicators = [
+        "❌ FAILED",
+        "Status: FAILED",
+        "AssertionError:",
+        "Exception occurred:",
+        "Test failed:",
+        "❌ Failed: ",
+        "CRITICAL ERROR",
+        "FATAL ERROR",
+    ]
+
+    # Only mark as failed if we find actual failure indicators
+    # Exclude lines that are just showing "Failed: 0" (which means 0 failures)
+    stdout_lines = stdout.split("\n")
+    for line in stdout_lines:
+        for indicator in failure_indicators:
+            if indicator in line and not ("Failed: 0" in line or "❌ Failed: 0" in line):
+                return False
+    return success
+
+
+def _format_quality_info(quality_metrics) -> str:
+    """Format quality metrics into a display string."""
+    if not quality_metrics:
+        return ""
+
+    score = quality_metrics.quality_score
+    violations_count = len(quality_metrics.violations) if quality_metrics.violations else 0
+    if score < 70:
+        return f" | Quality: {score:.1f}/100 ⚠️ ({violations_count} issues)"
+    elif score < 95:
+        return f" | Quality: {score:.1f}/100 📊 ({violations_count} issues)"
+    else:
+        return f" | Quality: {score:.1f}/100 ✅"
+
+
+def _print_quality_violations(quality_metrics) -> None:
+    """Print quality violation details."""
+    if not quality_metrics or quality_metrics.quality_score >= 95 or not quality_metrics.violations:
+        return
+
+    print("   🔍 Quality Issues:")
+    # Group violations by type for better readability
+    violation_types = {}
+    for violation in quality_metrics.violations[:5]:  # Show first 5
+        if "too long" in violation:
+            violation_types.setdefault("Length", []).append(violation)
+        elif "too complex" in violation:
+            violation_types.setdefault("Complexity", []).append(violation)
+        elif "missing type hint" in violation:
+            violation_types.setdefault("Type Hints", []).append(violation)
+        else:
+            violation_types.setdefault("Other", []).append(violation)
+
+    for vtype, violations in violation_types.items():
+        print(f"      {vtype}: {len(violations)} issue(s)")
+        for violation in violations[:2]:  # Show first 2 of each type
+            # Extract function name for brevity
+            if "Function '" in violation and "'" in violation:
+                func_name = violation.split("Function '")[1].split("'")[0]
+                issue_type = violation.split("' ")[1] if "' " in violation else violation
+                print(f"        • {func_name}: {issue_type}")
+            else:
+                print(f"        • {violation}")
+
+    if len(quality_metrics.violations) > 5:
+        print(f"      ... and {len(quality_metrics.violations) - 5} more issues")
+
+
+def _extract_numeric_test_count(test_count: str) -> int:
+    """Extract numeric test count from string format."""
+    if test_count == "Unknown":
+        return 0
+
+    try:
+        import re
+        match = re.search(r"(\d+)", test_count)
+        if match:
+            return int(match.group(1))
+    except (ValueError, AttributeError):
+        pass
+    return 0
+
+
+def _print_failure_details(result, failure_indicators: list[str]) -> None:
+    """Print failure details from test output."""
+    print("   🚨 Failure Details:")
+    if result.stderr:
+        error_lines = result.stderr.strip().split("\n")
+        for line in error_lines[-3:]:  # Show last 3 error lines
+            print(f"      {line}")
+    if result.stdout and any(indicator in result.stdout for indicator in failure_indicators):
+        stdout_lines = result.stdout.strip().split("\n")
+        failure_lines = [
+            line
+            for line in stdout_lines
+            if any(indicator in line for indicator in failure_indicators)
+        ]
+        for line in failure_lines[-2:]:  # Show last 2 failure lines
+            print(f"      {line}")
+
+
+def run_module_tests(
+    module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
+) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
+    """Run tests for a specific module with optional performance monitoring."""
+    # Initialize performance monitoring
+    monitor = PerformanceMonitor() if enable_monitoring else None
+    metrics = None
+
+    # Show description
+    desc = _generate_module_description(module_name, description)
+    print(f"   📝 {desc}")
 
     try:
         start_time = time.time()
@@ -511,263 +801,39 @@ def run_module_tests(
         # Check for success based on return code AND output content
         success = result.returncode == 0
 
-        # Extract test counts from output - improved patterns (check both stdout and stderr)
-        test_count = "Unknown"
+        # Extract test counts from output using helper function
         all_output_lines = []
         if result.stdout:
             all_output_lines.extend(result.stdout.split("\n"))
         if result.stderr:
             all_output_lines.extend(result.stderr.split("\n"))
 
-        if all_output_lines:
-            stdout_lines = all_output_lines  # Use combined output for pattern matching
+        test_count = _extract_test_count_from_output(all_output_lines)
 
-            # Pattern 1: Look for "✅ Passed: X" and "❌ Failed: Y"
-            for line in stdout_lines:
-                if "✅ Passed:" in line:
-                    try:
-                        passed = int(line.split("✅ Passed:")[1].split()[0])
-                        failed = 0
-                        # Look for failed count in same line or nearby lines
-                        if "❌ Failed:" in line:
-                            failed = int(line.split("❌ Failed:")[1].split()[0])
-                        else:
-                            # Check other lines for failed count
-                            for other_line in stdout_lines:
-                                if "❌ Failed:" in other_line:
-                                    failed = int(
-                                        other_line.split("❌ Failed:")[1].split()[0]
-                                    )
-                                    break
-                        test_count = f"{passed + failed} tests"
-                        break
-                    except (ValueError, IndexError):
-                        continue
+        # Check for failures in output
+        success = _check_for_failures_in_output(success, result.stdout)
 
-            # Pattern 2: Look for "X/Y tests passed" or "Results: X/Y"
-            if test_count == "Unknown":
-                for line in stdout_lines:
-                    if "tests passed" in line and "/" in line:
-                        try:
-                            # Extract from "📊 Results: 3/3 tests passed"
-                            parts = line.split("/")
-                            if len(parts) >= 2:
-                                total = parts[1].split()[0]
-                                test_count = f"{total} tests"
-                                break
-                        except (ValueError, IndexError):
-                            continue
-
-            # Pattern 3: Look for "✅ Passed: X" and "❌ Failed: Y" format (common in many modules)
-            if test_count == "Unknown":
-                passed_count = None
-                failed_count = None
-                for line in stdout_lines:
-                    # Remove ANSI color codes and whitespace
-                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-
-                    if "✅ Passed:" in clean_line:
-                        try:
-                            passed_count = int(
-                                clean_line.split("✅ Passed:")[1].strip()
-                            )
-                        except (ValueError, IndexError):
-                            continue
-                    elif "❌ Failed:" in clean_line:
-                        try:
-                            failed_count = int(
-                                clean_line.split("❌ Failed:")[1].strip()
-                            )
-                        except (ValueError, IndexError):
-                            continue
-
-                if passed_count is not None and failed_count is not None:
-                    test_count = f"{passed_count + failed_count} tests"
-                elif passed_count is not None:
-                    test_count = f"{passed_count}+ tests"
-
-            # Pattern 4: Look for Python unittest format "Ran X tests in Y.Zs"
-            if test_count == "Unknown":
-                for line in stdout_lines:
-                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                    if "Ran" in clean_line and "tests in" in clean_line:
-                        try:
-                            # Extract from "Ran 24 tests in 0.458s"
-                            parts = clean_line.split()
-                            ran_index = parts.index("Ran")
-                            if ran_index + 1 < len(parts):
-                                count = int(parts[ran_index + 1])
-                                test_count = f"{count} tests"
-                                break
-                        except (ValueError, IndexError):
-                            continue
-
-            # Pattern 5: Look for numbered test patterns like "Test 1:", "Test 2:", etc.
-            if test_count == "Unknown":
-                test_numbers = set()
-                for line in stdout_lines:
-                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                    # Look for patterns like "📋 Test 1:", "Test 2:", "• Test 3:"
-                    match = re.search(
-                        r"(?:📋|•|\*|-|\d+\.?)\s*Test\s+(\d+):",
-                        clean_line,
-                        re.IGNORECASE,
-                    )
-                    if match:
-                        test_numbers.add(int(match.group(1)))
-
-                if test_numbers:
-                    test_count = f"{len(test_numbers)} tests"
-
-            # Pattern 6: Look for any number followed by "test" or "tests"
-            if test_count == "Unknown":
-                for line in stdout_lines:
-                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                    # Look for patterns like "5 tests", "10 test cases", "3 test functions"
-                    match = re.search(
-                        r"(\d+)\s+tests?(?:\s+(?:cases?|functions?|passed|completed))?",
-                        clean_line,
-                        re.IGNORECASE,
-                    )
-                    if match:
-                        count = int(match.group(1))
-                        test_count = f"{count} tests"
-                        break
-
-            # Pattern 7: Look for test completion messages with counts
-            if test_count == "Unknown":
-                for line in stdout_lines:
-                    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                    # Look for patterns like "All X tests passed", "X operations completed"
-                    match = re.search(
-                        r"(?:All|Total)\s+(\d+)\s+(?:tests?|operations?|checks?)\s+(?:passed|completed|successful)",
-                        clean_line,
-                        re.IGNORECASE,
-                    )
-                    if match:
-                        count = int(match.group(1))
-                        test_count = f"{count} tests"
-                        break
-
-            # Pattern 8: Look for "ALL TESTS PASSED" with counts
-            if test_count == "Unknown":
-                for line in stdout_lines:
-                    if "ALL TESTS PASSED" in line or "Status: ALL TESTS PASSED" in line:
-                        # Look for nearby lines with test counts
-                        for other_line in stdout_lines:
-                            if "Passed:" in other_line and other_line.count(":") >= 1:
-                                try:
-                                    count = int(
-                                        other_line.split("Passed:")[1].split()[0]
-                                    )
-                                    test_count = f"{count} tests"
-                                    break
-                                except (ValueError, IndexError):
-                                    continue
-                        if test_count != "Unknown":
-                            break
-
-        # Define failure indicators (be more specific to avoid false positives)
+        # Failure indicators for detailed output
         failure_indicators = [
-            "❌ FAILED",
-            "Status: FAILED",
-            "AssertionError:",
-            "Exception occurred:",
-            "Test failed:",
-            "❌ Failed: ",
-            "CRITICAL ERROR",
-            "FATAL ERROR",
+            "❌ FAILED", "Status: FAILED", "AssertionError:", "Exception occurred:",
+            "Test failed:", "❌ Failed: ", "CRITICAL ERROR", "FATAL ERROR",
         ]
-
-        # Also check output for failure indicators
-        if success and result.stdout:
-            # Only mark as failed if we find actual failure indicators
-            # Exclude lines that are just showing "Failed: 0" (which means 0 failures)
-            stdout_lines = result.stdout.split("\n")
-            for line in stdout_lines:
-                for indicator in failure_indicators:
-                    if indicator in line and not (
-                        "Failed: 0" in line or "❌ Failed: 0" in line
-                    ):
-                        success = False
-                        break
-                if not success:
-                    break
 
         status = "✅ PASSED" if success else "❌ FAILED"
 
-        # Show concise summary with test count and quality score
-        quality_info = ""
-        if quality_metrics:
-            score = quality_metrics.quality_score
-            violations_count = len(quality_metrics.violations) if quality_metrics.violations else 0
-            if score < 70:
-                quality_info = f" | Quality: {score:.1f}/100 ⚠️ ({violations_count} issues)"
-            elif score < 95:
-                quality_info = f" | Quality: {score:.1f}/100 📊 ({violations_count} issues)"
-            else:
-                quality_info = f" | Quality: {score:.1f}/100 ✅"
-
+        # Format and print summary
+        quality_info = _format_quality_info(quality_metrics)
         print(f"   {status} | Duration: {duration:.2f}s | {test_count}{quality_info}")
 
-        # Show quality violation details for failed quality checks
-        if quality_metrics and quality_metrics.quality_score < 95 and quality_metrics.violations:
-            print("   🔍 Quality Issues:")
-            # Group violations by type for better readability
-            violation_types = {}
-            for violation in quality_metrics.violations[:5]:  # Show first 5
-                if "too long" in violation:
-                    violation_types.setdefault("Length", []).append(violation)
-                elif "too complex" in violation:
-                    violation_types.setdefault("Complexity", []).append(violation)
-                elif "missing type hint" in violation:
-                    violation_types.setdefault("Type Hints", []).append(violation)
-                else:
-                    violation_types.setdefault("Other", []).append(violation)
-
-            for vtype, violations in violation_types.items():
-                print(f"      {vtype}: {len(violations)} issue(s)")
-                for violation in violations[:2]:  # Show first 2 of each type
-                    # Extract function name for brevity
-                    if "Function '" in violation and "'" in violation:
-                        func_name = violation.split("Function '")[1].split("'")[0]
-                        issue_type = violation.split("' ")[1] if "' " in violation else violation
-                        print(f"        • {func_name}: {issue_type}")
-                    else:
-                        print(f"        • {violation}")
-
-            if len(quality_metrics.violations) > 5:
-                print(f"      ... and {len(quality_metrics.violations) - 5} more issues")
+        # Print quality violations
+        _print_quality_violations(quality_metrics)
 
         # Extract numeric test count for summary
-        numeric_test_count = 0
-        if test_count != "Unknown":
-            try:
-                # Extract number from formats like "8 tests", "24 tests", "5+ tests"
-                import re
-                # Extract number from formats like "8 tests", "24 tests", "5+ tests"
-                match = re.search(r"(\d+)", test_count)
-                if match:
-                    numeric_test_count = int(match.group(1))
-            except (ValueError, AttributeError):
-                numeric_test_count = 0
+        numeric_test_count = _extract_numeric_test_count(test_count)
+
+        # Print failure details if test failed
         if not success:
-            print("   🚨 Failure Details:")
-            if result.stderr:
-                error_lines = result.stderr.strip().split("\n")
-                for line in error_lines[-3:]:  # Show last 3 error lines
-                    print(f"      {line}")
-            if result.stdout and any(
-                indicator in result.stdout for indicator in failure_indicators
-            ):
-                stdout_lines = result.stdout.strip().split("\n")
-                failure_lines = [
-                    line
-                    for line in stdout_lines
-                    if any(indicator in line for indicator in failure_indicators)
-                ]
-                for line in failure_lines[-2:]:  # Show last 2 failure lines
-                    print(f"      {line}")
+            _print_failure_details(result, failure_indicators)
 
         # Create performance metrics if monitoring was enabled
         if enable_monitoring:
