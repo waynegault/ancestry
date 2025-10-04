@@ -234,7 +234,7 @@ class PerformanceMonitor:
             return func
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             function_name = f"{func.__module__}.{func.__name__}"
 
             # Get memory before
@@ -1222,7 +1222,7 @@ def performance_monitor_module_tests() -> bool:
 
         # Test profiling with function that raises exception
         @monitor.profile_function
-        def error_function():
+        def error_function() -> None:
             raise ValueError("Test error")
 
         try:

@@ -65,7 +65,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from functools import lru_cache, wraps
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -533,9 +533,9 @@ def monitor_memory_pressure() -> bool:
 
 def optimize_on_high_usage(memory_threshold: float = 85.0):
     """Decorator to automatically optimize performance when resource usage is high."""
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Check memory pressure before execution
             if monitor_memory_pressure():
                 logger.info("High memory pressure detected, running optimization before function execution")

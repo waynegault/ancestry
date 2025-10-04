@@ -487,7 +487,7 @@ def cached_session_component(component_type: str) -> Callable[[F], F]:
     """Decorator to cache expensive session components."""
     def decorator(func: F) -> F:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Try to get cached component
             cached = _unified_cache_manager.session_cache.get_cached_component(component_type)
             if cached is not None:
@@ -505,7 +505,7 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[F], F]:
     """Decorator to cache API calls with TTL."""
     def decorator(func: F) -> F:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Try to get cached result
             cached_result = _unified_cache_manager.api_cache.get_cached_api_response(endpoint, kwargs)
             if cached_result is not None:

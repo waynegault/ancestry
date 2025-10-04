@@ -64,7 +64,7 @@ class MessagePersonalizer:
     genealogically-informed messages based on extracted data.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the message personalizer with templates and configuration."""
         self.templates = self._load_message_templates()
         self.personalization_config = self._load_personalization_config()
