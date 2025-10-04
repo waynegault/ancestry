@@ -3551,13 +3551,8 @@ def main() -> None:
 
     # End of _run_test
 
-    # --- Test Execution ---
-    session_manager: SessionManagerType = None
-    driver_instance: DriverType = None
-    overall_status = "PASS"  # Assume PASS initially
-
-    try:
-        # === Section 1: Basic Utility Functions ===
+    def _run_basic_utility_tests() -> None:
+        """Run tests for basic utility functions."""
         logger.info("\n--- Section 1: Basic Utility Functions ---")
 
         # 1.1 parse_cookie
@@ -3617,6 +3612,15 @@ def main() -> None:
             "format_name (GEDCOM end)",
             lambda: format_name("John /Smith/") == "John Smith",
         )
+
+    # --- Test Execution ---
+    session_manager: SessionManagerType = None
+    driver_instance: DriverType = None
+    overall_status = "PASS"  # Assume PASS initially
+
+    try:
+        # === Section 1: Basic Utility Functions ===
+        _run_basic_utility_tests()
         _run_test(
             "format_name (GEDCOM middle)",
             lambda: format_name("John /Smith/ Jr") == "John Smith JR",
