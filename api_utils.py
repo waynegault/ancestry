@@ -1509,34 +1509,34 @@ def call_suggest_api(
 # End of call_suggest_api
 
 
-def call_facts_user_api(
+def _validate_facts_api_prerequisites(
     session_manager: "SessionManager",
     owner_profile_id: str,
     api_person_id: str,
     api_tree_id: str,
-    base_url: str,
-    timeouts: Optional[list[int]] = None,
-) -> Optional[dict[str, Any]]:
+) -> bool:
+    """Validate prerequisites for Facts API call."""
     if not callable(_api_req):
         logger.critical(
             "Facts API call failed: _api_req function unavailable (Import Failed?)."
         )
         raise ImportError("_api_req function not available from utils")
-    # End of if
+
     if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("Facts API call failed: Invalid SessionManager passed.")
-        return None
-    # End of if
+        return False
+
     if not all([owner_profile_id, api_person_id, api_tree_id]):
         logger.error(
             "Facts API call failed: owner_profile_id, api_person_id, and api_tree_id are required."
         )
-        return None
-    # End of if
+        return False
 
-    api_description = "Person Facts User API"
+    return True
 
-    # Apply rate limiting if available
+
+def _apply_rate_limiting(api_description: str) -> None:
+    """Apply rate limiting if available."""
     if api_rate_limiter and PYDANTIC_AVAILABLE:
         if not api_rate_limiter.can_make_request():
             wait_time = api_rate_limiter.wait_time_until_available()
@@ -1544,20 +1544,18 @@ def call_facts_user_api(
                 f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
             )
             import time
-
             time.sleep(wait_time)
         api_rate_limiter.record_request()
 
-    formatted_path = API_PATH_PERSON_FACTS_USER.format(
-        owner_profile_id=owner_profile_id.lower(),
-        tree_id=api_tree_id.lower(),
-        person_id=api_person_id.lower(),
-    )
-    facts_api_url = urljoin(base_url.rstrip("/") + "/", formatted_path)
-    facts_referer = _get_owner_referer(session_manager, base_url)
-    facts_data_raw = None
-    direct_timeout = _get_api_timeout(30)
-    fallback_timeouts = timeouts if timeouts else [30, 45, 60]
+
+def _try_direct_facts_request(
+    session_manager: "SessionManager",
+    facts_api_url: str,
+    facts_referer: str,
+    direct_timeout: int,
+    api_description: str,
+) -> Optional[dict[str, Any]]:
+    """Try direct facts request using requests library."""
     logger.info(f"Attempting {api_description} via direct request: {facts_api_url}")
 
     direct_response_obj = None
@@ -1565,7 +1563,7 @@ def call_facts_user_api(
         cookies = {}
         if session_manager._requests_session:
             cookies = session_manager._requests_session.cookies.get_dict()
-        # End of if
+
         direct_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
             "Accept": "application/json",
@@ -1579,12 +1577,14 @@ def call_facts_user_api(
         }
         logger.debug(f"Direct facts request headers: {direct_headers}")
         logger.debug(f"Direct facts request cookies: {list(cookies.keys())}")
+
         direct_response_obj = requests.get(
             facts_api_url,
             headers=direct_headers,
             cookies=cookies,
             timeout=direct_timeout,
         )
+
         if direct_response_obj.status_code == 200:
             facts_data_raw = direct_response_obj.json()
             if not isinstance(facts_data_raw, dict):
@@ -1592,98 +1592,108 @@ def call_facts_user_api(
                     f"Direct facts request OK (200) but returned non-dict data: {type(facts_data_raw)}"
                 )
                 logger.debug(f"Response content: {direct_response_obj.text[:500]}")
-                facts_data_raw = None
+                return None
             else:
                 logger.info(f"{api_description} call successful via direct request.")
-            # End of if/else
+                return facts_data_raw
         else:
             logger.warning(
                 f"Direct facts request failed: Status {direct_response_obj.status_code}"
             )
             logger.debug(f"Response content: {direct_response_obj.text[:500]}")
-            facts_data_raw = None
-        # End of if/else
+            return None
+
     except requests.exceptions.Timeout:
         logger.error(f"Direct facts request timed out after {direct_timeout} seconds")
-        facts_data_raw = None
+        return None
     except json.JSONDecodeError as json_err:
         logger.error(f"Direct facts request failed to decode JSON: {json_err}")
         if direct_response_obj:
             logger.debug(f"Response content: {direct_response_obj.text[:500]}")
-        # End of if
-        facts_data_raw = None
+        return None
     except Exception as direct_err:
         logger.error(f"Direct facts request failed: {direct_err}", exc_info=True)
-        facts_data_raw = None
-    # End of try/except
+        return None
 
-    if facts_data_raw is None:
-        logger.warning(
-            f"{api_description} direct request failed. Trying _api_req fallback."
+
+def _try_fallback_facts_request(
+    session_manager: "SessionManager",
+    facts_api_url: str,
+    facts_referer: str,
+    fallback_timeouts: list[int],
+    api_description: str,
+) -> Optional[dict[str, Any]]:
+    """Try fallback facts request using _api_req."""
+    logger.warning(
+        f"{api_description} direct request failed. Trying _api_req fallback."
+    )
+
+    max_attempts = len(fallback_timeouts)
+    for attempt, timeout in enumerate(fallback_timeouts, 1):
+        logger.debug(
+            f"{api_description} _api_req attempt {attempt}/{max_attempts} with timeout {timeout}s"
         )
-        max_attempts = len(fallback_timeouts)
-        for attempt, timeout in enumerate(fallback_timeouts, 1):
-            logger.debug(
-                f"{api_description} _api_req attempt {attempt}/{max_attempts} with timeout {timeout}s"
+        try:
+            custom_headers = {
+                "Accept": "application/json",
+                "Referer": facts_referer,
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+                "X-Requested-With": "XMLHttpRequest",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            }
+            api_response = _api_req(
+                url=facts_api_url,
+                driver=session_manager.driver,
+                session_manager=session_manager,
+                method="GET",
+                api_description=api_description,
+                headers=custom_headers,
+                referer_url=facts_referer,
+                timeout=timeout,
             )
-            try:
-                custom_headers = {
-                    "Accept": "application/json",
-                    "Referer": facts_referer,
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                    "X-Requested-With": "XMLHttpRequest",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-                }
-                api_response = _api_req(
-                    url=facts_api_url,
-                    driver=session_manager.driver,
-                    session_manager=session_manager,
-                    method="GET",
-                    api_description=api_description,
-                    headers=custom_headers,
-                    referer_url=facts_referer,
-                    timeout=timeout,
+            if isinstance(api_response, dict):
+                logger.info(
+                    f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts})."
                 )
-                if isinstance(api_response, dict):
-                    facts_data_raw = api_response
-                    logger.info(
-                        f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts})."
-                    )
-                    break
-                if api_response is None:
-                    logger.warning(
-                        f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
-                    )
-                else:
-                    logger.warning(
-                        f"{api_description} _api_req returned unexpected type: {type(api_response)}"
-                    )
-                    logger.debug(
-                        f"Unexpected Response Value: {str(api_response)[:500]}"
-                    )
-                # End of if/elif/else
-            except requests.exceptions.Timeout:
+                return api_response
+            if api_response is None:
                 logger.warning(
-                    f"{api_description} _api_req call timed out after {timeout}s on attempt {attempt}/{max_attempts}."
+                    f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
                 )
-            except Exception as api_req_err:
-                logger.error(
-                    f"{api_description} call using _api_req failed on attempt {attempt}/{max_attempts}: {api_req_err}",
-                    exc_info=True,
+            else:
+                logger.warning(
+                    f"{api_description} _api_req returned unexpected type: {type(api_response)}"
                 )
-                facts_data_raw = None
-                break
-            # End of try/except
-        # End of for
-    # End of if
+                logger.debug(
+                    f"Unexpected Response Value: {str(api_response)[:500]}"
+                )
+        except requests.exceptions.Timeout:
+            logger.warning(
+                f"{api_description} _api_req call timed out after {timeout}s on attempt {attempt}/{max_attempts}."
+            )
+        except Exception as api_req_err:
+            logger.error(
+                f"{api_description} call using _api_req failed on attempt {attempt}/{max_attempts}: {api_req_err}",
+                exc_info=True,
+            )
+            return None
 
+    return None
+
+
+def _validate_and_extract_facts_data(
+    facts_data_raw: Optional[dict[str, Any]],
+    api_person_id: str,
+    api_description: str,
+) -> Optional[dict[str, Any]]:
+    """Validate and extract person research data from facts API response."""
     if not isinstance(facts_data_raw, dict):
         logger.error(
             f"Failed to fetch valid {api_description} data after all attempts."
         )
         return None
-    # End of if
+
     person_research_data = facts_data_raw.get("data", {}).get("personResearch")
     if not isinstance(person_research_data, dict) or not person_research_data:
         logger.error(
@@ -1694,9 +1704,7 @@ def call_facts_user_api(
             logger.debug(f"'data' sub-keys: {list(facts_data_raw['data'].keys())}")
         else:
             logger.debug("'data' key missing or not a dict in response.")
-        # End of if/else
         return None
-    # End of if
 
     # Validate response with Pydantic if available
     if PYDANTIC_AVAILABLE:
@@ -1711,6 +1719,48 @@ def call_facts_user_api(
         f"Successfully fetched and extracted 'personResearch' data for PersonID {api_person_id}."
     )
     return person_research_data
+
+
+def call_facts_user_api(
+    session_manager: "SessionManager",
+    owner_profile_id: str,
+    api_person_id: str,
+    api_tree_id: str,
+    base_url: str,
+    timeouts: Optional[list[int]] = None,
+) -> Optional[dict[str, Any]]:
+    # Validate prerequisites
+    if not _validate_facts_api_prerequisites(
+        session_manager, owner_profile_id, api_person_id, api_tree_id
+    ):
+        return None
+
+    api_description = "Person Facts User API"
+    _apply_rate_limiting(api_description)
+
+    formatted_path = API_PATH_PERSON_FACTS_USER.format(
+        owner_profile_id=owner_profile_id.lower(),
+        tree_id=api_tree_id.lower(),
+        person_id=api_person_id.lower(),
+    )
+    facts_api_url = urljoin(base_url.rstrip("/") + "/", formatted_path)
+    facts_referer = _get_owner_referer(session_manager, base_url)
+    direct_timeout = _get_api_timeout(30)
+    fallback_timeouts = timeouts if timeouts else [30, 45, 60]
+
+    # Try direct request first
+    facts_data_raw = _try_direct_facts_request(
+        session_manager, facts_api_url, facts_referer, direct_timeout, api_description
+    )
+
+    # Try fallback if direct request failed
+    if facts_data_raw is None:
+        facts_data_raw = _try_fallback_facts_request(
+            session_manager, facts_api_url, facts_referer, fallback_timeouts, api_description
+        )
+
+    # Validate and extract person research data
+    return _validate_and_extract_facts_data(facts_data_raw, api_person_id, api_description)
 
 
 # End of call_facts_user_api
