@@ -2682,6 +2682,114 @@ def _handle_action8_exception(exception: Exception) -> bool:
     return False  # All exceptions result in overall_success = False
 
 
+def _perform_final_commit(
+    db_session: Session,
+    critical_db_error_occurred: bool,
+    db_logs_to_add_dicts: list[dict[str, Any]],
+    person_updates: dict[int, PersonStatusEnum],
+    batch_num: int,
+    session_manager: SessionManager
+) -> tuple[bool, int]:
+    """
+    Perform final commit of remaining data.
+
+    Returns:
+        Tuple of (overall_success, updated_batch_num)
+    """
+    overall_success = True
+
+    if not critical_db_error_occurred and (db_logs_to_add_dicts or person_updates):
+        batch_num += 1
+        logger.debug(
+            f"Performing final commit for remaining items (Batch {batch_num})..."
+        )
+
+        # Use safe commit for final batch
+        final_commit_success, final_logs_saved, final_persons_updated = _safe_commit_with_rollback(
+            session=db_session,
+            log_upserts=db_logs_to_add_dicts,
+            person_updates=person_updates,
+            context="Action 8 Final Save",
+            session_manager=session_manager
+        )
+
+        if final_commit_success:
+            # Final commit successful
+            db_logs_to_add_dicts.clear()
+            person_updates.clear()
+            logger.debug(
+                f"Action 8 Final commit executed (Logs Processed: {final_logs_saved}, Persons Updated: {final_persons_updated})."
+            )
+        else:
+            logger.critical("Final commit failed - some data may be lost")
+            overall_success = False
+
+    return overall_success, batch_num
+
+
+def _perform_final_cleanup(
+    db_session: Optional[Session],
+    session_manager: SessionManager,
+    critical_db_error_occurred: bool,
+    total_candidates: int,
+    processed_in_loop: int,
+    skipped_count: int,
+    sent_count: int,
+    acked_count: int,
+    error_count: int,
+    overall_success: bool,
+    error_categorizer: Any
+) -> int:
+    """
+    Perform final cleanup and logging.
+
+    Returns:
+        Updated skipped_count
+    """
+    if db_session:
+        session_manager.return_session(db_session)
+
+    # Adjust final skipped count if loop was stopped early
+    if critical_db_error_occurred and total_candidates > processed_in_loop:
+        unprocessed_count = total_candidates - processed_in_loop
+        logger.warning(
+            f"Adding {unprocessed_count} unprocessed candidates to skipped count due to DB commit failure."
+        )
+        skipped_count += unprocessed_count
+
+    # Log final summary
+    _log_final_summary(total_candidates, processed_in_loop, sent_count,
+                      acked_count, skipped_count, error_count, overall_success,
+                      error_categorizer)
+
+    return skipped_count
+
+
+def _perform_resource_cleanup(resource_manager: Any) -> None:
+    """Perform final resource cleanup and garbage collection."""
+    try:
+        resource_manager.cleanup_resources()
+        resource_manager.trigger_garbage_collection()
+        logger.debug("🧹 Final resource cleanup completed")
+    except Exception as cleanup_err:
+        logger.warning(f"Final resource cleanup failed: {cleanup_err}")
+
+
+def _log_performance_summary() -> None:
+    """Log performance monitoring summary."""
+    try:
+        perf_summary = stop_advanced_monitoring()
+        logger.info("--- Performance Summary ---")
+        logger.info(f"  Runtime: {perf_summary.get('total_runtime', 'N/A')}")
+        logger.info(f"  Memory Peak: {perf_summary.get('peak_memory_mb', 0):.1f}MB")
+        logger.info(f"  Operations Completed: {perf_summary.get('total_operations', 0)}")
+        logger.info(f"  API Calls: {perf_summary.get('api_calls', 0)}")
+        logger.info(f"  Errors: {perf_summary.get('total_errors', 0)}")
+        logger.info("---------------------------")
+    except Exception as perf_err:
+        logger.warning(f"Performance monitoring summary failed: {perf_err}")
+
+
 def _process_all_candidates(
     candidate_persons: list,
     total_candidates: int,
@@ -2932,31 +3040,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         # --- End Conditional Processing Block (if total_candidates > 0) ---
 
         # --- Step 4: Final Commit ---
-        if not critical_db_error_occurred and (db_logs_to_add_dicts or person_updates):
-            batch_num += 1
-            logger.debug(
-                f"Performing final commit for remaining items (Batch {batch_num})..."
-            )
-
-            # Use safe commit for final batch
-            final_commit_success, final_logs_saved, final_persons_updated = _safe_commit_with_rollback(
-                session=db_session,
-                log_upserts=db_logs_to_add_dicts,
-                person_updates=person_updates,
-                context="Action 8 Final Save",
-                session_manager=session_manager
-            )
-
-            if final_commit_success:
-                # Final commit successful
-                db_logs_to_add_dicts.clear()
-                person_updates.clear()
-                logger.debug(
-                    f"Action 8 Final commit executed (Logs Processed: {final_logs_saved}, Persons Updated: {final_persons_updated})."
-                )
-            else:
-                logger.critical("Final commit failed - some data may be lost")
-                overall_success = False
+        overall_success, batch_num = _perform_final_commit(
+            db_session, critical_db_error_occurred, db_logs_to_add_dicts,
+            person_updates, batch_num, session_manager
+        )
 
     # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---
     except (MaxApiFailuresExceededError, BrowserSessionError, APIRateLimitError,
@@ -2971,42 +3058,18 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             logger.error(f"Emergency resource cleanup failed: {emergency_cleanup_err}")
     # --- Step 6: Final Cleanup and Summary ---
     finally:
-        if db_session:
-            session_manager.return_session(db_session)  # Ensure session is returned
-
-        # Adjust final skipped count if loop was stopped early
-        if critical_db_error_occurred and total_candidates > processed_in_loop:
-            unprocessed_count = total_candidates - processed_in_loop
-            logger.warning(
-                f"Adding {unprocessed_count} unprocessed candidates to skipped count due to DB commit failure."
-            )
-            skipped_count += unprocessed_count
-
-        # Log final summary
-        _log_final_summary(total_candidates, processed_in_loop, sent_count,
-                          acked_count, skipped_count, error_count, overall_success,
-                          error_categorizer)
+        skipped_count = _perform_final_cleanup(
+            db_session, session_manager, critical_db_error_occurred,
+            total_candidates, processed_in_loop, skipped_count,
+            sent_count, acked_count, error_count, overall_success,
+            error_categorizer
+        )
 
     # Step 7: Final resource cleanup
-    try:
-        resource_manager.cleanup_resources()
-        resource_manager.trigger_garbage_collection()
-        logger.debug("🧹 Final resource cleanup completed")
-    except Exception as cleanup_err:
-        logger.warning(f"Final resource cleanup failed: {cleanup_err}")
+    _perform_resource_cleanup(resource_manager)
 
     # Step 8: Stop performance monitoring and log summary
-    try:
-        perf_summary = stop_advanced_monitoring()
-        logger.info("--- Performance Summary ---")
-        logger.info(f"  Runtime: {perf_summary.get('total_runtime', 'N/A')}")
-        logger.info(f"  Memory Peak: {perf_summary.get('peak_memory_mb', 0):.1f}MB")
-        logger.info(f"  Operations Completed: {perf_summary.get('total_operations', 0)}")
-        logger.info(f"  API Calls: {perf_summary.get('api_calls', 0)}")
-        logger.info(f"  Errors: {perf_summary.get('total_errors', 0)}")
-        logger.info("---------------------------")
-    except Exception as perf_err:
-        logger.warning(f"Performance monitoring summary failed: {perf_err}")
+    _log_performance_summary()
 
     # Step 9: Return overall success status
     return overall_success
