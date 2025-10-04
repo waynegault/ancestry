@@ -2512,7 +2512,7 @@ class SessionManager:
         """Check if driver is live."""
         return self.browser_manager.driver_live
 
-    def make_tab(self):
+    def make_tab(self) -> Any:
         """Create a new browser tab."""
         return self.browser_manager.create_new_tab()
 

@@ -2695,7 +2695,7 @@ def _handle_supplementary_info_phase(
 # End of _handle_supplementary_info_phase
 
 
-def handle_api_report(session_manager_param=None):
+def handle_api_report(session_manager_param: Optional[Any] = None) -> bool:
     """Orchestrates the process using only initial API data for comparison."""
 
     # Use the session_manager passed by the framework if available
@@ -2763,7 +2763,7 @@ def handle_api_report(session_manager_param=None):
 @timeout_protection(timeout=1800)  # 30 minutes for API report generation
 @graceful_degradation(fallback_value=None)
 @error_context("action11_api_report")
-def main():
+def main() -> None:
     """Main execution flow for Action 11 (API Report)."""
     logger.debug("--- Action 11: API Report Starting ---")
     if not session_manager:
@@ -3076,7 +3076,7 @@ def _extract_year_from_date(date_str: str) -> Optional[int]:
     return None
 
 
-def run_action11(session_manager_param=None, *_):
+def run_action11(session_manager_param: Optional[Any] = None, *_: Any) -> bool:
     """Wrapper function for main.py to call."""
     # Use the session_manager passed by the framework if available
     if session_manager_param:

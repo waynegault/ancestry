@@ -240,7 +240,7 @@ def create_property_delegator(target_attr: str, property_name: str):
             # Use:
             my_profile_id = create_property_delegator('api_manager', 'my_profile_id')
     """
-    def getter(self):
+    def getter(self) -> Any:
         target_obj = getattr(self, target_attr, None)
         if target_obj is None:
             return None
@@ -276,7 +276,7 @@ def create_method_delegator(target_attr: str, method_name: str):
             # Use:
             close_driver = create_method_delegator('browser_manager', 'close_driver')
     """
-    def delegator(self, *args, **kwargs):
+    def delegator(self, *args: Any, **kwargs: Any) -> Any:
         target_obj = getattr(self, target_attr, None)
         if target_obj is None:
             raise AttributeError(f"Target object '{target_attr}' not found")
@@ -402,7 +402,7 @@ def create_string_validator(min_length: int = 0, max_length: Optional[int] = Non
     return validator
 
 
-def create_composite_validator(*validators):
+def create_composite_validator(*validators: Callable) -> Callable:
     """
     Create a composite validation function that requires all validators to pass.
 

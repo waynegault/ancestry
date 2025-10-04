@@ -216,7 +216,7 @@ class ExtractedData(BaseModel):
         mode="before",
     )
     @classmethod
-    def ensure_list_of_strings(cls, v):
+    def ensure_list_of_strings(cls, v: Any) -> List[str]:
         """Ensures all fields are lists of strings."""
         if v is None:
             return []
@@ -249,7 +249,7 @@ class AIResponse(BaseModel):
 
     @field_validator("suggested_tasks", mode="before")
     @classmethod
-    def ensure_tasks_list(cls, v):
+    def ensure_tasks_list(cls, v: Any) -> List[str]:
         """Ensures suggested_tasks is a list of strings."""
         if v is None:
             return []
@@ -262,7 +262,7 @@ class AIResponse(BaseModel):
 _CACHED_GEDCOM_DATA = None
 
 
-def get_gedcom_data():
+def get_gedcom_data() -> Optional[Any]:
     """
     Returns the cached GEDCOM data instance, loading it if necessary.
 

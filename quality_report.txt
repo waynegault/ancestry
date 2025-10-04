@@ -2,81 +2,71 @@
 🔍 CODE QUALITY REPORT
 ==================================================
 📁 Files analyzed: 71
-🔧 Total functions: 2732
-📝 Average type hint coverage: 97.7%
-⭐ Average quality score: 78.5/100
+🔧 Total functions: 2928
+📝 Average type hint coverage: 98.3%
+⭐ Average quality score: 82.3/100
 
 📊 DETAILED RESULTS:
 ------------------------------
 📄 utils.py
-   Quality Score: 0.0/100
-   Type Hints: 89.2%
-   Functions: 130
+   Quality Score: 21.7/100
+   Type Hints: 92.2%
+   Functions: 153
    ⚠️  Violations:
-      • Function '_execute_request_with_retries' is too complex (complexity: 13)
-      • Function 'log_in' is too complex (complexity: 12)
-      • Function 'nav_to_page' is too complex (complexity: 45)
-      • ... and 17 more
-
-📄 session_manager.py
-   Quality Score: 5.5/100
-   Type Hints: 94.0%
-   Functions: 116
-   ⚠️  Violations:
-      • Function 'clear_session_cache' missing type hints
-      • Function 'session_manager_module_tests' is too complex (complexity: 14)
-      • Function 'perform_proactive_refresh' is too complex (complexity: 14)
-      • ... and 14 more
-
-📄 error_handling.py
-   Quality Score: 8.5/100
-   Type Hints: 83.5%
-   Functions: 91
-   ⚠️  Violations:
-      • Function 'safe_func' missing type hints
-      • Function 'failing_func' missing type hints
-      • Function 'failing_func' missing type hints
-      • ... and 12 more
-
-📄 main.py
-   Quality Score: 17.8/100
-   Type Hints: 87.0%
-   Functions: 54
-   ⚠️  Violations:
-      • Function 'validate_action_config' is too complex (complexity: 12)
-      • Function 'run_core_workflow_action' missing type hints
-      • Function 'reset_db_actn' is too complex (complexity: 17)
-      • ... and 10 more
+      • Function 'main' is too long (576 lines)
+      • Function 'main' is too complex (complexity: 36)
+      • Function 'mock_make_ube' missing type hints
+      • ... and 11 more
 
 📄 gedcom_utils.py
-   Quality Score: 18.6/100
-   Type Hints: 94.3%
-   Functions: 70
+   Quality Score: 26.3/100
+   Type Hints: 95.4%
+   Functions: 87
    ⚠️  Violations:
       • Function '_get_full_name' is too complex (complexity: 11)
-      • Function '_get_event_info' is too complex (complexity: 17)
       • Function 'fast_bidirectional_bfs' is too complex (complexity: 12)
-      • ... and 11 more
+      • Function '_determine_relationship_between_individuals' is too complex (complexity: 12)
+      • ... and 10 more
 
 📄 action6_gather.py
-   Quality Score: 21.5/100
+   Quality Score: 28.7/100
    Type Hints: 100.0%
-   Functions: 65
+   Functions: 81
    ⚠️  Violations:
       • Function '_main_page_processing_loop' is too complex (complexity: 12)
-      • Function '_prepare_bulk_db_data' is too complex (complexity: 15)
-      • Function '_execute_bulk_db_operations' is too complex (complexity: 53)
-      • ... and 11 more
+      • Function '_prepare_bulk_db_data' is too complex (complexity: 11)
+      • Function '_do_batch' is too complex (complexity: 11)
+      • ... and 10 more
+
+📄 error_handling.py
+   Quality Score: 32.9/100
+   Type Hints: 87.9%
+   Functions: 91
+   ⚠️  Violations:
+      • Function 'wrapper' missing type hints
+      • Function 'wrapper' missing type hints
+      • Function 'wrapper' missing type hints
+      • ... and 8 more
 
 📄 api_utils.py
-   Quality Score: 23.4/100
-   Type Hints: 98.9%
-   Functions: 93
+   Quality Score: 34.8/100
+   Type Hints: 99.0%
+   Functions: 101
    ⚠️  Violations:
       • Function '_extract_event_from_api_details' is too complex (complexity: 13)
-      • Function 'parse_ancestry_person_details' is too complex (complexity: 16)
       • Function 'call_suggest_api' is too complex (complexity: 12)
-      • ... and 11 more
+      • Function 'call_getladder_api' is too complex (complexity: 15)
+      • ... and 9 more
+
+📄 main.py
+   Quality Score: 37.5/100
+   Type Hints: 89.2%
+   Functions: 65
+   ⚠️  Violations:
+      • Function 'run_core_workflow_action' missing type hints
+      • Function 'backup_db_actn' missing type hints
+      • Function 'coord_action' missing type hints
+      • ... and 7 more
 
 📄 action9_process_productive.py
    Quality Score: 38.1/100
@@ -87,6 +77,16 @@
       • Function 'ensure_list_of_strings' missing type hints
       • Function 'ensure_tasks_list' missing type hints
       • ... and 7 more
+
+📄 session_manager.py
+   Quality Score: 38.9/100
+   Type Hints: 95.5%
+   Functions: 132
+   ⚠️  Violations:
+      • Function 'session_manager_module_tests' is too complex (complexity: 14)
+      • Function '_sync_cookies' is too complex (complexity: 13)
+      • Function 'make_tab' missing type hints
+      • ... and 8 more
 
 📄 credentials.py
    Quality Score: 48.1/100
@@ -99,84 +99,54 @@
       • ... and 5 more
 
 📄 database.py
-   Quality Score: 48.6/100
+   Quality Score: 49.2/100
    Type Hints: 100.0%
-   Functions: 56
+   Functions: 62
    ⚠️  Violations:
       • Function '_compare_field_values' is too complex (complexity: 12)
       • Function 'create_or_update_family_tree' is too complex (complexity: 14)
-      • Function 'create_or_update_person' is too complex (complexity: 36)
+      • Function 'create_or_update_person' is too complex (complexity: 14)
       • ... and 6 more
 
 📄 run_all_tests.py
-   Quality Score: 55.0/100
-   Type Hints: 92.3%
-   Functions: 13
+   Quality Score: 67.6/100
+   Type Hints: 97.1%
+   Functions: 35
    ⚠️  Violations:
       • Function 'discover_test_modules' is too complex (complexity: 11)
-      • Function 'extract_module_description' is too complex (complexity: 21)
-      • Function 'run_module_tests' is too complex (complexity: 98)
+      • Function '_print_quality_violations' is too complex (complexity: 12)
+      • Function 'run_module_tests' is too complex (complexity: 14)
       • ... and 2 more
 
-📄 cache.py
-   Quality Score: 55.7/100
-   Type Hints: 92.9%
-   Functions: 56
+📄 action8_messaging.py
+   Quality Score: 68.1/100
+   Type Hints: 100.0%
+   Functions: 121
    ⚠️  Violations:
-      • Function 'clear_cache' missing type hints
-      • Function 'close_cache' missing type hints
-      • Function 'get_cache_coordination_stats' is too complex (complexity: 11)
-      • ... and 4 more
-
-📄 cache_manager.py
-   Quality Score: 59.3/100
-   Type Hints: 89.3%
-   Functions: 56
-   ⚠️  Violations:
-      • Function '__init__' missing type hints
-      • Function '__init__' missing type hints
-      • Function '__init__' missing type hints
+      • Function '_process_all_candidates' is too complex (complexity: 15)
+      • Function 'send_messages_to_matches' is too complex (complexity: 18)
+      • Function 'action8_messaging_tests' is too long (537 lines)
       • ... and 3 more
 
 📄 relationship_utils.py
-   Quality Score: 59.5/100
+   Quality Score: 72.2/100
    Type Hints: 100.0%
-   Functions: 51
+   Functions: 71
    ⚠️  Violations:
-      • Function 'convert_gedcom_path_to_unified_format' is too complex (complexity: 23)
-      • Function 'convert_discovery_api_path_to_unified_format' is too complex (complexity: 18)
-      • Function 'convert_api_path_to_unified_format' is too complex (complexity: 42)
-      • ... and 4 more
-
-📄 performance_orchestrator.py
-   Quality Score: 63.4/100
-   Type Hints: 88.4%
-   Functions: 43
-   ⚠️  Violations:
-      • Function '__init__' missing type hints
-      • Function '__init__' missing type hints
-      • Function '__init__' missing type hints
+      • Function '_determine_gedcom_relationship' is too complex (complexity: 12)
+      • Function '_parse_discovery_relationship' is too complex (complexity: 12)
+      • Function '_get_relationship_term' is too complex (complexity: 12)
       • ... and 2 more
 
 📄 credential_manager.py
-   Quality Score: 65.8/100
-   Type Hints: 92.5%
+   Quality Score: 73.2/100
+   Type Hints: 95.0%
    Functions: 40
    ⚠️  Violations:
       • Function 'credential_manager_module_tests' is too long (615 lines)
       • Function 'credential_manager_module_tests' is too complex (complexity: 17)
-      • Function '_get_security_manager' missing type hints
-      • ... and 2 more
-
-📄 genealogical_task_templates.py
-   Quality Score: 67.9/100
-   Type Hints: 97.1%
-   Functions: 35
-   ⚠️  Violations:
-      • Function 'genealogical_task_templates_module_tests' is too long (485 lines)
-      • Function 'genealogical_task_templates_module_tests' is too complex (complexity: 19)
-      • Function '__init__' missing type hints
-      • ... and 2 more
+      • Function 'clear_cache' missing type hints
+      • ... and 1 more
 
 📄 gedcom_cache.py
    Quality Score: 73.3/100
@@ -187,16 +157,6 @@
       • Function 'data' missing type hints
       • Function '__init__' missing type hints
       • ... and 1 more
-
-📄 action8_messaging.py
-   Quality Score: 73.4/100
-   Type Hints: 100.0%
-   Functions: 119
-   ⚠️  Violations:
-      • Function 'send_messages_to_matches' is too complex (complexity: 39)
-      • Function 'action8_messaging_tests' is too long (537 lines)
-      • Function 'action8_messaging_tests' is too complex (complexity: 26)
-      • ... and 2 more
 
 📄 ms_graph_utils.py
    Quality Score: 74.1/100
@@ -226,6 +186,16 @@
       • Function 'run_setup_wizard' is too complex (complexity: 12)
       • ... and 1 more
 
+📄 cache.py
+   Quality Score: 75.3/100
+   Type Hints: 96.7%
+   Functions: 60
+   ⚠️  Violations:
+      • Function 'enforce_cache_size_limit' is too complex (complexity: 11)
+      • Function 'cache_module_tests' is too complex (complexity: 15)
+      • Function '__init__' missing type hints
+      • ... and 1 more
+
 📄 message_personalization.py
    Quality Score: 75.6/100
    Type Hints: 96.9%
@@ -234,6 +204,16 @@
       • Function '__init__' missing type hints
       • Function '_create_occupation_social_context' is too complex (complexity: 13)
       • Function '_create_generational_gap_analysis' is too complex (complexity: 12)
+      • ... and 1 more
+
+📄 genealogical_task_templates.py
+   Quality Score: 75.7/100
+   Type Hints: 100.0%
+   Functions: 35
+   ⚠️  Violations:
+      • Function 'genealogical_task_templates_module_tests' is too long (485 lines)
+      • Function 'genealogical_task_templates_module_tests' is too complex (complexity: 19)
+      • Function '_generate_name_variations' is too complex (complexity: 11)
       • ... and 1 more
 
 📄 ai_interface.py
@@ -246,35 +226,6 @@
       • Function 'test_ai_functionality' is too complex (complexity: 19)
       • ... and 1 more
 
-📄 config_schema.py
-   Quality Score: 75.9/100
-   Type Hints: 100.0%
-   Functions: 37
-   ⚠️  Violations:
-      • Function 'config_schema_module_tests' is too long (487 lines)
-      • Function 'config_schema_module_tests' is too complex (complexity: 29)
-      • Function 'validate' is too complex (complexity: 16)
-      • ... and 1 more
-
-📄 research_prioritization.py
-   Quality Score: 76.4/100
-   Type Hints: 100.0%
-   Functions: 44
-   ⚠️  Violations:
-      • Function '_optimize_research_workflow' is too complex (complexity: 12)
-      • Function '_calculate_gap_priority_score' is too complex (complexity: 17)
-      • Function '_calculate_conflict_priority_score' is too complex (complexity: 14)
-      • ... and 1 more
-
-📄 extraction_quality.py
-   Quality Score: 76.4/100
-   Type Hints: 100.0%
-   Functions: 14
-   ⚠️  Violations:
-      • Function 'compute_task_quality' is too complex (complexity: 17)
-      • Function 'compute_extraction_quality' is too complex (complexity: 27)
-      • Function 'compute_anomaly_summary' is too complex (complexity: 34)
-
 📄 action11.py
    Quality Score: 76.9/100
    Type Hints: 97.3%
@@ -283,6 +234,16 @@
       • Function 'handle_api_report' missing type hints
       • Function 'main' missing type hints
       • Function 'run_action11' missing type hints
+      • ... and 1 more
+
+📄 action7_inbox.py
+   Quality Score: 77.4/100
+   Type Hints: 100.0%
+   Functions: 61
+   ⚠️  Violations:
+      • Function '_get_all_conversations_api' is too complex (complexity: 12)
+      • Function '_determine_fetch_need' is too complex (complexity: 13)
+      • Function '_process_conversations_in_batch' is too complex (complexity: 13)
       • ... and 1 more
 
 📄 performance_cache.py
@@ -312,14 +273,13 @@
       • Function '__init__' missing type hints
       • Function '__init__' missing type hints
 
-📄 action7_inbox.py
-   Quality Score: 82.3/100
-   Type Hints: 100.0%
-   Functions: 41
+📄 performance_orchestrator.py
+   Quality Score: 85.3/100
+   Type Hints: 95.3%
+   Functions: 43
    ⚠️  Violations:
-      • Function '_get_all_conversations_api' is too complex (complexity: 12)
-      • Function '_process_inbox_loop' is too long (758 lines)
-      • Function '_process_inbox_loop' is too complex (complexity: 106)
+      • Function 'decorator' missing type hints
+      • Function 'wrapper' missing type hints
 
 📄 performance_monitor.py
    Quality Score: 86.2/100
@@ -328,6 +288,14 @@
    ⚠️  Violations:
       • Function 'wrapper' missing type hints
       • Function 'error_function' missing type hints
+
+📄 cache_manager.py
+   Quality Score: 86.4/100
+   Type Hints: 96.4%
+   Functions: 56
+   ⚠️  Violations:
+      • Function 'wrapper' missing type hints
+      • Function 'wrapper' missing type hints
 
 📄 database_manager.py
    Quality Score: 87.1/100
@@ -344,6 +312,14 @@
    ⚠️  Violations:
       • Function 'security_manager_module_tests' is too long (485 lines)
       • Function 'migrate_env_credentials' is too complex (complexity: 13)
+
+📄 config_schema.py
+   Quality Score: 87.8/100
+   Type Hints: 100.0%
+   Functions: 37
+   ⚠️  Violations:
+      • Function '_test_rate_limiting_configuration' is too complex (complexity: 11)
+      • Function 'validate' is too complex (complexity: 16)
 
 📄 gedcom_search_utils.py
    Quality Score: 88.2/100
@@ -369,12 +345,12 @@
       • Function 'get_api_relationship_path' is too complex (complexity: 11)
 
 📄 action10.py
-   Quality Score: 89.1/100
+   Quality Score: 89.2/100
    Type Hints: 100.0%
-   Functions: 79
+   Functions: 86
    ⚠️  Violations:
-      • Function 'action10_module_tests' is too long (981 lines)
-      • Function 'action10_module_tests' is too complex (complexity: 52)
+      • Function 'action10_module_tests' is too long (923 lines)
+      • Function 'action10_module_tests' is too complex (complexity: 49)
 
 📄 universal_scoring.py
    Quality Score: 90.0/100
@@ -411,12 +387,26 @@
    ⚠️  Violations:
       • Function 'format' is too complex (complexity: 11)
 
+📄 extraction_quality.py
+   Quality Score: 93.4/100
+   Type Hints: 100.0%
+   Functions: 25
+   ⚠️  Violations:
+      • Function 'compute_task_quality' is too complex (complexity: 17)
+
 📄 adaptive_rate_limiter.py
    Quality Score: 94.1/100
    Type Hints: 100.0%
    Functions: 45
    ⚠️  Violations:
       • Function 'test_regression_prevention_rate_limiter_caching' is too complex (complexity: 11)
+
+📄 research_prioritization.py
+   Quality Score: 94.3/100
+   Type Hints: 100.0%
+   Functions: 57
+   ⚠️  Violations:
+      • Function '_calculate_conflict_priority_score' is too complex (complexity: 14)
 
 📄 ai_prompt_utils.py
    Quality Score: 100.0/100
