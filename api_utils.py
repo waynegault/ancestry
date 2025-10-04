@@ -100,7 +100,8 @@ except ImportError:
     TestSuite = None
 
 # === MODULE LOGGER ===
-logger = setup_logging(log_file="api_utils.log", log_level="INFO")
+# Use centralized log file from .env (LOG_FILE)
+logger = setup_logging(log_level="INFO")
 
 # Note: format_api_relationship_path has been moved to relationship_utils.py
 
