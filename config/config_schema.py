@@ -767,6 +767,477 @@ class ConfigSchema:
         return errors
 
 
+# === Module-level test functions for config_schema_module_tests ===
+
+def _test_database_config() -> None:
+    """Test DatabaseConfig creation and validation."""
+    # Test default creation
+    db_config = DatabaseConfig()
+    assert db_config.pool_size == 10
+    assert db_config.journal_mode == "WAL"
+    assert db_config.backup_enabled is True
+
+    # Test custom values
+    custom_config = DatabaseConfig(
+        pool_size=20, journal_mode="DELETE", backup_enabled=False
+    )
+    assert custom_config.pool_size == 20
+    assert custom_config.journal_mode == "DELETE"  # Test validation errors
+    try:
+        DatabaseConfig(pool_size=-1)
+        raise AssertionError("Should have raised ConfigValidationError for negative pool_size")
+    except ConfigValidationError:
+        pass  # Expected
+
+    try:
+        DatabaseConfig(journal_mode="INVALID")
+        raise AssertionError("Should have raised ConfigValidationError for invalid journal_mode")
+    except ConfigValidationError:
+        pass  # Expected
+
+
+def _test_selenium_config() -> None:
+    """Test SeleniumConfig creation and validation."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test default creation
+        selenium_config = SeleniumConfig()
+        assert selenium_config.headless_mode is False
+        assert selenium_config.debug_port == 9222
+        assert selenium_config.window_size == "1920,1080"
+
+        # Test custom values
+        custom_config = SeleniumConfig(
+            headless_mode=True, debug_port=9223, window_size="1366,768"
+        )
+        assert custom_config.headless_mode is True
+        assert custom_config.debug_port == 9223
+
+        # Test validation errors
+        try:
+            SeleniumConfig(debug_port=-1)
+            raise AssertionError("Should have raised ValueError for invalid debug_port")
+        except ValueError:
+            pass  # Expected
+
+        try:
+            SeleniumConfig(window_size="invalid")
+            raise AssertionError("Should have raised ValueError for invalid window_size")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_api_config() -> None:
+    """Test APIConfig creation and validation."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test default creation
+        api_config = APIConfig()
+        assert api_config.base_url == "https://www.ancestry.com/"
+        assert api_config.request_timeout == 60  # Updated to match our rate limiting fixes
+        assert api_config.rate_limit_enabled is True
+
+        # Test custom values
+        custom_config = APIConfig(
+            base_url="https://example.com/",
+            request_timeout=90,  # Updated to use higher value for testing
+            rate_limit_enabled=False,
+        )
+        assert custom_config.base_url == "https://example.com/"
+        assert custom_config.request_timeout == 90  # Updated to match
+
+        # Test validation errors
+        try:
+            APIConfig(base_url="invalid-url")
+            raise AssertionError("Should have raised ValueError for invalid base_url")
+        except ValueError:
+            pass  # Expected
+
+        try:
+            APIConfig(request_timeout=-1)
+            raise AssertionError("Should have raised ValueError for negative request_timeout")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_logging_config() -> None:
+    """Test LoggingConfig creation and validation."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test default creation
+        logging_config = LoggingConfig()
+        assert logging_config.log_level == "INFO"
+        assert logging_config.enable_console_logging is True
+        assert logging_config.max_log_size_mb == 10
+
+        # Test custom values
+        custom_config = LoggingConfig(
+            log_level="DEBUG", enable_console_logging=False, max_log_size_mb=20
+        )
+        assert custom_config.log_level == "DEBUG"
+        assert custom_config.enable_console_logging is False
+
+        # Test validation errors
+        try:
+            LoggingConfig(log_level="INVALID")
+            raise AssertionError("Should have raised ValueError for invalid log_level")
+        except ValueError:
+            pass  # Expected
+
+        try:
+            LoggingConfig(max_log_size_mb=-1)
+            raise AssertionError("Should have raised ValueError for negative max_log_size_mb")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_cache_config() -> None:
+    """Test CacheConfig creation and validation."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test default creation
+        cache_config = CacheConfig()
+        assert cache_config.memory_cache_size == 1000
+        assert cache_config.disk_cache_enabled is True
+        assert cache_config.auto_cleanup_enabled is True
+
+        # Test custom values
+        custom_config = CacheConfig(
+            memory_cache_size=2000,
+            disk_cache_enabled=False,
+            auto_cleanup_enabled=False,
+        )
+        assert custom_config.memory_cache_size == 2000
+        assert custom_config.disk_cache_enabled is False
+
+        # Test validation errors
+        try:
+            CacheConfig(memory_cache_size=-1)
+            raise AssertionError("Should have raised ValueError for negative memory_cache_size")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_security_config() -> None:
+    """Test SecurityConfig creation and validation."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test default creation
+        security_config = SecurityConfig()
+        assert security_config.encryption_enabled is True
+        assert security_config.use_system_keyring is True
+        assert security_config.session_timeout_minutes == 120  # Test custom values
+        custom_config = SecurityConfig(
+            encryption_enabled=False, session_timeout_minutes=60
+        )
+        assert custom_config.encryption_enabled is False
+        assert custom_config.session_timeout_minutes == 60
+
+        # Test validation errors
+        try:
+            SecurityConfig(session_timeout_minutes=-1)
+            raise AssertionError("Should have raised ValueError for negative session_timeout_minutes")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_config_schema_creation() -> None:
+    """Test ConfigSchema creation with default sub-configs."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test default creation
+        config = ConfigSchema()
+        assert config.environment == "development"
+        assert config.debug_mode is False
+        assert config.app_name == "Ancestry Automation"
+
+        # Verify sub-configs are created
+        assert isinstance(config.database, DatabaseConfig)
+        assert isinstance(config.selenium, SeleniumConfig)
+        assert isinstance(config.api, APIConfig)
+        assert isinstance(config.logging, LoggingConfig)
+        assert isinstance(config.cache, CacheConfig)
+        assert isinstance(config.security, SecurityConfig)
+
+        # Test custom environment
+        custom_config = ConfigSchema(environment="production", debug_mode=True)
+        assert custom_config.environment == "production"
+        assert custom_config.debug_mode is True
+
+
+def _test_config_schema_to_dict() -> None:
+    """Test ConfigSchema to_dict method."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        config = ConfigSchema()
+        config_dict = config.to_dict()
+
+        # Verify structure
+        assert isinstance(config_dict, dict)
+        assert "database" in config_dict
+        assert "selenium" in config_dict
+        assert "api" in config_dict
+        assert "logging" in config_dict
+        assert "cache" in config_dict
+        assert "security" in config_dict
+        assert "environment" in config_dict
+
+        # Verify sub-configs are dicts
+        assert isinstance(config_dict["database"], dict)
+        assert isinstance(config_dict["selenium"], dict)
+
+        # Verify some values
+        assert config_dict["environment"] == "development"
+        assert config_dict["database"]["pool_size"] == 10
+
+
+def _test_config_schema_from_dict() -> None:
+    """Test ConfigSchema from_dict method."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Create a test dictionary
+        test_data = {
+            "environment": "testing",
+            "debug_mode": True,
+            "database": {"pool_size": 15, "journal_mode": "DELETE"},
+            "selenium": {"headless_mode": True, "debug_port": 9224},
+            "api": {
+                "base_url": "https://test.ancestry.com/",
+                "request_timeout": 45,
+            },
+        }
+
+        # Create config from dict
+        config = ConfigSchema.from_dict(test_data)
+
+        # Verify main config
+        assert config.environment == "testing"
+        assert config.debug_mode is True
+
+        # Verify sub-configs
+        assert config.database.pool_size == 15
+        assert config.database.journal_mode == "DELETE"
+        assert config.selenium.headless_mode is True
+        assert config.selenium.debug_port == 9224
+        assert config.api.base_url == "https://test.ancestry.com/"
+        assert config.api.request_timeout == 45
+
+
+def _test_config_schema_validation() -> None:
+    """Test ConfigSchema validation method."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test valid configuration
+        config = ConfigSchema()
+        errors = config.validate()
+        assert len(errors) == 0, f"Valid config should have no errors: {errors}"
+
+        # Test configuration with invalid environment
+        try:
+            ConfigSchema(environment="invalid")
+            raise AssertionError("Should have raised ValueError for invalid environment")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_edge_cases() -> None:
+    """Test edge cases and error scenarios."""
+    import tempfile
+    from pathlib import Path
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test Path handling in configs
+        temp_path = Path(tempfile.gettempdir()) / "test_config"
+
+        db_config = DatabaseConfig(database_file=temp_path)
+        assert db_config.database_file == temp_path
+
+        # Test None values
+        selenium_config = SeleniumConfig(chrome_driver_path=None)
+        assert selenium_config.chrome_driver_path is None
+
+        # Test empty strings in API config
+        try:
+            APIConfig(base_url="")
+            raise AssertionError("Should have raised ValueError for empty base_url")
+        except ValueError:
+            pass  # Expected
+
+
+def _test_integration() -> None:
+    """Test integration between different config components."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Create a full configuration
+        config = ConfigSchema(environment="production", debug_mode=False)
+
+        # Modify sub-configs
+        config.database.pool_size = 20
+        config.selenium.headless_mode = True
+        config.api.rate_limit_enabled = False
+
+        # Convert to dict and back
+        config_dict = config.to_dict()
+        restored_config = ConfigSchema.from_dict(config_dict)
+
+        # Verify restoration
+        assert restored_config.environment == "production"
+        assert restored_config.database.pool_size == 20
+        assert restored_config.selenium.headless_mode is True
+        assert restored_config.api.rate_limit_enabled is False
+
+
+def _test_performance() -> None:
+    """Test performance and memory efficiency."""
+    import time
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        start_time = time.time()
+
+        # Create multiple configurations
+        configs = []
+        for i in range(100):
+            config = ConfigSchema(environment="testing", debug_mode=i % 2 == 0)
+            configs.append(config)
+
+        creation_time = time.time() - start_time
+        logger.info(f"Created 100 configs in {creation_time:.4f} seconds")
+
+        # Test serialization performance
+        start_time = time.time()
+        for config in configs[:10]:  # Test a subset
+            config_dict = config.to_dict()
+            ConfigSchema.from_dict(config_dict)
+
+        serialization_time = time.time() - start_time
+        logger.info(
+            f"Serialized/deserialized 10 configs in {serialization_time:.4f} seconds"
+        )
+
+
+def _test_function_structure() -> None:
+    """Test that all expected methods and properties exist."""
+    from test_framework import suppress_logging, assert_valid_function
+
+    with suppress_logging():
+        # Test ConfigSchema methods
+        config = ConfigSchema()
+        assert_valid_function(config.to_dict, "ConfigSchema.to_dict")
+        assert_valid_function(config.validate, "ConfigSchema.validate")
+        assert_valid_function(ConfigSchema.from_dict, "ConfigSchema.from_dict")
+
+        # Test sub-config classes exist and have __post_init__
+        for config_class in [
+            DatabaseConfig,
+            SeleniumConfig,
+            APIConfig,
+            LoggingConfig,
+            CacheConfig,
+            SecurityConfig,
+        ]:
+            instance = config_class()
+            assert hasattr(instance, "__post_init__")
+            assert_valid_function(
+                instance.__post_init__, f"{config_class.__name__}.__post_init__"
+            )
+
+
+def _test_import_dependencies() -> None:
+    """Test that all required imports and dependencies are available."""
+    from test_framework import suppress_logging
+
+    with suppress_logging():
+        # Test dataclass functionality
+        from dataclasses import dataclass, field
+
+        assert callable(dataclass)
+        assert callable(field)
+
+        # Test typing imports
+
+        # Test pathlib
+        from pathlib import Path
+
+        test_path = Path("/test/path")
+        assert isinstance(test_path, Path)
+
+        # Test that all config classes are properly defined as dataclasses
+        for config_class in [
+            DatabaseConfig,
+            SeleniumConfig,
+            APIConfig,
+            LoggingConfig,
+            CacheConfig,
+            SecurityConfig,
+            ConfigSchema,
+        ]:
+            assert hasattr(config_class, "__dataclass_fields__")
+
+
+def _test_rate_limiting_configuration() -> None:
+    """Test that rate limiting configuration values are conservative for API stability."""
+    print("🚦 Testing Rate Limiting Configuration...")
+
+    api_config = APIConfig()
+
+    # Validate conservative settings for API rate limiting compliance
+    issues = []
+
+    if api_config.requests_per_second > 0.4:
+        issues.append(f"requests_per_second too high: {api_config.requests_per_second}")
+    if api_config.thread_pool_workers > 4:
+        issues.append(f"thread_pool_workers too high: {api_config.thread_pool_workers}")
+    if api_config.max_concurrency > 4:
+        issues.append(f"max_concurrency too high: {api_config.max_concurrency}")
+    if api_config.burst_limit > 4:
+        issues.append(f"burst_limit too high: {api_config.burst_limit}")
+    if api_config.max_retries < 5:
+        issues.append(f"max_retries too low: {api_config.max_retries}")
+    if api_config.retry_backoff_factor < 6.0:
+        issues.append(f"retry_backoff_factor too low: {api_config.retry_backoff_factor}")
+    if api_config.request_timeout < 60:
+        issues.append(f"request_timeout too low: {api_config.request_timeout}")
+    if api_config.max_delay < 300:
+        issues.append(f"max_delay too low: {api_config.max_delay}")
+
+    if issues:
+        print("   ❌ Configuration issues found:")
+        for issue in issues:
+            print(f"      - {issue}")
+        raise AssertionError(f"Rate limiting configuration issues: {issues}")
+    print("   ✅ All rate limiting settings are properly conservative")
+
+
+def _test_max_pages_configuration() -> None:
+    """Test MAX_PAGES configuration loading and validation."""
+    print("📄 Testing MAX_PAGES Configuration...")
+
+    api_config = APIConfig()
+    max_pages = api_config.max_pages
+    print(f"   MAX_PAGES default value: {max_pages}")
+
+    # Validate that max_pages is properly configured
+    assert isinstance(max_pages, int), f"MAX_PAGES should be integer, got {type(max_pages)}"
+    assert max_pages >= 0, f"MAX_PAGES should be non-negative, got {max_pages}"
+
+    if max_pages == 0:
+        print("   ✅ MAX_PAGES=0 correctly configured for unlimited processing")
+    else:
+        print(f"   ⚠️  MAX_PAGES={max_pages} limits processing (not unlimited)")
+
+
 def config_schema_module_tests() -> bool:
     """
     Run comprehensive tests for the Config Schema classes.
@@ -777,476 +1248,31 @@ def config_schema_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    import tempfile
-    from pathlib import Path
-
-    from test_framework import (
-        TestSuite,
-        assert_valid_function,
-        suppress_logging,
-    )
+    from test_framework import TestSuite
 
     # Initialize test suite
     suite = TestSuite("ConfigSchema", __name__)
     suite.start_suite()
 
-    # Test 1: Database Config Creation and Validation
-    def test_database_config():
-        """Test DatabaseConfig creation and validation."""
-        # Test default creation
-        db_config = DatabaseConfig()
-        assert db_config.pool_size == 10
-        assert db_config.journal_mode == "WAL"
-        assert db_config.backup_enabled is True
-
-        # Test custom values
-        custom_config = DatabaseConfig(
-            pool_size=20, journal_mode="DELETE", backup_enabled=False
-        )
-        assert custom_config.pool_size == 20
-        assert custom_config.journal_mode == "DELETE"  # Test validation errors
-        try:
-            DatabaseConfig(pool_size=-1)
-            raise AssertionError("Should have raised ConfigValidationError for negative pool_size")
-        except ConfigValidationError:
-            pass  # Expected
-
-        try:
-            DatabaseConfig(journal_mode="INVALID")
-            raise AssertionError("Should have raised ConfigValidationError for invalid journal_mode")
-        except ConfigValidationError:
-            pass  # Expected
-
-    # Test 2: Selenium Config Creation and Validation
-    def test_selenium_config():
-        """Test SeleniumConfig creation and validation."""
-        with suppress_logging():
-            # Test default creation
-            selenium_config = SeleniumConfig()
-            assert selenium_config.headless_mode is False
-            assert selenium_config.debug_port == 9222
-            assert selenium_config.window_size == "1920,1080"
-
-            # Test custom values
-            custom_config = SeleniumConfig(
-                headless_mode=True, debug_port=9223, window_size="1366,768"
-            )
-            assert custom_config.headless_mode is True
-            assert custom_config.debug_port == 9223
-
-            # Test validation errors
-            try:
-                SeleniumConfig(debug_port=-1)
-                raise AssertionError("Should have raised ValueError for invalid debug_port")
-            except ValueError:
-                pass  # Expected
-
-            try:
-                SeleniumConfig(window_size="invalid")
-                raise AssertionError("Should have raised ValueError for invalid window_size")
-            except ValueError:
-                pass  # Expected
-
-    # Test 3: API Config Creation and Validation
-    def test_api_config():
-        """Test APIConfig creation and validation."""
-        with suppress_logging():
-            # Test default creation
-            api_config = APIConfig()
-            assert api_config.base_url == "https://www.ancestry.com/"
-            assert api_config.request_timeout == 60  # Updated to match our rate limiting fixes
-            assert api_config.rate_limit_enabled is True
-
-            # Test custom values
-            custom_config = APIConfig(
-                base_url="https://example.com/",
-                request_timeout=90,  # Updated to use higher value for testing
-                rate_limit_enabled=False,
-            )
-            assert custom_config.base_url == "https://example.com/"
-            assert custom_config.request_timeout == 90  # Updated to match
-
-            # Test validation errors
-            try:
-                APIConfig(base_url="invalid-url")
-                raise AssertionError("Should have raised ValueError for invalid base_url")
-            except ValueError:
-                pass  # Expected
-
-            try:
-                APIConfig(request_timeout=-1)
-                raise AssertionError("Should have raised ValueError for negative request_timeout")
-            except ValueError:
-                pass  # Expected
-
-    # Test 4: Logging Config Creation and Validation
-    def test_logging_config():
-        """Test LoggingConfig creation and validation."""
-        with suppress_logging():
-            # Test default creation
-            logging_config = LoggingConfig()
-            assert logging_config.log_level == "INFO"
-            assert logging_config.enable_console_logging is True
-            assert logging_config.max_log_size_mb == 10
-
-            # Test custom values
-            custom_config = LoggingConfig(
-                log_level="DEBUG", enable_console_logging=False, max_log_size_mb=20
-            )
-            assert custom_config.log_level == "DEBUG"
-            assert custom_config.enable_console_logging is False
-
-            # Test validation errors
-            try:
-                LoggingConfig(log_level="INVALID")
-                raise AssertionError("Should have raised ValueError for invalid log_level")
-            except ValueError:
-                pass  # Expected
-
-            try:
-                LoggingConfig(max_log_size_mb=-1)
-                raise AssertionError("Should have raised ValueError for negative max_log_size_mb")
-            except ValueError:
-                pass  # Expected
-
-    # Test 5: Cache Config Creation and Validation
-    def test_cache_config():
-        """Test CacheConfig creation and validation."""
-        with suppress_logging():
-            # Test default creation
-            cache_config = CacheConfig()
-            assert cache_config.memory_cache_size == 1000
-            assert cache_config.disk_cache_enabled is True
-            assert cache_config.auto_cleanup_enabled is True
-
-            # Test custom values
-            custom_config = CacheConfig(
-                memory_cache_size=2000,
-                disk_cache_enabled=False,
-                auto_cleanup_enabled=False,
-            )
-            assert custom_config.memory_cache_size == 2000
-            assert custom_config.disk_cache_enabled is False
-
-            # Test validation errors
-            try:
-                CacheConfig(memory_cache_size=-1)
-                raise AssertionError("Should have raised ValueError for negative memory_cache_size")
-            except ValueError:
-                pass  # Expected
-
-    # Test 6: Security Config Creation and Validation
-    def test_security_config():
-        """Test SecurityConfig creation and validation."""
-        with suppress_logging():
-            # Test default creation
-            security_config = SecurityConfig()
-            assert security_config.encryption_enabled is True
-            assert security_config.use_system_keyring is True
-            assert security_config.session_timeout_minutes == 120  # Test custom values
-            custom_config = SecurityConfig(
-                encryption_enabled=False, session_timeout_minutes=60
-            )
-            assert custom_config.encryption_enabled is False
-            assert custom_config.session_timeout_minutes == 60
-
-            # Test validation errors
-            try:
-                SecurityConfig(session_timeout_minutes=-1)
-                raise AssertionError("Should have raised ValueError for negative session_timeout_minutes")
-            except ValueError:
-                pass  # Expected
-
-    # Test 7: Main Config Schema Creation
-    def test_config_schema_creation():
-        """Test ConfigSchema creation with default sub-configs."""
-        with suppress_logging():
-            # Test default creation
-            config = ConfigSchema()
-            assert config.environment == "development"
-            assert config.debug_mode is False
-            assert config.app_name == "Ancestry Automation"
-
-            # Verify sub-configs are created
-            assert isinstance(config.database, DatabaseConfig)
-            assert isinstance(config.selenium, SeleniumConfig)
-            assert isinstance(config.api, APIConfig)
-            assert isinstance(config.logging, LoggingConfig)
-            assert isinstance(config.cache, CacheConfig)
-            assert isinstance(config.security, SecurityConfig)
-
-            # Test custom environment
-            custom_config = ConfigSchema(environment="production", debug_mode=True)
-            assert custom_config.environment == "production"
-            assert custom_config.debug_mode is True
-
-    # Test 8: Config Schema to_dict Conversion
-    def test_config_schema_to_dict():
-        """Test ConfigSchema to_dict method."""
-        with suppress_logging():
-            config = ConfigSchema()
-            config_dict = config.to_dict()
-
-            # Verify structure
-            assert isinstance(config_dict, dict)
-            assert "database" in config_dict
-            assert "selenium" in config_dict
-            assert "api" in config_dict
-            assert "logging" in config_dict
-            assert "cache" in config_dict
-            assert "security" in config_dict
-            assert "environment" in config_dict
-
-            # Verify sub-configs are dicts
-            assert isinstance(config_dict["database"], dict)
-            assert isinstance(config_dict["selenium"], dict)
-
-            # Verify some values
-            assert config_dict["environment"] == "development"
-            assert config_dict["database"]["pool_size"] == 10
-
-    # Test 9: Config Schema from_dict Creation
-    def test_config_schema_from_dict():
-        """Test ConfigSchema from_dict method."""
-        with suppress_logging():
-            # Create a test dictionary
-            test_data = {
-                "environment": "testing",
-                "debug_mode": True,
-                "database": {"pool_size": 15, "journal_mode": "DELETE"},
-                "selenium": {"headless_mode": True, "debug_port": 9224},
-                "api": {
-                    "base_url": "https://test.ancestry.com/",
-                    "request_timeout": 45,
-                },
-            }
-
-            # Create config from dict
-            config = ConfigSchema.from_dict(test_data)
-
-            # Verify main config
-            assert config.environment == "testing"
-            assert config.debug_mode is True
-
-            # Verify sub-configs
-            assert config.database.pool_size == 15
-            assert config.database.journal_mode == "DELETE"
-            assert config.selenium.headless_mode is True
-            assert config.selenium.debug_port == 9224
-            assert config.api.base_url == "https://test.ancestry.com/"
-            assert config.api.request_timeout == 45
-
-    # Test 10: Config Schema Validation
-    def test_config_schema_validation():
-        """Test ConfigSchema validation method."""
-        with suppress_logging():
-            # Test valid configuration
-            config = ConfigSchema()
-            errors = config.validate()
-            assert len(errors) == 0, f"Valid config should have no errors: {errors}"
-
-            # Test configuration with invalid environment
-            try:
-                ConfigSchema(environment="invalid")
-                raise AssertionError("Should have raised ValueError for invalid environment")
-            except ValueError:
-                pass  # Expected
-
-    # Test 11: Edge Cases and Error Handling
-    def test_edge_cases():
-        """Test edge cases and error scenarios."""
-        with suppress_logging():
-            # Test Path handling in configs
-            temp_path = Path(tempfile.gettempdir()) / "test_config"
-
-            db_config = DatabaseConfig(database_file=temp_path)
-            assert db_config.database_file == temp_path
-
-            # Test None values
-            selenium_config = SeleniumConfig(chrome_driver_path=None)
-            assert selenium_config.chrome_driver_path is None
-
-            # Test empty strings in API config
-            try:
-                APIConfig(base_url="")
-                raise AssertionError("Should have raised ValueError for empty base_url")
-            except ValueError:
-                pass  # Expected
-
-    # Test 12: Integration Testing
-    def test_integration():
-        """Test integration between different config components."""
-        with suppress_logging():
-            # Create a full configuration
-            config = ConfigSchema(environment="production", debug_mode=False)
-
-            # Modify sub-configs
-            config.database.pool_size = 20
-            config.selenium.headless_mode = True
-            config.api.rate_limit_enabled = False
-
-            # Convert to dict and back
-            config_dict = config.to_dict()
-            restored_config = ConfigSchema.from_dict(config_dict)
-
-            # Verify restoration
-            assert restored_config.environment == "production"
-            assert restored_config.database.pool_size == 20
-            assert restored_config.selenium.headless_mode is True
-            assert restored_config.api.rate_limit_enabled is False
-
-    # Test 13: Performance and Memory Usage
-    def test_performance():
-        """Test performance and memory efficiency."""
-        with suppress_logging():
-            import time
-
-            start_time = time.time()
-
-            # Create multiple configurations
-            configs = []
-            for i in range(100):
-                config = ConfigSchema(environment="testing", debug_mode=i % 2 == 0)
-                configs.append(config)
-
-            creation_time = time.time() - start_time
-            logger.info(f"Created 100 configs in {creation_time:.4f} seconds")
-
-            # Test serialization performance
-            start_time = time.time()
-            for config in configs[:10]:  # Test a subset
-                config_dict = config.to_dict()
-                ConfigSchema.from_dict(config_dict)
-
-            serialization_time = time.time() - start_time
-            logger.info(
-                f"Serialized/deserialized 10 configs in {serialization_time:.4f} seconds"
-            )
-
-    # Test 14: Method Existence and Structure
-    def test_function_structure():
-        """Test that all expected methods and properties exist."""
-        with suppress_logging():
-            # Test ConfigSchema methods
-            config = ConfigSchema()
-            assert_valid_function(config.to_dict, "ConfigSchema.to_dict")
-            assert_valid_function(config.validate, "ConfigSchema.validate")
-            assert_valid_function(ConfigSchema.from_dict, "ConfigSchema.from_dict")
-
-            # Test sub-config classes exist and have __post_init__
-            for config_class in [
-                DatabaseConfig,
-                SeleniumConfig,
-                APIConfig,
-                LoggingConfig,
-                CacheConfig,
-                SecurityConfig,
-            ]:
-                instance = config_class()
-                assert hasattr(instance, "__post_init__")
-                assert_valid_function(
-                    instance.__post_init__, f"{config_class.__name__}.__post_init__"
-                )
-
-    # Test 15: Type Definitions and Import Dependencies
-    def test_import_dependencies():
-        """Test that all required imports and dependencies are available."""
-        with suppress_logging():
-            # Test dataclass functionality
-            from dataclasses import dataclass, field
-
-            assert callable(dataclass)
-            assert callable(field)
-
-            # Test typing imports
-
-            # Test pathlib
-            from pathlib import Path
-
-            test_path = Path("/test/path")
-            assert isinstance(test_path, Path)
-
-            # Test that all config classes are properly defined as dataclasses
-            for config_class in [
-                DatabaseConfig,
-                SeleniumConfig,
-                APIConfig,
-                LoggingConfig,
-                CacheConfig,
-                SecurityConfig,
-                ConfigSchema,
-            ]:
-                assert hasattr(config_class, "__dataclass_fields__")
-
-    def test_rate_limiting_configuration():
-        """Test that rate limiting configuration values are conservative for API stability."""
-        print("🚦 Testing Rate Limiting Configuration...")
-
-        api_config = APIConfig()
-
-        # Validate conservative settings for API rate limiting compliance
-        issues = []
-
-        if api_config.requests_per_second > 0.4:
-            issues.append(f"requests_per_second too high: {api_config.requests_per_second}")
-        if api_config.thread_pool_workers > 4:
-            issues.append(f"thread_pool_workers too high: {api_config.thread_pool_workers}")
-        if api_config.max_concurrency > 4:
-            issues.append(f"max_concurrency too high: {api_config.max_concurrency}")
-        if api_config.burst_limit > 4:
-            issues.append(f"burst_limit too high: {api_config.burst_limit}")
-        if api_config.max_retries < 5:
-            issues.append(f"max_retries too low: {api_config.max_retries}")
-        if api_config.retry_backoff_factor < 6.0:
-            issues.append(f"retry_backoff_factor too low: {api_config.retry_backoff_factor}")
-        if api_config.request_timeout < 60:
-            issues.append(f"request_timeout too low: {api_config.request_timeout}")
-        if api_config.max_delay < 300:
-            issues.append(f"max_delay too low: {api_config.max_delay}")
-
-        if issues:
-            print("   ❌ Configuration issues found:")
-            for issue in issues:
-                print(f"      - {issue}")
-            raise AssertionError(f"Rate limiting configuration issues: {issues}")
-        print("   ✅ All rate limiting settings are properly conservative")
-
-    def test_max_pages_configuration():
-        """Test MAX_PAGES configuration loading and validation."""
-        print("📄 Testing MAX_PAGES Configuration...")
-
-        api_config = APIConfig()
-        max_pages = api_config.max_pages
-        print(f"   MAX_PAGES default value: {max_pages}")
-
-        # Validate that max_pages is properly configured
-        assert isinstance(max_pages, int), f"MAX_PAGES should be integer, got {type(max_pages)}"
-        assert max_pages >= 0, f"MAX_PAGES should be non-negative, got {max_pages}"
-
-        if max_pages == 0:
-            print("   ✅ MAX_PAGES=0 correctly configured for unlimited processing")
-        else:
-            print(f"   ⚠️  MAX_PAGES={max_pages} limits processing (not unlimited)")
-
     # Define all tests
     tests = [
-        ("Database Config Validation", test_database_config),
-        ("Selenium Config Validation", test_selenium_config),
-        ("API Config Validation", test_api_config),
-        ("Logging Config Validation", test_logging_config),
-        ("Cache Config Validation", test_cache_config),
-        ("Security Config Validation", test_security_config),
-        ("Config Schema Creation", test_config_schema_creation),
-        ("Config Schema to_dict", test_config_schema_to_dict),
-        ("Config Schema from_dict", test_config_schema_from_dict),
-        ("Config Schema Validation", test_config_schema_validation),
-        ("Rate Limiting Configuration", test_rate_limiting_configuration),
-        ("MAX_PAGES Configuration", test_max_pages_configuration),
-        ("Edge Cases", test_edge_cases),
-        ("Integration Testing", test_integration),
-        ("Performance Testing", test_performance),
-        ("Function Structure", test_function_structure),
-        ("Import Dependencies", test_import_dependencies),
+        ("Database Config Validation", _test_database_config),
+        ("Selenium Config Validation", _test_selenium_config),
+        ("API Config Validation", _test_api_config),
+        ("Logging Config Validation", _test_logging_config),
+        ("Cache Config Validation", _test_cache_config),
+        ("Security Config Validation", _test_security_config),
+        ("Config Schema Creation", _test_config_schema_creation),
+        ("Config Schema to_dict", _test_config_schema_to_dict),
+        ("Config Schema from_dict", _test_config_schema_from_dict),
+        ("Config Schema Validation", _test_config_schema_validation),
+        ("Rate Limiting Configuration", _test_rate_limiting_configuration),
+        ("MAX_PAGES Configuration", _test_max_pages_configuration),
+        ("Edge Cases", _test_edge_cases),
+        ("Integration Testing", _test_integration),
+        ("Performance Testing", _test_performance),
+        ("Function Structure", _test_function_structure),
+        ("Import Dependencies", _test_import_dependencies),
     ]
 
     # Run each test using TestSuite
