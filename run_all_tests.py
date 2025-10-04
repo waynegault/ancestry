@@ -271,6 +271,53 @@ def run_quality_checks() -> bool:
         return True
 
 
+def _should_skip_system_file(python_file: Path) -> bool:
+    """Check if file should be skipped (system files, test runner, etc.)."""
+    return python_file.name in [
+        "run_all_tests.py",
+        "main.py",
+        "__init__.py",
+        "__main__.py",
+    ]
+
+
+def _should_skip_cache_or_temp_file(python_file: Path) -> bool:
+    """Check if file should be skipped (cache, backup, temp, venv)."""
+    file_path_str = str(python_file)
+    return (
+        "__pycache__" in file_path_str
+        or python_file.name.endswith("_backup.py")
+        or "backup_before_migration" in file_path_str
+        or python_file.name.startswith("temp_")
+        or python_file.name.endswith("_temp.py")
+        or "_old" in python_file.name
+        or ".venv" in file_path_str
+        or "site-packages" in file_path_str
+        or "Cache" in file_path_str
+        or "Logs" in file_path_str
+    )
+
+
+def _should_skip_demo_file(python_file: Path) -> bool:
+    """Check if file should be skipped (demo/prototype scripts)."""
+    demo_markers = ["demo", "prototype", "experimental", "sandbox"]
+    name_lower = python_file.name.lower()
+    return any(marker in name_lower for marker in demo_markers)
+
+
+def _should_skip_interactive_file(python_file: Path) -> bool:
+    """Check if file should be skipped (interactive modules)."""
+    return python_file.name in ["db_viewer.py", "test_program_executor.py"]
+
+
+def _has_test_function(content: str) -> bool:
+    """Check if file content has the standardized test function."""
+    return (
+        "def run_comprehensive_tests" in content or
+        "run_comprehensive_tests = create_standard_test_runner" in content
+    )
+
+
 def discover_test_modules() -> list[str]:
     """
     Discover all Python modules that contain tests by scanning the project directory.
@@ -283,55 +330,21 @@ def discover_test_modules() -> list[str]:
 
     # Get all Python files in the project
     for python_file in project_root.rglob("*.py"):
-        # Skip the test runner itself, main.py, and coordination files
-        if python_file.name in [
-            "run_all_tests.py",
-            "main.py",
-            "__init__.py",
-            "__main__.py",
-        ]:
+        # Skip various file types
+        if _should_skip_system_file(python_file):
             continue
-
-        # Skip cache, backup, temp files, and virtual environment
-        file_path_str = str(python_file)
-        if (
-            "__pycache__" in file_path_str
-            or python_file.name.endswith("_backup.py")
-            or "backup_before_migration" in file_path_str
-            or python_file.name.startswith("temp_")
-            or python_file.name.endswith("_temp.py")
-            or "_old" in python_file.name
-            or ".venv" in file_path_str
-            or "site-packages" in file_path_str
-            or "Cache" in file_path_str
-            or "Logs" in file_path_str
-        ):
+        if _should_skip_cache_or_temp_file(python_file):
             continue
-
-        # Quietly skip demo/prototype scripts in repo (no output spam)
-        demo_markers = ["demo", "prototype", "experimental", "sandbox"]
-        name_lower = python_file.name.lower()
-        if any(marker in name_lower for marker in demo_markers):
+        if _should_skip_demo_file(python_file):
+            continue
+        if _should_skip_interactive_file(python_file):
             continue
 
         # Check if the file has the standardized test function
         try:
             with python_file.open(encoding="utf-8") as f:
                 content = f.read()
-
-                # Skip files with interactive components that would block testing
-                # But allow legitimate test modules that happen to have interactive functionality
-                has_interactive = False
-                if python_file.name in ["db_viewer.py", "test_program_executor.py"]:
-                    # Specifically known interactive modules that should be excluded
-                    has_interactive = True
-
-                if has_interactive:
-                    continue
-
-                # Look for the standardized test function (either def or factory pattern)
-                if ("def run_comprehensive_tests" in content or
-                    "run_comprehensive_tests = create_standard_test_runner" in content):
+                if _has_test_function(content):
                     # Convert to relative path from project root
                     relative_path = python_file.relative_to(project_root)
                     test_modules.append(str(relative_path))
@@ -725,6 +738,28 @@ def _format_quality_info(quality_metrics) -> str:
         return f" | Quality: {score:.1f}/100 ✅"
 
 
+def _categorize_violation(violation: str) -> str:
+    """Categorize a violation by type."""
+    if "too long" in violation:
+        return "Length"
+    elif "too complex" in violation:
+        return "Complexity"
+    elif "missing type hint" in violation:
+        return "Type Hints"
+    else:
+        return "Other"
+
+
+def _format_violation_message(violation: str) -> str:
+    """Format a violation message for display."""
+    if "Function '" in violation and "'" in violation:
+        func_name = violation.split("Function '")[1].split("'")[0]
+        issue_type = violation.split("' ")[1] if "' " in violation else violation
+        return f"• {func_name}: {issue_type}"
+    else:
+        return f"• {violation}"
+
+
 def _print_quality_violations(quality_metrics) -> None:
     """Print quality violation details."""
     if not quality_metrics or quality_metrics.quality_score >= 95 or not quality_metrics.violations:
@@ -734,25 +769,13 @@ def _print_quality_violations(quality_metrics) -> None:
     # Group violations by type for better readability
     violation_types = {}
     for violation in quality_metrics.violations[:5]:  # Show first 5
-        if "too long" in violation:
-            violation_types.setdefault("Length", []).append(violation)
-        elif "too complex" in violation:
-            violation_types.setdefault("Complexity", []).append(violation)
-        elif "missing type hint" in violation:
-            violation_types.setdefault("Type Hints", []).append(violation)
-        else:
-            violation_types.setdefault("Other", []).append(violation)
+        vtype = _categorize_violation(violation)
+        violation_types.setdefault(vtype, []).append(violation)
 
     for vtype, violations in violation_types.items():
         print(f"      {vtype}: {len(violations)} issue(s)")
         for violation in violations[:2]:  # Show first 2 of each type
-            # Extract function name for brevity
-            if "Function '" in violation and "'" in violation:
-                func_name = violation.split("Function '")[1].split("'")[0]
-                issue_type = violation.split("' ")[1] if "' " in violation else violation
-                print(f"        • {func_name}: {issue_type}")
-            else:
-                print(f"        • {violation}")
+            print(f"        {_format_violation_message(violation)}")
 
     if len(quality_metrics.violations) > 5:
         print(f"      ... and {len(quality_metrics.violations) - 5} more issues")
@@ -791,6 +814,79 @@ def _print_failure_details(result, failure_indicators: list[str]) -> None:
             print(f"      {line}")
 
 
+def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], Optional[dict]]:
+    """Build the command and environment for running tests."""
+    cmd = [sys.executable]
+    env = None
+
+    # For modules with internal test suite, set env var to trigger test output
+    suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
+    if module_name in suite_env_modules:
+        env = dict(os.environ)
+        env["RUN_INTERNAL_TESTS"] = "1"
+
+    if coverage:
+        cmd += ["-m", "coverage", "run", "--append", module_name]
+    else:
+        cmd.append(module_name)
+
+    return cmd, env
+
+
+def _run_quality_analysis(module_name: str):
+    """Run quality analysis on a module."""
+    try:
+        module_path = Path(module_name)
+        if module_path.exists() and module_path.suffix == '.py':
+            quality_checker = CodeQualityChecker()
+            return quality_checker.check_file(module_path)
+    except Exception:
+        # Quality check failed, continue without it
+        pass
+    return None
+
+
+def _create_test_metrics(
+    module_name: str,
+    duration: float,
+    success: bool,
+    numeric_test_count: int,
+    perf_metrics: dict,
+    start_datetime: str,
+    end_datetime: str,
+    result,
+    quality_metrics
+) -> TestExecutionMetrics:
+    """Create TestExecutionMetrics object."""
+    return TestExecutionMetrics(
+        module_name=module_name,
+        duration=duration,
+        success=success,
+        test_count=numeric_test_count,
+        memory_usage_mb=perf_metrics.get("memory_mb", 0.0),
+        cpu_usage_percent=perf_metrics.get("cpu_percent", 0.0),
+        start_time=start_datetime,
+        end_time=end_datetime,
+        error_message=result.stderr if not success and result.stderr else None,
+        quality_metrics=quality_metrics
+    )
+
+
+def _create_error_metrics(module_name: str, error_message: str) -> TestExecutionMetrics:
+    """Create TestExecutionMetrics for error case."""
+    return TestExecutionMetrics(
+        module_name=module_name,
+        duration=0.0,
+        success=False,
+        test_count=0,
+        memory_usage_mb=0.0,
+        cpu_usage_percent=0.0,
+        start_time=datetime.now().isoformat(),
+        end_time=datetime.now().isoformat(),
+        error_message=error_message
+    )
+
+
 def run_module_tests(
     module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
 ) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
@@ -811,17 +907,8 @@ def run_module_tests(
         if monitor:
             monitor.start_monitoring()
 
-        cmd = [sys.executable]
-        env = None
-        # For modules with internal test suite, set env var to trigger test output
-        suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
-        if module_name in suite_env_modules:
-            env = dict(os.environ)
-            env["RUN_INTERNAL_TESTS"] = "1"
-        if coverage:
-            cmd += ["-m", "coverage", "run", "--append", module_name]
-        else:
-            cmd.append(module_name)
+        # Build and run test command
+        cmd, env = _build_test_command(module_name, coverage)
         result = subprocess.run(
             cmd,
             check=False, capture_output=True,
@@ -837,15 +924,7 @@ def run_module_tests(
         perf_metrics = monitor.stop_monitoring() if monitor else {}
 
         # Run quality analysis on the module
-        quality_metrics = None
-        try:
-            module_path = Path(module_name)
-            if module_path.exists() and module_path.suffix == '.py':
-                quality_checker = CodeQualityChecker()
-                quality_metrics = quality_checker.check_file(module_path)
-        except Exception:
-            # Quality check failed, continue without it
-            pass
+        quality_metrics = _run_quality_analysis(module_name)
 
         # Check for success based on return code AND output content
         success = result.returncode == 0
@@ -886,36 +965,16 @@ def run_module_tests(
 
         # Create performance metrics if monitoring was enabled
         if enable_monitoring:
-            metrics = TestExecutionMetrics(
-                module_name=module_name,
-                duration=duration,
-                success=success,
-                test_count=numeric_test_count,
-                memory_usage_mb=perf_metrics.get("memory_mb", 0.0),
-                cpu_usage_percent=perf_metrics.get("cpu_percent", 0.0),
-                start_time=start_datetime,
-                end_time=end_datetime,
-                error_message=result.stderr if not success and result.stderr else None,
-                quality_metrics=quality_metrics
+            metrics = _create_test_metrics(
+                module_name, duration, success, numeric_test_count,
+                perf_metrics, start_datetime, end_datetime, result, quality_metrics
             )
 
         return success, numeric_test_count, metrics
 
     except Exception as e:
         print(f"   ❌ FAILED | Error: {e}")
-        error_metrics = None
-        if enable_monitoring:
-            error_metrics = TestExecutionMetrics(
-                module_name=module_name,
-                duration=0.0,
-                success=False,
-                test_count=0,
-                memory_usage_mb=0.0,
-                cpu_usage_percent=0.0,
-                start_time=datetime.now().isoformat(),
-                end_time=datetime.now().isoformat(),
-                error_message=str(e)
-            )
+        error_metrics = _create_error_metrics(module_name, str(e)) if enable_monitoring else None
         return False, 0, error_metrics
 
 
