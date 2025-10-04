@@ -345,6 +345,53 @@ class SessionHealthMonitor:
             return HealthStatus.POOR
         return HealthStatus.CRITICAL
 
+    def _calculate_api_response_risk(self) -> float:
+        """Calculate risk from API response time trend."""
+        if len(self.api_response_times) < 3:
+            return 0.0
+
+        recent_avg = sum(list(self.api_response_times)[-3:]) / 3
+        if recent_avg > 10.0:
+            return 0.4
+        elif recent_avg > 8.0:
+            return 0.3
+        elif recent_avg > 5.0:
+            return 0.2
+        return 0.0
+
+    def _calculate_error_rate_risk(self) -> float:
+        """Calculate risk from error rate."""
+        total_errors = sum(self.error_counts.values())
+        if total_errors > 15:
+            return 0.4
+        elif total_errors > 10:
+            return 0.3
+        elif total_errors > 5:
+            return 0.2
+        return 0.0
+
+    def _calculate_memory_trend_risk(self) -> float:
+        """Calculate risk from memory usage trend."""
+        if len(self.memory_usage_history) < 3:
+            return 0.0
+
+        memory_trend = list(self.memory_usage_history)[-1] - list(self.memory_usage_history)[-3]
+        if memory_trend > 100:
+            return 0.2
+        elif memory_trend > 50:
+            return 0.1
+        return 0.0
+
+    def _calculate_critical_metrics_risk(self) -> float:
+        """Calculate risk from critical metrics."""
+        risk = 0.0
+        for _, metric in self.current_metrics.items():
+            if metric.value >= metric.threshold_critical:
+                risk += 0.15
+            elif metric.value >= metric.threshold_warning:
+                risk += 0.05
+        return risk
+
     def predict_session_death_risk(self) -> float:
         """
         Enhanced prediction of session death likelihood in next 10 pages (0.0-1.0).
@@ -352,46 +399,18 @@ class SessionHealthMonitor:
         Returns:
             Risk score from 0.0 (very safe) to 1.0 (imminent failure)
         """
-        risk_score = 0.0
-
-        # Base risk from current health score (more aggressive)
+        # Base risk from current health score
         health_score = self.calculate_health_score()
-        health_risk = (100 - health_score) / 100 * 0.5  # Increased from 0.4
-        risk_score += health_risk
+        health_risk = (100 - health_score) / 100 * 0.5
 
-        # Risk from API response time trend (more sensitive)
-        if len(self.api_response_times) >= 3:  # Reduced from 5
-            recent_avg = sum(list(self.api_response_times)[-3:]) / 3
-            if recent_avg > 10.0:
-                risk_score += 0.4  # Increased from 0.3
-            elif recent_avg > 8.0:
-                risk_score += 0.3  # New threshold
-            elif recent_avg > 5.0:
-                risk_score += 0.2  # Increased from 0.15
-
-        # Risk from error rate (more aggressive)
-        total_errors = sum(self.error_counts.values())
-        if total_errors > 15:
-            risk_score += 0.4  # Increased from 0.2
-        elif total_errors > 10:
-            risk_score += 0.3  # Increased from 0.2
-        elif total_errors > 5:
-            risk_score += 0.2  # Increased from 0.1
-
-        # Risk from memory usage trend
-        if len(self.memory_usage_history) >= 3:
-            memory_trend = list(self.memory_usage_history)[-1] - list(self.memory_usage_history)[-3]
-            if memory_trend > 100:  # Memory increasing very rapidly
-                risk_score += 0.2  # Increased from 0.1
-            elif memory_trend > 50:  # Memory increasing rapidly
-                risk_score += 0.1
-
-        # Additional risk factors for critical metrics
-        for _, metric in self.current_metrics.items():
-            if metric.value >= metric.threshold_critical:
-                risk_score += 0.15  # Each critical metric adds significant risk
-            elif metric.value >= metric.threshold_warning:
-                risk_score += 0.05  # Each warning metric adds some risk
+        # Aggregate all risk factors
+        risk_score = (
+            health_risk +
+            self._calculate_api_response_risk() +
+            self._calculate_error_rate_risk() +
+            self._calculate_memory_trend_risk() +
+            self._calculate_critical_metrics_risk()
+        )
 
         return min(1.0, risk_score)
 
@@ -450,6 +469,49 @@ class SessionHealthMonitor:
         # Check for early warning conditions
         self._check_error_rate_early_warning(current_time)
 
+    def _process_error_window_threshold(
+        self,
+        window_name: str,
+        errors_in_window: int,
+        threshold: int,
+        current_time: float
+    ) -> None:
+        """Process error threshold breach for a specific time window."""
+        warning_key = f"{window_name}_{threshold}"
+
+        # Only send warning once per hour for each threshold
+        last_warning = self.error_rate_warnings_sent.get(warning_key, 0)
+        if current_time - last_warning <= 3600:  # 1 hour
+            return
+
+        self.error_rate_warnings_sent[warning_key] = current_time
+
+        # Create critical alert
+        alert = HealthAlert(
+            level=AlertLevel.CRITICAL,
+            component="error_rate_monitor",
+            message=f"🚨 HIGH ERROR RATE: {errors_in_window} errors in {window_name} (threshold: {threshold})",
+            metric_name="error_rate_early_warning",
+            metric_value=errors_in_window,
+            threshold=threshold,
+            timestamp=current_time
+        )
+
+        self.alerts.append(alert)
+        prefix = self._safety_prefix()
+        logger.critical(f"{prefix}🚨 CRITICAL ALERT: {alert.message}")
+
+        # WORKLOAD-APPROPRIATE: Cascade failure detection with automatic intervention
+        if window_name == "30-minute" and errors_in_window >= 500:
+            logger.critical(f"{prefix}🚨 CASCADE FAILURE DETECTED - EMERGENCY INTERVENTION REQUIRED")
+            self._trigger_emergency_intervention("CASCADE_FAILURE", errors_in_window, window_name)
+        elif window_name == "15-minute" and errors_in_window >= 200:
+            logger.critical(f"{prefix}🚨 SEVERE ERROR PATTERN DETECTED - Triggering immediate intervention")
+            self._trigger_immediate_intervention("SEVERE_ERROR_PATTERN", errors_in_window, window_name)
+        elif window_name == "5-minute" and errors_in_window >= 75:
+            logger.warning(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
+            self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", errors_in_window, window_name)
+
     def _check_error_rate_early_warning(self, current_time: float) -> None:
         """
         PERFORMANCE-OPTIMIZED error rate monitoring for long sessions.
@@ -481,38 +543,7 @@ class SessionHealthMonitor:
             errors_in_window = sum(1 for ts in self.error_timestamps if ts >= window_start)
 
             if errors_in_window >= threshold:
-                warning_key = f"{window_name}_{threshold}"
-
-                # Only send warning once per hour for each threshold
-                last_warning = self.error_rate_warnings_sent.get(warning_key, 0)
-                if current_time - last_warning > 3600:  # 1 hour
-                    self.error_rate_warnings_sent[warning_key] = current_time
-
-                    # Create critical alert
-                    alert = HealthAlert(
-                        level=AlertLevel.CRITICAL,
-                        component="error_rate_monitor",
-                        message=f"🚨 HIGH ERROR RATE: {errors_in_window} errors in {window_name} (threshold: {threshold})",
-                        metric_name="error_rate_early_warning",
-                        metric_value=errors_in_window,
-                        threshold=threshold,
-                        timestamp=current_time
-                    )
-
-                    self.alerts.append(alert)
-                    prefix = self._safety_prefix()
-                    logger.critical(f"{prefix}🚨 CRITICAL ALERT: {alert.message}")
-
-                    # WORKLOAD-APPROPRIATE: Cascade failure detection with automatic intervention
-                    if window_name == "30-minute" and errors_in_window >= 500:
-                        logger.critical(f"{prefix}🚨 CASCADE FAILURE DETECTED - EMERGENCY INTERVENTION REQUIRED")
-                        self._trigger_emergency_intervention("CASCADE_FAILURE", errors_in_window, window_name)
-                    elif window_name == "15-minute" and errors_in_window >= 200:
-                        logger.critical(f"{prefix}🚨 SEVERE ERROR PATTERN DETECTED - Triggering immediate intervention")
-                        self._trigger_immediate_intervention("SEVERE_ERROR_PATTERN", errors_in_window, window_name)
-                    elif window_name == "5-minute" and errors_in_window >= 75:
-                        logger.warning(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
-                        self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", errors_in_window, window_name)
+                self._process_error_window_threshold(window_name, errors_in_window, threshold, current_time)
 
     def get_error_rate_statistics(self) -> dict[str, Any]:
         """
@@ -858,6 +889,32 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.warning(f"Error updating system metrics: {e}")
 
+    def _update_browser_health_metrics(self, monitor: Any) -> None:
+        """Update browser health metrics from monitor."""
+        if not (hasattr(monitor, 'get') or isinstance(monitor, dict)):
+            return
+
+        # Browser age
+        browser_start_time = monitor.get('browser_start_time') if hasattr(monitor, 'get') else monitor.get('browser_start_time', time.time())
+        if browser_start_time:
+            browser_age_minutes = (time.time() - browser_start_time) / 60
+            self.update_metric("browser_age_minutes", browser_age_minutes)
+
+        # Pages since refresh
+        pages_since_refresh = monitor.get('pages_since_refresh') if hasattr(monitor, 'get') else monitor.get('pages_since_refresh', 0)
+        if pages_since_refresh is not None:
+            self.update_metric("pages_since_refresh", pages_since_refresh)
+
+    def _update_session_health_metrics(self, session_monitor: Any) -> None:
+        """Update session health metrics from monitor."""
+        if not (hasattr(session_monitor, 'get') or isinstance(session_monitor, dict)):
+            return
+
+        session_start = session_monitor.get('session_start_time') if hasattr(session_monitor, 'get') else session_monitor.get('session_start_time', time.time())
+        if session_start:
+            session_age_minutes = (time.time() - session_start) / 60
+            self.update_metric("session_age_minutes", session_age_minutes)
+
     def update_session_metrics(self, session_manager: Any = None) -> None:
         """Update session-specific metrics with enhanced error handling."""
         try:
@@ -869,32 +926,14 @@ class SessionHealthMonitor:
                 # Handle browser health monitor
                 if hasattr(session_manager, 'browser_health_monitor'):
                     try:
-                        monitor = session_manager.browser_health_monitor
-
-                        # Check if monitor is a dict-like object
-                        if hasattr(monitor, 'get') or isinstance(monitor, dict):
-                            # Browser age
-                            browser_start_time = monitor.get('browser_start_time') if hasattr(monitor, 'get') else monitor.get('browser_start_time', time.time())
-                            if browser_start_time:
-                                browser_age_minutes = (time.time() - browser_start_time) / 60
-                                self.update_metric("browser_age_minutes", browser_age_minutes)
-
-                            # Pages since refresh
-                            pages_since_refresh = monitor.get('pages_since_refresh') if hasattr(monitor, 'get') else monitor.get('pages_since_refresh', 0)
-                            if pages_since_refresh is not None:
-                                self.update_metric("pages_since_refresh", pages_since_refresh)
+                        self._update_browser_health_metrics(session_manager.browser_health_monitor)
                     except Exception as browser_exc:
                         logger.debug(f"Browser health monitor update failed: {browser_exc}")
 
                 # Handle session health monitor
                 if hasattr(session_manager, 'session_health_monitor'):
                     try:
-                        session_monitor = session_manager.session_health_monitor
-                        if hasattr(session_monitor, 'get') or isinstance(session_monitor, dict):
-                            session_start = session_monitor.get('session_start_time') if hasattr(session_monitor, 'get') else session_monitor.get('session_start_time', time.time())
-                            if session_start:
-                                session_age_minutes = (time.time() - session_start) / 60
-                                self.update_metric("session_age_minutes", session_age_minutes)
+                        self._update_session_health_metrics(session_manager.session_health_monitor)
                     except Exception as session_exc:
                         logger.debug(f"Session health monitor update failed: {session_exc}")
 
