@@ -413,33 +413,38 @@ class IntelligentResearchPrioritizer:
 
             priority.dependency_bonus = dependency_bonus
 
-    def _optimize_research_workflow(self) -> None:
-        """Optimize research workflow by grouping related tasks and considering efficiency."""
-        # Group tasks by location for research efficiency
+    def _apply_location_clustering_bonus(self) -> None:
+        """Apply workflow bonuses for location clustering."""
         location_groups = defaultdict(list)
         for priority in self.research_priorities:
             location = self._extract_location_from_context(priority.research_context)
             if location:
                 location_groups[location].append(priority)
 
-        # Apply workflow bonuses for location clustering
+        # Apply bonuses for location clustering
         for _, tasks in location_groups.items():
             if len(tasks) > 1:  # Multiple tasks in same location
                 for task in tasks:
                     task.workflow_bonus = getattr(task, 'workflow_bonus', 0) + 3
 
-        # Group tasks by person for research efficiency
+    def _apply_person_clustering_bonus(self) -> None:
+        """Apply workflow bonuses for person clustering."""
         person_groups = defaultdict(list)
         for priority in self.research_priorities:
             if priority.target_people:
                 for person in priority.target_people:
                     person_groups[person].append(priority)
 
-        # Apply workflow bonuses for person clustering
+        # Apply bonuses for person clustering
         for _, tasks in person_groups.items():
             if len(tasks) > 1:  # Multiple tasks for same person
                 for task in tasks:
                     task.workflow_bonus = getattr(task, 'workflow_bonus', 0) + 2
+
+    def _optimize_research_workflow(self) -> None:
+        """Optimize research workflow by grouping related tasks and considering efficiency."""
+        self._apply_location_clustering_bonus()
+        self._apply_person_clustering_bonus()
 
     def _is_prerequisite(self, task1: ResearchPriority, task2: ResearchPriority) -> bool:
         """Determine if task1 is a prerequisite for task2."""
@@ -554,57 +559,77 @@ class IntelligentResearchPrioritizer:
             f"Cross-reference multiple sources for {location}"
         ]
 
+    def _score_gap_type(self, gap_type: str) -> float:
+        """Calculate score based on gap type."""
+        if gap_type == "missing_parents":
+            return 25.0  # Critical for family tree extension
+        elif gap_type == "missing_spouse":
+            return 22.0  # Important for family completeness
+        elif gap_type == "missing_children":
+            return 20.0  # Valuable for descendant research
+        elif gap_type == "missing_dates":
+            return 18.0  # Essential for timeline verification
+        elif gap_type == "missing_places":
+            return 15.0  # Important for location-based research
+        elif gap_type == "missing_occupation":
+            return 10.0  # Useful for social history
+        return 0.0
+
+    def _score_priority_level(self, priority: str) -> float:
+        """Calculate score based on priority level."""
+        if priority == "critical":
+            return 20.0
+        elif priority == "high":
+            return 15.0
+        elif priority == "medium":
+            return 8.0
+        elif priority == "low":
+            return 3.0
+        return 0.0
+
+    def _score_generation_level(self, person_id: str) -> float:
+        """Calculate score based on generation level."""
+        if not person_id:
+            return 0.0
+        generation_level = self._estimate_generation_level(person_id)
+        if generation_level <= 3:  # Parents, grandparents, great-grandparents
+            return (4 - generation_level) * 5.0
+        return 0.0
+
+    def _score_evidence_quality(self, evidence_quality: str) -> float:
+        """Calculate score based on evidence quality."""
+        if evidence_quality == "high":
+            return 10.0
+        elif evidence_quality == "medium":
+            return 5.0
+        return 0.0
+
+    def _score_research_difficulty(self, difficulty: str) -> float:
+        """Calculate score based on research difficulty."""
+        if difficulty == "easy":
+            return 8.0  # Quick wins are valuable
+        elif difficulty == "hard":
+            return -5.0  # Reduce priority for very difficult research
+        return 0.0
+
     def _calculate_gap_priority_score(self, gap: dict[str, Any]) -> float:
         """Calculate enhanced priority score for a gap using genealogical research best practices."""
         base_score = 50.0
 
-        # Enhanced gap type scoring with genealogical research priorities
-        gap_type = gap.get("gap_type", "")
-        if gap_type == "missing_parents":
-            base_score += 25  # Critical for family tree extension
-        elif gap_type == "missing_spouse":
-            base_score += 22  # Important for family completeness
-        elif gap_type == "missing_children":
-            base_score += 20  # Valuable for descendant research
-        elif gap_type == "missing_dates":
-            base_score += 18  # Essential for timeline verification
-        elif gap_type == "missing_places":
-            base_score += 15  # Important for location-based research
-        elif gap_type == "missing_occupation":
-            base_score += 10  # Useful for social history
+        # Enhanced gap type scoring
+        base_score += self._score_gap_type(gap.get("gap_type", ""))
 
         # Priority level adjustments
-        priority = gap.get("priority", "low")
-        if priority == "critical":
-            base_score += 20
-        elif priority == "high":
-            base_score += 15
-        elif priority == "medium":
-            base_score += 8
-        elif priority == "low":
-            base_score += 3
+        base_score += self._score_priority_level(gap.get("priority", "low"))
 
         # Research feasibility factors
-        person_id = gap.get("person_id", "")
-        if person_id:
-            # Boost score for direct ancestors (higher generations)
-            generation_level = self._estimate_generation_level(person_id)
-            if generation_level <= 3:  # Parents, grandparents, great-grandparents
-                base_score += (4 - generation_level) * 5
+        base_score += self._score_generation_level(gap.get("person_id", ""))
 
         # Available evidence bonus
-        evidence_quality = gap.get("evidence_quality", "low")
-        if evidence_quality == "high":
-            base_score += 10
-        elif evidence_quality == "medium":
-            base_score += 5
+        base_score += self._score_evidence_quality(gap.get("evidence_quality", "low"))
 
         # Research difficulty adjustment
-        difficulty = gap.get("research_difficulty", "medium")
-        if difficulty == "easy":
-            base_score += 8  # Quick wins are valuable
-        elif difficulty == "hard":
-            base_score -= 5  # Reduce priority for very difficult research
+        base_score += self._score_research_difficulty(gap.get("research_difficulty", "medium"))
 
         return min(100.0, max(0.0, base_score))
 
