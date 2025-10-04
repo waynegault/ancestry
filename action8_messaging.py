@@ -2605,6 +2605,153 @@ def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates
     return commit_success, batch_num
 
 
+def _process_single_candidate_iteration(
+    person: Any,
+    db_session: Session,
+    session_manager: SessionManager,
+    message_type_map: dict,
+    resource_manager: Any,
+    error_categorizer: Any,
+    max_messages_to_send_this_run: int,
+    db_commit_batch_size: int,
+    MAX_BATCH_MEMORY_MB: int,
+    MAX_BATCH_ITEMS: int,
+    sent_count: int,
+    acked_count: int,
+    skipped_count: int,
+    error_count: int,
+    db_logs_to_add_dicts: list,
+    person_updates: dict,
+    batch_num: int,
+    progress_bar: Any,
+    processed_in_loop: int
+) -> dict:
+    """
+    Process a single candidate iteration in the main loop.
+
+    Returns dict with updated counters and status flags.
+    """
+    import time
+
+    # Check message send limit
+    if _check_message_send_limit(max_messages_to_send_this_run, sent_count, acked_count,
+                                  progress_bar, skipped_count, error_count):
+        return {
+            'sent_count': sent_count,
+            'acked_count': acked_count,
+            'skipped_count': skipped_count + 1,
+            'error_count': error_count,
+            'batch_num': batch_num,
+            'critical_db_error_occurred': False,
+            'overall_success': True,
+            'should_continue': True
+        }
+
+    # Check halt signal
+    if _check_halt_signal(session_manager, processed_in_loop, 0):  # total_candidates not needed here
+        return {
+            'sent_count': sent_count,
+            'acked_count': acked_count,
+            'skipped_count': skipped_count,
+            'error_count': error_count,
+            'batch_num': batch_num,
+            'critical_db_error_occurred': False,
+            'overall_success': True,
+            'should_continue': False
+        }
+
+    # Log periodic progress
+    _log_periodic_progress(processed_in_loop, 0, sent_count,  # total_candidates not needed here
+                          acked_count, skipped_count, error_count)
+
+    # Get person ID and message history
+    person_id_int = int(safe_column_value(person, "id", 0))
+    latest_in_log, latest_out_log, latest_out_template_key = _get_person_message_history(
+        db_session, person_id_int
+    )
+
+    # Process single person with performance tracking
+    person_start_time = time.time()
+
+    try:
+        new_log_object, person_update_tuple, status = _process_single_person(
+            db_session, session_manager, person,
+            latest_in_log, latest_out_log, latest_out_template_key,
+            message_type_map
+        )
+    except MaxApiFailuresExceededError as cascade_err:
+        person_name = safe_column_value(person, 'name', 'Unknown')
+        logger.critical(
+            f"🚨 SESSION DEATH CASCADE in person processing for {person_name}: {cascade_err}. "
+            f"Halting remaining processing to prevent infinite cascade."
+        )
+        return {
+            'sent_count': sent_count,
+            'acked_count': acked_count,
+            'skipped_count': skipped_count,
+            'error_count': error_count,
+            'batch_num': batch_num,
+            'critical_db_error_occurred': False,
+            'overall_success': True,
+            'should_continue': False
+        }
+
+    # Log message creation for debugging
+    if new_log_object and hasattr(new_log_object, 'direction') and new_log_object.direction == MessageDirectionEnum.OUT:
+        template_info = "Unknown"
+        if new_log_object.message_template_id:
+            message_template_obj = db_session.query(MessageTemplate).filter(
+                MessageTemplate.id == new_log_object.message_template_id
+            ).first()
+            if message_template_obj:
+                template_info = message_template_obj.template_key
+        logger.debug(f"Created new OUT message for Person {person_id_int}: {template_info}")
+
+    # Update performance tracking
+    person_duration = time.time() - person_start_time
+    _update_messaging_performance(session_manager, person_duration)
+
+    # Update counters and collect data
+    sent_count, acked_count, skipped_count, error_count, overall_success = _update_counters_and_collect_data(
+        status, new_log_object, person_update_tuple,
+        sent_count, acked_count, skipped_count, error_count,
+        db_logs_to_add_dicts, person_updates,
+        error_categorizer, person, True  # overall_success always True here
+    )
+
+    # Update progress bar
+    if progress_bar:
+        progress_bar.set_description(
+            f"Processing: Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
+        )
+        progress_bar.update(1)
+
+    # Check if batch commit is needed
+    current_batch_size, memory_usage_mb = _calculate_batch_memory(db_logs_to_add_dicts, person_updates)
+
+    critical_db_error_occurred = False
+    if _should_commit_batch(current_batch_size, memory_usage_mb,
+                           db_commit_batch_size, MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS):
+        commit_success, batch_num = _perform_batch_commit(
+            db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager
+        )
+
+        if not commit_success:
+            critical_db_error_occurred = True
+            overall_success = False
+
+    return {
+        'sent_count': sent_count,
+        'acked_count': acked_count,
+        'skipped_count': skipped_count,
+        'error_count': error_count,
+        'batch_num': batch_num,
+        'critical_db_error_occurred': critical_db_error_occurred,
+        'overall_success': overall_success,
+        'should_continue': not critical_db_error_occurred
+    }
+
+
 def _log_final_summary(total_candidates: int, processed_in_loop: int, sent_count: int,
                        acked_count: int, skipped_count: int, error_count: int, overall_success: bool,
                        error_categorizer) -> None:
@@ -2806,7 +2953,6 @@ def _process_all_candidates(
     """Process all candidate persons for messaging. Returns dict with counters and results."""
     from tqdm.auto import tqdm
     from tqdm.contrib.logging import logging_redirect_tqdm
-    import time
 
     # Initialize counters
     sent_count = 0
@@ -2817,7 +2963,6 @@ def _process_all_candidates(
     batch_num = 0
     critical_db_error_occurred = False
     overall_success = True
-    memory_usage_bytes = 0
 
     # Initialize data collections
     db_logs_to_add_dicts = []
@@ -2855,88 +3000,34 @@ def _process_all_candidates(
             if processed_in_loop % 10 == 0:
                 resource_manager.periodic_maintenance()
 
-            # Check message send limit
-            if _check_message_send_limit(max_messages_to_send_this_run, sent_count, acked_count,
-                                          progress_bar, skipped_count, error_count):
-                skipped_count += 1
-                continue
-
-            # Check halt signal
-            if _check_halt_signal(session_manager, processed_in_loop, total_candidates):
-                break
-
-            # Log periodic progress
-            _log_periodic_progress(processed_in_loop, total_candidates, sent_count,
-                                  acked_count, skipped_count, error_count)
-
-            # Get person ID and message history
-            person_id_int = int(safe_column_value(person, "id", 0))
-            latest_in_log, latest_out_log, latest_out_template_key = _get_person_message_history(
-                db_session, person_id_int
-            )
-
-            # Process single person with performance tracking
-            person_start_time = time.time()
-
-            try:
-                new_log_object, person_update_tuple, status = _process_single_person(
-                    db_session, session_manager, person,
-                    latest_in_log, latest_out_log, latest_out_template_key,
-                    message_type_map
-                )
-            except MaxApiFailuresExceededError as cascade_err:
-                person_name = safe_column_value(person, 'name', 'Unknown')
-                logger.critical(
-                    f"🚨 SESSION DEATH CASCADE in person processing for {person_name}: {cascade_err}. "
-                    f"Halting remaining processing to prevent infinite cascade."
-                )
-                break
-
-            # Log message creation for debugging
-            if new_log_object and hasattr(new_log_object, 'direction') and new_log_object.direction == MessageDirectionEnum.OUT:
-                template_info = "Unknown"
-                if new_log_object.message_template_id:
-                    message_template_obj = db_session.query(MessageTemplate).filter(
-                        MessageTemplate.id == new_log_object.message_template_id
-                    ).first()
-                    if message_template_obj:
-                        template_info = message_template_obj.template_key
-                logger.debug(f"Created new OUT message for Person {person_id_int}: {template_info}")
-
-            # Update performance tracking
-            person_duration = time.time() - person_start_time
-            _update_messaging_performance(session_manager, person_duration)
-
-            # Update counters and collect data
-            sent_count, acked_count, skipped_count, error_count, overall_success = _update_counters_and_collect_data(
-                status, new_log_object, person_update_tuple,
+            # Process single candidate iteration
+            iteration_result = _process_single_candidate_iteration(
+                person, db_session, session_manager, message_type_map,
+                resource_manager, error_categorizer,
+                max_messages_to_send_this_run, db_commit_batch_size,
+                MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS,
                 sent_count, acked_count, skipped_count, error_count,
-                db_logs_to_add_dicts, person_updates,
-                error_categorizer, person, overall_success
+                db_logs_to_add_dicts, person_updates, batch_num,
+                progress_bar, processed_in_loop
             )
 
-            # Update progress bar
-            if progress_bar:
-                progress_bar.set_description(
-                    f"Processing: Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
-                )
-                progress_bar.update(1)
+            # Update counters from iteration result
+            sent_count = iteration_result['sent_count']
+            acked_count = iteration_result['acked_count']
+            skipped_count = iteration_result['skipped_count']
+            error_count = iteration_result['error_count']
+            batch_num = iteration_result['batch_num']
 
-            # Check if batch commit is needed
-            current_batch_size, memory_usage_mb = _calculate_batch_memory(db_logs_to_add_dicts, person_updates)
+            # Check for critical errors or halt conditions
+            if iteration_result['critical_db_error_occurred']:
+                critical_db_error_occurred = True
+                overall_success = False
+                break
 
-            if _should_commit_batch(current_batch_size, memory_usage_mb,
-                                   db_commit_batch_size, MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS):
-                commit_success, batch_num = _perform_batch_commit(
-                    db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager
-                )
+            if not iteration_result['should_continue']:
+                break
 
-                if not commit_success:
-                    critical_db_error_occurred = True
-                    overall_success = False
-                    break
-
-                memory_usage_bytes = 0
+            overall_success = iteration_result['overall_success']
 
     # Return all results as a dictionary
     return {
