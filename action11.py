@@ -2052,7 +2052,7 @@ def _log_relationship_calculation_checks(
     )
     logger.debug(
         f"  can_calc_discovery_api: {can_calc_discovery_api} "
-        f"(OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_person_global_id)})"
+        f"(OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_global_id_str)})"
     )
 
 

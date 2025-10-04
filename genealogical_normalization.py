@@ -54,7 +54,7 @@ standard library modules for safety.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 # Minimal constants for expected keys used across the codebase
 STRUCTURED_KEYS = [

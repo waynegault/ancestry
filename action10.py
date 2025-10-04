@@ -1791,7 +1791,6 @@ def action10_module_tests() -> bool:
 
     def test_display_relatives_fraser() -> None:
         """Test display_relatives with real Fraser Gault data"""
-        import os
 
         from dotenv import load_dotenv
 
@@ -1859,7 +1858,6 @@ def action10_module_tests() -> bool:
 
     def test_analyze_top_match_fraser() -> None:
         """Test analyze_top_match with real Fraser Gault data"""
-        import os
 
         from dotenv import load_dotenv
 
@@ -1952,7 +1950,6 @@ def action10_module_tests() -> bool:
 
     def test_real_search_performance_and_accuracy() -> None:
         """Test search performance and accuracy with real GEDCOM data"""
-        import os
 
         from dotenv import load_dotenv
         load_dotenv()
@@ -2045,7 +2042,6 @@ def action10_module_tests() -> bool:
 
     def test_family_relationship_analysis() -> None:
         """Test family relationship analysis with test person from .env"""
-        import os
 
         from dotenv import load_dotenv
         load_dotenv()
@@ -2118,7 +2114,6 @@ def action10_module_tests() -> bool:
 
     def test_relationship_path_calculation() -> None:
         """Test relationship path calculation from test person to tree owner"""
-        import os
 
         from dotenv import load_dotenv
         load_dotenv()
@@ -2253,7 +2248,6 @@ def action10_module_tests() -> bool:
 
     def test_fraser_gault_comprehensive() -> None:
         """Test 14: Comprehensive Fraser Gault family analysis with real GEDCOM data"""
-        import os
 
         from dotenv import load_dotenv
 

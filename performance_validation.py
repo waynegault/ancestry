@@ -517,8 +517,8 @@ def test_timing_measurement_accuracy() -> bool:
         time.sleep(0.01)  # 10ms sleep
         elapsed = time.time() - start_time
 
-        # Should be approximately 10ms with some tolerance
-        assert 0.005 <= elapsed <= 0.050, f"Expected ~0.01s, got {elapsed:.3f}s"
+        # Should be approximately 10ms with some tolerance (Windows can have higher overhead)
+        assert 0.005 <= elapsed <= 0.100, f"Expected ~0.01s, got {elapsed:.3f}s"
 
         # Test multiple timing measurements
         timings = []
@@ -527,13 +527,14 @@ def test_timing_measurement_accuracy() -> bool:
             time.sleep(0.001)  # 1ms sleep
             timings.append(time.time() - start)
 
-        # All timings should be reasonable
+        # All timings should be reasonable (Windows sleep has ~15ms minimum granularity)
+        # Adjusted thresholds to account for OS timing overhead
         for timing in timings:
-            assert 0.0005 <= timing <= 0.010, f"Unreasonable timing: {timing:.6f}s"
+            assert 0.0005 <= timing <= 0.025, f"Unreasonable timing: {timing:.6f}s"
 
-        # Average should be close to expected
+        # Average should be close to expected (relaxed upper bound for Windows)
         avg_timing = sum(timings) / len(timings)
-        assert 0.0005 <= avg_timing <= 0.010, f"Average timing out of range: {avg_timing:.6f}s"
+        assert 0.0005 <= avg_timing <= 0.025, f"Average timing out of range: {avg_timing:.6f}s"
 
         return True
     except Exception as e:
