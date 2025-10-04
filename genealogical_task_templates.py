@@ -161,32 +161,47 @@ class GenealogicalTaskGenerator:
         # Generic strategies for other locations
         return "Research local archives and historical societies. Check county courthouse records. Review local newspapers and obituaries. Consider regional migration patterns and historical events."
 
-    def _generate_name_variations(self, name: str) -> str:
-        """Generate common name variations for genealogical research."""
-        if not name:
-            return "Check common spelling variations"
-
+    def _apply_letter_substitutions(self, name_parts: list[str]) -> list[str]:
+        """Apply common letter substitutions to name parts."""
         variations = []
-        name_parts = name.split()
-
         for part in name_parts:
-            # Common letter substitutions
             if 'ph' in part.lower():
                 variations.append(part.replace('ph', 'f').replace('Ph', 'F'))
             if 'c' in part.lower():
                 variations.append(part.replace('c', 'k').replace('C', 'K'))
             if 'y' in part.lower():
                 variations.append(part.replace('y', 'i').replace('Y', 'I'))
+        return variations
 
-        # Add common prefixes/suffixes
+    def _add_nickname_variations(self, first_name: str) -> list[str]:
+        """Add common nickname variations for a given first name."""
+        nickname_map = {
+            'william': ['William', 'Bill', 'Billy', 'Will', 'Willie'],
+            'bill': ['William', 'Bill', 'Billy', 'Will', 'Willie'],
+            'billy': ['William', 'Bill', 'Billy', 'Will', 'Willie'],
+            'robert': ['Robert', 'Bob', 'Bobby', 'Rob', 'Robbie'],
+            'bob': ['Robert', 'Bob', 'Bobby', 'Rob', 'Robbie'],
+            'bobby': ['Robert', 'Bob', 'Bobby', 'Rob', 'Robbie'],
+            'james': ['James', 'Jim', 'Jimmy', 'Jamie'],
+            'jim': ['James', 'Jim', 'Jimmy', 'Jamie'],
+            'jimmy': ['James', 'Jim', 'Jimmy', 'Jamie'],
+        }
+        return nickname_map.get(first_name.lower(), [])
+
+    def _generate_name_variations(self, name: str) -> str:
+        """Generate common name variations for genealogical research."""
+        if not name:
+            return "Check common spelling variations"
+
+        name_parts = name.split()
+        variations = []
+
+        # Apply letter substitutions
+        variations.extend(self._apply_letter_substitutions(name_parts))
+
+        # Add nickname variations
         if name_parts:
-            first_name = name_parts[0]
-            if first_name.lower() in ['william', 'bill', 'billy']:
-                variations.extend(['William', 'Bill', 'Billy', 'Will', 'Willie'])
-            elif first_name.lower() in ['robert', 'bob', 'bobby']:
-                variations.extend(['Robert', 'Bob', 'Bobby', 'Rob', 'Robbie'])
-            elif first_name.lower() in ['james', 'jim', 'jimmy']:
-                variations.extend(['James', 'Jim', 'Jimmy', 'Jamie'])
+            variations.extend(self._add_nickname_variations(name_parts[0]))
 
         if variations:
             return f"Try variations: {', '.join(set(variations[:5]))}"
@@ -213,6 +228,55 @@ class GenealogicalTaskGenerator:
             }
         }
 
+    def _validate_and_normalize_inputs(
+        self,
+        person_data: dict[str, Any] | None,
+        extracted_data: dict[str, Any] | None,
+        suggested_tasks: list[str] | None
+    ) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+        """Validate and normalize input parameters."""
+        if person_data is None or not isinstance(person_data, dict):
+            person_data = {}
+        if extracted_data is None or not isinstance(extracted_data, dict):
+            extracted_data = {}
+        if suggested_tasks is None or not isinstance(suggested_tasks, list):
+            suggested_tasks = []
+        return person_data, extracted_data, suggested_tasks
+
+    def _generate_ai_enhanced_tasks(
+        self,
+        person_data: dict[str, Any],
+        extracted_data: dict[str, Any],
+        gedcom_data: Any
+    ) -> list[dict[str, Any]]:
+        """Generate GEDCOM AI-enhanced tasks if available."""
+        if not (self.gedcom_ai_available and self.gedcom_ai_integrator is not None and gedcom_data):
+            return []
+
+        try:
+            logger.debug("Generating GEDCOM AI-enhanced tasks")
+            ai_enhanced_tasks = self.gedcom_ai_integrator.generate_enhanced_research_tasks(
+                person_data, extracted_data, gedcom_data
+            )
+            logger.info(f"Generated {len(ai_enhanced_tasks)} GEDCOM AI-enhanced tasks")
+            return ai_enhanced_tasks
+        except Exception as e:
+            logger.warning(f"GEDCOM AI task generation failed: {e}, falling back to standard generation")
+            return []
+
+    def _generate_all_standard_tasks(self, extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Generate all standard task types based on extracted data."""
+        tasks = []
+        tasks.extend(self._generate_vital_records_tasks(extracted_data))
+        tasks.extend(self._generate_dna_analysis_tasks(extracted_data))
+        tasks.extend(self._generate_verification_tasks(extracted_data))
+        tasks.extend(self._generate_immigration_tasks(extracted_data))
+        tasks.extend(self._generate_census_tasks(extracted_data))
+        tasks.extend(self._generate_military_tasks(extracted_data))
+        tasks.extend(self._generate_occupation_tasks(extracted_data))
+        tasks.extend(self._generate_location_tasks(extracted_data))
+        return tasks
+
     def generate_research_tasks(
         self,
         person_data: dict[str, Any],
@@ -234,38 +298,17 @@ class GenealogicalTaskGenerator:
         """
         try:
             # Input validation and safe defaults
-            if person_data is None or not isinstance(person_data, dict):
-                person_data = {}
-            if extracted_data is None or not isinstance(extracted_data, dict):
-                extracted_data = {}
-            if suggested_tasks is None or not isinstance(suggested_tasks, list):
-                suggested_tasks = []
+            person_data, extracted_data, suggested_tasks = self._validate_and_normalize_inputs(
+                person_data, extracted_data, suggested_tasks
+            )
 
-            enhanced_tasks = []
+            # Generate AI-enhanced tasks if available
+            enhanced_tasks = self._generate_ai_enhanced_tasks(person_data, extracted_data, gedcom_data)
 
-            # === PHASE 12: GEDCOM AI ENHANCED TASK GENERATION ===
-            if self.gedcom_ai_available and self.gedcom_ai_integrator is not None and gedcom_data:
-                try:
-                    logger.debug("Generating GEDCOM AI-enhanced tasks")
-                    ai_enhanced_tasks = self.gedcom_ai_integrator.generate_enhanced_research_tasks(
-                        person_data, extracted_data, gedcom_data
-                    )
-                    enhanced_tasks.extend(ai_enhanced_tasks)
-                    logger.info(f"Generated {len(ai_enhanced_tasks)} GEDCOM AI-enhanced tasks")
-                except Exception as e:
-                    logger.warning(f"GEDCOM AI task generation failed: {e}, falling back to standard generation")
+            # Generate standard tasks
+            enhanced_tasks.extend(self._generate_all_standard_tasks(extracted_data))
 
-            # Generate tasks based on extracted data types (standard approach)
-            enhanced_tasks.extend(self._generate_vital_records_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_dna_analysis_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_verification_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_immigration_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_census_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_military_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_occupation_tasks(extracted_data))
-            enhanced_tasks.extend(self._generate_location_tasks(extracted_data))
-
-            # Add fallback tasks from AI suggestions if no specific tasks generated
+            # Add fallback tasks if no specific tasks generated
             if not enhanced_tasks and suggested_tasks:
                 enhanced_tasks.extend(self._create_fallback_tasks(person_data, suggested_tasks))
 
