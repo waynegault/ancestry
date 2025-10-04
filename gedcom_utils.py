@@ -1849,7 +1849,7 @@ class GedcomData:
             raise RuntimeError(error_msg) from e
         self.build_caches()  # Build caches upon initialization
 
-    def build_caches(self):
+    def build_caches(self) -> None:
         """Builds the individual index, family maps, and pre-processes data."""
         if not self.reader:
             logger.error("[Cache Build] Cannot build caches: GedcomReader is None.")
@@ -1866,7 +1866,7 @@ class GedcomData:
 
 
 
-    def _build_indi_index(self):
+    def _build_indi_index(self) -> None:
         """Builds a dictionary mapping normalized IDs to Individual records."""
         if not self.reader:
             logger.error("[Cache Build] Cannot build INDI index: GedcomReader is None.")
@@ -1937,7 +1937,7 @@ class GedcomData:
                 f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s."
             )
 
-    def _build_family_maps(self):
+    def _build_family_maps(self) -> None:
         """Builds dictionaries mapping child IDs to parent IDs and parent IDs to child IDs."""
         if not self.reader:
             logger.error(
@@ -2016,7 +2016,7 @@ class GedcomData:
                 "[Cache Build] Family maps are EMPTY despite processing FAM records. Check GEDCOM structure or parsing logic."
             )
 
-    def _pre_process_individual_data(self):
+    def _pre_process_individual_data(self) -> None:
         """NEW: Extracts and caches key data points for each individual."""
         if not self.indi_index:
             logger.error("Cannot pre-process data: INDI index is not built.")
