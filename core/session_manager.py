@@ -1867,6 +1867,44 @@ class SessionManager:
             logger.error(f"Failed to retrieve tree owner due to import error: {owner_imp_err}")
             return False
 
+    def _check_current_cookies(self, required_lower: set[str]) -> tuple[bool, set[str]]:
+        """Check current cookies and return if all found and missing set."""
+        if not self.driver:
+            return False, required_lower
+
+        try:
+            cookies = self.driver.get_cookies()
+            current_cookies_lower = {
+                c["name"].lower()
+                for c in cookies
+                if isinstance(c, dict) and "name" in c
+            }
+            missing_lower = required_lower - current_cookies_lower
+            return len(missing_lower) == 0, missing_lower
+        except Exception:
+            return False, required_lower
+
+    def _perform_final_cookie_check(self, cookie_names: list[str]) -> list[str]:
+        """Perform final cookie check after timeout and return missing cookies."""
+        missing_final = []
+        try:
+            if self.is_sess_valid():
+                cookies_final = self.driver.get_cookies()
+                current_cookies_final_lower = {
+                    c["name"].lower()
+                    for c in cookies_final
+                    if isinstance(c, dict) and "name" in c
+                }
+                missing_final = [
+                    name for name in cookie_names
+                    if name.lower() not in current_cookies_final_lower
+                ]
+            else:
+                missing_final = cookie_names
+        except Exception:
+            missing_final = cookie_names
+        return missing_final
+
     def get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
         """
         Advanced cookie management with timeout and session validation.
@@ -1885,8 +1923,6 @@ class SessionManager:
             logger.error("get_cookies: WebDriver instance is None.")
             return False
 
-        # Skip is_sess_valid() check here to prevent circular recursion
-
         start_time = time.time()
         logger.debug(f"Waiting up to {timeout}s for cookies: {cookie_names}...")
         required_lower = {name.lower() for name in cookie_names}
@@ -1895,23 +1931,15 @@ class SessionManager:
 
         while time.time() - start_time < timeout:
             try:
-                # Basic driver check (avoid is_sess_valid() to prevent recursion)
+                # Basic driver check
                 if not self.driver:
                     logger.warning("Driver became None while waiting for cookies.")
                     return False
 
-                cookies = self.driver.get_cookies()
-                current_cookies_lower = {
-                    c["name"].lower()
-                    for c in cookies
-                    if isinstance(c, dict) and "name" in c
-                }
-                missing_lower = required_lower - current_cookies_lower
-
-                if not missing_lower:
+                # Check current cookies
+                all_found, missing_lower = self._check_current_cookies(required_lower)
+                if all_found:
                     logger.debug(f"All required cookies found: {cookie_names}.")
-                    # Skip automatic cookie sync to prevent recursion
-                    # Cookie syncing will be handled elsewhere when needed
                     return True
 
                 # Log missing cookies only if the set changes
@@ -1924,11 +1952,9 @@ class SessionManager:
 
             except WebDriverException as e:
                 logger.error(f"WebDriverException while retrieving cookies: {e}")
-                # Check if session died due to the exception
                 if not self.is_sess_valid():
                     logger.error("Session invalid after WebDriverException during cookie retrieval.")
                     return False
-                # If session still valid, wait a bit longer before next try
                 time.sleep(interval * 2)
 
             except Exception as e:
@@ -1936,24 +1962,7 @@ class SessionManager:
                 time.sleep(interval * 2)
 
         # Final check after timeout
-        missing_final = []
-        try:
-            if self.is_sess_valid():
-                cookies_final = self.driver.get_cookies()
-                current_cookies_final_lower = {
-                    c["name"].lower()
-                    for c in cookies_final
-                    if isinstance(c, dict) and "name" in c
-                }
-                missing_final = [
-                    name for name in cookie_names
-                    if name.lower() not in current_cookies_final_lower
-                ]
-            else:
-                missing_final = cookie_names
-        except Exception:
-            missing_final = cookie_names
-
+        missing_final = self._perform_final_cookie_check(cookie_names)
         if missing_final:
             logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
             return False
