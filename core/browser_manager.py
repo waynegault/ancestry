@@ -56,7 +56,7 @@ DriverType = Optional[WebDriver]
 class BrowserManager:
     """Manages browser/WebDriver operations and state."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the BrowserManager."""
         self.driver: DriverType = None
         self.driver_live: bool = False
