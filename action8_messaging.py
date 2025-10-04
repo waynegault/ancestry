@@ -2637,6 +2637,51 @@ def _log_final_summary(total_candidates: int, processed_in_loop: int, sent_count
     logger.info("-----------------------------------------\n")
 
 
+def _handle_action8_exception(exception: Exception) -> bool:
+    """Handle exceptions in Action 8 and return overall_success status."""
+    if isinstance(exception, MaxApiFailuresExceededError):
+        logger.critical(
+            f"Halting Action 8 due to excessive critical API failures: {exception}",
+            exc_info=False,
+        )
+    elif isinstance(exception, BrowserSessionError):
+        logger.critical(
+            f"Browser session error in Action 8: {exception}",
+            exc_info=True,
+        )
+    elif isinstance(exception, APIRateLimitError):
+        logger.error(
+            f"API rate limit exceeded in Action 8: {exception}",
+            exc_info=False,
+        )
+    elif isinstance(exception, AuthenticationExpiredError):
+        logger.error(
+            f"Authentication expired during Action 8: {exception}",
+            exc_info=False,
+        )
+    elif isinstance(exception, ConnectionError):
+        # Check for session death cascade one more time at top level
+        if "Session death cascade detected" in str(exception):
+            logger.critical(
+                f"🚨 SESSION DEATH CASCADE at Action 8 top level: {exception}",
+                exc_info=False,
+            )
+        else:
+            logger.error(
+                f"Connection error during Action 8: {exception}",
+                exc_info=True,
+            )
+    elif isinstance(exception, KeyboardInterrupt):
+        logger.warning("Keyboard interrupt detected. Stopping Action 8 message processing.")
+    else:
+        logger.critical(
+            f"CRITICAL: Unhandled error during Action 8 execution: {exception}",
+            exc_info=True,
+        )
+
+    return False  # All exceptions result in overall_success = False
+
+
 # Updated decorator stack with enhanced error recovery
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Aligned with ANCESTRY_API_CONFIG
@@ -2849,52 +2894,9 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
                 overall_success = False
 
     # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---
-    except MaxApiFailuresExceededError as api_halt_err:
-        logger.critical(
-            f"Halting Action 8 due to excessive critical API failures: {api_halt_err}",
-            exc_info=False,
-        )
-        overall_success = False
-    except BrowserSessionError as browser_err:
-        logger.critical(
-            f"Browser session error in Action 8: {browser_err}",
-            exc_info=True,
-        )
-        overall_success = False
-    except APIRateLimitError as rate_err:
-        logger.error(
-            f"API rate limit exceeded in Action 8: {rate_err}",
-            exc_info=False,
-        )
-        overall_success = False
-    except AuthenticationExpiredError as auth_err:
-        logger.error(
-            f"Authentication expired during Action 8: {auth_err}",
-            exc_info=False,
-        )
-        overall_success = False
-    except ConnectionError as conn_err:
-        # Check for session death cascade one more time at top level
-        if "Session death cascade detected" in str(conn_err):
-            logger.critical(
-                f"🚨 SESSION DEATH CASCADE at Action 8 top level: {conn_err}",
-                exc_info=False,
-            )
-        else:
-            logger.error(
-                f"Connection error during Action 8: {conn_err}",
-                exc_info=True,
-            )
-        overall_success = False
-    except KeyboardInterrupt:
-        logger.warning("Keyboard interrupt detected. Stopping Action 8 message processing.")
-        overall_success = False
-    except Exception as outer_e:
-        logger.critical(
-            f"CRITICAL: Unhandled error during Action 8 execution: {outer_e}",
-            exc_info=True,
-        )
-        overall_success = False
+    except (MaxApiFailuresExceededError, BrowserSessionError, APIRateLimitError,
+            AuthenticationExpiredError, ConnectionError, KeyboardInterrupt, Exception) as outer_err:
+        overall_success = _handle_action8_exception(outer_err)
 
         # Emergency resource cleanup on critical failure
         try:
