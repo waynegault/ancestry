@@ -882,57 +882,115 @@ def fast_bidirectional_bfs(
     # Main search loop - continue until we find paths or exhaust the search
     while queue_fwd and queue_bwd and len(all_paths) < 5:
         # Check timeout and node limit
-        if time.time() - start_time > timeout_sec:
-            logger.warning(f"[FastBiBFS] Timeout after {timeout_sec:.1f} seconds.")
-            break
-        if processed > node_limit:
-            logger.warning(f"[FastBiBFS] Node limit ({node_limit}) reached.")
+        if _check_search_limits(start_time, timeout_sec, processed, node_limit):
             break
 
         # Process forward queue (from start)
-        if queue_fwd:
-            current_id, depth, path = queue_fwd.popleft()
-            processed += 1
-
-            # Check if we've reached a node visited by backward search
-            if current_id in visited_bwd:
-                # Found a meeting point - reconstruct the path
-                _bwd_depth, bwd_path = visited_bwd[current_id]  # depth unused
-                # Combine paths (remove duplicate meeting point)
-                combined_path = path + bwd_path[1:]
-                all_paths.append(combined_path)
-                logger.debug(
-                    f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
-                )
-                continue
-
-            # Expand this node in forward direction
-            _expand_forward_node(current_id, depth, path, visited_fwd, queue_fwd,
-                                id_to_parents, id_to_children, max_depth)
+        processed += _process_forward_queue_item(
+            queue_fwd, visited_bwd, visited_fwd, all_paths,
+            id_to_parents, id_to_children, max_depth
+        )
 
         # Process backward queue (from end)
-        if queue_bwd:
-            current_id, depth, path = queue_bwd.popleft()
-            processed += 1
-
-            # Check if we've reached a node visited by forward search
-            if current_id in visited_fwd:
-                # Found a meeting point - reconstruct the path
-                _fwd_depth, fwd_path = visited_fwd[current_id]  # depth unused
-                # Combine paths (remove duplicate meeting point)
-                combined_path = fwd_path + path[1:]
-                all_paths.append(combined_path)
-                logger.debug(
-                    f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
-                )
-                continue
-
-            # Expand this node in backward direction
-            _expand_backward_node(current_id, depth, path, visited_bwd, queue_bwd,
-                                 id_to_parents, id_to_children, max_depth)
+        processed += _process_backward_queue_item(
+            queue_bwd, visited_fwd, visited_bwd, all_paths,
+            id_to_parents, id_to_children, max_depth
+        )
 
     # Select the best path from found paths
     return _select_best_path(all_paths, start_id, end_id, id_to_parents, id_to_children)
+
+
+def _process_forward_queue_item(
+    queue_fwd: Any,
+    visited_bwd: dict,
+    visited_fwd: dict,
+    all_paths: list,
+    id_to_parents: dict,
+    id_to_children: dict,
+    max_depth: int
+) -> int:
+    """
+    Process one item from the forward queue.
+
+    Returns:
+        1 if processed, 0 if queue empty
+    """
+    if not queue_fwd:
+        return 0
+
+    current_id, depth, path = queue_fwd.popleft()
+
+    # Check if we've reached a node visited by backward search
+    if current_id in visited_bwd:
+        # Found a meeting point - reconstruct the path
+        _bwd_depth, bwd_path = visited_bwd[current_id]  # depth unused
+        # Combine paths (remove duplicate meeting point)
+        combined_path = path + bwd_path[1:]
+        all_paths.append(combined_path)
+        logger.debug(
+            f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
+        )
+        return 1
+
+    # Expand this node in forward direction
+    _expand_forward_node(current_id, depth, path, visited_fwd, queue_fwd,
+                        id_to_parents, id_to_children, max_depth)
+    return 1
+
+
+def _process_backward_queue_item(
+    queue_bwd: Any,
+    visited_fwd: dict,
+    visited_bwd: dict,
+    all_paths: list,
+    id_to_parents: dict,
+    id_to_children: dict,
+    max_depth: int
+) -> int:
+    """
+    Process one item from the backward queue.
+
+    Returns:
+        1 if processed, 0 if queue empty
+    """
+    if not queue_bwd:
+        return 0
+
+    current_id, depth, path = queue_bwd.popleft()
+
+    # Check if we've reached a node visited by forward search
+    if current_id in visited_fwd:
+        # Found a meeting point - reconstruct the path
+        _fwd_depth, fwd_path = visited_fwd[current_id]  # depth unused
+        # Combine paths (remove duplicate meeting point)
+        combined_path = fwd_path + path[1:]
+        all_paths.append(combined_path)
+        logger.debug(
+            f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
+        )
+        return 1
+
+    # Expand this node in backward direction
+    _expand_backward_node(current_id, depth, path, visited_bwd, queue_bwd,
+                         id_to_parents, id_to_children, max_depth)
+    return 1
+
+
+def _check_search_limits(start_time: float, timeout_sec: int, processed: int, node_limit: int) -> bool:
+    """
+    Check if search limits (timeout or node limit) have been reached.
+
+    Returns:
+        True if limits reached, False otherwise
+    """
+    if time.time() - start_time > timeout_sec:
+        logger.warning(f"[FastBiBFS] Timeout after {timeout_sec:.1f} seconds.")
+        return True
+    if processed > node_limit:
+        logger.warning(f"[FastBiBFS] Node limit ({node_limit}) reached.")
+        return True
+    return False
 
 
 def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
