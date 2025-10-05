@@ -3954,6 +3954,64 @@ def _fetch_match_list_page(
     return api_response
 
 
+def _validate_response_type(api_response: Any, current_page: int) -> bool:
+    """Validate that API response is a dictionary."""
+    if not isinstance(api_response, dict):
+        if isinstance(api_response, requests.Response):
+            logger.error(
+                f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
+            )
+        else:
+            logger.error(
+                f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
+            )
+            if isinstance(api_response, str):
+                logger.debug(f"API response content (first 500 chars): {api_response[:500]}")
+            else:
+                logger.debug(f"API response: {api_response}")
+        return False
+    return True
+
+
+def _extract_total_pages(api_response: Dict[str, Any]) -> Optional[int]:
+    """Extract and parse total pages from API response."""
+    total_pages_raw = api_response.get("totalPages")
+    if total_pages_raw is not None:
+        try:
+            return int(total_pages_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
+            return None
+    logger.warning("Total pages missing from match list response.")
+    return None
+
+
+def _filter_valid_matches(
+    match_data_list: List[Any],
+    current_page: int
+) -> List[Dict[str, Any]]:
+    """Filter matches that have a valid sampleId."""
+    valid_matches_for_processing: List[Dict[str, Any]] = []
+    skipped_sampleid_count = 0
+
+    for m_idx, m_val in enumerate(match_data_list):
+        if isinstance(m_val, dict) and m_val.get("sampleId"):
+            valid_matches_for_processing.append(m_val)
+        else:
+            skipped_sampleid_count += 1
+            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
+            logger.warning(
+                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
+            )
+
+    if skipped_sampleid_count > 0:
+        logger.warning(
+            f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
+        )
+
+    return valid_matches_for_processing
+
+
 def _process_match_list_response(
     api_response: Any,
     current_page: int
@@ -3972,31 +4030,11 @@ def _process_match_list_response(
         return [], None
 
     # Validate response type
-    if not isinstance(api_response, dict):
-        if isinstance(api_response, requests.Response):
-            logger.error(
-                f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
-            )
-        else:
-            logger.error(
-                f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
-            )
-            if isinstance(api_response, str):
-                logger.debug(f"API response content (first 500 chars): {api_response[:500]}")
-            else:
-                logger.debug(f"API response: {api_response}")
+    if not _validate_response_type(api_response, current_page):
         return None
 
     # Extract total pages
-    total_pages: Optional[int] = None
-    total_pages_raw = api_response.get("totalPages")
-    if total_pages_raw is not None:
-        try:
-            total_pages = int(total_pages_raw)
-        except (ValueError, TypeError):
-            logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
-    else:
-        logger.warning("Total pages missing from match list response.")
+    total_pages = _extract_total_pages(api_response)
 
     # Extract match list
     match_data_list = api_response.get("matchList", [])
@@ -4004,24 +4042,8 @@ def _process_match_list_response(
         logger.info(f"No matches found in 'matchList' array for page {current_page}.")
         return [], total_pages
 
-    # Filter valid matches (must have sampleId)
-    valid_matches_for_processing: List[Dict[str, Any]] = []
-    skipped_sampleid_count = 0
-
-    for m_idx, m_val in enumerate(match_data_list):
-        if isinstance(m_val, dict) and m_val.get("sampleId"):
-            valid_matches_for_processing.append(m_val)
-        else:
-            skipped_sampleid_count += 1
-            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
-            logger.warning(
-                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
-            )
-
-    if skipped_sampleid_count > 0:
-        logger.warning(
-            f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
-        )
+    # Filter valid matches
+    valid_matches_for_processing = _filter_valid_matches(match_data_list, current_page)
 
     if not valid_matches_for_processing:
         logger.warning(
@@ -4175,6 +4197,65 @@ def get_matches(  # type: ignore
 # End of get_matches
 
 
+def _validate_combined_details_session(
+    session_manager: SessionManager,
+    my_uuid: Optional[str],
+    match_uuid: str
+) -> None:
+    """Validate session and UUIDs for combined details fetch."""
+    if not my_uuid or not match_uuid:
+        logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
+        raise ValueError(f"Missing required UUIDs: my_uuid={my_uuid}, match_uuid={match_uuid}")
+
+    if not session_manager.is_sess_valid():
+        logger.error(
+            f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
+        )
+        raise ConnectionError(
+            f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
+        )
+
+
+def _fetch_and_merge_profile_details(
+    session_manager: SessionManager,
+    combined_data: Dict[str, Any],
+    match_uuid: str
+) -> None:
+    """Fetch profile details and merge into combined data."""
+    tester_profile_id_for_api = combined_data.get("tester_profile_id")
+    combined_data["last_logged_in_dt"] = None
+    combined_data["contactable"] = False
+
+    if not tester_profile_id_for_api:
+        logger.debug(
+            f"Skipping /profiles/details fetch for {match_uuid}: Tester profile ID not found in /details."
+        )
+        return
+
+    if not session_manager.is_sess_valid():
+        logger.error(
+            f"_fetch_combined_details: WebDriver session invalid before profile fetch for {tester_profile_id_for_api}."
+        )
+        raise ConnectionError(
+            f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id_for_api})"
+        )
+
+    try:
+        profile_data = _fetch_profile_details_api(
+            session_manager, tester_profile_id_for_api, match_uuid
+        )
+        combined_data.update(profile_data)
+    except ConnectionError:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error processing /profiles/details for {tester_profile_id_for_api}: {e}",
+            exc_info=True,
+        )
+        if isinstance(e, requests.exceptions.RequestException):
+            raise
+
+
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
 def _fetch_combined_details(
     session_manager: SessionManager, match_uuid: str
@@ -4197,18 +4278,11 @@ def _fetch_combined_details(
     my_uuid = session_manager.my_uuid
     logger.debug(f"_fetch_combined_details: my_uuid={my_uuid}")
 
-    if not my_uuid or not match_uuid:
-        logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
+    # Validate session and UUIDs
+    try:
+        _validate_combined_details_session(session_manager, my_uuid, match_uuid)
+    except ValueError:
         return None
-
-    logger.debug("_fetch_combined_details: Checking session validity...")
-    if not session_manager.is_sess_valid():
-        logger.error(
-            f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
-        )
 
     logger.debug("_fetch_combined_details: Session valid, proceeding with API calls...")
 
@@ -4228,37 +4302,8 @@ def _fetch_combined_details(
             raise
         return None
 
-    # Fetch profile details
-    tester_profile_id_for_api = combined_data.get("tester_profile_id")
-    combined_data["last_logged_in_dt"] = None
-    combined_data["contactable"] = False
-
-    if not tester_profile_id_for_api:
-        logger.debug(
-            f"Skipping /profiles/details fetch for {match_uuid}: Tester profile ID not found in /details."
-        )
-    elif not session_manager.is_sess_valid():
-        logger.error(
-            f"_fetch_combined_details: WebDriver session invalid before profile fetch for {tester_profile_id_for_api}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id_for_api})"
-        )
-    else:
-        try:
-            profile_data = _fetch_profile_details_api(
-                session_manager, tester_profile_id_for_api, match_uuid
-            )
-            combined_data.update(profile_data)
-        except ConnectionError:
-            raise
-        except Exception as e:
-            logger.error(
-                f"Error processing /profiles/details for {tester_profile_id_for_api}: {e}",
-                exc_info=True,
-            )
-            if isinstance(e, requests.exceptions.RequestException):
-                raise
+    # Fetch and merge profile details
+    _fetch_and_merge_profile_details(session_manager, combined_data, match_uuid)
 
     return combined_data if combined_data else None
 
