@@ -245,6 +245,52 @@ class BaseCacheModule(CacheInterface):
 base_cache_module = BaseCacheModule()
 
 
+# --- Cache Decorator Helper Functions ---
+
+
+def _generate_cache_key(cache_key_prefix: str, func: Callable, args: tuple, kwargs: dict, ignore_args: bool) -> Optional[str]:
+    """Generate cache key for function call."""
+    if ignore_args:
+        logger.debug(f"Using ignore_args=True, cache key: '{cache_key_prefix}'")
+        return cache_key_prefix
+
+    try:
+        arg_key_part = f"_args{args!s}_kwargs{sorted(kwargs.items())!s}"
+        return f"{cache_key_prefix}_{func.__name__}{arg_key_part}"
+    except Exception as key_gen_e:
+        logger.error(f"Error generating cache key for {func.__name__}: {key_gen_e}. Bypassing cache.")
+        return None
+
+
+def _try_get_cached_value(cache_key: str) -> tuple[bool, Any]:
+    """Try to get value from cache. Returns (found, value) tuple."""
+    try:
+        cached_value = cache.get(cache_key, default=ENOVAL, retry=True)
+        if cached_value is not ENOVAL:
+            logger.debug(f"Cache HIT for key: '{cache_key}'")
+            get_intelligent_cache_warmer().record_cache_access(cache_key, hit=True)
+            return True, cached_value
+        logger.debug(f"Cache MISS for key: '{cache_key}'")
+        get_intelligent_cache_warmer().record_cache_access(cache_key, hit=False)
+        return False, None
+    except Exception as e:
+        logger.error(f"Cache read error for key '{cache_key}': {e}", exc_info=True)
+        return False, None
+
+
+def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> None:
+    """Try to cache the result."""
+    try:
+        if check_cache_size_before_add():
+            cache.set(cache_key, result, expire=expire, retry=True)
+            expire_msg = f"with expiry {expire}s" if expire is not None else "with default expiry"
+            logger.debug(f"Cached result for key: '{cache_key}' {expire_msg}.")
+        else:
+            logger.warning(f"Cache size limit reached. Skipping cache set for key: '{cache_key}'")
+    except Exception as cache_set_e:
+        logger.error(f"Failed to cache result for key '{cache_key}': {cache_set_e}", exc_info=True)
+
+
 # --- Cache Decorator ---
 
 
@@ -275,95 +321,32 @@ def cache_result(
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Step 1: Check if cache is available
             if cache is None:
-                logger.error(
-                    "Cache is not initialized. Bypassing cache and calling function directly."
-                )
+                logger.error("Cache is not initialized. Bypassing cache and calling function directly.")
                 return func(*args, **kwargs)
 
             # Step 2: Generate the final cache key
-            if ignore_args:
-                # Use only the prefix if arguments should be ignored
-                final_cache_key = cache_key_prefix
-                logger.debug(f"Using ignore_args=True, cache key: '{final_cache_key}'")
-            else:
-                # Generate key based on prefix, function name, args, and sorted kwargs
-                # Note: Relies on stable string representation of arguments.
-                # Complex objects might require custom serialization for reliable keys.
-                try:
-                    arg_key_part = (
-                        f"_args{args!s}_kwargs{sorted(kwargs.items())!s}"
-                    )
-                    final_cache_key = (
-                        f"{cache_key_prefix}_{func.__name__}{arg_key_part}"
-                    )
-                except Exception as key_gen_e:
-                    logger.error(
-                        f"Error generating cache key for {func.__name__}: {key_gen_e}. Bypassing cache."
-                    )
-                    return func(*args, **kwargs)
-            # logger.debug(f"Generated cache key: '{final_cache_key}'") # Can be verbose
+            final_cache_key = _generate_cache_key(cache_key_prefix, func, args, kwargs, ignore_args)
+            if final_cache_key is None:
+                return func(*args, **kwargs)
 
             # Step 3: Attempt to retrieve from cache
-            try:
-                # Use default=ENOVAL to distinguish a cache miss from a stored None value
-                cached_value = cache.get(final_cache_key, default=ENOVAL, retry=True)
-
-                # Step 3a: Cache Hit - Return cached value
-                if cached_value is not ENOVAL:
-                    logger.debug(f"Cache HIT for key: '{final_cache_key}'")
-                    # === PHASE 12.4.1: RECORD CACHE ACCESS PATTERNS ===
-                    get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=True)
-                    return cached_value
-                # Step 3b: Cache Miss - Log and proceed to function execution
-                logger.debug(f"Cache MISS for key: '{final_cache_key}'")
-                # === PHASE 12.4.1: RECORD CACHE ACCESS PATTERNS ===
-                get_intelligent_cache_warmer().record_cache_access(final_cache_key, hit=False)
-
-            except Exception as e:
-                # Log errors during cache read but treat as cache miss
-                logger.error(
-                    f"Cache read error for key '{final_cache_key}': {e}", exc_info=True
-                )
-                # Proceed to execute the function below
+            found, cached_value = _try_get_cached_value(final_cache_key)
+            if found:
+                return cached_value
 
             # Step 4: Execute the original function (if cache miss or read error)
             try:
                 result = func(*args, **kwargs)
-
-                # Step 5: Store the result in the cache, enforcing size limit
-                try:
-                    if check_cache_size_before_add():
-                        cache.set(final_cache_key, result, expire=expire, retry=True)
-                        expire_msg = (
-                            f"with expiry {expire}s"
-                            if expire is not None
-                            else "with default expiry"
-                        )
-                        logger.debug(
-                            f"Cached result for key: '{final_cache_key}' {expire_msg}."
-                        )
-                    else:
-                        logger.warning(
-                            f"Cache size limit reached. Skipping cache set for key: '{final_cache_key}'"
-                        )
-                except Exception as cache_set_e:
-                    # Log error during cache set, but return the result anyway
-                    logger.error(
-                        f"Failed to cache result for key '{final_cache_key}': {cache_set_e}",
-                        exc_info=True,
-                    )
-
+                # Step 5: Store the result in the cache
+                _try_cache_result(final_cache_key, result, expire)
                 # Step 6: Return the live result
                 return result
-
             except Exception as func_exec_e:
                 # Step 7: Handle errors during function execution
                 logger.error(
                     f"Error during execution of function '{func.__name__}' or caching for key '{final_cache_key}': {func_exec_e}",
                     exc_info=True,
                 )
-                # Do NOT cache the error or any partial result.
-                # Re-raise the original exception to the caller.
                 raise func_exec_e
 
         # End of wrapper
