@@ -1068,6 +1068,245 @@ class UnifiedCredentialManager:
             return False
 
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+# These test functions are extracted from the main test suite for better
+# modularity, maintainability, and reduced complexity. Each function tests
+# a specific aspect of the credentials functionality.
+
+
+def _test_security_availability() -> None:
+    """Test that security components are available."""
+    assert SECURITY_AVAILABLE, "Security dependencies should be available"
+    assert SecurityManager is not None, "SecurityManager should be importable"
+
+
+def _test_manager_initialization() -> None:
+    """Test credential manager initialization."""
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+        assert (
+            manager.security_manager is not None
+        ), "SecurityManager should be initialized"
+
+
+def _test_manager_initialization_with_security_unavailable() -> None:
+    """Test that initialization fails properly when security is unavailable."""
+    # Temporarily set SECURITY_AVAILABLE to False
+    global SECURITY_AVAILABLE
+    original_value = SECURITY_AVAILABLE
+    SECURITY_AVAILABLE = False
+
+    try:
+        # Should raise ImportError
+        raised = False
+        try:
+            UnifiedCredentialManager()
+        except ImportError:
+            raised = True
+        assert raised, "Should raise ImportError when security is unavailable"
+    finally:
+        # Restore original value
+        SECURITY_AVAILABLE = original_value
+
+
+def _test_menu_methods() -> None:
+    """Test that all menu methods exist."""
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+        methods = [
+            "view_credentials",
+            "setup_credentials",
+            "remove_credential",
+            "delete_all_credentials",
+            "setup_test_credentials",
+            "export_credentials",
+            "check_status",
+            "edit_credential_types",
+        ]
+
+        for method in methods:
+            assert hasattr(manager, method), f"Manager should have {method} method"
+            assert callable(
+                getattr(manager, method)
+            ), f"{method} should be callable"
+
+
+def _test_load_credential_types_with_valid_file(create_test_credential_file) -> None:
+    """Test loading credential types from a valid file."""
+    from pathlib import Path
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Create a valid test credential file
+        test_file = create_test_credential_file(valid=True)
+
+        # Mock Path's parent/__truediv__ combination that's used in _load_credential_types
+        with patch.object(Path, "__truediv__", return_value=test_file):
+            # Mock exists to return True
+            with patch.object(Path, "exists", return_value=True):
+                # Load credential types
+                required, optional = manager._load_credential_types()
+
+                # Verify loaded credentials
+                assert (
+                    "TEST_REQUIRED" in required
+                ), "Should load required credentials"
+                assert (
+                    "TEST_OPTIONAL" in optional
+                ), "Should load optional credentials"
+
+
+def _test_load_credential_types_with_missing_file() -> None:
+    """Test loading credential types when the file is missing."""
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Mock file operations
+        with patch("pathlib.Path.exists", return_value=False):
+
+            # Load credential types
+            required, optional = manager._load_credential_types()
+
+            # Verify default credentials are used
+            assert len(required) > 0, "Should use default required credentials"
+            assert len(optional) > 0, "Should use default optional credentials"
+            assert (
+                "ANCESTRY_USERNAME" in required
+            ), "Default credentials should include ANCESTRY_USERNAME"
+
+
+def _test_load_credential_types_with_invalid_json(test_dir_path) -> None:
+    """Test loading credential types when the file has invalid JSON."""
+    from pathlib import Path
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Create an invalid test credential file
+        test_file = test_dir_path / "invalid.json"
+        with test_file.open("w", encoding="utf-8") as f:
+            f.write("{invalid json")
+
+        # Mock file operations
+        with patch(
+            "pathlib.Path.open",
+            side_effect=lambda *args, **kwargs: Path(test_file).open(
+                *args[1:], **kwargs
+            ),
+        ), patch("pathlib.Path.exists", return_value=True):
+
+            # Load credential types
+            required, optional = manager._load_credential_types()
+
+            # Verify default credentials are used
+            assert (
+                len(required) > 0
+            ), "Should use default required credentials on JSON error"
+            assert (
+                len(optional) > 0
+            ), "Should use default optional credentials on JSON error"
+
+
+def _test_load_credential_types_with_invalid_structure(create_test_credential_file) -> None:
+    """Test loading credential types when the file has invalid structure."""
+    from pathlib import Path
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Create a test credential file with invalid structure
+        test_file = create_test_credential_file(valid=False)
+
+        # Mock file operations
+        with patch(
+            "pathlib.Path.open",
+            side_effect=lambda *args, **kwargs: Path(test_file).open(
+                *args[1:], **kwargs
+            ),
+        ), patch("pathlib.Path.exists", return_value=True):
+
+            # Load credential types
+            required, optional = manager._load_credential_types()
+            # Verify default credentials are used when structure is invalid
+            assert (
+                "ANCESTRY_USERNAME" in required
+            ), "Should use default required credentials on structure error"
+            assert (
+                "OPENAI_API_KEY" in optional
+            ), "Should use default optional credentials on structure error"
+
+
+def _test_edit_credential_types_error_handling() -> None:
+    """Test error handling in edit_credential_types."""
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Mock open to simulate file access error
+        with patch(
+            "builtins.open", side_effect=PermissionError("Permission denied")
+        ):
+
+            # This should handle the error gracefully without crashing
+            success = manager._save_credential_types({}, {})
+            assert not success, "Should return False when file cannot be written"
+
+
+def _test_check_status_with_missing_credentials() -> None:
+    """Test check_status when credentials are missing."""
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Mock the decrypt_credentials method
+        with patch.object(
+            manager.security_manager, "decrypt_credentials", return_value=None
+        ):
+
+            # Call check_status and verify it doesn't crash
+            status = manager.check_status()
+            assert status is not None, "check_status should not return None"
+            assert (
+                not status
+            ), "Status should be False when required credentials are missing"
+
+
+def _test_setup_credentials_permission_error() -> None:
+    """Test setup_credentials handling of permission errors."""
+    from unittest.mock import patch
+
+    if SECURITY_AVAILABLE:
+        manager = UnifiedCredentialManager()
+
+        # Mock encrypt_credentials to simulate error
+        with patch.object(
+            manager.security_manager,
+            "encrypt_credentials",
+            side_effect=PermissionError("Test permission error"),
+        ):
+
+            # This should handle the error gracefully
+            success = manager._save_credential(
+                "TEST_CRED", "test_value", "Test credential"
+            )
+            assert not success, "Should return False when encryption fails"
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def credentials_module_tests() -> bool:
     """Comprehensive test suite for credentials.py"""
     import json
@@ -1102,203 +1341,19 @@ def credentials_module_tests() -> bool:
             json.dump(content, f)
         return file_path
 
-    def test_security_availability():
-        """Test that security components are available."""
-        assert SECURITY_AVAILABLE, "Security dependencies should be available"
-        assert SecurityManager is not None, "SecurityManager should be importable"
-
-    def test_manager_initialization():
-        """Test credential manager initialization."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-            assert (
-                manager.security_manager is not None
-            ), "SecurityManager should be initialized"
-
-    def test_manager_initialization_with_security_unavailable():
-        """Test that initialization fails properly when security is unavailable."""
-        # Temporarily set SECURITY_AVAILABLE to False
-        global SECURITY_AVAILABLE
-        original_value = SECURITY_AVAILABLE
-        SECURITY_AVAILABLE = False
-
-        try:
-            # Should raise ImportError
-            raised = False
-            try:
-                UnifiedCredentialManager()
-            except ImportError:
-                raised = True
-            assert raised, "Should raise ImportError when security is unavailable"
-        finally:
-            # Restore original value
-            SECURITY_AVAILABLE = original_value
-
-    def test_menu_methods():
-        """Test that all menu methods exist."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-            methods = [
-                "view_credentials",
-                "setup_credentials",
-                "remove_credential",
-                "delete_all_credentials",
-                "setup_test_credentials",
-                "export_credentials",
-                "check_status",
-                "edit_credential_types",
-            ]
-
-            for method in methods:
-                assert hasattr(manager, method), f"Manager should have {method} method"
-                assert callable(
-                    getattr(manager, method)
-                ), f"{method} should be callable"
-
-    def test_load_credential_types_with_valid_file():
-        """Test loading credential types from a valid file."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Create a valid test credential file
-            test_file = create_test_credential_file(valid=True)
-
-            # Mock Path's parent/__truediv__ combination that's used in _load_credential_types
-            with patch.object(Path, "__truediv__", return_value=test_file):
-                # Mock exists to return True
-                with patch.object(Path, "exists", return_value=True):
-                    # Load credential types
-                    required, optional = manager._load_credential_types()
-
-                    # Verify loaded credentials
-                    assert (
-                        "TEST_REQUIRED" in required
-                    ), "Should load required credentials"
-                    assert (
-                        "TEST_OPTIONAL" in optional
-                    ), "Should load optional credentials"
-
-    def test_load_credential_types_with_missing_file():
-        """Test loading credential types when the file is missing."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Mock file operations
-            with patch("pathlib.Path.exists", return_value=False):
-
-                # Load credential types
-                required, optional = manager._load_credential_types()
-
-                # Verify default credentials are used
-                assert len(required) > 0, "Should use default required credentials"
-                assert len(optional) > 0, "Should use default optional credentials"
-                assert (
-                    "ANCESTRY_USERNAME" in required
-                ), "Default credentials should include ANCESTRY_USERNAME"
-
-    def test_load_credential_types_with_invalid_json():
-        """Test loading credential types when the file has invalid JSON."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Create an invalid test credential file
-            test_file = test_dir_path / "invalid.json"
-            with test_file.open("w", encoding="utf-8") as f:
-                f.write("{invalid json")
-
-            # Mock file operations
-            with patch(
-                "pathlib.Path.open",
-                side_effect=lambda *args, **kwargs: Path(test_file).open(
-                    *args[1:], **kwargs
-                ),
-            ), patch("pathlib.Path.exists", return_value=True):
-
-                # Load credential types
-                required, optional = manager._load_credential_types()
-
-                # Verify default credentials are used
-                assert (
-                    len(required) > 0
-                ), "Should use default required credentials on JSON error"
-                assert (
-                    len(optional) > 0
-                ), "Should use default optional credentials on JSON error"
-
-    def test_load_credential_types_with_invalid_structure():
-        """Test loading credential types when the file has invalid structure."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Create a test credential file with invalid structure
-            test_file = create_test_credential_file(valid=False)
-
-            # Mock file operations
-            with patch(
-                "pathlib.Path.open",
-                side_effect=lambda *args, **kwargs: Path(test_file).open(
-                    *args[1:], **kwargs
-                ),
-            ), patch("pathlib.Path.exists", return_value=True):
-
-                # Load credential types
-                required, optional = manager._load_credential_types()
-                # Verify default credentials are used when structure is invalid
-                assert (
-                    "ANCESTRY_USERNAME" in required
-                ), "Should use default required credentials on structure error"
-                assert (
-                    "OPENAI_API_KEY" in optional
-                ), "Should use default optional credentials on structure error"
-
-    def test_edit_credential_types_error_handling():
-        """Test error handling in edit_credential_types."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Mock open to simulate file access error
-            with patch(
-                "builtins.open", side_effect=PermissionError("Permission denied")
-            ):
-
-                # This should handle the error gracefully without crashing
-                success = manager._save_credential_types({}, {})
-                assert not success, "Should return False when file cannot be written"
-
-    def test_check_status_with_missing_credentials():
-        """Test check_status when credentials are missing."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Mock the decrypt_credentials method
-            with patch.object(
-                manager.security_manager, "decrypt_credentials", return_value=None
-            ):
-
-                # Call check_status and verify it doesn't crash
-                status = manager.check_status()
-                assert status is not None, "check_status should not return None"
-                assert (
-                    not status
-                ), "Status should be False when required credentials are missing"
-
-    def test_setup_credentials_permission_error():
-        """Test setup_credentials handling of permission errors."""
-        if SECURITY_AVAILABLE:
-            manager = UnifiedCredentialManager()
-
-            # Mock encrypt_credentials to simulate error
-            with patch.object(
-                manager.security_manager,
-                "encrypt_credentials",
-                side_effect=PermissionError("Test permission error"),
-            ):
-
-                # This should handle the error gracefully
-                success = manager._save_credential(
-                    "TEST_CRED", "test_value", "Test credential"
-                )
-                assert not success, "Should return False when permission error occurs"
+    # Assign module-level test functions (removing duplicate nested definitions)
+    # Note: Some tests need access to create_test_credential_file and test_dir_path
+    test_security_availability = _test_security_availability
+    test_manager_initialization = _test_manager_initialization
+    test_manager_initialization_with_security_unavailable = _test_manager_initialization_with_security_unavailable
+    test_menu_methods = _test_menu_methods
+    test_load_credential_types_with_valid_file = lambda: _test_load_credential_types_with_valid_file(create_test_credential_file)
+    test_load_credential_types_with_missing_file = _test_load_credential_types_with_missing_file
+    test_load_credential_types_with_invalid_json = lambda: _test_load_credential_types_with_invalid_json(test_dir_path)
+    test_load_credential_types_with_invalid_structure = lambda: _test_load_credential_types_with_invalid_structure(create_test_credential_file)
+    test_edit_credential_types_error_handling = _test_edit_credential_types_error_handling
+    test_check_status_with_missing_credentials = _test_check_status_with_missing_credentials
+    test_setup_credentials_permission_error = _test_setup_credentials_permission_error
 
     with suppress_logging():
         suite.run_test("SECURITY_AVAILABLE, SecurityManager import", test_security_availability,
