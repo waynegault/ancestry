@@ -2186,6 +2186,90 @@ def _compare_boolean_field(
     return False, bool(new_value)
 
 
+def _extract_dna_field_values(
+    match: Dict[str, Any],
+    existing_dna_match: DnaMatch,
+    details_part: Dict[str, Any],
+    api_predicted_rel_for_comp: str,
+) -> Dict[str, Any]:
+    """Extract DNA field values from API and database for comparison."""
+    api_cm = int(match.get("cM_DNA", 0))
+    db_cm = existing_dna_match.cM_DNA
+    api_segments = int(
+        details_part.get("shared_segments", match.get("numSharedSegments", 0))
+    )
+    db_segments = existing_dna_match.shared_segments
+    api_longest_raw = details_part.get("longest_shared_segment")
+    api_longest = (
+        float(api_longest_raw) if api_longest_raw is not None else None
+    )
+    db_longest = existing_dna_match.longest_shared_segment
+    db_predicted_rel_for_comp = (
+        existing_dna_match.predicted_relationship
+        if existing_dna_match.predicted_relationship is not None
+        else "N/A"
+    )
+
+    return {
+        "api_cm": api_cm,
+        "db_cm": db_cm,
+        "api_segments": api_segments,
+        "db_segments": db_segments,
+        "api_longest": api_longest,
+        "db_longest": db_longest,
+        "api_predicted_rel": api_predicted_rel_for_comp,
+        "db_predicted_rel": db_predicted_rel_for_comp,
+        "api_fathers_side": bool(details_part.get("from_my_fathers_side", False)),
+        "db_fathers_side": bool(existing_dna_match.from_my_fathers_side),
+        "api_mothers_side": bool(details_part.get("from_my_mothers_side", False)),
+        "db_mothers_side": bool(existing_dna_match.from_my_mothers_side),
+        "api_meiosis": details_part.get("meiosis"),
+        "db_meiosis": existing_dna_match.meiosis,
+    }
+
+
+def _check_dna_fields_changed(
+    field_values: Dict[str, Any],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> bool:
+    """Check if any DNA fields have changed."""
+    if field_values["api_cm"] != field_values["db_cm"]:
+        logger_instance.debug(f"  DNA change {log_ref_short}: cM")
+        return True
+    elif field_values["api_segments"] != field_values["db_segments"]:
+        logger_instance.debug(f"  DNA change {log_ref_short}: Segments")
+        return True
+    elif (
+        field_values["api_longest"] is not None
+        and field_values["db_longest"] is not None
+        and abs(float(str(field_values["api_longest"])) - float(str(field_values["db_longest"]))) > 0.01
+    ):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Longest Segment")
+        return True
+    elif field_values["db_longest"] is not None and field_values["api_longest"] is None:
+        logger_instance.debug(
+            f"  DNA change {log_ref_short}: Longest Segment (API lost data)"
+        )
+        return True
+    elif str(field_values["db_predicted_rel"]) != str(field_values["api_predicted_rel"]):
+        logger_instance.debug(
+            f"  DNA change {log_ref_short}: Predicted Rel ({field_values['db_predicted_rel']} -> {field_values['api_predicted_rel']})"
+        )
+        return True
+    elif field_values["api_fathers_side"] != field_values["db_fathers_side"]:
+        logger_instance.debug(f"  DNA change {log_ref_short}: Father Side")
+        return True
+    elif field_values["api_mothers_side"] != field_values["db_mothers_side"]:
+        logger_instance.debug(f"  DNA change {log_ref_short}: Mother Side")
+        return True
+    elif field_values["api_meiosis"] is not None and field_values["api_meiosis"] != field_values["db_meiosis"]:
+        logger_instance.debug(f"  DNA change {log_ref_short}: Meiosis")
+        return True
+
+    return False
+
+
 def _check_dna_match_needs_update(
     match: Dict[str, Any],
     existing_dna_match: DnaMatch,
@@ -2201,70 +2285,10 @@ def _check_dna_match_needs_update(
         True if update is needed, False otherwise
     """
     try:
-        api_cm = int(match.get("cM_DNA", 0))
-        db_cm = existing_dna_match.cM_DNA
-        api_segments = int(
-            details_part.get("shared_segments", match.get("numSharedSegments", 0))
+        field_values = _extract_dna_field_values(
+            match, existing_dna_match, details_part, api_predicted_rel_for_comp
         )
-        db_segments = existing_dna_match.shared_segments
-        api_longest_raw = details_part.get("longest_shared_segment")
-        api_longest = (
-            float(api_longest_raw) if api_longest_raw is not None else None
-        )
-        db_longest = existing_dna_match.longest_shared_segment
-
-        # Compare using the safe default db_predicted_rel_for_comp
-        db_predicted_rel_for_comp = (
-            existing_dna_match.predicted_relationship
-            if existing_dna_match.predicted_relationship is not None
-            else "N/A"
-        )
-
-        if api_cm != db_cm:
-            logger_instance.debug(f"  DNA change {log_ref_short}: cM")
-            return True
-        elif api_segments != db_segments:
-            logger_instance.debug(f"  DNA change {log_ref_short}: Segments")
-            return True
-        elif (
-            api_longest is not None
-            and db_longest is not None
-            and abs(float(str(api_longest)) - float(str(db_longest))) > 0.01
-        ):
-            logger_instance.debug(f"  DNA change {log_ref_short}: Longest Segment")
-            return True
-        elif (
-            db_longest is not None and api_longest is None
-        ):  # API lost data for longest segment
-            logger_instance.debug(
-                f"  DNA change {log_ref_short}: Longest Segment (API lost data)"
-            )
-            return True
-        elif str(db_predicted_rel_for_comp) != str(
-            api_predicted_rel_for_comp
-        ):  # Convert to strings for safe comparison
-            logger_instance.debug(
-                f"  DNA change {log_ref_short}: Predicted Rel ({db_predicted_rel_for_comp} -> {api_predicted_rel_for_comp})"
-            )
-            return True
-        elif bool(details_part.get("from_my_fathers_side", False)) != bool(
-            existing_dna_match.from_my_fathers_side
-        ):
-            logger_instance.debug(f"  DNA change {log_ref_short}: Father Side")
-            return True
-        elif bool(details_part.get("from_my_mothers_side", False)) != bool(
-            existing_dna_match.from_my_mothers_side
-        ):
-            logger_instance.debug(f"  DNA change {log_ref_short}: Mother Side")
-            return True
-
-        api_meiosis = details_part.get("meiosis")
-        if api_meiosis is not None and api_meiosis != existing_dna_match.meiosis:
-            logger_instance.debug(f"  DNA change {log_ref_short}: Meiosis")
-            return True
-
-        return False
-
+        return _check_dna_fields_changed(field_values, log_ref_short, logger_instance)
     except (ValueError, TypeError, AttributeError) as dna_comp_err:
         logger_instance.warning(
             f"Error comparing DNA data for {log_ref_short}: {dna_comp_err}. Assuming update needed."
