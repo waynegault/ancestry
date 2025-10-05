@@ -1301,93 +1301,61 @@ def credentials_module_tests() -> bool:
                 assert not success, "Should return False when permission error occurs"
 
     with suppress_logging():
-        suite.run_test(
-            "SECURITY_AVAILABLE, SecurityManager import",
-            test_security_availability,
-            "Security dependencies are properly available and importable",
-            "Test security manager import and availability flag",
-            "Security components are available for credential management",
-        )
+        suite.run_test("SECURITY_AVAILABLE, SecurityManager import", test_security_availability,
+                      "Security dependencies are properly available and importable",
+                      "Test security manager import and availability flag",
+                      "Security components are available for credential management")
 
-        suite.run_test(
-            "UnifiedCredentialManager initialization",
-            test_manager_initialization,
-            "Credential manager initializes with working SecurityManager instance",
-            "Test UnifiedCredentialManager constructor and SecurityManager setup",
-            "Manager initializes successfully with all required components",
-        )
+        suite.run_test("UnifiedCredentialManager initialization", test_manager_initialization,
+                      "Credential manager initializes with working SecurityManager instance",
+                      "Test UnifiedCredentialManager constructor and SecurityManager setup",
+                      "Manager initializes successfully with all required components")
 
-        suite.run_test(
-            "UnifiedCredentialManager initialization with security unavailable",
-            test_manager_initialization_with_security_unavailable,
-            "Credential manager fails properly when security is unavailable",
-            "Test UnifiedCredentialManager handling of missing security dependencies",
-            "Manager properly raises ImportError when security is unavailable",
-        )
+        suite.run_test("UnifiedCredentialManager initialization with security unavailable",
+                      test_manager_initialization_with_security_unavailable,
+                      "Credential manager fails properly when security is unavailable",
+                      "Test UnifiedCredentialManager handling of missing security dependencies",
+                      "Manager properly raises ImportError when security is unavailable")
 
-        suite.run_test(
-            "Menu method availability and callability",
-            test_menu_methods,
-            "All credential management methods are available and callable",
-            "Test existence and callability of all manager methods",
-            "All required methods exist and are properly callable",
-        )
+        suite.run_test("Menu method availability and callability", test_menu_methods,
+                      "All credential management methods are available and callable",
+                      "Test existence and callability of all manager methods",
+                      "All required methods exist and are properly callable")
 
-        suite.run_test(
-            "Load credential types from valid file",
-            test_load_credential_types_with_valid_file,
-            "Credential types are properly loaded from a valid file",
-            "Test loading credential types from a valid JSON file",
-            "Credential types are correctly parsed from a valid configuration file",
-        )
+        suite.run_test("Load credential types from valid file", test_load_credential_types_with_valid_file,
+                      "Credential types are properly loaded from a valid file",
+                      "Test loading credential types from a valid JSON file",
+                      "Credential types are correctly parsed from a valid configuration file")
 
-        suite.run_test(
-            "Load credential types with missing file",
-            test_load_credential_types_with_missing_file,
-            "Default credential types are used when file is missing",
-            "Test fallback to defaults when credential types file is missing",
-            "System gracefully falls back to defaults when configuration file is not found",
-        )
+        suite.run_test("Load credential types with missing file", test_load_credential_types_with_missing_file,
+                      "Default credential types are used when file is missing",
+                      "Test fallback to defaults when credential types file is missing",
+                      "System gracefully falls back to defaults when configuration file is not found")
 
-        suite.run_test(
-            "Load credential types with invalid JSON",
-            test_load_credential_types_with_invalid_json,
-            "Default credential types are used when JSON is invalid",
-            "Test handling of invalid JSON in credential types file",
-            "System gracefully falls back to defaults when JSON cannot be parsed",
-        )
+        suite.run_test("Load credential types with invalid JSON", test_load_credential_types_with_invalid_json,
+                      "Default credential types are used when JSON is invalid",
+                      "Test handling of invalid JSON in credential types file",
+                      "System gracefully falls back to defaults when JSON cannot be parsed")
 
-        suite.run_test(
-            "Load credential types with invalid structure",
-            test_load_credential_types_with_invalid_structure,
-            "Default credential types are used when structure is invalid",
-            "Test handling of invalid structure in credential types file",
-            "System gracefully falls back to defaults when JSON structure is incorrect",
-        )
+        suite.run_test("Load credential types with invalid structure", test_load_credential_types_with_invalid_structure,
+                      "Default credential types are used when structure is invalid",
+                      "Test handling of invalid structure in credential types file",
+                      "System gracefully falls back to defaults when JSON structure is incorrect")
 
-        suite.run_test(
-            "Edit credential types error handling",
-            test_edit_credential_types_error_handling,
-            "Errors during credential type editing are properly handled",
-            "Test handling of permission errors when saving credential types",
-            "System gracefully handles file permission errors during configuration updates",
-        )
+        suite.run_test("Edit credential types error handling", test_edit_credential_types_error_handling,
+                      "Errors during credential type editing are properly handled",
+                      "Test handling of permission errors when saving credential types",
+                      "System gracefully handles file permission errors during configuration updates")
 
-        suite.run_test(
-            "Check status with missing credentials",
-            test_check_status_with_missing_credentials,
-            "Status check properly identifies missing credentials",
-            "Test credential status checking with missing credentials",
-            "System correctly reports when required credentials are missing",
-        )
+        suite.run_test("Check status with missing credentials", test_check_status_with_missing_credentials,
+                      "Status check properly identifies missing credentials",
+                      "Test credential status checking with missing credentials",
+                      "System correctly reports when required credentials are missing")
 
-        suite.run_test(
-            "Setup credentials permission error handling",
-            test_setup_credentials_permission_error,
-            "Permission errors during credential setup are properly handled",
-            "Test handling of permission errors when saving credentials",
-            "System gracefully handles permission errors during credential updates",
-        )
+        suite.run_test("Setup credentials permission error handling", test_setup_credentials_permission_error,
+                      "Permission errors during credential setup are properly handled",
+                      "Test handling of permission errors when saving credentials",
+                      "System gracefully handles permission errors during credential updates")
 
     # Clean up temporary directory
     test_dir.cleanup()
@@ -1416,7 +1384,7 @@ def _handle_import_env_mode() -> bool:
         import builtins
         orig_input = builtins.input
 
-        def fake_input(prompt=""):
+        def fake_input(prompt: str = "") -> str:
             if "path to .env" in prompt:
                 return ""
             if "Choice (m/o/r/c):" in prompt:
