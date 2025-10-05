@@ -1254,6 +1254,50 @@ def _update_page_statuses(
         page_statuses["error"] += 1
 
 
+def _process_and_append_match(
+    match_list_data: Dict[str, Any],
+    session_manager: SessionManager,
+    existing_persons_map: Dict[str, Person],
+    prefetched_data: Dict[str, Dict[str, Any]],
+    prepared_bulk_data: List[Dict[str, Any]],
+    page_statuses: Dict[str, int],
+    progress_bar: Optional[tqdm]
+) -> None:
+    """Process a single match and append to bulk data if valid."""
+    uuid_val = match_list_data.get("uuid")
+    log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
+
+    try:
+        # Process single match
+        prepared_data_for_this_match, status_for_this_match, error_msg_for_this_match = _process_single_match(
+            match_list_data, session_manager, existing_persons_map, prefetched_data, log_ref_short
+        )
+
+        # Update page statuses
+        _update_page_statuses(status_for_this_match, page_statuses, log_ref_short)
+
+        # Append valid prepared data to the bulk list
+        if status_for_this_match not in ["error", "skipped"] and prepared_data_for_this_match:
+            prepared_bulk_data.append(prepared_data_for_this_match)
+        elif status_for_this_match == "error":
+            logger.error(
+                f"Error preparing DB data for {log_ref_short}: {error_msg_for_this_match or 'Unknown error in _do_match'}"
+            )
+
+    except Exception as inner_e:
+        logger.error(
+            f"Critical unexpected error processing {log_ref_short} in _prepare_bulk_db_data: {inner_e}",
+            exc_info=True,
+        )
+        page_statuses["error"] += 1
+    finally:
+        if progress_bar:
+            try:
+                progress_bar.update(1)
+            except Exception as pbar_e:
+                logger.warning(f"Progress bar update error: {pbar_e}")
+
+
 def _prepare_bulk_db_data(
     session: SqlAlchemySession,
     session_manager: SessionManager,
@@ -1302,44 +1346,15 @@ def _prepare_bulk_db_data(
 
     # Step 2: Iterate through each candidate match
     for match_list_data in matches_to_process:
-        # Initialize state for this match
-        uuid_val = match_list_data.get("uuid")
-        log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
-        prepared_data_for_this_match: Optional[Dict[str, Any]] = None
-        status_for_this_match: Literal["new", "updated", "skipped", "error"] = "error"
-        error_msg_for_this_match: Optional[str] = None
-
-        try:
-            # Process single match
-            prepared_data_for_this_match, status_for_this_match, error_msg_for_this_match = _process_single_match(
-                match_list_data, session_manager, existing_persons_map, prefetched_data, log_ref_short
-            )
-
-            # Update page statuses
-            _update_page_statuses(status_for_this_match, page_statuses, log_ref_short)
-
-            # Append valid prepared data to the bulk list
-            if status_for_this_match not in ["error", "skipped"] and prepared_data_for_this_match:
-                prepared_bulk_data.append(prepared_data_for_this_match)
-            elif status_for_this_match == "error":
-                logger.error(
-                    f"Error preparing DB data for {log_ref_short}: {error_msg_for_this_match or 'Unknown error in _do_match'}"
-                )
-
-        # Step 3: Handle unexpected exceptions during single match processing
-        except Exception as inner_e:
-            logger.error(
-                f"Critical unexpected error processing {log_ref_short} in _prepare_bulk_db_data: {inner_e}",
-                exc_info=True,
-            )
-            page_statuses["error"] += 1  # Count as error for this item
-        finally:
-            # Step 4: Update progress bar after processing each item (regardless of outcome)
-            if progress_bar:
-                try:
-                    progress_bar.update(1)
-                except Exception as pbar_e:
-                    logger.warning(f"Progress bar update error: {pbar_e}")
+        _process_and_append_match(
+            match_list_data,
+            session_manager,
+            existing_persons_map,
+            prefetched_data,
+            prepared_bulk_data,
+            page_statuses,
+            progress_bar
+        )
 
     # Step 5: Log summary and return results
     process_duration = time.time() - process_start_time
@@ -1854,6 +1869,53 @@ def _handle_batch_critical_error(page_statuses: Dict[str, int], num_matches_on_p
     return final_error_count_for_page
 
 
+def _execute_batch_pipeline(
+    session: SqlAlchemySession,
+    session_manager: SessionManager,
+    matches_on_page: List[Dict[str, Any]],
+    current_page: int,
+    page_statuses: Dict[str, int],
+    progress_bar: Optional[tqdm]
+) -> None:
+    """Execute the data processing pipeline for a batch."""
+    logger.debug(f"Batch {current_page}: Looking up existing persons...")
+    uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
+    existing_persons_map = _lookup_existing_persons(session, uuids_on_page)
+
+    logger.debug(f"Batch {current_page}: Identifying candidates...")
+    fetch_candidates_uuid, matches_to_process_later, skipped_count = (
+        _identify_fetch_candidates(matches_on_page, existing_persons_map)
+    )
+    page_statuses["skipped"] = skipped_count
+
+    if progress_bar and skipped_count > 0:
+        try:
+            progress_bar.update(skipped_count)
+        except Exception as pbar_e:
+            logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
+
+    logger.debug(f"Batch {current_page}: Performing API Prefetches...")
+    prefetched_data = _perform_api_prefetches(
+        session_manager, fetch_candidates_uuid, matches_to_process_later
+    )
+
+    logger.debug(f"Batch {current_page}: Preparing DB data...")
+    prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
+        session,
+        session_manager,
+        matches_to_process_later,
+        existing_persons_map,
+        prefetched_data,
+        progress_bar,
+    )
+    page_statuses["new"] = prep_statuses.get("new", 0)
+    page_statuses["updated"] = prep_statuses.get("updated", 0)
+    page_statuses["error"] = prep_statuses.get("error", 0)
+
+    logger.debug(f"Batch {current_page}: Executing DB Commit...")
+    _execute_batch_db_commit(session, prepared_bulk_data, existing_persons_map, current_page, page_statuses)
+
+
 def _do_batch(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
@@ -1904,45 +1966,14 @@ def _do_batch(
             raise SQLAlchemyError("Failed get DB session")
 
         # --- Data Processing Pipeline ---
-        logger.debug(f"Batch {current_page}: Looking up existing persons...")
-        uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-        existing_persons_map = _lookup_existing_persons(session, uuids_on_page)
-
-        logger.debug(f"Batch {current_page}: Identifying candidates...")
-        fetch_candidates_uuid, matches_to_process_later, skipped_count = (
-            _identify_fetch_candidates(matches_on_page, existing_persons_map)
-        )
-        page_statuses["skipped"] = skipped_count
-
-        if progress_bar and skipped_count > 0:
-            # This logic updates the progress bar for items identified as "skipped" (no change from list view)
-            # It ensures the bar progresses even for items not going through full API fetch/DB prep.
-            try:
-                progress_bar.update(skipped_count)
-            except Exception as pbar_e:
-                logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
-
-        logger.debug(f"Batch {current_page}: Performing API Prefetches...")
-        # _perform_api_prefetches can now raise MaxApiFailuresExceededError
-        prefetched_data = _perform_api_prefetches(
-            session_manager, fetch_candidates_uuid, matches_to_process_later
-        )  # This exception, if raised, will be caught by coord.
-
-        logger.debug(f"Batch {current_page}: Preparing DB data...")
-        prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
+        _execute_batch_pipeline(
             session,
             session_manager,
-            matches_to_process_later,
-            existing_persons_map,
-            prefetched_data,
-            progress_bar,  # Pass progress_bar here
+            matches_on_page,
+            current_page,
+            page_statuses,
+            progress_bar
         )
-        page_statuses["new"] = prep_statuses.get("new", 0)
-        page_statuses["updated"] = prep_statuses.get("updated", 0)
-        page_statuses["error"] = prep_statuses.get("error", 0)
-
-        logger.debug(f"Batch {current_page}: Executing DB Commit...")
-        _execute_batch_db_commit(session, prepared_bulk_data, existing_persons_map, current_page, page_statuses)
 
         _log_page_summary(
             current_page,
@@ -2967,6 +2998,52 @@ def _prepare_family_tree_operation_data(
 # ------------------------------------------------------------------------------
 
 
+def _populate_and_finalize_match_data(
+    person_op_data: Optional[Dict[str, Any]],
+    dna_op_data: Optional[Dict[str, Any]],
+    tree_op_data: Optional[Dict[str, Any]],
+    tree_operation_status: str,
+    is_new_person: bool,
+    person_fields_changed: bool,
+    prepared_data_for_bulk: Dict[str, Any],
+    log_ref_short: str,
+    logger_instance: logging.Logger
+) -> Tuple[Optional[Dict[str, Any]], Literal["new", "updated", "skipped", "error"]]:
+    """Populate prepared data and determine final status."""
+    # Populate prepared data
+    if person_op_data:
+        prepared_data_for_bulk["person"] = person_op_data
+    if dna_op_data:
+        prepared_data_for_bulk["dna_match"] = dna_op_data
+    if tree_op_data and (is_new_person and tree_operation_status == "create" or not is_new_person):
+        prepared_data_for_bulk["family_tree"] = tree_op_data
+
+    # Determine overall status
+    overall_status = _determine_match_status(
+        is_new_person,
+        person_fields_changed,
+        dna_op_data,
+        tree_op_data,
+        tree_operation_status,
+    )
+
+    data_to_return = (
+        prepared_data_for_bulk
+        if overall_status not in ["skipped", "error"]
+        and any(v for v in prepared_data_for_bulk.values())
+        else None
+    )
+
+    if overall_status not in ["error", "skipped"] and not data_to_return:
+        logger_instance.debug(
+            f"Status is '{overall_status}' for {log_ref_short}, but no data payloads prepared. Revising to 'skipped'."
+        )
+        overall_status = "skipped"
+        data_to_return = None
+
+    return data_to_return, overall_status
+
+
 def _do_match(  # type: ignore
     match: Dict[str, Any],
     session_manager: SessionManager,
@@ -3064,40 +3141,18 @@ def _do_match(  # type: ignore
             match_in_my_tree, session_manager, log_ref_short, logger_instance
         )
 
-        # Populate prepared data
-        if person_op_data:
-            prepared_data_for_bulk["person"] = person_op_data
-        if dna_op_data:
-            prepared_data_for_bulk["dna_match"] = dna_op_data
-        if tree_op_data and (is_new_person and tree_operation_status == "create" or not is_new_person):
-            prepared_data_for_bulk["family_tree"] = tree_op_data
-
-        # Determine overall status
-        overall_status = _determine_match_status(
-            is_new_person,
-            person_fields_changed,
+        # Populate and finalize match data
+        data_to_return, overall_status = _populate_and_finalize_match_data(
+            person_op_data,
             dna_op_data,
             tree_op_data,
             tree_operation_status,
+            is_new_person,
+            person_fields_changed,
+            prepared_data_for_bulk,
+            log_ref_short,
+            logger_instance
         )
-
-        data_to_return = (
-            prepared_data_for_bulk
-            if overall_status not in ["skipped", "error"]
-            and any(v for v in prepared_data_for_bulk.values())
-            else None
-        )
-
-        if overall_status not in ["error", "skipped"] and not data_to_return:
-            # This means status was 'new' or 'updated' but no actual data was prepared to be sent.
-            # This could happen if, for an existing person, only tree_op_data was prepared but its status was 'none'.
-            # Or if a new person had no person_op_data (which shouldn't happen).
-            # It's safer to mark as skipped if no data is actually going to be bulk processed.
-            logger_instance.debug(  # Changed to debug as this can be a valid "no material change" state
-                f"Status is '{overall_status}' for {log_ref_short}, but no data payloads prepared. Revising to 'skipped'."
-            )
-            overall_status = "skipped"
-            data_to_return = None  # Ensure this is None for skipped
 
         return data_to_return, overall_status, None
 
@@ -4394,6 +4449,51 @@ def _fetch_combined_details(
 # End of _fetch_combined_details
 
 
+def _process_badge_response(
+    badge_response: Any,
+    match_uuid: str
+) -> Optional[Dict[str, Any]]:
+    """Process badge details API response."""
+    if not badge_response or not isinstance(badge_response, dict):
+        if isinstance(badge_response, requests.Response):
+            logger.warning(
+                f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
+            )
+        else:
+            logger.warning(
+                f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
+            )
+        return None
+
+    person_badged = badge_response.get("personBadged", {})
+    if not person_badged:
+        logger.warning(
+            f"Badge details response for UUID {match_uuid} missing 'personBadged' key."
+        )
+        return None
+
+    their_cfpid = person_badged.get("personId")
+    raw_firstname = person_badged.get("firstName")
+    # Use format_name for consistent name handling
+    formatted_name_val = format_name(raw_firstname)
+    their_firstname_formatted = (
+        formatted_name_val.split()[0]
+        if formatted_name_val and formatted_name_val != "Valued Relative"
+        else "Unknown"
+    )
+
+    result_data = {
+        "their_cfpid": their_cfpid,
+        "their_firstname": their_firstname_formatted,  # Use formatted name
+        "their_lastname": person_badged.get("lastName", "Unknown"),
+        "their_birth_year": person_badged.get("birthYear"),
+    }
+    logger.debug(
+        f"Successfully fetched /badgedetails for UUID {match_uuid} (CFPID: {their_cfpid})."
+    )
+    return result_data
+
+
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
 def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
@@ -4440,43 +4540,7 @@ def _fetch_batch_badge_details(
             referer_url=badge_referer,
         )
 
-        if badge_response and isinstance(badge_response, dict):
-            person_badged = badge_response.get("personBadged", {})
-            if not person_badged:
-                logger.warning(
-                    f"Badge details response for UUID {match_uuid} missing 'personBadged' key."
-                )
-                return None
-
-            their_cfpid = person_badged.get("personId")
-            raw_firstname = person_badged.get("firstName")
-            # Use format_name for consistent name handling
-            formatted_name_val = format_name(raw_firstname)
-            their_firstname_formatted = (
-                formatted_name_val.split()[0]
-                if formatted_name_val and formatted_name_val != "Valued Relative"
-                else "Unknown"
-            )
-
-            result_data = {
-                "their_cfpid": their_cfpid,
-                "their_firstname": their_firstname_formatted,  # Use formatted name
-                "their_lastname": person_badged.get("lastName", "Unknown"),
-                "their_birth_year": person_badged.get("birthYear"),
-            }
-            logger.debug(
-                f"Successfully fetched /badgedetails for UUID {match_uuid} (CFPID: {their_cfpid})."
-            )
-            return result_data
-        if isinstance(badge_response, requests.Response):
-            logger.warning(
-                f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
-            )
-            return None
-        logger.warning(
-            f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
-        )
-        return None
+        return _process_badge_response(badge_response, match_uuid)
 
     except ConnectionError as conn_err:
         logger.error(
