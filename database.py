@@ -1006,28 +1006,30 @@ def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref
     return validated_data
 
 
+def _compare_float_values(old_value: Any, new_value: Any) -> bool:
+    """Compare float values with tolerance."""
+    old_float = float(old_value) if old_value is not None else None
+    new_float = float(new_value) if new_value is not None else None
+
+    if (old_float is None) != (new_float is None):
+        return True
+    if old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01:
+        return True
+    return False
+
+
 def _compare_field_values(old_value: Any, new_value: Any) -> bool:
     """Compare old and new field values to detect changes."""
     # Handle float comparison with tolerance
     if isinstance(new_value, float) or isinstance(old_value, float):
-        old_float = float(old_value) if old_value is not None else None
-        new_float = float(new_value) if new_value is not None else None
-
-        if (old_float is None and new_float is not None) or (old_float is not None and new_float is None):
-            return True
-        if old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01:
-            return True
-        return False
+        return _compare_float_values(old_value, new_value)
 
     # Handle boolean comparison
     if isinstance(new_value, bool) or isinstance(old_value, bool):
         return bool(old_value) != bool(new_value)
 
     # General comparison
-    if old_value != new_value:
-        return True
-
-    return False
+    return old_value != new_value
 
 
 def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dict[str, Any], log_ref: str) -> bool:
@@ -1300,23 +1302,31 @@ def _compare_gender_field(current_value: Any, new_value: Any) -> tuple[bool, Any
     return False, current_value
 
 
+def _compare_boolean_field(current_value: Any, new_value: Any) -> tuple[bool, Any]:
+    """Compare boolean field values."""
+    if bool(current_value) != bool(new_value):
+        return True, bool(new_value)
+    return False, current_value
+
+
 def _compare_field_values(key: str, current_value: Any, new_value: Any, log_ref: str) -> tuple[bool, Any]:
     """Compare field values and return (value_changed, value_to_set)."""
-    # Handle specific field types
-    if key == "last_logged_in":
-        return _compare_datetime_field(current_value, new_value)
-    if key == "status":
-        return _compare_status_field(current_value, new_value, log_ref)
-    if key == "birth_year":
-        return _compare_birth_year_field(current_value, new_value, log_ref)
-    if key == "gender":
-        return _compare_gender_field(current_value, new_value)
-    # General comparison for other fields
+    # Field-specific comparisons
+    field_comparators = {
+        "last_logged_in": lambda c, n: _compare_datetime_field(c, n),
+        "status": lambda c, n: _compare_status_field(c, n, log_ref),
+        "birth_year": lambda c, n: _compare_birth_year_field(c, n, log_ref),
+        "gender": lambda c, n: _compare_gender_field(c, n),
+    }
+
+    if key in field_comparators:
+        return field_comparators[key](current_value, new_value)
+
+    # Boolean comparison
     if isinstance(current_value, bool) or isinstance(new_value, bool):
-        if bool(current_value) != bool(new_value):
-            return True, bool(new_value)
-        return False, current_value
-    # Standard comparison for other types
+        return _compare_boolean_field(current_value, new_value)
+
+    # Standard comparison
     if current_value != new_value:
         return True, new_value
 
@@ -2117,6 +2127,57 @@ def delete_person(
 # End of delete_person
 
 
+def _validate_db_path(db_path: Any) -> Path:
+    """Validate and convert db_path to Path object."""
+    if not isinstance(db_path, Path):
+        try:
+            db_path = Path(db_path)
+            logger.warning("Converted db_path string to Path object in delete_database.")
+        except TypeError:
+            logger.error(f"Cannot convert db_path {db_path} to Path object. Deletion aborted.")
+            raise
+    return db_path
+
+
+def _attempt_file_deletion(db_path: Path, attempt: int) -> bool:
+    """Attempt to delete file. Returns True if successful."""
+    # Run garbage collection to release file locks
+    logger.debug("Running GC before delete attempt...")
+    gc.collect()
+    time.sleep(0.5)
+    gc.collect()
+    time.sleep(1.0 + attempt)
+
+    if db_path.exists():
+        logger.debug(f"Attempting Path.unlink on {db_path}...")
+        db_path.unlink(missing_ok=True)
+        time.sleep(0.1)
+
+        if not db_path.exists():
+            logger.info(f"Database file '{db_path.name}' deleted successfully.")
+            return True
+
+        logger.warning(f"os.remove called, but file '{db_path}' still exists.")
+        raise OSError(f"File exists after os.remove attempt {attempt + 1}")
+
+    logger.info(f"Database file '{db_path.name}' does not exist (already deleted?).")
+    return True
+
+
+def _handle_deletion_error(e: Exception, db_path: Path, attempt: int) -> Exception:
+    """Handle deletion errors and return the error for tracking."""
+    if isinstance(e, PermissionError):
+        logger.warning(f"Permission denied deleting '{db_path}' (Attempt {attempt + 1}): {e}. File locked?")
+    elif isinstance(e, OSError):
+        if os.name == "nt" and hasattr(e, "winerror") and e.winerror == 32:
+            logger.warning(f"OSError (WinError 32) deleting '{db_path}' (Attempt {attempt + 1}): {e}. File locked?")
+        else:
+            logger.error(f"OSError deleting '{db_path}' (Attempt {attempt + 1}): {e}", exc_info=True)
+    else:
+        logger.critical(f"Unexpected error during delete attempt {attempt + 1} for '{db_path}': {e}", exc_info=True)
+    return e
+
+
 def delete_database(
     _session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
 ):
@@ -2132,100 +2193,28 @@ def delete_database(
     Raises:
         OSError or other file system errors if deletion fails after all attempts.
     """
-    # Step 1: Validate db_path type
-    if not isinstance(db_path, Path):
-        try:
-            db_path = Path(db_path)
-            logger.warning(
-                "Converted db_path string to Path object in delete_database."
-            )
-        except TypeError:
-            logger.error(
-                f"Cannot convert db_path {db_path} to Path object. Deletion aborted."
-            )
-            return  # Exit if path is invalid
-
+    db_path = _validate_db_path(db_path)
     logger.debug(f"Attempting to delete database file: {db_path}")
     last_error: Optional[Exception] = None
 
-    # Step 2: Retry loop for deletion
     for attempt in range(max_attempts):
-        logger.debug(
-            f"Delete attempt {attempt + 1}/{max_attempts} for {db_path.name}..."
-        )
+        logger.debug(f"Delete attempt {attempt + 1}/{max_attempts} for {db_path.name}...")
+
         try:
-            # Step 2a: Run garbage collection and pause before attempting deletion
-            # This can help release potential file locks held by the Python process.
-            logger.debug("Running GC before delete attempt...")
-            gc.collect()
-            time.sleep(0.5)
-            gc.collect()
-            time.sleep(1.0 + attempt)  # Increasing delay
-
-            # Step 2b: Check if file exists
-            if db_path.exists():
-                logger.debug(f"Attempting Path.unlink on {db_path}...")
-                db_path.unlink(missing_ok=True)
-                time.sleep(0.1)  # Short pause to allow filesystem to update
-                # Step 2c: Verify deletion
-                if not db_path.exists():
-                    logger.info(f"Database file '{db_path.name}' deleted successfully.")
-                    return  # Success
-                # This might happen if deletion fails silently or is delayed
-                logger.warning(
-                    f"os.remove called, but file '{db_path}' still exists."
-                )
-                last_error = OSError(
-                    f"File exists after os.remove attempt {attempt + 1}"
-                )
-            else:
-                # File doesn't exist, consider it deleted
-                logger.info(
-                    f"Database file '{db_path.name}' does not exist (already deleted?)."
-                )
-                return  # Success (or already done)
-
-        # Step 3: Handle specific errors during deletion attempt
-        except PermissionError as e:
-            logger.warning(
-                f"Permission denied deleting '{db_path}' (Attempt {attempt + 1}): {e}. File locked?"
-            )
-            last_error = e
-        except OSError as e:
-            # Check for specific Windows error code for locked file
-            if os.name == "nt" and hasattr(e, "winerror") and e.winerror == 32:
-                logger.warning(
-                    f"OSError (WinError 32) deleting '{db_path}' (Attempt {attempt + 1}): {e}. File locked?"
-                )
-            else:
-                logger.error(
-                    f"OSError deleting '{db_path}' (Attempt {attempt + 1}): {e}",
-                    exc_info=True,
-                )
-            last_error = e
+            if _attempt_file_deletion(db_path, attempt):
+                return
         except Exception as e:
-            logger.critical(
-                f"Unexpected error during delete attempt {attempt + 1} for '{db_path}': {e}",
-                exc_info=True,
-            )
-            last_error = e
+            last_error = _handle_deletion_error(e, db_path, attempt)
 
-        # Step 4: Wait before next retry
+        # Wait before next retry
         if attempt < max_attempts - 1:
-            wait_time = 2**attempt  # Exponential backoff for wait
+            wait_time = 2**attempt
             logger.debug(f"Waiting {wait_time} seconds before next delete attempt...")
             time.sleep(wait_time)
         else:
-            # Step 5: Raise error if all attempts fail
-            logger.error(
-                f"Failed to delete database file '{db_path.name}' after {max_attempts} attempts."
-            )
-            # Raise the last encountered error, or a generic one if none were caught
-            raise last_error or OSError(
-                f"Failed to delete {db_path} after {max_attempts} attempts"
-            )
+            logger.error(f"Failed to delete database file '{db_path.name}' after {max_attempts} attempts.")
+            raise last_error or OSError(f"Failed to delete {db_path} after {max_attempts} attempts")
 
-    # Should not be reached if loop logic is correct
     logger.error(f"Exited delete_database loop unexpectedly for {db_path}.")
 
 
@@ -2236,6 +2225,96 @@ def delete_database(
 
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
+def _validate_backup_paths() -> tuple[Path, Path, Path]:
+    """Validate and return database and backup paths."""
+    db_path = config_schema.database.database_file
+    backup_dir = config_schema.database.data_dir
+
+    if db_path is None:
+        raise AncestryException("Cannot backup database: DATABASE_FILE is not configured. Configure DATABASE_FILE in configuration.")
+
+    if backup_dir is None:
+        raise AncestryException("Cannot backup database: DATA_DIR is not configured. Configure DATA_DIR in configuration.")
+
+    if not db_path.exists():
+        raise AncestryException(f"Database file '{db_path.name}' not found at {db_path}. Ensure database file exists before backup.")
+
+    # Check if database file is readable
+    try:
+        with db_path.open("rb") as f:
+            f.read(1)
+    except PermissionError:
+        raise DatabaseConnectionError(
+            f"Permission denied accessing database file '{db_path}'",
+            context={"db_path": str(db_path)},
+            recovery_hint="Check file permissions and ensure database is not locked",
+        )
+
+    backup_path = backup_dir / "ancestry_backup.db"
+    return db_path, backup_dir, backup_path
+
+
+def _prepare_backup_directory(backup_dir: Path, db_path: Path) -> None:
+    """Prepare backup directory and check disk space."""
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise DatabaseConnectionError(
+            f"Permission denied creating backup directory '{backup_dir}'",
+            context={"backup_dir": str(backup_dir)},
+            recovery_hint="Check directory permissions",
+        )
+
+    # Check available disk space
+    import shutil as disk_utils
+
+    try:
+        disk_usage = disk_utils.disk_usage(backup_dir)
+        db_size = db_path.stat().st_size
+        available_space = disk_usage.free
+
+        if available_space < db_size * 1.1:
+            raise DatabaseConnectionError(
+                f"Insufficient disk space for backup. Need {db_size * 1.1 / 1024 / 1024:.1f}MB, available {available_space / 1024 / 1024:.1f}MB",
+                context={"db_size": db_size, "available_space": available_space, "backup_dir": str(backup_dir)},
+                recovery_hint="Free up disk space or choose different backup location",
+            )
+    except Exception as space_check_error:
+        logger.warning(f"Could not check disk space: {space_check_error}")
+
+
+def _perform_backup_copy(db_path: Path, backup_path: Path) -> None:
+    """Perform the actual backup copy with verification."""
+    try:
+        shutil.copy2(db_path, backup_path)
+
+        if not backup_path.exists():
+            raise DatabaseConnectionError("Backup file was not created successfully", context={"backup_path": str(backup_path)})
+
+        # Verify backup size matches original
+        original_size = db_path.stat().st_size
+        backup_size = backup_path.stat().st_size
+
+        if backup_size != original_size:
+            raise DataValidationError(
+                f"Backup size mismatch: original {original_size} bytes, backup {backup_size} bytes",
+                context={"original_size": original_size, "backup_size": backup_size, "backup_path": str(backup_path)},
+            )
+
+    except PermissionError as perm_error:
+        raise DatabaseConnectionError(
+            f"Permission denied during backup operation: {perm_error}",
+            context={"source": str(db_path), "destination": str(backup_path)},
+            recovery_hint="Check file and directory permissions",
+        )
+    except OSError as os_error:
+        raise DatabaseConnectionError(
+            f"File system error during backup: {os_error}",
+            context={"source": str(db_path), "destination": str(backup_path)},
+            recovery_hint="Check disk space and file system health",
+        )
+
+
 @timeout_protection(timeout=300)  # 5 minutes for large database backups
 @error_context("Database Backup Operation")
 def backup_database(_session_manager: Optional[Any] = None) -> bool:
@@ -2253,133 +2332,29 @@ def backup_database(_session_manager: Optional[Any] = None) -> bool:
     backup_start = time.time()
 
     try:
-        # Step 1: Get paths from config with validation
-        db_path = config_schema.database.database_file
-        backup_dir = config_schema.database.data_dir
+        # Validate paths
+        db_path, backup_dir, backup_path = _validate_backup_paths()
 
-        # Step 2: Enhanced path validation
-        if db_path is None:
-            raise AncestryException(
-                "Cannot backup database: DATABASE_FILE is not configured. Configure DATABASE_FILE in configuration."
-            )
+        # Prepare backup directory and check space
+        _prepare_backup_directory(backup_dir, db_path)
 
-        if backup_dir is None:
-            raise AncestryException(
-                "Cannot backup database: DATA_DIR is not configured. Configure DATA_DIR in configuration."
-            )
+        logger.info(f"Starting database backup: '{db_path.name}' -> '{backup_path}' (Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB)")
 
-        # Step 3: Check source database exists and is accessible
-        if not db_path.exists():
-            raise AncestryException(
-                f"Database file '{db_path.name}' not found at {db_path}. Ensure database file exists before backup."
-            )
+        # Perform backup
+        _perform_backup_copy(db_path, backup_path)
 
-        # Check if database file is readable
-        try:
-            with db_path.open("rb") as f:
-                f.read(1)  # Try to read first byte
-        except PermissionError:
-            raise DatabaseConnectionError(
-                f"Permission denied accessing database file '{db_path}'",
-                context={"db_path": str(db_path)},
-                recovery_hint="Check file permissions and ensure database is not locked",
-            )
-
-        # Step 4: Ensure backup directory exists with error handling
-        try:
-            backup_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError:
-            raise DatabaseConnectionError(
-                f"Permission denied creating backup directory '{backup_dir}'",
-                context={"backup_dir": str(backup_dir)},
-                recovery_hint="Check directory permissions",
-            )
-
-        backup_path = backup_dir / "ancestry_backup.db"
-
-        # Check available disk space
-        import shutil as disk_utils
-
-        try:
-            disk_usage = disk_utils.disk_usage(backup_dir)
-            db_size = db_path.stat().st_size
-            available_space = disk_usage.free
-
-            if available_space < db_size * 1.1:  # Need 10% extra space
-                raise DatabaseConnectionError(
-                    f"Insufficient disk space for backup. Need {db_size * 1.1 / 1024 / 1024:.1f}MB, available {available_space / 1024 / 1024:.1f}MB",
-                    context={
-                        "db_size": db_size,
-                        "available_space": available_space,
-                        "backup_dir": str(backup_dir),
-                    },
-                    recovery_hint="Free up disk space or choose different backup location",
-                )
-        except Exception as space_check_error:
-            logger.warning(f"Could not check disk space: {space_check_error}")
-
-        logger.info(
-            f"Starting database backup: '{db_path.name}' -> '{backup_path}' "
-            f"(Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB)"
-        )
-
-        # Step 5: Perform backup with enhanced error handling
-        try:
-            # Use copy2 to preserve metadata (like modification time)
-            shutil.copy2(db_path, backup_path)
-
-            # Verify backup integrity
-            if not backup_path.exists():
-                raise DatabaseConnectionError(
-                    "Backup file was not created successfully",
-                    context={"backup_path": str(backup_path)},
-                )
-
-            # Verify backup size matches original
-            original_size = db_path.stat().st_size
-            backup_size = backup_path.stat().st_size
-
-            if backup_size != original_size:
-                raise DataValidationError(
-                    f"Backup size mismatch: original {original_size} bytes, backup {backup_size} bytes",
-                    context={
-                        "original_size": original_size,
-                        "backup_size": backup_size,
-                        "backup_path": str(backup_path),
-                    },
-                )
-
-            backup_time = time.time() - backup_start
-            logger.info(
-                f"Database backup completed successfully in {backup_time:.2f}s: '{backup_path.name}' "
-                f"({backup_size / 1024 / 1024:.1f}MB)"
-            )
-            return True
-
-        except PermissionError as perm_error:
-            raise DatabaseConnectionError(
-                f"Permission denied during backup operation: {perm_error}",
-                context={"source": str(db_path), "destination": str(backup_path)},
-                recovery_hint="Check file and directory permissions",
-            )
-        except OSError as os_error:
-            raise DatabaseConnectionError(
-                f"File system error during backup: {os_error}",
-                context={"source": str(db_path), "destination": str(backup_path)},
-                recovery_hint="Check disk space and file system health",
-            )
+        backup_time = time.time() - backup_start
+        backup_size = backup_path.stat().st_size
+        logger.info(f"Database backup completed successfully in {backup_time:.2f}s: '{backup_path.name}' ({backup_size / 1024 / 1024:.1f}MB)")
+        return True
 
     except AncestryException:
-        # Re-raise our custom exceptions
         raise
     except Exception as unexpected_error:
         backup_time = time.time() - backup_start
         raise RetryableError(
             f"Unexpected error during database backup: {unexpected_error}",
-            context={
-                "backup_time": backup_time,
-                "error_type": type(unexpected_error).__name__,
-            },
+            context={"backup_time": backup_time, "error_type": type(unexpected_error).__name__},
             recovery_hint="Check system resources and retry",
         )
 
@@ -2468,6 +2443,58 @@ def cleanup_soft_deleted_records(
 # --- Tests ---
 
 
+def _create_and_verify_test_person(session: Session, test_uuid: str, test_profile_id: str, test_username: str) -> bool:
+    """Create and verify test person."""
+    logger.info(f"Creating test person: UUID={test_uuid}, ProfileID={test_profile_id}, Username={test_username}")
+    person_data = {"uuid": test_uuid, "profile_id": test_profile_id, "username": test_username, "status": PersonStatusEnum.ACTIVE}
+
+    person_id = create_person(session, person_data)
+    if person_id == 0:
+        logger.error("Failed to create test person.")
+        return False
+
+    logger.info(f"Created test person with ID: {person_id}")
+
+    person = get_person_by_profile_id(session, test_profile_id)
+    if not person:
+        logger.error(f"Test person with ProfileID={test_profile_id} not found after creation.")
+        return False
+
+    logger.info(f"Verified test person exists: ID={person.id}, ProfileID={person.profile_id}")
+    return True
+
+
+def _verify_soft_delete_state(session: Session, test_profile_id: str) -> bool:
+    """Verify person is soft-deleted correctly."""
+    # Verify not found in normal queries
+    person = get_person_by_profile_id(session, test_profile_id)
+    if person:
+        logger.error(f"Test person with ProfileID={test_profile_id} still found after soft-delete in normal query.")
+        return False
+    logger.info("Verified test person not found in normal query after soft-delete.")
+
+    # Verify found with include_deleted=True
+    person = get_person_by_profile_id(session, test_profile_id, include_deleted=True)
+    if not person:
+        logger.error(f"Test person with ProfileID={test_profile_id} not found after soft-delete with include_deleted=True.")
+        return False
+    logger.info("Verified test person found with include_deleted=True after soft-delete.")
+
+    # Verify deleted_at timestamp
+    if getattr(person, "deleted_at", None) is None:
+        logger.error(f"Test person with ProfileID={test_profile_id} has no deleted_at timestamp after soft-delete.")
+        return False
+    logger.info(f"Verified test person has deleted_at timestamp: {person.deleted_at}")
+
+    # Verify status is ARCHIVE
+    if getattr(person, "status", None) != PersonStatusEnum.ARCHIVE:
+        logger.error(f"Test person with ProfileID={test_profile_id} has status {person.status} instead of ARCHIVE after soft-delete.")
+        return False
+    logger.info("Verified test person has status ARCHIVE after soft-delete.")
+
+    return True
+
+
 def test_soft_delete_functionality(session: Session) -> bool:
     """
     Tests the soft delete functionality by:
@@ -2490,124 +2517,33 @@ def test_soft_delete_functionality(session: Session) -> bool:
     test_profile_id = f"TEST-{uuid4()}"
     test_username = f"Test User {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-    # Step 1: Create a test person
-    logger.info(
-        f"Creating test person: UUID={test_uuid}, ProfileID={test_profile_id}, Username={test_username}"
-    )
-    person_data = {
-        "uuid": test_uuid,
-        "profile_id": test_profile_id,
-        "username": test_username,
-        "status": PersonStatusEnum.ACTIVE,
-    }
-
     try:
-        # Create the person
-        person_id = create_person(session, person_data)
-        if person_id == 0:
-            logger.error("Failed to create test person.")
+        # Create and verify test person
+        if not _create_and_verify_test_person(session, test_uuid, test_profile_id, test_username):
             return False
 
-        logger.info(f"Created test person with ID: {person_id}")
-
-        # Step 2: Verify the person exists
-        person = get_person_by_profile_id(session, test_profile_id)
-        if not person:
-            logger.error(
-                f"Test person with ProfileID={test_profile_id} not found after creation."
-            )
+        # Soft-delete the person
+        logger.info(f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}")
+        if not soft_delete_person(session, test_profile_id, test_username):
+            logger.error(f"Failed to soft-delete test person: ProfileID={test_profile_id}")
             return False
-
-        logger.info(
-            f"Verified test person exists: ID={person.id}, ProfileID={person.profile_id}"
-        )
-
-        # Step 3: Soft-delete the person
-        logger.info(
-            f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}"
-        )
-        result = soft_delete_person(session, test_profile_id, test_username)
-        if not result:
-            logger.error(
-                f"Failed to soft-delete test person: ProfileID={test_profile_id}"
-            )
-            return False
-
         logger.info(f"Soft-deleted test person: ProfileID={test_profile_id}")
 
-        # Step 4: Verify the person is not found in normal queries
-        person = get_person_by_profile_id(session, test_profile_id)
-        if person:
-            logger.error(
-                f"Test person with ProfileID={test_profile_id} still found after soft-delete in normal query."
-            )
+        # Verify soft-delete state
+        if not _verify_soft_delete_state(session, test_profile_id):
             return False
 
-        logger.info(
-            "Verified test person not found in normal query after soft-delete."
-        )
-
-        # Step 5: Verify the person is found when include_deleted=True
-        person = get_person_by_profile_id(
-            session, test_profile_id, include_deleted=True
-        )
-        if not person:
-            logger.error(
-                f"Test person with ProfileID={test_profile_id} not found after soft-delete with include_deleted=True."
-            )
+        # Hard-delete for cleanup
+        logger.info(f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}")
+        if not hard_delete_person(session, test_profile_id, test_username):
+            logger.error(f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}")
             return False
+        logger.info(f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}")
 
-        logger.info(
-            "Verified test person found with include_deleted=True after soft-delete."
-        )
-
-        # Step 6: Verify deleted_at timestamp is set - use safer comparison
-        deleted_at_value = getattr(person, "deleted_at", None)
-        if deleted_at_value is None:
-            logger.error(
-                f"Test person with ProfileID={test_profile_id} has no deleted_at timestamp after soft-delete."
-            )
+        # Verify permanent deletion
+        if get_person_by_profile_id(session, test_profile_id, include_deleted=True):
+            logger.error(f"Test person with ProfileID={test_profile_id} still found after hard-delete.")
             return False
-
-        logger.info(
-            f"Verified test person has deleted_at timestamp: {deleted_at_value}"
-        )
-
-        # Step 7: Verify status is set to ARCHIVE - use safer comparison
-        status_value = getattr(person, "status", None)
-        if status_value != PersonStatusEnum.ARCHIVE:
-            logger.error(
-                f"Test person with ProfileID={test_profile_id} has status {status_value} instead of ARCHIVE after soft-delete."
-            )
-            return False
-
-        logger.info("Verified test person has status ARCHIVE after soft-delete.")
-
-        # Step 8: Hard-delete the person to clean up
-        logger.info(
-            f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}"
-        )
-        result = hard_delete_person(session, test_profile_id, test_username)
-        if not result:
-            logger.error(
-                f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}"
-            )
-            return False
-
-        logger.info(
-            f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}"
-        )
-
-        # Step 9: Verify the person is permanently deleted
-        person = get_person_by_profile_id(
-            session, test_profile_id, include_deleted=True
-        )
-        if person:
-            logger.error(
-                f"Test person with ProfileID={test_profile_id} still found after hard-delete."
-            )
-            return False
-
         logger.info("Verified test person permanently deleted.")
 
         logger.info("=== All Soft Delete Tests Passed ===")
