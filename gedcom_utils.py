@@ -1140,43 +1140,25 @@ def _check_relationship_type(
 
     Returns None if the relationship type doesn't match.
     """
-    # Direct parent/child relationships
-    if relationship_type == "parent" and id_b in id_to_parents.get(id_a, set()):
-        return _determine_parent_relationship(sex_char, name_b, birth_year_b)
+    # Data-driven relationship checking
+    relationship_checks = {
+        "parent": (lambda: id_b in id_to_parents.get(id_a, set()), lambda: _determine_parent_relationship(sex_char, name_b, birth_year_b)),
+        "child": (lambda: id_b in id_to_children.get(id_a, set()), lambda: _determine_child_relationship(sex_char, name_b, birth_year_b)),
+        "sibling": (lambda: _are_siblings(id_a, id_b, id_to_parents), lambda: _determine_sibling_relationship(sex_char, name_b, birth_year_b)),
+        "spouse": (lambda: _are_spouses(id_a, id_b, reader), lambda: _determine_spouse_relationship(sex_char, name_b, birth_year_b)),
+        "aunt_uncle": (lambda: _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children), lambda: _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)),
+        "niece_nephew": (lambda: _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children), lambda: _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)),
+        "cousin": (lambda: _are_cousins(id_a, id_b, id_to_parents, id_to_children), lambda: f"whose cousin is {name_b}{birth_year_b}"),
+        "grandparent": (lambda: _is_grandparent(id_a, id_b, id_to_parents), lambda: _determine_grandparent_relationship(sex_char, name_b, birth_year_b)),
+        "grandchild": (lambda: _is_grandchild(id_a, id_b, id_to_children), lambda: _determine_grandchild_relationship(sex_char, name_b, birth_year_b)),
+        "great_grandparent": (lambda: _is_great_grandparent(id_a, id_b, id_to_parents), lambda: _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)),
+        "great_grandchild": (lambda: _is_great_grandchild(id_a, id_b, id_to_children), lambda: _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b)),
+    }
 
-    if relationship_type == "child" and id_b in id_to_children.get(id_a, set()):
-        return _determine_child_relationship(sex_char, name_b, birth_year_b)
-
-    # Sibling and spouse relationships
-    if relationship_type == "sibling" and _are_siblings(id_a, id_b, id_to_parents):
-        return _determine_sibling_relationship(sex_char, name_b, birth_year_b)
-
-    if relationship_type == "spouse" and _are_spouses(id_a, id_b, reader):
-        return _determine_spouse_relationship(sex_char, name_b, birth_year_b)
-
-    # Extended family relationships
-    if relationship_type == "aunt_uncle" and _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children):
-        return _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)
-
-    if relationship_type == "niece_nephew" and _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children):
-        return _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)
-
-    if relationship_type == "cousin" and _are_cousins(id_a, id_b, id_to_parents, id_to_children):
-        return f"whose cousin is {name_b}{birth_year_b}"
-
-    # Grandparent/grandchild relationships
-    if relationship_type == "grandparent" and _is_grandparent(id_a, id_b, id_to_parents):
-        return _determine_grandparent_relationship(sex_char, name_b, birth_year_b)
-
-    if relationship_type == "grandchild" and _is_grandchild(id_a, id_b, id_to_children):
-        return _determine_grandchild_relationship(sex_char, name_b, birth_year_b)
-
-    # Great-grandparent/great-grandchild relationships
-    if relationship_type == "great_grandparent" and _is_great_grandparent(id_a, id_b, id_to_parents):
-        return _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)
-
-    if relationship_type == "great_grandchild" and _is_great_grandchild(id_a, id_b, id_to_children):
-        return _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b)
+    if relationship_type in relationship_checks:
+        check_func, result_func = relationship_checks[relationship_type]
+        if check_func():
+            return result_func()
 
     return None
 
