@@ -2064,6 +2064,33 @@ def _normalize_datetime_to_utc(dt_value: Any) -> Optional[datetime]:
         return dt_value.replace(tzinfo=timezone.utc, microsecond=0)
 
 
+def _determine_match_status(
+    is_new_person: bool,
+    person_fields_changed: bool,
+    dna_op_data: Any,
+    tree_op_data: Any,
+    tree_operation_status: str,
+) -> Literal["new", "updated", "skipped"]:
+    """
+    Determine the overall status for a match based on data changes.
+
+    Returns:
+        Status: "new", "updated", or "skipped"
+    """
+    if is_new_person:
+        return "new"
+
+    # Existing person - check if anything changed
+    if (
+        person_fields_changed
+        or dna_op_data
+        or (tree_op_data and tree_operation_status != "none")
+    ):
+        return "updated"
+    else:
+        return "skipped"
+
+
 def _compare_person_field(
     key: str,
     new_value: Any,
@@ -2694,30 +2721,22 @@ def _do_match(  # type: ignore
             # Continue with other operations but mark tree data as None
             tree_op_data, tree_operation_status = None, "none"  # type: ignore
 
-        if is_new_person:
-            overall_status = "new"
-            if person_op_data:
-                prepared_data_for_bulk["person"] = person_op_data
-            if dna_op_data:
-                prepared_data_for_bulk["dna_match"] = dna_op_data
-            if tree_op_data and tree_operation_status == "create":
-                prepared_data_for_bulk["family_tree"] = tree_op_data
-        else:  # Existing Person
-            if person_op_data:
-                prepared_data_for_bulk["person"] = person_op_data
-            if dna_op_data:
-                prepared_data_for_bulk["dna_match"] = dna_op_data
-            if tree_op_data:
-                prepared_data_for_bulk["family_tree"] = tree_op_data
+        # Populate prepared data
+        if person_op_data:
+            prepared_data_for_bulk["person"] = person_op_data
+        if dna_op_data:
+            prepared_data_for_bulk["dna_match"] = dna_op_data
+        if tree_op_data and (is_new_person and tree_operation_status == "create" or not is_new_person):
+            prepared_data_for_bulk["family_tree"] = tree_op_data
 
-            if (
-                person_fields_changed
-                or dna_op_data
-                or (tree_op_data and tree_operation_status != "none")
-            ):
-                overall_status = "updated"
-            else:
-                overall_status = "skipped"
+        # Determine overall status
+        overall_status = _determine_match_status(
+            is_new_person,
+            person_fields_changed,
+            dna_op_data,
+            tree_op_data,
+            tree_operation_status,
+        )
 
         data_to_return = (
             prepared_data_for_bulk
