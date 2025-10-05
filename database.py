@@ -962,7 +962,7 @@ def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[Optional[
     return people_id, log_ref
 
 
-def _validate_optional_numeric(key: str, value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
+def _validate_optional_numeric(_key: str, value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
     """Validate optional numeric field."""
     if value is None:
         return None
@@ -1853,7 +1853,7 @@ def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix
     return log_inserts_mappings
 
 
-def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum], log_prefix: str) -> list[dict[str, Any]]:
+def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum], _log_prefix: str) -> list[dict[str, Any]]:
     """Prepare and validate person update data for bulk update."""
     person_update_mappings = []
 

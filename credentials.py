@@ -1008,7 +1008,7 @@ class UnifiedCredentialManager:
                 },
             )
 
-    def _save_credential(self, key: str, value: str, description: str) -> bool:
+    def _save_credential(self, key: str, value: str, _description: str) -> bool:
         """Save a credential to the secure store.
 
         Args:
