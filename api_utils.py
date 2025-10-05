@@ -917,6 +917,73 @@ def _extract_from_event_info_card(
     return None, None
 
 
+def _extract_from_facts_data(
+    facts_data: Optional[dict],
+    keys: dict[str, str],
+    event_type: str,
+    parser: Any
+) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
+    """Extract event data from facts_data using multiple strategies."""
+    date_str: Optional[str] = None
+    place_str: Optional[str] = None
+    date_obj: Optional[datetime] = None
+    found_in_facts = False
+
+    if not facts_data or not isinstance(facts_data, dict):
+        return date_str, place_str, date_obj, found_in_facts
+
+    # Strategy 1: PersonFacts primary event facts
+    date_str, place_str, date_obj, found_in_facts = _extract_from_person_facts(
+        facts_data, keys["facts_user"], event_type, parser
+    )
+
+    # Strategy 2: Structured facts data with date/place objects
+    if not found_in_facts:
+        date_str, place_str, found_in_facts = _extract_from_structured_facts(
+            facts_data, keys["app_api_facts"]
+        )
+
+    # Strategy 3: Alternative event fact formats
+    if not found_in_facts:
+        date_str, place_str, found_in_facts = _extract_from_alternative_facts(
+            facts_data, keys["app_api"]
+        )
+
+    return date_str, place_str, date_obj, found_in_facts
+
+
+def _extract_from_person_card(
+    person_card: dict,
+    keys: dict[str, str],
+    event_type: str,
+    current_date_str: Optional[str],
+    current_place_str: Optional[str]
+) -> tuple[Optional[str], Optional[str]]:
+    """Extract event data from person_card using multiple strategies."""
+    date_str = current_date_str
+    place_str = current_place_str
+
+    # Strategy 4: Suggest API year/place fields
+    suggest_date, suggest_place = _extract_from_suggest_api(
+        person_card, keys["suggest_year"], keys["suggest_place"], event_type
+    )
+
+    if suggest_date:
+        date_str = suggest_date
+        place_str = suggest_place
+    else:
+        # Strategy 5: Concatenated event info strings
+        card_date, card_place = _extract_from_event_info_card(
+            person_card, keys["event_lower"]
+        )
+        if card_date:
+            date_str = card_date
+        if card_place and place_str is None:
+            place_str = card_place
+
+    return date_str, place_str
+
+
 def _extract_event_from_api_details(
     event_type: str, person_card: dict, facts_data: Optional[dict]
 ) -> tuple[Optional[str], Optional[str], Optional[datetime]]:
@@ -958,43 +1025,13 @@ def _extract_event_from_api_details(
     keys = _build_event_keys(event_type)
 
     # Try to extract from facts_data using multiple strategies
-    if facts_data and isinstance(facts_data, dict):
-        # Strategy 1: PersonFacts primary event facts
-        date_str, place_str, date_obj, found_in_facts = _extract_from_person_facts(
-            facts_data, keys["facts_user"], event_type, parser
-        )
-
-        # Strategy 2: Structured facts data with date/place objects
-        if not found_in_facts:
-            date_str, place_str, found_in_facts = _extract_from_structured_facts(
-                facts_data, keys["app_api_facts"]
-            )
-
-        # Strategy 3: Alternative event fact formats
-        if not found_in_facts:
-            date_str, place_str, found_in_facts = _extract_from_alternative_facts(
-                facts_data, keys["app_api"]
-            )
+    date_str, place_str, date_obj, found_in_facts = _extract_from_facts_data(
+        facts_data, keys, event_type, parser
+    )
 
     # Try to extract from person_card if not found in facts_data
     if not found_in_facts and person_card:
-        # Strategy 4: Suggest API year/place fields
-        suggest_date, suggest_place = _extract_from_suggest_api(
-            person_card, keys["suggest_year"], keys["suggest_place"], event_type
-        )
-
-        if suggest_date:
-            date_str = suggest_date
-            place_str = suggest_place
-        else:
-            # Strategy 5: Concatenated event info strings
-            card_date, card_place = _extract_from_event_info_card(
-                person_card, keys["event_lower"]
-            )
-            if card_date:
-                date_str = card_date
-            if card_place and place_str is None:
-                place_str = card_place
+        date_str, place_str = _extract_from_person_card(person_card, keys, event_type, date_str, place_str)
 
     # Final attempt to parse date if we have a date string but no date object
     if date_obj is None and date_str and parser:
@@ -1423,33 +1460,17 @@ def _try_direct_suggest_fallback(
     return None
 
 
-@timeout_protection(timeout=180)  # 3 minutes for complex API calls
-@error_context("Ancestry Suggest API Call")
-def call_suggest_api(
+def _execute_suggest_api_with_retries(
+    suggest_url: str,
     session_manager: "SessionManager",
-    owner_tree_id: str,
-    _owner_profile_id: Optional[str],  # Unused but kept for API consistency
-    base_url: str,
-    search_criteria: dict[str, Any],
-    timeouts: Optional[list[int]] = None,
+    owner_facts_referer: str,
+    timeouts_used: list[int],
+    api_description: str
 ) -> Optional[list[dict[str, Any]]]:
-    # Validate inputs
-    _validate_suggest_api_inputs(session_manager, owner_tree_id)
-
-    api_description = "Suggest API"
-
-    # Apply rate limiting
-    _apply_rate_limiting(api_description)
-
-    # Build URL
-    suggest_url = _build_suggest_url(owner_tree_id, base_url, search_criteria)
-    owner_facts_referer = _get_owner_referer(session_manager, base_url)
-
-    timeouts_used = timeouts if timeouts else [20, 30, 60]
+    """Execute Suggest API with retry logic."""
     max_attempts = len(timeouts_used)
-    logger.info(f"Attempting {api_description} search: {suggest_url}")
-
     suggest_response = None
+
     for attempt, timeout in enumerate(timeouts_used, 1):
         logger.debug(f"{api_description} attempt {attempt}/{max_attempts} with timeout {timeout}s")
 
@@ -1497,11 +1518,45 @@ def call_suggest_api(
             suggest_response = None
             continue
 
+    return None
+
+
+@timeout_protection(timeout=180)  # 3 minutes for complex API calls
+@error_context("Ancestry Suggest API Call")
+def call_suggest_api(
+    session_manager: "SessionManager",
+    owner_tree_id: str,
+    _owner_profile_id: Optional[str],  # Unused but kept for API consistency
+    base_url: str,
+    search_criteria: dict[str, Any],
+    timeouts: Optional[list[int]] = None,
+) -> Optional[list[dict[str, Any]]]:
+    # Validate inputs
+    _validate_suggest_api_inputs(session_manager, owner_tree_id)
+
+    api_description = "Suggest API"
+
+    # Apply rate limiting
+    _apply_rate_limiting(api_description)
+
+    # Build URL
+    suggest_url = _build_suggest_url(owner_tree_id, base_url, search_criteria)
+    owner_facts_referer = _get_owner_referer(session_manager, base_url)
+
+    timeouts_used = timeouts if timeouts else [20, 30, 60]
+    max_attempts = len(timeouts_used)
+    logger.info(f"Attempting {api_description} search: {suggest_url}")
+
+    result = _execute_suggest_api_with_retries(
+        suggest_url, session_manager, owner_facts_referer, timeouts_used, api_description
+    )
+    if result is not None:
+        return result
+
     # Try direct fallback if all attempts failed
-    if suggest_response is None:
-        direct_result = _try_direct_suggest_fallback(suggest_url, session_manager, owner_facts_referer, api_description)
-        if direct_result is not None:
-            return direct_result
+    direct_result = _try_direct_suggest_fallback(suggest_url, session_manager, owner_facts_referer, api_description)
+    if direct_result is not None:
+        return direct_result
 
     logger.error(f"{api_description} failed after all attempts and fallback.")
     return None
