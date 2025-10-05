@@ -1953,6 +1953,28 @@ def call_discovery_relationship_api(
 # End of call_discovery_relationship_api
 
 
+def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> Optional[str]:
+    """Build TreesUI List API URL with search parameters."""
+    first_name_raw = search_criteria.get("first_name_raw", "")
+    surname_raw = search_criteria.get("surname_raw", "")
+    birth_year = search_criteria.get("birth_year")
+
+    if not birth_year:
+        logger.warning("Cannot call TreesUI List API: 'birth_year' is missing in search criteria.")
+        return None
+
+    treesui_params_list = ["limit=100", "fields=NAMES,BIRTH_DEATH"]
+    if first_name_raw:
+        treesui_params_list.append(f"fn={quote(first_name_raw)}")
+    if surname_raw:
+        treesui_params_list.append(f"ln={quote(surname_raw)}")
+    treesui_params_list.append(f"by={birth_year}")
+
+    treesui_params = "&".join(treesui_params_list)
+    formatted_path = API_PATH_TREESUI_LIST.format(tree_id=owner_tree_id)
+    return urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{treesui_params}"
+
+
 def call_treesui_list_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
@@ -1962,56 +1984,22 @@ def call_treesui_list_api(
     timeouts: Optional[list[int]] = None,
 ) -> Optional[list[dict[str, Any]]]:
     if not callable(_api_req):
-        logger.critical(
-            "TreesUI List API call failed: _api_req function unavailable (Import Failed?)."
-        )
+        logger.critical("TreesUI List API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
-    # End of if
     if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("TreesUI List API call failed: Invalid SessionManager passed.")
         return None
-    # End of if
     if not owner_tree_id:
         logger.error("TreesUI List API call failed: owner_tree_id is required.")
         return None
-    # End of if
 
     api_description = "TreesUI List API (Alternative Search)"
+    _apply_rate_limiting(api_description)
 
-    # Apply rate limiting if available
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
-
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
-
-    first_name_raw = search_criteria.get("first_name_raw", "")
-    surname_raw = search_criteria.get("surname_raw", "")
-    birth_year = search_criteria.get("birth_year")
-    if not birth_year:
-        logger.warning(
-            "Cannot call TreesUI List API: 'birth_year' is missing in search criteria."
-        )
+    treesui_url = _build_treesui_url(owner_tree_id, base_url, search_criteria)
+    if not treesui_url:
         return None
-    # End of if
-    treesui_params_list = ["limit=100", "fields=NAMES,BIRTH_DEATH"]
-    if first_name_raw:
-        treesui_params_list.append(f"fn={quote(first_name_raw)}")
-    # End of if
-    if surname_raw:
-        treesui_params_list.append(f"ln={quote(surname_raw)}")
-    # End of if
-    treesui_params_list.append(f"by={birth_year}")
-    treesui_params = "&".join(treesui_params_list)
-    formatted_path = API_PATH_TREESUI_LIST.format(tree_id=owner_tree_id)
-    treesui_url = (
-        urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{treesui_params}"
-    )
+
     owner_facts_referer = _get_owner_referer(session_manager, base_url)
     timeouts_used = timeouts if timeouts else [15, 25, 35]
     max_attempts = len(timeouts_used)
