@@ -763,6 +763,15 @@ def _create_person_dict(name: str, birth_year: Optional[str], death_year: Option
     }
 
 
+def _get_gendered_term(male_term: str, female_term: str, neutral_term: str, sex_char: Optional[str]) -> str:
+    """Get gendered relationship term based on sex character."""
+    if sex_char == "M":
+        return male_term
+    if sex_char == "F":
+        return female_term
+    return neutral_term
+
+
 def _determine_gedcom_relationship(
     prev_id: str,
     current_id: str,
@@ -772,49 +781,24 @@ def _determine_gedcom_relationship(
     id_to_children: dict[str, set[str]],
 ) -> str:
     """Determine relationship between two individuals in GEDCOM path."""
-    # Check if current is a PARENT of prev
-    if current_id in id_to_parents.get(prev_id, set()):
-        return "father" if sex_char == "M" else "mother" if sex_char == "F" else "parent"
+    # Define relationship checks in order of priority
+    relationship_checks = [
+        (lambda: current_id in id_to_parents.get(prev_id, set()), "father", "mother", "parent"),
+        (lambda: current_id in id_to_children.get(prev_id, set()), "son", "daughter", "child"),
+        (lambda: _are_siblings(prev_id, current_id, id_to_parents), "brother", "sister", "sibling"),
+        (lambda: _are_spouses(prev_id, current_id, reader), "husband", "wife", "spouse"),
+        (lambda: _is_grandparent(prev_id, current_id, id_to_parents), "grandfather", "grandmother", "grandparent"),
+        (lambda: _is_grandchild(prev_id, current_id, id_to_children), "grandson", "granddaughter", "grandchild"),
+        (lambda: _is_great_grandparent(prev_id, current_id, id_to_parents), "great-grandfather", "great-grandmother", "great-grandparent"),
+        (lambda: _is_great_grandchild(prev_id, current_id, id_to_children), "great-grandson", "great-granddaughter", "great-grandchild"),
+        (lambda: _is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children), "uncle", "aunt", "aunt/uncle"),
+        (lambda: _is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children), "nephew", "niece", "niece/nephew"),
+        (lambda: _are_cousins(prev_id, current_id, id_to_parents, id_to_children), "cousin", "cousin", "cousin"),
+    ]
 
-    # Check if current is a CHILD of prev
-    if current_id in id_to_children.get(prev_id, set()):
-        return "son" if sex_char == "M" else "daughter" if sex_char == "F" else "child"
-
-    # Check if current is a SIBLING of prev
-    if _are_siblings(prev_id, current_id, id_to_parents):
-        return "brother" if sex_char == "M" else "sister" if sex_char == "F" else "sibling"
-
-    # Check if current is a SPOUSE of prev
-    if _are_spouses(prev_id, current_id, reader):
-        return "husband" if sex_char == "M" else "wife" if sex_char == "F" else "spouse"
-
-    # Check for grandparent
-    if _is_grandparent(prev_id, current_id, id_to_parents):
-        return "grandfather" if sex_char == "M" else "grandmother" if sex_char == "F" else "grandparent"
-
-    # Check for grandchild
-    if _is_grandchild(prev_id, current_id, id_to_children):
-        return "grandson" if sex_char == "M" else "granddaughter" if sex_char == "F" else "grandchild"
-
-    # Check for great-grandparent
-    if _is_great_grandparent(prev_id, current_id, id_to_parents):
-        return "great-grandfather" if sex_char == "M" else "great-grandmother" if sex_char == "F" else "great-grandparent"
-
-    # Check for great-grandchild
-    if _is_great_grandchild(prev_id, current_id, id_to_children):
-        return "great-grandson" if sex_char == "M" else "great-granddaughter" if sex_char == "F" else "great-grandchild"
-
-    # Check for aunt/uncle
-    if _is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children):
-        return "uncle" if sex_char == "M" else "aunt" if sex_char == "F" else "aunt/uncle"
-
-    # Check for niece/nephew
-    if _is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children):
-        return "nephew" if sex_char == "M" else "niece" if sex_char == "F" else "niece/nephew"
-
-    # Check for cousins
-    if _are_cousins(prev_id, current_id, id_to_parents, id_to_children):
-        return "cousin"
+    for check_func, male_term, female_term, neutral_term in relationship_checks:
+        if check_func():
+            return _get_gendered_term(male_term, female_term, neutral_term, sex_char)
 
     return "relative"
 
@@ -879,40 +863,36 @@ def convert_gedcom_path_to_unified_format(
 
 def _parse_discovery_relationship(relationship_text: str) -> tuple[str, Optional[str]]:
     """Parse Discovery API relationship text to extract relationship term and gender."""
-    relationship_term: str = "relative"
-    gender: Optional[str] = None
-
     rel_lower = relationship_text.lower()
 
-    # Check for specific relationship terms with gender
-    if "daughter" in rel_lower:
-        relationship_term, gender = "daughter", "F"
-    elif "son" in rel_lower:
-        relationship_term, gender = "son", "M"
-    elif "father" in rel_lower:
-        relationship_term, gender = "father", "M"
-    elif "mother" in rel_lower:
-        relationship_term, gender = "mother", "F"
-    elif "brother" in rel_lower:
-        relationship_term, gender = "brother", "M"
-    elif "sister" in rel_lower:
-        relationship_term, gender = "sister", "F"
-    elif "husband" in rel_lower:
-        relationship_term, gender = "husband", "M"
-    elif "wife" in rel_lower:
-        relationship_term, gender = "wife", "F"
-    else:
-        # Try to extract the relationship term from the text
-        rel_match = re.search(r"(is|are) the (.*?) of", rel_lower)
-        if rel_match:
-            relationship_term = rel_match.group(2)
-            # Try to determine gender from relationship term
-            if relationship_term in ["son", "father", "brother", "husband"]:
-                gender = "M"
-            elif relationship_term in ["daughter", "mother", "sister", "wife"]:
-                gender = "F"
+    # Define relationship terms with their genders
+    relationship_mappings = [
+        ("daughter", "daughter", "F"),
+        ("son", "son", "M"),
+        ("father", "father", "M"),
+        ("mother", "mother", "F"),
+        ("brother", "brother", "M"),
+        ("sister", "sister", "F"),
+        ("husband", "husband", "M"),
+        ("wife", "wife", "F"),
+    ]
 
-    return relationship_term, gender
+    # Check for specific relationship terms
+    for keyword, term, gender in relationship_mappings:
+        if keyword in rel_lower:
+            return term, gender
+
+    # Try to extract the relationship term from the text
+    rel_match = re.search(r"(is|are) the (.*?) of", rel_lower)
+    if rel_match:
+        relationship_term = rel_match.group(2)
+        # Determine gender from relationship term
+        male_terms = ["son", "father", "brother", "husband"]
+        female_terms = ["daughter", "mother", "sister", "wife"]
+        gender = "M" if relationship_term in male_terms else "F" if relationship_term in female_terms else None
+        return relationship_term, gender
+
+    return "relative", None
 
 
 def convert_discovery_api_path_to_unified_format(
@@ -1449,41 +1429,27 @@ def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str
     Returns:
         Human-readable relationship term
     """
-    relationship_code_lower = relationship_code.lower()  # Use a different variable name
+    relationship_code_lower = relationship_code.lower()
 
-    # Direct relationships
-    if relationship_code_lower == "parent":
-        return "father" if gender == "M" else "mother" if gender == "F" else "parent"
-    if relationship_code_lower == "child":
-        return "son" if gender == "M" else "daughter" if gender == "F" else "child"
-    if relationship_code_lower == "spouse":
-        return "husband" if gender == "M" else "wife" if gender == "F" else "spouse"
-    if relationship_code_lower == "sibling":
-        return "brother" if gender == "M" else "sister" if gender == "F" else "sibling"
+    # Define relationship mappings: (code/keyword, male_term, female_term, neutral_term, is_exact_match)
+    relationship_mappings = [
+        ("parent", "father", "mother", "parent", True),
+        ("child", "son", "daughter", "child", True),
+        ("spouse", "husband", "wife", "spouse", True),
+        ("sibling", "brother", "sister", "sibling", True),
+        ("grandparent", "grandfather", "grandmother", "grandparent", False),
+        ("grandchild", "grandson", "granddaughter", "grandchild", False),
+        ("aunt", "uncle", "aunt", "aunt/uncle", False),
+        ("uncle", "uncle", "aunt", "aunt/uncle", False),
+        ("niece", "nephew", "niece", "niece/nephew", False),
+        ("nephew", "nephew", "niece", "niece/nephew", False),
+        ("cousin", "cousin", "cousin", "cousin", False),
+    ]
 
-    # Extended relationships
-    if "grandparent" in relationship_code_lower:
-        return (
-            "grandfather"
-            if gender == "M"
-            else "grandmother" if gender == "F" else "grandparent"
-        )
-    if "grandchild" in relationship_code_lower:
-        return (
-            "grandson"
-            if gender == "M"
-            else "granddaughter" if gender == "F" else "grandchild"
-        )
-    if "aunt" in relationship_code_lower or "uncle" in relationship_code_lower:
-        return "uncle" if gender == "M" else "aunt" if gender == "F" else "aunt/uncle"
-    if "niece" in relationship_code_lower or "nephew" in relationship_code_lower:
-        return (
-            "nephew" if gender == "M" else "niece" if gender == "F" else "niece/nephew"
-        )
-    if "cousin" in relationship_code_lower:
-        return "cousin"
+    for code, male_term, female_term, neutral_term, is_exact in relationship_mappings:
+        if (is_exact and relationship_code_lower == code) or (not is_exact and code in relationship_code_lower):
+            return _get_gendered_term(male_term, female_term, neutral_term, gender)
 
-    # Default
     return relationship_code  # Return original if no match
 
 
@@ -1521,31 +1487,12 @@ def relationship_module_tests() -> None:
         ]
 
         print("📋 Testing name formatting with various cases:")
-        results = []
-
         for input_name, expected, description in test_cases:
-            try:
-                result = format_name(input_name)
-                test_passed = result == expected
+            result = format_name(input_name)
+            assert result == expected, f"format_name({input_name}) should return {expected}, got {result}"
+            print(f"   ✅ {description}: {input_name!r} → {result!r}")
 
-                status = "✅" if test_passed else "❌"
-                print(f"   {status} {description}")
-                print(
-                    f"      Input: {input_name!r} → Output: {result!r} (Expected: {expected!r})"
-                )
-
-                results.append(test_passed)
-                assert (
-                    result == expected
-                ), f"format_name({input_name}) should return {expected}, got {result}"
-
-            except Exception as e:
-                print(f"   ❌ {description}")
-                print(f"      Input: {input_name!r} → Error: {e}")
-                results.append(False)
-                raise
-
-        print(f"📊 Results: {sum(results)}/{len(results)} name formatting tests passed")
+        print(f"📊 Results: {len(test_cases)}/{len(test_cases)} name formatting tests passed")
 
     tests.append(("Name Formatting", test_name_formatting))
 
@@ -1563,75 +1510,24 @@ def relationship_module_tests() -> None:
         }
 
         print("📋 Testing bidirectional BFS pathfinding:")
-        results = []
 
         # Test 1: Multi-generation path finding
-        try:
-            path = fast_bidirectional_bfs(
-                "@I001@", "@I003@", id_to_parents, id_to_children
-            )
-            path_valid = isinstance(path, list) and len(path) >= 2
-
-            status = "✅" if path_valid else "❌"
-            print(f"   {status} Multi-generation pathfinding")
-            print(
-                f"      From: @I001@ → To: @I003@, Path: {path}, Length: {len(path) if path else 0}"
-            )
-
-            results.append(path_valid)
-            assert isinstance(path, list), "BFS should return a list"
-            assert len(path) >= 2, "Path should contain at least start and end"
-
-        except Exception as e:
-            print("   ❌ Multi-generation pathfinding")
-            print(f"      Error: {e}")
-            results.append(False)
-            raise
+        path = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+        assert isinstance(path, list), "BFS should return a list"
+        assert len(path) >= 2, "Path should contain at least start and end"
+        print(f"   ✅ Multi-generation pathfinding: {path}")
 
         # Test 2: Same person path
-        try:
-            same_path = fast_bidirectional_bfs(
-                "@I001@", "@I001@", id_to_parents, id_to_children
-            )
-            same_path_valid = isinstance(same_path, list) and len(same_path) == 1
-
-            status = "✅" if same_path_valid else "❌"
-            print(f"   {status} Same person pathfinding")
-            print(
-                f"      From: @I001@ → To: @I001@, Path: {same_path}, Length: {len(same_path) if same_path else 0}"
-            )
-
-            results.append(same_path_valid)
-            assert len(same_path) == 1, "Same person path should have length 1"
-
-        except Exception as e:
-            print("   ❌ Same person pathfinding")
-            print(f"      Error: {e}")
-            results.append(False)
-            raise
+        same_path = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
+        assert len(same_path) == 1, "Same person path should have length 1"
+        print(f"   ✅ Same person pathfinding: {same_path}")
 
         # Test 3: No path available
-        try:
-            no_path = fast_bidirectional_bfs(
-                "@I001@", "@I999@", id_to_parents, id_to_children
-            )
-            no_path_valid = no_path is None or (
-                isinstance(no_path, list) and len(no_path) == 0
-            )
+        no_path = fast_bidirectional_bfs("@I001@", "@I999@", id_to_parents, id_to_children)
+        assert no_path is None or (isinstance(no_path, list) and len(no_path) == 0), "No path should return None or empty list"
+        print(f"   ✅ No path available handling: {no_path}")
 
-            status = "✅" if no_path_valid else "❌"
-            print(f"   {status} No path available handling")
-            print(f"      From: @I001@ → To: @I999@ (non-existent), Result: {no_path}")
-
-            results.append(no_path_valid)
-
-        except Exception as e:
-            print("   ❌ No path available handling")
-            print(f"      Error: {e}")
-            results.append(False)
-            # Don't raise for this test as it might be expected behavior
-
-        print(f"📊 Results: {sum(results)}/{len(results)} BFS pathfinding tests passed")
+        print("📊 Results: 3/3 BFS pathfinding tests passed")
 
     tests.append(("BFS Pathfinding", test_bfs_pathfinding))
 
@@ -1671,33 +1567,8 @@ def relationship_module_tests() -> None:
 from test_utilities import create_standard_test_runner
 
 
-def relationship_utils_module_tests() -> bool:
-    """
-    Comprehensive test suite for relationship_utils.py.
-    Tests all relationship path conversion and formatting functionality.
-    """
-
-    print("🧬 Running Relationship Utils comprehensive test suite...")
-
-    # Quick basic test first
-    try:
-        # Test basic name formatting
-        formatted = format_name("John Doe")
-        assert formatted == "John Doe"
-        print("✅ Name formatting test passed")
-
-        print("✅ Basic Relationship Utils tests completed")
-    except Exception as e:
-        print(f"❌ Basic Relationship Utils tests failed: {e}")
-        return False
-
-    with suppress_logging():
-        suite = TestSuite(
-            "Relationship Utils & Path Conversion", "relationship_utils.py"
-        )
-        suite.start_suite()
-
-    # Name formatting functionality
+def _run_basic_functionality_tests(suite: "TestSuite") -> None:
+    """Run basic functionality tests for relationship_utils module."""
     def test_name_formatting():
         # Test normal name
         assert format_name("John Doe") == "John Doe"
@@ -1718,7 +1589,6 @@ def relationship_utils_module_tests() -> bool:
         result = format_name("john doe")
         assert "John" in result and "Doe" in result
 
-    # Bidirectional BFS functionality
     def test_bidirectional_bfs():
         # Create test relationship data
         id_to_parents = {
@@ -1742,7 +1612,25 @@ def relationship_utils_module_tests() -> bool:
         assert path[0] == "parent1", "Path should start with parent1"
         assert path[-1] == "grandchild", "Path should end with grandchild"
 
-    # GEDCOM path conversion functionality
+    suite.run_test(
+        "Name formatting functionality",
+        test_name_formatting,
+        "6 name formatting tests: lowercase→title, GEDCOM slashes, None→'Valued Relative', empty→'Valued Relative', uppercase→title, whitespace cleanup.",
+        "Test name formatting handles various input cases correctly with detailed verification.",
+        "Verify format_name() handles john doe→John Doe, /John Smith/→John Smith, None→Valued Relative, empty→Valued Relative, MARY→Mary, whitespace cleanup.",
+    )
+
+    suite.run_test(
+        "Bidirectional BFS path finding",
+        test_bidirectional_bfs,
+        "3 BFS pathfinding tests: multi-generation paths, same-person paths, no-path-available handling.",
+        "Test bidirectional breadth-first search pathfinding with detailed verification.",
+        "Verify fast_bidirectional_bfs() finds @I001@→@I003@ paths, handles @I001@→@I001@ same-person, manages non-existent targets.",
+    )
+
+
+def _run_conversion_tests(suite: "TestSuite") -> None:
+    """Run conversion tests for relationship_utils module."""
     def test_gedcom_path_conversion():
         # Create mock GEDCOM data
         class MockReader:
@@ -1809,7 +1697,6 @@ def relationship_utils_module_tests() -> bool:
             # Complex function - just verify it exists
             pass
 
-    # API relationship path formatting
     def test_api_relationship_formatting():
         # Test function availability
         assert callable(format_api_relationship_path), "Function should be callable"
@@ -1822,7 +1709,49 @@ def relationship_utils_module_tests() -> bool:
             # Complex function - just verify it exists
             pass
 
-    # Error handling
+    suite.run_test(
+        "GEDCOM path conversion",
+        test_gedcom_path_conversion,
+        "GEDCOM format relationship conversion tested: genealogy data→unified format transformation.",
+        "Test GEDCOM format relationships are converted to unified format.",
+        "Verify GEDCOM conversion transforms genealogy relationship data to standardized format for processing.",
+    )
+
+    suite.run_test(
+        "Discovery API path conversion",
+        test_discovery_api_conversion,
+        "Discovery API format is converted to unified relationship format",
+        "Test convert_discovery_api_path_to_unified_format with Discovery API data structure",
+        "Discovery API conversion standardizes external API relationship data",
+    )
+
+    suite.run_test(
+        "General API path conversion",
+        test_general_api_conversion,
+        "General API formats are converted to unified relationship format",
+        "Test convert_api_path_to_unified_format with generic API relationship data",
+        "General API conversion handles diverse API relationship formats",
+    )
+
+    suite.run_test(
+        "Unified path formatting",
+        test_unified_path_formatting,
+        "Unified relationship paths are formatted into readable text",
+        "Test format_relationship_path_unified with standardized relationship data",
+        "Unified formatting creates consistent output from standardized relationship data",
+    )
+
+    suite.run_test(
+        "API relationship path formatting",
+        test_api_relationship_formatting,
+        "API relationship data is properly formatted for processing",
+        "Test format_api_relationship_path with standard API relationship data",
+        "API formatting converts relationship data to usable format",
+    )
+
+
+def _run_validation_tests(suite: "TestSuite") -> None:
+    """Run validation and performance tests for relationship_utils module."""
     def test_error_handling():
         # Test with None inputs
         assert format_name(None) == "Valued Relative"
@@ -1870,7 +1799,6 @@ def relationship_utils_module_tests() -> bool:
 
         assert bfs_duration < 1.0, f"BFS too slow: {bfs_duration:.3f}s"
 
-    # Function availability test
     def test_function_availability():
         # Verify all major functions are available
         required_functions = [
@@ -1883,87 +1811,61 @@ def relationship_utils_module_tests() -> bool:
         from test_framework import test_function_availability
         test_function_availability(required_functions, globals(), "Relationship Utils")
 
-    # Run all tests
+    suite.run_test(
+        "Error handling and edge cases",
+        test_error_handling,
+        "Error conditions and edge cases are handled gracefully",
+        "Test functions with None inputs, empty data, and various edge cases",
+        "Error handling provides robust operation with invalid or missing data",
+    )
+
+    suite.run_test(
+        "Performance validation",
+        test_performance,
+        "Relationship processing operations complete within reasonable time limits",
+        "Test performance of name formatting and BFS processing with datasets",
+        "Performance validation ensures efficient processing of relationship data",
+    )
+
+    suite.run_test(
+        "Function availability verification",
+        test_function_availability,
+        "All required relationship utility functions are available and callable",
+        "Test availability of format_name, BFS, and conversion functions",
+        "Function availability ensures complete relationship utility interface",
+    )
+
+
+def relationship_utils_module_tests() -> bool:
+    """
+    Comprehensive test suite for relationship_utils.py.
+    Tests all relationship path conversion and formatting functionality.
+    """
+
+    print("🧬 Running Relationship Utils comprehensive test suite...")
+
+    # Quick basic test first
+    try:
+        # Test basic name formatting
+        formatted = format_name("John Doe")
+        assert formatted == "John Doe"
+        print("✅ Name formatting test passed")
+
+        print("✅ Basic Relationship Utils tests completed")
+    except Exception as e:
+        print(f"❌ Basic Relationship Utils tests failed: {e}")
+        return False
+
     with suppress_logging():
-        suite.run_test(
-            "Name formatting functionality",
-            test_name_formatting,
-            "6 name formatting tests: lowercase→title, GEDCOM slashes, None→'Valued Relative', empty→'Valued Relative', uppercase→title, whitespace cleanup.",
-            "Test name formatting handles various input cases correctly with detailed verification.",
-            "Verify format_name() handles john doe→John Doe, /John Smith/→John Smith, None→Valued Relative, empty→Valued Relative, MARY→Mary, whitespace cleanup.",
+        suite = TestSuite(
+            "Relationship Utils & Path Conversion", "relationship_utils.py"
         )
+        suite.start_suite()
 
-        suite.run_test(
-            "Bidirectional BFS path finding",
-            test_bidirectional_bfs,
-            "3 BFS pathfinding tests: multi-generation paths, same-person paths, no-path-available handling.",
-            "Test bidirectional breadth-first search pathfinding with detailed verification.",
-            "Verify fast_bidirectional_bfs() finds @I001@→@I003@ paths, handles @I001@→@I001@ same-person, manages non-existent targets.",
-        )
-
-        suite.run_test(
-            "GEDCOM path conversion",
-            test_gedcom_path_conversion,
-            "GEDCOM format relationship conversion tested: genealogy data→unified format transformation.",
-            "Test GEDCOM format relationships are converted to unified format.",
-            "Verify GEDCOM conversion transforms genealogy relationship data to standardized format for processing.",
-        )
-
-        suite.run_test(
-            "Discovery API path conversion",
-            test_discovery_api_conversion,
-            "Discovery API format is converted to unified relationship format",
-            "Test convert_discovery_api_path_to_unified_format with Discovery API data structure",
-            "Discovery API conversion standardizes external API relationship data",
-        )
-
-        suite.run_test(
-            "General API path conversion",
-            test_general_api_conversion,
-            "General API formats are converted to unified relationship format",
-            "Test convert_api_path_to_unified_format with generic API relationship data",
-            "General API conversion handles diverse API relationship formats",
-        )
-
-        suite.run_test(
-            "Unified path formatting",
-            test_unified_path_formatting,
-            "Unified relationship paths are formatted into readable text",
-            "Test format_relationship_path_unified with standardized relationship data",
-            "Unified formatting creates consistent output from standardized relationship data",
-        )
-
-        suite.run_test(
-            "API relationship path formatting",
-            test_api_relationship_formatting,
-            "API relationship data is properly formatted for processing",
-            "Test format_api_relationship_path with standard API relationship data",
-            "API formatting converts relationship data to usable format",
-        )
-
-        suite.run_test(
-            "Error handling and edge cases",
-            test_error_handling,
-            "Error conditions and edge cases are handled gracefully",
-            "Test functions with None inputs, empty data, and various edge cases",
-            "Error handling provides robust operation with invalid or missing data",
-        )
-
-        suite.run_test(
-            "Performance validation",
-            test_performance,
-            "Relationship processing operations complete within reasonable time limits",
-            "Test performance of name formatting and BFS processing with datasets",
-            "Performance validation ensures efficient processing of relationship data",
-        )
-
-        suite.run_test(
-            "Function availability verification",
-            test_function_availability,
-            "All required relationship utility functions are available and callable",
-            "Test availability of format_name, BFS, and conversion functions",
-            "Function availability ensures complete relationship utility interface",
-        )
+    # Run all test categories
+    _run_basic_functionality_tests(suite)
+    _run_conversion_tests(suite)
+    _run_validation_tests(suite)
 
     return suite.finish_suite()
 
