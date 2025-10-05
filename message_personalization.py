@@ -881,25 +881,34 @@ class MessagePersonalizer:
 
         return "Surname distribution patterns often reveal family migration routes and concentrations."
 
+    def _get_occupation_context(self, occupation: str, person: str) -> Optional[str]:
+        """Get social context for a specific occupation."""
+        occupation_lower = occupation.lower()
+
+        occupation_contexts = {
+            ("farmer", "agricultural"): f"{person}'s agricultural work suggests rural family roots, which often means strong community ties and local records.",
+            ("miner", "mining"): f"{person}'s mining work indicates industrial family history, often with company records and mining community connections.",
+            ("fisherman", "fishing"): f"{person}'s fishing occupation suggests coastal family traditions and maritime community connections.",
+            ("teacher", "educator"): f"{person}'s teaching profession indicates educated family background with potential school and community records.",
+            ("merchant", "trader"): f"{person}'s merchant work suggests business connections and potential commercial records.",
+        }
+
+        for keywords, context in occupation_contexts.items():
+            if any(keyword in occupation_lower for keyword in keywords):
+                return context
+        return None
+
     def _create_occupation_social_context(self, extracted_data: dict[str, Any]) -> str:
         """Create social context based on occupations."""
         occupations = extracted_data.get("occupations", [])
 
         for occ in occupations:
             if isinstance(occ, dict):
-                occupation = occ.get("occupation", "").lower()
+                occupation = occ.get("occupation", "")
                 person = occ.get("person", "")
-
-                if "farmer" in occupation or "agricultural" in occupation:
-                    return f"{person}'s agricultural work suggests rural family roots, which often means strong community ties and local records."
-                if "miner" in occupation or "mining" in occupation:
-                    return f"{person}'s mining work indicates industrial family history, often with company records and mining community connections."
-                if "fisherman" in occupation or "fishing" in occupation:
-                    return f"{person}'s fishing occupation suggests coastal family traditions and maritime community connections."
-                if "teacher" in occupation or "educator" in occupation:
-                    return f"{person}'s teaching profession indicates educated family background with potential school and community records."
-                if "merchant" in occupation or "trader" in occupation:
-                    return f"{person}'s merchant work suggests business connections and potential commercial records."
+                context = self._get_occupation_context(occupation, person)
+                if context:
+                    return context
 
         return "Family occupations provide insights into social status, community connections, and available records."
 
@@ -927,10 +936,17 @@ class MessagePersonalizer:
 
         return "Family size patterns help predict the scope of potential DNA matches and research opportunities."
 
-    def _create_generational_gap_analysis(self, extracted_data: dict[str, Any]) -> str:
-        """Analyze generational gaps and their implications."""
-        vital_records = extracted_data.get("vital_records", [])
+    def _extract_year_from_date(self, date: str) -> Optional[int]:
+        """Extract a 4-digit year from a date string."""
+        for part in str(date).split():
+            if part.isdigit() and len(part) == 4:
+                year = int(part)
+                if 1800 <= year <= 2000:
+                    return year
+        return None
 
+    def _extract_birth_and_marriage_years(self, vital_records: list[Any]) -> tuple[list[int], list[int]]:
+        """Extract birth and marriage years from vital records."""
         birth_years = []
         marriage_years = []
 
@@ -938,24 +954,34 @@ class MessagePersonalizer:
             if isinstance(record, dict):
                 event_type = record.get("event_type", "")
                 date = record.get("date", "")
+                year = self._extract_year_from_date(date)
 
-                # Extract year
-                for part in str(date).split():
-                    if part.isdigit() and len(part) == 4:
-                        year = int(part)
-                        if 1800 <= year <= 2000:
-                            if event_type == "birth":
-                                birth_years.append(year)
-                            elif event_type == "marriage":
-                                marriage_years.append(year)
-                        break
+                if year:
+                    if event_type == "birth":
+                        birth_years.append(year)
+                    elif event_type == "marriage":
+                        marriage_years.append(year)
 
+        return birth_years, marriage_years
+
+    def _analyze_birth_year_gap(self, birth_years: list[int]) -> Optional[str]:
+        """Analyze gap between birth years and return interpretation."""
         if len(birth_years) >= 2:
             gap = abs(birth_years[0] - birth_years[1])
             if gap >= 25:
                 return f"The {gap}-year generational gap suggests we may be looking at parent-child relationships, which helps narrow our connection."
             if gap <= 10:
                 return f"The {gap}-year age gap suggests sibling or cousin relationships, indicating we share more recent common ancestors."
+        return None
+
+    def _create_generational_gap_analysis(self, extracted_data: dict[str, Any]) -> str:
+        """Analyze generational gaps and their implications."""
+        vital_records = extracted_data.get("vital_records", [])
+        birth_years, marriage_years = self._extract_birth_and_marriage_years(vital_records)
+
+        analysis = self._analyze_birth_year_gap(birth_years)
+        if analysis:
+            return analysis
 
         return "Analyzing generational gaps helps estimate relationship distances and common ancestor timeframes."
 
