@@ -616,12 +616,11 @@ def _determine_cross_module_health(coordination_stats: dict[str, Any]) -> str:
 
     if available_modules >= 3:
         return "excellent"
-    elif available_modules >= 2:
+    if available_modules >= 2:
         return "good"
-    elif available_modules >= 1:
+    if available_modules >= 1:
         return "limited"
-    else:
-        return "critical"
+    return "critical"
 
 
 def get_cache_coordination_stats() -> dict[str, Any]:

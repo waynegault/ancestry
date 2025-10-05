@@ -386,7 +386,7 @@ def _score_death_year(search_dy: int, cand_dy: int, weights: Dict[str, int]) -> 
                 weights["death_year_match"],
                 [f"exact death year ({cand_dy}) ({weights['death_year_match']}pts)"]
             )
-        elif abs(cand_dy_int - search_dy_int) <= 5:
+        if abs(cand_dy_int - search_dy_int) <= 5:
             return (
                 weights["death_year_close"],
                 weights["death_year_close"],
@@ -676,7 +676,7 @@ def _calculate_candidate_score(
             return score, field_scores, reasons
 
         # Fall back to simple scoring
-        elif scoring_func is not None:
+        if scoring_func is not None:
             score, field_scores, reasons = _run_simple_suggestion_scoring(search_criteria, candidate_data_dict)
             logger.debug(f"Simple Score for {person_id}: {score}, Fields: {field_scores}")
             if "gender_match" in field_scores:
@@ -686,9 +686,8 @@ def _calculate_candidate_score(
 
             return score, field_scores, reasons
 
-        else:
-            logger.error("Scoring function is None")
-            return 0.0, {}, []
+        logger.error("Scoring function is None")
+        return 0.0, {}, []
 
     except Exception as score_err:
         logger.error(f"Error scoring {person_id}: {score_err}", exc_info=True)
@@ -1068,10 +1067,9 @@ def _format_extracted_name(name: str) -> str:
 
     if not name or name == "Valued Relative":
         return "Unknown"
-    elif callable(name_formatter):
+    if callable(name_formatter):
         return name_formatter(name)
-    else:
-        return name
+    return name
 
 
 # Detailed Info Extraction (Only called if proceeding to supplementary info)
@@ -1353,9 +1351,8 @@ def _get_tree_id_from_api(session_manager_local: SessionManager) -> Optional[str
         if owner_tree_id:
             logger.info(f"Successfully retrieved tree ID: {owner_tree_id}")
             return owner_tree_id
-        else:
-            logger.warning(f"Failed to retrieve tree ID for tree name: {tree_name}")
-            return None
+        logger.warning(f"Failed to retrieve tree ID for tree name: {tree_name}")
+        return None
     except Exception as e:
         logger.error(f"Error retrieving tree ID: {e}")
         return None
@@ -1368,10 +1365,9 @@ def _get_tree_id_from_user() -> Optional[str]:
     if user_tree_id:
         logger.info(f"Using user-provided tree ID: {user_tree_id}")
         return user_tree_id
-    else:
-        logger.error("Owner Tree ID missing and no input provided.")
-        print("Error: Tree ID is required for searching. Operation cancelled.")
-        return None
+    logger.error("Owner Tree ID missing and no input provided.")
+    print("Error: Tree ID is required for searching. Operation cancelled.")
+    return None
 
 
 def _resolve_owner_tree_id(session_manager_local: SessionManager) -> Optional[str]:
@@ -1858,7 +1854,7 @@ def _resolve_owner_name(session_manager_local: SessionManager, owner_name: str, 
             session_manager_local.tree_owner_name = config_owner_name
             logger.info(f"Using tree owner name from configuration: {config_owner_name}")
             return config_owner_name
-        elif owner_profile_id:
+        if owner_profile_id:
             resolved_name = config_owner_name if config_owner_name else "Tree Owner"
             session_manager_local.tree_owner_name = resolved_name
             logger.info(f"Using tree owner name from config/default: {resolved_name}")
@@ -1889,9 +1885,8 @@ def _extract_ids_from_detailed_data(
             f"TreeID='{temp_tree_id}', GlobalID='{temp_global_id}'"
         )
         return temp_person_id, temp_tree_id, temp_global_id, temp_name, True, "Detailed Fetch Success"
-    else:
-        logger.debug("Detailed data fetched, but essential relationship IDs missing. Will attempt fallback.")
-        return None, None, None, "Selected Person", False, "Detailed Fetch Failed (Missing IDs)"
+    logger.debug("Detailed data fetched, but essential relationship IDs missing. Will attempt fallback.")
+    return None, None, None, "Selected Person", False, "Detailed Fetch Failed (Missing IDs)"
 
 
 def _extract_ids_from_raw_suggestion(
@@ -1920,9 +1915,8 @@ def _extract_ids_from_raw_suggestion(
             f"TreeID='{temp_tree_id}', GlobalID='{temp_global_id}'"
         )
         return temp_person_id, temp_tree_id, temp_global_id, temp_name, True, "Raw Suggestion Fallback Success"
-    else:
-        logger.error("Fallback failed: Raw suggestion data also missing essential relationship IDs.")
-        return None, None, None, "Selected Person", False, "Fallback Failed (Missing IDs)"
+    logger.error("Fallback failed: Raw suggestion data also missing essential relationship IDs.")
+    return None, None, None, "Selected Person", False, "Fallback Failed (Missing IDs)"
 
 
 def _extract_selected_person_ids(
@@ -2227,12 +2221,11 @@ def _format_discovery_api_path(
             formatted_path = format_relationship_path_unified(unified_path, selected_name, owner_name, None)
             logger.debug("Discovery API path formatted using unified formatter")
             return formatted_path
-        else:
-            logger.warning("Failed to convert Discovery API path to unified format")
-            # Fallback to simple formatting
-            formatted_path = _format_discovery_api_path_fallback(discovery_api_response, selected_name, owner_name)
-            logger.debug("Discovery API path constructed using fallback formatter")
-            return formatted_path
+        logger.warning("Failed to convert Discovery API path to unified format")
+        # Fallback to simple formatting
+        formatted_path = _format_discovery_api_path_fallback(discovery_api_response, selected_name, owner_name)
+        logger.debug("Discovery API path constructed using fallback formatter")
+        return formatted_path
     except Exception as e:
         logger.error(f"Error formatting Discovery API path: {e}", exc_info=True)
         # Fallback to simple formatting
@@ -2505,15 +2498,14 @@ def _attempt_browser_login() -> bool:
             return False
 
         return True
-    else:
-        # Try to log in
-        login_result = log_in(session_manager)
-        if login_result != "LOGIN_SUCCEEDED":
-            logger.error(f"Failed to log in: {login_result}")
-            print(f"\nERROR: Failed to log in: {login_result}")
-            return False
+    # Try to log in
+    login_result = log_in(session_manager)
+    if login_result != "LOGIN_SUCCEEDED":
+        logger.error(f"Failed to log in: {login_result}")
+        print(f"\nERROR: Failed to log in: {login_result}")
+        return False
 
-        return True
+    return True
 
 
 def _initialize_session_with_login() -> bool:
@@ -2556,10 +2548,9 @@ def _handle_not_logged_in_user() -> bool:
     # Check if we have cookies in the requests session
     if not session_manager._requests_session.cookies:
         return _initialize_session_with_login()
-    else:
-        # We have cookies, so we're good to go
-        logger.info("Session already has authentication cookies.")
-        return True
+    # We have cookies, so we're good to go
+    logger.info("Session already has authentication cookies.")
+    return True
 
 
 def _ensure_authenticated_session() -> bool:
@@ -2572,8 +2563,7 @@ def _ensure_authenticated_session() -> bool:
     # If we're already logged in, refresh the cookies
     if login_stat is True:
         return _handle_logged_in_user()
-    else:
-        return _handle_not_logged_in_user()
+    return _handle_not_logged_in_user()
 
 
 def _handle_supplementary_info_phase(

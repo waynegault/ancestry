@@ -300,9 +300,9 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     """Ensure the required session state is achieved."""
     if required_state == "db_ready":
         return session_manager.ensure_db_ready()
-    elif required_state == "driver_ready":
+    if required_state == "driver_ready":
         return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
-    elif required_state == "session_ready":
+    if required_state == "session_ready":
         skip_csrf = (choice == "11")
         return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
     return True
@@ -329,21 +329,19 @@ def _prepare_action_arguments(action_func, session_manager: SessionManager, args
             coord_args.append(config)
 
         return coord_args, kwargs_for_action
-    else:
-        # General case
-        final_args = []
-        if pass_session_manager:
-            final_args.append(session_manager)
-        final_args.extend(args)
-        return final_args, {}
+    # General case
+    final_args = []
+    if pass_session_manager:
+        final_args.append(session_manager)
+    final_args.extend(args)
+    return final_args, {}
 
 
 def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict):
     """Execute the action function with prepared arguments."""
     if kwargs:
         return action_func(*prepared_args, **kwargs)
-    else:
-        return action_func(*prepared_args)
+    return action_func(*prepared_args)
 
 
 def _should_close_session(action_result, action_exception, close_sess_after: bool, action_name: str) -> bool:
@@ -351,7 +349,7 @@ def _should_close_session(action_result, action_exception, close_sess_after: boo
     if action_result is False or action_exception is not None:
         logger.warning(f"Action '{action_name}' failed or raised exception. Closing session.")
         return True
-    elif close_sess_after:
+    if close_sess_after:
         logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
         return True
     return False
@@ -1118,13 +1116,13 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
         if status is True:
             return _handle_logged_in_status(session_manager)
-        elif status is False:
+        if status is False:
             return _attempt_login(session_manager)
-        else:  # Status is None
-            print("\n? Unable to determine login status due to a technical error.")
-            print("  This may indicate a browser or network issue.")
-            logger.warning("Login status check returned None (ambiguous result).")
-            return False
+        # Status is None
+        print("\n? Unable to determine login status due to a technical error.")
+        print("  This may indicate a browser or network issue.")
+        logger.warning("Login status check returned None (ambiguous result).")
+        return False
 
     except Exception as e:
         logger.error(f"Exception during login status check: {e}", exc_info=True)

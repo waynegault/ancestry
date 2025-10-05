@@ -492,7 +492,7 @@ def _generate_module_description(module_name: str, description: str | None = Non
             .title()
         )
         return f"Core {component} functionality"
-    elif "config/" in module_name:
+    if "config/" in module_name:
         component = (
             module_name.replace("config/", "")
             .replace(".py", "")
@@ -500,24 +500,23 @@ def _generate_module_description(module_name: str, description: str | None = Non
             .title()
         )
         return f"Configuration {component} management"
-    elif "action" in module_name:
+    if "action" in module_name:
         action_name = module_name.replace(".py", "").replace("_", " ").title()
         return f"{action_name} automation"
-    elif module_name.endswith("_utils.py"):
+    if module_name.endswith("_utils.py"):
         util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
         return f"{util_type} utility functions"
-    elif module_name.endswith("_manager.py"):
+    if module_name.endswith("_manager.py"):
         manager_type = (
             module_name.replace("_manager.py", "").replace("_", " ").title()
         )
         return f"{manager_type} management system"
-    elif module_name.endswith("_cache.py"):
+    if module_name.endswith("_cache.py"):
         cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
         return f"{cache_type} caching system"
-    else:
-        # Generic fallback
-        clean_name = module_name.replace(".py", "").replace("_", " ").title()
-        return f"{clean_name} module functionality"
+    # Generic fallback
+    clean_name = module_name.replace(".py", "").replace("_", " ").title()
+    return f"{clean_name} module functionality"
 
 
 def _try_pattern_passed_failed(stdout_lines: list[str]) -> str:
@@ -579,7 +578,7 @@ def _try_pattern_passed_failed_ansi(stdout_lines: list[str]) -> str:
 
     if passed_count is not None and failed_count is not None:
         return f"{passed_count + failed_count} tests"
-    elif passed_count is not None:
+    if passed_count is not None:
         return f"{passed_count}+ tests"
     return "Unknown"
 
@@ -732,22 +731,20 @@ def _format_quality_info(quality_metrics) -> str:
     violations_count = len(quality_metrics.violations) if quality_metrics.violations else 0
     if score < 70:
         return f" | Quality: {score:.1f}/100 ⚠️ ({violations_count} issues)"
-    elif score < 95:
+    if score < 95:
         return f" | Quality: {score:.1f}/100 📊 ({violations_count} issues)"
-    else:
-        return f" | Quality: {score:.1f}/100 ✅"
+    return f" | Quality: {score:.1f}/100 ✅"
 
 
 def _categorize_violation(violation: str) -> str:
     """Categorize a violation by type."""
     if "too long" in violation:
         return "Length"
-    elif "too complex" in violation:
+    if "too complex" in violation:
         return "Complexity"
-    elif "missing type hint" in violation:
+    if "missing type hint" in violation:
         return "Type Hints"
-    else:
-        return "Other"
+    return "Other"
 
 
 def _format_violation_message(violation: str) -> str:
@@ -756,8 +753,7 @@ def _format_violation_message(violation: str) -> str:
         func_name = violation.split("Function '")[1].split("'")[0]
         issue_type = violation.split("' ")[1] if "' " in violation else violation
         return f"• {func_name}: {issue_type}"
-    else:
-        return f"• {violation}"
+    return f"• {violation}"
 
 
 def _print_quality_violations(quality_metrics) -> None:

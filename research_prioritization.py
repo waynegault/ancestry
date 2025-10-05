@@ -563,15 +563,15 @@ class IntelligentResearchPrioritizer:
         """Calculate score based on gap type."""
         if gap_type == "missing_parents":
             return 25.0  # Critical for family tree extension
-        elif gap_type == "missing_spouse":
+        if gap_type == "missing_spouse":
             return 22.0  # Important for family completeness
-        elif gap_type == "missing_children":
+        if gap_type == "missing_children":
             return 20.0  # Valuable for descendant research
-        elif gap_type == "missing_dates":
+        if gap_type == "missing_dates":
             return 18.0  # Essential for timeline verification
-        elif gap_type == "missing_places":
+        if gap_type == "missing_places":
             return 15.0  # Important for location-based research
-        elif gap_type == "missing_occupation":
+        if gap_type == "missing_occupation":
             return 10.0  # Useful for social history
         return 0.0
 
@@ -579,11 +579,11 @@ class IntelligentResearchPrioritizer:
         """Calculate score based on priority level."""
         if priority == "critical":
             return 20.0
-        elif priority == "high":
+        if priority == "high":
             return 15.0
-        elif priority == "medium":
+        if priority == "medium":
             return 8.0
-        elif priority == "low":
+        if priority == "low":
             return 3.0
         return 0.0
 
@@ -600,7 +600,7 @@ class IntelligentResearchPrioritizer:
         """Calculate score based on evidence quality."""
         if evidence_quality == "high":
             return 10.0
-        elif evidence_quality == "medium":
+        if evidence_quality == "medium":
             return 5.0
         return 0.0
 
@@ -608,7 +608,7 @@ class IntelligentResearchPrioritizer:
         """Calculate score based on research difficulty."""
         if difficulty == "easy":
             return 8.0  # Quick wins are valuable
-        elif difficulty == "hard":
+        if difficulty == "hard":
             return -5.0  # Reduce priority for very difficult research
         return 0.0
 
@@ -738,11 +738,11 @@ class IntelligentResearchPrioritizer:
         """Calculate probability adjustment based on priority level."""
         if priority == "critical":
             return 0.25  # Critical gaps often have more evidence
-        elif priority == "high":
+        if priority == "high":
             return 0.2
-        elif priority == "medium":
+        if priority == "medium":
             return 0.15
-        elif priority == "low":
+        if priority == "low":
             return 0.05
         return 0.0
 
@@ -766,11 +766,11 @@ class IntelligentResearchPrioritizer:
         if "18" in time_period:  # 1800s
             if "180" in time_period or "181" in time_period:  # Early 1800s
                 return -0.1
-            else:  # Later 1800s
-                return 0.05
-        elif "19" in time_period:  # 1900s
+            # Later 1800s
+            return 0.05
+        if "19" in time_period:  # 1900s
             return 0.1  # Better record keeping
-        elif "17" in time_period:  # 1700s
+        if "17" in time_period:  # 1700s
             return -0.2  # Much more challenging
 
         return 0.0
@@ -784,11 +784,11 @@ class IntelligentResearchPrioritizer:
 
         if any(term in location_lower for term in ['england', 'scotland', 'ireland']):
             return 0.08  # Good record keeping traditions
-        elif any(term in location_lower for term in ['massachusetts', 'connecticut', 'new hampshire']):
+        if any(term in location_lower for term in ['massachusetts', 'connecticut', 'new hampshire']):
             return 0.12  # Excellent early American records
-        elif any(term in location_lower for term in ['virginia', 'north carolina', 'south carolina']):
+        if any(term in location_lower for term in ['virginia', 'north carolina', 'south carolina']):
             return -0.05  # Some record loss from wars
-        elif any(term in location_lower for term in ['frontier', 'territory', 'west']):
+        if any(term in location_lower for term in ['frontier', 'territory', 'west']):
             return -0.1  # Frontier areas had less record keeping
 
         return 0.0
@@ -797,9 +797,9 @@ class IntelligentResearchPrioritizer:
         """Calculate probability adjustment based on evidence quality."""
         if evidence_quality == "high":
             return 0.15
-        elif evidence_quality == "medium":
+        if evidence_quality == "medium":
             return 0.08
-        elif evidence_quality == "low":
+        if evidence_quality == "low":
             return -0.05
         return 0.0
 
@@ -807,11 +807,11 @@ class IntelligentResearchPrioritizer:
         """Calculate probability adjustment based on research difficulty."""
         if difficulty == "easy":
             return 0.2
-        elif difficulty == "medium":
+        if difficulty == "medium":
             return 0.05
-        elif difficulty == "hard":
+        if difficulty == "hard":
             return -0.15
-        elif difficulty == "very_hard":
+        if difficulty == "very_hard":
             return -0.25
         return 0.0
 

@@ -792,9 +792,8 @@ class InboxProcessor:
             if status == "error":
                 return None, "error"
             return person, status
-        else:
-            person, status = self._create_new_person(session, profile_id, username_to_use, log_ref)
-            return person, status
+        person, status = self._create_new_person(session, profile_id, username_to_use, log_ref)
+        return person, status
 
     # End of _lookup_or_create_person
 
@@ -1167,8 +1166,7 @@ class InboxProcessor:
         if comp_conv_id and api_conv_id == comp_conv_id:
             if comp_ts and api_latest_ts_aware and api_latest_ts_aware > comp_ts:
                 return True, True, None
-            else:
-                return False, True, "Comparator Found (No Change)"
+            return False, True, "Comparator Found (No Change)"
 
         # Not comparator - compare with DB timestamps
         db_log_in = existing_conv_logs.get((api_conv_id, MessageDirectionEnum.IN.name))
@@ -1189,7 +1187,7 @@ class InboxProcessor:
         # Fetch if API timestamp is newer OR no DB logs exist
         if api_latest_ts_aware and api_latest_ts_aware > db_latest_overall:
             return True, False, None
-        elif not db_log_in and not db_log_out:
+        if not db_log_in and not db_log_out:
             return True, False, None
 
         return False, False, None

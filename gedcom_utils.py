@@ -214,9 +214,8 @@ def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[Gedc
     if not _is_individual(indi):
         if hasattr(indi, "value") and _is_individual(getattr(indi, "value", None)):
             return indi.value, ""  # type: ignore
-        else:
-            logger.warning(f"_get_full_name called with non-Individual type: {type(indi)}")
-            return None, "Unknown (Invalid Type)"
+        logger.warning(f"_get_full_name called with non-Individual type: {type(indi)}")
+        return None, "Unknown (Invalid Type)"
 
     if indi is None:
         return None, "Unknown (None)"
@@ -498,9 +497,8 @@ def _extract_year_fallback(cleaned_str: str) -> Optional[datetime]:
         if 500 <= year <= datetime.now().year + 5:
             logger.debug(f"Extracted year {year} as fallback.")
             return datetime(year, 1, 1)
-        else:
-            logger.debug(f"Extracted year {year} out of plausible range.")
-            return None
+        logger.debug(f"Extracted year {year} out of plausible range.")
+        return None
     except ValueError:
         logger.debug(f"Could not convert extracted year '{year_str}' to int.")
         return None
@@ -583,9 +581,8 @@ def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Opti
             # Type ignore is needed because the type checker doesn't understand the dynamic nature
             # of this code. We've already checked that individual.value is a valid GedcomIndividualType
             return individual.value  # type: ignore
-        else:
-            logger.warning(f"_get_event_info invalid input type: {type(individual)}")
-            return None
+        logger.warning(f"_get_event_info invalid input type: {type(individual)}")
+        return None
 
     if individual is None:
         return None

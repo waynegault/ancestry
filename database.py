@@ -1015,17 +1015,16 @@ def _compare_field_values(old_value: Any, new_value: Any) -> bool:
 
         if (old_float is None and new_float is not None) or (old_float is not None and new_float is None):
             return True
-        elif old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01:
+        if old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01:
             return True
-        else:
-            return False
+        return False
 
     # Handle boolean comparison
-    elif isinstance(new_value, bool) or isinstance(old_value, bool):
+    if isinstance(new_value, bool) or isinstance(old_value, bool):
         return bool(old_value) != bool(new_value)
 
     # General comparison
-    elif old_value != new_value:
+    if old_value != new_value:
         return True
 
     return False
@@ -1315,19 +1314,19 @@ def _compare_field_values(key: str, current_value: Any, new_value: Any, log_ref:
     # Handle specific field types
     if key == "last_logged_in":
         return _compare_datetime_field(current_value, new_value)
-    elif key == "status":
+    if key == "status":
         return _compare_status_field(current_value, new_value, log_ref)
-    elif key == "birth_year":
+    if key == "birth_year":
         return _compare_birth_year_field(current_value, new_value, log_ref)
-    elif key == "gender":
+    if key == "gender":
         return _compare_gender_field(current_value, new_value)
     # General comparison for other fields
-    elif isinstance(current_value, bool) or isinstance(new_value, bool):
+    if isinstance(current_value, bool) or isinstance(new_value, bool):
         if bool(current_value) != bool(new_value):
             return True, bool(new_value)
         return False, current_value
     # Standard comparison for other types
-    elif current_value != new_value:
+    if current_value != new_value:
         return True, new_value
 
     return False, current_value

@@ -805,7 +805,7 @@ def _check_tree_status_changes(
     if bool(api_in_tree) != bool(db_in_tree):
         logger.debug(f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})")
         return True
-    elif api_in_tree and not existing_tree:
+    if api_in_tree and not existing_tree:
         logger.debug(f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record.")
         return True
     return False

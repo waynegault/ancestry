@@ -776,9 +776,9 @@ class MessagePersonalizer:
         """Get historical context based on year and location."""
         if "Scotland" in place and 1840 <= year <= 1920:
             return f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods."
-        elif "Ireland" in place and 1845 <= year <= 1855:
+        if "Ireland" in place and 1845 <= year <= 1855:
             return f"The {event_type} in {place} around {year} was during the Irish Potato Famine era."
-        elif 1914 <= year <= 1918:
+        if 1914 <= year <= 1918:
             return f"The {year} timeframe was during World War I, which affected many family records."
         return None
 

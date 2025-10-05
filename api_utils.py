@@ -634,9 +634,9 @@ def _normalize_gender_string(gender_str: Optional[str]) -> Optional[str]:
 
     if gender_str_lower == "male":
         return "M"
-    elif gender_str_lower == "female":
+    if gender_str_lower == "female":
         return "F"
-    elif gender_str_lower in ["m", "f"]:
+    if gender_str_lower in ["m", "f"]:
         return gender_str_lower.upper()
 
     return None
@@ -875,7 +875,7 @@ def _extract_from_alternative_facts(
         date_str = event_fact_alt.get("normalized", event_fact_alt.get("date"))
         place_str = event_fact_alt.get("place")
         return date_str, place_str, True
-    elif isinstance(event_fact_alt, str):
+    if isinstance(event_fact_alt, str):
         return event_fact_alt, None, True
 
     return None, None, False
@@ -909,7 +909,7 @@ def _extract_from_event_info_card(
         date_str = parts[0].strip() if parts else event_info_card
         place_str = parts[1].strip() if len(parts) > 1 else None
         return date_str, place_str
-    elif isinstance(event_info_card, dict):
+    if isinstance(event_info_card, dict):
         date_str = event_info_card.get("date")
         place_str = event_info_card.get("place")
         return date_str, place_str
@@ -1594,15 +1594,13 @@ def _try_direct_facts_request(
                 )
                 logger.debug(f"Response content: {direct_response_obj.text[:500]}")
                 return None
-            else:
-                logger.info(f"{api_description} call successful via direct request.")
-                return facts_data_raw
-        else:
-            logger.warning(
-                f"Direct facts request failed: Status {direct_response_obj.status_code}"
-            )
-            logger.debug(f"Response content: {direct_response_obj.text[:500]}")
-            return None
+            logger.info(f"{api_description} call successful via direct request.")
+            return facts_data_raw
+        logger.warning(
+            f"Direct facts request failed: Status {direct_response_obj.status_code}"
+        )
+        logger.debug(f"Response content: {direct_response_obj.text[:500]}")
+        return None
 
     except requests.exceptions.Timeout:
         logger.error(f"Direct facts request timed out after {direct_timeout} seconds")

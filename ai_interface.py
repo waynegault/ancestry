@@ -273,9 +273,8 @@ def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int,
     response = client.chat.completions.create(**request_params)
     if response.choices and response.choices[0].message and response.choices[0].message.content:
         return response.choices[0].message.content.strip()
-    else:
-        logger.error("DeepSeek returned an empty or invalid response structure.")
-        return None
+    logger.error("DeepSeek returned an empty or invalid response structure.")
+    return None
 
 
 # Helper functions for _call_gemini_model
@@ -410,11 +409,10 @@ def _route_ai_provider_call(
     """Route call to appropriate AI provider."""
     if provider == "deepseek":
         return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    elif provider == "gemini":
+    if provider == "gemini":
         return _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
-    else:
-        logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
-        return None
+    logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
+    return None
 
 def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager) -> None:
     """Handle AI API exceptions with appropriate logging and actions."""
