@@ -93,6 +93,81 @@ ACTION_VERBS = {
 _YEAR_RE = re.compile(r"\b(17|18|19|20)\d{2}\b")
 _SPECIFIC_PATTERN_RE = re.compile(r"\b(census|manifest|marriage|birth|death|baptism|immigration|naturalization|military|obituary|probate|newspaper|ship|passenger|DNA|chromosome)\b", re.IGNORECASE)
 
+def _calculate_positive_task_score(text: str, lower: str, words: set[str]) -> float:
+    """Calculate positive scoring components for a task."""
+    score = 0.0
+
+    if words & ACTION_VERBS:
+        score += 5
+    if _YEAR_RE.search(text):
+        score += 3
+    if _SPECIFIC_PATTERN_RE.search(text):
+        score += 3
+    if "[" in text and "]" in text:
+        score += 2
+    if '"' in text:
+        score += 2
+
+    return score
+
+
+def _calculate_length_score(text_length: int) -> float:
+    """Calculate length-based scoring for a task."""
+    score = 0.0
+
+    if 25 <= text_length <= 140:
+        score += 1
+    if text_length < 10 or text_length > 220:
+        score -= 2
+
+    return score
+
+
+def _score_single_task(text: str, filler_patterns: list[str]) -> float:
+    """Score a single task based on quality heuristics."""
+    lower = text.lower()
+    words = set(re.findall(r"[a-zA-Z']+", lower))
+
+    # Calculate positive scoring
+    raw = _calculate_positive_task_score(text, lower, words)
+
+    # Add length-based scoring
+    raw += _calculate_length_score(len(text))
+
+    # Negative scoring for filler
+    if any(pat in lower for pat in filler_patterns):
+        raw -= 3
+
+    # Soft clamp single task raw between -5 and 15
+    return max(-5.0, min(15.0, raw))
+
+
+def _calculate_average_task_score(tasks: list[Any], filler_patterns: list[str]) -> tuple[float, int]:
+    """Calculate average task score. Returns (total, counted)."""
+    total = 0.0
+    counted = 0
+
+    for t in tasks:
+        if not isinstance(t, str):
+            continue
+        text = t.strip()
+        if not text:
+            continue
+
+        raw = _score_single_task(text, filler_patterns)
+        total += raw
+        counted += 1
+
+    return total, counted
+
+
+def _map_score_to_scale(avg: float) -> int:
+    """Map average score (-5..15) to 0..30 scale."""
+    normalized = (avg + 5) / 20  # 0..1
+    scaled = max(0.0, min(1.0, normalized)) * 30.0
+    return round(scaled)
+
+
 def compute_task_quality(tasks: list[Any] | None) -> int:
     """Score the quality of suggested research tasks (0-30).
 
@@ -109,49 +184,19 @@ def compute_task_quality(tasks: list[Any] | None) -> int:
     """
     if not isinstance(tasks, list) or not tasks:
         return 0
+
     filler_patterns = [
-        "follow up","touch base","look into it","do research","research more",
-        "get info","ask them","find out"
+        "follow up", "touch base", "look into it", "do research", "research more",
+        "get info", "ask them", "find out"
     ]
-    total = 0.0
-    counted = 0
-    for t in tasks:
-        if not isinstance(t, str):
-            continue
-        text = t.strip()
-        if not text:
-            continue
-        raw = 0.0
-        lower = text.lower()
-        words = set(re.findall(r"[a-zA-Z']+", lower))
-        if words & ACTION_VERBS:
-            raw += 5
-        if _YEAR_RE.search(text):
-            raw += 3
-        if _SPECIFIC_PATTERN_RE.search(text):
-            raw += 3
-        if "[" in text and "]" in text:
-            raw += 2
-        if '"' in text:
-            raw += 2
-        ln = len(text)
-        if 25 <= ln <= 140:
-            raw += 1
-        if ln < 10 or ln > 220:
-            raw -= 2
-        if any(pat in lower for pat in filler_patterns):
-            raw -= 3
-        # Soft clamp single task raw between -5 and 15
-        raw = max(-5.0, min(15.0, raw))
-        total += raw
-        counted += 1
+
+    total, counted = _calculate_average_task_score(tasks, filler_patterns)
+
     if counted == 0:
         return 0
+
     avg = total / counted  # -5 .. 15 typical
-    # Map avg (-5..15) to 0..30
-    normalized = (avg + 5) / 20  # 0..1
-    scaled = max(0.0, min(1.0, normalized)) * 30.0
-    return round(scaled)
+    return _map_score_to_scale(avg)
 
 
 def _score_names_quality(extracted_data: dict[str, Any], names_count: int) -> float:
