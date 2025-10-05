@@ -3568,17 +3568,11 @@ def session_manager_module_tests() -> bool:
         )
 
         # === PHASE 4: LOAD SIMULATION FRAMEWORK ===
-        def test_724_page_workload_simulation():
-            """Simulate 724-page workload with realistic error injection."""
+        def _create_mock_session_manager() -> Any:
+            """Create mock session manager for testing."""
             import time
-            from unittest.mock import Mock, patch
+            from unittest.mock import Mock
 
-            # Skip in fast mode to reduce test time (saves ~60s)
-            if SKIP_SLOW_TESTS:
-                logger.info("Skipping 724-page workload simulation (SKIP_SLOW_TESTS=true)")
-                return True
-
-            # Create mock session manager
             session_manager = Mock()
             session_manager.browser_health_monitor = {
                 'pages_since_refresh': 0,
@@ -3590,10 +3584,60 @@ def session_manager_module_tests() -> bool:
                 'death_timestamp': 0,
                 'death_reason': ""
             }
-
-            # Add the methods we're testing
             session_manager.check_automatic_intervention = SessionManager.check_automatic_intervention.__get__(session_manager)
             session_manager.perform_proactive_browser_refresh = Mock(return_value=True)
+            return session_manager
+
+        def _inject_error_cluster(mock_monitor: Any, errors_injected: int, interventions_triggered: int) -> tuple[int, int]:
+            """Inject error cluster and update intervention state. Returns (errors_injected, interventions_triggered)."""
+            import time
+
+            # Simulate error cluster (12-15 errors to reach thresholds)
+            for _ in range(15):
+                errors_injected += 1
+                mock_monitor.error_timestamps.append(time.time() - (errors_injected * 0.1))
+
+            # Check if this triggers intervention (only count once per threshold)
+            if errors_injected >= 75 and interventions_triggered == 0:
+                mock_monitor.is_enhanced_monitoring_active.return_value = True
+                interventions_triggered += 1
+
+            if errors_injected >= 200 and interventions_triggered == 1:
+                mock_monitor.should_immediate_intervention.return_value = True
+                interventions_triggered += 1
+
+            return errors_injected, interventions_triggered
+
+        def _simulate_page_processing(session_manager: Any, mock_monitor: Any, page: int, errors_injected: int) -> bool:
+            """Simulate processing a single page. Returns should_halt."""
+            import time
+
+            # Test intervention check
+            should_halt = session_manager.check_automatic_intervention()
+
+            # For realistic error rates, should not halt
+            if errors_injected < 500:
+                assert not should_halt, f"Should not halt at page {page} with {errors_injected} errors"
+
+            # Simulate browser refresh every 50 pages
+            if page % 50 == 0:
+                session_manager.browser_health_monitor['pages_since_refresh'] = 0
+                session_manager.browser_health_monitor['last_browser_refresh'] = time.time()
+
+            return should_halt
+
+        def test_724_page_workload_simulation():
+            """Simulate 724-page workload with realistic error injection."""
+            import time
+            from unittest.mock import Mock, patch
+
+            # Skip in fast mode to reduce test time (saves ~60s)
+            if SKIP_SLOW_TESTS:
+                logger.info("Skipping 724-page workload simulation (SKIP_SLOW_TESTS=true)")
+                return True
+
+            # Create mock session manager
+            session_manager = _create_mock_session_manager()
 
             # Simulate processing 724 pages with realistic error patterns
             pages_processed = 0
@@ -3609,41 +3653,21 @@ def session_manager_module_tests() -> bool:
                 mock_monitor.error_timestamps = []
 
                 # Simulate realistic error injection pattern
-                # Expect ~100-200 errors over 724 pages (13-27% error rate)
-                error_injection_points = [50, 150, 300, 450, 600, 700]  # Pages where errors cluster
+                error_injection_points = [50, 150, 300, 450, 600, 700]
 
                 for page in range(1, 725):  # 724 pages
                     pages_processed += 1
 
                     # Inject realistic error patterns
                     if page in error_injection_points:
-                        # Simulate error cluster (12-15 errors to reach thresholds)
-                        for _ in range(15):
-                            errors_injected += 1
-                            mock_monitor.error_timestamps.append(time.time() - (errors_injected * 0.1))
-
-                        # Check if this triggers intervention (only count once per threshold)
-                        if errors_injected >= 75 and interventions_triggered == 0:  # Enhanced monitoring threshold (count once)
-                            mock_monitor.is_enhanced_monitoring_active.return_value = True
-                            interventions_triggered += 1
-
-                        if errors_injected >= 200 and interventions_triggered == 1:  # Immediate intervention threshold (count once)
-                            mock_monitor.should_immediate_intervention.return_value = True
-                            interventions_triggered += 1
+                        errors_injected, interventions_triggered = _inject_error_cluster(
+                            mock_monitor, errors_injected, interventions_triggered
+                        )
 
                     mock_get_monitor.return_value = mock_monitor
 
-                    # Test intervention check (should not halt for realistic error rates)
-                    should_halt = session_manager.check_automatic_intervention()
-
-                    # For realistic error rates, should not halt
-                    if errors_injected < 500:  # Below emergency threshold
-                        assert not should_halt, f"Should not halt at page {page} with {errors_injected} errors"
-
-                    # Simulate browser refresh every 50 pages
-                    if page % 50 == 0:
-                        session_manager.browser_health_monitor['pages_since_refresh'] = 0
-                        session_manager.browser_health_monitor['last_browser_refresh'] = time.time()
+                    # Simulate page processing
+                    _simulate_page_processing(session_manager, mock_monitor, page, errors_injected)
 
             # Verify load simulation results
             assert pages_processed == 724, f"Should process 724 pages, processed {pages_processed}"
