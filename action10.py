@@ -1418,6 +1418,7 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
     """Setup test environment and return original GEDCOM path and test suite."""
     import os
     from pathlib import Path
+
     from test_framework import TestSuite  # type: ignore[import-not-found]
 
     # Use minimal test GEDCOM for faster tests (saves ~35s)
@@ -1462,6 +1463,7 @@ def _debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
 def _load_test_person_data_from_env() -> dict[str, Any]:
     """Load test person data from .env configuration."""
     import os
+
     from dotenv import load_dotenv
 
     load_dotenv()

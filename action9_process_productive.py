@@ -317,7 +317,6 @@ def get_gedcom_data() -> Optional[Any]:
 from action11 import _process_and_score_suggestions
 from gedcom_utils import calculate_match_score
 
-
 # Helper functions for _search_gedcom_for_names
 
 def _parse_name_parts(name: str) -> tuple[str, str]:
