@@ -359,7 +359,11 @@ class CredentialManager:
         }
 
 
-# === EXTRACTED TEST FUNCTIONS ===
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+# Extracted from monolithic credential_manager_module_tests() for better organization
+# Each test function is independent and can be run individually
 
 
 def _test_initialization() -> None:
@@ -471,6 +475,349 @@ def _test_credential_validation() -> None:
         assert cm.validate_credentials(invalid_creds3) is False
 
 
+def _test_credential_access() -> None:
+    """Test getting and checking individual credentials."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Mock the load_credentials method to return test data
+        test_creds = {
+            "ANCESTRY_USERNAME": "test_user",
+            "ANCESTRY_PASSWORD": "test_pass",
+            "DEEPSEEK_API_KEY": "test_key",
+        }
+        cm._credentials_cache = test_creds
+
+        # Test getting existing credential
+        username = cm.get_credential("ANCESTRY_USERNAME")
+        assert username == "test_user"
+
+        # Test getting non-existent credential
+        missing = cm.get_credential("NONEXISTENT_KEY")
+        assert missing is None
+
+        # Test checking credential existence
+        assert cm.has_credential("ANCESTRY_USERNAME") is True
+        assert cm.has_credential("NONEXISTENT_KEY") is False
+
+
+def _test_ancestry_credentials() -> None:
+    """Test the ancestry-specific credential helper."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Test with complete credentials
+        test_creds = {
+            "ANCESTRY_USERNAME": "test_user",
+            "ANCESTRY_PASSWORD": "test_pass",
+        }
+        cm._credentials_cache = test_creds
+
+        username, password = cm.get_ancestry_credentials()
+        assert username == "test_user"
+        assert password == "test_pass"
+
+        # Test with missing credentials
+        cm._credentials_cache = {}
+        username, password = cm.get_ancestry_credentials()
+        assert username is None
+        assert password is None
+
+
+def _test_api_key_retrieval() -> None:
+    """Test API key retrieval for different providers."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        test_creds = {
+            "DEEPSEEK_API_KEY": "deepseek_key",
+            "GOOGLE_API_KEY": "google_key",
+            "OPENAI_API_KEY": "openai_key",
+        }
+        cm._credentials_cache = test_creds
+
+        # Test various providers
+        assert cm.get_api_key("deepseek") == "deepseek_key"
+        assert cm.get_api_key("google") == "google_key"
+        assert cm.get_api_key("openai") == "openai_key"
+
+        # Test case insensitive
+        assert cm.get_api_key("DeepSeek") == "deepseek_key"
+
+        # Test non-existent provider
+        assert cm.get_api_key("nonexistent") is None
+
+
+def _test_cache_management() -> None:
+    """Test credential cache management."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Set cache
+        test_creds = {"ANCESTRY_USERNAME": "test_user"}
+        cm._credentials_cache = test_creds
+
+        # Verify cache is set
+        assert cm._credentials_cache is not None
+        assert len(cm._credentials_cache) == 1
+
+        # Clear cache
+        cm.clear_cache()
+        assert cm._credentials_cache is None
+
+
+def _test_credential_status() -> None:
+    """Test credential status reporting."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Mock credentials
+        test_creds = {
+            "ANCESTRY_USERNAME": "test_user",
+            "ANCESTRY_PASSWORD": "test_pass",
+            "DEEPSEEK_API_KEY": "test_key",
+        }
+        cm._credentials_cache = test_creds
+
+        status = cm.get_credential_status()
+
+        # Verify status structure
+        assert isinstance(status, dict)
+        assert "total_credentials" in status
+        assert "required_credentials_present" in status
+        assert "security_manager_available" in status
+        assert "encrypted_storage_available" in status
+        assert "credential_keys" in status
+
+        # Verify values
+        assert status["total_credentials"] == 3
+        assert status["required_credentials_present"] is True
+        assert isinstance(status["credential_keys"], list)
+        assert "ANCESTRY_USERNAME" in status["credential_keys"]
+
+
+def _test_export_functionality() -> None:
+    """Test credential export for backup."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager("TestApp")
+
+        test_creds = {
+            "ANCESTRY_USERNAME": "test_user",
+            "ANCESTRY_PASSWORD": "test_pass",
+        }
+        cm._credentials_cache = test_creds
+
+        # Test export without sensitive data
+        safe_export = cm.export_for_backup(include_sensitive=False)
+        assert "credential_keys" in safe_export
+        assert "credential_count" in safe_export
+        assert "app_name" in safe_export
+        assert "has_ancestry_credentials" in safe_export
+        assert "credentials" not in safe_export  # Should not contain actual values
+        assert safe_export["credential_count"] == 2
+        assert safe_export["app_name"] == "TestApp"
+        assert safe_export["has_ancestry_credentials"] is True
+
+        # Test export with sensitive data
+        sensitive_export = cm.export_for_backup(include_sensitive=True)
+        assert "credentials" in sensitive_export
+        assert "credential_count" in sensitive_export
+        assert sensitive_export["credentials"]["ANCESTRY_USERNAME"] == "test_user"
+
+
+def _test_security_manager_integration() -> None:
+    """Test SecurityManager integration (with fallback for missing module)."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Test getting security manager (should handle missing module gracefully)
+        security_manager = cm._get_security_manager()
+        # Should not raise exception, returns None if module not available
+        assert security_manager is None or hasattr(
+            security_manager, "encrypt_credentials"
+        )
+
+
+def _test_error_handling() -> None:
+    """Test error handling in various scenarios."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Test with invalid credentials for validation
+        invalid_data = {"invalid": "data"}
+        assert cm.validate_credentials(invalid_data) is False
+
+        # Test storage without security manager (should fail gracefully)
+        result = cm.store_credentials({"test": "value"})
+        assert result is False  # Should fail without security manager
+
+        # Test removal without security manager (should fail gracefully)
+        result = cm.remove_credential("test_key")
+        assert result is False  # Should fail without security manager
+
+
+def _test_integration() -> None:
+    """Test integration between different components."""
+    import os
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager("IntegrationTest")
+
+        # Store original environment
+        original_username = os.environ.get("ANCESTRY_USERNAME")
+        original_password = os.environ.get("ANCESTRY_PASSWORD")
+
+        try:
+            # Set environment variables
+            os.environ["ANCESTRY_USERNAME"] = "integration_user"
+            os.environ["ANCESTRY_PASSWORD"] = "integration_pass"
+
+            # Load credentials (should get from environment)
+            credentials = cm.load_credentials()
+
+            # Verify loaded credentials
+            assert "ANCESTRY_USERNAME" in credentials
+            assert credentials["ANCESTRY_USERNAME"] == "integration_user"
+
+            # Test ancestry helper
+            username, password = cm.get_ancestry_credentials()
+            assert username == "integration_user"
+            assert password == "integration_pass"
+
+            # Test status
+            status = cm.get_credential_status()
+            assert status["required_credentials_present"] is True
+
+        finally:
+            # Restore environment
+            if original_username is None:
+                os.environ.pop("ANCESTRY_USERNAME", None)
+            else:
+                os.environ["ANCESTRY_USERNAME"] = original_username
+
+            if original_password is None:
+                os.environ.pop("ANCESTRY_PASSWORD", None)
+            else:
+                os.environ["ANCESTRY_PASSWORD"] = original_password
+
+
+def _test_performance() -> None:
+    """Test performance of credential operations."""
+    import time
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Test cache performance
+        large_creds = {f"KEY_{i}": f"value_{i}" for i in range(100)}
+        cm._credentials_cache = large_creds
+
+        start_time = time.time()
+        for i in range(100):
+            cm.get_credential(f"KEY_{i}")
+        cache_time = time.time() - start_time
+
+        logger.info(f"Retrieved 100 cached credentials in {cache_time:.4f} seconds")
+
+        # Test validation performance
+        start_time = time.time()
+        for i in range(10):
+            cm.validate_credentials(
+                {"ANCESTRY_USERNAME": f"user_{i}", "ANCESTRY_PASSWORD": f"pass_{i}"}
+            )
+        validation_time = time.time() - start_time
+
+        logger.info(
+            f"Validated 10 credential sets in {validation_time:.4f} seconds"
+        )
+
+
+def _test_function_structure() -> None:
+    """Test that all expected methods and properties exist."""
+    from test_framework import suppress_logging, assert_valid_function  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Test public methods
+        assert_valid_function(cm.load_credentials, "load_credentials")
+        assert_valid_function(cm.get_credential, "get_credential")
+        assert_valid_function(cm.has_credential, "has_credential")
+        assert_valid_function(cm.store_credentials, "store_credentials")
+        assert_valid_function(cm.remove_credential, "remove_credential")
+        assert_valid_function(cm.validate_credentials, "validate_credentials")
+        assert_valid_function(
+            cm.migrate_from_environment, "migrate_from_environment"
+        )
+        assert_valid_function(
+            cm.get_ancestry_credentials, "get_ancestry_credentials"
+        )
+        assert_valid_function(cm.get_api_key, "get_api_key")
+        assert_valid_function(cm.clear_cache, "clear_cache")
+        assert_valid_function(cm.get_credential_status, "get_credential_status")
+        assert_valid_function(cm.export_for_backup, "export_for_backup")
+
+        # Test private methods
+        assert_valid_function(cm._get_security_manager, "_get_security_manager")
+        assert_valid_function(cm._load_from_environment, "_load_from_environment")
+
+        # Test properties
+        assert hasattr(cm, "app_name")
+        assert hasattr(cm, "_security_manager")
+        assert hasattr(cm, "_credentials_cache")
+
+
+def _test_import_dependencies() -> None:
+    """Test that all required imports and dependencies are available."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        # Test logging
+        import logging
+
+        assert hasattr(logging, "getLogger")
+
+        # Test pathlib
+        from pathlib import Path
+
+        test_path = Path("/test")
+        assert isinstance(test_path, Path)
+
+        # Test typing
+
+        # Test os module
+        import os
+
+        assert hasattr(os, "getenv")
+
+        # Test that the class is properly defined
+        assert hasattr(CredentialManager, "__init__")
+        assert hasattr(CredentialManager, "load_credentials")
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def credential_manager_module_tests() -> bool:
     """
     Run comprehensive tests for the CredentialManager class.
@@ -576,317 +923,40 @@ def credential_manager_module_tests() -> bool:
     test_credential_validation = _test_credential_validation
 
     # Test 4: Credential Getting and Checking
-    def test_credential_access():
-        """Test getting and checking individual credentials."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Mock the load_credentials method to return test data
-            test_creds = {
-                "ANCESTRY_USERNAME": "test_user",
-                "ANCESTRY_PASSWORD": "test_pass",
-                "DEEPSEEK_API_KEY": "test_key",
-            }
-            cm._credentials_cache = test_creds
-
-            # Test getting existing credential
-            username = cm.get_credential("ANCESTRY_USERNAME")
-            assert username == "test_user"
-
-            # Test getting non-existent credential
-            missing = cm.get_credential("NONEXISTENT_KEY")
-            assert missing is None
-
-            # Test checking credential existence
-            assert cm.has_credential("ANCESTRY_USERNAME") is True
-            assert cm.has_credential("NONEXISTENT_KEY") is False
+    test_credential_access = _test_credential_access
 
     # Test 5: Ancestry Credentials Helper
-    def test_ancestry_credentials():
-        """Test the ancestry-specific credential helper."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Test with complete credentials
-            test_creds = {
-                "ANCESTRY_USERNAME": "test_user",
-                "ANCESTRY_PASSWORD": "test_pass",
-            }
-            cm._credentials_cache = test_creds
-
-            username, password = cm.get_ancestry_credentials()
-            assert username == "test_user"
-            assert password == "test_pass"
-
-            # Test with missing credentials
-            cm._credentials_cache = {}
-            username, password = cm.get_ancestry_credentials()
-            assert username is None
-            assert password is None
+    test_ancestry_credentials = _test_ancestry_credentials
 
     # Test 6: API Key Retrieval
-    def test_api_key_retrieval():
-        """Test API key retrieval for different providers."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            test_creds = {
-                "DEEPSEEK_API_KEY": "deepseek_key",
-                "GOOGLE_API_KEY": "google_key",
-                "OPENAI_API_KEY": "openai_key",
-            }
-            cm._credentials_cache = test_creds
-
-            # Test various providers
-            assert cm.get_api_key("deepseek") == "deepseek_key"
-            assert cm.get_api_key("google") == "google_key"
-            assert cm.get_api_key("openai") == "openai_key"
-
-            # Test case insensitive
-            assert cm.get_api_key("DeepSeek") == "deepseek_key"
-
-            # Test non-existent provider
-            assert cm.get_api_key("nonexistent") is None
+    test_api_key_retrieval = _test_api_key_retrieval
 
     # Test 7: Cache Management
-    def test_cache_management():
-        """Test credential cache management."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Set cache
-            test_creds = {"ANCESTRY_USERNAME": "test_user"}
-            cm._credentials_cache = test_creds
-
-            # Verify cache is set
-            assert cm._credentials_cache is not None
-            assert len(cm._credentials_cache) == 1
-
-            # Clear cache
-            cm.clear_cache()
-            assert cm._credentials_cache is None
+    test_cache_management = _test_cache_management
 
     # Test 8: Credential Status Reporting
-    def test_credential_status():
-        """Test credential status reporting."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Mock credentials
-            test_creds = {
-                "ANCESTRY_USERNAME": "test_user",
-                "ANCESTRY_PASSWORD": "test_pass",
-                "DEEPSEEK_API_KEY": "test_key",
-            }
-            cm._credentials_cache = test_creds
-
-            status = cm.get_credential_status()
-
-            # Verify status structure
-            assert isinstance(status, dict)
-            assert "total_credentials" in status
-            assert "required_credentials_present" in status
-            assert "security_manager_available" in status
-            assert "encrypted_storage_available" in status
-            assert "credential_keys" in status
-
-            # Verify values
-            assert status["total_credentials"] == 3
-            assert status["required_credentials_present"] is True
-            assert isinstance(status["credential_keys"], list)
-            assert "ANCESTRY_USERNAME" in status["credential_keys"]
+    test_credential_status = _test_credential_status
 
     # Test 9: Export Functionality
-    def test_export_functionality():
-        """Test credential export for backup."""
-        with suppress_logging():
-            cm = CredentialManager("TestApp")
-
-            test_creds = {
-                "ANCESTRY_USERNAME": "test_user",
-                "ANCESTRY_PASSWORD": "test_pass",
-            }
-            cm._credentials_cache = test_creds
-
-            # Test export without sensitive data
-            safe_export = cm.export_for_backup(include_sensitive=False)
-            assert "credential_keys" in safe_export
-            assert "credential_count" in safe_export
-            assert "app_name" in safe_export
-            assert "has_ancestry_credentials" in safe_export
-            assert "credentials" not in safe_export  # Should not contain actual values
-            assert safe_export["credential_count"] == 2
-            assert safe_export["app_name"] == "TestApp"
-            assert safe_export["has_ancestry_credentials"] is True
-
-            # Test export with sensitive data
-            sensitive_export = cm.export_for_backup(include_sensitive=True)
-            assert "credentials" in sensitive_export
-            assert "credential_count" in sensitive_export
-            assert sensitive_export["credentials"]["ANCESTRY_USERNAME"] == "test_user"
+    test_export_functionality = _test_export_functionality
 
     # Test 10: Security Manager Integration
-    def test_security_manager_integration():
-        """Test SecurityManager integration (with fallback for missing module)."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Test getting security manager (should handle missing module gracefully)
-            security_manager = cm._get_security_manager()
-            # Should not raise exception, returns None if module not available
-            assert security_manager is None or hasattr(
-                security_manager, "encrypt_credentials"
-            )
+    test_security_manager_integration = _test_security_manager_integration
 
     # Test 11: Error Handling
-    def test_error_handling():
-        """Test error handling in various scenarios."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Test with invalid credentials for validation
-            invalid_data = {"invalid": "data"}
-            assert cm.validate_credentials(invalid_data) is False
-
-            # Test storage without security manager (should fail gracefully)
-            result = cm.store_credentials({"test": "value"})
-            assert result is False  # Should fail without security manager
-
-            # Test removal without security manager (should fail gracefully)
-            result = cm.remove_credential("test_key")
-            assert result is False  # Should fail without security manager
+    test_error_handling = _test_error_handling
 
     # Test 12: Integration Testing
-    def test_integration():
-        """Test integration between different components."""
-        with suppress_logging():
-            cm = CredentialManager("IntegrationTest")
-
-            # Store original environment
-            original_username = os.environ.get("ANCESTRY_USERNAME")
-            original_password = os.environ.get("ANCESTRY_PASSWORD")
-
-            try:
-                # Set environment variables
-                os.environ["ANCESTRY_USERNAME"] = "integration_user"
-                os.environ["ANCESTRY_PASSWORD"] = "integration_pass"
-
-                # Load credentials (should get from environment)
-                credentials = cm.load_credentials()
-
-                # Verify loaded credentials
-                assert "ANCESTRY_USERNAME" in credentials
-                assert credentials["ANCESTRY_USERNAME"] == "integration_user"
-
-                # Test ancestry helper
-                username, password = cm.get_ancestry_credentials()
-                assert username == "integration_user"
-                assert password == "integration_pass"
-
-                # Test status
-                status = cm.get_credential_status()
-                assert status["required_credentials_present"] is True
-
-            finally:
-                # Restore environment
-                if original_username is None:
-                    os.environ.pop("ANCESTRY_USERNAME", None)
-                else:
-                    os.environ["ANCESTRY_USERNAME"] = original_username
-                if original_password is None:
-                    os.environ.pop("ANCESTRY_PASSWORD", None)
-                else:
-                    os.environ["ANCESTRY_PASSWORD"] = original_password
+    test_integration = _test_integration
 
     # Test 13: Performance Testing
-    def test_performance():
-        """Test performance of credential operations."""
-        with suppress_logging():
-            import time
-
-            cm = CredentialManager()
-
-            # Test cache performance
-            large_creds = {f"KEY_{i}": f"value_{i}" for i in range(100)}
-            cm._credentials_cache = large_creds
-
-            start_time = time.time()
-            for i in range(100):
-                cm.get_credential(f"KEY_{i}")
-            cache_time = time.time() - start_time
-
-            logger.info(f"Retrieved 100 cached credentials in {cache_time:.4f} seconds")
-
-            # Test validation performance
-            start_time = time.time()
-            for i in range(10):
-                cm.validate_credentials(
-                    {"ANCESTRY_USERNAME": f"user_{i}", "ANCESTRY_PASSWORD": f"pass_{i}"}
-                )
-            validation_time = time.time() - start_time
-
-            logger.info(
-                f"Validated 10 credential sets in {validation_time:.4f} seconds"
-            )
+    test_performance = _test_performance
 
     # Test 14: Method Existence and Structure
-    def test_function_structure():
-        """Test that all expected methods and properties exist."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Test public methods
-            assert_valid_function(cm.load_credentials, "load_credentials")
-            assert_valid_function(cm.get_credential, "get_credential")
-            assert_valid_function(cm.has_credential, "has_credential")
-            assert_valid_function(cm.store_credentials, "store_credentials")
-            assert_valid_function(cm.remove_credential, "remove_credential")
-            assert_valid_function(cm.validate_credentials, "validate_credentials")
-            assert_valid_function(
-                cm.migrate_from_environment, "migrate_from_environment"
-            )
-            assert_valid_function(
-                cm.get_ancestry_credentials, "get_ancestry_credentials"
-            )
-            assert_valid_function(cm.get_api_key, "get_api_key")
-            assert_valid_function(cm.clear_cache, "clear_cache")
-            assert_valid_function(cm.get_credential_status, "get_credential_status")
-            assert_valid_function(cm.export_for_backup, "export_for_backup")
-
-            # Test private methods
-            assert_valid_function(cm._get_security_manager, "_get_security_manager")
-            assert_valid_function(cm._load_from_environment, "_load_from_environment")
-
-            # Test properties
-            assert hasattr(cm, "app_name")
-            assert hasattr(cm, "_security_manager")
-            assert hasattr(cm, "_credentials_cache")
+    test_function_structure = _test_function_structure
 
     # Test 15: Import Dependencies and Type Definitions
-    def test_import_dependencies():
-        """Test that all required imports and dependencies are available."""
-        with suppress_logging():
-            # Test logging
-            import logging
-
-            assert hasattr(logging, "getLogger")
-
-            # Test pathlib
-            from pathlib import Path
-
-            test_path = Path("/test")
-            assert isinstance(test_path, Path)
-
-            # Test typing
-
-            # Test os module
-            import os
-
-            assert hasattr(os, "getenv")
-
-            # Test that the class is properly defined
-            assert hasattr(CredentialManager, "__init__")
-            assert hasattr(CredentialManager, "load_credentials")
+    test_import_dependencies = _test_import_dependencies
 
     # Define all tests with descriptions
     tests = [
