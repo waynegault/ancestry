@@ -410,6 +410,97 @@ class DatabaseManager:
             logger.debug("Database already initialized.")
             return True
 
+    def _dispose_existing_engine(self) -> None:
+        """Dispose existing engine if present."""
+        if not self.engine:
+            return
+
+        logger.warning("Disposing existing engine before re-initializing.")
+        try:
+            self.engine.dispose()
+        except Exception as dispose_e:
+            logger.error(f"Error disposing existing engine: {dispose_e}")
+        self.engine = None
+        self.Session = None
+
+    def _calculate_pool_configuration(self) -> tuple[int, int, int, int, bool]:
+        """Calculate optimal pool configuration. Returns (pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping)."""
+        # Get base pool size from config
+        base_pool_size = (
+            config_schema.database.pool_size
+            if config_schema and config_schema.database
+            else self._base_pool_size
+        )
+        if not isinstance(base_pool_size, int) or base_pool_size <= 0:
+            logger.warning(f"Invalid DB_POOL_SIZE '{base_pool_size}'. Using default {self._base_pool_size}.")
+            base_pool_size = self._base_pool_size
+
+        # Adaptive pool sizing based on performance metrics
+        pool_size = self._calculate_optimal_pool_size(base_pool_size)
+        pool_size = min(pool_size, self._max_pool_size)  # Cap pool size
+        self._current_pool_size = pool_size
+
+        # Enhanced pool configuration
+        max_overflow = max(5, int(pool_size * 0.3))  # Increased overflow capacity
+        pool_timeout = 45  # Increased timeout for better reliability
+        pool_recycle = self._max_connection_age  # Recycle connections after max age
+        pool_pre_ping = True  # Enable connection health checks
+
+        logger.debug(
+            f"Enhanced DB Pool Config: Size={pool_size}, MaxOverflow={max_overflow}, "
+            f"Timeout={pool_timeout}, Recycle={pool_recycle}, PrePing={pool_pre_ping}"
+        )
+
+        return pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping
+
+    def _create_engine_with_config(self, pool_size: int, max_overflow: int, pool_timeout: int, pool_recycle: int, pool_pre_ping: bool) -> None:
+        """Create SQLAlchemy engine with specified configuration."""
+        self.engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            echo=False,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=pool_pre_ping,
+            poolclass=sqlalchemy_pool.QueuePool,
+            connect_args={
+                "check_same_thread": False,
+                "timeout": 30,  # Connection timeout
+                "isolation_level": None,  # Autocommit mode for better performance
+            },
+            execution_options={
+                "autocommit": False,
+                "compiled_cache": {},  # Enable query compilation caching
+            }
+        )
+        logger.debug(f"Created SQLAlchemy engine: ID={id(self.engine)}")
+
+    def _attach_pragma_listener(self) -> None:
+        """Attach event listener for SQLite PRAGMA settings."""
+        @event.listens_for(self.engine, "connect")
+        def enable_sqlite_settings(dbapi_connection: Any, connection_record: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL;")
+                cursor.execute("PRAGMA foreign_keys=ON;")
+                cursor.execute("PRAGMA synchronous=NORMAL;")
+                logger.debug(
+                    "SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal)."
+                )
+            except sqlite3.Error as pragma_e:
+                logger.error(f"Failed setting PRAGMA: {pragma_e}")
+            finally:
+                cursor.close()
+
+    def _cleanup_failed_initialization(self) -> None:
+        """Clean up resources after failed initialization."""
+        if self.engine:
+            self.engine.dispose()
+        self.engine = None
+        self.Session = None
+        self._db_init_attempted = False
+
     def _initialize_engine_and_session(self) -> None:
         """Initialize SQLAlchemy engine and session factory."""
         # Prevent re-initialization if already done
@@ -421,83 +512,19 @@ class DatabaseManager:
         self._db_init_attempted = True
 
         # Dispose existing engine if somehow present but Session is not
-        if self.engine:
-            logger.warning("Disposing existing engine before re-initializing.")
-            try:
-                self.engine.dispose()
-            except Exception as dispose_e:
-                logger.error(f"Error disposing existing engine: {dispose_e}")
-            self.engine = None
-            self.Session = None
+        self._dispose_existing_engine()
 
         try:
             logger.debug(f"DB Path: {self.db_path}")
 
-            # Phase 7.3.2: Enhanced pool configuration with adaptive sizing
-            base_pool_size = (
-                config_schema.database.pool_size
-                if config_schema and config_schema.database
-                else self._base_pool_size
-            )
-            if not isinstance(base_pool_size, int) or base_pool_size <= 0:
-                logger.warning(f"Invalid DB_POOL_SIZE '{base_pool_size}'. Using default {self._base_pool_size}.")
-                base_pool_size = self._base_pool_size
+            # Calculate pool configuration
+            pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping = self._calculate_pool_configuration()
 
-            # Adaptive pool sizing based on performance metrics
-            pool_size = self._calculate_optimal_pool_size(base_pool_size)
-            pool_size = min(pool_size, self._max_pool_size)  # Cap pool size
-            self._current_pool_size = pool_size
+            # Create engine with configuration
+            self._create_engine_with_config(pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping)
 
-            # Enhanced pool configuration
-            max_overflow = max(5, int(pool_size * 0.3))  # Increased overflow capacity
-            pool_timeout = 45  # Increased timeout for better reliability
-            pool_recycle = self._max_connection_age  # Recycle connections after max age
-            pool_pre_ping = True  # Enable connection health checks
-            pool_class = sqlalchemy_pool.QueuePool
-
-            logger.debug(
-                f"Enhanced DB Pool Config: Size={pool_size}, MaxOverflow={max_overflow}, "
-                f"Timeout={pool_timeout}, Recycle={pool_recycle}, PrePing={pool_pre_ping}"
-            )
-
-            # Create Enhanced Engine with Phase 7.3.2 optimizations
-            self.engine = create_engine(
-                f"sqlite:///{self.db_path}",
-                echo=False,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=pool_timeout,
-                pool_recycle=pool_recycle,
-                pool_pre_ping=pool_pre_ping,
-                poolclass=pool_class,
-                connect_args={
-                    "check_same_thread": False,
-                    "timeout": 30,  # Connection timeout
-                    "isolation_level": None,  # Autocommit mode for better performance
-                },
-                execution_options={
-                    "autocommit": False,
-                    "compiled_cache": {},  # Enable query compilation caching
-                }
-            )
-
-            logger.debug(f"Created SQLAlchemy engine: ID={id(self.engine)}")
-
-            # Attach event listener for PRAGMA settings
-            @event.listens_for(self.engine, "connect")
-            def enable_sqlite_settings(dbapi_connection: Any, connection_record: Any) -> None:
-                cursor = dbapi_connection.cursor()
-                try:
-                    cursor.execute("PRAGMA journal_mode=WAL;")
-                    cursor.execute("PRAGMA foreign_keys=ON;")
-                    cursor.execute("PRAGMA synchronous=NORMAL;")
-                    logger.debug(
-                        "SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal)."
-                    )
-                except sqlite3.Error as pragma_e:
-                    logger.error(f"Failed setting PRAGMA: {pragma_e}")
-                finally:
-                    cursor.close()
+            # Attach PRAGMA listener
+            self._attach_pragma_listener()
 
             # Create Session Factory
             self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
@@ -508,21 +535,13 @@ class DatabaseManager:
 
         except SQLAlchemyError as sql_e:
             logger.critical(f"FAILED to initialize SQLAlchemy: {sql_e}", exc_info=True)
-            if self.engine:
-                self.engine.dispose()
-            self.engine = None
-            self.Session = None
-            self._db_init_attempted = False
+            self._cleanup_failed_initialization()
             raise sql_e
         except Exception as e:
             logger.critical(
                 f"UNEXPECTED error initializing SQLAlchemy: {e}", exc_info=True
             )
-            if self.engine:
-                self.engine.dispose()
-            self.engine = None
-            self.Session = None
-            self._db_init_attempted = False
+            self._cleanup_failed_initialization()
             raise e
 
     def _ensure_tables_created(self) -> None:
@@ -630,6 +649,38 @@ class DatabaseManager:
         else:
             logger.warning("Attempted to return a None DB session.")
 
+    def _commit_session_if_active(self, session: Session, session_id: str) -> None:
+        """Commit session if active, otherwise log warning."""
+        if session.is_active:
+            try:
+                session.commit()
+                logger.debug(
+                    f"DB Context Manager: Commit successful for session {session_id}."
+                )
+            except SQLAlchemyError as commit_err:
+                logger.error(
+                    f"DB Context Manager: Commit failed for session {session_id}: {commit_err}. Rolling back."
+                )
+                session.rollback()
+                raise
+        else:
+            logger.warning(
+                f"DB Context Manager: Session {session_id} inactive after yield, skipping commit."
+            )
+
+    def _rollback_session_if_active(self, session: Optional[Session], session_id: str) -> None:
+        """Rollback session if active."""
+        if session and session.is_active:
+            try:
+                session.rollback()
+                logger.warning(
+                    f"DB Context Manager: Rollback successful for session {session_id}."
+                )
+            except Exception as rb_err:
+                logger.error(
+                    f"DB Context Manager: Error during rollback for session {session_id}: {rb_err}"
+                )
+
     @contextlib.contextmanager
     def get_session_context(self) -> Generator[Optional[Session], None, None]:
         """
@@ -651,22 +702,7 @@ class DatabaseManager:
                 yield session
 
                 # After the 'with' block finishes:
-                if session.is_active:
-                    try:
-                        session.commit()
-                        logger.debug(
-                            f"DB Context Manager: Commit successful for session {session_id_for_log}."
-                        )
-                    except SQLAlchemyError as commit_err:
-                        logger.error(
-                            f"DB Context Manager: Commit failed for session {session_id_for_log}: {commit_err}. Rolling back."
-                        )
-                        session.rollback()
-                        raise
-                else:
-                    logger.warning(
-                        f"DB Context Manager: Session {session_id_for_log} inactive after yield, skipping commit."
-                    )
+                self._commit_session_if_active(session, session_id_for_log)
             else:
                 logger.error("DB Context Manager: Failed to obtain DB session.")
                 yield None
@@ -676,32 +712,14 @@ class DatabaseManager:
                 f"DB Context Manager: SQLAlchemyError ({type(sql_e).__name__}). Rolling back session {session_id_for_log}.",
                 exc_info=True,
             )
-            if session and session.is_active:
-                try:
-                    session.rollback()
-                    logger.warning(
-                        f"DB Context Manager: Rollback successful for session {session_id_for_log}."
-                    )
-                except Exception as rb_err:
-                    logger.error(
-                        f"DB Context Manager: Error during rollback for session {session_id_for_log}: {rb_err}"
-                    )
+            self._rollback_session_if_active(session, session_id_for_log)
             raise sql_e
         except Exception as e:
             logger.error(
                 f"DB Context Manager: Unexpected Exception ({type(e).__name__}). Rolling back session {session_id_for_log}.",
                 exc_info=True,
             )
-            if session and session.is_active:
-                try:
-                    session.rollback()
-                    logger.warning(
-                        f"DB Context Manager: Rollback successful for session {session_id_for_log}."
-                    )
-                except Exception as rb_err:
-                    logger.error(
-                        f"DB Context Manager: Error during rollback for session {session_id_for_log}: {rb_err}"
-                    )
+            self._rollback_session_if_active(session, session_id_for_log)
             raise e
         finally:
             # Always return the session to the pool
