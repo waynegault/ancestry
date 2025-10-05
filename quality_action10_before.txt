@@ -1,0 +1,438 @@
+🔍 Running code quality check...
+🔍 CODE QUALITY REPORT
+==================================================
+📁 Files analyzed: 71
+🔧 Total functions: 3286
+📝 Average type hint coverage: 99.8%
+⭐ Average quality score: 97.3/100
+
+📊 DETAILED RESULTS:
+------------------------------
+📄 session_manager.py
+   Quality Score: 66.4/100
+   Type Hints: 96.6%
+   Functions: 148
+   ⚠️  Violations:
+      • Function 'session_manager_module_tests' is too complex (complexity: 14)
+      • Function 'my_profile_id' missing type hints
+      • Function 'scraper' missing type hints
+      • ... and 3 more
+
+📄 action9_process_productive.py
+   Quality Score: 68.7/100
+   Type Hints: 93.7%
+   Functions: 79
+   ⚠️  Violations:
+      • Function '__post_init__' missing type hints
+      • Function '__post_init__' missing type hints
+      • Function '_initialize_ms_graph' missing type hints
+      • ... and 2 more
+
+📄 genealogical_task_templates.py
+   Quality Score: 88.2/100
+   Type Hints: 100.0%
+   Functions: 40
+   ⚠️  Violations:
+      • Function 'genealogical_task_templates_module_tests' is too long (485 lines)
+      • Function 'genealogical_task_templates_module_tests' is too complex (complexity: 19)
+
+📄 credential_manager.py
+   Quality Score: 88.2/100
+   Type Hints: 100.0%
+   Functions: 40
+   ⚠️  Violations:
+      • Function 'credential_manager_module_tests' is too long (615 lines)
+      • Function 'credential_manager_module_tests' is too complex (complexity: 17)
+
+📄 config.py
+   Quality Score: 88.3/100
+   Type Hints: 100.0%
+   Functions: 6
+   ⚠️  Violations:
+      • Function 'config_module_tests' is too complex (complexity: 11)
+
+📄 main.py
+   Quality Score: 89.1/100
+   Type Hints: 100.0%
+   Functions: 79
+   ⚠️  Violations:
+      • Function 'main_module_tests' is too long (540 lines)
+      • Function 'main_module_tests' is too complex (complexity: 13)
+
+📄 action10.py
+   Quality Score: 89.2/100
+   Type Hints: 100.0%
+   Functions: 89
+   ⚠️  Violations:
+      • Function 'action10_module_tests' is too long (885 lines)
+      • Function 'action10_module_tests' is too complex (complexity: 49)
+
+📄 action8_messaging.py
+   Quality Score: 89.5/100
+   Type Hints: 100.0%
+   Functions: 135
+   ⚠️  Violations:
+      • Function 'action8_messaging_tests' is too long (537 lines)
+      • Function 'action8_messaging_tests' is too complex (complexity: 26)
+
+📄 logging_utils.py
+   Quality Score: 93.2/100
+   Type Hints: 100.0%
+   Functions: 22
+   ⚠️  Violations:
+      • Function 'logging_utils_module_tests' is too complex (complexity: 14)
+
+📄 run_all_tests.py
+   Quality Score: 93.3/100
+   Type Hints: 98.3%
+   Functions: 58
+   ⚠️  Violations:
+      • Function '_monitor_loop' missing type hints
+
+📄 security_manager.py
+   Quality Score: 94.0/100
+   Type Hints: 100.0%
+   Functions: 29
+   ⚠️  Violations:
+      • Function 'security_manager_module_tests' is too long (485 lines)
+
+📄 config_schema.py
+   Quality Score: 94.0/100
+   Type Hints: 100.0%
+   Functions: 41
+   ⚠️  Violations:
+      • Function '_test_rate_limiting_configuration' is too complex (complexity: 11)
+
+📄 adaptive_rate_limiter.py
+   Quality Score: 94.1/100
+   Type Hints: 100.0%
+   Functions: 45
+   ⚠️  Violations:
+      • Function 'test_regression_prevention_rate_limiter_caching' is too complex (complexity: 11)
+
+📄 api_utils.py
+   Quality Score: 94.2/100
+   Type Hints: 99.2%
+   Functions: 129
+   ⚠️  Violations:
+      • Function 'record_request' missing type hints
+
+📄 credentials.py
+   Quality Score: 94.3/100
+   Type Hints: 100.0%
+   Functions: 54
+   ⚠️  Violations:
+      • Function 'credentials_module_tests' is too complex (complexity: 13)
+
+📄 config_manager.py
+   Quality Score: 94.3/100
+   Type Hints: 100.0%
+   Functions: 55
+   ⚠️  Violations:
+      • Function 'config_manager_module_tests' is too complex (complexity: 11)
+
+📄 cache.py
+   Quality Score: 94.4/100
+   Type Hints: 100.0%
+   Functions: 63
+   ⚠️  Violations:
+      • Function 'cache_module_tests' is too complex (complexity: 15)
+
+📄 action11.py
+   Quality Score: 94.6/100
+   Type Hints: 100.0%
+   Functions: 111
+   ⚠️  Violations:
+      • Function 'action11_module_tests' is too complex (complexity: 15)
+
+📄 action6_gather.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 140
+
+📄 action7_inbox.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 77
+
+📄 ai_interface.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 53
+
+📄 ai_prompt_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 18
+
+📄 api_search_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 57
+
+📄 cache_manager.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 56
+
+📄 chromedriver.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 20
+
+📄 code_quality_checker.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 13
+
+📄 core_imports.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 22
+
+📄 database.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 84
+
+📄 dna_gedcom_crossref.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 32
+
+📄 extraction_quality.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 30
+
+📄 gedcom_ai_integration.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 29
+
+📄 gedcom_cache.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 47
+
+📄 gedcom_intelligence.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 33
+
+📄 gedcom_search_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 47
+
+📄 gedcom_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 118
+
+📄 genealogical_normalization.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 28
+
+📄 health_monitor.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 80
+
+📄 logging_config.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 26
+
+📄 memory_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 5
+
+📄 message_personalization.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 68
+
+📄 ms_graph_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 18
+
+📄 my_selectors.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 11
+
+📄 performance_cache.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 40
+
+📄 performance_dashboard.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 23
+
+📄 performance_monitor.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 53
+
+📄 performance_orchestrator.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 43
+
+📄 performance_validation.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 20
+
+📄 person_search.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 22
+
+📄 prompt_telemetry.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 21
+
+📄 quality_regression_gate.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 5
+
+📄 relationship_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 75
+
+📄 research_prioritization.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 61
+
+📄 selenium_utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 31
+
+📄 standard_imports.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 15
+
+📄 test_framework.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 58
+
+📄 test_utilities.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 29
+
+📄 universal_scoring.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 12
+
+📄 utils.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 139
+
+📄 __init__.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 0
+
+📄 __main__.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 0
+
+📄 api_manager.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 21
+
+📄 browser_manager.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 19
+
+📄 cancellation.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 4
+
+📄 database_manager.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 35
+
+📄 dependency_injection.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 65
+
+📄 enhanced_error_recovery.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 21
+
+📄 error_handling.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 91
+
+📄 progress_indicators.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 17
+
+📄 session_validator.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 23
+
+📄 __init__.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 8
+
+📄 __main__.py
+   Quality Score: 100.0/100
+   Type Hints: 100.0%
+   Functions: 0
+
+[94m⚙️ Test 1: Quality Metrics[0m
+Test: Test QualityMetrics properties and scoring
+Method: Verify type hint coverage and quality score calculations
+Expected: Quality metrics calculation works correctly
+Outcome: Test executed successfully with all assertions passing
+Duration: 0.000s
+Conclusion: [92m✅ PASSED[0m
+
+[94m⚙️ Test 2: Checker Initialization[0m
+Test: Test CodeQualityChecker initialization
+Method: Verify checker creates proper data structures
+Expected: Code quality checker initializes correctly
+Outcome: Test executed successfully with all assertions passing
+Duration: 0.000s
+Conclusion: [92m✅ PASSED[0m
+
+
+[96m============================================================[0m
+[1m[96m🔍 Test Summary: Code Quality Checker[0m
+[96m============================================================[0m
+[92m⏰ Duration: 0.000s[0m
+[92m✅ Status: ALL TESTS PASSED[0m
+[92m✅ Passed: 2[0m
+[91m❌ Failed: 0[0m
+[96m============================================================[0m
+
