@@ -1985,6 +1985,72 @@ def _do_batch(
 # ------------------------------------------------------------------------------
 
 
+def _extract_raw_profile_ids(
+    details_part: Dict[str, Any],
+    match: Dict[str, Any]
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract and normalize raw profile IDs from API data."""
+    raw_tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
+    raw_admin_profile_id = details_part.get("admin_profile_id") or match.get(
+        "administrator_profile_id_hint"
+    )
+    raw_admin_username = details_part.get("admin_username") or match.get(
+        "administrator_username_hint"
+    )
+
+    tester_profile_id_upper = (
+        raw_tester_profile_id.upper() if raw_tester_profile_id else None
+    )
+    admin_profile_id_upper = (
+        raw_admin_profile_id.upper() if raw_admin_profile_id else None
+    )
+    formatted_admin_username = (
+        format_name(raw_admin_username) if raw_admin_username else None
+    )
+
+    return tester_profile_id_upper, admin_profile_id_upper, formatted_admin_username
+
+
+def _resolve_profile_assignment(
+    tester_profile_id_upper: Optional[str],
+    admin_profile_id_upper: Optional[str],
+    formatted_admin_username: Optional[str],
+    formatted_match_username: str
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Resolve which profile IDs to save based on tester/admin relationship."""
+    person_profile_id_to_save: Optional[str] = None
+    person_admin_id_to_save: Optional[str] = None
+    person_admin_username_to_save: Optional[str] = None
+
+    # Both tester and admin IDs present
+    if tester_profile_id_upper and admin_profile_id_upper:
+        if tester_profile_id_upper == admin_profile_id_upper:
+            # Same ID - check if usernames match
+            if (
+                formatted_match_username
+                and formatted_admin_username
+                and formatted_match_username.lower() == formatted_admin_username.lower()
+            ):
+                person_profile_id_to_save = tester_profile_id_upper
+            else:
+                person_admin_id_to_save = admin_profile_id_upper
+                person_admin_username_to_save = formatted_admin_username
+        else:
+            # Different IDs - save both
+            person_profile_id_to_save = tester_profile_id_upper
+            person_admin_id_to_save = admin_profile_id_upper
+            person_admin_username_to_save = formatted_admin_username
+    # Only tester ID present
+    elif tester_profile_id_upper:
+        person_profile_id_to_save = tester_profile_id_upper
+    # Only admin ID present
+    elif admin_profile_id_upper:
+        person_admin_id_to_save = admin_profile_id_upper
+        person_admin_username_to_save = formatted_admin_username
+
+    return person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save
+
+
 def _determine_profile_ids(
     details_part: Dict[str, Any],
     match: Dict[str, Any],
@@ -1996,47 +2062,20 @@ def _determine_profile_ids(
     Returns:
         Tuple of (person_profile_id, person_admin_id, person_admin_username, message_target_id)
     """
-    raw_tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
-    raw_admin_profile_id = details_part.get("admin_profile_id") or match.get(
-        "administrator_profile_id_hint"
-    )
-    raw_admin_username = details_part.get("admin_username") or match.get(
-        "administrator_username_hint"
-    )
-    formatted_admin_username = (
-        format_name(raw_admin_username) if raw_admin_username else None
-    )
-    tester_profile_id_upper = (
-        raw_tester_profile_id.upper() if raw_tester_profile_id else None
-    )
-    admin_profile_id_upper = (
-        raw_admin_profile_id.upper() if raw_admin_profile_id else None
+    # Extract raw profile IDs
+    tester_profile_id_upper, admin_profile_id_upper, formatted_admin_username = (
+        _extract_raw_profile_ids(details_part, match)
     )
 
-    person_profile_id_to_save: Optional[str] = None
-    person_admin_id_to_save: Optional[str] = None
-    person_admin_username_to_save: Optional[str] = None
-
-    if tester_profile_id_upper and admin_profile_id_upper:
-        if tester_profile_id_upper == admin_profile_id_upper:
-            if (
-                formatted_match_username
-                and formatted_admin_username
-                and formatted_match_username.lower() == formatted_admin_username.lower()
-            ):
-                person_profile_id_to_save = tester_profile_id_upper
-            else:
-                person_admin_id_to_save = admin_profile_id_upper
-                person_admin_username_to_save = formatted_admin_username
-        else:
-            person_profile_id_to_save = tester_profile_id_upper
-            person_admin_id_to_save = admin_profile_id_upper
-            person_admin_username_to_save = formatted_admin_username
-    elif tester_profile_id_upper:
-        person_profile_id_to_save = tester_profile_id_upper
-    elif admin_profile_id_upper:
-        person_admin_id_to_save = admin_profile_id_upper
-        person_admin_username_to_save = formatted_admin_username
+    # Resolve profile assignment
+    person_profile_id_to_save, person_admin_id_to_save, person_admin_username_to_save = (
+        _resolve_profile_assignment(
+            tester_profile_id_upper,
+            admin_profile_id_upper,
+            formatted_admin_username,
+            formatted_match_username
+        )
+    )
 
     message_target_id = person_profile_id_to_save or person_admin_id_to_save
 
