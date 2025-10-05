@@ -2738,6 +2738,38 @@ def _validate_session_for_matches(
     return driver, my_uuid
 
 
+def _try_get_csrf_from_driver_cookies(
+    driver: Any,
+    cookie_names: tuple[str, ...]
+) -> Optional[str]:
+    """
+    Fallback method to get CSRF token using get_driver_cookies.
+
+    Returns:
+        CSRF token if found, None otherwise
+    """
+    logger.debug(
+        "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
+    )
+    all_cookies = get_driver_cookies(driver)
+    if not all_cookies:
+        logger.warning(
+            "Fallback get_driver_cookies also failed to retrieve cookies."
+        )
+        return None
+
+    for cookie_name in cookie_names:
+        for cookie in all_cookies:
+            if cookie.get("name") == cookie_name and cookie.get("value"):
+                token = unquote(cookie["value"]).split("|")[0]
+                logger.debug(
+                    f"Read CSRF token via fallback from '{cookie_name}'."
+                )
+                return token
+
+    return None
+
+
 def _get_csrf_token_for_matches(driver: Any) -> Optional[str]:
     """
     Retrieve CSRF token from browser cookies for match list API.
@@ -2776,25 +2808,9 @@ def _get_csrf_token_for_matches(driver: Any) -> Optional[str]:
 
         # Fallback to get_driver_cookies if direct access failed
         if not specific_csrf_token:
-            logger.debug(
-                "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
+            specific_csrf_token = _try_get_csrf_from_driver_cookies(
+                driver, csrf_token_cookie_names
             )
-            all_cookies = get_driver_cookies(driver)
-            if all_cookies:
-                for cookie_name in csrf_token_cookie_names:
-                    for cookie in all_cookies:
-                        if cookie.get("name") == cookie_name and cookie.get("value"):
-                            specific_csrf_token = unquote(cookie["value"]).split("|")[0]
-                            logger.debug(
-                                f"Read CSRF token via fallback from '{cookie_name}'."
-                            )
-                            break
-                    if specific_csrf_token:
-                        break
-            else:
-                logger.warning(
-                    "Fallback get_driver_cookies also failed to retrieve cookies."
-                )
 
         if not specific_csrf_token:
             logger.error(
