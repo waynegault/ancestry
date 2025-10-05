@@ -52,6 +52,80 @@ class SessionValidator:
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
         logger.debug("SessionValidator initialized")
 
+    def _perform_all_checks(
+        self,
+        browser_manager,
+        api_manager,
+        session_manager,
+        action_name: Optional[str],
+        skip_csrf: bool,
+        attempt: int,
+    ) -> tuple[bool, str]:
+        """Perform all readiness checks. Returns (success, error_message)."""
+        # Check login status and attempt relogin if needed
+        login_success, login_error = self._check_login_and_attempt_relogin(
+            browser_manager, session_manager, attempt
+        )
+        if not login_success:
+            return False, login_error
+
+        # Check and handle current URL
+        if not self._check_and_handle_url(browser_manager):
+            logger.error("URL check/handling failed.")
+            return False, "URL check/handling failed"
+
+        logger.debug("URL check/handling OK.")
+
+        # Check essential cookies
+        cookies_success, cookies_error = self._check_essential_cookies(
+            browser_manager, action_name
+        )
+        if not cookies_success:
+            return False, cookies_error
+
+        # Sync cookies to requests session
+        sync_success, sync_error = self._sync_cookies_to_requests(
+            browser_manager, api_manager
+        )
+        if not sync_success:
+            return False, sync_error
+
+        # Check CSRF token (skip if not needed)
+        if not skip_csrf:
+            csrf_success, csrf_error = self._check_csrf_token(api_manager)
+            if not csrf_success:
+                return False, csrf_error
+        else:
+            logger.debug("Skipping CSRF token check as requested")
+
+        return True, ""
+
+    def _handle_check_exception(
+        self, exception: Exception, attempt: int, browser_manager
+    ) -> tuple[bool, str]:
+        """Handle exceptions during checks. Returns (should_abort, error_message)."""
+        if isinstance(exception, WebDriverException):
+            logger.error(
+                f"WebDriverException during readiness check attempt {attempt}: {exception}",
+                exc_info=False,
+            )
+            error_msg = f"WebDriverException: {exception}"
+
+            if not browser_manager.is_session_valid():
+                logger.error(
+                    "Session invalid during readiness check. Aborting checks."
+                )
+                return True, error_msg  # Abort
+
+            return False, error_msg  # Don't abort, retry
+
+        # Other exceptions
+        logger.error(
+            f"Unexpected exception during readiness check attempt {attempt}: {exception}",
+            exc_info=True,
+        )
+        return False, f"Exception: {exception}"  # Don't abort, retry
+
     def perform_readiness_checks(
         self,
         browser_manager,
@@ -84,75 +158,30 @@ class SessionValidator:
             logger.debug(f"Readiness check attempt {attempt} of {max_attempts}")
 
             try:
-                # Check login status and attempt relogin if needed
-                login_success, login_error = self._check_login_and_attempt_relogin(
-                    browser_manager, session_manager, attempt
+                # Perform all checks
+                success, error = self._perform_all_checks(
+                    browser_manager, api_manager, session_manager,
+                    action_name, skip_csrf, attempt
                 )
-                if not login_success:
-                    last_check_error = login_error
-                    continue
 
-                # Check and handle current URL
-                if not self._check_and_handle_url(browser_manager):
-                    logger.error("URL check/handling failed.")
-                    last_check_error = "URL check/handling failed"
-                    continue
+                if success:
+                    logger.debug(f"Readiness checks PASSED on attempt {attempt}.")
+                    return True
 
-                logger.debug("URL check/handling OK.")
-
-                # Check essential cookies
-                cookies_success, cookies_error = self._check_essential_cookies(
-                    browser_manager, action_name
-                )
-                if not cookies_success:
-                    last_check_error = cookies_error
-                    continue
-
-                # Sync cookies to requests session
-                sync_success, sync_error = self._sync_cookies_to_requests(
-                    browser_manager, api_manager
-                )
-                if not sync_success:
-                    last_check_error = sync_error
-                    continue
-
-                # Check CSRF token (skip if not needed)
-                if not skip_csrf:
-                    csrf_success, csrf_error = self._check_csrf_token(api_manager)
-                    if not csrf_success:
-                        last_check_error = csrf_error
-                        continue
-                else:
-                    logger.debug("Skipping CSRF token check as requested")
-
-                # All checks passed
-                logger.debug(f"Readiness checks PASSED on attempt {attempt}.")
-                return True
-
-            except WebDriverException as wd_exc:
-                logger.error(
-                    f"WebDriverException during readiness check attempt {attempt}: {wd_exc}",
-                    exc_info=False,
-                )
-                last_check_error = f"WebDriverException: {wd_exc}"
-
-                if not browser_manager.is_session_valid():
-                    logger.error(
-                        "Session invalid during readiness check. Aborting checks."
-                    )
-                    return False
+                last_check_error = error
 
             except Exception as exc:
-                logger.error(
-                    f"Unexpected exception during readiness check attempt {attempt}: {exc}",
-                    exc_info=True,
+                should_abort, error_msg = self._handle_check_exception(
+                    exc, attempt, browser_manager
                 )
-                last_check_error = f"Exception: {exc}"
+                last_check_error = error_msg
+
+                if should_abort:
+                    return False
 
             # Wait before next attempt (except on last attempt)
             if attempt < max_attempts:
                 import time
-
                 time.sleep(5)  # Increased from 2 to 5 seconds for better stability
 
         logger.error(
