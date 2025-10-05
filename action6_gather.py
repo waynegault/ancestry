@@ -2272,6 +2272,78 @@ def _check_dna_match_needs_update(
         return True
 
 
+def _build_tree_links(
+    their_cfpid: str,
+    session_manager: SessionManager,
+    config_schema_arg: "ConfigSchema",
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Build facts link and view-in-tree link for a person in the family tree.
+
+    Returns:
+        Tuple of (facts_link, view_in_tree_link)
+    """
+    if not their_cfpid or not session_manager.my_tree_id:
+        return None, None
+
+    base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid}"
+    facts_link = urljoin(config_schema_arg.api.base_url, f"{base_person_path}/facts")  # type: ignore
+
+    view_params = {
+        "cfpid": their_cfpid,
+        "showMatches": "true",
+        "sid": session_manager.my_uuid,
+    }
+    base_view_url = urljoin(
+        config_schema_arg.api.base_url,  # type: ignore
+        f"/family-tree/tree/{session_manager.my_tree_id}/family",
+    )
+    view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
+
+    return facts_link, view_in_tree_link
+
+
+def _check_family_tree_needs_update(
+    existing_family_tree: FamilyTree,
+    prefetched_tree_data: Dict[str, Any],
+    their_cfpid_final: Optional[str],
+    facts_link: Optional[str],
+    view_in_tree_link: Optional[str],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> bool:
+    """
+    Check if family tree record needs to be updated by comparing fields.
+
+    Returns:
+        True if update is needed, False otherwise
+    """
+    fields_to_check = [
+        ("cfpid", their_cfpid_final),
+        (
+            "person_name_in_tree",
+            prefetched_tree_data.get("their_firstname", "Unknown"),
+        ),
+        (
+            "actual_relationship",
+            prefetched_tree_data.get("actual_relationship"),
+        ),
+        ("relationship_path", prefetched_tree_data.get("relationship_path")),
+        ("facts_link", facts_link),
+        ("view_in_tree_link", view_in_tree_link),
+    ]
+
+    for field, new_val in fields_to_check:
+        old_val = getattr(existing_family_tree, field, None)
+        if new_val != old_val:  # Handles None comparison correctly
+            logger_instance.debug(
+                f"  Tree change {log_ref_short}: Field '{field}'"
+            )
+            return True
+
+    return False
+
+
 def _compare_person_field(
     key: str,
     new_value: Any,
@@ -2551,53 +2623,33 @@ def _prepare_family_tree_operation_data(
           for this family tree record.
     """
     tree_operation: Literal["create", "update", "none"] = "none"
-    view_in_tree_link, facts_link = None, None
     their_cfpid_final = None
+    facts_link, view_in_tree_link = None, None
 
-    if prefetched_tree_data:  # Ensure prefetched_tree_data is not None
+    # Extract CFPID and build links if tree data is available
+    if prefetched_tree_data:
         their_cfpid_final = prefetched_tree_data.get("their_cfpid")
-        if their_cfpid_final and session_manager.my_tree_id:
-            base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}"
-            facts_link = urljoin(config_schema_arg.api.base_url, f"{base_person_path}/facts")  # type: ignore
-            view_params = {
-                "cfpid": their_cfpid_final,
-                "showMatches": "true",
-                "sid": session_manager.my_uuid,
-            }
-            base_view_url = urljoin(
-                config_schema_arg.api.base_url,  # type: ignore
-                f"/family-tree/tree/{session_manager.my_tree_id}/family",
+        if their_cfpid_final:
+            facts_link, view_in_tree_link = _build_tree_links(
+                their_cfpid_final, session_manager, config_schema_arg
             )
-            view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
 
     # Determine tree operation based on match status and existing data
     if match_in_my_tree and existing_family_tree is None:
         tree_operation = "create"
     elif match_in_my_tree and existing_family_tree is not None:
         if prefetched_tree_data:  # Only check if we have new data
-            fields_to_check = [
-                ("cfpid", their_cfpid_final),
-                (
-                    "person_name_in_tree",
-                    prefetched_tree_data.get("their_firstname", "Unknown"),
-                ),
-                (
-                    "actual_relationship",
-                    prefetched_tree_data.get("actual_relationship"),
-                ),
-                ("relationship_path", prefetched_tree_data.get("relationship_path")),
-                ("facts_link", facts_link),
-                ("view_in_tree_link", view_in_tree_link),
-            ]
-            for field, new_val in fields_to_check:
-                old_val = getattr(existing_family_tree, field, None)
-                if new_val != old_val:  # Handles None comparison correctly
-                    tree_operation = "update"
-                    logger_instance.debug(
-                        f"  Tree change {log_ref_short}: Field '{field}'"
-                    )
-                    break
-        # else: no prefetched_tree_data, cannot determine update, tree_operation remains "none"
+            needs_update = _check_family_tree_needs_update(
+                existing_family_tree,
+                prefetched_tree_data,
+                their_cfpid_final,
+                facts_link,
+                view_in_tree_link,
+                log_ref_short,
+                logger_instance,
+            )
+            if needs_update:
+                tree_operation = "update"
     elif not match_in_my_tree and existing_family_tree is not None:
         logger_instance.warning(
             f"{log_ref_short}: Data mismatch - API says not 'in_my_tree', but FamilyTree record exists (ID: {existing_family_tree.id}). Skipping."
