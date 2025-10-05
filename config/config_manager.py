@@ -586,24 +586,22 @@ class ConfigManager:
             logger.error(f"Failed to load config file {self.config_file}: {e}")
             return {}
 
-    def _load_environment_variables(self) -> dict[str, Any]:
-        """Load configuration from environment variables."""
-        config = {}  # Load main configuration
+    def _load_main_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load main configuration from environment variables."""
         env_value = os.getenv("ENVIRONMENT")
         if env_value:
             config["environment"] = env_value
 
         debug_mode_value = os.getenv("DEBUG_MODE")
         if debug_mode_value:
-            config["debug_mode"] = debug_mode_value.lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            config["debug_mode"] = debug_mode_value.lower() in ("true", "1", "yes")
 
         app_name_value = os.getenv("APP_NAME")
         if app_name_value:
-            config["app_name"] = app_name_value  # Load reference person configuration
+            config["app_name"] = app_name_value
+
+    def _load_reference_person_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load reference person configuration from environment variables."""
         reference_person_id_value = os.getenv("REFERENCE_PERSON_ID")
         if reference_person_id_value:
             config["reference_person_id"] = reference_person_id_value
@@ -612,7 +610,8 @@ class ConfigManager:
         if reference_person_name_value:
             config["reference_person_name"] = reference_person_name_value
 
-        # Load user configuration
+    def _load_user_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load user configuration from environment variables."""
         user_name_value = os.getenv("USER_NAME")
         if user_name_value:
             config["user_name"] = user_name_value
@@ -621,17 +620,20 @@ class ConfigManager:
         if user_location_value:
             config["user_location"] = user_location_value
 
-        # Load testing configuration
+    def _load_testing_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load testing configuration from environment variables."""
         testing_profile_id_value = os.getenv("TESTING_PROFILE_ID")
         if testing_profile_id_value:
             config["testing_profile_id"] = testing_profile_id_value
 
-        # Load application mode
+    def _load_app_mode_from_env(self, config: dict[str, Any]) -> None:
+        """Load application mode from environment variables."""
         app_mode_value = os.getenv("APP_MODE")
         if app_mode_value:
             config["app_mode"] = app_mode_value
 
-        # Load AI configuration
+    def _load_ai_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load AI configuration from environment variables."""
         ai_provider_value = os.getenv("AI_PROVIDER")
         if ai_provider_value:
             config["ai_provider"] = ai_provider_value
@@ -657,7 +659,8 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid AI_CONTEXT_WINDOW_MESSAGES: {ai_ctx_window}")
 
-        # Proactive refresh cooldown (seconds)
+    def _load_timeout_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load timeout configuration from environment variables."""
         refresh_cooldown = os.getenv("PROACTIVE_REFRESH_COOLDOWN")
         if refresh_cooldown:
             try:
@@ -665,7 +668,6 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid PROACTIVE_REFRESH_COOLDOWN: {refresh_cooldown}")
 
-        # Proactive refresh interval (seconds)
         refresh_interval = os.getenv("PROACTIVE_REFRESH_INTERVAL")
         if refresh_interval:
             try:
@@ -673,7 +675,6 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid PROACTIVE_REFRESH_INTERVAL: {refresh_interval}")
 
-        # Action 6 coord timeout (seconds)
         a6_coord_timeout = os.getenv("ACTION6_COORD_TIMEOUT")
         if a6_coord_timeout:
             try:
@@ -681,7 +682,8 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid ACTION6_COORD_TIMEOUT: {a6_coord_timeout}")
 
-        # Load API configuration
+    def _load_api_keys_from_env(self, config: dict[str, Any]) -> None:
+        """Load API keys configuration from environment variables."""
         api_config = {}
 
         # DeepSeek API configuration
@@ -709,7 +711,8 @@ class ConfigManager:
         if api_config:
             config["api"] = api_config
 
-        # Load database configuration
+    def _load_database_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load database configuration from environment variables."""
         db_config = {}
         database_file_value = os.getenv("DATABASE_FILE")
         if database_file_value:
@@ -739,8 +742,12 @@ class ConfigManager:
         db_journal_mode_value = os.getenv("DB_JOURNAL_MODE")
         if db_journal_mode_value:
             db_config["journal_mode"] = db_journal_mode_value
+
         if db_config:
-            config["database"] = db_config  # Load Selenium configuration
+            config["database"] = db_config
+
+    def _load_selenium_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load Selenium configuration from environment variables."""
         selenium_config = {}
         chrome_driver_path_value = os.getenv("CHROME_DRIVER_PATH")
         if chrome_driver_path_value:
@@ -760,11 +767,7 @@ class ConfigManager:
 
         headless_mode_value = os.getenv("HEADLESS_MODE")
         if headless_mode_value:
-            selenium_config["headless_mode"] = headless_mode_value.lower() in (
-                "true",
-                "1",
-                "yes",
-            )
+            selenium_config["headless_mode"] = headless_mode_value.lower() in ("true", "1", "yes")
 
         debug_port_value = os.getenv("DEBUG_PORT")
         if debug_port_value:
@@ -772,10 +775,12 @@ class ConfigManager:
                 selenium_config["debug_port"] = int(debug_port_value)
             except ValueError:
                 logger.warning(f"Invalid DEBUG_PORT value: {debug_port_value}")
+
         if selenium_config:
             config["selenium"] = selenium_config
 
-        # Merge additional API configuration with existing api_config
+    def _load_additional_api_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load additional API configuration from environment variables."""
         if "api" not in config:
             config["api"] = {}
 
@@ -792,9 +797,7 @@ class ConfigManager:
             try:
                 config["api"]["request_timeout"] = int(request_timeout_value)
             except ValueError:
-                logger.warning(
-                    f"Invalid REQUEST_TIMEOUT value: {request_timeout_value}"
-                )
+                logger.warning(f"Invalid REQUEST_TIMEOUT value: {request_timeout_value}")
 
         tree_name_value = os.getenv("TREE_NAME")
         if tree_name_value:
@@ -804,7 +807,6 @@ class ConfigManager:
         if tree_id_value:
             config["api"]["tree_id"] = tree_id_value
 
-        # Load processing limit configuration (Action 6 lessons)
         max_pages_value = os.getenv("MAX_PAGES")
         if max_pages_value:
             try:
@@ -812,7 +814,22 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_PAGES value: {max_pages_value}")
 
-        # Load batch size configuration
+        max_concurrency_value = os.getenv("MAX_CONCURRENCY")
+        if max_concurrency_value:
+            try:
+                config["api"]["max_concurrency"] = int(max_concurrency_value)
+            except ValueError:
+                logger.warning(f"Invalid MAX_CONCURRENCY value: {max_concurrency_value}")
+
+        thread_pool_workers_value = os.getenv("THREAD_POOL_WORKERS")
+        if thread_pool_workers_value:
+            try:
+                config["api"]["thread_pool_workers"] = int(thread_pool_workers_value)
+            except ValueError:
+                logger.warning(f"Invalid THREAD_POOL_WORKERS value: {thread_pool_workers_value}")
+
+    def _load_processing_limits_from_env(self, config: dict[str, Any]) -> None:
+        """Load processing limit configuration from environment variables."""
         batch_size_value = os.getenv("BATCH_SIZE")
         if batch_size_value:
             try:
@@ -820,7 +837,6 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid BATCH_SIZE value: {batch_size_value}")
 
-        # Load matches per page configuration
         matches_per_page_value = os.getenv("MATCHES_PER_PAGE")
         if matches_per_page_value:
             try:
@@ -828,29 +844,6 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid MATCHES_PER_PAGE value: {matches_per_page_value}")
 
-        # Load optional concurrency override for Action 6
-        max_concurrency_value = os.getenv("MAX_CONCURRENCY")
-        if max_concurrency_value:
-            try:
-                # Mirror under API scope since APIConfig owns concurrency affecting API calls
-                if "api" not in config:
-                    config["api"] = {}
-                config["api"]["max_concurrency"] = int(max_concurrency_value)
-            except ValueError:
-                logger.warning(f"Invalid MAX_CONCURRENCY value: {max_concurrency_value}")
-
-        # Load thread pool workers override for Action 6
-        thread_pool_workers_value = os.getenv("THREAD_POOL_WORKERS")
-        if thread_pool_workers_value:
-            try:
-                # Store under API scope for consistency with max_concurrency
-                if "api" not in config:
-                    config["api"] = {}
-                config["api"]["thread_pool_workers"] = int(thread_pool_workers_value)
-            except ValueError:
-                logger.warning(f"Invalid THREAD_POOL_WORKERS value: {thread_pool_workers_value}")
-
-        # Load max productive to process configuration
         max_productive_value = os.getenv("MAX_PRODUCTIVE_TO_PROCESS")
         if max_productive_value:
             try:
@@ -858,7 +851,6 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_PRODUCTIVE_TO_PROCESS value: {max_productive_value}")
 
-        # Load max inbox configuration
         max_inbox_value = os.getenv("MAX_INBOX")
         if max_inbox_value:
             try:
@@ -866,7 +858,8 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_INBOX value: {max_inbox_value}")
 
-        # Load logging configuration
+    def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load logging configuration from environment variables."""
         logging_config = {}
         log_level_value = os.getenv("LOG_LEVEL")
         if log_level_value:
@@ -882,8 +875,12 @@ class ConfigManager:
                 logging_config["max_log_size_mb"] = int(max_log_size_value)
             except ValueError:
                 logger.warning(f"Invalid MAX_LOG_SIZE_MB value: {max_log_size_value}")
+
         if logging_config:
-            config["logging"] = logging_config  # Load cache configuration
+            config["logging"] = logging_config
+
+    def _load_cache_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load cache configuration from environment variables."""
         cache_config = {}
         cache_dir_value = os.getenv("CACHE_DIR")
         if cache_dir_value:
@@ -894,43 +891,75 @@ class ConfigManager:
             try:
                 cache_config["memory_cache_size"] = int(memory_cache_size_value)
             except ValueError:
-                logger.warning(
-                    f"Invalid MEMORY_CACHE_SIZE value: {memory_cache_size_value}"
-                )
+                logger.warning(f"Invalid MEMORY_CACHE_SIZE value: {memory_cache_size_value}")
 
         disk_cache_size_value = os.getenv("DISK_CACHE_SIZE_MB")
         if disk_cache_size_value:
             try:
                 cache_config["disk_cache_size_mb"] = int(disk_cache_size_value)
             except ValueError:
-                logger.warning(
-                    f"Invalid DISK_CACHE_SIZE_MB value: {disk_cache_size_value}"
-                )
+                logger.warning(f"Invalid DISK_CACHE_SIZE_MB value: {disk_cache_size_value}")
+
         if cache_config:
-            config["cache"] = cache_config  # Load security configuration
+            config["cache"] = cache_config
+
+    def _load_security_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load security configuration from environment variables."""
         security_config = {}
         encryption_enabled_value = os.getenv("ENCRYPTION_ENABLED")
         if encryption_enabled_value:
-            security_config["encryption_enabled"] = (
-                encryption_enabled_value.lower() in ("true", "1", "yes")
-            )
+            security_config["encryption_enabled"] = encryption_enabled_value.lower() in ("true", "1", "yes")
 
         use_system_keyring_value = os.getenv("USE_SYSTEM_KEYRING")
         if use_system_keyring_value:
-            security_config["use_system_keyring"] = (
-                use_system_keyring_value.lower() in ("true", "1", "yes")
-            )
+            security_config["use_system_keyring"] = use_system_keyring_value.lower() in ("true", "1", "yes")
 
         session_timeout_value = os.getenv("SESSION_TIMEOUT_MINUTES")
         if session_timeout_value:
             try:
                 security_config["session_timeout_minutes"] = int(session_timeout_value)
             except ValueError:
-                logger.warning(
-                    f"Invalid SESSION_TIMEOUT_MINUTES value: {session_timeout_value}"
-                )
+                logger.warning(f"Invalid SESSION_TIMEOUT_MINUTES value: {session_timeout_value}")
+
         if security_config:
             config["security"] = security_config
+
+    def _load_environment_variables(self) -> dict[str, Any]:
+        """Load configuration from environment variables."""
+        config = {}
+
+        # Load all configuration sections
+        self._load_main_config_from_env(config)
+        self._load_reference_person_config_from_env(config)
+        self._load_user_config_from_env(config)
+        self._load_testing_config_from_env(config)
+        self._load_app_mode_from_env(config)
+        self._load_ai_config_from_env(config)
+        self._load_timeout_config_from_env(config)
+
+        # Load API configuration
+        self._load_api_keys_from_env(config)
+
+        # Load database configuration
+        self._load_database_config_from_env(config)
+
+        # Load Selenium configuration
+        self._load_selenium_config_from_env(config)
+
+        # Load additional API configuration
+        self._load_additional_api_config_from_env(config)
+
+        # Load processing limits
+        self._load_processing_limits_from_env(config)
+
+        # Load logging configuration
+        self._load_logging_config_from_env(config)
+
+        # Load cache configuration
+        self._load_cache_config_from_env(config)
+
+        # Load security configuration
+        self._load_security_config_from_env(config)
 
         return config
 
