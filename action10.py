@@ -2084,6 +2084,216 @@ def test_real_search_performance_and_accuracy() -> None:
     return True
 
 
+def test_family_relationship_analysis() -> None:
+    """Test family relationship analysis with test person from .env"""
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    # Get test person data from .env configuration
+    test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
+    test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
+    test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
+    test_gender = os.getenv("TEST_PERSON_GENDER", "m")
+    test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+
+    # Use cached GEDCOM data (already loaded in Test 3)
+    gedcom_data = get_cached_gedcom()
+    if not gedcom_data:
+        print("❌ No GEDCOM data available (should have been loaded in Test 3)")
+        return False
+
+    print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
+
+    # Search for test person using consistent criteria (Test 5 - Family Analysis)
+    person_search = {
+        "first_name": test_first_name.lower(),
+        "surname": test_last_name.lower(),
+        "birth_year": test_birth_year,
+        "gender": test_gender,  # Add gender for consistency
+        "birth_place": test_birth_place  # Add birth place for consistent scoring
+    }
+
+    print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
+
+    person_results = filter_and_score_individuals(
+        gedcom_data,
+        person_search,
+        person_search,
+        dict(config_schema.common_scoring_weights),
+        {"year_match_range": 5}
+    )
+
+    if not person_results:
+        print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
+        return False
+
+    person = person_results[0]
+    person_individual = gedcom_data.find_individual_by_id(person.get('id'))
+
+    if not person_individual:
+        print(f"❌ Could not retrieve {test_first_name}'s individual record")
+        return False
+
+    print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
+    print(f"   Birth year: {test_birth_year} (as expected)")
+
+    # Test relationship analysis functionality
+    try:
+        print("\n🔍 Analyzing family relationships...")
+
+        # Display actual family details instead of just validating them
+        print(f"\n👨‍👩‍👧‍👦 Family Details for {person.get('full_name_disp')}:")
+
+        # Show the family information directly
+        display_relatives(gedcom_data, person_individual)
+
+        print("✅ Family relationship analysis completed successfully")
+        print("Conclusion: Test person family structure successfully analyzed and displayed")
+        return True
+
+    except Exception as e:
+        print(f"❌ Family relationship analysis failed: {e}")
+        return False
+
+
+def test_relationship_path_calculation() -> None:
+    """Test relationship path calculation from test person to tree owner"""
+    import os
+    from dotenv import load_dotenv
+    from relationship_utils import (  # type: ignore[import-not-found]
+        convert_gedcom_path_to_unified_format,
+        fast_bidirectional_bfs,
+        format_relationship_path_unified,
+    )
+
+    load_dotenv()
+
+    # Get test person data from .env configuration
+    test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
+    test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
+    test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
+    test_gender = os.getenv("TEST_PERSON_GENDER", "m")
+    test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+
+    # Get tree owner data from configuration
+    reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
+
+    # Use cached GEDCOM data (already loaded in Test 3)
+    gedcom_data = get_cached_gedcom()
+    if not gedcom_data:
+        print("❌ No GEDCOM data available (should have been loaded in Test 3)")
+        return False
+
+    print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
+
+    # Search for test person using consistent criteria
+    person_search = {
+        "first_name": test_first_name.lower(),
+        "surname": test_last_name.lower(),
+        "birth_year": test_birth_year,
+        "gender": test_gender,  # Add gender for consistency
+        "birth_place": test_birth_place  # Add birth place for consistency
+    }
+
+    print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
+
+    person_results = filter_and_score_individuals(
+        gedcom_data,
+        person_search,
+        person_search,
+        dict(config_schema.common_scoring_weights),
+        {"year_match_range": 5}
+    )
+
+    if not person_results:
+        print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
+        return False
+
+    person = person_results[0]
+    person_id = person.get('id')
+
+    print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
+    print(f"   Person ID: {person_id}")
+
+    # Get reference person (tree owner) from config
+    reference_person_id = config_schema.reference_person_id if config_schema else None
+
+    if not reference_person_id:
+        print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
+        return True
+
+    print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
+
+    # Test relationship path calculation
+    try:
+        print("\n🔍 Calculating relationship path...")
+
+        # Get the individual record for relationship calculation
+        person_individual = gedcom_data.find_individual_by_id(person_id)
+        if not person_individual:
+            print("❌ Could not retrieve individual record for relationship calculation")
+            return False
+
+        # Find the relationship path using the consolidated function
+        path_ids = fast_bidirectional_bfs(
+            person_id,  # type: ignore[arg-type]
+            reference_person_id,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            max_depth=25,
+            node_limit=150000,
+            timeout_sec=45,
+        )
+
+        # Convert the GEDCOM path to the unified format
+        unified_path = convert_gedcom_path_to_unified_format(
+            path_ids,
+            gedcom_data.reader,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            gedcom_data.indi_index,
+        )
+
+        if unified_path:
+            # Format the path using the unified formatter
+            relationship_explanation = format_relationship_path_unified(
+                unified_path, person.get('full_name_disp'), reference_person_name, None  # type: ignore[arg-type]
+            )
+
+            # Print the formatted relationship path without logger prefix
+            print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
+
+            print("✅ Relationship path calculation completed successfully")
+            print("Conclusion: Relationship path between test person and tree owner successfully calculated")
+            return True
+        print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
+        return False
+
+    except Exception as e:
+        print(f"❌ Relationship path calculation failed: {e}")
+        return False
+
+
+def test_main_patch() -> None:
+    """Test main function with mocked input"""
+    import builtins
+
+    # Patch input and logger to simulate user flow
+    orig_input = builtins.input
+    builtins.input = lambda _: ""
+
+    try:
+        with mock_logger_context(globals()):
+            result = main()
+
+            assert result is not False
+    finally:
+        builtins.input = orig_input
+    return True
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -2106,373 +2316,6 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     debug_wrapper = _debug_wrapper
-
-    def test_family_relationship_analysis() -> None:
-        """Test family relationship analysis with test person from .env"""
-
-        from dotenv import load_dotenv
-        load_dotenv()
-
-        # Get test person data from .env configuration
-        test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-        test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-        test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-        test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-
-        # Use cached GEDCOM data (already loaded in Test 3)
-        gedcom_data = get_cached_gedcom()
-        if not gedcom_data:
-            print("❌ No GEDCOM data available (should have been loaded in Test 3)")
-            return False
-
-        print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
-
-        # Search for test person using consistent criteria (Test 5 - Family Analysis)
-        person_search = {
-            "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(),
-            "birth_year": test_birth_year,
-            "gender": test_gender,  # Add gender for consistency
-            "birth_place": test_birth_place  # Add birth place for consistent scoring
-        }
-
-        print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
-
-        person_results = filter_and_score_individuals(
-            gedcom_data,
-            person_search,
-            person_search,
-            dict(config_schema.common_scoring_weights),
-            {"year_match_range": 5}
-        )
-
-        if not person_results:
-            print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
-            return False
-
-        person = person_results[0]
-        person_individual = gedcom_data.find_individual_by_id(person.get('id'))
-
-        if not person_individual:
-            print(f"❌ Could not retrieve {test_first_name}'s individual record")
-            return False
-
-        print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
-        print(f"   Birth year: {test_birth_year} (as expected)")
-
-        # Test relationship analysis functionality
-        try:
-            print("\n🔍 Analyzing family relationships...")
-
-            # Display actual family details instead of just validating them
-            print(f"\n�‍👩‍👧‍👦 Family Details for {person.get('full_name_disp')}:")
-
-            # Show the family information directly
-            display_relatives(gedcom_data, person_individual)
-
-            print("✅ Family relationship analysis completed successfully")
-            print("Conclusion: Test person family structure successfully analyzed and displayed")
-            return True
-
-        except Exception as e:
-            print(f"❌ Family relationship analysis failed: {e}")
-            return False
-
-    def test_relationship_path_calculation() -> None:
-        """Test relationship path calculation from test person to tree owner"""
-
-        from dotenv import load_dotenv
-        load_dotenv()
-
-        # Get test person data from .env configuration
-        test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-        test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-        test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-        test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-        test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-
-        # Get tree owner data from configuration
-        reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
-
-        # Use cached GEDCOM data (already loaded in Test 3)
-        gedcom_data = get_cached_gedcom()
-        if not gedcom_data:
-            print("❌ No GEDCOM data available (should have been loaded in Test 3)")
-            return False
-
-        print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
-
-        # Search for test person using consistent criteria
-        person_search = {
-            "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(),
-            "birth_year": test_birth_year,
-            "gender": test_gender,  # Add gender for consistency
-            "birth_place": test_birth_place  # Add birth place for consistency
-        }
-
-        print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
-
-        person_results = filter_and_score_individuals(
-            gedcom_data,
-            person_search,
-            person_search,
-            dict(config_schema.common_scoring_weights),
-            {"year_match_range": 5}
-        )
-
-        if not person_results:
-            print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
-            return False
-
-        person = person_results[0]
-        person_id = person.get('id')
-
-        print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
-        print(f"   Person ID: {person_id}")
-
-        # Get reference person (tree owner) from config
-        reference_person_id = config_schema.reference_person_id if config_schema else None
-
-        if not reference_person_id:
-            print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
-            return True
-
-        print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
-
-        # Test relationship path calculation
-        try:
-            print("\n🔍 Calculating relationship path...")
-
-            # Calculate and display only the relationship path (without family details)
-
-            # Get the individual record for relationship calculation
-            person_individual = gedcom_data.find_individual_by_id(person_id)
-            if not person_individual:
-                print("❌ Could not retrieve individual record for relationship calculation")
-                return False
-
-            # Import the relationship calculation functions
-            from relationship_utils import (  # type: ignore[import-not-found]
-                convert_gedcom_path_to_unified_format,
-                fast_bidirectional_bfs,
-                format_relationship_path_unified,
-            )
-
-            # Find the relationship path using the consolidated function
-            path_ids = fast_bidirectional_bfs(
-                person_id,  # type: ignore[arg-type]
-                reference_person_id,
-                gedcom_data.id_to_parents,
-                gedcom_data.id_to_children,
-                max_depth=25,
-                node_limit=150000,
-                timeout_sec=45,
-            )
-
-            # Convert the GEDCOM path to the unified format
-            unified_path = convert_gedcom_path_to_unified_format(
-                path_ids,
-                gedcom_data.reader,
-                gedcom_data.id_to_parents,
-                gedcom_data.id_to_children,
-                gedcom_data.indi_index,
-            )
-
-            if unified_path:
-                # Format the path using the unified formatter
-                relationship_explanation = format_relationship_path_unified(
-                    unified_path, person.get('full_name_disp'), reference_person_name, None  # type: ignore[arg-type]
-                )
-
-                # Print the formatted relationship path without logger prefix
-                print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
-
-                print("✅ Relationship path calculation completed successfully")
-                print("Conclusion: Relationship path between test person and tree owner successfully calculated")
-                return True
-            print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
-            return False
-
-        except Exception as e:
-            print(f"❌ Relationship path calculation failed: {e}")
-            return False
-
-    def test_main_patch() -> None:
-        # Patch input and logger to simulate user flow
-        orig_input = builtins.input
-        builtins.input = lambda _: ""
-
-        try:
-            with mock_logger_context(globals()):
-                result = main()
-
-                assert result is not False
-        finally:
-            builtins.input = orig_input
-        return True
-
-    def test_fraser_gault_comprehensive() -> None:
-        """Test 14: Comprehensive Fraser Gault family analysis with real GEDCOM data"""
-
-        from dotenv import load_dotenv
-
-        try:
-            # Load expected data from .env
-            load_dotenv()
-
-            print("\n" + "=" * 80)
-            print("🧪 TEST 14: FRASER GAULT COMPREHENSIVE FAMILY ANALYSIS")
-            print("=" * 80)
-
-            # Get expected data from .env
-            expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-            expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-            expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-            expected_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-            expected_spouse = os.getenv("TEST_PERSON_SPOUSE_NAME", "Nellie Mason Smith")
-            expected_children = os.getenv(
-                "TEST_PERSON_CHILDREN_NAMES", "David Gault,Caroline Gault,Barry Gault"
-            ).split(",")
-            expected_father = os.getenv("TEST_PERSON_FATHER_NAME", "James Gault")
-            expected_mother = os.getenv(
-                "TEST_PERSON_MOTHER_NAME", "'Dolly' Clara Alexina Fraser"
-            )
-            expected_siblings = os.getenv("TEST_PERSON_SIBLINGS_NAMES", "").split(",")
-            expected_relationship = os.getenv(
-                "TEST_PERSON_RELATIONSHIP_TO_OWNER", "Uncle"
-            )
-
-            print("📋 Expected Data from .env:")
-            print(f"   Name: {expected_first_name} {expected_last_name}")
-            print(f"   Birth: {expected_birth_year} in {expected_birth_place}")
-            print(f"   Father: {expected_father}")
-            print(f"   Mother: {expected_mother}")
-            print(f"   Spouse: {expected_spouse}")
-            print(f"   Children: {', '.join(expected_children)}")
-            print(f"   Relationship: {expected_relationship}")
-            print(
-                f"   Siblings count: {len([s for s in expected_siblings if s.strip()])}"
-            )
-
-            # Load real GEDCOM data
-            gedcom_path = (
-                config_schema.database.gedcom_file_path
-                if config_schema and config_schema.database.gedcom_file_path
-                else None
-            )
-            if not gedcom_path:
-                print("⚠️ GEDCOM_FILE_PATH not configured, skipping test")
-                return True
-
-            gedcom_data = load_gedcom_data(Path(gedcom_path))
-            if not gedcom_data:
-                print("❌ Failed to load GEDCOM data")
-                return False
-
-            print(
-                f"\n✅ GEDCOM data loaded: {len(gedcom_data.processed_data_cache)} individuals"
-            )
-
-            # Search for Fraser Gault using real search
-            search_criteria = {
-                "first_name": expected_first_name.lower(),
-                "surname": expected_last_name.lower(),
-                "gender": "m",
-                "birth_year": expected_birth_year,
-                "birth_place": expected_birth_place,
-                "death_year": None,
-                "death_place": None,
-            }
-
-            scoring_criteria = search_criteria.copy()
-            scoring_weights = (
-                dict(config_schema.common_scoring_weights) if config_schema else {}
-            )
-            date_flex = {"year_match_range": 5}
-
-            # Find Fraser Gault
-            results = filter_and_score_individuals(
-                gedcom_data,
-                search_criteria,
-                scoring_criteria,
-                scoring_weights,
-                date_flex,
-            )
-
-            if not results:
-                print("❌ No Fraser Gault found in GEDCOM data")
-                return False
-
-            # Get top match
-            top_match = results[0]
-            fraser_id = top_match.get("id")
-
-            print("\n🎯 FOUND FRASER GAULT:")
-            print(f"   ID: {fraser_id}")
-            print(f"   Score: {top_match.get('total_score', 0)}")
-            print(f"   Name: {top_match.get('full_name_disp', 'N/A')}")
-
-            # Get detailed scoring breakdown using the original result data
-            if top_match:
-                # Use the original candidate data from the search results
-                candidate_data = top_match.get("raw_data", {})
-                if not candidate_data:
-                    # Fallback to getting individual data
-                    fraser_individual = gedcom_data.find_individual_by_id(fraser_id)
-                    if fraser_individual and hasattr(fraser_individual, "__dict__"):
-                        candidate_data = fraser_individual.__dict__
-                    else:
-                        candidate_data = top_match  # Use the top match data itself
-
-                # Recalculate score for detailed breakdown
-                score, field_scores, reasons = calculate_match_score_cached(
-                    search_criteria,
-                    candidate_data,
-                    scoring_weights,
-                    date_flex,
-                    cache={},
-                )
-
-                # Display detailed scoring breakdown
-                breakdown = detailed_scoring_breakdown(
-                    "Fraser Gault Comprehensive Test",
-                    search_criteria,
-                    candidate_data,
-                    scoring_weights,
-                    date_flex,
-                    score,
-                    field_scores,
-                    reasons,
-                )
-                print(breakdown)
-
-            # Get detailed family information using analyze_top_match
-            print("\n🔍 ANALYZING FAMILY DETAILS...")
-            analyze_top_match(
-                gedcom_data,
-                top_match,
-                (
-                    config_schema.reference_person_id
-                    if config_schema
-                    else "I102281560836"
-                ),
-                "Wayne Gordon Gault",
-            )
-
-            print("\n" + "=" * 80)
-            print("✅ Fraser Gault comprehensive test completed")
-            print("=" * 80)
-
-            return True
-
-        except Exception as e:
-            print(f"❌ Test failed with error: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
 
     # Register meaningful tests only
     _register_input_validation_tests(suite, debug_wrapper, test_sanitize_input, test_get_validated_year_input_patch)
