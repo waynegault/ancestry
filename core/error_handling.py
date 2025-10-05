@@ -1021,7 +1021,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
                 result = [None]
                 exception = [None]
 
-                def target():
+                def target() -> None:
                     try:
                         result[0] = func(*args, **kwargs)
                     except Exception as e:
@@ -1043,7 +1043,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
             # Unix-like systems can use signal
             import signal
 
-            def timeout_handler(signum, frame):
+            def timeout_handler(signum: int, frame: Any) -> None:
                 raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
 
             # Set the signal handler and a timeout alarm
@@ -1267,7 +1267,7 @@ def test_error_recovery() -> None:
         assert result == "success", "safe_execute should return actual result on success"
 
         # Test with different error types
-        def network_error_func():
+        def network_error_func() -> None:
             raise ConnectionError("Network error")
 
         result = safe_execute(network_error_func, default_return="network_recovered")
