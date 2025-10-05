@@ -79,7 +79,7 @@ class ConfigValidator:
             value = getattr(config, rule.field_name)
             if value is None and rule.required:
                 return f"Required field {rule.field_name} is missing"
-            elif value is not None and not rule.validator(value):
+            if value is not None and not rule.validator(value):
                 return rule.error_message
         elif rule.required:
             return f"Required field {rule.field_name} is missing"
@@ -93,7 +93,7 @@ class ConfigValidator:
             value = getattr(config, rule.field_name)
             if value is None and rule.required:
                 return f"Environment-required field {rule.field_name} is missing for {environment.value}"
-            elif value is not None and not rule.validator(value):
+            if value is not None and not rule.validator(value):
                 return f"{rule.error_message} (environment: {environment.value})"
         elif rule.required:
             return f"Environment-required field {rule.field_name} is missing for {environment.value}"
