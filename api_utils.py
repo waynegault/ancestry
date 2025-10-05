@@ -1871,6 +1871,28 @@ def call_getladder_api(
 # End of call_getladder_api
 
 
+def _process_discovery_relationship_response(relationship_data: Any, api_description: str) -> Optional[dict[str, Any]]:
+    """Process discovery relationship API response."""
+    if not isinstance(relationship_data, dict):
+        logger.warning(f"{api_description} call returned unexpected type: {type(relationship_data)}")
+        return None
+
+    # Validate response with Pydantic if available
+    if PYDANTIC_AVAILABLE:
+        try:
+            DiscoveryRelationshipResponse(**relationship_data)
+            logger.debug("Discovery Relationship API response validation successful")
+        except Exception as validation_err:
+            logger.warning(f"Discovery Relationship API response validation warning: {validation_err}")
+
+    if "path" in relationship_data:
+        logger.info(f"{api_description} call successful, received valid JSON response with path data.")
+        return relationship_data
+
+    logger.warning(f"{api_description} call returned JSON without 'path' key: {list(relationship_data.keys())}")
+    return relationship_data  # Still return the data for potential debugging
+
+
 def call_discovery_relationship_api(
     session_manager: "SessionManager",
     selected_person_global_id: str,
@@ -1895,37 +1917,17 @@ def call_discovery_relationship_api(
         Dictionary containing relationship path data or None if the call fails
     """
     if not callable(_api_req):
-        logger.critical(
-            "Discovery Relationship API call failed: _api_req function unavailable (Import Failed?)."
-        )
+        logger.critical("Discovery Relationship API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
-    # End of if
     if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error(
-            "Discovery Relationship API call failed: Invalid SessionManager passed."
-        )
+        logger.error("Discovery Relationship API call failed: Invalid SessionManager passed.")
         return None
-    # End of if
     if not all([owner_profile_id, selected_person_global_id]):
-        logger.error(
-            "Discovery Relationship API call failed: owner_profile_id and selected_person_global_id are required."
-        )
+        logger.error("Discovery Relationship API call failed: owner_profile_id and selected_person_global_id are required.")
         return None
-    # End of if
 
     api_description = "Discovery Relationship API"
-
-    # Apply rate limiting if available
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
-
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
+    _apply_rate_limiting(api_description)
 
     formatted_path = API_PATH_DISCOVERY_RELATIONSHIP
     discovery_api_url = (
@@ -1958,49 +1960,7 @@ def call_discovery_relationship_api(
             use_csrf_token=False,
         )
 
-        if isinstance(relationship_data, dict) and "path" in relationship_data:
-            # Validate response with Pydantic if available
-            if PYDANTIC_AVAILABLE:
-                try:
-                    DiscoveryRelationshipResponse(
-                        **relationship_data
-                    )
-                    logger.debug(
-                        "Discovery Relationship API response validation successful"
-                    )
-                except Exception as validation_err:
-                    logger.warning(
-                        f"Discovery Relationship API response validation warning: {validation_err}"
-                    )
-
-            logger.info(
-                f"{api_description} call successful, received valid JSON response with path data."
-            )
-            return relationship_data
-        if isinstance(relationship_data, dict):
-            # Validate response with Pydantic if available
-            if PYDANTIC_AVAILABLE:
-                try:
-                    DiscoveryRelationshipResponse(
-                        **relationship_data
-                    )
-                    logger.debug(
-                        "Discovery Relationship API response validation successful"
-                    )
-                except Exception as validation_err:
-                    logger.warning(
-                        f"Discovery Relationship API response validation warning: {validation_err}"
-                    )
-
-            logger.warning(
-                f"{api_description} call returned JSON without 'path' key: {list(relationship_data.keys())}"
-            )
-            return relationship_data  # Still return the data for potential debugging
-        logger.warning(
-            f"{api_description} call returned unexpected type: {type(relationship_data)}"
-        )
-        return None
-        # End of if/elif/else
+        return _process_discovery_relationship_response(relationship_data, api_description)
     except requests.exceptions.Timeout:
         logger.error(f"{api_description} call timed out after {api_timeout_val}s.")
         return None
