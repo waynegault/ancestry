@@ -479,7 +479,7 @@ class DatabaseManager:
     def _attach_pragma_listener(self) -> None:
         """Attach event listener for SQLite PRAGMA settings."""
         @event.listens_for(self.engine, "connect")
-        def enable_sqlite_settings(dbapi_connection: Any, connection_record: Any) -> None:
+        def enable_sqlite_settings(dbapi_connection: Any, _connection_record: Any) -> None:
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute("PRAGMA journal_mode=WAL;")
