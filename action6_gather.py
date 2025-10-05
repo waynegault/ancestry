@@ -2296,6 +2296,72 @@ def _check_dna_match_needs_update(
         return True
 
 
+def _process_birth_year(
+    prefetched_tree_data: Optional[Dict[str, Any]],
+) -> Optional[int]:
+    """Extract and validate birth year from tree data."""
+    if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
+        try:
+            return int(prefetched_tree_data["their_birth_year"])
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _process_last_logged_in(
+    profile_part: Dict[str, Any],
+) -> Optional[datetime]:
+    """Extract and normalize last_logged_in datetime."""
+    last_logged_in_val: Optional[datetime] = profile_part.get("last_logged_in_dt")
+    if isinstance(last_logged_in_val, datetime):
+        if last_logged_in_val.tzinfo is None:
+            return last_logged_in_val.replace(tzinfo=timezone.utc)
+        else:
+            return last_logged_in_val.astimezone(timezone.utc)
+    return None
+
+
+def _compare_and_update_person_fields(
+    incoming_person_data: Dict[str, Any],
+    existing_person: Person,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Tuple[Dict[str, Any], bool]:
+    """
+    Compare incoming person data with existing person and build update dictionary.
+
+    Returns:
+        Tuple of (person_data_for_update, person_fields_changed)
+    """
+    person_data_for_update: Dict[str, Any] = {
+        "_operation": "update",
+        "_existing_person_id": existing_person.id,
+        "uuid": incoming_person_data["uuid"],
+    }
+    person_fields_changed = False
+
+    for key, new_value in incoming_person_data.items():
+        if key == "uuid":
+            continue
+
+        current_value = getattr(existing_person, key, None)
+        value_changed, value_to_set = _compare_person_field(
+            key, new_value, current_value, log_ref_short, logger_instance
+        )
+
+        if not value_changed and value_to_set is None:
+            continue
+
+        if value_changed:
+            person_data_for_update[key] = value_to_set
+            person_fields_changed = True
+            logger_instance.debug(
+                f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
+            )
+
+    return person_data_for_update, person_fields_changed
+
+
 def _build_tree_links(
     their_cfpid: str,
     session_manager: SessionManager,
@@ -2558,19 +2624,8 @@ def _prepare_person_operation_data(
         else None
     )
 
-    birth_year_val: Optional[int] = None
-    if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
-        try:
-            birth_year_val = int(prefetched_tree_data["their_birth_year"])
-        except (ValueError, TypeError):
-            pass
-
-    last_logged_in_val: Optional[datetime] = profile_part.get("last_logged_in_dt")
-    if isinstance(last_logged_in_val, datetime):
-        if last_logged_in_val.tzinfo is None:
-            last_logged_in_val = last_logged_in_val.replace(tzinfo=timezone.utc)
-        else:
-            last_logged_in_val = last_logged_in_val.astimezone(timezone.utc)
+    birth_year_val = _process_birth_year(prefetched_tree_data)
+    last_logged_in_val = _process_last_logged_in(profile_part)
 
     incoming_person_data = {
         "uuid": match_uuid.upper(),
@@ -2591,37 +2646,12 @@ def _prepare_person_operation_data(
     if existing_person is None:
         person_op_dict = incoming_person_data.copy()
         person_op_dict["_operation"] = "create"
-        return (
-            person_op_dict,
-            False,
-        )  # False for person_fields_changed as it's a new person
+        return person_op_dict, False
 
-    # Person exists - prepare update dictionary
-    person_data_for_update: Dict[str, Any] = {
-        "_operation": "update",
-        "_existing_person_id": existing_person.id,
-        "uuid": match_uuid.upper(),  # Keep UUID for identification
-    }
-    person_fields_changed = False
-    for key, new_value in incoming_person_data.items():
-        if key == "uuid":  # UUID should not be changed for existing records
-            continue
-
-        current_value = getattr(existing_person, key, None)
-        value_changed, value_to_set = _compare_person_field(
-            key, new_value, current_value, log_ref_short, logger_instance
-        )
-
-        # Handle skip case (when value_to_set is None and not changed)
-        if not value_changed and value_to_set is None:
-            continue
-
-        if value_changed:
-            person_data_for_update[key] = value_to_set
-            person_fields_changed = True
-            logger_instance.debug(
-                f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
-            )
+    # Person exists - compare and update
+    person_data_for_update, person_fields_changed = _compare_and_update_person_fields(
+        incoming_person_data, existing_person, log_ref_short, logger_instance
+    )
 
     return (
         person_data_for_update if person_fields_changed else None
@@ -3175,6 +3205,68 @@ def _process_relationship_prob_response(
     return f"{relationship_str} [{top_prob_display:.1f}%]"
 
 
+def _extract_relationship_description(
+    raw_desc_full: str,
+    is_last_item: bool,
+) -> str:
+    """
+    Extract and format relationship description text.
+
+    Args:
+        raw_desc_full: Raw description text from HTML
+        is_last_item: Whether this is the last item (the "You are the..." line)
+
+    Returns:
+        Formatted description text
+    """
+    if is_last_item and raw_desc_full.lower().startswith("you are the "):
+        return format_name(raw_desc_full[len("You are the ") :].strip())
+
+    # Normal relationship "of" someone else
+    match_rel = re.match(
+        r"^(.*?)\s+of\s+(.*)$",
+        raw_desc_full,
+        re.IGNORECASE,
+    )
+    if match_rel:
+        return f"{match_rel.group(1).strip().capitalize()} of {format_name(match_rel.group(2).strip())}"
+
+    # Fallback if "of" not found (e.g., "Wife")
+    return format_name(raw_desc_full)
+
+
+def _parse_ladder_path_item(
+    item: Any,
+    item_index: int,
+    num_items: int,
+) -> Optional[str]:
+    """
+    Parse a single ladder path item to extract name and description.
+
+    Returns:
+        Formatted path item string or None if no name found
+    """
+    name_text, desc_text = "", ""
+    name_container = item.find("a") or item.find("b")
+
+    if name_container:
+        name_text = format_name(
+            name_container.get_text(strip=True).replace('"', "'")
+        )
+
+    if item_index > 0:  # Description is not for the first person (the target)
+        desc_element = item.find("i")
+        if desc_element:
+            raw_desc_full = desc_element.get_text(strip=True).replace('"', "'")
+            is_last_item = item_index == num_items - 1
+            desc_text = _extract_relationship_description(raw_desc_full, is_last_item)
+
+    if name_text:
+        return f"{name_text} ({desc_text})" if desc_text else name_text
+
+    return None
+
+
 def _parse_ladder_html(
     html_content: str,
     cfpid: str,
@@ -3209,35 +3301,9 @@ def _parse_ladder_html(
     num_items = len(path_items)
 
     for i, item in enumerate(path_items):
-        name_text, desc_text = "", ""
-        name_container = item.find("a") or item.find("b")
-
-        if name_container:
-            name_text = format_name(
-                name_container.get_text(strip=True).replace('"', "'")
-            )
-
-        if i > 0:  # Description is not for the first person (the target)
-            desc_element = item.find("i")
-            if desc_element:
-                raw_desc_full = desc_element.get_text(strip=True).replace('"', "'")
-
-                # Check if it's the "You are the..." line
-                if i == num_items - 1 and raw_desc_full.lower().startswith("you are the "):
-                    desc_text = format_name(raw_desc_full[len("You are the ") :].strip())
-                else:  # Normal relationship "of" someone else
-                    match_rel = re.match(
-                        r"^(.*?)\s+of\s+(.*)$",
-                        raw_desc_full,
-                        re.IGNORECASE,
-                    )
-                    if match_rel:
-                        desc_text = f"{match_rel.group(1).strip().capitalize()} of {format_name(match_rel.group(2).strip())}"
-                    else:  # Fallback if "of" not found (e.g., "Wife")
-                        desc_text = format_name(raw_desc_full)
-
-        if name_text:  # Only add if name was found
-            path_list.append(f"{name_text} ({desc_text})" if desc_text else name_text)
+        path_item = _parse_ladder_path_item(item, i, num_items)
+        if path_item:
+            path_list.append(path_item)
 
     if path_list:
         ladder_data["relationship_path"] = "\n↓\n".join(path_list)
@@ -3473,7 +3539,57 @@ def _fetch_profile_details_api(
     return result
 
 
-def _fetch_in_tree_status(
+def _try_get_in_tree_from_cache(
+    cache_key: str,
+    current_page: int,
+) -> Optional[Set[str]]:
+    """
+    Try to get in-tree status from cache.
+
+    Returns:
+        Set of in-tree IDs if found in cache, None otherwise
+    """
+    try:
+        if global_cache is not None:
+            cached_in_tree = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            if cached_in_tree is not ENOVAL:
+                if isinstance(cached_in_tree, set):
+                    logger.debug(
+                        f"Loaded {len(cached_in_tree)} in-tree IDs from cache for page {current_page}."
+                    )
+                    return cached_in_tree
+            else:
+                logger.debug(
+                    f"Cache miss for in-tree status (Key: {cache_key}). Fetching from API."
+                )
+    except Exception as cache_read_err:
+        logger.error(
+            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
+            exc_info=True,
+        )
+    return None
+
+
+def _save_in_tree_to_cache(
+    cache_key: str,
+    in_tree_ids: Set[str],
+    current_page: int,
+) -> None:
+    """Save in-tree status to cache."""
+    try:
+        if global_cache is not None:
+            global_cache.set(
+                cache_key,
+                in_tree_ids,
+                expire=config_schema.cache.memory_cache_ttl,
+                retry=True,
+            )
+        logger.debug(f"Cached in-tree status result for page {current_page}.")
+    except Exception as cache_write_err:
+        logger.error(f"Error writing in-tree status to cache: {cache_write_err}")
+
+
+def _fetch_in_tree_from_api(
     driver: Any,
     session_manager: SessionManager,
     my_uuid: str,
@@ -3482,42 +3598,11 @@ def _fetch_in_tree_status(
     current_page: int,
 ) -> Set[str]:
     """
-    Fetch in-tree status for a list of sample IDs, with caching.
+    Fetch in-tree status from API.
 
     Returns:
         Set of sample IDs that are in the user's tree
     """
-    in_tree_ids: Set[str] = set()
-    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
-
-    # Try to get from cache first
-    try:
-        if global_cache is not None:
-            cached_in_tree = global_cache.get(cache_key_tree, default=ENOVAL, retry=True)
-            if cached_in_tree is not ENOVAL:
-                if isinstance(cached_in_tree, set):
-                    in_tree_ids = cached_in_tree
-                logger.debug(
-                    f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
-                )
-                return in_tree_ids
-            else:
-                logger.debug(
-                    f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
-                )
-    except Exception as cache_read_err:
-        logger.error(
-            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
-            exc_info=True,
-        )
-
-    # Fetch from API if cache miss or error
-    if not session_manager.is_sess_valid():
-        logger.error(
-            f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch."
-        )
-        return in_tree_ids
-
     in_tree_url = urljoin(
         config_schema.api.base_url,
         f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
@@ -3561,19 +3646,7 @@ def _fetch_in_tree_status(
     if isinstance(response_in_tree, list):
         in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
         logger.debug(f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}.")
-
-        # Cache the result
-        try:
-            if global_cache is not None:
-                global_cache.set(
-                    cache_key_tree,
-                    in_tree_ids,
-                    expire=config_schema.cache.memory_cache_ttl,
-                    retry=True,
-                )
-            logger.debug(f"Cached in-tree status result for page {current_page}.")
-        except Exception as cache_write_err:
-            logger.error(f"Error writing in-tree status to cache: {cache_write_err}")
+        return in_tree_ids
     else:
         status_code_log = (
             f" Status: {response_in_tree.status_code}"  # type: ignore
@@ -3583,7 +3656,44 @@ def _fetch_in_tree_status(
         logger.warning(
             f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
         )
-        logger.debug(f"In-Tree check response: {response_in_tree}")
+        return set()
+
+
+def _fetch_in_tree_status(
+    driver: Any,
+    session_manager: SessionManager,
+    my_uuid: str,
+    sample_ids_on_page: List[str],
+    specific_csrf_token: str,
+    current_page: int,
+) -> Set[str]:
+    """
+    Fetch in-tree status for a list of sample IDs, with caching.
+
+    Returns:
+        Set of sample IDs that are in the user's tree
+    """
+    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
+
+    # Try to get from cache first
+    cached_result = _try_get_in_tree_from_cache(cache_key_tree, current_page)
+    if cached_result is not None:
+        return cached_result
+
+    # Fetch from API if cache miss or error
+    if not session_manager.is_sess_valid():
+        logger.error(
+            f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch."
+        )
+        return set()
+
+    in_tree_ids = _fetch_in_tree_from_api(
+        driver, session_manager, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
+    )
+
+    # Cache the result if we got data
+    if in_tree_ids:
+        _save_in_tree_to_cache(cache_key_tree, in_tree_ids, current_page)
 
     return in_tree_ids
 
