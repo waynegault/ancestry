@@ -1483,6 +1483,66 @@ def _is_great_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]
 
 
 # ==============================================
+def _prepare_search_data(search_criteria: dict) -> dict[str, Any]:
+    """Extract and normalize search criteria data."""
+    return {
+        "fname": (search_criteria.get("first_name") or "").lower() if isinstance(search_criteria.get("first_name"), str) else "",
+        "sname": (search_criteria.get("surname") or "").lower() if isinstance(search_criteria.get("surname"), str) else "",
+        "pob": (search_criteria.get("birth_place") or "").lower() if isinstance(search_criteria.get("birth_place"), str) else "",
+        "pod": (search_criteria.get("death_place") or "").lower() if isinstance(search_criteria.get("death_place"), str) else "",
+        "b_year": search_criteria.get("birth_year"),
+        "b_date": search_criteria.get("birth_date_obj"),
+        "d_year": search_criteria.get("death_year"),
+        "d_date": search_criteria.get("death_date_obj"),
+        "gender": search_criteria.get("gender"),
+    }
+
+
+def _prepare_candidate_data(candidate_processed_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract and normalize candidate data."""
+    return {
+        "id_debug": candidate_processed_data.get("norm_id", "N/A_in_proc_cache"),
+        "fname": (candidate_processed_data.get("first_name") or "").lower() if isinstance(candidate_processed_data.get("first_name"), str) else "",
+        "sname": (candidate_processed_data.get("surname") or "").lower() if isinstance(candidate_processed_data.get("surname"), str) else "",
+        "bplace": (candidate_processed_data.get("birth_place_disp") or "").lower() if isinstance(candidate_processed_data.get("birth_place_disp"), str) else "",
+        "dplace": (candidate_processed_data.get("death_place_disp") or "").lower() if isinstance(candidate_processed_data.get("death_place_disp"), str) else "",
+        "b_year": candidate_processed_data.get("birth_year"),
+        "b_date": candidate_processed_data.get("birth_date_obj"),
+        "d_year": candidate_processed_data.get("death_year"),
+        "d_date": candidate_processed_data.get("death_date_obj"),
+        "gender": candidate_processed_data.get("gender_norm"),
+    }
+
+
+def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score name matches (first name, surname, and bonus for both)."""
+    first_name_matched = False
+    surname_matched = False
+
+    if t_data["fname"] and c_data["fname"] and t_data["fname"] in c_data["fname"]:
+        points_givn = weights.get("contains_first_name", 0)
+        if points_givn != 0:
+            field_scores["givn"] = int(points_givn)
+            match_reasons.append(f"Contains First Name ({points_givn}pts)")
+            first_name_matched = True
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched contains_first_name. Set field_scores['givn'] = {points_givn}")
+
+    if t_data["sname"] and c_data["sname"] and t_data["sname"] in c_data["sname"]:
+        points_surn = weights.get("contains_surname", 0)
+        if points_surn != 0:
+            field_scores["surn"] = int(points_surn)
+            match_reasons.append(f"Contains Surname ({points_surn}pts)")
+            surname_matched = True
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched contains_surname. Set field_scores['surn'] = {points_surn}")
+
+    if t_data["fname"] and t_data["sname"] and first_name_matched and surname_matched:
+        bonus_points = weights.get("bonus_both_names_contain", 0)
+        if bonus_points != 0:
+            field_scores["bonus"] = int(bonus_points)
+            match_reasons.append(f"Bonus Both Names ({bonus_points}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Applied bonus_both_names_contain. Set field_scores['bonus'] = {bonus_points}")
+
+
 # Scoring Function (V18 - Corrected Syntax)
 # ==============================================
 def calculate_match_score(
@@ -1500,91 +1560,19 @@ def calculate_match_score(
     """
     match_reasons: list[str] = []
     field_scores = {
-        "givn": 0,
-        "surn": 0,
-        "gender": 0,
-        "byear": 0,
-        "bdate": 0,
-        "bplace": 0,
-        "bbonus": 0,  # Birth bonus
-        "dyear": 0,
-        "ddate": 0,
-        "dplace": 0,
-        "dbonus": 0,  # Death bonus
-        "bonus": 0,  # Name bonus
+        "givn": 0, "surn": 0, "gender": 0, "byear": 0, "bdate": 0, "bplace": 0,
+        "bbonus": 0, "dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0, "bonus": 0,
     }
-    weights = (
-        scoring_weights
-        if scoring_weights is not None
-        else config.common_scoring_weights
-    )
-    date_flex = (
-        date_flexibility
-        if date_flexibility is not None
-        else {"year_match_range": config.date_flexibility}
-    )
+    weights = scoring_weights if scoring_weights is not None else config.common_scoring_weights
+    date_flex = date_flexibility if date_flexibility is not None else {"year_match_range": config.date_flexibility}
     year_score_range = date_flex.get("year_match_range", 10)
 
-    # Prepare Target Data
-    t_fname_raw = search_criteria.get("first_name")
-    t_fname = t_fname_raw.lower() if isinstance(t_fname_raw, str) else ""
-    t_sname_raw = search_criteria.get("surname")
-    t_sname = t_sname_raw.lower() if isinstance(t_sname_raw, str) else ""
-    t_pob_raw = search_criteria.get("birth_place")
-    t_pob = t_pob_raw.lower() if isinstance(t_pob_raw, str) else ""
-    t_pod_raw = search_criteria.get("death_place")
-    t_pod = t_pod_raw.lower() if isinstance(t_pod_raw, str) else ""
-    t_b_year = search_criteria.get("birth_year")
-    t_b_date = search_criteria.get("birth_date_obj")
-    t_d_year = search_criteria.get("death_year")
-    t_d_date = search_criteria.get("death_date_obj")
-    t_gender = search_criteria.get("gender")
-
-    # Get Candidate Data from Pre-processed dict
-    c_id_debug = candidate_processed_data.get("norm_id", "N/A_in_proc_cache")
-    c_fname_raw = candidate_processed_data.get("first_name", "")
-    c_fname = c_fname_raw.lower() if isinstance(c_fname_raw, str) else ""
-    c_sname_raw = candidate_processed_data.get("surname", "")
-    c_sname = c_sname_raw.lower() if isinstance(c_sname_raw, str) else ""
-    c_bplace_raw = candidate_processed_data.get("birth_place_disp")
-    c_bplace = c_bplace_raw.lower() if isinstance(c_bplace_raw, str) else ""
-    c_dplace_raw = candidate_processed_data.get("death_place_disp")
-    c_dplace = c_dplace_raw.lower() if isinstance(c_dplace_raw, str) else ""
-    c_b_year = candidate_processed_data.get("birth_year")
-    c_b_date = candidate_processed_data.get("birth_date_obj")
-    c_d_year = candidate_processed_data.get("death_year")
-    c_d_date = candidate_processed_data.get("death_date_obj")
-    c_gender = candidate_processed_data.get("gender_norm")
+    # Prepare data
+    t_data = _prepare_search_data(search_criteria)
+    c_data = _prepare_candidate_data(candidate_processed_data)
 
     # Name Scoring
-    first_name_matched = False
-    surname_matched = False
-    if t_fname and c_fname and t_fname in c_fname:
-        points_givn = weights.get("contains_first_name", 0)
-        if points_givn != 0:
-            field_scores["givn"] = int(points_givn)
-            match_reasons.append(f"Contains First Name ({points_givn}pts)")
-            first_name_matched = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched contains_first_name. Set field_scores['givn'] = {points_givn}"
-            )
-    if t_sname and c_sname and t_sname in c_sname:
-        points_surn = weights.get("contains_surname", 0)
-        if points_surn != 0:
-            field_scores["surn"] = int(points_surn)
-            match_reasons.append(f"Contains Surname ({points_surn}pts)")
-            surname_matched = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched contains_surname. Set field_scores['surn'] = {points_surn}"
-            )
-    if t_fname and t_sname and first_name_matched and surname_matched:
-        bonus_points = weights.get("bonus_both_names_contain", 0)
-        if bonus_points != 0:
-            field_scores["bonus"] = int(bonus_points)
-            match_reasons.append(f"Bonus Both Names ({bonus_points}pts)")
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Applied bonus_both_names_contain. Set field_scores['bonus'] = {bonus_points}"
-            )
+    _score_names(t_data, c_data, weights, field_scores, match_reasons)
 
     # Date Flag Calculation (Restored except clauses)
     exact_birth_date_match = bool(
