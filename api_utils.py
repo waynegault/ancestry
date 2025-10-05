@@ -2066,6 +2066,36 @@ def call_treesui_list_api(
 # End of call_treesui_list_api
 
 
+def _validate_message_response(
+    api_response: dict[str, Any],
+    is_initial: bool,
+    existing_conv_id: Optional[str],
+    my_profile_id_upper: str,
+    log_prefix: str
+) -> tuple[bool, Optional[str], str]:
+    """Validate message API response. Returns (post_ok, conversation_id, message_status)."""
+    if is_initial:
+        api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
+        msg_details = api_response.get(KEY_MESSAGE, {})
+        api_author = str(msg_details.get(KEY_AUTHOR, "")).upper() if isinstance(msg_details, dict) else None
+
+        if api_conv_id and api_author == my_profile_id_upper:
+            return True, api_conv_id, SEND_ERROR_UNKNOWN
+
+        logger.error(f"{log_prefix}: API initial response format invalid (ConvID: '{api_conv_id}', Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
+        logger.debug(f"API Response: {api_response}")
+        return False, None, SEND_ERROR_VALIDATION_FAILED
+
+    # Follow-up message
+    api_author = str(api_response.get(KEY_AUTHOR, "")).upper()
+    if api_author == my_profile_id_upper:
+        return True, existing_conv_id, SEND_ERROR_UNKNOWN
+
+    logger.error(f"{log_prefix}: API follow-up author validation failed (Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
+    logger.debug(f"API Response: {api_response}")
+    return False, None, SEND_ERROR_VALIDATION_FAILED
+
+
 def _process_send_message_response(
     api_response: Any,
     is_initial: bool,
@@ -2091,32 +2121,12 @@ def _process_send_message_response(
             logger.debug(f"Error response body: {api_response.text[:500]}")
     elif isinstance(api_response, dict):
         try:
-            if is_initial:
-                api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
-                msg_details = api_response.get(KEY_MESSAGE, {})
-                api_author = str(msg_details.get(KEY_AUTHOR, "")).upper() if isinstance(msg_details, dict) else None
-
-                if api_conv_id and api_author == my_profile_id_upper:
-                    post_ok = True
-                    new_conversation_id_from_api = api_conv_id
-                else:
-                    logger.error(f"{log_prefix}: API initial response format invalid (ConvID: '{api_conv_id}', Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
-                    logger.debug(f"API Response: {api_response}")
-                    message_status = SEND_ERROR_VALIDATION_FAILED
-            else:
-                api_author = str(api_response.get(KEY_AUTHOR, "")).upper()
-                if api_author == my_profile_id_upper:
-                    post_ok = True
-                    new_conversation_id_from_api = existing_conv_id
-                else:
-                    logger.error(f"{log_prefix}: API follow-up author validation failed (Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
-                    logger.debug(f"API Response: {api_response}")
-                    message_status = SEND_ERROR_VALIDATION_FAILED
-
+            post_ok, new_conversation_id_from_api, message_status = _validate_message_response(
+                api_response, is_initial, existing_conv_id, my_profile_id_upper, log_prefix
+            )
             if post_ok:
                 message_status = SEND_SUCCESS_DELIVERED
                 logger.info(f"{log_prefix}: Message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')} successful (ConvID: {new_conversation_id_from_api}).")
-
         except Exception as parse_err:
             logger.error(f"{log_prefix}: Error parsing successful API response ({send_api_desc}): {parse_err}", exc_info=True)
             logger.debug(f"API Response received: {api_response}")
