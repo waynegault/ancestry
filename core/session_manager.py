@@ -2526,7 +2526,7 @@ class SessionManager:
 
     # API delegation methods
     @property
-    def my_profile_id(self):
+    def my_profile_id(self) -> Optional[str]:
         """Get the user's profile ID."""
         # Try to get from API manager first, then retrieve if needed
         profile_id = self.api_manager.my_profile_id
@@ -2632,12 +2632,12 @@ class SessionManager:
 
     # Enhanced capabilities properties
     @property
-    def scraper(self):
+    def scraper(self) -> Optional[Any]:
         """Get the CloudScraper instance for anti-bot protection."""
         return getattr(self, '_scraper', None)
 
     @scraper.setter
-    def scraper(self, value):
+    def scraper(self, value: Any) -> None:
         """Set the CloudScraper instance."""
         self._scraper = value
 

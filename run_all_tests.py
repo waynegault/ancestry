@@ -126,7 +126,7 @@ class PerformanceMonitor:
             "peak_cpu_percent": max(cpu_values)
         }
 
-    def _monitor_loop(self):
+    def _monitor_loop(self) -> None:
         """Background monitoring loop."""
         while self.monitoring:
             try:

@@ -398,7 +398,7 @@ class ApiRateLimiter:
             return False
         return not len(self.hour_calls) >= self.max_calls_per_hour
 
-    def record_request(self):
+    def record_request(self) -> None:
         """Record that a request was made."""
         current_time = datetime.now()
         self.minute_calls.append(current_time)
