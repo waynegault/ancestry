@@ -1216,25 +1216,24 @@ def _test_rate_limiting_configuration() -> None:
 
     api_config = APIConfig()
 
+    # Define validation rules as data structure to reduce complexity
+    validation_rules = [
+        ("requests_per_second", lambda v: v > 0.4, "too high"),
+        ("thread_pool_workers", lambda v: v > 4, "too high"),
+        ("max_concurrency", lambda v: v > 4, "too high"),
+        ("burst_limit", lambda v: v > 4, "too high"),
+        ("max_retries", lambda v: v < 5, "too low"),
+        ("retry_backoff_factor", lambda v: v < 6.0, "too low"),
+        ("request_timeout", lambda v: v < 60, "too low"),
+        ("max_delay", lambda v: v < 300, "too low"),
+    ]
+
     # Validate conservative settings for API rate limiting compliance
     issues = []
-
-    if api_config.requests_per_second > 0.4:
-        issues.append(f"requests_per_second too high: {api_config.requests_per_second}")
-    if api_config.thread_pool_workers > 4:
-        issues.append(f"thread_pool_workers too high: {api_config.thread_pool_workers}")
-    if api_config.max_concurrency > 4:
-        issues.append(f"max_concurrency too high: {api_config.max_concurrency}")
-    if api_config.burst_limit > 4:
-        issues.append(f"burst_limit too high: {api_config.burst_limit}")
-    if api_config.max_retries < 5:
-        issues.append(f"max_retries too low: {api_config.max_retries}")
-    if api_config.retry_backoff_factor < 6.0:
-        issues.append(f"retry_backoff_factor too low: {api_config.retry_backoff_factor}")
-    if api_config.request_timeout < 60:
-        issues.append(f"request_timeout too low: {api_config.request_timeout}")
-    if api_config.max_delay < 300:
-        issues.append(f"max_delay too low: {api_config.max_delay}")
+    for field_name, check_func, issue_type in validation_rules:
+        field_value = getattr(api_config, field_name)
+        if check_func(field_value):
+            issues.append(f"{field_name} {issue_type}: {field_value}")
 
     if issues:
         print("   ❌ Configuration issues found:")
