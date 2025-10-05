@@ -658,7 +658,7 @@ class DatabaseState:
     batch_size: int = 10
     commit_threshold: int = 10
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.logs_to_add is None:
             self.logs_to_add = []
         if self.person_updates is None:
@@ -673,7 +673,7 @@ class MessageConfig:
     ack_msg_type_id: Optional[int] = None
     custom_reply_msg_type_id: Optional[int] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.templates is None:
             self.templates = {}
 
@@ -938,7 +938,7 @@ class PersonProcessor:
                 person, task_desc, task_index, len(suggested_tasks), log_prefix
             )
 
-    def _initialize_ms_graph(self):
+    def _initialize_ms_graph(self) -> None:
         """Initialize MS Graph authentication and list ID if needed."""
         if not self.ms_state.token and not self.ms_state.auth_attempted:
             logger.info("Attempting MS Graph authentication (device flow)...")
