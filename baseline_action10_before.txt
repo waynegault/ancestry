@@ -1,0 +1,371 @@
+
+ANCESTRY PROJECT - COMPREHENSIVE TEST SUITE
+============================================================
+
+🧹 LINTER: Applying safe auto-fixes (W291/W292/W293/E401)...
+🧹 LINTER: Enforcing critical blocking rules (E722,F821,F811,F823)...
+🧹 LINTER: Repository diagnostics (non-blocking summary)...
+10	B904   	[ ] raise-without-from-inside-except
+ 7	SIM103 	[*] needless-bool
+ 5	RET503 	[*] implicit-return
+ 5	SIM117 	[ ] multiple-with-statements
+ 5	PTH123 	[ ] builtin-open
+ 5	N815   	[ ] mixed-case-variable-in-class-scope
+ 5	F841   	[*] unused-variable
+ 4	PTH120 	[ ] os-path-dirname
+ 4	E731   	[*] lambda-assignment
+ 4	PLW2901	[ ] redefined-loop-name
+ 3	SIM108 	[*] if-else-block-instead-of-if-exp
+ 3	PTH100 	[ ] os-path-abspath
+ 2	B011   	[*] assert-false
+ 2	SIM114 	[*] if-with-same-arms
+ 2	N812   	[ ] lowercase-imported-as-non-lowercase
+ 2	RUF001 	[ ] ambiguous-unicode-character-string
+ 1	B007   	[ ] unused-loop-control-variable
+ 1	B023   	[ ] function-uses-loop-variable
+ 1	RET507 	[*] superfluous-else-continue
+ 1	N802   	[ ] invalid-function-name
+ 1	N818   	[ ] error-suffix-on-exception-name
+ 1	PLR5501	[*] collapsible-else-if
+ 1	PLW0602	[ ] global-variable-not-assigned
+ 1	RUF021 	[*] parenthesize-chained-operators
+[*] fixable with `ruff check --fix`
+🔍 QUALITY: Running Python best practices checks...
+✅ action10.py: Quality score 89.2/100
+✅ action11.py: Quality score 94.6/100
+✅ utils.py: Quality score 100.0/100
+✅ main.py: Quality score 89.1/100
+✅ code_quality_checker.py: Quality score 100.0/100
+📊 Average quality score: 94.6/100
+📊 Found 62 test modules (62 with enhanced descriptions)
+
+============================================================
+🧪 RUNNING TESTS
+============================================================
+🔄 Running tests sequentially...
+
+🧪 [ 1/62] Testing: action10.py
+   📝 GEDCOM Analysis & Advanced Genealogical Intelligence Engine
+   ✅ PASSED | Duration: 70.12s | 5 tests | Quality: 89.2/100 📊 (2 issues)
+   🔍 Quality Issues:
+      Function Length: 1 issue(s)
+        • action10_module_tests: is too long (885 lines)
+      Complexity: 1 issue(s)
+        • action10_module_tests: is too complex (complexity: 49)
+
+🧪 [ 2/62] Testing: action11.py
+   📝 Action 11: Ancestry API Search and Family Analysis
+   ✅ PASSED | Duration: 1.72s | 3 tests | Quality: 94.6/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • action11_module_tests: is too complex (complexity: 15)
+
+🧪 [ 3/62] Testing: action6_gather.py
+   📝 - Gather DNA Matches from Ancestry
+   ✅ PASSED | Duration: 1.40s | 7 tests | Quality: 100.0/100 ✅
+
+🧪 [ 4/62] Testing: action7_inbox.py
+   📝 Intelligent Inbox Processing & AI-Powered Message Classification
+   ✅ PASSED | Duration: 4.00s | 4 tests | Quality: 100.0/100 ✅
+
+🧪 [ 5/62] Testing: action8_messaging.py
+   📝 Intelligent Messaging Automation & Personalization Engine
+   ✅ PASSED | Duration: 1.93s | 3 tests | Quality: 89.5/100 📊 (2 issues)
+   🔍 Quality Issues:
+      Function Length: 1 issue(s)
+        • action8_messaging_tests: is too long (537 lines)
+      Complexity: 1 issue(s)
+        • action8_messaging_tests: is too complex (complexity: 26)
+
+🧪 [ 6/62] Testing: action9_process_productive.py
+   📝 Action 9: Productive DNA Match Processing
+   ✅ PASSED | Duration: 4.63s | 8 tests | Quality: 68.7/100 ⚠️ (5 issues)
+   🔍 Quality Issues:
+      Type Hints: 5 issue(s)
+        • __post_init__: missing type hints
+        • __post_init__: missing type hints
+
+🧪 [ 7/62] Testing: adaptive_rate_limiter.py
+   📝 Adaptive Rate Limiting & Intelligent API Throttling Engine
+   ✅ PASSED | Duration: 0.29s | 4 tests | Quality: 94.1/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • test_regression_prevention_rate_limiter_caching: is too complex (complexity: 11)
+
+🧪 [ 8/62] Testing: ai_interface.py
+   📝 AI Intelligence & Genealogical Content Analysis Engine
+   ✅ PASSED | Duration: 3.63s | 10 tests | Quality: 100.0/100 ✅
+
+🧪 [ 9/62] Testing: ai_prompt_utils.py
+   📝 AI Prompt Management - Dynamic Prompt Configuration
+   ✅ PASSED | Duration: 0.26s | 6 tests | Quality: 100.0/100 ✅
+
+🧪 [10/62] Testing: api_search_utils.py
+   📝 API Search Utilities - Ancestry API Search and Retrieval
+   ✅ PASSED | Duration: 2.30s | 6 tests | Quality: 100.0/100 ✅
+
+🧪 [11/62] Testing: api_utils.py
+   📝 API Intelligence & Request Orchestration Engine
+   ✅ PASSED | Duration: 1.41s | 18 tests | Quality: 94.2/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Type Hints: 1 issue(s)
+        • record_request: missing type hints
+
+🧪 [12/62] Testing: cache.py
+   📝 High-Performance Disk Caching & Intelligent Data Management Engine
+   ✅ PASSED | Duration: 1.66s | 11 tests | Quality: 94.4/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • cache_module_tests: is too complex (complexity: 15)
+
+🧪 [13/62] Testing: cache_manager.py
+   📝 Centralized Cache Management & Intelligent Coordination Engine
+   ✅ PASSED | Duration: 0.33s | 21 tests | Quality: 100.0/100 ✅
+
+🧪 [14/62] Testing: chromedriver.py
+   📝 Management & Browser Automation Engine
+   ✅ PASSED | Duration: 0.77s | 5 tests | Quality: 100.0/100 ✅
+
+🧪 [15/62] Testing: code_quality_checker.py
+   📝 Code Quality Checker & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 3.16s | 2 tests | Quality: 100.0/100 ✅
+
+🧪 [16/62] Testing: config.py
+   📝 uration Management & Environment Orchestration Engine
+   ✅ PASSED | Duration: 0.30s | 5 tests | Quality: 88.3/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • config_module_tests: is too complex (complexity: 11)
+
+🧪 [17/62] Testing: config\config_manager.py
+   📝 Enhanced Configuration Manager.
+   ✅ PASSED | Duration: 0.45s | 10 tests | Quality: 94.3/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • config_manager_module_tests: is too complex (complexity: 11)
+
+🧪 [18/62] Testing: config\config_schema.py
+   📝 Configuration Schema Definitions.
+   ✅ PASSED | Duration: 0.28s | 17 tests | Quality: 94.0/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • _test_rate_limiting_configuration: is too complex (complexity: 11)
+
+🧪 [19/62] Testing: config\credential_manager.py
+   📝 Enhanced Credential Manager.
+   ✅ PASSED | Duration: 0.43s | 15 tests | Quality: 88.2/100 📊 (2 issues)
+   🔍 Quality Issues:
+      Function Length: 1 issue(s)
+        • credential_manager_module_tests: is too long (615 lines)
+      Complexity: 1 issue(s)
+        • credential_manager_module_tests: is too complex (complexity: 17)
+
+🧪 [20/62] Testing: core\api_manager.py
+   📝 API Manager - Handles API interactions and user identifiers.
+   ✅ PASSED | Duration: 0.45s | 7 tests | Quality: 100.0/100 ✅
+
+🧪 [21/62] Testing: core\browser_manager.py
+   📝 Browser Manager - Handles all browser/WebDriver operations.
+   ✅ PASSED | Duration: 0.82s | 10 tests | Quality: 100.0/100 ✅
+
+🧪 [22/62] Testing: core\database_manager.py
+   📝 Database Manager - Handles all database-related operations.
+   ✅ PASSED | Duration: 1.58s | 8 tests | Quality: 100.0/100 ✅
+
+🧪 [23/62] Testing: core\dependency_injection.py
+   📝 Dependency Injection Framework.
+   ✅ PASSED | Duration: 1.50s | 24 tests | Quality: 100.0/100 ✅
+
+🧪 [24/62] Testing: core\error_handling.py
+   📝 Standardized Error Handling Framework.
+   ✅ PASSED | Duration: 0.30s | 6 tests | Quality: 100.0/100 ✅
+
+🧪 [25/62] Testing: core\logging_utils.py
+   📝 Centralized Logging Utilities.
+   ✅ PASSED | Duration: 0.25s | 8 tests | Quality: 93.2/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • logging_utils_module_tests: is too complex (complexity: 14)
+
+🧪 [26/62] Testing: core\session_manager.py
+   📝 Session Management & Resource Orchestration Engine
+   ✅ PASSED | Duration: 2.23s | 15 tests | Quality: 66.4/100 ⚠️ (6 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • session_manager_module_tests: is too complex (complexity: 14)
+      Type Hints: 4 issue(s)
+        • my_profile_id: missing type hints
+        • scraper: missing type hints
+      ... and 1 more issues
+
+🧪 [27/62] Testing: core\session_validator.py
+   📝 Session Validator - Handles session validation and readiness checks.
+   ✅ PASSED | Duration: 0.31s | 9 tests | Quality: 100.0/100 ✅
+
+🧪 [28/62] Testing: core_imports.py
+   📝 Core Import System - Unified Module and Function Registry
+   ✅ PASSED | Duration: 0.11s | Unknown | Quality: 100.0/100 ✅
+
+🧪 [29/62] Testing: credentials.py
+   📝 Unified Credential Management & Enterprise Security Engine
+   ✅ PASSED | Duration: 0.69s | 11 tests | Quality: 94.3/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Complexity: 1 issue(s)
+        • credentials_module_tests: is too complex (complexity: 13)
+
+🧪 [30/62] Testing: database.py
+   📝 - SQLAlchemy Models, Database Utilities, and Schema Management
+   ✅ PASSED | Duration: 1.54s | 13 tests | Quality: 100.0/100 ✅
+
+🧪 [31/62] Testing: dna_gedcom_crossref.py
+   📝 DNA-GEDCOM Cross-Reference Intelligence & Advanced Genealogical Integration Engine
+   ✅ PASSED | Duration: 0.26s | 5 tests | Quality: 100.0/100 ✅
+
+🧪 [32/62] Testing: extraction_quality.py
+   📝 Extraction Quality & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.26s | 7 tests | Quality: 100.0/100 ✅
+
+🧪 [33/62] Testing: gedcom_ai_integration.py
+   📝 Gedcom Ai Integration & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.27s | 5 tests | Quality: 100.0/100 ✅
+
+🧪 [34/62] Testing: gedcom_cache.py
+   📝 GEDCOM Cache Intelligence & Advanced Genealogical Data Optimization Engine
+   ✅ PASSED | Duration: 0.41s | 13 tests | Quality: 100.0/100 ✅
+
+🧪 [35/62] Testing: gedcom_intelligence.py
+   📝 Gedcom Intelligence & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.29s | 4 tests | Quality: 100.0/100 ✅
+
+🧪 [36/62] Testing: gedcom_search_utils.py
+   📝 GEDCOM Search Intelligence & Advanced Genealogical Discovery Engine
+   ✅ PASSED | Duration: 1.98s | 12 tests | Quality: 100.0/100 ✅
+
+🧪 [37/62] Testing: gedcom_utils.py
+   📝 GEDCOM Processing & Genealogical Data Intelligence Engine
+   ✅ PASSED | Duration: 0.97s | 6 tests | Quality: 100.0/100 ✅
+
+🧪 [38/62] Testing: genealogical_normalization.py
+   📝 Genealogical Normalization & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.25s | 7 tests | Quality: 100.0/100 ✅
+
+🧪 [39/62] Testing: genealogical_task_templates.py
+   📝 Genealogical Research Task Intelligence & Advanced Workflow Automation Engine
+   ✅ PASSED | Duration: 0.27s | 17 tests | Quality: 88.2/100 📊 (2 issues)
+   🔍 Quality Issues:
+      Function Length: 1 issue(s)
+        • genealogical_task_templates_module_tests: is too long (485 lines)
+      Complexity: 1 issue(s)
+        • genealogical_task_templates_module_tests: is too complex (complexity: 19)
+
+🧪 [40/62] Testing: health_monitor.py
+   📝 Comprehensive Health Monitoring & Intelligent System Diagnostics Engine
+   ✅ PASSED | Duration: 0.35s | Unknown | Quality: 100.0/100 ✅
+
+🧪 [41/62] Testing: logging_config.py
+   📝 Centralized Logging Configuration & Intelligent Log Management Engine
+   ✅ PASSED | Duration: 0.27s | 3 tests | Quality: 100.0/100 ✅
+
+🧪 [42/62] Testing: memory_utils.py
+   📝 Memory Utilities - Lightweight memory management utilities.
+   ✅ PASSED | Duration: 0.08s | Unknown | Quality: 100.0/100 ✅
+
+🧪 [43/62] Testing: message_personalization.py
+   📝 Intelligent Messaging & Communication Automation Engine
+   ✅ PASSED | Duration: 1.68s | 4 tests | Quality: 100.0/100 ✅
+
+🧪 [44/62] Testing: ms_graph_utils.py
+   📝 Advanced Utility & Intelligent Service Engine
+   ✅ PASSED | Duration: 1.68s | 6 tests | Quality: 100.0/100 ✅
+
+🧪 [45/62] Testing: my_selectors.py
+   📝 My Selectors & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.25s | 10 tests | Quality: 100.0/100 ✅
+
+🧪 [46/62] Testing: performance_cache.py
+   📝 Performance Intelligence & Advanced System Optimization Engine
+   ✅ PASSED | Duration: 0.25s | 8 tests | Quality: 100.0/100 ✅
+
+🧪 [47/62] Testing: performance_dashboard.py
+   📝 Performance Intelligence & Advanced System Optimization Engine
+   ✅ PASSED | Duration: 0.25s | 4 tests | Quality: 100.0/100 ✅
+
+🧪 [48/62] Testing: performance_monitor.py
+   📝 Performance Intelligence & System Optimization Engine
+   ✅ PASSED | Duration: 5.33s | 12 tests | Quality: 100.0/100 ✅
+
+🧪 [49/62] Testing: performance_orchestrator.py
+   📝 Performance Intelligence & Advanced System Optimization Engine
+   ✅ PASSED | Duration: 0.32s | 12 tests | Quality: 100.0/100 ✅
+
+🧪 [50/62] Testing: performance_validation.py
+   📝 Performance Intelligence & Advanced System Optimization Engine
+   ✅ PASSED | Duration: 0.67s | 11 tests | Quality: 100.0/100 ✅
+
+🧪 [51/62] Testing: person_search.py
+   📝 Advanced Utility & Intelligent Service Engine
+   ✅ PASSED | Duration: 1.07s | 14 tests | Quality: 100.0/100 ✅
+
+🧪 [52/62] Testing: prompt_telemetry.py
+   📝 Prompt Telemetry & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.20s | 3 tests | Quality: 100.0/100 ✅
+
+🧪 [53/62] Testing: quality_regression_gate.py
+   📝 Quality Regression Gate & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.14s | 2 tests | Quality: 100.0/100 ✅
+
+🧪 [54/62] Testing: relationship_utils.py
+   📝 Advanced Utility & Intelligent Service Engine
+   ✅ PASSED | Duration: 0.47s | 10 tests | Quality: 100.0/100 ✅
+
+🧪 [55/62] Testing: research_prioritization.py
+   📝 Advanced Utility & Intelligent Service Engine
+   ✅ PASSED | Duration: 0.14s | 4 tests | Quality: 100.0/100 ✅
+
+🧪 [56/62] Testing: security_manager.py
+   📝 Security Manager & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.43s | 11 tests | Quality: 94.0/100 📊 (1 issues)
+   🔍 Quality Issues:
+      Function Length: 1 issue(s)
+        • security_manager_module_tests: is too long (485 lines)
+
+🧪 [57/62] Testing: selenium_utils.py
+   📝 Advanced Utility & Intelligent Service Engine
+   ✅ PASSED | Duration: 0.40s | 10 tests | Quality: 100.0/100 ✅
+
+🧪 [58/62] Testing: standard_imports.py
+   📝 Standard Imports & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.13s | 9 tests | Quality: 100.0/100 ✅
+
+🧪 [59/62] Testing: test_framework.py
+   📝 Comprehensive Testing Infrastructure & Quality Assurance Engine
+   ✅ PASSED | Duration: 0.14s | 3 tests | Quality: 100.0/100 ✅
+
+🧪 [60/62] Testing: test_utilities.py
+   📝 Centralized Testing Utilities & DRY Implementation Engine
+   ✅ PASSED | Duration: 0.07s | Unknown | Quality: 100.0/100 ✅
+
+🧪 [61/62] Testing: universal_scoring.py
+   📝 Universal Scoring & Advanced System Intelligence Engine
+   ✅ PASSED | Duration: 0.42s | Unknown | Quality: 100.0/100 ✅
+
+🧪 [62/62] Testing: utils.py
+   📝 - Core Session Management, API Requests, General Utilities
+   ✅ PASSED | Duration: 0.76s | 5 tests | Quality: 100.0/100 ✅
+
+============================================================
+📊 FINAL TEST SUMMARY
+============================================================
+⏰ Duration: 131.1s
+🧪 Total Tests Run: 488
+✅ Passed: 62
+❌ Failed: 0
+📈 Success Rate: 100.0%
+
+📋 RESULTS BY CATEGORY:
+   Enhanced Modules: 62 passed, 0 failed
+   Standard Modules: 0 passed, 0 failed
+
+🎉 ALL 62 MODULES PASSED!
+   Professional testing framework with 62 standardized modules complete.
+

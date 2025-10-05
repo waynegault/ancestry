@@ -28,7 +28,7 @@ logger = setup_module(globals(), __name__)
 import os
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import (
