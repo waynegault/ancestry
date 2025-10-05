@@ -73,6 +73,51 @@ class ConfigValidator:
             self.environment_rules[env] = []
         self.environment_rules[env].append(rule)
 
+    def _validate_single_rule(self, config: Any, rule: ValidationRule) -> Optional[str]:
+        """Validate a single rule against config. Returns error message or None."""
+        if hasattr(config, rule.field_name):
+            value = getattr(config, rule.field_name)
+            if value is None and rule.required:
+                return f"Required field {rule.field_name} is missing"
+            elif value is not None and not rule.validator(value):
+                return rule.error_message
+        elif rule.required:
+            return f"Required field {rule.field_name} is missing"
+        return None
+
+    def _validate_environment_rule(
+        self, config: Any, rule: ValidationRule, environment: EnvironmentType
+    ) -> Optional[str]:
+        """Validate an environment-specific rule. Returns error message or None."""
+        if hasattr(config, rule.field_name):
+            value = getattr(config, rule.field_name)
+            if value is None and rule.required:
+                return f"Environment-required field {rule.field_name} is missing for {environment.value}"
+            elif value is not None and not rule.validator(value):
+                return f"{rule.error_message} (environment: {environment.value})"
+        elif rule.required:
+            return f"Environment-required field {rule.field_name} is missing for {environment.value}"
+        return None
+
+    def _apply_general_rules(self, config: Any) -> list[str]:
+        """Apply general validation rules and return errors."""
+        errors = []
+        for rule in self.rules:
+            error = self._validate_single_rule(config, rule)
+            if error:
+                errors.append(error)
+        return errors
+
+    def _apply_environment_rules(self, config: Any, environment: EnvironmentType) -> list[str]:
+        """Apply environment-specific validation rules and return errors."""
+        errors = []
+        if environment in self.environment_rules:
+            for rule in self.environment_rules[environment]:
+                error = self._validate_environment_rule(config, rule, environment)
+                if error:
+                    errors.append(error)
+        return errors
+
     def validate(
         self, config: Any, environment: EnvironmentType = EnvironmentType.DEVELOPMENT
     ) -> list[str]:
@@ -80,33 +125,10 @@ class ConfigValidator:
         errors = []
 
         # Apply general rules
-        for rule in self.rules:
-            if hasattr(config, rule.field_name):
-                value = getattr(config, rule.field_name)
-                if value is None and rule.required:
-                    errors.append(f"Required field {rule.field_name} is missing")
-                elif value is not None and not rule.validator(value):
-                    errors.append(rule.error_message)
-            elif rule.required:
-                errors.append(f"Required field {rule.field_name} is missing")
+        errors.extend(self._apply_general_rules(config))
 
         # Apply environment-specific rules
-        if environment in self.environment_rules:
-            for rule in self.environment_rules[environment]:
-                if hasattr(config, rule.field_name):
-                    value = getattr(config, rule.field_name)
-                    if value is None and rule.required:
-                        errors.append(
-                            f"Environment-required field {rule.field_name} is missing for {environment.value}"
-                        )
-                    elif value is not None and not rule.validator(value):
-                        errors.append(
-                            f"{rule.error_message} (environment: {environment.value})"
-                        )
-                elif rule.required:
-                    errors.append(
-                        f"Environment-required field {rule.field_name} is missing for {environment.value}"
-                    )
+        errors.extend(self._apply_environment_rules(config, environment))
 
         return errors
 
