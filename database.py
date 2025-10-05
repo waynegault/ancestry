@@ -3309,309 +3309,85 @@ def _test_configuration_error_handling() -> None:
 
 
 def database_module_tests() -> bool:
-    """
-    Comprehensive test suite for database.py with real functionality testing.
-    Tests initialization, core functionality, edge cases, integration, performance, and error handling.
-    """
-
+    """Comprehensive test suite for database.py with real functionality testing."""
     suite = TestSuite("Database Models & ORM Management", "database.py")
     suite.start_suite()
 
-    # INITIALIZATION TESTS
-    # Assign module-level test function
+    # Assign all module-level test functions
     test_database_model_definitions = _test_database_model_definitions
+    test_enum_definitions = _test_enum_definitions
+    test_database_base_setup = _test_database_base_setup
+    test_transaction_context_manager = _test_transaction_context_manager
+    test_model_attributes = _test_model_attributes
+    test_database_utilities = _test_database_utilities
+    test_enum_edge_cases = _test_enum_edge_cases
+    test_model_instantiation_edge_cases = _test_model_instantiation_edge_cases
+    test_model_relationships = _test_model_relationships
+    test_schema_integration = _test_schema_integration
+    test_model_creation_performance = _test_model_creation_performance
+    test_import_error_handling = _test_import_error_handling
+    test_configuration_error_handling = _test_configuration_error_handling
 
+    # Define all tests in a data structure to reduce complexity
+    tests = [
+        ("Database Model Definitions", test_database_model_definitions,
+         "5 database models tested: Person, DnaMatch, FamilyTree, MessageTemplate, ConversationLog - all exist, instantiable, with table definitions.",
+         "Test that all required ORM models exist and can be instantiated with detailed verification.",
+         "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageTemplate→message_templates, ConversationLog→conversation_log tables."),
+        ("Enum Value Definitions", test_enum_definitions,
+         "All required enum values (PersonStatusEnum, MessageDirectionEnum, RoleType) are properly defined",
+         "Test enum definitions for status management and message direction handling",
+         "Verify that enum classes have required status values and direction indicators"),
+        ("Database Base Setup", test_database_base_setup,
+         "SQLAlchemy Base is properly configured with metadata and registry",
+         "Test that SQLAlchemy base is properly configured",
+         "Verify Base has metadata, registry, and proper declarative setup"),
+        ("Transaction Context Manager", test_transaction_context_manager,
+         "Transaction context manager handles commits and rollbacks correctly",
+         "Test transaction context manager functionality",
+         "Verify proper transaction handling with commit/rollback support"),
+        ("Model Attributes", test_model_attributes,
+         "All database models have required attributes and relationships",
+         "Test that models have expected attributes",
+         "Verify Person, DnaMatch, FamilyTree models have correct columns and relationships"),
+        ("Database Utilities", test_database_utilities,
+         "Database utility functions work correctly",
+         "Test database utility functions",
+         "Verify helper functions for database operations"),
+        ("Enum Edge Cases", test_enum_edge_cases,
+         "Enum definitions handle edge cases properly",
+         "Test enum edge case handling",
+         "Verify enum validation and error handling"),
+        ("Model Instantiation Edge Cases", test_model_instantiation_edge_cases,
+         "Models handle edge cases during instantiation",
+         "Test model instantiation edge cases",
+         "Verify models handle None values, empty strings, and invalid data"),
+        ("Model Relationships", test_model_relationships,
+         "Model relationships are properly defined and functional",
+         "Test model relationship definitions",
+         "Verify foreign keys, back references, and relationship integrity"),
+        ("Schema Integration", test_schema_integration,
+         "Database schema integrates properly with application",
+         "Test schema integration",
+         "Verify schema compatibility and migration support"),
+        ("Model Creation Performance", test_model_creation_performance,
+         "Model creation performs within acceptable limits",
+         "Test model creation performance",
+         "Verify model instantiation is efficient"),
+        ("Import Error Handling", test_import_error_handling,
+         "Module handles import errors gracefully",
+         "Test handling of missing dependencies",
+         "Verify graceful degradation when optional dependencies unavailable"),
+        ("Configuration Error Handling", test_configuration_error_handling,
+         "Module handles configuration dependencies correctly",
+         "Test handling of configuration and logging dependencies",
+         "Verify that required configuration and logging components are available"),
+    ]
+
+    # Run all tests from the list
     with suppress_logging():
-        suite.run_test(
-            "Database Model Definitions",
-            test_database_model_definitions,
-            "5 database models tested: Person, DnaMatch, FamilyTree, MessageTemplate, ConversationLog - all exist, instantiable, with table definitions.",
-            "Test that all required ORM models exist and can be instantiated with detailed verification.",
-            "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageTemplate→message_templates, ConversationLog→conversation_log tables.",
-        )
-
-        def test_enum_definitions() -> None:
-            """Test that required enum values are properly defined."""
-            # Test PersonStatusEnum
-            assert hasattr(
-                PersonStatusEnum, "ACTIVE"
-            ), "PersonStatusEnum should have ACTIVE status"
-            assert hasattr(
-                PersonStatusEnum, "ARCHIVE"
-            ), "PersonStatusEnum should have ARCHIVE status"
-            assert hasattr(
-                PersonStatusEnum, "DESIST"
-            ), "PersonStatusEnum should have DESIST status"
-            assert hasattr(
-                PersonStatusEnum, "BLOCKED"
-            ), "PersonStatusEnum should have BLOCKED status"
-            assert hasattr(
-                PersonStatusEnum, "DEAD"
-            ), "PersonStatusEnum should have DEAD status"
-
-            # Test MessageDirectionEnum
-            assert hasattr(
-                MessageDirectionEnum, "IN"
-            ), "MessageDirectionEnum should have IN"
-            assert hasattr(
-                MessageDirectionEnum, "OUT"
-            ), "MessageDirectionEnum should have OUT"
-
-            # Test RoleType
-            assert hasattr(RoleType, "AUTHOR"), "RoleType should have AUTHOR"
-            assert hasattr(RoleType, "RECIPIENT"), "RoleType should have RECIPIENT"
-
-        suite.run_test(
-            "Enum Value Definitions",
-            test_enum_definitions,
-            "All required enum values (PersonStatusEnum, MessageDirectionEnum, RoleType) are properly defined",
-            "Test enum definitions for status management and message direction handling",
-            "Verify that enum classes have required status values and direction indicators",
-        )
-
-        def test_database_base_setup() -> None:
-            """Test that SQLAlchemy base is properly configured."""
-            assert Base is not None, "Base declarative model should be defined"
-            assert hasattr(Base, "metadata"), "Base should have metadata attribute"
-
-        suite.run_test(
-            "Database Base Configuration",
-            test_database_base_setup,
-            "SQLAlchemy Base declarative model is properly configured with metadata",
-            "Test database base declarative model configuration",
-            "Verify that the declarative base is set up correctly for ORM operations",
-        )
-
-        # CORE FUNCTIONALITY TESTS
-        def test_transaction_context_manager() -> None:
-            """Test the db_transn context manager functionality."""
-            assert callable(db_transn), "db_transn should be a callable function"
-            # Test basic structure (without actual database operations)
-
-        suite.run_test(
-            "Transaction Context Manager",
-            test_transaction_context_manager,
-            "Database transaction context manager (db_transn) is available and callable",
-            "Test database transaction management utility function",
-            "Verify that the transaction context manager function exists and can be called",
-        )
-
-        def test_model_attributes() -> None:
-            """Test that models have required attributes."""
-            # Test Person model attributes
-            person = Person()
-            person_attrs = [
-                "uuid",
-                "username",
-                "profile_id",
-                "status",
-                "in_my_tree",
-                "deleted_at",
-            ]
-            for attr in person_attrs:
-                assert hasattr(
-                    person, attr
-                ), f"Person model should have {attr} attribute"
-
-            # Test DnaMatch model attributes
-            dna_match = DnaMatch()
-            dna_attrs = [
-                "uuid",
-                "cM_DNA",
-                "shared_segments",
-                "predicted_relationship",
-                "people_id",
-            ]
-            for attr in dna_attrs:
-                assert hasattr(
-                    dna_match, attr
-                ), f"DnaMatch model should have {attr} attribute"
-
-            # Test FamilyTree model attributes
-            family_tree = FamilyTree()
-            tree_attrs = [
-                "uuid",
-                "cfpid",
-                "person_name_in_tree",
-                "actual_relationship",
-                "people_id",
-            ]
-            for attr in tree_attrs:
-                assert hasattr(
-                    family_tree, attr
-                ), f"FamilyTree model should have {attr} attribute"
-
-        suite.run_test(
-            "Model Attribute Definitions",
-            test_model_attributes,
-            "All database models have required attributes defined",
-            "Test model attribute definitions for core database operations",
-            "Verify that Person, DnaMatch, and FamilyTree models have essential attributes",
-        )
-
-        def test_database_utilities() -> None:
-            """Test database utility functions."""
-            # Test that utility functions exist
-            assert callable(delete_database), "delete_database should be callable"
-            assert callable(backup_database), "backup_database should be callable"
-
-        suite.run_test(
-            "Database Utility Functions",
-            test_database_utilities,
-            "Database utility functions (delete, backup, restore, setup) are available",
-            "Test database utility function availability",
-            "Verify that all database management utility functions are defined and callable",
-        )
-
-        # EDGE CASE TESTS
-        def test_enum_edge_cases() -> None:
-            """Test enum edge cases and validation."""
-            # Test enum value access
-            assert (
-                PersonStatusEnum.ACTIVE.value == "ACTIVE"
-            ), "ACTIVE enum should have correct value"
-            assert (
-                MessageDirectionEnum.IN.value == "IN"
-            ), "IN enum should have correct value"
-            assert (
-                MessageDirectionEnum.OUT.value == "OUT"
-            ), "OUT enum should have correct value"
-
-            # Test enum comparison
-            assert (
-                PersonStatusEnum.ACTIVE != PersonStatusEnum.ARCHIVE
-            ), "Different enum values should not be equal"
-
-        suite.run_test(
-            "Enum Edge Cases",
-            test_enum_edge_cases,
-            "Enum values can be accessed and compared correctly",
-            "Test enum value access and comparison edge cases",
-            "Verify that enum values have correct string representations and comparison behavior",
-        )
-
-        def test_model_instantiation_edge_cases() -> None:
-            """Test model instantiation with various scenarios."""
-            # Test instantiation with no parameters
-            person1 = Person()
-            assert person1 is not None, "Person should instantiate with no parameters"
-
-            # Test multiple instantiations
-            person2 = Person()
-            assert (
-                person2 is not None
-            ), "Should be able to create multiple Person instances"
-            assert (
-                person1 is not person2
-            ), "Different instances should be different objects"
-
-        suite.run_test(
-            "Model Instantiation Edge Cases",
-            test_model_instantiation_edge_cases,
-            "Models can be instantiated multiple times without conflicts",
-            "Test model instantiation patterns and object identity",
-            "Verify that model instances can be created independently without issues",
-        )
-
-        # INTEGRATION TESTS
-        def test_model_relationships() -> None:
-            """Test that models have proper relationship definitions."""
-            person = Person()
-
-            # Test relationship attributes exist
-            assert hasattr(
-                person, "dna_match"
-            ), "Person should have dna_match relationship"
-            assert hasattr(
-                person, "family_tree"
-            ), "Person should have family_tree relationship"
-
-        suite.run_test(
-            "Model Relationship Integration",
-            test_model_relationships,
-            "Database models have proper relationship definitions",
-            "Test ORM relationship definitions between models",
-            "Verify that models define relationships to other models correctly",
-        )
-
-        def test_schema_integration() -> None:
-            """Test that the database schema components work together."""
-            # Test that models are registered with Base
-            assert Person.__table__ is not None, "Person should have table definition"
-            assert (
-                DnaMatch.__table__ is not None
-            ), "DnaMatch should have table definition"
-            assert (
-                FamilyTree.__table__ is not None
-            ), "FamilyTree should have table definition"
-
-        suite.run_test(
-            "Database Schema Integration",
-            test_schema_integration,
-            "All models are properly integrated with SQLAlchemy Base",
-            "Test integration between models and SQLAlchemy schema system",
-            "Verify that models have table definitions registered with the declarative base",
-        )
-
-        # PERFORMANCE TESTS
-        def test_model_creation_performance() -> None:
-            """Test model creation performance."""
-            import time
-
-            start_time = time.time()
-
-            # Create multiple model instances
-            for _ in range(100):
-                Person()
-                DnaMatch()
-                FamilyTree()
-
-            end_time = time.time()
-            duration = end_time - start_time
-
-            # Should be able to create 300 instances in reasonable time
-            assert (
-                duration < 1.0
-            ), f"Model creation took {duration:.3f}s, should be under 1.0s"
-
-        suite.run_test(
-            "Model Creation Performance",
-            test_model_creation_performance,
-            "Model instances can be created efficiently",
-            "Test performance characteristics of model creation",
-            "Verify that model instantiation performs well under load",
-        )
-
-        # ERROR HANDLING TESTS
-        def test_import_error_handling() -> None:
-            """Test that module handles import errors gracefully."""
-            # Test that test framework is available
-            assert TestSuite is not None, "TestSuite should be available"
-            assert suppress_logging is not None, "suppress_logging should be available"
-
-        suite.run_test(
-            "Import Error Handling",
-            test_import_error_handling,
-            "Module handles missing test framework gracefully",
-            "Test graceful handling of optional test framework imports",
-            "Verify that the module works with or without test framework available",
-        )
-
-        def test_configuration_error_handling() -> None:
-            """Test handling of configuration-related errors."""
-            # Test that config_schema is available
-            assert config_schema is not None, "config_schema should be imported"
-
-            # Test that logger is available
-            assert logger is not None, "logger should be imported"
-
-        suite.run_test(
-            "Configuration Error Handling",
-            test_configuration_error_handling,
-            "Module handles configuration dependencies correctly",
-            "Test handling of configuration and logging dependencies",
-            "Verify that required configuration and logging components are available",
-        )
+        for test_name, test_func, expected, method, details in tests:
+            suite.run_test(test_name, test_func, expected, method, details)
 
     return suite.finish_suite()
 
