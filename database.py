@@ -1673,6 +1673,70 @@ def exclude_deleted_persons(query: Query) -> Query:
 # End of exclude_deleted_persons
 
 
+def _extract_person_identifiers(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
+    """Extract and normalize person identifiers from data."""
+    person_uuid_raw = identifier_data.get("uuid")
+    person_profile_id_raw = identifier_data.get("profile_id")
+    person_username = identifier_data.get("username")
+
+    person_uuid = str(person_uuid_raw).upper() if person_uuid_raw else None
+    person_profile_id = str(person_profile_id_raw).upper() if person_profile_id_raw else None
+
+    # Create log reference
+    log_parts = []
+    if person_uuid:
+        log_parts.append(f"UUID='{person_uuid}'")
+    if person_profile_id:
+        log_parts.append(f"ProfileID='{person_profile_id}'")
+    if person_username:
+        log_parts.append(f"User='{person_username}'")
+    log_ref = " / ".join(log_parts) or "No Identifiers Provided"
+
+    return person_uuid, person_profile_id, person_username, log_ref
+
+
+def _disambiguate_by_username(potential_matches: list[Person], person_username: str, person_profile_id: str, log_ref: str) -> Optional[Person]:
+    """Disambiguate multiple profile ID matches using username."""
+    found_by_username: Optional[Person] = None
+    username_match_count = 0
+
+    for p in potential_matches:
+        if p.username == person_username:
+            found_by_username = p
+            username_match_count += 1
+
+    if username_match_count == 1 and found_by_username:
+        logger.info(f"Disambiguated multiple ProfileID matches using exact Username '{person_username}' for {log_ref} (ID: {found_by_username.id}).")
+        return found_by_username
+
+    if username_match_count > 1:
+        logger.error(f"CRITICAL AMBIGUITY: Found {username_match_count} people matching BOTH ProfileID {person_profile_id} AND Username '{person_username}'. Cannot reliably identify.")
+        return None
+
+    logger.warning(f"Multiple matches for ProfileID {person_profile_id}, but none matched exact Username '{person_username}'.")
+    return None
+
+
+def _find_by_profile_id(base_query: Any, person_profile_id: str, person_username: Optional[str], log_ref: str) -> Optional[Person]:
+    """Find person by profile ID, with username disambiguation if needed."""
+    potential_matches = base_query.filter(Person.profile_id == person_profile_id).all()
+
+    if not potential_matches:
+        return None
+
+    if len(potential_matches) == 1:
+        return potential_matches[0]
+
+    # Multiple matches found
+    logger.warning(f"Multiple ({len(potential_matches)}) people found for Profile ID: {person_profile_id}. Attempting disambiguation...")
+
+    if person_username:
+        return _disambiguate_by_username(potential_matches, person_username, person_profile_id, log_ref)
+
+    logger.warning(f"Multiple matches for ProfileID {person_profile_id}, but no Username provided for disambiguation.")
+    return None
+
+
 def find_existing_person(
     session: Session, identifier_data: dict[str, Any], include_deleted: bool = False
 ) -> Optional[Person]:
@@ -1687,104 +1751,37 @@ def find_existing_person(
     Returns:
         The found Person object, or None if no unique match is found or an error occurs.
     """
-    # Step 1: Extract identifiers and create log reference
-    person_uuid_raw = identifier_data.get("uuid")
-    person_profile_id_raw = identifier_data.get("profile_id")
-    person_username = identifier_data.get(
-        "username"
-    )  # Keep case as provided for potential disambiguation
-    person_uuid = str(person_uuid_raw).upper() if person_uuid_raw else None
-    person_profile_id = (
-        str(person_profile_id_raw).upper() if person_profile_id_raw else None
-    )
-    log_parts = []
-    if person_uuid:
-        log_parts.append(f"UUID='{person_uuid}'")
-    if person_profile_id:
-        log_parts.append(f"ProfileID='{person_profile_id}'")
-    if person_username:
-        log_parts.append(f"User='{person_username}'")
-    log_ref = " / ".join(log_parts) or "No Identifiers Provided"
+    # Extract identifiers
+    person_uuid, person_profile_id, person_username, log_ref = _extract_person_identifiers(identifier_data)
 
     person: Optional[Person] = None
     try:
         # Create base query
         base_query = session.query(Person)
-
-        # Apply deleted filter unless include_deleted is True
         if not include_deleted:
             base_query = exclude_deleted_persons(base_query)
 
-        # Step 2: Prioritize lookup by UUID (should be unique)
+        # Prioritize lookup by UUID
         if person_uuid:
             person = base_query.filter(Person.uuid == person_uuid).first()
             if person:
-                # logger.debug(f"Found existing person by UUID for {log_ref} (ID: {person.id}).")
-                return person  # Found by UUID, return immediately
+                return person
 
-        # Step 3: If not found by UUID, try lookup by Profile ID (case-insensitive)
+        # Try lookup by Profile ID
         if person is None and person_profile_id:
-            # Find all potential matches for the profile ID
-            potential_matches = base_query.filter(
-                Person.profile_id == person_profile_id
-            ).all()
+            person = _find_by_profile_id(base_query, person_profile_id, person_username, log_ref)
 
-            if not potential_matches:
-                pass  # No matches found by profile ID, proceed to final check
-            elif len(potential_matches) == 1:
-                return potential_matches[0]  # Unique match found by profile ID
-                # logger.debug(f"Found unique person by ProfileID for {log_ref} (ID: {person.id}).")
-            else:  # Multiple matches found for the same profile ID
-                logger.warning(
-                    f"Multiple ({len(potential_matches)}) people found for Profile ID: {person_profile_id}. Attempting disambiguation..."
-                )
-                # Step 3a: Attempt disambiguation using username (case-sensitive)
-                if person_username:
-                    found_by_username: Optional[Person] = None
-                    username_match_count = 0
-                    for p in potential_matches:
-                        # Compare exact username provided
-                        if p.username == person_username:
-                            found_by_username = p
-                            username_match_count += 1
-
-                    if username_match_count == 1 and found_by_username:
-                        logger.info(
-                            f"Disambiguated multiple ProfileID matches using exact Username '{person_username}' for {log_ref} (ID: {found_by_username.id})."
-                        )
-                        return found_by_username
-                    if username_match_count > 1:
-                        logger.error(
-                            f"CRITICAL AMBIGUITY: Found {username_match_count} people matching BOTH ProfileID {person_profile_id} AND Username '{person_username}'. Cannot reliably identify."
-                        )
-                        return None  # Cannot safely return a match
-                    # No username match among the profile ID matches
-                    logger.warning(
-                        f"Multiple matches for ProfileID {person_profile_id}, but none matched exact Username '{person_username}'."
-                    )
-                    return None  # Cannot safely return a match
-                # Multiple profile ID matches, but no username provided for disambiguation
-                logger.warning(
-                    f"Multiple matches for ProfileID {person_profile_id}, but no Username provided for disambiguation."
-                )
-                return None  # Cannot safely return a match
-
-        # Step 4: Log if no reliable match found
+        # Log if no reliable match found
         if person is None:
             logger.debug(f"No existing person reliably identified for {log_ref}.")
 
-    # Step 5: Handle potential database errors
     except SQLAlchemyError as e:
         logger.error(f"DB error find_existing_person for {log_ref}: {e}", exc_info=True)
         return None
-    # Step 6: Handle unexpected errors
     except Exception as e:
-        logger.error(
-            f"Unexpected error find_existing_person for {log_ref}: {e}", exc_info=True
-        )
+        logger.error(f"Unexpected error find_existing_person for {log_ref}: {e}", exc_info=True)
         return None
 
-    # Step 7: Return the found person or None
     return person
 
 
@@ -1841,11 +1838,70 @@ def get_person_by_uuid(
 # --- Update ---
 
 
+def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix: str) -> list[dict[str, Any]]:
+    """Prepare and validate conversation log data for bulk insert."""
+    log_inserts_mappings = []
+
+    for data in log_upserts:
+        conv_id = data.get("conversation_id")
+        direction_input = data.get("direction")
+        people_id = data.get("people_id")
+        ts_val = data.get("latest_timestamp")
+
+        # Basic validation
+        if not all([conv_id, direction_input, people_id, isinstance(ts_val, datetime)]):
+            logger.error(f"{log_prefix}Skipping invalid log data (missing keys/ts): ConvID={conv_id}, Dir={direction_input}, PID={people_id}, TS={ts_val}")
+            continue
+
+        # Normalize direction to Enum
+        try:
+            if isinstance(direction_input, MessageDirectionEnum):
+                direction_enum = direction_input
+            else:
+                direction_enum = MessageDirectionEnum(str(direction_input).upper())
+        except ValueError:
+            logger.error(f"{log_prefix}Invalid direction '{direction_input}' in log data ConvID {conv_id}. Skipping.")
+            continue
+
+        # Normalize timestamp to aware UTC
+        if ts_val is not None:
+            aware_timestamp = ts_val.astimezone(timezone.utc) if hasattr(ts_val, "tzinfo") and ts_val.tzinfo else ts_val.replace(tzinfo=timezone.utc)
+            data["latest_timestamp"] = aware_timestamp
+        else:
+            data["latest_timestamp"] = datetime.now(timezone.utc)
+
+        data["direction"] = direction_enum
+        log_inserts_mappings.append(data)
+
+    return log_inserts_mappings
+
+
+def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum], log_prefix: str) -> list[dict[str, Any]]:
+    """Prepare and validate person update data for bulk update."""
+    person_update_mappings = []
+
+    for pid, status_enum in person_updates.items():
+        if not isinstance(pid, int) or pid <= 0:
+            logger.warning(f"Invalid Person ID '{pid}' in updates. Skipping.")
+            continue
+        if not isinstance(status_enum, PersonStatusEnum):
+            logger.warning(f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update.")
+            continue
+
+        person_update_mappings.append({
+            "id": pid,
+            "status": status_enum,
+            "updated_at": datetime.now(timezone.utc),
+        })
+
+    return person_update_mappings
+
+
 def commit_bulk_data(
     session: Session,
-    log_upserts: list[dict[str, Any]],  # List of dicts for ConversationLog
-    person_updates: dict[int, PersonStatusEnum],  # Dict of {person_id: status_enum}
-    context: str = "Bulk Commit",  # Optional context for logging
+    log_upserts: list[dict[str, Any]],
+    person_updates: dict[int, PersonStatusEnum],
+    context: str = "Bulk Commit",
 ) -> tuple[int, int]:
     """
     Commits a batch of ConversationLog inserts and Person status updates to the database
@@ -1855,166 +1911,63 @@ def commit_bulk_data(
     Args:
         session: The active SQLAlchemy database session.
         log_upserts: List of dictionaries, each containing data for a ConversationLog entry.
-                     Required keys: 'conversation_id', 'direction' (enum or value), 'people_id', 'latest_timestamp'.
-                     Optional keys match ConversationLog model.
         person_updates: Dictionary mapping Person ID to their new PersonStatusEnum.
         context: A string describing the calling context for logging purposes.
 
     Returns:
-        A tuple containing:
-        - Number of log entries successfully inserted.
-        - Number of Person records successfully updated.
+        A tuple containing (logs_inserted, persons_updated).
     """
-    # Step 1: Initialization
-    processed_logs_count = 0
-    updated_person_count = 0
-    log_inserts_mappings = []  # For bulk insert
-
-    # Step 2: Check if there's data to commit
+    # Check if there's data to commit
     if not log_upserts and not person_updates:
         logger.debug(f"{context}: No data provided for commit.")
         return 0, 0
 
     log_prefix = f"[{context}] "
-    logger.debug(
-        f"{log_prefix}Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates."
-    )
+    logger.debug(f"{log_prefix}Preparing commit: {len(log_upserts)} logs, {len(person_updates)} person updates.")
 
-    # Step 3: Perform DB operations within a transaction context
     try:
-        # Use the db_transn context manager to handle commit/rollback
         with db_transn(session) as sess:
             logger.debug(f"{log_prefix}Entered transaction block.")
+            processed_logs_count = 0
+            updated_person_count = 0
 
-            # --- Step 3a: Prepare ConversationLog Data for Insert ---
+            # Prepare and insert conversation logs
             if log_upserts:
-                logger.debug(
-                    f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for insert..."
-                )
+                logger.debug(f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for insert...")
+                log_inserts_mappings = _prepare_conversation_log_data(log_upserts, log_prefix)
 
-                for data in log_upserts:
-                    conv_id = data.get("conversation_id")
-                    direction_input = data.get("direction")
-                    people_id = data.get("people_id")
-                    ts_val = data.get("latest_timestamp")
-
-                    # Basic validation
-                    if not all(
-                        [
-                            conv_id,
-                            direction_input,
-                            people_id,
-                            isinstance(ts_val, datetime),
-                        ]
-                    ):
-                        logger.error(
-                            f"{log_prefix}Skipping invalid log data (missing keys/ts): ConvID={conv_id}, Dir={direction_input}, PID={people_id}, TS={ts_val}"
-                        )
-                        continue
-
-                    # Normalize direction to Enum
-                    try:
-                        if isinstance(direction_input, MessageDirectionEnum):
-                            direction_enum = direction_input
-                        else:  # Assume string value like 'IN' or 'OUT'
-                            direction_enum = MessageDirectionEnum(
-                                str(direction_input).upper()
-                            )
-                    except ValueError:
-                        logger.error(
-                            f"{log_prefix}Invalid direction '{direction_input}' in log data ConvID {conv_id}. Skipping."
-                        )
-                        continue
-
-                    # Normalize timestamp to aware UTC
-                    if ts_val is not None:
-                        aware_timestamp = (
-                            ts_val.astimezone(timezone.utc)
-                            if hasattr(ts_val, "tzinfo") and ts_val.tzinfo
-                            else ts_val.replace(tzinfo=timezone.utc)
-                        )
-                        data["latest_timestamp"] = aware_timestamp
-                    else:
-                        # Use current time if timestamp is None
-                        data["latest_timestamp"] = datetime.now(timezone.utc)
-
-                    # Update dict with normalized enum
-                    data["direction"] = direction_enum
-
-                    # Add to insert list (no need to check for existing records)
-                    log_inserts_mappings.append(data)
-
-                # --- Step 3b: Bulk Insert ConversationLog Records ---
                 if log_inserts_mappings:
-                    logger.debug(
-                        f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries..."
-                    )
+                    logger.debug(f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries...")
                     sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)
                     processed_logs_count = len(log_inserts_mappings)
-                    logger.debug(
-                        f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries."
-                    )
+                    logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
 
-            # --- Step 3c: Person Update Logic (Bulk Update) ---
+            # Prepare and update persons
             if person_updates:
-                person_update_mappings = []
-                logger.debug(
-                    f"{log_prefix}Preparing {len(person_updates)} Person status updates..."
-                )
-                for pid, status_enum in person_updates.items():
-                    if not isinstance(pid, int) or pid <= 0:
-                        logger.warning(
-                            f"Invalid Person ID '{pid}' in updates. Skipping."
-                        )
-                        continue
-                    if not isinstance(status_enum, PersonStatusEnum):
-                        logger.warning(
-                            f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update."
-                        )
-                        continue
-                    person_update_mappings.append(
-                        {
-                            "id": pid,
-                            "status": status_enum,  # Pass Enum directly, SQLAlchemy handles it
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    )
+                logger.debug(f"{log_prefix}Preparing {len(person_updates)} Person status updates...")
+                person_update_mappings = _prepare_person_update_data(person_updates, log_prefix)
 
                 if person_update_mappings:
-                    logger.debug(
-                        f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons..."
-                    )
+                    logger.debug(f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons...")
                     try:
                         from sqlalchemy import inspect
-
-                        sess.bulk_update_mappings(
-                            inspect(Person), person_update_mappings
-                        )
+                        sess.bulk_update_mappings(inspect(Person), person_update_mappings)
                         updated_person_count = len(person_update_mappings)
-                        logger.debug(
-                            f"{log_prefix}Bulk update successful for {updated_person_count} persons."
-                        )
+                        logger.debug(f"{log_prefix}Bulk update successful for {updated_person_count} persons.")
                     except Exception as bulk_person_err:
-                        logger.error(
-                            f"{log_prefix}Error during Person bulk update: {bulk_person_err}",
-                            exc_info=True,
-                        )
-                        raise  # Re-raise to trigger transaction rollback
+                        logger.error(f"{log_prefix}Error during Person bulk update: {bulk_person_err}", exc_info=True)
+                        raise
                 else:
-                    logger.warning(
-                        f"{log_prefix}No valid Person updates prepared for bulk operation."
-                    )
+                    logger.warning(f"{log_prefix}No valid Person updates prepared for bulk operation.")
 
             logger.debug(f"{log_prefix}Exiting transaction block (commit follows).")
-        # --- Commit happens implicitly here when 'with db_transn' exits ---
+
         logger.debug(f"{log_prefix}Transaction committed successfully via db_transn.")
         return processed_logs_count, updated_person_count
 
-    # Step 4: Handle exceptions during commit process
     except Exception as commit_err:
-        # db_transn handles rollback logging, just log overall failure here
         logger.error(f"{log_prefix}DB Commit FAILED: {commit_err}", exc_info=True)
-        return 0, 0  # Return 0 counts on failure
+        return 0, 0
 
 
 # End of commit_bulk_data
