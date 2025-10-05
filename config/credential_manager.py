@@ -498,7 +498,7 @@ def credential_manager_module_tests() -> bool:
         from typing import Any, Callable, Optional
 
         class TestSuite:
-            def __init__(self, name: str, module: Any = None):
+            def __init__(self, name: str, _module: Any = None):
                 self.name = name
                 self.tests_passed = 0
                 self.tests_failed = 0
@@ -507,7 +507,7 @@ def credential_manager_module_tests() -> bool:
                 print(f"Starting {self.name} tests...")
 
             def run_test(
-                self, name: str, func: Callable, description: str = ""
+                self, name: str, func: Callable, _description: str = ""
             ) -> None:
                 try:
                     func()

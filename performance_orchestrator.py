@@ -531,7 +531,7 @@ def monitor_memory_pressure() -> bool:
 # PERFORMANCE OPTIMIZATION DECORATOR
 # ==============================================
 
-def optimize_on_high_usage(memory_threshold: float = 85.0):
+def optimize_on_high_usage(_memory_threshold: float = 85.0):
     """Decorator to automatically optimize performance when resource usage is high."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)

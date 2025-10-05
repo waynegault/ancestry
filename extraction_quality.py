@@ -93,7 +93,7 @@ ACTION_VERBS = {
 _YEAR_RE = re.compile(r"\b(17|18|19|20)\d{2}\b")
 _SPECIFIC_PATTERN_RE = re.compile(r"\b(census|manifest|marriage|birth|death|baptism|immigration|naturalization|military|obituary|probate|newspaper|ship|passenger|DNA|chromosome)\b", re.IGNORECASE)
 
-def _calculate_positive_task_score(text: str, lower: str, words: set[str]) -> float:
+def _calculate_positive_task_score(text: str, _lower: str, words: set[str]) -> float:
     """Calculate positive scoring components for a task."""
     score = 0.0
 
