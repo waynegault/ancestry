@@ -2048,6 +2048,22 @@ def _determine_profile_ids(
     )
 
 
+def _normalize_datetime_to_utc(dt_value: Any) -> Optional[datetime]:
+    """
+    Normalize a datetime value to UTC timezone, ignoring microseconds.
+
+    Returns:
+        UTC datetime with microseconds set to 0, or None if input is not a datetime
+    """
+    if not isinstance(dt_value, datetime):
+        return None
+
+    if dt_value.tzinfo:
+        return dt_value.astimezone(timezone.utc).replace(microsecond=0)
+    else:
+        return dt_value.replace(tzinfo=timezone.utc, microsecond=0)
+
+
 def _compare_person_field(
     key: str,
     new_value: Any,
@@ -2067,24 +2083,9 @@ def _compare_person_field(
     # Specific comparisons and transformations
     if key == "last_logged_in":
         # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
-        current_dt_utc = (
-            current_value.astimezone(timezone.utc).replace(microsecond=0)
-            if isinstance(current_value, datetime) and current_value.tzinfo
-            else (
-                current_value.replace(tzinfo=timezone.utc, microsecond=0)
-                if isinstance(current_value, datetime)
-                else None
-            )
-        )
-        new_dt_utc = (
-            new_value.astimezone(timezone.utc).replace(microsecond=0)
-            if isinstance(new_value, datetime) and new_value.tzinfo
-            else (
-                new_value.replace(tzinfo=timezone.utc, microsecond=0)
-                if isinstance(new_value, datetime)
-                else None
-            )
-        )
+        current_dt_utc = _normalize_datetime_to_utc(current_value)
+        new_dt_utc = _normalize_datetime_to_utc(new_value)
+
         if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
             value_changed = True
             # value_to_set is already new_value (potentially a datetime obj)
