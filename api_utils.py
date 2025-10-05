@@ -2468,38 +2468,72 @@ def call_profile_details_api(
 # End of call_profile_details_api
 
 
-def call_header_trees_api_for_tree_id(
-    session_manager: "SessionManager", tree_name_config: str
-) -> Optional[str]:
+def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
+    """Extract tree ID from header trees API response."""
+    if not response_data or not isinstance(response_data, dict):
+        if response_data is None:
+            logger.warning(f"{api_description} call failed (_api_req returned None).")
+        else:
+            status = str(response_data.status_code) if isinstance(response_data, requests.Response) else "N/A"
+            logger.warning(f"Unexpected response format from {api_description} (Type: {type(response_data)}, Status: {status}).")
+            logger.debug(f"Full {api_description} response data: {response_data!s}")
+        return None
+
+    if KEY_MENUITEMS not in response_data or not isinstance(response_data[KEY_MENUITEMS], list):
+        logger.warning(f"Unexpected response format from {api_description} (missing or invalid menuItems).")
+        return None
+
+    # Validate response with Pydantic if available
+    if PYDANTIC_AVAILABLE:
+        try:
+            HeaderTreesResponse(**response_data)
+            logger.debug("Header Trees API response validation successful")
+        except Exception as validation_err:
+            logger.warning(f"Header Trees API response validation warning: {validation_err}")
+
+    for item in response_data[KEY_MENUITEMS]:
+        if isinstance(item, dict) and item.get(KEY_TEXT) == tree_name_config:
+            tree_url = item.get(KEY_URL)
+            if tree_url and isinstance(tree_url, str):
+                match = re.search(r"/tree/(\d+)", tree_url)
+                if match:
+                    my_tree_id_val = match.group(1)
+                    logger.debug(f"Found tree ID '{my_tree_id_val}' for tree '{tree_name_config}'.")
+                    return my_tree_id_val
+                logger.warning(f"Found tree '{tree_name_config}', but URL format unexpected: {tree_url}")
+            else:
+                logger.warning(f"Found tree '{tree_name_config}', but '{KEY_URL}' key missing or invalid.")
+            break
+
+    logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
+    return None
+
+
+def _validate_header_trees_request(session_manager: "SessionManager", tree_name_config: str) -> bool:
+    """Validate header trees API request prerequisites."""
     if not tree_name_config:
         logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
-        return None
-    # End of if
+        return False
     if not session_manager.is_sess_valid():
         logger.error("call_header_trees_api_for_tree_id: Session invalid.")
-        return None
-    # End of if
+        return False
     if not callable(_api_req):
         logger.critical("call_header_trees_api_for_tree_id: _api_req is not callable!")
         raise ImportError("_api_req function not available from utils")
-    # End of if
+    return True
+
+
+def call_header_trees_api_for_tree_id(
+    session_manager: "SessionManager", tree_name_config: str
+) -> Optional[str]:
+    if not _validate_header_trees_request(session_manager, tree_name_config):
+        return None
 
     base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
     url = urljoin(base_url_cfg.rstrip("/") + "/", API_PATH_HEADER_TREES)
     api_description = "Header Trees API (Nav Data)"
 
-    # Apply rate limiting if available
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
-
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
-
+    _apply_rate_limiting(api_description)
     referer_url = urljoin(base_url_cfg.rstrip("/") + "/", "family-tree/trees")
 
     logger.debug(
@@ -2524,62 +2558,7 @@ def call_header_trees_api_for_tree_id(
             referer_url=referer_url,
         )
 
-        if (
-            response_data
-            and isinstance(response_data, dict)
-            and KEY_MENUITEMS in response_data
-            and isinstance(response_data[KEY_MENUITEMS], list)
-        ):
-            # Validate response with Pydantic if available
-            if PYDANTIC_AVAILABLE:
-                try:
-                    HeaderTreesResponse(**response_data)
-                    logger.debug("Header Trees API response validation successful")
-                except Exception as validation_err:
-                    logger.warning(
-                        f"Header Trees API response validation warning: {validation_err}"
-                    )
-
-            for item in response_data[KEY_MENUITEMS]:
-                if isinstance(item, dict) and item.get(KEY_TEXT) == tree_name_config:
-                    tree_url = item.get(KEY_URL)
-                    if tree_url and isinstance(tree_url, str):
-                        match = re.search(r"/tree/(\d+)", tree_url)
-                        if match:
-                            my_tree_id_val = match.group(1)
-                            logger.debug(
-                                f"Found tree ID '{my_tree_id_val}' for tree '{tree_name_config}'."
-                            )
-                            return my_tree_id_val
-                        logger.warning(
-                            f"Found tree '{tree_name_config}', but URL format unexpected: {tree_url}"
-                        )
-                        # End of if/else
-                    else:
-                        logger.warning(
-                            f"Found tree '{tree_name_config}', but '{KEY_URL}' key missing or invalid."
-                        )
-                    # End of if/else
-                    break
-                # End of if
-            # End of for
-            logger.warning(
-                f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response."
-            )
-            return None
-        if response_data is None:
-            logger.warning(f"{api_description} call failed (_api_req returned None).")
-            return None
-        status = "N/A"
-        if isinstance(response_data, requests.Response):
-            status = str(response_data.status_code)
-        # End of if
-        logger.warning(
-            f"Unexpected response format from {api_description} (Type: {type(response_data)}, Status: {status})."
-        )
-        logger.debug(f"Full {api_description} response data: {response_data!s}")
-        return None
-        # End of if/elif/else
+        return _extract_tree_id_from_response(response_data, tree_name_config, api_description)
     except Exception as e:
         logger.error(f"Error during {api_description}: {e}", exc_info=True)
         return None
@@ -2589,45 +2568,69 @@ def call_header_trees_api_for_tree_id(
 # End of call_header_trees_api_for_tree_id
 
 
-def call_tree_owner_api(
-    session_manager: "SessionManager", tree_id: str
-) -> Optional[str]:
+def _extract_tree_owner_from_response(response_data: Any, tree_id: str, api_description: str) -> Optional[str]:
+    """Extract tree owner name from API response."""
+    if not response_data or not isinstance(response_data, dict):
+        if response_data is None:
+            logger.warning(f"{api_description} call failed (_api_req returned None).")
+        else:
+            status = str(response_data.status_code) if isinstance(response_data, requests.Response) else "N/A"
+            logger.warning(f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None.")
+            logger.debug(f"Response received: {response_data!s}")
+        return None
+
+    # Validate response with Pydantic if available
+    if PYDANTIC_AVAILABLE:
+        try:
+            TreeOwnerResponse.from_dict(response_data)
+            logger.debug("Tree Owner API response validation successful")
+        except Exception as validation_err:
+            logger.warning(f"Tree Owner API response validation warning: {validation_err}")
+
+    owner_data = response_data.get(KEY_OWNER)
+    if not owner_data or not isinstance(owner_data, dict):
+        logger.warning(f"Could not find '{KEY_OWNER}' data in {api_description} response for tree {tree_id}.")
+        logger.debug(f"Full {api_description} response data: {response_data}")
+        return None
+
+    display_name = owner_data.get(KEY_DISPLAY_NAME)
+    if display_name and isinstance(display_name, str):
+        logger.debug(f"Found tree owner '{display_name}' for tree ID {tree_id}.")
+        return display_name
+
+    logger.warning(f"Could not find '{KEY_DISPLAY_NAME}' in owner data for tree {tree_id}.")
+    logger.debug(f"Full {api_description} response data: {response_data}")
+    return None
+
+
+def _validate_tree_owner_request(session_manager: "SessionManager", tree_id: str) -> bool:
+    """Validate tree owner API request prerequisites."""
     if not tree_id:
         logger.warning("Cannot get tree owner: tree_id is missing.")
-        return None
-    # End of if
+        return False
     if not isinstance(tree_id, str):  # type: ignore[unreachable]
-        logger.warning(
-            f"Invalid tree_id type provided: {type(tree_id)}. Expected string."
-        )
-        return None
-    # End of if
+        logger.warning(f"Invalid tree_id type provided: {type(tree_id)}. Expected string.")
+        return False
     if not session_manager.is_sess_valid():
         logger.error("call_tree_owner_api: Session invalid.")
-        return None
-    # End of if
+        return False
     if not callable(_api_req):
         logger.critical("call_tree_owner_api: _api_req is not callable!")
         raise ImportError("_api_req function not available from utils")
-    # End of if
+    return True
+
+
+def call_tree_owner_api(
+    session_manager: "SessionManager", tree_id: str
+) -> Optional[str]:
+    if not _validate_tree_owner_request(session_manager, tree_id):
+        return None
 
     base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
-    url = urljoin(
-        base_url_cfg.rstrip("/") + "/", f"{API_PATH_TREE_OWNER_INFO}?tree_id={tree_id}"
-    )
+    url = urljoin(base_url_cfg.rstrip("/") + "/", f"{API_PATH_TREE_OWNER_INFO}?tree_id={tree_id}")
     api_description = "Tree Owner Name API"
 
-    # Apply rate limiting if available
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
-
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
+    _apply_rate_limiting(api_description)
 
     logger.debug(
         f"Attempting to fetch tree owner name for tree ID: {tree_id} via {api_description}..."
@@ -2643,49 +2646,7 @@ def call_tree_owner_api(
             api_description=api_description,
         )
 
-        if response_data and isinstance(response_data, dict):
-            # Validate response with Pydantic if available
-            if PYDANTIC_AVAILABLE:
-                try:
-                    TreeOwnerResponse.from_dict(response_data)
-                    logger.debug("Tree Owner API response validation successful")
-                except Exception as validation_err:
-                    logger.warning(
-                        f"Tree Owner API response validation warning: {validation_err}"
-                    )
-
-            owner_data = response_data.get(KEY_OWNER)
-            if owner_data and isinstance(owner_data, dict):
-                display_name = owner_data.get(KEY_DISPLAY_NAME)
-                if display_name and isinstance(display_name, str):
-                    logger.debug(
-                        f"Found tree owner '{display_name}' for tree ID {tree_id}."
-                    )
-                    return display_name
-                logger.warning(
-                    f"Could not find '{KEY_DISPLAY_NAME}' in owner data for tree {tree_id}."
-                )
-                # End of if/else
-            else:
-                logger.warning(
-                    f"Could not find '{KEY_OWNER}' data in {api_description} response for tree {tree_id}."
-                )
-            # End of if/else
-            logger.debug(f"Full {api_description} response data: {response_data}")
-            return None
-        if response_data is None:
-            logger.warning(f"{api_description} call failed (_api_req returned None).")
-            return None
-        status = "N/A"
-        if isinstance(response_data, requests.Response):
-            status = str(response_data.status_code)
-        # End of if
-        logger.warning(
-            f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None."
-        )
-        logger.debug(f"Response received: {response_data!s}")
-        return None
-        # End of if/elif/else
+        return _extract_tree_owner_from_response(response_data, tree_id, api_description)
     except Exception as e:
         logger.error(
             f"Error during {api_description} for tree {tree_id}: {e}", exc_info=True
