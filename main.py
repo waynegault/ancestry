@@ -1566,6 +1566,101 @@ def _toggle_log_level() -> None:
         )
 
 
+def _handle_database_actions(choice: str, session_manager: Any) -> bool:
+    """Handle database-only actions (no browser needed)."""
+    if choice == "0":
+        exec_actn(all_but_first_actn, session_manager, choice)
+    elif choice == "2":
+        exec_actn(reset_db_actn, session_manager, choice)
+    elif choice == "3":
+        exec_actn(backup_db_actn, session_manager, choice)
+    elif choice == "4":
+        exec_actn(restore_db_actn, session_manager, choice)
+    return True
+
+
+def _handle_action6_with_start_page(choice: str, session_manager: Any, config: Any) -> bool:
+    """Handle Action 6 (DNA match gathering) with optional start page."""
+    global logger
+    parts = choice.split()
+    start_val = 1
+    if len(parts) > 1:
+        try:
+            start_arg = int(parts[1])
+            start_val = start_arg if start_arg > 0 else 1
+        except ValueError:
+            logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
+            print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
+
+    print(f"Starting DNA match gathering from page {start_val}...")
+    exec_actn(coord_action, session_manager, "6", False, config, start_val)
+    return True
+
+
+def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> bool:
+    """Handle browser-required actions."""
+    if choice == "1":
+        ensure_caching_initialized()
+        exec_actn(run_core_workflow_action, session_manager, choice, close_sess_after=True)
+        return True
+    if choice == "5":
+        exec_actn(check_login_actn, session_manager, choice)
+        return True
+    if choice.startswith("6"):
+        return _handle_action6_with_start_page(choice, session_manager, config)
+    if choice == "7":
+        exec_actn(srch_inbox_actn, session_manager, choice)
+        return True
+    if choice == "8":
+        exec_actn(send_messages_action, session_manager, choice)
+        return True
+    if choice == "9":
+        ensure_caching_initialized()
+        exec_actn(process_productive_messages_action, session_manager, choice)
+        return True
+    if choice == "10":
+        ensure_caching_initialized()
+        exec_actn(run_action10, session_manager, choice)
+        return True
+    if choice == "11":
+        ensure_caching_initialized()
+        exec_actn(run_action11_wrapper, session_manager, choice)
+        return True
+    return False
+
+
+def _handle_test_options(choice: str) -> bool:
+    """Handle test options."""
+    if choice == "test":
+        _run_main_tests()
+        return True
+    if choice == "testall":
+        _run_all_tests()
+        return True
+    return False
+
+
+def _handle_meta_options(choice: str) -> bool:
+    """Handle meta options (sec, s, t, c, q)."""
+    if choice == "sec":
+        _run_credential_manager()
+        return True
+    if choice == "s":
+        _show_cache_statistics()
+        return True
+    if choice == "t":
+        _toggle_log_level()
+        return True
+    if choice == "c":
+        os.system("cls" if os.name == "nt" else "clear")
+        return True
+    if choice == "q":
+        os.system("cls" if os.name == "nt" else "clear")
+        print("Exiting.")
+        return False
+    return False
+
+
 def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> bool:
     """
     Dispatch menu action based on user choice.
@@ -1573,98 +1668,25 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
     Returns:
         True to continue menu loop, False to exit
     """
-    global logger
-
     # --- Database-only actions (no browser needed) ---
     if choice in ["0", "2", "3", "4"]:
-        if choice == "0":
-            exec_actn(all_but_first_actn, session_manager, choice)
-        elif choice == "2":
-            exec_actn(reset_db_actn, session_manager, choice)
-        elif choice == "3":
-            exec_actn(backup_db_actn, session_manager, choice)
-        elif choice == "4":
-            exec_actn(restore_db_actn, session_manager, choice)
-        return True
+        return _handle_database_actions(choice, session_manager)
 
     # --- Browser-required actions ---
-    if choice == "1":
-        ensure_caching_initialized()
-        exec_actn(run_core_workflow_action, session_manager, choice, close_sess_after=True)
-        return True
-
-    if choice == "5":
-        exec_actn(check_login_actn, session_manager, choice)
-        return True
-
-    if choice.startswith("6"):
-        parts = choice.split()
-        start_val = 1
-        if len(parts) > 1:
-            try:
-                start_arg = int(parts[1])
-                start_val = start_arg if start_arg > 0 else 1
-            except ValueError:
-                logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
-                print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
-
-        print(f"Starting DNA match gathering from page {start_val}...")
-        exec_actn(coord_action, session_manager, "6", False, config, start_val)
-        return True
-
-    if choice == "7":
-        exec_actn(srch_inbox_actn, session_manager, choice)
-        return True
-
-    if choice == "8":
-        exec_actn(send_messages_action, session_manager, choice)
-        return True
-
-    if choice == "9":
-        ensure_caching_initialized()
-        exec_actn(process_productive_messages_action, session_manager, choice)
-        return True
-
-    if choice == "10":
-        ensure_caching_initialized()
-        exec_actn(run_action10, session_manager, choice)
-        return True
-
-    if choice == "11":
-        ensure_caching_initialized()
-        exec_actn(run_action11_wrapper, session_manager, choice)
-        return True
+    if choice in ["1", "5", "7", "8", "9", "10", "11"] or choice.startswith("6"):
+        result = _handle_browser_actions(choice, session_manager, config)
+        if result:
+            return True
 
     # --- Test Options ---
-    if choice == "test":
-        _run_main_tests()
-        return True
-
-    if choice == "testall":
-        _run_all_tests()
+    result = _handle_test_options(choice)
+    if result:
         return True
 
     # --- Meta Options ---
-    if choice == "sec":
-        _run_credential_manager()
-        return True
-
-    if choice == "s":
-        _show_cache_statistics()
-        return True
-
-    if choice == "t":
-        _toggle_log_level()
-        return True
-
-    if choice == "c":
-        os.system("cls" if os.name == "nt" else "clear")
-        return True
-
-    if choice == "q":
-        os.system("cls" if os.name == "nt" else "clear")
-        print("Exiting.")
-        return False
+    result = _handle_meta_options(choice)
+    if result is not False:
+        return result
 
     # Handle invalid choices
     print("Invalid choice.\n")
