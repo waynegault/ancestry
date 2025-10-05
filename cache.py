@@ -1247,6 +1247,227 @@ def invalidate_cache_pattern(pattern: str) -> int:
 # End of invalidate_cache_pattern
 
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+# These test functions are extracted from the main test suite for better
+# modularity, maintainability, and reduced complexity. Each function tests
+# a specific aspect of the cache functionality.
+
+
+def _test_cache_initialization() -> bool:
+    """Test cache system initialization and configuration."""
+    # Check if cache is initialized (may be None in some environments)
+    cache_available = cache is not None
+    if cache_available:
+        assert hasattr(cache, "set"), "Cache should have set method"
+        assert hasattr(cache, "get"), "Cache should have get method"
+        assert hasattr(cache, "delete"), "Cache should have delete method"
+        assert hasattr(cache, "clear"), "Cache should have clear method"
+    return True
+
+
+def _test_cache_interfaces() -> bool:
+    """Test cache interface classes."""
+    base_module = BaseCacheModule()
+    assert base_module.get_module_name() == "base_cache"
+
+    # Test health status method
+    health = base_module.get_health_status()
+    assert isinstance(health, dict), "Health status should be dict"
+    assert "health" in health, "Health status should contain 'health' key"
+    assert "message" in health, "Health status should contain 'message' key"
+    return True
+
+
+def _test_basic_cache_operations() -> bool:
+    """Test fundamental cache set/get/delete operations."""
+    if cache is None:
+        return True  # Skip if cache not available
+
+    # Test basic set/get
+    test_key = "test_basic_ops"
+    test_value = "test_value_123"
+
+    cache.set(test_key, test_value)
+    retrieved = cache.get(test_key)
+    assert (
+        retrieved == test_value
+    ), f"Retrieved value {retrieved} doesn't match set value {test_value}"
+
+    # Test delete
+    cache.delete(test_key)
+    retrieved_after_delete = cache.get(test_key)
+    assert retrieved_after_delete is None, "Value should be None after deletion"
+    return True
+
+
+def _test_cache_decorator() -> bool:
+    """Test @cache_result decorator functionality."""
+    call_count = 0
+
+    @cache_result("test_decorator")
+    def test_function(x, y):
+        nonlocal call_count
+        call_count += 1
+        return x + y
+
+    # First call should execute function
+    result1 = test_function(1, 2)
+    assert result1 == 3
+    assert call_count == 1
+
+    # Second call should use cache
+    result2 = test_function(1, 2)
+    assert result2 == 3
+    assert call_count == 1  # Should not increment
+    return True
+
+
+def _test_cache_expiration() -> bool:
+    """Test cache TTL and expiration."""
+    if cache is None:
+        return True
+
+    test_key = "test_expiration"
+    test_value = "expires_soon"
+
+    # Set with very short TTL
+    cache.set(test_key, test_value, expire=0.1)  # 100ms
+
+    # Should be available immediately
+    assert cache.get(test_key) == test_value
+
+    # Wait for expiration
+    import time
+
+    time.sleep(0.2)
+
+    # Should be expired
+    expired_value = cache.get(test_key)
+    assert expired_value is None
+    return True
+
+
+def _test_cache_size_management() -> bool:
+    """Test cache size limits and eviction."""
+    # This is a basic test - actual size management depends on diskcache config
+    if cache is None:
+        return True
+
+    # Set multiple values
+    for i in range(5):
+        cache.set(f"size_test_{i}", f"value_{i}")
+
+    # Verify they're stored
+    for i in range(5):
+        value = cache.get(f"size_test_{i}")
+        if value is not None:  # May be evicted, that's okay
+            assert value == f"value_{i}"
+    return True
+
+
+def _test_cache_clearing() -> bool:
+    """Test cache clearing functionality."""
+    if cache is None:
+        return True
+
+    # Set some test data
+    cache.set("clear_test_1", "data1")
+    cache.set("clear_test_2", "data2")
+
+    # Verify data exists
+    assert cache.get("clear_test_1") == "data1"
+    assert cache.get("clear_test_2") == "data2"
+
+    # Clear cache
+    cache.clear()
+
+    # Verify data is gone
+    assert cache.get("clear_test_1") is None
+    assert cache.get("clear_test_2") is None
+    return True
+
+
+def _test_complex_data_types() -> bool:
+    """Test caching of complex data structures."""
+    if cache is None:
+        return True
+
+    # Test dictionary
+    test_dict = {"key1": "value1", "nested": {"key2": "value2"}}
+    cache.set("test_dict", test_dict)
+    retrieved_dict = cache.get("test_dict")
+    assert retrieved_dict == test_dict
+
+    # Test list
+    test_list = [1, 2, {"nested": "value"}, [3, 4]]
+    cache.set("test_list", test_list)
+    retrieved_list = cache.get("test_list")
+    assert retrieved_list == test_list
+    return True
+
+
+def _test_cache_performance() -> bool:
+    """Test cache performance and statistics."""
+    if cache is None:
+        return True
+
+    # Performance test - basic operations should be fast
+    import time
+
+    start_time = time.time()
+
+    for i in range(100):
+        cache.set(f"perf_test_{i}", f"value_{i}")
+        cache.get(f"perf_test_{i}")
+
+    duration = time.time() - start_time
+    assert (
+        duration < 5.0
+    ), f"100 cache operations took {duration}s, should be under 5s"
+    return True
+
+
+def _test_error_handling() -> bool:
+    """Test cache error handling and edge cases."""
+    if cache is None:
+        return True
+
+    # Test with None values
+    cache.set("test_none", None)
+    cache.get("test_none")
+    # Note: this might be None due to the value OR due to key not found
+    # The actual behavior depends on diskcache implementation
+
+    # Test with empty string
+    cache.set("test_empty", "")
+    retrieved_empty = cache.get("test_empty")
+    assert retrieved_empty == ""
+    return True
+
+
+def _test_health_monitoring() -> bool:
+    """Test cache health monitoring."""
+    # Test module health functions
+    if is_function_available("get_cache_stats"):
+        stats_func = get_function("get_cache_stats")
+        stats = stats_func()
+        assert isinstance(stats, dict)
+
+    # Test cache directory health
+    if cache is not None:
+        # Basic health check - cache should be operational
+        cache.set("health_test", "healthy")
+        assert cache.get("health_test") == "healthy"
+    return True
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def cache_module_tests() -> bool:
     """
     Run all cache tests and return True if successful.
@@ -1254,203 +1475,18 @@ def cache_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-
-    def test_cache_initialization():
-        """Test cache system initialization and configuration."""
-        # Check if cache is initialized (may be None in some environments)
-        cache_available = cache is not None
-        if cache_available:
-            assert hasattr(cache, "set"), "Cache should have set method"
-            assert hasattr(cache, "get"), "Cache should have get method"
-            assert hasattr(cache, "delete"), "Cache should have delete method"
-            assert hasattr(cache, "clear"), "Cache should have clear method"
-        return True
-
-    def test_cache_interfaces():
-        """Test cache interface classes."""
-        base_module = BaseCacheModule()
-        assert base_module.get_module_name() == "base_cache"
-
-        # Test health status method
-        health = base_module.get_health_status()
-        assert isinstance(health, dict), "Health status should be dict"
-        assert "health" in health, "Health status should contain 'health' key"
-        assert "message" in health, "Health status should contain 'message' key"
-        return True
-
-    def test_basic_cache_operations():
-        """Test fundamental cache set/get/delete operations."""
-        if cache is None:
-            return True  # Skip if cache not available
-
-        # Test basic set/get
-        test_key = "test_basic_ops"
-        test_value = "test_value_123"
-
-        cache.set(test_key, test_value)
-        retrieved = cache.get(test_key)
-        assert (
-            retrieved == test_value
-        ), f"Retrieved value {retrieved} doesn't match set value {test_value}"
-
-        # Test delete
-        cache.delete(test_key)
-        retrieved_after_delete = cache.get(test_key)
-        assert retrieved_after_delete is None, "Value should be None after deletion"
-        return True
-
-    def test_cache_decorator():
-        """Test @cache_result decorator functionality."""
-        call_count = 0
-
-        @cache_result("test_decorator")
-        def test_function(x, y):
-            nonlocal call_count
-            call_count += 1
-            return x + y
-
-        # First call should execute function
-        result1 = test_function(1, 2)
-        assert result1 == 3
-        assert call_count == 1
-
-        # Second call should use cache
-        result2 = test_function(1, 2)
-        assert result2 == 3
-        assert call_count == 1  # Should not increment
-        return True
-
-    def test_cache_expiration():
-        """Test cache TTL and expiration."""
-        if cache is None:
-            return True
-
-        test_key = "test_expiration"
-        test_value = "expires_soon"
-
-        # Set with very short TTL
-        cache.set(test_key, test_value, expire=0.1)  # 100ms
-
-        # Should be available immediately
-        assert cache.get(test_key) == test_value
-
-        # Wait for expiration
-        import time
-
-        time.sleep(0.2)
-
-        # Should be expired
-        expired_value = cache.get(test_key)
-        assert expired_value is None
-        return True
-
-    def test_cache_size_management():
-        """Test cache size limits and eviction."""
-        # This is a basic test - actual size management depends on diskcache config
-        if cache is None:
-            return True
-
-        # Set multiple values
-        for i in range(5):
-            cache.set(f"size_test_{i}", f"value_{i}")
-
-        # Verify they're stored
-        for i in range(5):
-            value = cache.get(f"size_test_{i}")
-            if value is not None:  # May be evicted, that's okay
-                assert value == f"value_{i}"
-        return True
-
-    def test_cache_clearing():
-        """Test cache clearing functionality."""
-        if cache is None:
-            return True
-
-        # Set some test data
-        cache.set("clear_test_1", "data1")
-        cache.set("clear_test_2", "data2")
-
-        # Verify data exists
-        assert cache.get("clear_test_1") == "data1"
-        assert cache.get("clear_test_2") == "data2"
-
-        # Clear cache
-        cache.clear()
-
-        # Verify data is gone
-        assert cache.get("clear_test_1") is None
-        assert cache.get("clear_test_2") is None
-        return True
-
-    def test_complex_data_types():
-        """Test caching of complex data structures."""
-        if cache is None:
-            return True
-
-        # Test dictionary
-        test_dict = {"key1": "value1", "nested": {"key2": "value2"}}
-        cache.set("test_dict", test_dict)
-        retrieved_dict = cache.get("test_dict")
-        assert retrieved_dict == test_dict
-
-        # Test list
-        test_list = [1, 2, {"nested": "value"}, [3, 4]]
-        cache.set("test_list", test_list)
-        retrieved_list = cache.get("test_list")
-        assert retrieved_list == test_list
-        return True
-
-    def test_cache_performance():
-        """Test cache performance and statistics."""
-        if cache is None:
-            return True
-
-        # Performance test - basic operations should be fast
-        import time
-
-        start_time = time.time()
-
-        for i in range(100):
-            cache.set(f"perf_test_{i}", f"value_{i}")
-            cache.get(f"perf_test_{i}")
-
-        duration = time.time() - start_time
-        assert (
-            duration < 5.0
-        ), f"100 cache operations took {duration}s, should be under 5s"
-        return True
-
-    def test_error_handling():
-        """Test cache error handling and edge cases."""
-        if cache is None:
-            return True
-
-        # Test with None values
-        cache.set("test_none", None)
-        cache.get("test_none")
-        # Note: this might be None due to the value OR due to key not found
-        # The actual behavior depends on diskcache implementation
-
-        # Test with empty string
-        cache.set("test_empty", "")
-        retrieved_empty = cache.get("test_empty")
-        assert retrieved_empty == ""
-        return True
-
-    def test_health_monitoring():
-        """Test cache health monitoring."""
-        # Test module health functions
-        if is_function_available("get_cache_stats"):
-            stats_func = get_function("get_cache_stats")
-            stats = stats_func()
-            assert isinstance(stats, dict)
-
-        # Test cache directory health
-        if cache is not None:
-            # Basic health check - cache should be operational
-            cache.set("health_test", "healthy")
-            assert cache.get("health_test") == "healthy"
-        return True
+    # Assign module-level test functions (removing duplicate nested definitions)
+    test_cache_initialization = _test_cache_initialization
+    test_cache_interfaces = _test_cache_interfaces
+    test_basic_cache_operations = _test_basic_cache_operations
+    test_cache_decorator = _test_cache_decorator
+    test_cache_expiration = _test_cache_expiration
+    test_cache_size_management = _test_cache_size_management
+    test_cache_clearing = _test_cache_clearing
+    test_complex_data_types = _test_complex_data_types
+    test_cache_performance = _test_cache_performance
+    test_error_handling = _test_error_handling
+    test_health_monitoring = _test_health_monitoring
 
     # Create test suite and run tests
     suite = TestSuite("Disk-Based Caching System", "cache.py")
