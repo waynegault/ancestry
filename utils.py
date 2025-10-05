@@ -3384,10 +3384,7 @@ def nav_to_page(
             return True
         if action == "fail":
             return False
-        if action == "retry":
-            driver = new_driver if new_driver else driver
-            continue
-        elif action == "continue":
+        if action == "retry" or action == "continue":
             driver = new_driver if new_driver else driver
             continue
 
