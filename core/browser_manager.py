@@ -110,7 +110,7 @@ class BrowserManager:
                 from utils import _load_login_cookies
                 # Create a minimal session manager-like object for cookie loading
                 class CookieLoader:
-                    def __init__(self, driver):
+                    def __init__(self, driver: Any) -> None:
                         self.driver = driver
 
                 cookie_loader = CookieLoader(self.driver)
