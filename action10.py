@@ -1699,6 +1699,43 @@ def test_config_defaults() -> None:
         return True
 
 
+def test_sanitize_input() -> None:
+    """Test input sanitization with various input types"""
+    test_cases = [
+        ("  John  ", "John", "Whitespace trimming"),
+        ("", None, "Empty string handling"),
+        ("   ", None, "Whitespace-only string"),
+        ("Fraser Gault", "Fraser Gault", "Normal text"),
+        ("  Multiple   Spaces  ", "Multiple   Spaces", "Internal spaces preserved"),
+    ]
+
+    print("📋 Testing input sanitization with test cases:")
+    results = []
+
+    for input_val, expected, description in test_cases:
+        try:
+            actual = sanitize_input(input_val)
+            passed = actual == expected
+            status = "✅" if passed else "❌"
+
+            print(f"   {status} {description}")
+            print(
+                f"      Input: '{input_val}' → Output: '{actual}' (Expected: '{expected}')"
+            )
+
+            results.append(passed)
+            assert (
+                actual == expected
+            ), f"Failed for '{input_val}': expected '{expected}', got '{actual}'"
+
+        except Exception as e:
+            print(f"   ❌ {description}: Exception {e}")
+            results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} test cases passed")
+    return True
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -1721,42 +1758,6 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     debug_wrapper = _debug_wrapper
-
-    def test_sanitize_input() -> None:
-        """Test input sanitization with various input types"""
-        test_cases = [
-            ("  John  ", "John", "Whitespace trimming"),
-            ("", None, "Empty string handling"),
-            ("   ", None, "Whitespace-only string"),
-            ("Fraser Gault", "Fraser Gault", "Normal text"),
-            ("  Multiple   Spaces  ", "Multiple   Spaces", "Internal spaces preserved"),
-        ]
-
-        print("📋 Testing input sanitization with test cases:")
-        results = []
-
-        for input_val, expected, description in test_cases:
-            try:
-                actual = sanitize_input(input_val)
-                passed = actual == expected
-                status = "✅" if passed else "❌"
-
-                print(f"   {status} {description}")
-                print(
-                    f"      Input: '{input_val}' → Output: '{actual}' (Expected: '{expected}')"
-                )
-
-                results.append(passed)
-                assert (
-                    actual == expected
-                ), f"Failed for '{input_val}': expected '{expected}', got '{actual}'"
-
-            except Exception as e:
-                print(f"   ❌ {description}: Exception {e}")
-                results.append(False)
-
-        print(f"📊 Results: {sum(results)}/{len(results)} test cases passed")
-        return True
 
     def test_get_validated_year_input_patch() -> None:
         """Test year input validation with various input formats"""
