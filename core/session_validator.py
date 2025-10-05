@@ -242,7 +242,7 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _attempt_relogin(self, browser_manager, session_manager) -> bool:
+    def _attempt_relogin(self, _browser_manager, session_manager) -> bool:
         """
         Attempt to relogin the user.
 
