@@ -256,38 +256,29 @@ class UnifiedCredentialManager:
 
         print("-" * 50)
 
-    def setup_credentials(self) -> None:
-        """Interactive credential setup."""
-        print("\n" + "=" * 50)
-        print("         CREDENTIAL SETUP")
-        print("=" * 50)
-
-        # Check existing credentials
-        existing_creds = self.security_manager.decrypt_credentials()
-        if existing_creds:
-            print(f"✓ Found {len(existing_creds)} existing credentials")
-            print("Options:")
-            print("  a) Add/update individual credentials")
-            print("  r) Replace all credentials")
-            print("  c) Cancel")
-
-            choice = input("\nChoice (a/r/c): ").strip().lower()
-            if choice == "c":
-                return
-            if choice == "r":
-                if not self._confirm_action("replace ALL credentials"):
-                    return
-                existing_creds = {}
-        else:
-            existing_creds = {}
+    def _get_existing_credentials_choice(self, existing_creds: dict[str, str]) -> Optional[dict[str, str]]:
+        """Get user choice for handling existing credentials. Returns credentials dict or None if cancelled."""
+        if not existing_creds:
             print("No existing credentials found. Setting up new credentials...")
+            return {}
 
-        # Load credential types from configuration file
-        required_creds, optional_creds = self._load_credential_types()
+        print(f"✓ Found {len(existing_creds)} existing credentials")
+        print("Options:")
+        print("  a) Add/update individual credentials")
+        print("  r) Replace all credentials")
+        print("  c) Cancel")
 
-        new_creds = existing_creds.copy()
+        choice = input("\nChoice (a/r/c): ").strip().lower()
+        if choice == "c":
+            return None
+        if choice == "r":
+            if not self._confirm_action("replace ALL credentials"):
+                return None
+            return {}
+        return existing_creds
 
-        # Setup required credentials
+    def _setup_required_credentials(self, new_creds: dict[str, str], existing_creds: dict[str, str], required_creds: dict[str, str]) -> None:
+        """Setup required credentials interactively."""
         print("\n🔸 Required Credentials:")
         for key, description in required_creds.items():
             current_value = existing_creds.get(key, "")
@@ -301,7 +292,8 @@ class UnifiedCredentialManager:
                 if value:
                     new_creds[key] = value
 
-        # Setup optional credentials
+    def _setup_optional_credentials(self, new_creds: dict[str, str], existing_creds: dict[str, str], optional_creds: dict[str, str]) -> None:
+        """Setup optional credentials interactively."""
         print("\n🔹 Optional Credentials (press Enter to skip):")
         for key, description in optional_creds.items():
             current_value = existing_creds.get(key, "")
@@ -311,6 +303,27 @@ class UnifiedCredentialManager:
             value = input(f"  {description}: ").strip()
             if value:
                 new_creds[key] = value
+
+    def setup_credentials(self) -> None:
+        """Interactive credential setup."""
+        print("\n" + "=" * 50)
+        print("         CREDENTIAL SETUP")
+        print("=" * 50)
+
+        # Check existing credentials
+        existing_creds = self.security_manager.decrypt_credentials()
+        existing_creds = self._get_existing_credentials_choice(existing_creds)
+        if existing_creds is None:
+            return
+
+        # Load credential types from configuration file
+        required_creds, optional_creds = self._load_credential_types()
+
+        new_creds = existing_creds.copy()
+
+        # Setup required and optional credentials
+        self._setup_required_credentials(new_creds, existing_creds, required_creds)
+        self._setup_optional_credentials(new_creds, existing_creds, optional_creds)
 
         # Save credentials
         if self.security_manager.encrypt_credentials(new_creds):
@@ -901,6 +914,32 @@ class UnifiedCredentialManager:
         )
         return response in ["yes", "y"]
 
+    def _handle_menu_choice(self, choice: str) -> bool:
+        """Handle menu choice. Returns True to continue, False to exit."""
+        if choice == "0":
+            print("👋 Goodbye!")
+            return False
+
+        # Data-driven menu dispatch
+        menu_actions = {
+            "1": self.view_credentials,
+            "2": self.setup_credentials,
+            "3": self.remove_credential,
+            "4": self.delete_all_credentials,
+            "5": self.setup_test_credentials,
+            "6": self.import_from_env,
+            "7": self.export_credentials,
+            "8": self.check_status,
+            "9": self.edit_credential_types,
+        }
+
+        if choice in menu_actions:
+            menu_actions[choice]()
+        else:
+            print("❌ Invalid choice. Please try again.")
+
+        return True
+
     def run(self) -> bool:
         """Main menu loop."""
         if not SECURITY_AVAILABLE:
@@ -913,31 +952,10 @@ class UnifiedCredentialManager:
                 self.display_main_menu()
                 choice = input("Enter choice: ").strip()
 
-                if choice == "0":
-                    print("👋 Goodbye!")
+                if not self._handle_menu_choice(choice):
                     break
-                if choice == "1":
-                    self.view_credentials()
-                elif choice == "2":
-                    self.setup_credentials()
-                elif choice == "3":
-                    self.remove_credential()
-                elif choice == "4":
-                    self.delete_all_credentials()
-                elif choice == "5":
-                    self.setup_test_credentials()
-                elif choice == "6":
-                    self.import_from_env()
-                elif choice == "7":
-                    self.export_credentials()
-                elif choice == "8":
-                    self.check_status()
-                elif choice == "9":
-                    self.edit_credential_types()
-                else:
-                    print("❌ Invalid choice. Please try again.")
-                if choice != "0":
-                    input("\nPress Enter to continue...")
+
+                input("\nPress Enter to continue...")
 
             except KeyboardInterrupt:
                 print("\n\n👋 Goodbye!")
@@ -1383,75 +1401,96 @@ from test_utilities import create_standard_test_runner
 run_comprehensive_tests = create_standard_test_runner(credentials_module_tests)
 
 
-def main() -> bool:
-    """Main entry point."""
-    # Support non-interactive .env import
-    if len(sys.argv) > 1 and sys.argv[1] == "--import-env":
-        if not SECURITY_AVAILABLE:
-            print("\n❌ Security dependencies are required for credential management.")
-            UnifiedCredentialManager.check_and_install_dependencies()
-            return False
-        try:
-            manager = UnifiedCredentialManager()
-            # Use default .env path, non-interactive
-            print("\n🔐 Importing credentials from .env (non-interactive)...")
-            manager.import_from_env = manager.import_from_env.__func__.__get__(manager)
-            # Patch input to always use default .env and merge
-            import builtins
+def _handle_import_env_mode() -> bool:
+    """Handle non-interactive .env import mode."""
+    if not SECURITY_AVAILABLE:
+        print("\n❌ Security dependencies are required for credential management.")
+        UnifiedCredentialManager.check_and_install_dependencies()
+        return False
 
-            orig_input = builtins.input
+    try:
+        manager = UnifiedCredentialManager()
+        print("\n🔐 Importing credentials from .env (non-interactive)...")
 
-            def fake_input(prompt=""):
-                if "path to .env" in prompt:
-                    return ""
-                if "Choice (m/o/r/c):" in prompt:
-                    return "o"  # Overwrite existing with .env values
-                if "Are you sure you want to" in prompt:
-                    return "yes"
+        # Patch input to always use default .env and merge
+        import builtins
+        orig_input = builtins.input
+
+        def fake_input(prompt=""):
+            if "path to .env" in prompt:
                 return ""
+            if "Choice (m/o/r/c):" in prompt:
+                return "o"  # Overwrite existing with .env values
+            if "Are you sure you want to" in prompt:
+                return "yes"
+            return ""
 
-            builtins.input = fake_input
-            try:
-                manager.import_from_env()
-            finally:
-                builtins.input = orig_input
-            print("\n✅ .env import complete.")
-            return True
-        except Exception as e:
-            print(f"❌ Error during .env import: {e}")
-            return False
+        builtins.input = fake_input
+        try:
+            manager.import_from_env()
+        finally:
+            builtins.input = orig_input
 
+        print("\n✅ .env import complete.")
+        return True
+    except Exception as e:
+        print(f"❌ Error during .env import: {e}")
+        return False
+
+
+def _should_run_tests() -> bool:
+    """Check if we should run tests instead of interactive mode."""
     # Auto-detect if being run as part of the test harness
     if os.environ.get("RUNNING_ANCESTRY_TESTS") == "1":
         print("🔐 Auto-detected test execution from test harness...")
-        return run_comprehensive_tests()
+        return True
 
-    # Time-based auto-test detection (add a short timeout to avoid hanging in test suites)
+    # Time-based auto-test detection
     from pathlib import Path
     if time.time() > 0 and Path(sys.argv[0]).name == "credentials.py":
         if not sys.stdin.isatty() or os.environ.get("CI") == "true":
             print("🔐 Auto-detected non-interactive environment, running tests...")
-            return run_comprehensive_tests()
+            return True
 
+    return False
+
+
+def _handle_missing_dependencies() -> bool:
+    """Handle missing security dependencies."""
+    print("\n" + "=" * 60)
+    print("        SECURITY DEPENDENCIES MISSING")
+    print("=" * 60)
+    print("\n❌ Security dependencies are required for credential management.")
+    print("Would you like to install them now?")
+
+    if UnifiedCredentialManager.check_and_install_dependencies():
+        print("\n✅ Dependencies installed successfully!")
+        print("Please restart the program: python credentials.py")
+    else:
+        print("\n⚠️ Dependencies are still missing. Please install them manually:")
+        print("  pip install cryptography keyring")
+        print("  - OR -")
+        print("  pip install -r requirements.txt")
+        print("\nFor more information, see SECURITY_STREAMLINED.md")
+
+    return False
+
+
+def main() -> bool:
+    """Main entry point."""
+    # Support non-interactive .env import
+    if len(sys.argv) > 1 and sys.argv[1] == "--import-env":
+        return _handle_import_env_mode()
+
+    # Check if we should run tests
+    if _should_run_tests():
+        return run_comprehensive_tests()
+
+    # Check for missing dependencies
     if not SECURITY_AVAILABLE:
-        print("\n" + "=" * 60)
-        print("        SECURITY DEPENDENCIES MISSING")
-        print("=" * 60)
-        print("\n❌ Security dependencies are required for credential management.")
-        print("Would you like to install them now?")
+        return _handle_missing_dependencies()
 
-        if UnifiedCredentialManager.check_and_install_dependencies():
-            print("\n✅ Dependencies installed successfully!")
-            print("Please restart the program: python credentials.py")
-        else:
-            print("\n⚠️ Dependencies are still missing. Please install them manually:")
-            print("  pip install cryptography keyring")
-            print("  - OR -")
-            print("  pip install -r requirements.txt")
-            print("\nFor more information, see SECURITY_STREAMLINED.md")
-
-        return False
-
+    # Run interactive credential manager
     try:
         manager = UnifiedCredentialManager()
         return manager.run()
