@@ -2477,8 +2477,8 @@ def _parse_tree_id_from_url(tree_url: Any, tree_name_config: str) -> Optional[st
     return None
 
 
-def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
-    """Extract tree ID from header trees API response."""
+def _validate_header_trees_response(response_data: Any, api_description: str) -> Optional[list]:
+    """Validate header trees response and return menu items if valid."""
     if not response_data or not isinstance(response_data, dict):
         if response_data is None:
             logger.warning(f"{api_description} call failed (_api_req returned None).")
@@ -2500,7 +2500,16 @@ def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, ap
         except Exception as validation_err:
             logger.warning(f"Header Trees API response validation warning: {validation_err}")
 
-    for item in response_data[KEY_MENUITEMS]:
+    return response_data[KEY_MENUITEMS]
+
+
+def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
+    """Extract tree ID from header trees API response."""
+    menu_items = _validate_header_trees_response(response_data, api_description)
+    if not menu_items:
+        return None
+
+    for item in menu_items:
         if isinstance(item, dict) and item.get(KEY_TEXT) == tree_name_config:
             return _parse_tree_id_from_url(item.get(KEY_URL), tree_name_config)
 
