@@ -944,6 +944,25 @@ error_recovery_manager = ErrorRecoveryManager()
 
 # === DECORATORS AND UTILITY FUNCTIONS ===
 
+
+def _should_stop_retry(exception: Exception, stop_on: list[type[Exception]]) -> bool:
+    """Check if exception should stop retry attempts."""
+    return any(isinstance(exception, exc_type) for exc_type in stop_on)
+
+
+def _should_retry(exception: Exception, retry_on: list[type[Exception]]) -> bool:
+    """Check if exception should trigger a retry."""
+    return any(isinstance(exception, exc_type) for exc_type in retry_on)
+
+
+def _calculate_retry_delay(attempt: int, backoff_factor: float, jitter: bool) -> float:
+    """Calculate delay before next retry attempt."""
+    delay = backoff_factor ** attempt
+    if jitter:
+        delay *= (0.5 + random.random() * 0.5)  # Add jitter
+    return delay
+
+
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
@@ -968,17 +987,16 @@ def retry_on_failure(
                     last_exception = e
 
                     # Check if we should stop retrying
-                    if any(isinstance(e, exc_type) for exc_type in stop_on):
+                    if _should_stop_retry(e, stop_on):
                         raise e
 
                     # Check if we should retry
-                    if not any(isinstance(e, exc_type) for exc_type in retry_on):
+                    if not _should_retry(e, retry_on):
                         raise e
 
+                    # Calculate and apply delay before next attempt
                     if attempt < max_attempts - 1:  # Don't sleep on last attempt
-                        delay = backoff_factor ** attempt
-                        if jitter:
-                            delay *= (0.5 + random.random() * 0.5)  # Add jitter
+                        delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
                         time.sleep(delay)
 
             raise last_exception
