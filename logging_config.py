@@ -175,74 +175,79 @@ class AlignedMessageFormatter(logging.Formatter):
     Leading whitespace from subsequent lines of the original message is removed.
     """
 
-    def format(self, record: logging.LogRecord) -> str:
-        """Formats the log record with alignment and automatic color support."""
-        # Step 1: Get the original message content
-        original_message = record.getMessage()
+    def _apply_level_color(self, message: str, level: int) -> str:
+        """Apply color based on log level if not already colored."""
+        # Skip if already has ANSI codes
+        if '\033[' in message:
+            return message
 
-        # Step 1.5: Apply automatic color based on log level
-        if record.levelno >= logging.CRITICAL:
-            # Critical messages in red
-            if '\033[' not in original_message:  # Check if already has ANSI codes
-                original_message = Colors.red(original_message)
-        elif record.levelno >= logging.ERROR:
-            # Error messages in red
-            if '\033[' not in original_message:  # Check if already has ANSI codes
-                original_message = Colors.red(original_message)
-        elif record.levelno >= logging.WARNING:
-            # Warning messages in yellow
-            if '\033[' not in original_message:  # Check if already has ANSI codes
-                original_message = Colors.yellow(original_message)
+        if level >= logging.CRITICAL:
+            return Colors.red(message)
+        elif level >= logging.ERROR:
+            return Colors.red(message)
+        elif level >= logging.WARNING:
+            return Colors.yellow(message)
 
-        # Step 2: Create a copy to safely calculate prefix length
-        record_copy = copy.copy(record)
-        placeholder = "X"  # Placeholder character for calculation
-        record_copy.msg = placeholder
-        record_copy.args = ()  # Clear args for prefix calculation
-        record_copy.message = (
-            record_copy.getMessage()
-        )  # Ensure message attribute is generated
+        return message
 
-        # Step 3: Format the record with the placeholder to find message start position
-        prefix_with_placeholder = super().format(record_copy)  # Use base class format
+    def _calculate_message_start_position(self, record_copy: logging.LogRecord, placeholder: str) -> int:
+        """Calculate the position where the actual message starts."""
+        prefix_with_placeholder = super().format(record_copy)
+
         try:
-            # Find the position of the placeholder (start of the actual message)
-            message_start_pos = prefix_with_placeholder.index(placeholder)
+            return prefix_with_placeholder.index(placeholder)
         except ValueError:
-            # Fallback if placeholder isn't found (shouldn't happen with standard format)
+            # Fallback if placeholder isn't found
             logger_for_setup.warning(
                 "Placeholder 'X' not found in formatted prefix calculation, using fallback.",
                 exc_info=False,
             )
             # Heuristic: find end of metadata bracket ']' and add 2 spaces
             heuristic_index = prefix_with_placeholder.find("] ")
-            message_start_pos = (
-                heuristic_index + 2 if heuristic_index != -1 else 41
-            )  # Default indent
+            return heuristic_index + 2 if heuristic_index != -1 else 41
 
-        # Step 4: Extract the prefix string and calculate indent string
+    def _format_multiline_message(self, lines: list[str], prefix: str, indent: str) -> str:
+        """Format multiline message with proper indentation."""
+        result_lines = []
+
+        # Format first line
+        if lines:
+            first_line_content = lines[0].lstrip()
+            result_lines.append(f"{prefix}{first_line_content}")
+        elif prefix:
+            return prefix.rstrip()
+
+        # Format subsequent lines
+        for i in range(1, len(lines)):
+            subsequent_line_content = lines[i].lstrip()
+            result_lines.append(f"{indent}{subsequent_line_content}")
+
+        return "\n".join(result_lines)
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Formats the log record with alignment and automatic color support."""
+        # Get and colorize message
+        original_message = record.getMessage()
+        original_message = self._apply_level_color(original_message, record.levelno)
+
+        # Create a copy to calculate prefix length
+        record_copy = copy.copy(record)
+        placeholder = "X"
+        record_copy.msg = placeholder
+        record_copy.args = ()
+        record_copy.message = record_copy.getMessage()
+
+        # Calculate message start position
+        message_start_pos = self._calculate_message_start_position(record_copy, placeholder)
+
+        # Extract prefix and calculate indent
+        prefix_with_placeholder = super().format(record_copy)
         prefix_string = prefix_with_placeholder[:message_start_pos]
         indent = " " * message_start_pos
 
-        # Step 5: Split the original message into lines
+        # Format multiline message
         lines = original_message.split("\n")
-        result_lines = []
-
-        # Step 6: Format the first line (prefix + left-stripped content)
-        if lines:
-            first_line_content = lines[0].lstrip()  # Remove leading whitespace
-            result_lines.append(f"{prefix_string}{first_line_content}")
-        elif prefix_string:
-            # Handle case where message is empty but prefix exists
-            return prefix_string.rstrip()  # Return only prefix
-
-        # Step 7: Format subsequent lines (indent + left-stripped content)
-        for i in range(1, len(lines)):
-            subsequent_line_content = lines[i].lstrip()  # Remove leading whitespace
-            result_lines.append(f"{indent}{subsequent_line_content}")
-
-        # Step 8: Join the formatted lines back together
-        return "\n".join(result_lines)
+        return self._format_multiline_message(lines, prefix_string, indent)
 
     # End of format
 
