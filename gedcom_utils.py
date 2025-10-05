@@ -48,6 +48,7 @@ logger = setup_module(globals(), __name__)
 
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import logging
 import re
 import sys
@@ -2229,6 +2230,31 @@ class GedcomData:
                 processed_fam_ids.add(fam_id)
         return matching_families_with_role
 
+    def _validate_relationship_path_inputs(self, id1_norm: str, id2_norm: str) -> Optional[str]:
+        """Validate inputs for relationship path calculation. Returns error message or None if valid."""
+        if not self.reader:
+            return "Error: GEDCOM Reader unavailable."
+        if not id1_norm or not id2_norm:
+            return "Invalid input IDs."
+        if id1_norm == id2_norm:
+            return "Individuals are the same."
+
+        # Ensure family maps are built
+        if not self.id_to_parents and not self.id_to_children:
+            logger.warning("Relationship maps are empty, attempting rebuild.")
+            self._build_family_maps()
+        if not self.id_to_parents and not self.id_to_children:
+            return "Error: Family relationship maps could not be built."
+
+        # Ensure individual index is built
+        if not self.indi_index:
+            logger.warning("Individual index is empty, attempting rebuild.")
+            self._build_indi_index()
+        if not self.indi_index:
+            return "Error: Individual index could not be built."
+
+        return None  # Valid
+
     def get_relationship_path(self, id1: str, id2: str) -> str:
         """
         Finds and explains the relationship path between two individuals.
@@ -2245,22 +2271,11 @@ class GedcomData:
         """
         id1_norm = _normalize_id(id1)
         id2_norm = _normalize_id(id2)
-        if not self.reader:
-            return "Error: GEDCOM Reader unavailable."
-        if not id1_norm or not id2_norm:
-            return "Invalid input IDs."
-        if id1_norm == id2_norm:
-            return "Individuals are the same."
-        if not self.id_to_parents and not self.id_to_children:
-            logger.warning("Relationship maps are empty, attempting rebuild.")
-            self._build_family_maps()
-        if not self.id_to_parents and not self.id_to_children:
-            return "Error: Family relationship maps could not be built."
-        if not self.indi_index:
-            logger.warning("Individual index is empty, attempting rebuild.")
-            self._build_indi_index()
-        if not self.indi_index:
-            return "Error: Individual index could not be built."
+
+        # Validate inputs
+        validation_error = self._validate_relationship_path_inputs(id1_norm, id2_norm)
+        if validation_error:
+            return validation_error
 
         # Use the enhanced bidirectional BFS algorithm to find the path
         max_depth = 25
@@ -2673,10 +2688,8 @@ def test_memory_optimization():
     # Test that functions don't create excessive memory overhead
     if "_get_full_name" in globals():
         for _ in range(100):
-            try:
+            with contextlib.suppress(Exception):
                 _get_full_name(None)  # Should not accumulate memory
-            except Exception:
-                pass
 
 
 def test_external_integration():
@@ -2686,28 +2699,22 @@ def test_external_integration():
 
     if "_is_individual" in globals():
         for data in test_data_structures:
-            try:
+            with contextlib.suppress(Exception):
                 result = _is_individual(data)
                 assert isinstance(result, bool)
-            except Exception:
-                pass  # Some types may not be supported
 
 
 def test_error_recovery():
     """Test error handling and recovery."""
     # Test that functions handle errors gracefully
     if "_normalize_id" in globals():
-        try:
+        with contextlib.suppress(Exception):
             _normalize_id("invalid_format")  # Invalid format
-        except Exception:
-            pass  # Exception is acceptable
 
     if "_get_full_name" in globals():
-        try:
+        with contextlib.suppress(Exception):
             result = _get_full_name(None)
             assert result == "Unknown" or isinstance(result, str)
-        except Exception:
-            pass  # Exception is acceptable
 
 
 # ==============================================
