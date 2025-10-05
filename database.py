@@ -3185,28 +3185,31 @@ def _test_transaction_context_manager() -> None:
 
 def _test_model_attributes() -> None:
     """Test that models have expected attributes and columns."""
-    # Test Person model attributes
-    assert hasattr(Person, "person_id"), "Person should have person_id attribute"
-    assert hasattr(Person, "tree_user_id"), "Person should have tree_user_id attribute"
-    assert hasattr(Person, "name"), "Person should have name attribute"
+    # Test Person model attributes (using actual column names from model definition)
+    assert hasattr(Person, "id"), "Person should have id attribute"
+    assert hasattr(Person, "uuid"), "Person should have uuid attribute"
+    assert hasattr(Person, "profile_id"), "Person should have profile_id attribute"
+    assert hasattr(Person, "username"), "Person should have username attribute"
     assert hasattr(Person, "status"), "Person should have status attribute"
 
-    # Test DnaMatch model attributes
-    assert hasattr(DnaMatch, "match_id"), "DnaMatch should have match_id attribute"
-    assert hasattr(DnaMatch, "person_id"), "DnaMatch should have person_id attribute"
-    assert hasattr(DnaMatch, "shared_cm"), "DnaMatch should have shared_cm attribute"
+    # Test DnaMatch model attributes (using actual column names)
+    assert hasattr(DnaMatch, "id"), "DnaMatch should have id attribute"
+    assert hasattr(DnaMatch, "people_id"), "DnaMatch should have people_id attribute"
+    assert hasattr(DnaMatch, "cM_DNA"), "DnaMatch should have cM_DNA attribute"
+    assert hasattr(DnaMatch, "shared_segments"), "DnaMatch should have shared_segments attribute"
 
-    # Test FamilyTree model attributes
-    assert hasattr(FamilyTree, "tree_id"), "FamilyTree should have tree_id attribute"
-    assert hasattr(FamilyTree, "person_id"), "FamilyTree should have person_id attribute"
+    # Test FamilyTree model attributes (using actual column names)
+    assert hasattr(FamilyTree, "id"), "FamilyTree should have id attribute"
+    assert hasattr(FamilyTree, "people_id"), "FamilyTree should have people_id attribute"
+    assert hasattr(FamilyTree, "cfpid"), "FamilyTree should have cfpid attribute"
 
-    # Test MessageTemplate model attributes
-    assert hasattr(MessageTemplate, "template_id"), "MessageTemplate should have template_id attribute"
+    # Test MessageTemplate model attributes (using actual column names)
+    assert hasattr(MessageTemplate, "id"), "MessageTemplate should have id attribute"
     assert hasattr(MessageTemplate, "template_key"), "MessageTemplate should have template_key attribute"
 
-    # Test ConversationLog model attributes
-    assert hasattr(ConversationLog, "log_id"), "ConversationLog should have log_id attribute"
-    assert hasattr(ConversationLog, "person_id"), "ConversationLog should have person_id attribute"
+    # Test ConversationLog model attributes (using actual column names)
+    assert hasattr(ConversationLog, "id"), "ConversationLog should have id attribute"
+    assert hasattr(ConversationLog, "people_id"), "ConversationLog should have people_id attribute"
 
 
 def _test_database_utilities() -> None:
@@ -3255,10 +3258,10 @@ def _test_model_instantiation_edge_cases() -> None:
 
 def _test_model_relationships() -> None:
     """Test model relationships and foreign keys."""
-    # Test that models have relationship attributes
-    assert hasattr(Person, "dna_matches"), "Person should have dna_matches relationship"
-    assert hasattr(Person, "family_trees"), "Person should have family_trees relationship"
-    assert hasattr(Person, "conversation_logs"), "Person should have conversation_logs relationship"
+    # Test that models have relationship attributes (using actual relationship names from model)
+    assert hasattr(Person, "dna_match"), "Person should have dna_match relationship"
+    assert hasattr(Person, "family_tree"), "Person should have family_tree relationship"
+    assert hasattr(Person, "conversation_log_entries"), "Person should have conversation_log_entries relationship"
 
 
 def _test_schema_integration() -> None:
