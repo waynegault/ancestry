@@ -2138,6 +2138,145 @@ def call_treesui_list_api(
 # End of call_treesui_list_api
 
 
+def _process_send_message_response(
+    api_response: Any,
+    is_initial: bool,
+    existing_conv_id: Optional[str],
+    my_profile_id_upper: str,
+    person: "Person",
+    send_api_desc: str,
+    log_prefix: str
+) -> tuple[str, Optional[str]]:
+    """Process send message API response and return status and conversation ID."""
+    message_status = SEND_ERROR_UNKNOWN
+    new_conversation_id_from_api: Optional[str] = None
+    post_ok = False
+
+    if api_response is None:
+        message_status = SEND_ERROR_POST_FAILED
+        logger.error(f"{log_prefix}: API POST ({send_api_desc}) failed (No response/Retries exhausted).")
+    elif isinstance(api_response, requests.Response):
+        message_status = f"send_error (http_{api_response.status_code})"
+        logger.error(f"{log_prefix}: API POST ({send_api_desc}) failed with status {api_response.status_code}.")
+        from contextlib import suppress
+        with suppress(Exception):
+            logger.debug(f"Error response body: {api_response.text[:500]}")
+    elif isinstance(api_response, dict):
+        try:
+            if is_initial:
+                api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
+                msg_details = api_response.get(KEY_MESSAGE, {})
+                api_author = str(msg_details.get(KEY_AUTHOR, "")).upper() if isinstance(msg_details, dict) else None
+
+                if api_conv_id and api_author == my_profile_id_upper:
+                    post_ok = True
+                    new_conversation_id_from_api = api_conv_id
+                else:
+                    logger.error(f"{log_prefix}: API initial response format invalid (ConvID: '{api_conv_id}', Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
+                    logger.debug(f"API Response: {api_response}")
+                    message_status = SEND_ERROR_VALIDATION_FAILED
+            else:
+                api_author = str(api_response.get(KEY_AUTHOR, "")).upper()
+                if api_author == my_profile_id_upper:
+                    post_ok = True
+                    new_conversation_id_from_api = existing_conv_id
+                else:
+                    logger.error(f"{log_prefix}: API follow-up author validation failed (Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
+                    logger.debug(f"API Response: {api_response}")
+                    message_status = SEND_ERROR_VALIDATION_FAILED
+
+            if post_ok:
+                message_status = SEND_SUCCESS_DELIVERED
+                logger.info(f"{log_prefix}: Message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')} successful (ConvID: {new_conversation_id_from_api}).")
+
+        except Exception as parse_err:
+            logger.error(f"{log_prefix}: Error parsing successful API response ({send_api_desc}): {parse_err}", exc_info=True)
+            logger.debug(f"API Response received: {api_response}")
+            message_status = SEND_ERROR_UNEXPECTED_FORMAT
+    else:
+        logger.error(f"{log_prefix}: API call ({send_api_desc}) unexpected success format. Type:{type(api_response)}, Resp:{str(api_response)[:200]}")
+        message_status = SEND_ERROR_UNEXPECTED_FORMAT
+
+    if not post_ok and message_status == SEND_ERROR_UNKNOWN:
+        message_status = SEND_ERROR_VALIDATION_FAILED
+        logger.warning(f"{log_prefix}: Message send attempt concluded with status: {message_status}")
+
+    return message_status, new_conversation_id_from_api
+
+
+def _prepare_send_message_request(
+    message_text: str,
+    my_profile_id_lower: str,
+    recipient_profile_id_upper: str,
+    existing_conv_id: Optional[str],
+    log_prefix: str
+) -> Optional[tuple[str, dict[str, Any], str, dict[str, Any]]]:
+    """Prepare API request data for sending message. Returns (url, payload, description, headers) or None."""
+    try:
+        base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
+        is_initial = not existing_conv_id
+
+        if is_initial:
+            send_api_url = urljoin(base_url_cfg.rstrip("/") + "/", API_PATH_SEND_MESSAGE_NEW)
+            send_api_desc = "Create Conversation API"
+            payload = {
+                "content": message_text,
+                "author": my_profile_id_lower,
+                "index": 0,
+                "created": 0,
+                "conversation_members": [
+                    {"user_id": recipient_profile_id_upper.lower(), "family_circles": []},
+                    {"user_id": my_profile_id_lower},
+                ],
+            }
+        elif existing_conv_id:
+            formatted_path = API_PATH_SEND_MESSAGE_EXISTING.format(conv_id=existing_conv_id)
+            send_api_url = urljoin(base_url_cfg.rstrip("/") + "/", formatted_path)
+            send_api_desc = "Send Message API (Existing Conv)"
+            payload = {"content": message_text, "author": my_profile_id_lower}
+        else:
+            logger.error(f"{log_prefix}: Logic Error - Cannot determine API URL/payload (existing_conv_id issue?).")
+            return None
+
+        ctx_headers = config_schema.api.api_contextual_headers.get(send_api_desc, {})
+        api_headers = ctx_headers.copy()
+
+        return send_api_url, payload, send_api_desc, api_headers
+    except Exception as prep_err:
+        logger.error(f"{log_prefix}: Error preparing API request data: {prep_err}", exc_info=True)
+        return None
+
+
+def _validate_send_message_request(
+    session_manager: "SessionManager",
+    person: "Person",
+    message_text: str,
+    log_prefix: str
+) -> Optional[tuple[str, Optional[str]]]:
+    """Validate send message request. Returns error tuple if invalid, None if valid."""
+    if not session_manager or not session_manager.my_profile_id:
+        logger.error(f"{log_prefix}: Cannot send message - SessionManager or own profile ID missing.")
+        return SEND_ERROR_MISSING_OWN_ID, None
+
+    if not isinstance(person, Person) or not getattr(person, "profile_id", None):
+        logger.error(f"{log_prefix}: Cannot send message - Invalid Person object (Type: {type(person)}) or missing profile ID.")
+        return SEND_ERROR_INVALID_RECIPIENT, None
+
+    if not isinstance(message_text, str) or not message_text.strip():
+        logger.error(f"{log_prefix}: Cannot send message - Message text is empty or invalid.")
+        return SEND_ERROR_API_PREP_FAILED, None
+
+    return None
+
+
+def _handle_dry_run_mode(person: "Person", existing_conv_id: Optional[str], log_prefix: str) -> tuple[str, Optional[str]]:
+    """Handle dry run mode for message sending."""
+    message_status = SEND_SUCCESS_DRY_RUN
+    effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
+    logger.info(f"{log_prefix}: Dry Run - Simulated message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')}.")
+    return message_status, effective_conv_id
+
+
 def call_send_message_api(
     session_manager: "SessionManager",
     person: "Person",
@@ -2145,97 +2284,28 @@ def call_send_message_api(
     existing_conv_id: Optional[str],
     log_prefix: str,
 ) -> tuple[str, Optional[str]]:
-    if not session_manager or not session_manager.my_profile_id:
-        logger.error(
-            f"{log_prefix}: Cannot send message - SessionManager or own profile ID missing."
-        )
-        return SEND_ERROR_MISSING_OWN_ID, None
-    # End of if
-
-    if not isinstance(person, Person) or not getattr(person, "profile_id", None):
-        logger.error(
-            f"{log_prefix}: Cannot send message - Invalid Person object (Type: {type(person)}) or missing profile ID."
-        )
-        return SEND_ERROR_INVALID_RECIPIENT, None
-    # End of if
-    if not isinstance(message_text, str) or not message_text.strip():
-        logger.error(
-            f"{log_prefix}: Cannot send message - Message text is empty or invalid."
-        )
-        return SEND_ERROR_API_PREP_FAILED, None
-    # End of if
+    validation_error = _validate_send_message_request(session_manager, person, message_text, log_prefix)
+    if validation_error:
+        return validation_error
 
     app_mode = config_schema.app_mode
     if app_mode == "dry_run":
-        message_status = SEND_SUCCESS_DRY_RUN
-        effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
-        logger.info(
-            f"{log_prefix}: Dry Run - Simulated message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown') }."
-        )
-        return message_status, effective_conv_id
+        return _handle_dry_run_mode(person, existing_conv_id, log_prefix)
     if app_mode not in ["production", "testing"]:
-        logger.error(
-            f"{log_prefix}: Logic Error - Unexpected APP_MODE '{app_mode}' reached send logic."
-        )
+        logger.error(f"{log_prefix}: Logic Error - Unexpected APP_MODE '{app_mode}' reached send logic.")
         return SEND_ERROR_INTERNAL_MODE, None
-    # End of if/elif
 
     MY_PROFILE_ID_LOWER = session_manager.my_profile_id.lower()
     MY_PROFILE_ID_UPPER = session_manager.my_profile_id.upper()
     recipient_profile_id_upper = getattr(person, "profile_id", "").upper()
 
-    is_initial = not existing_conv_id
-    send_api_url: str = ""
-    payload: dict[str, Any] = {}
-    send_api_desc: str = ""
-    api_headers: dict[str, Any] = {}
-
-    try:
-        base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
-        if is_initial:
-            send_api_url = urljoin(
-                base_url_cfg.rstrip("/") + "/", API_PATH_SEND_MESSAGE_NEW
-            )
-            send_api_desc = "Create Conversation API"
-            payload = {
-                "content": message_text,
-                "author": MY_PROFILE_ID_LOWER,
-                "index": 0,
-                "created": 0,
-                "conversation_members": [
-                    {
-                        "user_id": recipient_profile_id_upper.lower(),
-                        "family_circles": [],
-                    },
-                    {"user_id": MY_PROFILE_ID_LOWER},
-                ],
-            }
-        elif existing_conv_id:
-            formatted_path = API_PATH_SEND_MESSAGE_EXISTING.format(
-                conv_id=existing_conv_id
-            )
-            send_api_url = urljoin(base_url_cfg.rstrip("/") + "/", formatted_path)
-            send_api_desc = "Send Message API (Existing Conv)"
-            payload = {
-                "content": message_text,
-                "author": MY_PROFILE_ID_LOWER,
-            }
-        else:
-            logger.error(
-                f"{log_prefix}: Logic Error - Cannot determine API URL/payload (existing_conv_id issue?)."
-            )
-            return SEND_ERROR_API_PREP_FAILED, None
-        # End of if/elif/else
-
-        ctx_headers = config_schema.api.api_contextual_headers.get(send_api_desc, {})
-        api_headers = ctx_headers.copy()
-
-    except Exception as prep_err:
-        logger.error(
-            f"{log_prefix}: Error preparing API request data: {prep_err}", exc_info=True
-        )
+    api_request_data = _prepare_send_message_request(
+        message_text, MY_PROFILE_ID_LOWER, recipient_profile_id_upper, existing_conv_id, log_prefix
+    )
+    if not api_request_data:
         return SEND_ERROR_API_PREP_FAILED, None
-    # End of try/except
+
+    send_api_url, payload, send_api_desc, api_headers = api_request_data
 
     api_response = _api_req(
         url=send_api_url,
@@ -2248,89 +2318,11 @@ def call_send_message_api(
         api_description=send_api_desc,
     )
 
-    message_status = SEND_ERROR_UNKNOWN
-    new_conversation_id_from_api: Optional[str] = None
-    post_ok = False
-
-    if api_response is None:
-        message_status = SEND_ERROR_POST_FAILED
-        logger.error(
-            f"{log_prefix}: API POST ({send_api_desc}) failed (No response/Retries exhausted)."
-        )
-    elif isinstance(api_response, requests.Response):
-        message_status = f"send_error (http_{api_response.status_code})"
-        logger.error(
-            f"{log_prefix}: API POST ({send_api_desc}) failed with status {api_response.status_code}."
-        )
-        from contextlib import suppress
-        with suppress(Exception):
-            logger.debug(f"Error response body: {api_response.text[:500]}")
-        # End of try/except
-    elif isinstance(api_response, dict):
-        try:
-            if is_initial:
-                api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
-                msg_details = api_response.get(KEY_MESSAGE, {})
-                api_author = (
-                    str(msg_details.get(KEY_AUTHOR, "")).upper()
-                    if isinstance(msg_details, dict)
-                    else None
-                )
-
-                if api_conv_id and api_author == MY_PROFILE_ID_UPPER:
-                    post_ok = True
-                    new_conversation_id_from_api = api_conv_id
-                else:
-                    logger.error(
-                        f"{log_prefix}: API initial response format invalid (ConvID: '{api_conv_id}', Author: '{api_author}', Expected Author: '{MY_PROFILE_ID_UPPER}')."
-                    )
-                    logger.debug(f"API Response: {api_response}")
-                    message_status = SEND_ERROR_VALIDATION_FAILED
-                # End of if/else
-            else:
-                api_author = str(api_response.get(KEY_AUTHOR, "")).upper()
-                if api_author == MY_PROFILE_ID_UPPER:
-                    post_ok = True
-                    new_conversation_id_from_api = existing_conv_id
-                else:
-                    logger.error(
-                        f"{log_prefix}: API follow-up author validation failed (Author: '{api_author}', Expected Author: '{MY_PROFILE_ID_UPPER}')."
-                    )
-                    logger.debug(f"API Response: {api_response}")
-                    message_status = SEND_ERROR_VALIDATION_FAILED
-                # End of if/else
-            # End of if/else
-
-            if post_ok:
-                message_status = SEND_SUCCESS_DELIVERED
-                logger.info(
-                    f"{log_prefix}: Message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')} successful (ConvID: {new_conversation_id_from_api})."
-                )
-            # End of if
-
-        except Exception as parse_err:
-            logger.error(
-                f"{log_prefix}: Error parsing successful API response ({send_api_desc}): {parse_err}",
-                exc_info=True,
-            )
-            logger.debug(f"API Response received: {api_response}")
-            message_status = SEND_ERROR_UNEXPECTED_FORMAT
-        # End of try/except
-    else:
-        logger.error(
-            f"{log_prefix}: API call ({send_api_desc}) unexpected success format. Type:{type(api_response)}, Resp:{str(api_response)[:200]}"
-        )
-        message_status = SEND_ERROR_UNEXPECTED_FORMAT
-    # End of if/elif/else
-
-    if not post_ok and message_status == SEND_ERROR_UNKNOWN:
-        message_status = SEND_ERROR_VALIDATION_FAILED
-        logger.warning(
-            f"{log_prefix}: Message send attempt concluded with status: {message_status}"
-        )
-    # End of if
-
-    return message_status, new_conversation_id_from_api
+    is_initial = not existing_conv_id
+    return _process_send_message_response(
+        api_response, is_initial, existing_conv_id, MY_PROFILE_ID_UPPER,
+        person, send_api_desc, log_prefix
+    )
 
 
 # End of call_send_message_api
