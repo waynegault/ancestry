@@ -67,7 +67,7 @@ except ImportError:
         def __init__(self, name: str) -> None:
             self.name = name
 
-        def __call__(self, *args: Any, **kwargs: Any) -> 'DummyComponent':
+        def __call__(self, *_args: Any, **_kwargs: Any) -> 'DummyComponent':
             return self
 
         def __repr__(self) -> str:
