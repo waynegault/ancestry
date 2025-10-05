@@ -1760,6 +1760,146 @@ class InboxProcessor:
         )
         return final_logs, final_persons, stop_reason
 
+    def _fetch_and_process_batch(
+        self,
+        state: dict[str, Any],
+    ) -> tuple[bool, Optional[str], list[Any], Optional[str]]:
+        """Fetch and process batch. Returns (should_stop, stop_reason, batch, next_cursor)."""
+        # Check preconditions
+        should_stop, stop_reason_check, current_limit = self._check_batch_preconditions(
+            state["current_batch_num"], state["items_processed_before_stop"]
+        )
+        if should_stop:
+            return True, stop_reason_check, [], None
+
+        # Fetch and validate batch
+        should_stop, stop_reason_check, all_conversations_batch, next_cursor_from_api = (
+            self._fetch_and_validate_batch(current_limit, state["next_cursor"])
+        )
+        if should_stop:
+            return True, stop_reason_check, [], None
+
+        # Update batch counters
+        batch_api_item_count = len(all_conversations_batch)
+        state["total_processed_api_items"] += batch_api_item_count
+        state["current_batch_num"] += 1
+
+        # Log progress periodically
+        if state["current_batch_num"] % 5 == 0 or state["total_processed_api_items"] >= 100:
+            logger.info(
+                f"Action 7 Progress: Batch {state['current_batch_num']} "
+                f"(Processed={state['total_processed_api_items']}, AI={state['ai_classified_count']}, "
+                f"StatusUpdates={state['status_updated_count']}, Errors={state['error_count_this_loop']})"
+            )
+
+        return False, None, all_conversations_batch, next_cursor_from_api
+
+    def _handle_batch_and_commit(
+        self,
+        session: DbSession,
+        state: dict[str, Any],
+        all_conversations_batch: list[Any],
+        comp_conv_id: Optional[str],
+        comp_ts: Optional[datetime],
+        my_pid_lower: str,
+        progress_bar: Optional[tqdm],
+    ) -> tuple[bool, Optional[str]]:
+        """Handle batch processing and commit. Returns (should_stop, stop_reason)."""
+        # Update progress bar
+        self._update_progress_bar_initial(progress_bar, len(all_conversations_batch))
+
+        # Prefetch batch data
+        existing_persons_map, existing_conv_logs, prefetch_error = (
+            self._prefetch_batch_data(session, all_conversations_batch, state["current_batch_num"])
+        )
+        if prefetch_error:
+            return True, prefetch_error
+
+        # Process conversations in batch
+        batch_stop, batch_stop_reason = self._process_conversations_in_batch(
+            session, all_conversations_batch, existing_persons_map, existing_conv_logs,
+            comp_conv_id, comp_ts, my_pid_lower, state["min_aware_dt"], progress_bar, state
+        )
+
+        # Commit batch updates
+        logs_committed, persons_updated = self._commit_batch_updates(
+            session, state["conv_log_upserts_dicts"], state["person_updates"], state["current_batch_num"]
+        )
+        state["status_updated_count"] += persons_updated
+        state["logs_processed_in_run"] += logs_committed
+
+        # Check if batch processing should stop
+        if batch_stop:
+            return True, batch_stop_reason or "Comparator Found"
+
+        return False, None
+
+    def _process_single_batch_iteration(
+        self,
+        session: DbSession,
+        state: dict[str, Any],
+        comp_conv_id: Optional[str],
+        comp_ts: Optional[datetime],
+        my_pid_lower: str,
+        progress_bar: Optional[tqdm],
+    ) -> tuple[bool, Optional[str]]:
+        """Process a single batch iteration. Returns (should_stop, stop_reason)."""
+        # Fetch and process batch
+        should_stop, stop_reason, all_conversations_batch, next_cursor_from_api = (
+            self._fetch_and_process_batch(state)
+        )
+        if should_stop:
+            return True, stop_reason
+
+        # Handle empty batch
+        if len(all_conversations_batch) == 0:
+            should_stop, empty_reason = self._handle_empty_batch(next_cursor_from_api)
+            if should_stop:
+                return True, empty_reason
+            state["next_cursor"] = next_cursor_from_api
+            return False, None
+
+        # Handle batch and commit
+        should_stop, stop_reason = self._handle_batch_and_commit(
+            session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+        )
+        if should_stop:
+            return True, stop_reason
+
+        # Prepare for next batch
+        state["next_cursor"] = next_cursor_from_api
+        if not next_cursor_from_api:
+            if progress_bar is not None:
+                progress_bar.total = state["items_processed_before_stop"]
+                progress_bar.refresh()
+            return True, "End of Inbox Reached (No Next Cursor)"
+
+        # Check for cancellation
+        if self._check_cancellation_requested():
+            logger.warning("Cancellation requested by timeout wrapper. Stopping inbox processing loop.")
+            return True, "Timeout Cancellation"
+
+        return False, None
+
+    def _handle_loop_exception(
+        self,
+        exception: Exception,
+        exception_type: str,
+        session: DbSession,
+        state: dict[str, Any],
+    ) -> tuple[Optional[str], int, int]:
+        """Handle exceptions during batch processing."""
+        if exception_type != "Exception":
+            state["error_count_this_loop"] += 1
+
+        final_logs, final_persons, stop_reason = self._handle_batch_processing_exception(
+            exception, exception_type, session,
+            state["conv_log_upserts_dicts"], state["person_updates"], state["current_batch_num"]
+        )
+        state["status_updated_count"] += final_persons
+        state["logs_processed_in_run"] += final_logs
+        return stop_reason, final_logs, final_persons
+
     def _process_inbox_loop(
         self,
         session: DbSession,
@@ -1774,189 +1914,47 @@ class InboxProcessor:
         # Initialize loop state
         state = self._initialize_loop_state()
 
-        # Extract variables from state for easier access
-        (ai_classified_count, status_updated_count, total_processed_api_items,
-         items_processed_before_stop, logs_processed_in_run, skipped_count_this_loop,
-         error_count_this_loop, stop_reason, next_cursor, current_batch_num,
-         conv_log_upserts_dicts, person_updates, stop_processing, min_aware_dt,
-         conversations_needing_processing) = self._extract_state_variables(state)
-
         # Step 2: Main loop - continues until stop condition met
-        while not stop_processing:
-            try:  # Inner try for handling exceptions within a single batch iteration
-                # Check preconditions (browser health, session, API limit)
-                should_stop, stop_reason_check, current_limit = self._check_batch_preconditions(
-                    current_batch_num, items_processed_before_stop
+        while not state["stop_processing"]:
+            try:
+                # Process single batch iteration
+                should_stop, batch_stop_reason = self._process_single_batch_iteration(
+                    session, state, comp_conv_id, comp_ts, my_pid_lower, progress_bar
                 )
+
                 if should_stop:
-                    stop_reason = stop_reason_check
-                    stop_processing = True
-                    break
-
-                # Fetch and validate batch
-                should_stop, stop_reason_check, all_conversations_batch, next_cursor_from_api = (
-                    self._fetch_and_validate_batch(current_limit, next_cursor)
-                )
-                if should_stop:
-                    stop_reason = stop_reason_check
-                    stop_processing = True
-                    break
-
-                # Step 2f: Process fetched batch
-                batch_api_item_count = len(all_conversations_batch)
-                total_processed_api_items += batch_api_item_count
-                current_batch_num += 1
-
-                # Log progress periodically
-                if current_batch_num % 5 == 0 or total_processed_api_items >= 100:
-                    logger.info(
-                        f"Action 7 Progress: Batch {current_batch_num} "
-                        f"(Processed={total_processed_api_items}, AI={ai_classified_count}, "
-                        f"StatusUpdates={status_updated_count}, Errors={error_count_this_loop})"
-                    )
-
-                # Handle empty batch
-                if batch_api_item_count == 0:
-                    should_stop, empty_reason = self._handle_empty_batch(next_cursor_from_api)
-                    if should_stop:
-                        stop_reason = empty_reason
-                        stop_processing = True
-                        break
-                    next_cursor = next_cursor_from_api
-                    continue
-
-                # Update progress bar total on first batch
-                self._update_progress_bar_initial(progress_bar, batch_api_item_count)
-
-                # Step 2g: Prefetch existing Person and ConversationLog data for batch
-                existing_persons_map, existing_conv_logs, prefetch_error = (
-                    self._prefetch_batch_data(session, all_conversations_batch, current_batch_num)
-                )
-                if prefetch_error:
-                    stop_reason = prefetch_error
-                    stop_processing = True
-                    break
-
-                # Step 2h: Process each conversation in the batch
-                # Update state dict with current values before calling helper
-                state.update({
-                    "items_processed_before_stop": items_processed_before_stop,
-                    "skipped_count_this_loop": skipped_count_this_loop,
-                    "error_count_this_loop": error_count_this_loop,
-                    "ai_classified_count": ai_classified_count,
-                    "status_updated_count": status_updated_count,
-                    "conversations_needing_processing": conversations_needing_processing,
-                })
-
-                batch_stop, batch_stop_reason = self._process_conversations_in_batch(
-                    session, all_conversations_batch, existing_persons_map, existing_conv_logs,
-                    comp_conv_id, comp_ts, my_pid_lower, min_aware_dt, progress_bar, state
-                )
-
-                # Extract updated values from state
-                items_processed_before_stop = state["items_processed_before_stop"]
-                skipped_count_this_loop = state["skipped_count_this_loop"]
-                error_count_this_loop = state["error_count_this_loop"]
-                ai_classified_count = state["ai_classified_count"]
-                conversations_needing_processing = state["conversations_needing_processing"]
-
-                if batch_stop:
-                    stop_processing = True
-                    if batch_stop_reason:
-                        stop_reason = batch_stop_reason
-
-                # Commit batch data
-                logs_committed, persons_updated = self._commit_batch_updates(
-                    session, conv_log_upserts_dicts, person_updates, current_batch_num
-                )
-                status_updated_count += persons_updated
-                logs_processed_in_run += logs_committed
-
-                # Check stop flag after commit
-                if stop_processing:
-                    if not stop_reason:
-                        stop_reason = "Comparator Found"
-                    break
-
-                # Prepare for next batch
-                next_cursor = next_cursor_from_api
-                if not next_cursor:
-                    stop_reason = "End of Inbox Reached (No Next Cursor)"
-                    stop_processing = True
-                    logger.debug("No next cursor from API. Ending processing.")
-                    if progress_bar is not None:
-                        progress_bar.total = items_processed_before_stop
-                        progress_bar.refresh()
-                    break
-
-                # Check for cancellation request
-                if self._check_cancellation_requested():
-                    stop_reason = stop_reason or "Timeout Cancellation"
-                    stop_processing = True
-                    logger.warning("Cancellation requested by timeout wrapper. Stopping inbox processing loop.")
+                    state["stop_reason"] = batch_stop_reason
+                    state["stop_processing"] = True
                     break
 
             # Handle exceptions during batch processing
             except WebDriverException as wde:
-                error_count_this_loop += 1
-                final_logs, final_persons, stop_reason = self._handle_batch_processing_exception(
-                    wde, "WebDriverException", session, conv_log_upserts_dicts, person_updates, current_batch_num
-                )
-                status_updated_count += final_persons
-                logs_processed_in_run += final_logs
-                stop_processing = True
+                state["stop_reason"], _, _ = self._handle_loop_exception(wde, "WebDriverException", session, state)
+                state["stop_processing"] = True
                 break
 
             except KeyboardInterrupt as ki:
-                final_logs, final_persons, stop_reason = self._handle_batch_processing_exception(
-                    ki, "KeyboardInterrupt", session, conv_log_upserts_dicts, person_updates, current_batch_num
-                )
-                status_updated_count += final_persons
-                logs_processed_in_run += final_logs
-                stop_processing = True
+                state["stop_reason"], _, _ = self._handle_loop_exception(ki, "KeyboardInterrupt", session, state)
+                state["stop_processing"] = True
                 break
 
             except Exception as e_main:
-                error_count_this_loop += 1
-                final_logs, final_persons, stop_reason = self._handle_batch_processing_exception(
-                    e_main, "Exception", session, conv_log_upserts_dicts, person_updates, current_batch_num
-                )
-                status_updated_count += final_persons
-                logs_processed_in_run += final_logs
-                stop_processing = True
-
+                state["stop_reason"], _, _ = self._handle_loop_exception(e_main, "Exception", session, state)
+                state["stop_processing"] = True
                 return (
-                    stop_reason,
-                    total_processed_api_items,
-                    ai_classified_count,
-                    status_updated_count,
-                    items_processed_before_stop,
+                    state["stop_reason"],
+                    state["total_processed_api_items"],
+                    state["ai_classified_count"],
+                    state["status_updated_count"],
+                    state["items_processed_before_stop"],
                 )
 
         # --- End Main Loop (while not stop_processing) ---
 
-        # Update state dictionary with final values
-        state.update({
-            "ai_classified_count": ai_classified_count,
-            "status_updated_count": status_updated_count,
-            "total_processed_api_items": total_processed_api_items,
-            "items_processed_before_stop": items_processed_before_stop,
-            "logs_processed_in_run": logs_processed_in_run,
-            "skipped_count_this_loop": skipped_count_this_loop,
-            "error_count_this_loop": error_count_this_loop,
-            "stop_reason": stop_reason,
-            "next_cursor": next_cursor,
-            "current_batch_num": current_batch_num,
-            "conv_log_upserts_dicts": conv_log_upserts_dicts,
-            "person_updates": person_updates,
-            "stop_processing": stop_processing,
-            "conversations_needing_processing": conversations_needing_processing,
-        })
-
         # Step 4: Perform final commit if loop finished normally or stopped early
         if (
-            not stop_reason
-            or stop_reason
+            not state["stop_reason"]
+            or state["stop_reason"]
             in (  # Only commit if loop ended somewhat gracefully
                 "Comparator Found",
                 "Comparator Found (No Change)",
@@ -1964,25 +1962,24 @@ class InboxProcessor:
                 "End of Inbox Reached (Empty Batch, No Cursor)",
                 "End of Inbox Reached (No Next Cursor)",
             )
-        ) and (conv_log_upserts_dicts or person_updates):
+        ) and (state["conv_log_upserts_dicts"] or state["person_updates"]):
             logger.debug("Performing final commit at end of processing loop...")
-            # --- CALL NEW FUNCTION ---
             final_logs_saved, final_persons_updated = commit_bulk_data(
                 session=session,
-                log_upserts=conv_log_upserts_dicts,
-                person_updates=person_updates,
+                log_upserts=state["conv_log_upserts_dicts"],
+                person_updates=state["person_updates"],
                 context="Action 7 Final Save (Normal Exit)",
             )
-            status_updated_count += final_persons_updated
-            logs_processed_in_run += final_logs_saved
+            state["status_updated_count"] += final_persons_updated
+            state["logs_processed_in_run"] += final_logs_saved
 
-        # Step 5: Return results from the loop execution (modified tuple)
+        # Step 5: Return results from the loop execution
         return (
-            stop_reason,
-            total_processed_api_items,
-            ai_classified_count,
-            status_updated_count,
-            items_processed_before_stop,
+            state["stop_reason"],
+            state["total_processed_api_items"],
+            state["ai_classified_count"],
+            state["status_updated_count"],
+            state["items_processed_before_stop"],
         )
 
     # End of _process_inbox_loop
