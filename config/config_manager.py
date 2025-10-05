@@ -409,6 +409,57 @@ class ConfigManager:
             logger.warning(f"Auto-detection failed, using defaults: {e}")
             return {}
 
+    def _check_minimum_requirements(self, cpu_count: int, memory_gb: float, disk_space_gb: float, validation_results: dict[str, Any]) -> None:
+        """Check minimum system requirements and update validation results."""
+        if cpu_count < 2:
+            validation_results["warnings"].append(
+                f"Low CPU count ({cpu_count}). Recommend at least 2 cores for optimal performance."
+            )
+
+        if memory_gb < 4:
+            validation_results["errors"].append(
+                f"Insufficient memory ({memory_gb:.1f}GB). Minimum 4GB required."
+            )
+            validation_results["valid"] = False
+
+        if disk_space_gb < 1:
+            validation_results["errors"].append(
+                f"Insufficient disk space ({disk_space_gb:.1f}GB). Minimum 1GB free space required."
+            )
+            validation_results["valid"] = False
+
+    def _check_optimal_performance(self, cpu_count: int, memory_gb: float, validation_results: dict[str, Any]) -> None:
+        """Check for optimal performance opportunities and add recommendations."""
+        if memory_gb >= 16:
+            validation_results["recommendations"].append(
+                "High memory detected. Consider enabling GPU acceleration and increasing cache sizes."
+            )
+
+        if cpu_count >= 8:
+            validation_results["recommendations"].append(
+                "High CPU count detected. Consider increasing concurrency settings for better performance."
+            )
+
+    def _check_dependencies_and_chrome(self, validation_results: dict[str, Any]) -> None:
+        """Check Python dependencies and Chrome availability."""
+        import shutil
+
+        # Check Python dependencies
+        try:
+            from importlib.util import find_spec
+            deps = ["requests", "selenium", "sqlalchemy"]
+            validation_results["dependencies_ok"] = all(find_spec(d) is not None for d in deps)
+        except Exception as e:
+            validation_results["errors"].append(f"Missing required dependency: {e}")
+            validation_results["valid"] = False
+
+        # Check Chrome/ChromeDriver availability
+        chrome_available = shutil.which("chrome") or shutil.which("google-chrome") or shutil.which("chromium")
+        if not chrome_available:
+            validation_results["warnings"].append(
+                "Chrome browser not found in PATH. Selenium automation may not work."
+            )
+
     def validate_system_requirements(self) -> dict[str, Any]:
         """
         Validate system requirements and provide recommendations.
@@ -417,8 +468,6 @@ class ConfigManager:
             Dictionary with validation results and recommendations
         """
         try:
-            import shutil
-
             import psutil
 
             validation_results = {
@@ -440,50 +489,10 @@ class ConfigManager:
                 "free_disk_gb": round(disk_space_gb, 1)
             }
 
-            # Validate minimum requirements
-            if cpu_count < 2:
-                validation_results["warnings"].append(
-                    f"Low CPU count ({cpu_count}). Recommend at least 2 cores for optimal performance."
-                )
-
-            if memory_gb < 4:
-                validation_results["errors"].append(
-                    f"Insufficient memory ({memory_gb:.1f}GB). Minimum 4GB required."
-                )
-                validation_results["valid"] = False
-
-            if disk_space_gb < 1:
-                validation_results["errors"].append(
-                    f"Insufficient disk space ({disk_space_gb:.1f}GB). Minimum 1GB free space required."
-                )
-                validation_results["valid"] = False
-
-            # Check for optimal performance
-            if memory_gb >= 16:
-                validation_results["recommendations"].append(
-                    "High memory detected. Consider enabling GPU acceleration and increasing cache sizes."
-                )
-
-            if cpu_count >= 8:
-                validation_results["recommendations"].append(
-                    "High CPU count detected. Consider increasing concurrency settings for better performance."
-                )
-
-            # Check Python dependencies
-            try:
-                from importlib.util import find_spec
-                deps = ["requests", "selenium", "sqlalchemy"]
-                validation_results["dependencies_ok"] = all(find_spec(d) is not None for d in deps)
-            except Exception as e:
-                validation_results["errors"].append(f"Missing required dependency: {e}")
-                validation_results["valid"] = False
-
-            # Check Chrome/ChromeDriver availability
-            chrome_available = shutil.which("chrome") or shutil.which("google-chrome") or shutil.which("chromium")
-            if not chrome_available:
-                validation_results["warnings"].append(
-                    "Chrome browser not found in PATH. Selenium automation may not work."
-                )
+            # Perform validation checks
+            self._check_minimum_requirements(cpu_count, memory_gb, disk_space_gb, validation_results)
+            self._check_optimal_performance(cpu_count, memory_gb, validation_results)
+            self._check_dependencies_and_chrome(validation_results)
 
             return validation_results
 
@@ -495,6 +504,49 @@ class ConfigManager:
                 "recommendations": [],
                 "system_info": {}
             }
+
+    def _print_system_info(self, system_info: dict[str, Any]) -> None:
+        """Print system information."""
+        print("\n📊 System Information:")
+        print(f"   CPU Cores: {system_info.get('cpu_cores', 'Unknown')}")
+        print(f"   Memory: {system_info.get('memory_gb', 'Unknown')}GB")
+        print(f"   Free Disk: {system_info.get('free_disk_gb', 'Unknown')}GB")
+
+    def _print_validation_results(self, validation: dict[str, Any]) -> bool:
+        """Print validation results. Returns True if valid, False otherwise."""
+        if validation.get("errors"):
+            print("\n❌ Critical Issues:")
+            for error in validation["errors"]:
+                print(f"   • {error}")
+
+        if validation.get("warnings"):
+            print("\n⚠️  Warnings:")
+            for warning in validation["warnings"]:
+                print(f"   • {warning}")
+
+        if validation.get("recommendations"):
+            print("\n💡 Recommendations:")
+            for rec in validation["recommendations"]:
+                print(f"   • {rec}")
+
+        if not validation.get("valid"):
+            print("\n❌ Setup cannot continue due to critical issues.")
+            return False
+
+        print("\n✅ System validation passed!")
+        return True
+
+    def _print_optimal_settings(self, auto_detected: dict[str, Any]) -> None:
+        """Print auto-detected optimal settings."""
+        print("\n🔧 Auto-detected Optimal Settings:")
+
+        api_config = auto_detected.get("api", {})
+        print(f"   Concurrency: {api_config.get('max_concurrency', 'Default')}")
+        print(f"   Thread Pool: {api_config.get('thread_pool_workers', 'Default')}")
+
+        cache_config = auto_detected.get("cache", {})
+        print(f"   Memory Cache: {cache_config.get('memory_cache_size', 'Default')}MB")
+        print(f"   Disk Cache: {cache_config.get('disk_cache_size_mb', 'Default')}MB")
 
     def run_setup_wizard(self, interactive: bool = True) -> bool:
         """
@@ -513,45 +565,16 @@ class ConfigManager:
             # Validate system requirements
             validation = self.validate_system_requirements()
 
-            print("\n📊 System Information:")
-            system_info = validation.get("system_info", {})
-            print(f"   CPU Cores: {system_info.get('cpu_cores', 'Unknown')}")
-            print(f"   Memory: {system_info.get('memory_gb', 'Unknown')}GB")
-            print(f"   Free Disk: {system_info.get('free_disk_gb', 'Unknown')}GB")
+            # Print system information
+            self._print_system_info(validation.get("system_info", {}))
 
             # Show validation results
-            if validation.get("errors"):
-                print("\n❌ Critical Issues:")
-                for error in validation["errors"]:
-                    print(f"   • {error}")
-
-            if validation.get("warnings"):
-                print("\n⚠️  Warnings:")
-                for warning in validation["warnings"]:
-                    print(f"   • {warning}")
-
-            if validation.get("recommendations"):
-                print("\n💡 Recommendations:")
-                for rec in validation["recommendations"]:
-                    print(f"   • {rec}")
-
-            if not validation.get("valid"):
-                print("\n❌ Setup cannot continue due to critical issues.")
+            if not self._print_validation_results(validation):
                 return False
-
-            print("\n✅ System validation passed!")
 
             # Auto-detect and show optimal settings
             auto_detected = self._auto_detect_optimal_settings()
-            print("\n🔧 Auto-detected Optimal Settings:")
-
-            api_config = auto_detected.get("api", {})
-            print(f"   Concurrency: {api_config.get('max_concurrency', 'Default')}")
-            print(f"   Thread Pool: {api_config.get('thread_pool_workers', 'Default')}")
-
-            cache_config = auto_detected.get("cache", {})
-            print(f"   Memory Cache: {cache_config.get('memory_cache_size', 'Default')}MB")
-            print(f"   Disk Cache: {cache_config.get('disk_cache_size_mb', 'Default')}MB")
+            self._print_optimal_settings(auto_detected)
 
             if interactive:
                 response = input("\n✨ Use auto-detected settings? (Y/n): ").strip().lower()
