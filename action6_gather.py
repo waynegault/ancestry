@@ -2841,6 +2841,79 @@ def _sync_cookies_and_get_csrf_for_scraper(
     return csrf_token_val
 
 
+def _process_relationship_prob_response(
+    response_rel: Any,
+    sample_id_upper: str,
+    api_description: str,
+    max_labels_param: int,
+) -> Optional[str]:
+    """
+    Process the relationship probability API response and extract prediction.
+
+    Returns:
+        Formatted relationship string with probability, or None if processing fails
+    """
+    if not response_rel.content:
+        logger.warning(
+            f"{api_description}: OK ({response_rel.status_code}), but response body EMPTY."
+        )
+        return None
+
+    try:
+        data = response_rel.json()
+    except json.JSONDecodeError as json_err:
+        logger.error(
+            f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}"
+        )
+        logger.debug(f"Response text: {response_rel.text[:500]}")
+        raise RequestException("JSONDecodeError") from json_err
+
+    if "matchProbabilityToSampleId" not in data:
+        logger.warning(
+            f"Invalid data structure from {api_description} for {sample_id_upper}. Resp: {data}"
+        )
+        return None
+
+    prob_data = data["matchProbabilityToSampleId"]
+    predictions = prob_data.get("relationships", {}).get("predictions", [])
+
+    if not predictions:
+        logger.debug(
+            f"No relationship predictions found for {sample_id_upper}. Marking as Distant."
+        )
+        return "Distant relationship?"
+
+    valid_preds = [
+        p
+        for p in predictions
+        if isinstance(p, dict)
+        and "distributionProbability" in p
+        and "pathsToMatch" in p
+    ]
+
+    if not valid_preds:
+        logger.warning(f"No valid prediction paths found for {sample_id_upper}.")
+        return None
+
+    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+    top_prob = best_pred.get("distributionProbability", 0.0)
+    top_prob_display = top_prob * 100.0
+    paths = best_pred.get("pathsToMatch", [])
+    labels = [
+        p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
+    ]
+
+    if not labels:
+        logger.warning(
+            f"Prediction found for {sample_id_upper}, but no labels in paths. Top prob: {top_prob_display:.1f}%"
+        )
+        return None
+
+    final_labels = labels[:max_labels_param]
+    relationship_str = " or ".join(map(str, final_labels))
+    return f"{relationship_str} [{top_prob_display:.1f}%]"
+
+
 def _parse_ladder_html(
     html_content: str,
     cfpid: str,
@@ -4034,72 +4107,11 @@ def _fetch_batch_relationship_prob(
             response_rel.raise_for_status()
             return None  # Fallback if raise_for_status doesn't trigger retry
 
+        # Process the response
         try:
-            if not response_rel.content:
-                logger.warning(
-                    f"{api_description}: OK ({response_rel.status_code}), but response body EMPTY."
-                )
-                return None  # Changed from "N/A (Empty Response)"
-
-            data = response_rel.json()
-
-            if "matchProbabilityToSampleId" not in data:
-                logger.warning(
-                    f"Invalid data structure from {api_description} for {sample_id_upper}. Resp: {data}"
-                )
-                return None  # Changed from "N/A (Invalid Data Structure)"
-
-            prob_data = data["matchProbabilityToSampleId"]
-            predictions = prob_data.get("relationships", {}).get("predictions", [])
-            if not predictions:
-                logger.debug(
-                    f"No relationship predictions found for {sample_id_upper}. Marking as Distant."
-                )
-                return "Distant relationship?"
-
-            valid_preds = [
-                p
-                for p in predictions
-                if isinstance(p, dict)
-                and "distributionProbability" in p
-                and "pathsToMatch" in p
-            ]
-            if not valid_preds:
-                logger.warning(
-                    f"No valid prediction paths found for {sample_id_upper}."
-                )
-                return None  # Changed from "N/A (No Valid Paths)"
-
-            best_pred = max(
-                valid_preds, key=lambda x: x.get("distributionProbability", 0.0)
+            return _process_relationship_prob_response(
+                response_rel, sample_id_upper, api_description, max_labels_param
             )
-            # Store the original decimal value (not multiplied by 100)
-            top_prob = best_pred.get("distributionProbability", 0.0)
-            # For display purposes only, calculate percentage
-            top_prob_display = top_prob * 100.0
-            paths = best_pred.get("pathsToMatch", [])
-            labels = [
-                p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
-            ]
-
-            if not labels:
-                logger.warning(
-                    f"Prediction found for {sample_id_upper}, but no labels in paths. Top prob: {top_prob_display:.1f}%"
-                )
-                # Return None if no labels, instead of a string that implies partial success
-                return None
-
-            final_labels = labels[:max_labels_param]
-            relationship_str = " or ".join(map(str, final_labels))
-            # Format the string with the percentage for display, but store the original decimal value
-            return f"{relationship_str} [{top_prob_display:.1f}%]"
-
-        except json.JSONDecodeError as json_err:
-            logger.error(
-                f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}"
-            )
-            logger.debug(f"Response text: {response_rel.text[:500]}")
-            raise RequestException("JSONDecodeError") from json_err
         except Exception as e:
             logger.error(
                 f"{api_description}: Error processing successful response for {sample_id_upper}: {e}",
