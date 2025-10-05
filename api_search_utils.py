@@ -270,38 +270,54 @@ def _get_tree_and_profile_ids(session_manager: SessionManager) -> tuple[Optional
     return tree_id, owner_profile_id
 
 
+def _parse_hyphenated_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
+    """Parse hyphenated lifespan format (e.g., '1850-1920')."""
+    parts = lifespan.split("-")
+    if len(parts) == 2:
+        try:
+            birth_year = int(parts[0].strip()) if parts[0].strip() else None
+            death_year = int(parts[1].strip()) if parts[1].strip() else None
+            return birth_year, death_year
+        except ValueError:
+            pass
+    return None, None
+
+
+def _parse_birth_notation(lifespan: str) -> Optional[int]:
+    """Parse birth notation format (e.g., 'b. 1850')."""
+    match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return None
+
+
+def _parse_death_notation(lifespan: str) -> Optional[int]:
+    """Parse death notation format (e.g., 'd. 1920')."""
+    match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return None
+
+
 def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
     """Parse lifespan string to extract birth and death years."""
-    birth_year = None
-    death_year = None
-
     if not lifespan:
-        return birth_year, death_year
+        return None, None
 
     if "-" in lifespan:
-        parts = lifespan.split("-")
-        if len(parts) == 2:
-            try:
-                birth_year = int(parts[0].strip()) if parts[0].strip() else None
-                death_year = int(parts[1].strip()) if parts[1].strip() else None
-            except ValueError:
-                pass
+        return _parse_hyphenated_lifespan(lifespan)
     elif "b." in lifespan.lower():
-        match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
-        if match:
-            try:
-                birth_year = int(match.group(1))
-            except ValueError:
-                pass
+        return _parse_birth_notation(lifespan), None
     elif "d." in lifespan.lower():
-        match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
-        if match:
-            try:
-                death_year = int(match.group(1))
-            except ValueError:
-                pass
+        return None, _parse_death_notation(lifespan)
 
-    return birth_year, death_year
+    return None, None
 
 
 def _process_suggest_result(suggestion: Dict[str, Any], search_criteria: Dict[str, Any], scoring_weights: Dict[str, int], date_flex: Dict[str, int]) -> Optional[Dict[str, Any]]:
@@ -940,6 +956,28 @@ def get_api_family_details(
     return result
 
 
+def _get_tree_id_for_relationship(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:
+    """Get tree ID from session manager or config."""
+    if tree_id:
+        return tree_id
+
+    tree_id = session_manager.my_tree_id
+    if tree_id:
+        return tree_id
+
+    tree_id = getattr(config_schema.test, "test_tree_id", "")
+    return tree_id if tree_id else None
+
+
+def _get_reference_id_for_relationship(reference_id: Optional[str]) -> Optional[str]:
+    """Get reference ID from parameter or config."""
+    if reference_id:
+        return reference_id
+
+    reference_id = config_schema.reference_person_id
+    return reference_id if reference_id else None
+
+
 def get_api_relationship_path(
     session_manager: SessionManager,
     person_id: str,
@@ -965,29 +1003,23 @@ def get_api_relationship_path(
         logger.error("Session manager is not valid or not logged in")
         return "(Session not valid)"
 
-    # Step 2: Get tree ID if not provided
+    # Step 2: Get tree ID
+    tree_id = _get_tree_id_for_relationship(session_manager, tree_id)
     if not tree_id:
-        tree_id = session_manager.my_tree_id
-        if not tree_id:
-            tree_id = getattr(config_schema.test, "test_tree_id", "")
-            if not tree_id:
-                logger.error("No tree ID available for API relationship path")
-                return "(Tree ID not available)"
+        logger.error("No tree ID available for API relationship path")
+        return "(Tree ID not available)"
 
-    # Step 3: Get reference ID if not provided
+    # Step 3: Get reference ID
+    reference_id = _get_reference_id_for_relationship(reference_id)
     if not reference_id:
-        reference_id = config_schema.reference_person_id
-        if not reference_id:
-            logger.error("Reference person ID not provided and not found in config")
-            return "(Reference person ID not available)"
+        logger.error("Reference person ID not provided and not found in config")
+        return "(Reference person ID not available)"
 
     # Step 4: Get base URL
     base_url = config_schema.api.base_url
 
     # Step 5: Call the getladder API to get relationship path
-    logger.info(
-        f"Getting relationship path from {person_id} to {reference_id} in tree {tree_id}"
-    )
+    logger.info(f"Getting relationship path from {person_id} to {reference_id} in tree {tree_id}")
     ladder_data = call_getladder_api(
         session_manager=session_manager,
         owner_tree_id=tree_id,
