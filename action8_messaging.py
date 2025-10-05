@@ -3218,14 +3218,13 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
 
 # ==============================================
-# Standalone Test Block
+# MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
-def action8_messaging_tests() -> None:
-    """Test suite for action8_messaging.py - Automated Messaging System with detailed reporting."""
+# Extracted from monolithic action8_messaging_tests() for better organization
+# Each test function is independent and can be run individually
 
-    suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
 
-    def test_function_availability() -> None:
+def _test_function_availability() -> None:
         """Test messaging system functions are available with detailed verification."""
         required_functions = [
             'safe_column_value', 'load_message_templates', 'determine_next_message_type',
@@ -3236,115 +3235,253 @@ def action8_messaging_tests() -> None:
         from test_framework import test_function_availability
         return test_function_availability(required_functions, globals(), "Action 8")
 
-    def test_safe_column_value() -> None:
-        """Test safe column value extraction with detailed verification."""
-        test_cases = [
-            (None, "attr", "default", "None object handling"),
-            (
-                type("MockObj", (), {"attr": "value"})(),
-                "attr",
-                "default",
-                "object with attribute",
-            ),
-            (
-                type("MockObj", (), {})(),
-                "missing_attr",
-                "fallback",
-                "object without attribute",
-            ),
-        ]
 
-        print("📋 Testing safe column value extraction:")
-        results = []
+def _test_safe_column_value() -> None:
+    """Test safe column value extraction with detailed verification."""
+    test_cases = [
+        (None, "attr", "default", "None object handling"),
+        (
+            type("MockObj", (), {"attr": "value"})(),
+            "attr",
+            "default",
+            "object with attribute",
+        ),
+        (
+            type("MockObj", (), {})(),
+            "missing_attr",
+            "fallback",
+            "object without attribute",
+        ),
+    ]
 
-        for obj, attr_name, default, description in test_cases:
-            try:
-                result = safe_column_value(obj, attr_name, default)
-                test_passed = result is not None or result == default
+    print("📋 Testing safe column value extraction:")
+    results = []
 
-                status = "✅" if test_passed else "❌"
-                print(f"   {status} {description}")
-                print(
-                    f"      Input: obj={type(obj).__name__}, attr='{attr_name}', default='{default}' → Result: {result!r}"
-                )
-
-                results.append(test_passed)
-
-            except Exception as e:
-                print(f"   ❌ {description}")
-                print(f"      Error: {e}")
-                results.append(False)
-                raise
-
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} safe column value tests passed"
-        )
-
-    def test_message_template_loading() -> None:
-        """Test message template loading functionality."""
-        print("📋 Testing message template loading:")
-        results = []
-
+    for obj, attr_name, default, description in test_cases:
         try:
-            templates = load_message_templates()
-            templates_loaded = isinstance(templates, dict)
+            result = safe_column_value(obj, attr_name, default)
+            test_passed = result is not None or result == default
 
-            status = "✅" if templates_loaded else "❌"
-            print(f"   {status} Message template loading")
+            status = "✅" if test_passed else "❌"
+            print(f"   {status} {description}")
             print(
-                f"      Type: {type(templates).__name__}, Count: {len(templates) if templates_loaded else 0}"
+                f"      Input: obj={type(obj).__name__}, attr='{attr_name}', default='{default}' → Result: {result!r}"
             )
 
-            results.append(templates_loaded)
-            assert templates_loaded, "load_message_templates should return a dictionary"
+            results.append(test_passed)
 
         except Exception as e:
-            print("   ❌ Message template loading")
+            print(f"   ❌ {description}")
             print(f"      Error: {e}")
             results.append(False)
-            # Don't raise as templates file might not exist in test environment
+            raise
 
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} safe column value tests passed"
+    )
+
+
+def _test_message_template_loading() -> None:
+    """Test message template loading functionality."""
+    print("📋 Testing message template loading:")
+    results = []
+
+    try:
+        templates = load_message_templates()
+        templates_loaded = isinstance(templates, dict)
+
+        status = "✅" if templates_loaded else "❌"
+        print(f"   {status} Message template loading")
         print(
-            f"📊 Results: {sum(results)}/{len(results)} message template loading tests passed"
+            f"      Type: {type(templates).__name__}, Count: {len(templates) if templates_loaded else 0}"
         )
 
-    def test_circuit_breaker_config() -> None:
-        """Test circuit breaker decorator configuration reflects Action 6 lessons."""
-        import inspect
+        results.append(templates_loaded)
+        assert templates_loaded, "load_message_templates should return a dictionary"
 
-        print("📋 Testing circuit breaker configuration:")
-        results = []
+    except Exception as e:
+        print("   ❌ Message template loading")
+        print(f"      Error: {e}")
+        results.append(False)
+        # Don't raise as templates file might not exist in test environment
 
-        # Get the decorators applied to send_messages_to_matches
-        func = send_messages_to_matches
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} message template loading tests passed"
+    )
 
-        # Check if function has the expected attributes from decorators
-        test_cases = [
-            ("Function is callable", callable(func)),
-            ("Function has error handling", hasattr(func, '__wrapped__') or hasattr(func, '__name__')),
-            ("Function name preserved", func.__name__ == 'send_messages_to_matches'),
+
+def _test_circuit_breaker_config() -> None:
+    """Test circuit breaker decorator configuration reflects Action 6 lessons."""
+    import inspect
+
+    print("📋 Testing circuit breaker configuration:")
+    results = []
+
+    # Get the decorators applied to send_messages_to_matches
+    func = send_messages_to_matches
+
+    # Check if function has the expected attributes from decorators
+    test_cases = [
+        ("Function is callable", callable(func)),
+        ("Function has error handling", hasattr(func, '__wrapped__') or hasattr(func, '__name__')),
+        ("Function name preserved", func.__name__ == 'send_messages_to_matches'),
+    ]
+
+    for description, condition in test_cases:
+        status = "✅" if condition else "❌"
+        print(f"   {status} {description}")
+        results.append(condition)
+
+    # Test that the function can be imported and called (basic validation)
+    try:
+        # Verify the function signature is intact
+        sig = inspect.signature(func)
+        has_session_manager = 'session_manager' in sig.parameters
+        status = "✅" if has_session_manager else "❌"
+        print(f"   {status} Function signature intact (has session_manager parameter)")
+        results.append(has_session_manager)
+    except Exception as e:
+        print(f"   ❌ Function signature validation failed: {e}")
+        results.append(False)
+
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} circuit breaker configuration tests passed"
+    )
+
+
+def _test_session_death_cascade_detection() -> None:
+    """Test session death cascade detection and handling."""
+    print("📋 Testing session death cascade detection:")
+    results = []
+
+    try:
+        # Test that MaxApiFailuresExceededError is available
+        error_available = MaxApiFailuresExceededError is not None
+        status = "✅" if error_available else "❌"
+        print(f"   {status} MaxApiFailuresExceededError class available")
+        results.append(error_available)
+
+        # Test cascade detection string matching
+        test_error = ConnectionError("Session death cascade detected in test")
+        cascade_detected = "Session death cascade detected" in str(test_error)
+        status = "✅" if cascade_detected else "❌"
+        print(f"   {status} Cascade detection string matching")
+        results.append(cascade_detected)
+
+        # Test error inheritance
+        cascade_error = MaxApiFailuresExceededError("Test cascade error", context={"source": "Action 8"})
+        is_exception = isinstance(cascade_error, Exception)
+        status = "✅" if is_exception else "❌"
+        print(f"   {status} MaxApiFailuresExceededError inherits from Exception")
+        results.append(is_exception)
+
+    except Exception as e:
+        print(f"   ❌ Session death cascade detection test failed: {e}")
+        results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} cascade detection tests passed")
+    assert all(results), "All session death cascade detection tests should pass"
+
+
+def _test_performance_tracking() -> None:
+    """Test performance tracking functionality."""
+    print("📋 Testing performance tracking:")
+    results = []
+
+    try:
+        # Test performance tracking function exists
+        func_exists = callable(_update_messaging_performance)
+        status = "✅" if func_exists else "❌"
+        print(f"   {status} _update_messaging_performance function available")
+        results.append(func_exists)
+
+        # Test with mock session manager
+        class MockSessionManager:
+            pass
+
+        mock_session = MockSessionManager()
+
+        # Test performance tracking doesn't crash
+        try:
+            _update_messaging_performance(mock_session, 1.5)
+            tracking_works = True
+        except Exception:
+            tracking_works = False
+
+        status = "✅" if tracking_works else "❌"
+        print(f"   {status} Performance tracking executes without errors")
+        results.append(tracking_works)
+
+        # Test attributes are created
+        has_response_times = hasattr(mock_session, '_response_times')
+        has_slow_calls = hasattr(mock_session, '_recent_slow_calls')
+        has_avg_time = hasattr(mock_session, '_avg_response_time')
+
+        attributes_created = has_response_times and has_slow_calls and has_avg_time
+        status = "✅" if attributes_created else "❌"
+        print(f"   {status} Performance tracking attributes created")
+        results.append(attributes_created)
+
+    except Exception as e:
+        print(f"   ❌ Performance tracking test failed: {e}")
+        results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} performance tracking tests passed")
+    assert all(results), "All performance tracking tests should pass"
+
+
+def _test_enhanced_error_handling() -> None:
+    """Test enhanced error handling patterns."""
+    print("📋 Testing enhanced error handling:")
+    results = []
+
+    try:
+        # Test error classes are available
+        error_classes = [
+            BrowserSessionError,
+            APIRateLimitError,
+            AuthenticationExpiredError,
+            MaxApiFailuresExceededError
         ]
 
-        for description, condition in test_cases:
-            status = "✅" if condition else "❌"
-            print(f"   {status} {description}")
-            results.append(condition)
+        for error_class in error_classes:
+            try:
+                # Handle different error class signatures
+                if error_class == MaxApiFailuresExceededError:
+                    test_error = error_class("Test error", context={"source": "Action 8"})
+                else:
+                    test_error = error_class("Test error")
+                is_exception = isinstance(test_error, Exception)
+                status = "✅" if is_exception else "❌"
+                print(f"   {status} {error_class.__name__} class works correctly")
+                results.append(is_exception)
+            except Exception as e:
+                print(f"   ❌ {error_class.__name__} class failed: {e}")
+                results.append(False)
 
-        # Test that the function can be imported and called (basic validation)
-        try:
-            # Verify the function signature is intact
-            sig = inspect.signature(func)
-            has_session_manager = 'session_manager' in sig.parameters
-            status = "✅" if has_session_manager else "❌"
-            print(f"   {status} Function signature intact (has session_manager parameter)")
-            results.append(has_session_manager)
-        except Exception as e:
-            print(f"   ❌ Function signature validation failed: {e}")
-            results.append(False)
+        # Test enhanced recovery import
+        recovery_available = with_enhanced_recovery is not None
+        status = "✅" if recovery_available else "❌"
+        print(f"   {status} Enhanced recovery decorator available")
+        results.append(recovery_available)
 
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} circuit breaker configuration tests passed"
-        )
+    except Exception as e:
+        print(f"   ❌ Enhanced error handling test failed: {e}")
+        results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} enhanced error handling tests passed")
+    assert all(results), "All enhanced error handling tests should pass"
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
+def action8_messaging_tests() -> None:
+    """Test suite for action8_messaging.py - Automated Messaging System with detailed reporting."""
+
+    suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
 
     print(
         "📧 Running Action 8 - Automated Messaging System comprehensive test suite..."
@@ -3353,7 +3490,7 @@ def action8_messaging_tests() -> None:
     with suppress_logging():
         suite.run_test(
             "Function availability verification",
-            test_function_availability,
+            _test_function_availability,
             "7 messaging functions tested: safe_column_value, load_message_templates, determine_next_message_type, _safe_commit_with_rollback, _get_simple_messaging_data, _process_single_person, send_messages_to_matches.",
             "Test messaging system functions are available with detailed verification.",
             "Verify safe_column_value→SQLAlchemy extraction, load_message_templates→database loading, determine_next_message_type→logic, _safe_commit_with_rollback→database, _get_simple_messaging_data→simplified fetching, _process_single_person→individual processing, send_messages_to_matches→main function.",
@@ -3361,7 +3498,7 @@ def action8_messaging_tests() -> None:
 
         suite.run_test(
             "Safe column value extraction",
-            test_safe_column_value,
+            _test_safe_column_value,
             "3 safe extraction tests: None object, object with attribute, object without attribute - all handle gracefully.",
             "Test safe column value extraction with detailed verification.",
             "Verify safe_column_value() handles None→default, obj.attr→value, obj.missing→default extraction patterns.",
@@ -3369,7 +3506,7 @@ def action8_messaging_tests() -> None:
 
         suite.run_test(
             "Message template loading",
-            test_message_template_loading,
+            _test_message_template_loading,
             "Message template loading tested: load_message_templates() returns dictionary of templates from JSON.",
             "Test message template loading functionality.",
             "Verify load_message_templates() loads JSON→dict templates for messaging system.",
@@ -3377,137 +3514,15 @@ def action8_messaging_tests() -> None:
 
         suite.run_test(
             "Circuit breaker configuration",
-            test_circuit_breaker_config,
+            _test_circuit_breaker_config,
             "Circuit breaker configuration validated: failure_threshold=10, backoff_factor=4.0 for improved resilience.",
             "Test circuit breaker decorator configuration reflects Action 6 lessons.",
             "Verify send_messages_to_matches() has failure_threshold=10, backoff_factor=4.0 for production-ready error handling.",
         )
 
-    def test_session_death_cascade_detection() -> None:
-        """Test session death cascade detection and handling."""
-        print("📋 Testing session death cascade detection:")
-        results = []
-
-        try:
-            # Test that MaxApiFailuresExceededError is available
-            error_available = MaxApiFailuresExceededError is not None
-            status = "✅" if error_available else "❌"
-            print(f"   {status} MaxApiFailuresExceededError class available")
-            results.append(error_available)
-
-            # Test cascade detection string matching
-            test_error = ConnectionError("Session death cascade detected in test")
-            cascade_detected = "Session death cascade detected" in str(test_error)
-            status = "✅" if cascade_detected else "❌"
-            print(f"   {status} Cascade detection string matching")
-            results.append(cascade_detected)
-
-            # Test error inheritance
-            cascade_error = MaxApiFailuresExceededError("Test cascade error", context={"source": "Action 8"})
-            is_exception = isinstance(cascade_error, Exception)
-            status = "✅" if is_exception else "❌"
-            print(f"   {status} MaxApiFailuresExceededError inherits from Exception")
-            results.append(is_exception)
-
-        except Exception as e:
-            print(f"   ❌ Session death cascade detection test failed: {e}")
-            results.append(False)
-
-        print(f"📊 Results: {sum(results)}/{len(results)} cascade detection tests passed")
-        assert all(results), "All session death cascade detection tests should pass"
-
-    def test_performance_tracking() -> None:
-        """Test performance tracking functionality."""
-        print("📋 Testing performance tracking:")
-        results = []
-
-        try:
-            # Test performance tracking function exists
-            func_exists = callable(_update_messaging_performance)
-            status = "✅" if func_exists else "❌"
-            print(f"   {status} _update_messaging_performance function available")
-            results.append(func_exists)
-
-            # Test with mock session manager
-            class MockSessionManager:
-                pass
-
-            mock_session = MockSessionManager()
-
-            # Test performance tracking doesn't crash
-            try:
-                _update_messaging_performance(mock_session, 1.5)
-                tracking_works = True
-            except Exception:
-                tracking_works = False
-
-            status = "✅" if tracking_works else "❌"
-            print(f"   {status} Performance tracking executes without errors")
-            results.append(tracking_works)
-
-            # Test attributes are created
-            has_response_times = hasattr(mock_session, '_response_times')
-            has_slow_calls = hasattr(mock_session, '_recent_slow_calls')
-            has_avg_time = hasattr(mock_session, '_avg_response_time')
-
-            attributes_created = has_response_times and has_slow_calls and has_avg_time
-            status = "✅" if attributes_created else "❌"
-            print(f"   {status} Performance tracking attributes created")
-            results.append(attributes_created)
-
-        except Exception as e:
-            print(f"   ❌ Performance tracking test failed: {e}")
-            results.append(False)
-
-        print(f"📊 Results: {sum(results)}/{len(results)} performance tracking tests passed")
-        assert all(results), "All performance tracking tests should pass"
-
-    def test_enhanced_error_handling() -> None:
-        """Test enhanced error handling patterns."""
-        print("📋 Testing enhanced error handling:")
-        results = []
-
-        try:
-            # Test error classes are available
-            error_classes = [
-                BrowserSessionError,
-                APIRateLimitError,
-                AuthenticationExpiredError,
-                MaxApiFailuresExceededError
-            ]
-
-            for error_class in error_classes:
-                try:
-                    # Handle different error class signatures
-                    if error_class == MaxApiFailuresExceededError:
-                        test_error = error_class("Test error", context={"source": "Action 8"})
-                    else:
-                        test_error = error_class("Test error")
-                    is_exception = isinstance(test_error, Exception)
-                    status = "✅" if is_exception else "❌"
-                    print(f"   {status} {error_class.__name__} class works correctly")
-                    results.append(is_exception)
-                except Exception as e:
-                    print(f"   ❌ {error_class.__name__} class failed: {e}")
-                    results.append(False)
-
-            # Test enhanced recovery import
-            recovery_available = with_enhanced_recovery is not None
-            status = "✅" if recovery_available else "❌"
-            print(f"   {status} Enhanced recovery decorator available")
-            results.append(recovery_available)
-
-        except Exception as e:
-            print(f"   ❌ Enhanced error handling test failed: {e}")
-            results.append(False)
-
-        print(f"📊 Results: {sum(results)}/{len(results)} enhanced error handling tests passed")
-        assert all(results), "All enhanced error handling tests should pass"
-
-    with suppress_logging():
         suite.run_test(
             "Session death cascade detection",
-            test_session_death_cascade_detection,
+            _test_session_death_cascade_detection,
             "Session death cascade detection and handling works correctly",
             "Test session death cascade detection patterns from Action 6",
             "Verify MaxApiFailuresExceededError, cascade string detection, and error inheritance"
@@ -3515,7 +3530,7 @@ def action8_messaging_tests() -> None:
 
         suite.run_test(
             "Performance tracking",
-            test_performance_tracking,
+            _test_performance_tracking,
             "Performance tracking functionality works correctly",
             "Test performance tracking patterns from Action 6",
             "Verify _update_messaging_performance function and attribute creation"
@@ -3523,7 +3538,7 @@ def action8_messaging_tests() -> None:
 
         suite.run_test(
             "Enhanced error handling",
-            test_enhanced_error_handling,
+            _test_enhanced_error_handling,
             "Enhanced error handling patterns work correctly",
             "Test enhanced error handling from Action 6",
             "Verify error classes and enhanced recovery decorator availability"
