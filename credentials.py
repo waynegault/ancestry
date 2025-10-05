@@ -602,21 +602,12 @@ class UnifiedCredentialManager:
             except Exception as e:
                 print(f"❌ Export failed: {e}")
 
-    def check_status(self) -> bool:
-        """Check credential and security status.
-
-        Returns:
-            bool: True if all security checks pass, False otherwise
-        """
-        print("\n" + "=" * 50)
-        print("         SECURITY STATUS")
-        print("=" * 50)  # Check dependencies
-
+    def _check_security_dependencies(self) -> tuple[bool, str, str]:
+        """Check security dependencies. Returns (security_ok, crypto_status, keyring_status)."""
         security_ok = True
 
         try:
             import cryptography
-
             crypto_version = cryptography.__version__
             crypto_status = f"✅ Installed (v{crypto_version})"
         except ImportError:
@@ -625,10 +616,8 @@ class UnifiedCredentialManager:
 
         try:
             import keyring
-
             keyring_status = "✅ Installed"
             try:
-                # Try to get version if available
                 keyring_version = getattr(keyring, "__version__", "unknown")
                 if keyring_version != "unknown":
                     keyring_status = f"✅ Installed (v{keyring_version})"
@@ -638,15 +627,13 @@ class UnifiedCredentialManager:
             keyring_status = "❌ Not installed (required for secure key storage)"
             security_ok = False
 
-        print("🔐 Security Dependencies:")
-        print(f"  - cryptography: {crypto_status}")
-        print(f"  - keyring: {keyring_status}")
+        return security_ok, crypto_status, keyring_status
 
-        # Check if alt keyring is needed (for Linux/macOS)
+    def _check_alt_keyring(self, keyring_status: str) -> None:
+        """Check and display alt keyring status for Linux/macOS."""
         if os.name != "nt" and "✅" in keyring_status:
             try:
                 import keyrings.alt
-
                 alt_status = "✅ Installed"
                 try:
                     alt_version = getattr(keyrings.alt, "__version__", "unknown")
@@ -658,7 +645,8 @@ class UnifiedCredentialManager:
                 alt_status = "⚠️ Not installed (recommended for Linux/macOS)"
             print(f"  - keyrings.alt: {alt_status}")
 
-        # Show installation instructions if any dependencies are missing
+    def _show_dependency_install_instructions(self, crypto_status: str, keyring_status: str) -> None:
+        """Show installation instructions if dependencies are missing."""
         if "❌" in crypto_status or "❌" in keyring_status:
             print("\n📋 Installation Instructions:")
             print("  Run: pip install cryptography keyring")
@@ -668,67 +656,87 @@ class UnifiedCredentialManager:
             if os.name != "nt":
                 print("\n  For Linux/macOS users:")
                 print("  Run: pip install keyrings.alt")
-                print(
-                    "  Some Linux distros may require: sudo apt-get install python3-dbus"
-                )
+                print("  Some Linux distros may require: sudo apt-get install python3-dbus")
 
-        # Check SecurityManager status
-        print(
-            f"🔐 Security Manager: {'✅ Available' if SECURITY_AVAILABLE else '❌ Not Available'}"
-        )
-
-        if not SECURITY_AVAILABLE:
-            security_ok = False
-
-        # Check credentials
+    def _check_stored_credentials(self) -> bool:
+        """Check stored credentials status. Returns True if all required credentials present."""
         credentials = self.security_manager.decrypt_credentials()
-        if credentials:
-            print(f"🗝️  Stored Credentials: ✅ {len(credentials)} credentials found")
-
-            # Get credential types from configuration
-            required_creds, optional_creds = self._load_credential_types()
-            all_configured_creds = set(required_creds.keys()) | set(
-                optional_creds.keys()
-            )
-
-            # Check for required credentials
-            missing = [
-                cred for cred in required_creds if cred not in credentials
-            ]
-
-            if missing:
-                print(f"⚠️  Missing Required: {', '.join(missing)}")
-                security_ok = False
-            else:
-                print("✅ Required Credentials: All present")
-
-            # Check for optional credentials
-            present_optional = [
-                cred for cred in optional_creds if cred in credentials
-            ]
-            if present_optional:
-                print(f"🔹 Optional Credentials: {', '.join(present_optional)}")
-
-            # Check for credentials not in configuration
-            unknown_creds = [
-                cred for cred in credentials if cred not in all_configured_creds
-            ]
-            if unknown_creds:
-                print(f"i  Additional Credentials: {', '.join(unknown_creds)}")
-        else:
+        if not credentials:
             print("🗝️  Stored Credentials: ❌ None found")
-            security_ok = False
+            return False
 
-        # Check encryption status
+        print(f"🗝️  Stored Credentials: ✅ {len(credentials)} credentials found")
+
+        # Get credential types from configuration
+        required_creds, optional_creds = self._load_credential_types()
+        all_configured_creds = set(required_creds.keys()) | set(optional_creds.keys())
+
+        # Check for required credentials
+        missing = [cred for cred in required_creds if cred not in credentials]
+        if missing:
+            print(f"⚠️  Missing Required: {', '.join(missing)}")
+            return False
+
+        print("✅ Required Credentials: All present")
+
+        # Check for optional credentials
+        present_optional = [cred for cred in optional_creds if cred in credentials]
+        if present_optional:
+            print(f"🔹 Optional Credentials: {', '.join(present_optional)}")
+
+        # Check for credentials not in configuration
+        unknown_creds = [cred for cred in credentials if cred not in all_configured_creds]
+        if unknown_creds:
+            print(f"ℹ️  Additional Credentials: {', '.join(unknown_creds)}")
+
+        return True
+
+    def _test_encryption(self) -> bool:
+        """Test encryption functionality. Returns True if encryption works."""
         try:
             test_data = {"test": "value"}
             encrypted = self.security_manager.encrypt_credentials(test_data)
             self.security_manager.delete_credentials()  # Clean up test
             print(f"🔒 Encryption Test: {'✅ Working' if encrypted else '❌ Failed'}")
-            if not encrypted:
-                security_ok = False
+            return bool(encrypted)
         except Exception as e:
             print(f"🔒 Encryption Test: ❌ Error - {e}")
+            return False
+
+    def check_status(self) -> bool:
+        """Check credential and security status.
+
+        Returns:
+            bool: True if all security checks pass, False otherwise
+        """
+        print("\n" + "=" * 50)
+        print("         SECURITY STATUS")
+        print("=" * 50)
+
+        # Check dependencies
+        security_ok, crypto_status, keyring_status = self._check_security_dependencies()
+
+        print("🔐 Security Dependencies:")
+        print(f"  - cryptography: {crypto_status}")
+        print(f"  - keyring: {keyring_status}")
+
+        # Check alt keyring
+        self._check_alt_keyring(keyring_status)
+
+        # Show installation instructions if needed
+        self._show_dependency_install_instructions(crypto_status, keyring_status)
+
+        # Check SecurityManager status
+        print(f"🔐 Security Manager: {'✅ Available' if SECURITY_AVAILABLE else '❌ Not Available'}")
+        if not SECURITY_AVAILABLE:
+            security_ok = False
+
+        # Check credentials
+        if not self._check_stored_credentials():
+            security_ok = False
+
+        # Check encryption status
+        if not self._test_encryption():
             security_ok = False
 
         return security_ok
