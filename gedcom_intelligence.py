@@ -466,7 +466,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, person_record) -> Optional[int]:
+    def _extract_birth_year(self, _person_record) -> Optional[int]:
         """Extract birth year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -475,7 +475,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_year(self, person_record) -> Optional[int]:
+    def _extract_death_year(self, _person_record) -> Optional[int]:
         """Extract death year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -483,7 +483,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_birth_place(self, person_record) -> Optional[str]:
+    def _extract_birth_place(self, _person_record) -> Optional[str]:
         """Extract birth place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -491,7 +491,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_place(self, person_record) -> Optional[str]:
+    def _extract_death_place(self, _person_record) -> Optional[str]:
         """Extract death place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -550,12 +550,12 @@ class GedcomIntelligenceAnalyzer:
         sorted_surnames = sorted(surname_counts.items(), key=lambda x: x[1], reverse=True)
         return [surname for surname, count in sorted_surnames[:5]]
 
-    def _find_geographic_patterns(self, gedcom_data: Any) -> list[str]:
+    def _find_geographic_patterns(self, _gedcom_data: Any) -> list[str]:
         """Find geographic patterns in the family tree."""
         # Placeholder implementation
         return ["Pattern analysis not yet implemented"]
 
-    def _analyze_time_coverage(self, gedcom_data: Any) -> dict[str, Any]:
+    def _analyze_time_coverage(self, _gedcom_data: Any) -> dict[str, Any]:
         """Analyze time period coverage of the family tree."""
         # Placeholder implementation
         return {"earliest_date": "Unknown", "latest_date": "Unknown", "coverage_span": "Unknown"}
