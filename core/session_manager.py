@@ -51,6 +51,7 @@ if parent_dir not in sys.path:
 
 from standard_imports import setup_module
 
+# === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -116,9 +117,6 @@ def clear_session_cache() -> bool:
         return manager.session_cache.warm()
     except Exception:
         return False
-
-# === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import threading
@@ -1278,10 +1276,11 @@ class SessionManager:
 
         # Check 6: Verify browser process is still running
         try:
-            if hasattr(self.driver, 'service') and hasattr(self.driver.service, 'is_connectable'):
-                if not self.driver.service.is_connectable():
-                    logger.info("🔍 Browser health check: Service not connectable - refresh needed")
-                    return "unhealthy"
+            if (hasattr(self.driver, 'service') and
+                hasattr(self.driver.service, 'is_connectable') and
+                not self.driver.service.is_connectable()):
+                logger.info("🔍 Browser health check: Service not connectable - refresh needed")
+                return "unhealthy"
         except Exception:
             pass  # Non-critical check
 
@@ -1425,9 +1424,8 @@ class SessionManager:
                     return True
 
                 # Ensure flag is cleared if we exit attempts without success
-                if attempt == max_attempts:
-                    if 'refresh_in_progress' in self.session_health_monitor:
-                        self.session_health_monitor['refresh_in_progress'].clear()
+                if attempt == max_attempts and 'refresh_in_progress' in self.session_health_monitor:
+                    self.session_health_monitor['refresh_in_progress'].clear()
 
                 # Wait before next attempt (except on last attempt)
                 if attempt < max_attempts:
@@ -1629,7 +1627,7 @@ class SessionManager:
         except Exception:
             return True  # Non-critical test
 
-    def _verify_session_continuity(self, new_browser_manager, old_browser_manager) -> bool:
+    def _verify_session_continuity(self, new_browser_manager, _old_browser_manager) -> bool:
         """Comprehensive verification that new browser maintains session continuity."""
         try:
             logger.debug("🔍 Verifying session continuity...")
@@ -2044,10 +2042,7 @@ class SessionManager:
         if not self.driver:
             return True
 
-        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
-            return True
-
-        return False
+        return bool(not hasattr(self.api_manager, "_requests_session") or not self.api_manager._requests_session)
 
     def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
         """Sync driver cookies to requests session. Returns count of synced cookies."""
@@ -2707,7 +2702,7 @@ class SessionManager:
         return stats
 
     # === Reliable Processing API (compatibility with ReliableSessionManager) ===
-    def _check_session_duration_and_refresh(self, page_num: int) -> bool:
+    def _check_session_duration_and_refresh(self, _page_num: int) -> bool:
         """Check session duration and perform refresh if needed. Returns True if OK to continue."""
         hours = (time.time() - self._reliable_state['start_time']) / 3600.0
         if hours >= self._reliable_state['max_session_hours']:
@@ -2928,7 +2923,7 @@ class SessionManager:
         except Exception:
             return False
 
-    def _p2_apply_action(self, action: str, page_num: int) -> bool:
+    def _p2_apply_action(self, action: str, _page_num: int) -> bool:
         """Apply recovery action based on error type. Data-driven dispatch."""
         # Map actions to handler methods
         action_handlers = {
@@ -3208,22 +3203,22 @@ def _test_browser_operations() -> bool:
     session_manager = SessionManager()
 
     # Mock the browser manager to avoid actually starting a browser (saves ~200s)
-    with patch.object(session_manager.browser_manager, 'start_browser', return_value=True) as mock_start:
-        with patch.object(session_manager.browser_manager, 'close_browser', return_value=None) as mock_close:
-            try:
-                # Test that methods are properly delegated
-                result = session_manager.start_browser("test_action")
-                assert isinstance(result, bool), "start_browser should return bool"
-                assert mock_start.called, "start_browser should be delegated to browser_manager"
+    with (patch.object(session_manager.browser_manager, 'start_browser', return_value=True) as mock_start,
+          patch.object(session_manager.browser_manager, 'close_browser', return_value=None) as mock_close):
+        try:
+            # Test that methods are properly delegated
+            result = session_manager.start_browser("test_action")
+            assert isinstance(result, bool), "start_browser should return bool"
+            assert mock_start.called, "start_browser should be delegated to browser_manager"
 
-                session_manager.close_browser()
-                assert mock_close.called, "close_browser should be delegated to browser_manager"
+            session_manager.close_browser()
+            assert mock_close.called, "close_browser should be delegated to browser_manager"
 
-                print("✅ Browser operations properly delegated to BrowserManager")
-                return True
-            except Exception as e:
-                print(f"⚠️ Browser operation delegation test failed: {e}")
-                return True  # Consider failures as acceptable in tests
+            print("✅ Browser operations properly delegated to BrowserManager")
+            return True
+        except Exception as e:
+            print(f"⚠️ Browser operation delegation test failed: {e}")
+            return True  # Consider failures as acceptable in tests
 
 
 def _test_property_access() -> bool:
@@ -3253,11 +3248,11 @@ def _test_component_delegation() -> bool:
         assert isinstance(db_result, bool), "Database delegation should work"
 
         # Mock browser operations to avoid slow browser startup (~200s)
-        with patch.object(session_manager.browser_manager, 'start_browser', return_value=True):
-            with patch.object(session_manager.browser_manager, 'close_browser', return_value=None):
-                browser_result = session_manager.start_browser("test")
-                assert isinstance(browser_result, bool), "Browser delegation should work"
-                session_manager.close_browser()
+        with (patch.object(session_manager.browser_manager, 'start_browser', return_value=True),
+              patch.object(session_manager.browser_manager, 'close_browser', return_value=None)):
+            browser_result = session_manager.start_browser("test")
+            assert isinstance(browser_result, bool), "Browser delegation should work"
+            session_manager.close_browser()
 
         return True
     except Exception as e:
@@ -3304,10 +3299,10 @@ def _test_error_handling() -> bool:
         session_manager.ensure_db_ready()
 
         # Mock browser operations to avoid slow browser startup (~200s)
-        with patch.object(session_manager.browser_manager, 'start_browser', return_value=True):
-            with patch.object(session_manager.browser_manager, 'close_browser', return_value=None):
-                session_manager.start_browser("test_action")
-                session_manager.close_browser()
+        with (patch.object(session_manager.browser_manager, 'start_browser', return_value=True),
+              patch.object(session_manager.browser_manager, 'close_browser', return_value=None)):
+            session_manager.start_browser("test_action")
+            session_manager.close_browser()
 
         _ = session_manager.session_ready
         _ = session_manager.is_ready
@@ -3608,7 +3603,7 @@ def session_manager_module_tests() -> bool:
 
             return errors_injected, interventions_triggered
 
-        def _simulate_page_processing(session_manager: Any, mock_monitor: Any, page: int, errors_injected: int) -> bool:
+        def _simulate_page_processing(session_manager: Any, _mock_monitor: Any, page: int, errors_injected: int) -> bool:
             """Simulate processing a single page. Returns should_halt."""
             import time
 
@@ -3628,7 +3623,6 @@ def session_manager_module_tests() -> bool:
 
         def test_724_page_workload_simulation():
             """Simulate 724-page workload with realistic error injection."""
-            import time
             from unittest.mock import Mock, patch
 
             # Skip in fast mode to reduce test time (saves ~60s)
@@ -3675,6 +3669,8 @@ def session_manager_module_tests() -> bool:
             assert errors_injected <= 200, f"Should not inject excessive errors, got {errors_injected}"
             assert interventions_triggered >= 1, f"Should trigger some interventions, got {interventions_triggered}"
 
+            return True
+
         suite.run_test(
             "724-Page Workload Simulation",
             test_724_page_workload_simulation,
@@ -3683,7 +3679,7 @@ def session_manager_module_tests() -> bool:
             "Verify system can handle 724 pages with 100-200 errors without cascade failure",
         )
 
-        def test_memory_pressure_simulation():
+        def test_memory_pressure_simulation() -> bool:
             """Test browser replacement under memory pressure conditions."""
             from unittest.mock import Mock, patch
 
@@ -3708,7 +3704,9 @@ def session_manager_module_tests() -> bool:
                 result = session_manager._check_memory_availability()
                 assert result, "Should pass with sufficient memory"
 
-        def test_network_instability_simulation():
+            return True
+
+        def test_network_instability_simulation() -> bool:
             """Test system behavior under poor network conditions."""
             import time
             from unittest.mock import Mock, patch
@@ -3731,27 +3729,29 @@ def session_manager_module_tests() -> bool:
             old_browser = Mock()
 
             # Simulate network instability during session continuity verification
-            with patch('utils.nav_to_page') as mock_nav:
-                with patch('config.config_manager.ConfigManager') as mock_config:
-                    mock_config.return_value.get_config.return_value.api.base_url = "https://ancestry.com"
+            with (patch('utils.nav_to_page') as mock_nav,
+                  patch('config.config_manager.ConfigManager') as mock_config):
+                mock_config.return_value.get_config.return_value.api.base_url = "https://ancestry.com"
 
-                    # Test 1: Network failure during navigation
-                    mock_nav.return_value = False  # Navigation fails
-                    new_browser.is_session_valid.return_value = True
+                # Test 1: Network failure during navigation
+                mock_nav.return_value = False  # Navigation fails
+                new_browser.is_session_valid.return_value = True
 
-                    result = session_manager._verify_session_continuity(new_browser, old_browser)
-                    assert not result, "Should fail with network navigation failure"
+                result = session_manager._verify_session_continuity(new_browser, old_browser)
+                assert not result, "Should fail with network navigation failure"
 
-                    # Test 2: Successful navigation under good conditions
-                    mock_nav.return_value = True  # Navigation succeeds
-                    new_browser.driver.get_cookies.return_value = [{'name': 'test', 'value': 'value'}]
-                    new_browser.driver.execute_script.return_value = "complete"
-                    new_browser.driver.current_url = "https://ancestry.com/dashboard"
+                # Test 2: Successful navigation under good conditions
+                mock_nav.return_value = True  # Navigation succeeds
+                new_browser.driver.get_cookies.return_value = [{'name': 'test', 'value': 'value'}]
+                new_browser.driver.execute_script.return_value = "complete"
+                new_browser.driver.current_url = "https://ancestry.com/dashboard"
 
-                    result = session_manager._verify_session_continuity(new_browser, old_browser)
-                    assert result, "Should pass with good network conditions"
+                result = session_manager._verify_session_continuity(new_browser, old_browser)
+                assert result, "Should pass with good network conditions"
 
-        def test_cascade_failure_recovery():
+            return True
+
+        def test_cascade_failure_recovery() -> bool:
             """Test system recovery from cascade failure scenarios."""
             import time
             from unittest.mock import Mock, patch
@@ -3809,6 +3809,8 @@ def session_manager_module_tests() -> bool:
                 result = session_manager.check_automatic_intervention()
                 assert not result, "Should attempt recovery for immediate intervention"
                 session_manager.perform_proactive_browser_refresh.assert_called_once()
+
+            return True
 
         suite.run_test(
             "Memory Pressure Simulation",
