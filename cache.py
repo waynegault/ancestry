@@ -657,6 +657,48 @@ def get_cache_coordination_stats() -> dict[str, Any]:
 # --- Enhanced Cache Management Functions ---
 
 
+def _collect_lru_keys_to_remove(entries_to_remove: int) -> list[str]:
+    """Collect oldest cache keys to remove based on LRU order."""
+    keys_to_remove = []
+    for key_count, key in enumerate(cache, start=1):
+        keys_to_remove.append(key)
+        if key_count >= entries_to_remove:
+            break
+    return keys_to_remove
+
+
+def _remove_cache_keys(keys_to_remove: list[str]) -> int:
+    """Remove specified cache keys and return count of successfully removed keys."""
+    removed_count = 0
+    for key in keys_to_remove:
+        try:
+            cache.delete(key)
+            removed_count += 1
+            logger.debug(f"Evicted cache key: {key}")
+        except Exception as del_error:
+            logger.warning(f"Failed to delete cache key {key}: {del_error}")
+    return removed_count
+
+
+def _perform_manual_lru_eviction(entries_to_remove: int) -> int:
+    """Perform manual LRU eviction and return count of removed entries."""
+    try:
+        keys_to_remove = _collect_lru_keys_to_remove(entries_to_remove)
+        removed_count = _remove_cache_keys(keys_to_remove)
+        logger.info(f"Manually evicted {removed_count} entries using LRU order")
+        return removed_count
+    except Exception as evict_error:
+        logger.error(f"Error during manual cache eviction: {evict_error}")
+        # Last resort: try using diskcache's built-in cull (size-based)
+        try:
+            culled = cache.cull()
+            logger.info(f"Fallback: diskcache culled {culled} entries by size")
+            return culled
+        except Exception as cull_error:
+            logger.error(f"Even fallback cull failed: {cull_error}")
+            return 0
+
+
 def enforce_cache_size_limit() -> dict[str, Any]:
     """
     Enforce cache size limits based on configuration.
@@ -682,42 +724,13 @@ def enforce_cache_size_limit() -> dict[str, Any]:
                 "max_size": max_size,
                 "entries_removed": 0,
                 "utilization": (current_size / max_size * 100) if max_size > 0 else 0,
-            }  # Need to remove entries
+            }
+
+        # Need to remove entries
         excess_entries = current_size - max_size
         entries_to_remove = excess_entries + 1  # Remove excess + 1 for buffer
 
-        removed_count = 0
-        try:
-            # Manual LRU eviction by iterating through cache and removing oldest entries
-            # diskcache stores entries in LRU order when iterating
-            keys_to_remove = []
-            key_count = 0
-
-            # Collect keys to remove (oldest first)
-            for key_count, key in enumerate(cache, start=1):
-                keys_to_remove.append(key)
-                if key_count >= entries_to_remove:
-                    break
-
-            # Remove the collected keys
-            for key in keys_to_remove:
-                try:
-                    cache.delete(key)
-                    removed_count += 1
-                    logger.debug(f"Evicted cache key: {key}")
-                except Exception as del_error:
-                    logger.warning(f"Failed to delete cache key {key}: {del_error}")
-
-            logger.info(f"Manually evicted {removed_count} entries using LRU order")
-
-        except Exception as evict_error:
-            logger.error(f"Error during manual cache eviction: {evict_error}")
-            # Last resort: try using diskcache's built-in cull (size-based)
-            try:
-                culled = cache.cull()
-                logger.info(f"Fallback: diskcache culled {culled} entries by size")
-            except Exception as cull_error:
-                logger.error(f"Even fallback cull failed: {cull_error}")
+        removed_count = _perform_manual_lru_eviction(entries_to_remove)
 
         final_size = get_cache_entry_count()
 
