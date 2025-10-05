@@ -3079,6 +3079,235 @@ if __name__ == "__main__":
 # ==============================================
 
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+
+
+def _test_database_model_definitions() -> None:
+    """Test that all required ORM models exist and can be instantiated with detailed verification."""
+    model_tests = [
+        (Person, "Person", "Main DNA match person record"),
+        (DnaMatch, "DnaMatch", "DNA match details and relationships"),
+        (FamilyTree, "FamilyTree", "Family tree position and genealogy"),
+        (MessageTemplate, "MessageTemplate", "Message templates"),
+        (ConversationLog, "ConversationLog", "Conversation history tracking"),
+    ]
+
+    print("📋 Testing database model definitions:")
+    results = []
+
+    for model_class, model_name, description in model_tests:
+        # Test model existence
+        model_exists = model_class is not None
+
+        # Test model instantiation
+        instance_created = False
+        try:
+            instance = model_class()
+            instance_created = instance is not None
+            _ = type(instance).__name__  # ensure attribute access is not useless
+        except Exception as e:
+            print(f"   ❌ {model_name} instantiation failed: {e}")
+            instance_created = False
+
+        # Test table definition
+        has_table = (
+            hasattr(model_class, "__table__") and model_class.__table__ is not None
+        )
+        table_name = (
+            model_class.__tablename__
+            if hasattr(model_class, "__tablename__")
+            else "Unknown"
+        )
+
+        status = "✅" if model_exists and instance_created and has_table else "❌"
+        print(f"   {status} {model_name}: {description}")
+        print(
+            f"      Exists: {model_exists}, Instantiable: {instance_created}, Table: {table_name}"
+        )
+
+        test_passed = model_exists and instance_created and has_table
+        results.append(test_passed)
+
+        assert model_exists, f"{model_name} model should be defined"
+        assert instance_created, f"{model_name} model should be instantiable"
+        assert has_table, f"{model_name} should have table definition"
+
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} database models properly defined"
+    )
+
+
+def _test_enum_definitions() -> None:
+    """Test that required enum values are properly defined."""
+    # Test PersonStatusEnum
+    assert hasattr(
+        PersonStatusEnum, "ACTIVE"
+    ), "PersonStatusEnum should have ACTIVE status"
+    assert hasattr(
+        PersonStatusEnum, "ARCHIVE"
+    ), "PersonStatusEnum should have ARCHIVE status"
+    assert hasattr(
+        PersonStatusEnum, "DESIST"
+    ), "PersonStatusEnum should have DESIST status"
+    assert hasattr(
+        PersonStatusEnum, "BLOCKED"
+    ), "PersonStatusEnum should have BLOCKED status"
+    assert hasattr(
+        PersonStatusEnum, "DEAD"
+    ), "PersonStatusEnum should have DEAD status"
+
+    # Test MessageDirectionEnum
+    assert hasattr(
+        MessageDirectionEnum, "IN"
+    ), "MessageDirectionEnum should have IN"
+    assert hasattr(
+        MessageDirectionEnum, "OUT"
+    ), "MessageDirectionEnum should have OUT"
+
+    # Test RoleType
+    assert hasattr(RoleType, "AUTHOR"), "RoleType should have AUTHOR"
+    assert hasattr(RoleType, "RECIPIENT"), "RoleType should have RECIPIENT"
+
+
+def _test_database_base_setup() -> None:
+    """Test that SQLAlchemy base is properly configured."""
+    assert Base is not None, "Base declarative model should be defined"
+    assert hasattr(Base, "metadata"), "Base should have metadata attribute"
+
+
+def _test_transaction_context_manager() -> None:
+    """Test the db_transn context manager functionality."""
+    assert callable(db_transn), "db_transn should be a callable function"
+    # Test basic structure (without actual database operations)
+
+
+def _test_model_attributes() -> None:
+    """Test that models have expected attributes and columns."""
+    # Test Person model attributes
+    assert hasattr(Person, "person_id"), "Person should have person_id attribute"
+    assert hasattr(Person, "tree_user_id"), "Person should have tree_user_id attribute"
+    assert hasattr(Person, "name"), "Person should have name attribute"
+    assert hasattr(Person, "status"), "Person should have status attribute"
+
+    # Test DnaMatch model attributes
+    assert hasattr(DnaMatch, "match_id"), "DnaMatch should have match_id attribute"
+    assert hasattr(DnaMatch, "person_id"), "DnaMatch should have person_id attribute"
+    assert hasattr(DnaMatch, "shared_cm"), "DnaMatch should have shared_cm attribute"
+
+    # Test FamilyTree model attributes
+    assert hasattr(FamilyTree, "tree_id"), "FamilyTree should have tree_id attribute"
+    assert hasattr(FamilyTree, "person_id"), "FamilyTree should have person_id attribute"
+
+    # Test MessageTemplate model attributes
+    assert hasattr(MessageTemplate, "template_id"), "MessageTemplate should have template_id attribute"
+    assert hasattr(MessageTemplate, "template_key"), "MessageTemplate should have template_key attribute"
+
+    # Test ConversationLog model attributes
+    assert hasattr(ConversationLog, "log_id"), "ConversationLog should have log_id attribute"
+    assert hasattr(ConversationLog, "person_id"), "ConversationLog should have person_id attribute"
+
+
+def _test_database_utilities() -> None:
+    """Test database utility functions."""
+    # Test that utility functions exist
+    assert callable(get_engine), "get_engine should be callable"
+    assert callable(get_session), "get_session should be callable"
+    assert callable(init_db), "init_db should be callable"
+
+
+def _test_enum_edge_cases() -> None:
+    """Test enum edge cases and validation."""
+    # Test that enum values are unique
+    status_values = [
+        PersonStatusEnum.ACTIVE,
+        PersonStatusEnum.ARCHIVE,
+        PersonStatusEnum.DESIST,
+        PersonStatusEnum.BLOCKED,
+        PersonStatusEnum.DEAD,
+    ]
+    assert len(status_values) == len(set(status_values)), "PersonStatusEnum values should be unique"
+
+    # Test MessageDirectionEnum values
+    direction_values = [MessageDirectionEnum.IN, MessageDirectionEnum.OUT]
+    assert len(direction_values) == len(set(direction_values)), "MessageDirectionEnum values should be unique"
+
+    # Test RoleType values
+    role_values = [RoleType.AUTHOR, RoleType.RECIPIENT]
+    assert len(role_values) == len(set(role_values)), "RoleType values should be unique"
+
+
+def _test_model_instantiation_edge_cases() -> None:
+    """Test model instantiation with various edge cases."""
+    # Test Person instantiation with minimal data
+    person = Person()
+    assert person is not None, "Person should be instantiable"
+
+    # Test DnaMatch instantiation
+    match = DnaMatch()
+    assert match is not None, "DnaMatch should be instantiable"
+
+    # Test FamilyTree instantiation
+    tree = FamilyTree()
+    assert tree is not None, "FamilyTree should be instantiable"
+
+
+def _test_model_relationships() -> None:
+    """Test model relationships and foreign keys."""
+    # Test that models have relationship attributes
+    assert hasattr(Person, "dna_matches"), "Person should have dna_matches relationship"
+    assert hasattr(Person, "family_trees"), "Person should have family_trees relationship"
+    assert hasattr(Person, "conversation_logs"), "Person should have conversation_logs relationship"
+
+
+def _test_schema_integration() -> None:
+    """Test schema integration and table creation."""
+    # Test that Base.metadata contains all tables
+    assert Base.metadata is not None, "Base.metadata should exist"
+    assert len(Base.metadata.tables) > 0, "Base.metadata should contain tables"
+
+    # Test that expected tables are in metadata
+    table_names = list(Base.metadata.tables.keys())
+    assert "people" in table_names, "people table should be in metadata"
+    assert "dna_match" in table_names, "dna_match table should be in metadata"
+
+
+def _test_model_creation_performance() -> None:
+    """Test model creation performance."""
+    import time
+    start_time = time.time()
+
+    # Create multiple model instances
+    for _ in range(100):
+        Person()
+        DnaMatch()
+        FamilyTree()
+
+    elapsed_time = time.time() - start_time
+    assert elapsed_time < 1.0, f"Model creation should be fast, took {elapsed_time:.3f}s"
+
+
+def _test_import_error_handling() -> None:
+    """Test error handling for import failures."""
+    # Test that required modules are imported
+    assert Person is not None, "Person model should be imported"
+    assert DnaMatch is not None, "DnaMatch model should be imported"
+    assert Base is not None, "Base should be imported"
+
+
+def _test_configuration_error_handling() -> None:
+    """Test error handling for configuration issues."""
+    # Test that database configuration is accessible
+    assert callable(get_engine), "get_engine should be callable"
+    # Note: get_session is not a module-level function, it's a context manager from get_engine
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def database_module_tests() -> bool:
     """
     Comprehensive test suite for database.py with real functionality testing.
@@ -3089,59 +3318,8 @@ def database_module_tests() -> bool:
     suite.start_suite()
 
     # INITIALIZATION TESTS
-    def test_database_model_definitions() -> None:
-        """Test that all required ORM models exist and can be instantiated with detailed verification."""
-        model_tests = [
-            (Person, "Person", "Main DNA match person record"),
-            (DnaMatch, "DnaMatch", "DNA match details and relationships"),
-            (FamilyTree, "FamilyTree", "Family tree position and genealogy"),
-            (MessageTemplate, "MessageTemplate", "Message templates"),
-            (ConversationLog, "ConversationLog", "Conversation history tracking"),
-        ]
-
-        print("📋 Testing database model definitions:")
-        results = []
-
-        for model_class, model_name, description in model_tests:
-            # Test model existence
-            model_exists = model_class is not None
-
-            # Test model instantiation
-            instance_created = False
-            try:
-                instance = model_class()
-                instance_created = instance is not None
-                _ = type(instance).__name__  # ensure attribute access is not useless
-            except Exception as e:
-                print(f"   ❌ {model_name} instantiation failed: {e}")
-                instance_created = False
-
-            # Test table definition
-            has_table = (
-                hasattr(model_class, "__table__") and model_class.__table__ is not None
-            )
-            table_name = (
-                model_class.__tablename__
-                if hasattr(model_class, "__tablename__")
-                else "Unknown"
-            )
-
-            status = "✅" if model_exists and instance_created and has_table else "❌"
-            print(f"   {status} {model_name}: {description}")
-            print(
-                f"      Exists: {model_exists}, Instantiable: {instance_created}, Table: {table_name}"
-            )
-
-            test_passed = model_exists and instance_created and has_table
-            results.append(test_passed)
-
-            assert model_exists, f"{model_name} model should be defined"
-            assert instance_created, f"{model_name} model should be instantiable"
-            assert has_table, f"{model_name} should have table definition"
-
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} database models properly defined"
-        )
+    # Assign module-level test function
+    test_database_model_definitions = _test_database_model_definitions
 
     with suppress_logging():
         suite.run_test(
