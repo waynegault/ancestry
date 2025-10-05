@@ -208,41 +208,26 @@ if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
 # --- Core Authentication and API Functions ---
 
 
-def acquire_token_device_flow() -> Optional[str]:
-    """
-    Acquires an MS Graph API access token using the device code flow.
-    Prioritizes silent acquisition from cache, falls back to interactive flow.
-
-    Returns:
-        The access token string if successful, otherwise None.
-    """
-    # Step 1: Check if MSAL App instance is available
-    if not msal_app_instance:
-        logger.error(
-            "MSAL app instance not initialized (check CLIENT_ID). Cannot acquire token."
-        )
+def _try_silent_token_acquisition(app: Any) -> Optional[str]:
+    """Attempt to acquire token silently from cache."""
+    accounts = app.get_accounts()
+    if not accounts:
         return None
-    app = msal_app_instance  # Use the shared instance
 
-    # Step 2: Attempt Silent Token Acquisition (from cache)
-    account = None
-    accounts = app.get_accounts()  # Get accounts known to the cache
-    if accounts:
-        logger.info(
-            f"Account(s) found in cache ({len(accounts)}). Attempting silent token acquisition..."
-        )
-        account = accounts[0]  # Use the first account found
-        result = app.acquire_token_silent(SCOPES, account=account)
-        # Step 2a: Check silent result
-        if result and "access_token" in result:
-            logger.info("Access token acquired silently from cache.")
-            return result["access_token"]  # Return cached token
-        logger.info(
-            "Silent token acquisition failed (likely expired or needs refresh)."
-        )
-            # Optional: Could remove account if silent fails: app.remove_account(account)
+    logger.info(f"Account(s) found in cache ({len(accounts)}). Attempting silent token acquisition...")
+    account = accounts[0]
+    result = app.acquire_token_silent(SCOPES, account=account)
 
-    # Step 3: Fallback to Interactive Device Code Flow
+    if result and "access_token" in result:
+        logger.info("Access token acquired silently from cache.")
+        return result["access_token"]
+
+    logger.info("Silent token acquisition failed (likely expired or needs refresh).")
+    return None
+
+
+def _initiate_device_flow(app: Any) -> Optional[dict]:
+    """Initiate device flow and return flow object."""
     logger.info("Initiating interactive device flow...")
     try:
         flow = app.initiate_device_flow(scopes=SCOPES)
@@ -250,13 +235,16 @@ def acquire_token_device_flow() -> Optional[str]:
         logger.error(f"Error initiating device flow: {flow_init_e}", exc_info=True)
         return None
 
-    # Step 3a: Check if flow initiation failed (e.g., config error)
     if "user_code" not in flow:
         err_desc = flow.get("error_description", "Unknown error during flow initiation")
         logger.error(f"Failed to create device flow. Response: {err_desc}")
         return None
 
-    # Step 3b: Display user instructions (use print for immediate visibility)
+    return flow
+
+
+def _display_device_flow_instructions(flow: dict) -> None:
+    """Display user instructions for device flow authentication."""
     print("\n" + "=" * 40)
     print(" MS GRAPH AUTHENTICATION REQUIRED")
     print("=" * 40)
@@ -265,50 +253,111 @@ def acquire_token_device_flow() -> Optional[str]:
     print("3. Sign in with your Microsoft account and grant permissions.")
     print("   (Waiting for authentication in browser...)")
     print("=" * 40 + "\n")
-    timeout_seconds = flow.get("expires_in", 900)  # Get timeout from response
-    logger.info(
-        f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout)."
-    )
+    timeout_seconds = flow.get("expires_in", 900)
+    logger.info(f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout).")
 
-    # Step 3c: Wait for user authentication (blocking call)
-    try:
-        result = app.acquire_token_by_device_flow(
-            flow
-        )  # This waits for completion/timeout
-    except Exception as flow_acquire_e:
-        # Catch errors during the waiting/acquisition phase
-        logger.error(
-            f"Error acquiring token via device flow: {flow_acquire_e}", exc_info=True
-        )
-        result = None  # Ensure result is None on exception
 
-    # Step 4: Process device flow result
-    if result and "access_token" in result:
+def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
+    """Process device flow result and return access token."""
+    if not result:
+        logger.error("Device flow failed, timed out, or returned unexpected result: None")
+        return None
+
+    if "access_token" in result:
         logger.info("Access token acquired successfully via device flow.")
-        # Log user info if available
-        user_info = result.get("id_token_claims", {}).get(
-            "preferred_username"
-        ) or result.get("id_token_claims", {}).get("name", "Unknown User")
+        user_info = result.get("id_token_claims", {}).get("preferred_username") or result.get("id_token_claims", {}).get("name", "Unknown User")
         logger.info(f"Authenticated as: {user_info}")
-        # Mark cache as changed *only* after successful interactive flow
+
         if persistent_cache:
             persistent_cache.has_state_changed = True
         logger.debug("Marked persistent token cache as changed.")
-        return result["access_token"]  # Return the newly acquired token
-    if result and "error_description" in result:
-        # Log specific error message from MS identity platform
-        logger.error(
-            f"Failed to acquire token via device flow: {result.get('error_description', 'No description provided')}"
-        )
+        return result["access_token"]
+
+    if "error_description" in result:
+        logger.error(f"Failed to acquire token via device flow: {result.get('error_description', 'No description provided')}")
         return None
-    # Handle timeout or other unexpected failures
-    logger.error(
-        f"Device flow failed, timed out, or returned unexpected result: {result}"
-    )
+
+    logger.error(f"Device flow failed, timed out, or returned unexpected result: {result}")
     return None
 
 
+def acquire_token_device_flow() -> Optional[str]:
+    """
+    Acquires an MS Graph API access token using the device code flow.
+    Prioritizes silent acquisition from cache, falls back to interactive flow.
+
+    Returns:
+        The access token string if successful, otherwise None.
+    """
+    # Check if MSAL App instance is available
+    if not msal_app_instance:
+        logger.error("MSAL app instance not initialized (check CLIENT_ID). Cannot acquire token.")
+        return None
+
+    app = msal_app_instance
+
+    # Attempt silent token acquisition from cache
+    token = _try_silent_token_acquisition(app)
+    if token:
+        return token
+
+    # Fallback to interactive device code flow
+    flow = _initiate_device_flow(app)
+    if not flow:
+        return None
+
+    # Display user instructions
+    _display_device_flow_instructions(flow)
+
+    # Wait for user authentication
+    try:
+        result = app.acquire_token_by_device_flow(flow)
+    except Exception as flow_acquire_e:
+        logger.error(f"Error acquiring token via device flow: {flow_acquire_e}", exc_info=True)
+        result = None
+
+    # Process and return result
+    return _process_device_flow_result(result)
+
+
 # End of acquire_token_device_flow
+
+
+def _process_list_query_response(lists_data: dict, list_name: str) -> Optional[str]:
+    """Process the list query response and extract list ID."""
+    if not lists_data or "value" not in lists_data:
+        logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
+        logger.debug(f"API response for list query: {lists_data}")
+        return None
+
+    value_list = lists_data["value"]
+    if not isinstance(value_list, list) or len(value_list) == 0:
+        logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
+        logger.debug(f"API response for list query: {lists_data}")
+        return None
+
+    first_match = value_list[0]
+    list_id = first_match.get("id")
+    if list_id:
+        logger.info(f"Found To-Do list '{list_name}' with ID: {list_id}")
+        return list_id
+
+    logger.error(f"List '{list_name}' found, but 'id' field missing: {first_match}")
+    return None
+
+
+def _handle_list_query_http_error(http_err: requests.exceptions.HTTPError) -> None:
+    """Handle HTTP errors from list query."""
+    status_code = http_err.response.status_code
+    if status_code in [401, 403]:
+        logger.error(f"MS Graph Auth Error ({status_code}) querying To-Do lists. Token expired or invalid permissions? Error: {http_err}")
+    elif status_code == 404:
+        logger.error(f"MS Graph Not Found Error (404) querying To-Do lists. Base API endpoint correct? Error: {http_err}")
+    else:
+        logger.error(f"HTTP error querying To-Do lists: {http_err}", exc_info=False)
+
+    with contextlib.suppress(Exception):
+        logger.debug(f"Error response content: {http_err.response.text[:500]}")
 
 
 def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
@@ -323,85 +372,57 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
     Returns:
         The ID string of the list if found, otherwise None.
     """
-    # Step 1: Validate inputs (Unchanged)
+    # Validate inputs
     if not access_token or not list_name:
         logger.error("Cannot get list ID: Access token or list name missing.")
         return None
 
-    # Step 2: Prepare API request details (Unchanged)
+    # Prepare API request
     headers = {"Authorization": f"Bearer {access_token}"}
-    list_query_url = (
-        f"{GRAPH_API_ENDPOINT}/me/todo/lists?$filter=displayName eq '{list_name}'"
-    )
+    list_query_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists?$filter=displayName eq '{list_name}'"
     logger.info(f"Querying MS Graph API for To-Do list named '{list_name}'...")
     logger.debug(f"List query URL: {list_query_url}")
 
-    # Step 3: Execute the API request
+    # Execute API request and handle errors
     try:
         response = requests.get(list_query_url, headers=headers, timeout=30)
-        response.raise_for_status()  # Raise HTTPError for bad status codes
-
-        # Step 4: Parse the JSON response (Unchanged)
+        response.raise_for_status()
         lists_data = response.json()
+        return _process_list_query_response(lists_data, list_name)
 
-        # Step 5: Process the result list (Unchanged)
-        if (
-            lists_data
-            and "value" in lists_data
-            and isinstance(lists_data["value"], list)
-            and len(lists_data["value"]) > 0
-        ):
-            first_match = lists_data["value"][0]
-            list_id = first_match.get("id")
-            if list_id:
-                logger.info(f"Found To-Do list '{list_name}' with ID: {list_id}")
-                return list_id
-            logger.error(
-                f"List '{list_name}' found, but 'id' field missing: {first_match}"
-            )
-            return None
-        logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
-        logger.debug(f"API response for list query: {lists_data}")
-        return None
-
-    # --- Step 6: Handle potential errors (REVISED) ---
     except requests.exceptions.HTTPError as http_err:
-        status_code = http_err.response.status_code
-        # Log specific common errors
-        if status_code in [401, 403]:
-            logger.error(
-                f"MS Graph Auth Error ({status_code}) querying To-Do lists. Token expired or invalid permissions? Error: {http_err}"
-            )
-        elif status_code == 404:
-            # This shouldn't happen with a $filter query unless the base endpoint is wrong
-            logger.error(
-                f"MS Graph Not Found Error (404) querying To-Do lists. Base API endpoint correct? Error: {http_err}"
-            )
-        else:  # Log other HTTP errors
-            logger.error(f"HTTP error querying To-Do lists: {http_err}", exc_info=False)
-        # Log response body for debugging
-        with contextlib.suppress(Exception):
-            logger.debug(f"Error response content: {http_err.response.text[:500]}")
+        _handle_list_query_http_error(http_err)
         return None
     except requests.exceptions.RequestException as req_err:
-        # Network errors, timeouts, etc.
         logger.error(f"Network error querying To-Do lists: {req_err}", exc_info=False)
         return None
     except json.JSONDecodeError as json_err:
-        # Error parsing the response (shouldn't happen on success)
         logger.error(f"Error decoding JSON response from list query: {json_err}")
-        if "response" in locals() and hasattr(
-            response, "text"
-        ):  # Check if response exists
+        if "response" in locals() and hasattr(response, "text"):
             logger.debug(f"Response content causing JSON error: {response.text[:500]}")
         return None
     except Exception as e:
-        # Catch-all for unexpected errors
         logger.error(f"Unexpected error getting To-Do list ID: {e}", exc_info=True)
         return None
 
 
 # End of get_todo_list_id
+
+
+def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, list_id: str) -> None:
+    """Handle HTTP errors from task creation."""
+    status_code = http_err.response.status_code
+    if status_code in [401, 403]:
+        logger.error(f"MS Graph Auth Error ({status_code}) creating task. Token expired/invalid permissions? Error: {http_err}")
+    elif status_code == 400:
+        logger.error(f"MS Graph Bad Request (400) creating task. Payload invalid? Error: {http_err}")
+    elif status_code == 404:
+        logger.error(f"MS Graph Not Found Error (404) creating task. List ID '{list_id}' invalid? Error: {http_err}")
+    else:
+        logger.error(f"HTTP error creating To-Do task: {http_err}", exc_info=False)
+
+    with contextlib.suppress(Exception):
+        logger.error(f"Error response content: {http_err.response.text[:500]}")
 
 
 def create_todo_task(
@@ -420,65 +441,35 @@ def create_todo_task(
     Returns:
         True if the task was created successfully, False otherwise.
     """
-    # Step 1: Validate inputs (Unchanged)
+    # Validate inputs
     if not access_token or not list_id or not task_title:
-        logger.error(
-            "Cannot create task: Access token, List ID, or Task title missing."
-        )
+        logger.error("Cannot create task: Access token, List ID, or Task title missing.")
         return False
 
-    # Step 2: Prepare API request details (Unchanged)
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
+    # Prepare API request
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     task_create_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists/{list_id}/tasks"
 
-    # Step 3: Construct the task data payload (Unchanged)
+    # Construct task data payload
     task_data: dict[str, Any] = {"title": task_title}
     if task_body:
         task_data["body"] = {"content": task_body, "contentType": "text"}
 
-    logger.info(
-        f"Attempting to create MS To-Do task '{task_title[:50]}...' in list ID '{list_id}'..."
-    )
+    logger.info(f"Attempting to create MS To-Do task '{task_title[:50]}...' in list ID '{list_id}'...")
     logger.debug(f"Task creation payload: {json.dumps(task_data)}")
 
-    # Step 4: Execute the POST request
+    # Execute POST request and handle errors
     try:
-        response = requests.post(
-            task_create_url, headers=headers, json=task_data, timeout=30
-        )
-        response.raise_for_status()  # Raise HTTPError for bad status codes
+        response = requests.post(task_create_url, headers=headers, json=task_data, timeout=30)
+        response.raise_for_status()
 
-        # Step 5: Process successful response (HTTP 201 Created) (Unchanged)
         logger.info(f"Successfully created task '{task_title[:50]}...'.")
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             logger.debug(f"Create task response details: {response.json()}")
-        except json.JSONDecodeError:
-            logger.debug("Create task response body not valid JSON (but status OK).")
         return True
 
-    # --- Step 6: Handle potential errors (REVISED) ---
     except requests.exceptions.HTTPError as http_err:
-        status_code = http_err.response.status_code
-        if status_code in [401, 403]:
-            logger.error(
-                f"MS Graph Auth Error ({status_code}) creating task. Token expired/invalid permissions? Error: {http_err}"
-            )
-        elif status_code == 400:
-            logger.error(
-                f"MS Graph Bad Request (400) creating task. Payload invalid? Error: {http_err}"
-            )
-        elif status_code == 404:
-            logger.error(
-                f"MS Graph Not Found Error (404) creating task. List ID '{list_id}' invalid? Error: {http_err}"
-            )
-        else:
-            logger.error(f"HTTP error creating To-Do task: {http_err}", exc_info=False)
-        # Log response body for debugging
-        with contextlib.suppress(Exception):
-            logger.error(f"Error response content: {http_err.response.text[:500]}")
+        _handle_task_creation_http_error(http_err, list_id)
         return False
     except requests.exceptions.RequestException as req_err:
         logger.error(f"Network error creating To-Do task: {req_err}", exc_info=False)
