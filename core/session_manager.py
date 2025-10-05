@@ -2034,21 +2034,49 @@ class SessionManager:
         self._sync_cookies_to_requests()
         logger.debug("Forced session cookie resync due to authentication error")
 
+    def _should_skip_cookie_sync(self) -> bool:
+        """Check if cookie sync should be skipped. Returns True if should skip."""
+        # Recursion guard
+        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
+            logger.debug("Recursion detected in _sync_cookies(), skipping to prevent loop")
+            return True
+
+        if not self.driver:
+            return True
+
+        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
+            return True
+
+        return False
+
+    def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
+        """Sync driver cookies to requests session. Returns count of synced cookies."""
+        self.api_manager._requests_session.cookies.clear()
+        synced_count = 0
+
+        for cookie in driver_cookies:
+            if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
+                try:
+                    self.api_manager._requests_session.cookies.set(
+                        cookie["name"],
+                        cookie["value"],
+                        domain=cookie.get("domain"),
+                        path=cookie.get("path", "/")
+                    )
+                    synced_count += 1
+                except Exception:
+                    continue  # Skip problematic cookies silently
+
+        return synced_count
+
     def _sync_cookies(self) -> None:
         """
         Simple cookie synchronization from WebDriver to requests session.
 
         Simplified version that avoids all session validation to prevent recursion.
         """
-        # Recursion guard to prevent infinite loops
-        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
-            logger.debug("Recursion detected in _sync_cookies(), skipping to prevent loop")
-            return
-
-        if not self.driver:
-            return
-
-        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
+        # Check if we should skip sync
+        if self._should_skip_cookie_sync():
             return
 
         try:
@@ -2060,23 +2088,8 @@ class SessionManager:
             if not driver_cookies:
                 return
 
-            # Clear and sync cookies
-            self.api_manager._requests_session.cookies.clear()
-            synced_count = 0
-
-            for cookie in driver_cookies:
-                if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
-                    try:
-                        self.api_manager._requests_session.cookies.set(
-                            cookie["name"],
-                            cookie["value"],
-                            domain=cookie.get("domain"),
-                            path=cookie.get("path", "/")
-                        )
-                        synced_count += 1
-                    except Exception:
-                        continue  # Skip problematic cookies silently
-
+            # Sync cookies
+            synced_count = self._sync_driver_cookies_to_requests(driver_cookies)
             logger.debug(f"Synced {synced_count} cookies to requests session")
 
         except Exception as e:
