@@ -1478,6 +1478,53 @@ def _load_test_person_data_from_env() -> dict[str, Any]:
     }
 
 
+def _register_input_validation_tests(suite: Any, debug_wrapper: Callable, test_sanitize_input: Callable, test_get_validated_year_input_patch: Callable) -> None:
+    """Register input validation and parsing tests."""
+    suite.run_test(
+        "Input Sanitization",
+        debug_wrapper(test_sanitize_input),
+        "Validates whitespace trimming, empty string handling, and text preservation.",
+        "Test input sanitization with edge cases and real-world inputs.",
+        "Test against: '  John  ', '', '   ', 'Fraser Gault', '  Multiple   Spaces  '.",
+    )
+    suite.run_test(
+        "Date Parsing",
+        debug_wrapper(test_get_validated_year_input_patch),
+        "Parses multiple date formats: simple years, full dates, and various formats.",
+        "Test year extraction from various date input formats.",
+        "Test against: '1990', '1 Jan 1942', '1/1/1942', '1942/1/1', '2000'.",
+    )
+
+
+def _register_scoring_tests(suite: Any, debug_wrapper: Callable, test_fraser_gault_scoring_algorithm: Callable) -> None:
+    """Register scoring algorithm tests."""
+    suite.run_test(
+        "Test Person Scoring Algorithm",
+        debug_wrapper(test_fraser_gault_scoring_algorithm),
+        "Validates scoring algorithm with test person's real data and consistent scoring.",
+        "Test match scoring algorithm with test person's real genealogical data from .env.",
+        "Test scoring algorithm with actual test person data from .env configuration.",
+    )
+
+
+def _register_relationship_tests(suite: Any, debug_wrapper: Callable, test_family_relationship_analysis: Callable, test_relationship_path_calculation: Callable) -> None:
+    """Register family relationship and path calculation tests."""
+    suite.run_test(
+        "Family Relationship Analysis",
+        debug_wrapper(test_family_relationship_analysis),
+        "Tests family relationship analysis with test person from .env configuration.",
+        "Test family relationship analysis with test person from .env.",
+        "Find test person using .env data and analyze family relationships (parents, siblings, spouse, children).",
+    )
+    suite.run_test(
+        "Relationship Path Calculation",
+        debug_wrapper(test_relationship_path_calculation),
+        "Tests relationship path calculation from test person to tree owner using BFS algorithm.",
+        "Test relationship path calculation between test person and tree owner.",
+        "Calculate relationship path from test person to tree owner using bidirectional BFS and format relationship description.",
+    )
+
+
 def _get_gedcom_data_or_skip() -> Optional[Any]:
     """Get GEDCOM data or return None if not available."""
     from test_framework import Colors  # type: ignore[import-not-found]
@@ -2410,41 +2457,9 @@ def action10_module_tests() -> bool:
             return False
 
     # Register meaningful tests only
-    suite.run_test(
-        "Input Sanitization",
-        debug_wrapper(test_sanitize_input),
-        "Validates whitespace trimming, empty string handling, and text preservation.",
-        "Test input sanitization with edge cases and real-world inputs.",
-        "Test against: '  John  ', '', '   ', 'Fraser Gault', '  Multiple   Spaces  '.",
-    )
-    suite.run_test(
-        "Date Parsing",
-        debug_wrapper(test_get_validated_year_input_patch),
-        "Parses multiple date formats: simple years, full dates, and various formats.",
-        "Test year extraction from various date input formats.",
-        "Test against: '1990', '1 Jan 1942', '1/1/1942', '1942/1/1', '2000'.",
-    )
-    suite.run_test(
-        "Test Person Scoring Algorithm",
-        debug_wrapper(test_fraser_gault_scoring_algorithm),
-        "Validates scoring algorithm with test person's real data and consistent scoring.",
-        "Test match scoring algorithm with test person's real genealogical data from .env.",
-        "Test scoring algorithm with actual test person data from .env configuration.",
-    )
-    suite.run_test(
-        "Family Relationship Analysis",
-        debug_wrapper(test_family_relationship_analysis),
-        "Tests family relationship analysis with test person from .env configuration.",
-        "Test family relationship analysis with test person from .env.",
-        "Find test person using .env data and analyze family relationships (parents, siblings, spouse, children).",
-    )
-    suite.run_test(
-        "Relationship Path Calculation",
-        debug_wrapper(test_relationship_path_calculation),
-        "Tests relationship path calculation from test person to tree owner using BFS algorithm.",
-        "Test relationship path calculation between test person and tree owner.",
-        "Calculate relationship path from test person to tree owner using bidirectional BFS and format relationship description.",
-    )
+    _register_input_validation_tests(suite, debug_wrapper, test_sanitize_input, test_get_validated_year_input_patch)
+    _register_scoring_tests(suite, debug_wrapper, test_fraser_gault_scoring_algorithm)
+    _register_relationship_tests(suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation)
 
     _teardown_test_environment(original_gedcom)
     return suite.finish_suite()
