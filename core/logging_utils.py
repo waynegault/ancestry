@@ -182,6 +182,212 @@ class OptimizedLogger:
 
 
 # =============================================================================
+# MODULE-LEVEL TEST FUNCTIONS
+# =============================================================================
+# These test functions are extracted from the main test suite for better
+# modularity, maintainability, and reduced complexity. Each function tests
+# a specific aspect of the logging utilities functionality.
+
+
+def _test_get_logger_functionality() -> bool:
+    """Test get_logger function with various parameters"""
+    try:
+        # Test without name parameter
+        logger1 = get_logger()
+        assert logger1 is not None
+        assert hasattr(logger1, 'info')
+        assert hasattr(logger1, 'debug')
+
+        # Test with specific name
+        logger2 = get_logger("test_logger")
+        assert logger2 is not None
+        assert logger2.name.endswith("test_logger")
+
+        # Test that loggers are properly configured
+        assert hasattr(logger1, 'handlers')
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_duplicate_handler_prevention() -> bool:
+    """Test ensure_no_duplicate_handlers functionality"""
+    try:
+        import logging
+
+        # Create test logger
+        test_logger = logging.getLogger("test_duplicate_handler")
+
+        # Add duplicate handlers manually
+        handler1 = logging.StreamHandler()
+        handler2 = logging.StreamHandler()  # Same type, should be detected as duplicate
+        # Use proper logs directory for test.log
+        import os
+        from pathlib import Path
+        logs_dir = Path(os.getenv("LOG_DIR", "Logs"))
+        if not logs_dir.is_absolute():
+            logs_dir = (Path(__file__).parent.parent.resolve() / logs_dir).resolve()
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        test_log_path = logs_dir / "test.log"
+        handler3 = logging.FileHandler(str(test_log_path)) if hasattr(logging, 'FileHandler') else logging.StreamHandler()
+
+        test_logger.addHandler(handler1)
+        test_logger.addHandler(handler2)
+        test_logger.addHandler(handler3)
+
+        initial_count = len(test_logger.handlers)
+
+        # Run duplicate removal
+        ensure_no_duplicate_handlers(test_logger)
+
+        # Should have fewer handlers now
+        final_count = len(test_logger.handlers)
+        assert final_count <= initial_count
+
+        # Clean up
+        test_logger.handlers.clear()
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_external_logger_suppression() -> bool:
+    """Test suppress_external_loggers functionality"""
+    try:
+        import logging
+
+        # Run suppression
+        suppress_external_loggers()
+
+        # Check that external loggers are properly configured
+        test_loggers = ["urllib3", "selenium", "requests"]
+        for logger_name in test_loggers:
+            ext_logger = logging.getLogger(logger_name)
+            # Should have a level set (not NOTSET)
+            assert ext_logger.level != logging.NOTSET
+            # Should not propagate to reduce noise
+            assert not ext_logger.propagate
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_app_logger_convenience() -> bool:
+    """Test get_app_logger convenience function"""
+    try:
+        app_logger = get_app_logger()
+        assert app_logger is not None
+        assert hasattr(app_logger, 'info')
+        assert hasattr(app_logger, 'debug')
+        assert hasattr(app_logger, 'error')
+
+        # Should be equivalent to get_logger()
+        get_logger()
+        # They should be related (same or parent/child relationship)
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_debug_decorator() -> bool:
+    """Test debug_if_enabled decorator functionality"""
+    try:
+        test_logger = get_logger("test_debug_decorator")
+
+        # Create a test function with decorator
+        @debug_if_enabled(test_logger)
+        def test_debug_function():
+            return "debug_executed"
+
+        # Test that decorator is callable
+        assert callable(test_debug_function)
+
+        # Test execution (result depends on debug level)
+        result = test_debug_function()
+        # Should either return the result or None based on debug level
+        assert result is None or result == "debug_executed"
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_optimized_logger_functionality() -> bool:
+    """Test OptimizedLogger wrapper functionality"""
+    try:
+        base_logger = get_logger("test_optimized")
+        opt_logger = OptimizedLogger(base_logger)
+
+        # Test logger property access
+        assert opt_logger.logger is base_logger
+
+        # Test delegation of standard methods
+        assert hasattr(opt_logger, 'info')
+        assert hasattr(opt_logger, 'error')
+
+        # Test debug_lazy method
+        assert hasattr(opt_logger, 'debug_lazy')
+        assert callable(opt_logger.debug_lazy)
+
+        # Test debug_lazy execution
+        execution_count = 0
+        def test_msg_func():
+            nonlocal execution_count
+            execution_count += 1
+            return "test message"
+
+        opt_logger.debug_lazy(test_msg_func)
+        # Execution count depends on debug level, but should not error
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_centralized_logging_setup() -> bool:
+    """Test centralized logging configuration"""
+    try:
+        global _centralized_logging_setup
+        original_setup = _centralized_logging_setup
+
+        # Reset setup flag
+        _centralized_logging_setup = False
+
+        # Get logger should trigger setup
+        logger = get_logger("test_centralized")
+
+        # Should have attempted setup (flag may or may not change based on imports)
+        assert logger is not None
+
+        # Restore original state
+        _centralized_logging_setup = original_setup
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_logging_import_fallback() -> bool:
+    """Test fallback behavior when logging_config unavailable"""
+    try:
+        # Test that get_logger works even with import failures
+        # This is hard to test directly, but we can test that
+        # get_logger handles various scenarios gracefully
+
+        logger = get_logger("fallback_test")
+        assert logger is not None
+        assert hasattr(logger, 'info')
+
+        return True
+    except Exception:
+        return False
+
+
+# =============================================================================
 # COMPREHENSIVE TEST SUITE
 # =============================================================================
 
@@ -201,193 +407,15 @@ def logging_utils_module_tests() -> bool:
         suite = TestSuite("Logging Utils Comprehensive Tests", __name__)
         suite.start_suite()
 
-        def test_get_logger_functionality():
-            """Test get_logger function with various parameters"""
-            try:
-                # Test without name parameter
-                logger1 = get_logger()
-                assert logger1 is not None
-                assert hasattr(logger1, 'info')
-                assert hasattr(logger1, 'debug')
-
-                # Test with specific name
-                logger2 = get_logger("test_logger")
-                assert logger2 is not None
-                assert logger2.name.endswith("test_logger")
-
-                # Test that loggers are properly configured
-                assert hasattr(logger1, 'handlers')
-
-                return True
-            except Exception:
-                return False
-
-        def test_duplicate_handler_prevention():
-            """Test ensure_no_duplicate_handlers functionality"""
-            try:
-                import logging
-
-                # Create test logger
-                test_logger = logging.getLogger("test_duplicate_handler")
-
-                # Add duplicate handlers manually
-                handler1 = logging.StreamHandler()
-                handler2 = logging.StreamHandler()  # Same type, should be detected as duplicate
-                # Use proper logs directory for test.log
-                import os
-                from pathlib import Path
-                logs_dir = Path(os.getenv("LOG_DIR", "Logs"))
-                if not logs_dir.is_absolute():
-                    logs_dir = (Path(__file__).parent.parent.resolve() / logs_dir).resolve()
-                logs_dir.mkdir(parents=True, exist_ok=True)
-                test_log_path = logs_dir / "test.log"
-                handler3 = logging.FileHandler(str(test_log_path)) if hasattr(logging, 'FileHandler') else logging.StreamHandler()
-
-                test_logger.addHandler(handler1)
-                test_logger.addHandler(handler2)
-                test_logger.addHandler(handler3)
-
-                initial_count = len(test_logger.handlers)
-
-                # Run duplicate removal
-                ensure_no_duplicate_handlers(test_logger)
-
-                # Should have fewer handlers now
-                final_count = len(test_logger.handlers)
-                assert final_count <= initial_count
-
-                # Clean up
-                test_logger.handlers.clear()
-
-                return True
-            except Exception:
-                return False
-
-        def test_external_logger_suppression():
-            """Test suppress_external_loggers functionality"""
-            try:
-                # Run suppression
-                suppress_external_loggers()
-
-                # Check that external loggers are properly configured
-                test_loggers = ["urllib3", "selenium", "requests"]
-                for logger_name in test_loggers:
-                    ext_logger = logging.getLogger(logger_name)
-                    # Should have a level set (not NOTSET)
-                    assert ext_logger.level != logging.NOTSET
-                    # Should not propagate to reduce noise
-                    assert not ext_logger.propagate
-
-                return True
-            except Exception:
-                return False
-
-        def test_app_logger_convenience():
-            """Test get_app_logger convenience function"""
-            try:
-                app_logger = get_app_logger()
-                assert app_logger is not None
-                assert hasattr(app_logger, 'info')
-                assert hasattr(app_logger, 'debug')
-                assert hasattr(app_logger, 'error')
-
-                # Should be equivalent to get_logger()
-                get_logger()
-                # They should be related (same or parent/child relationship)
-
-                return True
-            except Exception:
-                return False
-
-        def test_debug_decorator():
-            """Test debug_if_enabled decorator functionality"""
-            try:
-                test_logger = get_logger("test_debug_decorator")
-
-                # Create a test function with decorator
-                @debug_if_enabled(test_logger)
-                def test_debug_function():
-                    return "debug_executed"
-
-                # Test that decorator is callable
-                assert callable(test_debug_function)
-
-                # Test execution (result depends on debug level)
-                result = test_debug_function()
-                # Should either return the result or None based on debug level
-                assert result is None or result == "debug_executed"
-
-                return True
-            except Exception:
-                return False
-
-        def test_optimized_logger_functionality():
-            """Test OptimizedLogger wrapper functionality"""
-            try:
-                base_logger = get_logger("test_optimized")
-                opt_logger = OptimizedLogger(base_logger)
-
-                # Test logger property access
-                assert opt_logger.logger is base_logger
-
-                # Test delegation of standard methods
-                assert hasattr(opt_logger, 'info')
-                assert hasattr(opt_logger, 'error')
-
-                # Test debug_lazy method
-                assert hasattr(opt_logger, 'debug_lazy')
-                assert callable(opt_logger.debug_lazy)
-
-                # Test debug_lazy execution
-                execution_count = 0
-                def test_msg_func():
-                    nonlocal execution_count
-                    execution_count += 1
-                    return "test message"
-
-                opt_logger.debug_lazy(test_msg_func)
-                # Execution count depends on debug level, but should not error
-
-                return True
-            except Exception:
-                return False
-
-        def test_centralized_logging_setup():
-            """Test centralized logging configuration"""
-            try:
-                global _centralized_logging_setup
-                original_setup = _centralized_logging_setup
-
-                # Reset setup flag
-                _centralized_logging_setup = False
-
-                # Get logger should trigger setup
-                logger = get_logger("test_centralized")
-
-                # Should have attempted setup (flag may or may not change based on imports)
-                assert logger is not None
-
-                # Restore original state
-                _centralized_logging_setup = original_setup
-
-                return True
-            except Exception:
-                return False
-
-        def test_logging_import_fallback():
-            """Test fallback behavior when logging_config unavailable"""
-            try:
-                # Test that get_logger works even with import failures
-                # This is hard to test directly, but we can test that
-                # get_logger handles various scenarios gracefully
-
-                logger = get_logger("fallback_test")
-                assert logger is not None
-                assert hasattr(logger, 'info')
-
-                return True
-            except Exception:
-                return False
+        # Assign module-level test functions (removing duplicate nested definitions)
+        test_get_logger_functionality = _test_get_logger_functionality
+        test_duplicate_handler_prevention = _test_duplicate_handler_prevention
+        test_external_logger_suppression = _test_external_logger_suppression
+        test_app_logger_convenience = _test_app_logger_convenience
+        test_debug_decorator = _test_debug_decorator
+        test_optimized_logger_functionality = _test_optimized_logger_functionality
+        test_centralized_logging_setup = _test_centralized_logging_setup
+        test_logging_import_fallback = _test_logging_import_fallback
 
         # Run all tests
         suite.run_test(
