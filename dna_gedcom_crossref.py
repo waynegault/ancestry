@@ -397,7 +397,7 @@ class DNAGedcomCrossReferencer:
 
         return suggestions[:5]  # Limit to top 5 suggestions
 
-    def _identify_relationship_conflicts(self, dna_matches: list[DNAMatch], gedcom_people: list[GedcomPerson]):
+    def _identify_relationship_conflicts(self, _dna_matches: list[DNAMatch], _gedcom_people: list[GedcomPerson]):
         """Identify conflicts between DNA evidence and GEDCOM relationships."""
         # This would implement conflict detection logic
         # For now, providing framework
@@ -449,22 +449,22 @@ class DNAGedcomCrossReferencer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, person_record) -> Optional[int]:
+    def _extract_birth_year(self, _person_record) -> Optional[int]:
         """Extract birth year from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_death_year(self, person_record) -> Optional[int]:
+    def _extract_death_year(self, _person_record) -> Optional[int]:
         """Extract death year from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_birth_place(self, person_record) -> Optional[str]:
+    def _extract_birth_place(self, _person_record) -> Optional[str]:
         """Extract birth place from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_death_place(self, person_record) -> Optional[str]:
+    def _extract_death_place(self, _person_record) -> Optional[str]:
         """Extract death place from GEDCOM record."""
         # Placeholder implementation
         return None
@@ -489,7 +489,7 @@ class DNAGedcomCrossReferencer:
 
         return None
 
-    def _is_plausible_relationship_match(self, dna_match: DNAMatch, gedcom_person: GedcomPerson, relationship_distance: int) -> bool:
+    def _is_plausible_relationship_match(self, _dna_match: DNAMatch, _gedcom_person: GedcomPerson, _relationship_distance: int) -> bool:
         """Check if a relationship match is plausible."""
         # Placeholder implementation
         return True
