@@ -1113,6 +1113,38 @@ def create_or_update_dna_match(
 # End of create_or_update_dna_match
 
 
+def _prepare_family_tree_args(tree_data: dict[str, Any], people_id: int) -> dict[str, Any]:
+    """Prepare valid arguments for FamilyTree model."""
+    valid_tree_args = {
+        col.name: tree_data.get(col.name)
+        for col in FamilyTree.__table__.columns
+        if col.name in tree_data and col.name not in ("id", "created_at", "updated_at")
+    }
+    valid_tree_args["people_id"] = people_id
+    return valid_tree_args
+
+
+def _update_family_tree_if_changed(existing_tree: FamilyTree, valid_tree_args: dict[str, Any], log_ref: str) -> Literal["updated", "skipped"]:
+    """Update existing family tree if changes detected."""
+    updated = False
+    for field, new_value in valid_tree_args.items():
+        if field == "people_id":
+            continue
+        old_value = getattr(existing_tree, field, None)
+        if old_value != new_value:
+            logger.debug(f"  Tree Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')")
+            setattr(existing_tree, field, new_value)
+            updated = True
+
+    if updated:
+        existing_tree.updated_at = datetime.now(timezone.utc)
+        logger.debug(f"Updating existing FamilyTree record for {log_ref}.")
+        return "updated"
+
+    logger.debug(f"Existing FamilyTree record found for {log_ref}, no changes needed. Skipping.")
+    return "skipped"
+
+
 def create_or_update_family_tree(
     session: Session, tree_data: dict[str, Any]
 ) -> Literal["created", "updated", "skipped", "error"]:
@@ -1130,83 +1162,42 @@ def create_or_update_family_tree(
         'skipped' if the record exists and no changes were needed.
         'error' if validation fails or a database error occurs.
     """
-    # Step 1: Validate people_id
+    # Validate people_id
     people_id = tree_data.get("people_id")
     if not people_id or not isinstance(people_id, int) or people_id <= 0:
         logger.error("Cannot create/update FamilyTree: Invalid 'people_id'.")
         return "error"
 
-    # Step 2: Prepare log reference and incoming data dictionary
+    # Prepare log reference and valid arguments
     cfpid_val = tree_data.get("cfpid")
     log_ref = f"PersonID={people_id}, CFPID={cfpid_val or 'N/A'}"
-    # Filter only valid columns for the FamilyTree model from input
-    valid_tree_args = {
-        col.name: tree_data.get(col.name)
-        for col in FamilyTree.__table__.columns
-        if col.name in tree_data and col.name not in ("id", "created_at", "updated_at")
-    }
-    # Ensure people_id is included
-    valid_tree_args["people_id"] = people_id
+    valid_tree_args = _prepare_family_tree_args(tree_data, people_id)
 
-    # Step 3: Check if FamilyTree record exists
     try:
         existing_tree = session.query(FamilyTree).filter_by(people_id=people_id).first()
 
         if existing_tree:
-            # Step 4: Update existing record if changes detected
-            updated = False
-            for field, new_value in valid_tree_args.items():
-                if field == "people_id":
-                    continue  # Skip key comparison
-                old_value = getattr(existing_tree, field, None)
-                # Compare values, treating None consistently
-                if old_value != new_value:
-                    logger.debug(
-                        f"  Tree Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')"
-                    )
-                    setattr(existing_tree, field, new_value)
-                    updated = True
+            return _update_family_tree_if_changed(existing_tree, valid_tree_args, log_ref)
 
-            if updated:
-                # Use setattr to avoid type checking issues with SQLAlchemy columns
-                existing_tree.updated_at = datetime.now(timezone.utc)  # Update timestamp
-                logger.debug(f"Updating existing FamilyTree record for {log_ref}.")
-                # No need to session.add() for updates
-                return "updated"
-            logger.debug(
-                f"Existing FamilyTree record found for {log_ref}, no changes needed. Skipping."
-            )
-            return "skipped"
-        # Step 5: Create new record
+        # Create new record
         logger.debug(f"Creating new FamilyTree record for {log_ref}.")
         new_tree = FamilyTree(**valid_tree_args)
         session.add(new_tree)
         logger.debug(f"FamilyTree record added to session for {log_ref}.")
         return "created"
 
-    # Step 6: Handle database errors
     except TypeError as te:
-        logger.critical(
-            f"TypeError create/update FamilyTree {log_ref}: {te}. Args: {valid_tree_args}",
-            exc_info=True,
-        )
+        logger.critical(f"TypeError create/update FamilyTree {log_ref}: {te}. Args: {valid_tree_args}", exc_info=True)
         return "error"
     except IntegrityError as ie:
         session.rollback()
-        logger.error(
-            f"IntegrityError create/update FamilyTree {log_ref}: {ie}", exc_info=False
-        )
+        logger.error(f"IntegrityError create/update FamilyTree {log_ref}: {ie}", exc_info=False)
         return "error"
     except SQLAlchemyError as e:
-        logger.error(
-            f"SQLAlchemyError create/update FamilyTree {log_ref}: {e}", exc_info=True
-        )
+        logger.error(f"SQLAlchemyError create/update FamilyTree {log_ref}: {e}", exc_info=True)
         return "error"
     except Exception as e:
-        logger.critical(
-            f"Unexpected error create_or_update_family_tree {log_ref}: {e}",
-            exc_info=True,
-        )
+        logger.critical(f"Unexpected error create_or_update_family_tree {log_ref}: {e}", exc_info=True)
         return "error"
 
 
@@ -1332,6 +1323,39 @@ def _compare_field_values(key: str, current_value: Any, new_value: Any, log_ref:
     return False, current_value
 
 
+def _prepare_person_update_fields(person_data: dict[str, Any], profile_id_val: Optional[str], username_val: str) -> dict[str, Any]:
+    """Prepare fields to update for a person."""
+    return {
+        "profile_id": profile_id_val,
+        "username": username_val,
+        "administrator_profile_id": person_data.get("administrator_profile_id", "").upper() if person_data.get("administrator_profile_id") else None,
+        "administrator_username": person_data.get("administrator_username"),
+        "message_link": person_data.get("message_link"),
+        "in_my_tree": bool(person_data.get("in_my_tree", False)),
+        "first_name": person_data.get("first_name"),
+        "gender": person_data.get("gender"),
+        "birth_year": person_data.get("birth_year"),
+        "contactable": bool(person_data.get("contactable", True)),
+        "last_logged_in": person_data.get("last_logged_in"),
+        "status": person_data.get("status"),
+    }
+
+
+def _update_person_fields(existing_person: Person, fields_to_update: dict[str, Any], log_ref: str) -> bool:
+    """Update person fields if changed. Returns True if any field was updated."""
+    person_update_needed = False
+
+    for key, new_value in fields_to_update.items():
+        current_value = getattr(existing_person, key, None)
+        value_changed, value_to_set = _compare_field_values(key, current_value, new_value, log_ref)
+
+        if value_changed:
+            setattr(existing_person, key, value_to_set)
+            person_update_needed = True
+
+    return person_update_needed
+
+
 def create_or_update_person(
     session: Session, person_data: dict[str, Any]
 ) -> tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
@@ -1349,114 +1373,57 @@ def create_or_update_person(
         - The created or updated Person object (or None on error).
         - A status string: 'created', 'updated', 'skipped', 'error'.
     """
-    # Step 1: Extract and validate mandatory identifiers
+    # Extract and validate mandatory identifiers
     uuid_val, username_val, profile_id_val, log_ref = _validate_person_identifiers(person_data)
     if not uuid_val or not username_val:
         return None, "error"
 
     try:
-        # Step 3: Attempt to find the person definitively by UUID
-        # Use with_for_update() if optimistic locking is needed and supported by DB dialect
-        existing_person = (
-            session.query(Person).filter(Person.uuid == uuid_val).first()
-        )  # .with_for_update()
+        existing_person = session.query(Person).filter(Person.uuid == uuid_val).first()
 
         if existing_person:
-            # --- Step 4: UPDATE existing person ---
-            person_update_needed = False  # Flag to track if any field actually changed
-            logger.debug(
-                f"{log_ref}: Updating existing Person ID {existing_person.id}."
-            )
+            logger.debug(f"{log_ref}: Updating existing Person ID {existing_person.id}.")
 
-            # Step 4a: Define fields to compare and potentially update
-            fields_to_update = {
-                "profile_id": profile_id_val,  # Update Profile ID if provided and different
-                "username": username_val,  # Update username
-                "administrator_profile_id": (
-                    person_data.get("administrator_profile_id", "").upper()
-                    if person_data.get("administrator_profile_id")
-                    else None
-                ),
-                "administrator_username": person_data.get("administrator_username"),
-                "message_link": person_data.get("message_link"),
-                "in_my_tree": bool(person_data.get("in_my_tree", False)),
-                "first_name": person_data.get("first_name"),
-                "gender": person_data.get("gender"),
-                "birth_year": person_data.get("birth_year"),
-                "contactable": bool(
-                    person_data.get("contactable", True)
-                ),  # Ensure boolean
-                "last_logged_in": person_data.get("last_logged_in"),
-                "status": person_data.get("status"),  # Allow status update
-            }
+            fields_to_update = _prepare_person_update_fields(person_data, profile_id_val, username_val)
+            person_update_needed = _update_person_fields(existing_person, fields_to_update, log_ref)
 
-            # Step 4b: Iterate and compare fields
-            for key, new_value in fields_to_update.items():
-                current_value = getattr(existing_person, key, None)
-
-                # Use helper function for field comparison
-                value_changed, value_to_set = _compare_field_values(
-                    key, current_value, new_value, log_ref
-                )
-
-                # Apply the update if value changed
-                if value_changed:
-                    setattr(existing_person, key, value_to_set)
-                    person_update_needed = True
-                    # logger.debug(f"  Updating {key} for Person {existing_person.id}") # Verbose log
-
-            # Step 4c: Set updated_at timestamp if any field changed
             if person_update_needed:
-                # Use setattr to avoid type checking issues with SQLAlchemy columns
                 existing_person.updated_at = datetime.now(timezone.utc)
-                session.flush()  # Apply updates to DB session state
+                session.flush()
                 return existing_person, "updated"
+
             logger.debug(f"{log_ref}: No updates needed for existing person.")
             return existing_person, "skipped"
-        # --- Step 5: CREATE new person ---
+
+        # Create new person
         logger.debug(f"{log_ref}: Creating new Person.")
-        # Use the helper function for creation
         new_person_id = create_person(session, person_data)
         if new_person_id > 0:
-            # Fetch the newly created object to return it
             new_person_obj = session.get(Person, new_person_id)
             if new_person_obj:
                 return new_person_obj, "created"
-            # This indicates a problem if create_person returned an ID but get() failed
-            logger.error(
-                f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report."
-            )
-            # Rollback might be needed if state is inconsistent
+
+            logger.error(f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report.")
             with contextlib.suppress(Exception):
                 session.rollback()
             return None, "error"
-        # create_person already logged the error
+
         logger.error(f"create_person helper failed for {log_ref}.")
         return None, "error"
 
-    # --- Step 6: Handle Exceptions ---
     except IntegrityError as ie:
         session.rollback()
-        logger.error(
-            f"IntegrityError processing person {log_ref}: {ie}. Rolling back.",
-            exc_info=False,
-        )
+        logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
         return None, "error"
     except SQLAlchemyError as e:
-        try:
-            session.rollback()  # Attempt rollback on DB errors
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            session.rollback()
         logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
         return None, "error"
     except Exception as e:
-        try:
-            session.rollback()  # Attempt rollback on unexpected errors
-        except Exception:
-            pass
-        logger.critical(
-            f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True
-        )
+        with contextlib.suppress(Exception):
+            session.rollback()
+        logger.critical(f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True)
         return None, "error"
 
 
@@ -2654,6 +2621,82 @@ def test_soft_delete_functionality(session: Session) -> bool:
 # End of test_soft_delete_functionality
 
 
+def _create_test_persons_for_cleanup(session: Session) -> tuple[list[dict[str, str]], list[int]]:
+    """Create test persons for cleanup testing."""
+    test_persons = []
+    for i in range(3):
+        test_uuid = f"TEST-CLEANUP-{uuid4()}"
+        test_profile_id = f"TEST-CLEANUP-{uuid4()}"
+        test_username = f"Test Cleanup User {i} {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        test_persons.append({"uuid": test_uuid, "profile_id": test_profile_id, "username": test_username})
+
+    created_ids = []
+    for i, person_data in enumerate(test_persons):
+        logger.info(f"Creating test person {i+1}: ProfileID={person_data['profile_id']}")
+        person_id = create_person(session, person_data)
+        if person_id == 0:
+            raise ValueError(f"Failed to create test person {i+1}.")
+        created_ids.append(person_id)
+
+    logger.info(f"Created {len(created_ids)} test persons with IDs: {created_ids}")
+    return test_persons, created_ids
+
+
+def _soft_delete_test_persons_with_timestamps(session: Session, test_persons: list[dict[str, str]]) -> None:
+    """Soft-delete test persons and set different timestamps."""
+    for i, person_data in enumerate(test_persons):
+        logger.info(f"Soft-deleting test person {i+1}: ProfileID={person_data['profile_id']}")
+        result = soft_delete_person(session, person_data["profile_id"], person_data["username"])
+        if not result:
+            raise ValueError(f"Failed to soft-delete test person {i+1}.")
+
+        person = get_person_by_profile_id(session, person_data["profile_id"], include_deleted=True)
+        if not person:
+            raise ValueError(f"Test person {i+1} not found after soft-delete.")
+
+        # Set different deleted_at timestamps
+        if i == 0:
+            person.deleted_at = datetime.now(timezone.utc) - timedelta(days=40)  # Should be cleaned up
+        elif i == 1:
+            person.deleted_at = datetime.now(timezone.utc) - timedelta(days=20)  # Should not be cleaned up
+
+        logger.info(f"Set deleted_at for test person {i+1} to {person.deleted_at}")
+
+    session.flush()
+
+
+def _verify_cleanup_results(session: Session, test_persons: list[dict[str, str]], deleted_counts: dict[str, int]) -> bool:
+    """Verify cleanup results match expectations."""
+    if deleted_counts["people"] != 1:
+        logger.error(f"Expected 1 person to be deleted, but got {deleted_counts['people']}.")
+        return False
+
+    logger.info(f"Cleanup deleted {deleted_counts['people']} persons as expected.")
+
+    # Verify person 1 is deleted
+    person1 = get_person_by_profile_id(session, test_persons[0]["profile_id"], include_deleted=True)
+    if person1:
+        logger.error("Test person 1 still exists after cleanup.")
+        return False
+    logger.info("Verified test person 1 was permanently deleted.")
+
+    # Verify person 2 still exists
+    person2 = get_person_by_profile_id(session, test_persons[1]["profile_id"], include_deleted=True)
+    if not person2:
+        logger.error("Test person 2 was unexpectedly deleted.")
+        return False
+    logger.info("Verified test person 2 still exists (soft-deleted).")
+
+    # Verify person 3 still exists
+    person3 = get_person_by_profile_id(session, test_persons[2]["profile_id"], include_deleted=True)
+    if not person3:
+        logger.error("Test person 3 was unexpectedly deleted.")
+        return False
+    logger.info("Verified test person 3 still exists (soft-deleted).")
+
+    return True
+
+
 def test_cleanup_soft_deleted_records(session: Session) -> bool:
     """
     Tests the cleanup_soft_deleted_records function by:
@@ -2670,126 +2713,30 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
     """
     logger.info("=== Testing Cleanup of Soft-Deleted Records ===")
 
-    # Create test data for multiple persons
-    test_persons = []
-    for i in range(3):
-        test_uuid = f"TEST-CLEANUP-{uuid4()}"
-        test_profile_id = f"TEST-CLEANUP-{uuid4()}"
-        test_username = f"Test Cleanup User {i} {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-
-        test_persons.append(
-            {
-                "uuid": test_uuid,
-                "profile_id": test_profile_id,
-                "username": test_username,
-            }
-        )
-
     try:
-        created_ids = []
+        # Create test persons
+        test_persons, created_ids = _create_test_persons_for_cleanup(session)
 
-        # Step 1: Create test persons
-        for i, person_data in enumerate(test_persons):
-            logger.info(
-                f"Creating test person {i+1}: ProfileID={person_data['profile_id']}"
-            )
-            person_id = create_person(session, person_data)
-            if person_id == 0:
-                logger.error(f"Failed to create test person {i+1}.")
-                return False
-            created_ids.append(person_id)
+        # Soft-delete with different timestamps
+        _soft_delete_test_persons_with_timestamps(session, test_persons)
 
-        logger.info(f"Created {len(created_ids)} test persons with IDs: {created_ids}")
-
-        # Step 2: Soft-delete the persons with different timestamps
-        for i, person_data in enumerate(test_persons):
-            logger.info(
-                f"Soft-deleting test person {i+1}: ProfileID={person_data['profile_id']}"
-            )
-            result = soft_delete_person(
-                session, person_data["profile_id"], person_data["username"]
-            )
-            if not result:
-                logger.error(f"Failed to soft-delete test person {i+1}.")
-                return False
-
-            # Get the person and manually set the deleted_at timestamp for testing
-            person = get_person_by_profile_id(
-                session, person_data["profile_id"], include_deleted=True
-            )
-            if not person:
-                logger.error(f"Test person {i+1} not found after soft-delete.")
-                return False
-
-            # Set different deleted_at timestamps using setattr to avoid type checking issues
-            if i == 0:
-                # 40 days ago (should be cleaned up)
-                person.deleted_at = datetime.now(timezone.utc) - timedelta(days=40)
-            elif i == 1:
-                # 20 days ago (should not be cleaned up with 30-day cutoff)
-                person.deleted_at = datetime.now(timezone.utc) - timedelta(days=20)
-            # Leave the third person with the current timestamp
-
-            logger.info(f"Set deleted_at for test person {i+1} to {person.deleted_at}")
-
-        # Flush changes to the database
-        session.flush()
-
-        # Step 3: Run the cleanup function with a 30-day cutoff
+        # Run cleanup with 30-day cutoff
         logger.info("Running cleanup_soft_deleted_records with 30-day cutoff")
         deleted_counts = cleanup_soft_deleted_records(session, older_than_days=30)
 
-        # Step 4: Verify only the appropriate records are deleted
-        if deleted_counts["people"] != 1:
-            logger.error(
-                f"Expected 1 person to be deleted, but got {deleted_counts['people']}."
-            )
+        # Verify results
+        if not _verify_cleanup_results(session, test_persons, deleted_counts):
             return False
-
-        logger.info(f"Cleanup deleted {deleted_counts['people']} persons as expected.")
-
-        # Verify person 1 is deleted
-        person1 = get_person_by_profile_id(
-            session, test_persons[0]["profile_id"], include_deleted=True
-        )
-        if person1:
-            logger.error("Test person 1 still exists after cleanup.")
-            return False
-
-        logger.info("Verified test person 1 was permanently deleted.")
-
-        # Verify person 2 still exists
-        person2 = get_person_by_profile_id(
-            session, test_persons[1]["profile_id"], include_deleted=True
-        )
-        if not person2:
-            logger.error("Test person 2 was unexpectedly deleted.")
-            return False
-
-        logger.info("Verified test person 2 still exists (soft-deleted).")
-
-        # Verify person 3 still exists
-        person3 = get_person_by_profile_id(
-            session, test_persons[2]["profile_id"], include_deleted=True
-        )
-        if not person3:
-            logger.error("Test person 3 was unexpectedly deleted.")
-            return False
-
-        logger.info("Verified test person 3 still exists (soft-deleted).")
 
         # Clean up remaining test persons
         for i in range(1, 3):  # Persons 2 and 3
             logger.info(f"Hard-deleting test person {i+1} for cleanup")
-            result = hard_delete_person(
-                session, test_persons[i]["profile_id"], test_persons[i]["username"]
-            )
+            result = hard_delete_person(session, test_persons[i]["profile_id"], test_persons[i]["username"])
             if not result:
                 logger.error(f"Failed to hard-delete test person {i+1} for cleanup.")
                 return False
 
         logger.info("Hard-deleted remaining test persons for cleanup.")
-
         logger.info("=== All Cleanup Tests Passed ===")
         return True
 
