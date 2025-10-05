@@ -3132,6 +3132,99 @@ def _build_search_criteria_from_test_person(tp: dict[str, Any]) -> dict[str, Any
     }
 
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+
+
+def _test_live_search_fraser(skip_live_tests: bool) -> bool:
+    """Live API: search for Fraser Gault and ensure a scored match is returned."""
+    if skip_live_tests:
+        logger.info("Skipping live API test: test_live_search_fraser")
+        return True
+    sm = _ensure_session(skip_live_tests)
+    if not sm:
+        return True
+    tp = load_test_person_from_env()
+    criteria = _build_search_criteria_from_test_person(tp)
+    results = search_ancestry_api_for_person(sm, criteria, max_results=5)
+    assert results, "No results returned from live API search"
+    top = results[0]
+    name_l = str(top.get("name", "")).lower()
+    assert "fraser" in name_l and "gault" in name_l, f"Top match is not Fraser Gault: {top.get('name')}"
+    assert float(top.get("score", 0)) > 0, "Top match has non-positive score"
+    # Birth place 'contains' logic
+    bp_disp = str(top.get("birth_place", "")).lower()
+    assert criteria["birth_place"] in bp_disp, f"Birth place does not contain '{criteria['birth_place']}'"
+    return True
+
+
+def _test_live_family_matches_env(skip_live_tests: bool) -> bool:
+    """Live API: fetch person details and validate spouse/children from .env test data."""
+    if skip_live_tests:
+        logger.info("Skipping live API test: test_live_family_matches_env")
+        return True
+    sm = _ensure_session(skip_live_tests)
+    if not sm:
+        return True
+    tp = load_test_person_from_env()
+    # Reuse search to pick id/tree
+    criteria = _build_search_criteria_from_test_person(tp)
+    results = search_ancestry_api_for_person(sm, criteria, max_results=3)
+    assert results, "No results available for details test"
+    raw = results[0].get("raw_data", {})
+    person_id = raw.get("PersonId")
+    tree_id = raw.get("TreeId") or sm.my_tree_id
+    assert person_id and tree_id, "Missing person or tree id for details fetch"
+    details = get_ancestry_person_details(sm, str(person_id), str(tree_id))
+    assert details, "No details returned from Facts User API"
+    # Validate spouse and at least one child per .env expectations
+    spouse_expect = str(tp.get("spouse_name", "Helen")).lower()
+    children_expect = [c.lower() for c in tp.get("children", []) if c]
+    spouses = [str(s.get("name", "")).lower() for s in details.get("spouses", [])]
+    children = [str(c.get("name", "")).lower() for c in details.get("children", [])]
+    assert any(spouse_expect in s for s in spouses), f"Expected spouse '{spouse_expect}' not found in {spouses}"
+    assert any(any(exp in ch for exp in children_expect) for ch in children), f"Expected one of children {children_expect} not found in {children}"
+    return True
+
+
+def _test_live_relationship_uncle(skip_live_tests: bool) -> bool:
+    """Live API: format relationship path between Fraser Gault and owner; should include 'Uncle'."""
+    if skip_live_tests:
+        logger.info("Skipping live API test: test_live_relationship_uncle")
+        return True
+    sm = _ensure_session(skip_live_tests)
+    if not sm:
+        return True
+    tp = load_test_person_from_env()
+    # Search to get ids
+    criteria = _build_search_criteria_from_test_person(tp)
+    results = search_ancestry_api_for_person(sm, criteria, max_results=3)
+    assert results, "No results available for relationship test"
+    top = results[0]
+    raw = top.get("raw_data", {})
+    person_id = str(raw.get("PersonId"))
+    tree_id = str(raw.get("TreeId") or sm.my_tree_id)
+    owner_name = sm.tree_owner_name or os.getenv("TREE_OWNER_NAME", "Wayne Gault")
+    target_name = top.get("name", tp.get("name", "Fraser Gault"))
+    # Call ladder API and format
+    from api_utils import call_getladder_api
+    from relationship_utils import format_api_relationship_path
+    ladder_raw = call_getladder_api(sm, tree_id, person_id, config_schema.api.base_url, timeout=20)
+    assert ladder_raw and isinstance(ladder_raw, str), "GetLadder API returned no/invalid data"
+    formatted = format_api_relationship_path(ladder_raw, owner_name=owner_name, target_name=target_name, relationship_type="relative")
+    fmt_lower = formatted.lower()
+    assert "uncle" in fmt_lower, f"Formatted relationship does not show 'uncle': {formatted}"
+    assert "fraser" in fmt_lower and "gault" in fmt_lower, "Target name missing in formatted relationship"
+    assert owner_name.split()[0].lower() in fmt_lower, "Owner name missing in formatted relationship"
+    return True
+
+
+# ==============================================
+# MAIN TEST SUITE
+# ==============================================
+
+
 def action11_module_tests() -> bool:
     """
     Comprehensive test suite for action11.py following the standardized 6-category TestSuite framework.
@@ -3164,99 +3257,24 @@ def action11_module_tests() -> bool:
     # - test_exception_handling (9 lines)
 
     # === RUN ALL TESTS ===
+    # Skip live API tests when running through test runner to avoid hanging
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        print("ℹ️  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
+        logger.info("Skipping all live API tests due to SKIP_LIVE_API_TESTS environment variable")
+
+    # Create wrapper functions that pass skip_live_tests parameter
+    def test_live_search_fraser():
+        return _test_live_search_fraser(skip_live_tests)
+
+    def test_live_family_matches_env():
+        return _test_live_family_matches_env(skip_live_tests)
+
+    def test_live_relationship_uncle():
+        return _test_live_relationship_uncle(skip_live_tests)
+
+    # Register the live tests (these are decisive, fail on real issues)
     with suppress_logging():
-        # INITIALIZATION TESTS
-
-
-
-        # === LIVE API TESTS (REAL, ENV-DRIVEN) ===
-        # Skip live API tests when running through test runner to avoid hanging
-        skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
-        if skip_live_tests:
-            print("ℹ️  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
-            logger.info("Skipping all live API tests due to SKIP_LIVE_API_TESTS environment variable")
-
-        def test_live_search_fraser():
-            """Live API: search for Fraser Gault and ensure a scored match is returned."""
-            if skip_live_tests:
-                logger.info("Skipping live API test: test_live_search_fraser")
-                return True
-            sm = _ensure_session(skip_live_tests)
-            if not sm:
-                return True
-            tp = load_test_person_from_env()
-            criteria = _build_search_criteria_from_test_person(tp)
-            results = search_ancestry_api_for_person(sm, criteria, max_results=5)
-            assert results, "No results returned from live API search"
-            top = results[0]
-            name_l = str(top.get("name", "")).lower()
-            assert "fraser" in name_l and "gault" in name_l, f"Top match is not Fraser Gault: {top.get('name')}"
-            assert float(top.get("score", 0)) > 0, "Top match has non-positive score"
-            # Birth place 'contains' logic
-            bp_disp = str(top.get("birth_place", "")).lower()
-            assert criteria["birth_place"] in bp_disp, f"Birth place does not contain '{criteria['birth_place']}'"
-            return True
-
-        def test_live_family_matches_env():
-            """Live API: fetch person details and validate spouse/children from .env test data."""
-            if skip_live_tests:
-                logger.info("Skipping live API test: test_live_family_matches_env")
-                return True
-            sm = _ensure_session(skip_live_tests)
-            if not sm:
-                return True
-            tp = load_test_person_from_env()
-            # Reuse search to pick id/tree
-            criteria = _build_search_criteria_from_test_person(tp)
-            results = search_ancestry_api_for_person(sm, criteria, max_results=3)
-            assert results, "No results available for details test"
-            raw = results[0].get("raw_data", {})
-            person_id = raw.get("PersonId")
-            tree_id = raw.get("TreeId") or sm.my_tree_id
-            assert person_id and tree_id, "Missing person or tree id for details fetch"
-            details = get_ancestry_person_details(sm, str(person_id), str(tree_id))
-            assert details, "No details returned from Facts User API"
-            # Validate spouse and at least one child per .env expectations
-            spouse_expect = str(tp.get("spouse_name", "Helen")).lower()
-            children_expect = [c.lower() for c in tp.get("children", []) if c]
-            spouses = [str(s.get("name", "")).lower() for s in details.get("spouses", [])]
-            children = [str(c.get("name", "")).lower() for c in details.get("children", [])]
-            assert any(spouse_expect in s for s in spouses), f"Expected spouse '{spouse_expect}' not found in {spouses}"
-            assert any(any(exp in ch for exp in children_expect) for ch in children), f"Expected one of children {children_expect} not found in {children}"
-            return True
-
-        def test_live_relationship_uncle():
-            """Live API: format relationship path between Fraser Gault and owner; should include 'Uncle'."""
-            if skip_live_tests:
-                logger.info("Skipping live API test: test_live_relationship_uncle")
-                return True
-            sm = _ensure_session(skip_live_tests)
-            if not sm:
-                return True
-            tp = load_test_person_from_env()
-            # Search to get ids
-            criteria = _build_search_criteria_from_test_person(tp)
-            results = search_ancestry_api_for_person(sm, criteria, max_results=3)
-            assert results, "No results available for relationship test"
-            top = results[0]
-            raw = top.get("raw_data", {})
-            person_id = str(raw.get("PersonId"))
-            tree_id = str(raw.get("TreeId") or sm.my_tree_id)
-            owner_name = sm.tree_owner_name or os.getenv("TREE_OWNER_NAME", "Wayne Gault")
-            target_name = top.get("name", tp.get("name", "Fraser Gault"))
-            # Call ladder API and format
-            from api_utils import call_getladder_api
-            from relationship_utils import format_api_relationship_path
-            ladder_raw = call_getladder_api(sm, tree_id, person_id, config_schema.api.base_url, timeout=20)
-            assert ladder_raw and isinstance(ladder_raw, str), "GetLadder API returned no/invalid data"
-            formatted = format_api_relationship_path(ladder_raw, owner_name=owner_name, target_name=target_name, relationship_type="relative")
-            fmt_lower = formatted.lower()
-            assert "uncle" in fmt_lower, f"Formatted relationship does not show 'uncle': {formatted}"
-            assert "fraser" in fmt_lower and "gault" in fmt_lower, "Target name missing in formatted relationship"
-            assert owner_name.split()[0].lower() in fmt_lower, "Owner name missing in formatted relationship"
-            return True
-
-        # Register the live tests (these are decisive, fail on real issues)
         suite.run_test(
             "Live API search: Fraser Gault",
             test_live_search_fraser,
