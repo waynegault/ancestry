@@ -1640,6 +1640,65 @@ def test_module_initialization() -> None:
         return True  # Skip if config is missing in test env
 
 
+def test_config_defaults() -> None:
+    """Test that configuration defaults are loaded correctly"""
+    print("📋 Testing configuration default values:")
+
+    try:
+        # Get actual values
+        date_flexibility_value = (
+            config_schema.date_flexibility if config_schema else 2
+        )
+        scoring_weights = (
+            dict(config_schema.common_scoring_weights) if config_schema else {}
+        )
+
+        # Expected values
+        expected_date_flexibility = 5.0
+        expected_weight_keys = [
+            "contains_first_name",
+            "contains_surname",
+            "bonus_both_names_contain",
+            "exact_birth_date",
+            "birth_year_match",
+            "year_birth",
+            "gender_match",
+        ]
+
+        print(
+            f"   • Date flexibility: Expected {expected_date_flexibility}, Got {date_flexibility_value}"
+        )
+        print(f"   • Scoring weights type: {type(scoring_weights).__name__}")
+        print(f"   • Scoring weights count: {len(scoring_weights)} keys")
+
+        # Check key scoring weights
+        for key in expected_weight_keys:
+            weight = scoring_weights.get(key, "MISSING")
+            print(f"   • {key}: {weight}")
+
+        print("📊 Results:")
+        print(
+            f"   Date flexibility correct: {date_flexibility_value == expected_date_flexibility}"
+        )
+        print(f"   Scoring weights is dict: {isinstance(scoring_weights, dict)}")
+        print(
+            f"   Has required weight keys: {all(key in scoring_weights for key in expected_weight_keys)}"
+        )
+
+        assert (
+            date_flexibility_value == expected_date_flexibility
+        ), f"Date flexibility should be {expected_date_flexibility}, got {date_flexibility_value}"
+        assert isinstance(
+            scoring_weights, dict
+        ), f"Scoring weights should be dict, got {type(scoring_weights)}"
+        assert len(scoring_weights) > 0, "Scoring weights should not be empty"
+
+        return True
+    except Exception as e:
+        print(f"❌ Config defaults test failed: {e}")
+        return True
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -1662,64 +1721,6 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     debug_wrapper = _debug_wrapper
-
-    def test_config_defaults() -> None:
-        """Test that configuration defaults are loaded correctly"""
-        print("📋 Testing configuration default values:")
-
-        try:
-            # Get actual values
-            date_flexibility_value = (
-                config_schema.date_flexibility if config_schema else 2
-            )
-            scoring_weights = (
-                dict(config_schema.common_scoring_weights) if config_schema else {}
-            )
-
-            # Expected values
-            expected_date_flexibility = 5.0
-            expected_weight_keys = [
-                "contains_first_name",
-                "contains_surname",
-                "bonus_both_names_contain",
-                "exact_birth_date",
-                "birth_year_match",
-                "year_birth",
-                "gender_match",
-            ]
-
-            print(
-                f"   • Date flexibility: Expected {expected_date_flexibility}, Got {date_flexibility_value}"
-            )
-            print(f"   • Scoring weights type: {type(scoring_weights).__name__}")
-            print(f"   • Scoring weights count: {len(scoring_weights)} keys")
-
-            # Check key scoring weights
-            for key in expected_weight_keys:
-                weight = scoring_weights.get(key, "MISSING")
-                print(f"   • {key}: {weight}")
-
-            print("📊 Results:")
-            print(
-                f"   Date flexibility correct: {date_flexibility_value == expected_date_flexibility}"
-            )
-            print(f"   Scoring weights is dict: {isinstance(scoring_weights, dict)}")
-            print(
-                f"   Has required weight keys: {all(key in scoring_weights for key in expected_weight_keys)}"
-            )
-
-            assert (
-                date_flexibility_value == expected_date_flexibility
-            ), f"Date flexibility should be {expected_date_flexibility}, got {date_flexibility_value}"
-            assert isinstance(
-                scoring_weights, dict
-            ), f"Scoring weights should be dict, got {type(scoring_weights)}"
-            assert len(scoring_weights) > 0, "Scoring weights should not be empty"
-
-            return True
-        except Exception as e:
-            print(f"❌ Config defaults test failed: {e}")
-            return True
 
     def test_sanitize_input() -> None:
         """Test input sanitization with various input types"""
