@@ -97,14 +97,13 @@ def _format_single_word(word: str) -> str:
     if word.isupper() and len(word) <= 3:
         return word
     # Handle name particles and prefixes
-    elif word.lower() in ["mc", "mac", "o'"]:
+    if word.lower() in ["mc", "mac", "o'"]:
         return word.capitalize()
     # Handle quoted nicknames
-    elif word.startswith('"') and word.endswith('"'):
+    if word.startswith('"') and word.endswith('"'):
         return f'"{word[1:-1].title()}"'
     # Regular title case
-    else:
-        return word.title()
+    return word.title()
 
 def format_name(name: Optional[str]) -> str:
     """
@@ -585,7 +584,7 @@ def _extract_name_from_item(item) -> str:
         name_elem = item.find("b") if isinstance(item, Tag) else None
         if name_elem and hasattr(name_elem, "get_text"):
             return name_elem.get_text(strip=True)
-        elif hasattr(item, "string") and item.string:
+        if hasattr(item, "string") and item.string:
             return str(item.string).strip()
         return "Unknown"
     except (AttributeError, TypeError):
@@ -1179,9 +1178,9 @@ def _format_years_display(birth_year: Optional[str], death_year: Optional[str]) 
     """Format birth/death years into display string."""
     if birth_year and death_year:
         return f" ({birth_year}-{death_year})"
-    elif birth_year:
+    if birth_year:
         return f" (b. {birth_year})"
-    elif death_year:
+    if death_year:
         return f" (d. {death_year})"
     return ""
 
@@ -1264,10 +1263,9 @@ def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
             gender_str = str(gender_val) if gender_val is not None else ""
             if gender_str.upper() == "M":
                 return "Uncle"
-            elif gender_str.upper() == "F":
+            if gender_str.upper() == "F":
                 return "Aunt"
-            else:
-                return "Aunt/Uncle"
+            return "Aunt/Uncle"
 
     return None
 
@@ -1290,10 +1288,9 @@ def _check_grandparent_pattern(path_data: list[dict]) -> Optional[str]:
 
         if gender == "M":
             return "Grandfather"
-        elif gender == "F":
+        if gender == "F":
             return "Grandmother"
-        else:
-            return "Grandparent"
+        return "Grandparent"
 
     return None
 
@@ -1323,10 +1320,9 @@ def _check_nephew_niece_pattern(path_data: list[dict]) -> Optional[str]:
 
         if target_gender == "M":
             return "Nephew"
-        elif target_gender == "F":
+        if target_gender == "F":
             return "Niece"
-        else:
-            return "Nephew/Niece"
+        return "Nephew/Niece"
 
     return None
 

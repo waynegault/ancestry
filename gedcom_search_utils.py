@@ -746,7 +746,7 @@ def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> Opt
 
     if husb_tag and husb_tag.value != individual_id_norm:
         return _normalize_id(husb_tag.value)
-    elif wife_tag and wife_tag.value != individual_id_norm:
+    if wife_tag and wife_tag.value != individual_id_norm:
         return _normalize_id(wife_tag.value)
 
     return None

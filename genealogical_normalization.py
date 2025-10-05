@@ -143,23 +143,22 @@ def _construct_normalized_date(year: str, month: Optional[str], day: Optional[st
     """Construct normalized date string from components."""
     if day and month:
         return f"{year}-{month}-{day}"
-    elif month:
+    if month:
         return f"{year}-{month}"
-    else:
-        return year
+    return year
 
 
 def _add_approximation_prefix(date_str: str, normalized: str) -> str:
     """Add approximation indicator prefix to normalized date."""
     if "circa" in date_str.lower() or "c." in date_str.lower():
         return f"circa {normalized}"
-    elif "~" in date_str:
+    if "~" in date_str:
         return f"~{normalized}"
-    elif "about" in date_str.lower() or "abt" in date_str.lower():
+    if "about" in date_str.lower() or "abt" in date_str.lower():
         return f"about {normalized}"
-    elif "before" in date_str.lower() or "bef" in date_str.lower():
+    if "before" in date_str.lower() or "bef" in date_str.lower():
         return f"before {normalized}"
-    elif "after" in date_str.lower() or "aft" in date_str.lower():
+    if "after" in date_str.lower() or "aft" in date_str.lower():
         return f"after {normalized}"
 
     return normalized

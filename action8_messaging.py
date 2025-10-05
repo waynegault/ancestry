@@ -1900,12 +1900,11 @@ def _get_best_name_for_person(person: Person, family_tree: Optional[FamilyTree])
 
     if tree_name:
         return tree_name
-    elif first_name:
+    if first_name:
         return first_name
-    elif username and username not in ["Unknown", "Unknown User"]:
+    if username and username not in ["Unknown", "Unknown User"]:
         return username
-    else:
-        return "Valued Relative"
+    return "Valued Relative"
 
 
 def _format_predicted_relationship(rel_str: str) -> str:
@@ -2019,7 +2018,7 @@ def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
         if not testing_profile_id_config:
             logger.error(f"Testing mode active, but TESTING_PROFILE_ID not configured. Skipping {log_prefix}.")
             return False, "skipped (config_error)"
-        elif current_profile_id != testing_profile_id_config:
+        if current_profile_id != testing_profile_id_config:
             skip_reason = f"skipped (testing_mode_filter: not {testing_profile_id_config})"
             logger.debug(f"Testing Mode: Skipping send to {log_prefix} ({skip_reason}).")
             return False, skip_reason
@@ -2406,15 +2405,14 @@ def _check_and_handle_browser_health(session_manager: SessionManager, processed_
         if session_manager.attempt_browser_recovery():
             logger.warning(f"✅ Browser recovery successful at person {processed_in_loop} - continuing")
             return False, 0
-        else:
-            logger.critical(f"❌ Browser recovery failed at person {processed_in_loop} - halting messaging")
-            remaining_to_skip = total_candidates - processed_in_loop + 1
-            if progress_bar:
-                progress_bar.set_description(
-                    f"ERROR: Browser failed - Sent={sent_count} ACK={acked_count} Skip={skipped_count + remaining_to_skip} Err={error_count}"
-                )
-                progress_bar.update(remaining_to_skip)
-            return True, remaining_to_skip
+        logger.critical(f"❌ Browser recovery failed at person {processed_in_loop} - halting messaging")
+        remaining_to_skip = total_candidates - processed_in_loop + 1
+        if progress_bar:
+            progress_bar.set_description(
+                f"ERROR: Browser failed - Sent={sent_count} ACK={acked_count} Skip={skipped_count + remaining_to_skip} Err={error_count}"
+            )
+            progress_bar.update(remaining_to_skip)
+        return True, remaining_to_skip
     return False, 0
 
 

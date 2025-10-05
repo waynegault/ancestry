@@ -353,9 +353,9 @@ class SessionHealthMonitor:
         recent_avg = sum(list(self.api_response_times)[-3:]) / 3
         if recent_avg > 10.0:
             return 0.4
-        elif recent_avg > 8.0:
+        if recent_avg > 8.0:
             return 0.3
-        elif recent_avg > 5.0:
+        if recent_avg > 5.0:
             return 0.2
         return 0.0
 
@@ -364,9 +364,9 @@ class SessionHealthMonitor:
         total_errors = sum(self.error_counts.values())
         if total_errors > 15:
             return 0.4
-        elif total_errors > 10:
+        if total_errors > 10:
             return 0.3
-        elif total_errors > 5:
+        if total_errors > 5:
             return 0.2
         return 0.0
 
@@ -378,7 +378,7 @@ class SessionHealthMonitor:
         memory_trend = list(self.memory_usage_history)[-1] - list(self.memory_usage_history)[-3]
         if memory_trend > 100:
             return 0.2
-        elif memory_trend > 50:
+        if memory_trend > 50:
             return 0.1
         return 0.0
 

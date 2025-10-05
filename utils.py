@@ -187,12 +187,11 @@ def _get_ordinal_suffix(num: int) -> str:
     last_digit = num % 10
     if last_digit == 1:
         return "st"
-    elif last_digit == 2:
+    if last_digit == 2:
         return "nd"
-    elif last_digit == 3:
+    if last_digit == 3:
         return "rd"
-    else:
-        return "th"
+    return "th"
 
 
 def _format_number_as_ordinal(num: int) -> str:
@@ -613,7 +612,7 @@ def _extract_driver_from_args(args: tuple) -> Optional[DriverType]:
 
     if isinstance(args[0], SessionManager):  # type: ignore
         return args[0].driver
-    elif isinstance(args[0], WebDriver):  # type: ignore
+    if isinstance(args[0], WebDriver):  # type: ignore
         return args[0]
 
     return None
@@ -2758,8 +2757,7 @@ def _execute_login_flow(
     # Handle 2FA or verify login
     if two_fa_present:
         return _handle_2fa_flow(session_manager)
-    else:
-        return _verify_login_no_2fa(driver, session_manager, signin_url)
+    return _verify_login_no_2fa(driver, session_manager, signin_url)
 
 
 def _handle_login_exception(e: Exception, driver: Any) -> str:
@@ -2767,14 +2765,13 @@ def _handle_login_exception(e: Exception, driver: Any) -> str:
     if isinstance(e, TimeoutException):
         logger.error(f"Timeout during login process: {e}", exc_info=False)
         return "LOGIN_FAILED_TIMEOUT"
-    elif isinstance(e, WebDriverException):
+    if isinstance(e, WebDriverException):
         logger.error(f"WebDriverException during login: {e}", exc_info=False)
         if not is_browser_open(driver):
             logger.error("Session became invalid during login.")
         return "LOGIN_FAILED_WEBDRIVER"
-    else:
-        logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
-        return "LOGIN_FAILED_UNEXPECTED"
+    logger.error(f"An unexpected error occurred during login: {e}", exc_info=True)
+    return "LOGIN_FAILED_UNEXPECTED"
 
 
 def log_in(session_manager: SessionManager) -> str:  # type: ignore
@@ -3220,7 +3217,7 @@ def _check_url_mismatch_and_handle(
     mismatch_action = _handle_url_mismatch(driver, landed_url_base, target_url_base, unavailability_selectors)
     if mismatch_action == "fail":
         return ("fail", driver)
-    elif mismatch_action == "continue":
+    if mismatch_action == "continue":
         return ("continue", driver)
 
     return (None, driver)  # type: ignore  # Continue with normal flow
@@ -3250,7 +3247,7 @@ def _validate_post_navigation(
         login_action = _handle_login_redirect(session_manager)
         if login_action == "retry":
             return ("continue", driver)
-        elif login_action in ("fail", "no_manager"):
+        if login_action in ("fail", "no_manager"):
             return ("fail", driver)
 
     # Check for URL mismatch
@@ -3265,9 +3262,9 @@ def _validate_post_navigation(
     element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
     if element_result == "success":
         return ("success", driver)
-    elif element_result == "fail":
+    if element_result == "fail":
         return ("fail", driver)
-    elif element_result == "continue":
+    if element_result == "continue":
         return ("continue", driver)
 
     return ("continue", driver)
@@ -3385,9 +3382,9 @@ def nav_to_page(
 
         if action == "success":
             return True
-        elif action == "fail":
+        if action == "fail":
             return False
-        elif action == "retry":
+        if action == "retry":
             driver = new_driver if new_driver else driver
             continue
         elif action == "continue":
