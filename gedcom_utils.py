@@ -1543,6 +1543,187 @@ def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dic
             logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Applied bonus_both_names_contain. Set field_scores['bonus'] = {bonus_points}")
 
 
+def _check_year_match(t_year: Any, c_year: Any, year_score_range: int) -> tuple[bool, bool]:
+    """Check if years match exactly or approximately. Returns (exact_match, approx_match)."""
+    if t_year is None or c_year is None:
+        return False, False
+    try:
+        t_year_int = int(t_year)
+        c_year_int = int(c_year)
+        exact_match = t_year_int == c_year_int
+        approx_match = not exact_match and abs(c_year_int - t_year_int) <= year_score_range
+        return exact_match, approx_match
+    except Exception:
+        return False, False
+
+
+def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: int) -> dict:
+    """Calculate date match flags for birth and death dates."""
+    birth_year_match, birth_year_approx = _check_year_match(t_data["b_year"], c_data["b_year"], year_score_range)
+    death_year_match, death_year_approx = _check_year_match(t_data["d_year"], c_data["d_year"], year_score_range)
+
+    return {
+        "exact_birth_date_match": bool(
+            t_data["b_date"] and c_data["b_date"] and
+            isinstance(t_data["b_date"], datetime) and isinstance(c_data["b_date"], datetime) and
+            t_data["b_date"].date() == c_data["b_date"].date()
+        ),
+        "exact_death_date_match": bool(
+            t_data["d_date"] and c_data["d_date"] and
+            isinstance(t_data["d_date"], datetime) and isinstance(c_data["d_date"], datetime) and
+            t_data["d_date"].date() == c_data["d_date"].date()
+        ),
+        "birth_year_match": birth_year_match,
+        "birth_year_approx_match": birth_year_approx,
+        "death_year_match": death_year_match,
+        "death_year_approx_match": death_year_approx,
+        "death_dates_absent": bool(
+            t_data["d_date"] is None and c_data["d_date"] is None and
+            t_data["d_year"] is None and c_data["d_year"] is None
+        ),
+    }
+
+
+def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score birth date matches (prioritize: exact date > exact year > approx year)."""
+    if date_flags["exact_birth_date_match"]:
+        points_bdate = weights.get("exact_birth_date", 0)
+        if points_bdate != 0:
+            field_scores["bdate"] = int(points_bdate)
+            match_reasons.append(f"Exact Birth Date ({points_bdate}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched exact_birth_date. Set field_scores['bdate'] = {points_bdate}")
+            return
+
+    if date_flags["birth_year_match"]:
+        points_byear = weights.get("year_birth", 0)
+        if points_byear != 0:
+            field_scores["byear"] = int(points_byear)
+            match_reasons.append(f"Exact Birth Year ({c_data['b_year']}) ({points_byear}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched year_birth. Set field_scores['byear'] = {points_byear}")
+            return
+
+    if date_flags["birth_year_approx_match"]:
+        points_byear_approx = weights.get("approx_year_birth", 0) or weights.get("birth_year_close", 0)
+        if points_byear_approx != 0:
+            field_scores["byear"] = int(points_byear_approx)
+            match_reasons.append(f"Approx Birth Year ({c_data['b_year']} vs {t_data['b_year']}) ({points_byear_approx}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched birth_year_close. Set field_scores['byear'] = {points_byear_approx}")
+
+
+def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score death date matches (prioritize: exact date > exact year > approx year > both absent)."""
+    if date_flags["exact_death_date_match"]:
+        points_ddate = weights.get("exact_death_date", 0)
+        if points_ddate != 0:
+            field_scores["ddate"] = int(points_ddate)
+            match_reasons.append(f"Exact Death Date ({points_ddate}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched exact_death_date. Set field_scores['ddate'] = {points_ddate}")
+            return
+
+    if date_flags["death_year_match"]:
+        points_dyear = weights.get("year_death", 0)
+        if points_dyear != 0:
+            field_scores["dyear"] = int(points_dyear)
+            match_reasons.append(f"Exact Death Year ({c_data['d_year']}) ({points_dyear}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched year_death. Set field_scores['dyear'] = {points_dyear}")
+            return
+
+    if date_flags["death_year_approx_match"]:
+        points_dyear_approx = weights.get("approx_year_death", 0)
+        if points_dyear_approx != 0:
+            field_scores["dyear"] = int(points_dyear_approx)
+            match_reasons.append(f"Approx Death Year ({c_data['d_year']} vs {t_data['d_year']}) ({points_dyear_approx}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched approx_year_death. Set field_scores['dyear'] = {points_dyear_approx}")
+            return
+
+    if date_flags["death_dates_absent"]:
+        points_ddate_abs = weights.get("death_dates_both_absent", 0)
+        if points_ddate_abs != 0:
+            field_scores["ddate"] = int(points_ddate_abs)
+            match_reasons.append(f"Death Dates Absent ({points_ddate_abs}pts)")
+            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched death_dates_both_absent. Set field_scores['ddate'] = {points_ddate_abs}")
+
+
+def _score_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score birth and death date matches."""
+    _score_birth_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
+    _score_death_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
+
+
+def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score birth place match."""
+    if not (t_data["pob"] and c_data["bplace"] and t_data["pob"] in c_data["bplace"]):
+        return
+    points_pob = weights.get("contains_pob", 0) or weights.get("birth_place_match", 0)
+    if points_pob != 0:
+        field_scores["bplace"] = int(points_pob)
+        match_reasons.append(f"Birth Place Contains ({points_pob}pts)")
+        logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched birth_place_match. Set field_scores['bplace'] = {points_pob}")
+
+
+def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score death place match (contains OR both absent)."""
+    pod_match = bool(t_data["pod"] and c_data["dplace"] and t_data["pod"] in c_data["dplace"])
+    pod_absent = bool(not t_data["pod"] and not c_data["dplace"])
+    if not (pod_match or pod_absent):
+        return
+    points_pod = weights.get("contains_pod", 0) or weights.get("death_place_match", 0)
+    if points_pod != 0:
+        field_scores["dplace"] = int(points_pod)
+        reason = f"Death Place Contains ({points_pod}pts)" if pod_match else f"Death Places Both Absent ({points_pod}pts)"
+        match_reasons.append(reason)
+        logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched Death Place condition ({'Contains' if pod_match else 'Both Absent'}). Set field_scores['dplace'] = {points_pod}")
+
+
+def _score_gender(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score gender match."""
+    if not (t_data["gender"] and c_data["gender"] and t_data["gender"] == c_data["gender"]):
+        return
+    points_gender = weights.get("gender_match", 0)
+    if points_gender != 0:
+        field_scores["gender"] = int(points_gender)
+        match_reasons.append(f"Gender Match ({t_data['gender'].upper()}) ({points_gender}pts)")
+        logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched gender_match. Set field_scores['gender'] = {points_gender}")
+
+
+def _score_places_and_gender(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score birth place, death place, and gender matches."""
+    _score_birth_place(t_data, c_data, weights, field_scores, match_reasons)
+    _score_death_place(t_data, c_data, weights, field_scores, match_reasons)
+    _score_gender(t_data, c_data, weights, field_scores, match_reasons)
+
+
+def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list, c_id_debug: str) -> None:
+    """Score birth bonus (if both birth year and birth place matched)."""
+    if not (field_scores["byear"] > 0 and field_scores["bplace"] > 0):
+        return
+    birth_bonus_points = weights.get("bonus_birth_info", 0) or weights.get("bonus_birth_date_and_place", 0)
+    if birth_bonus_points != 0:
+        field_scores["bbonus"] = int(birth_bonus_points)
+        match_reasons.append(f"Bonus Birth Info ({birth_bonus_points}pts)")
+        logger.debug(f"SCORE DEBUG ({c_id_debug}): Applied bonus_birth_date_and_place. Set field_scores['bbonus'] = {birth_bonus_points}")
+
+
+def _score_death_bonus(date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list, c_id_debug: str) -> None:
+    """Score death bonus (when BOTH death info matched OR BOTH are absent for living person)."""
+    death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
+    both_death_info_absent = date_flags["death_dates_absent"] and field_scores["dplace"] == 0
+    if not (death_info_matched or both_death_info_absent):
+        return
+    death_bonus_points = weights.get("bonus_death_info", 0) or weights.get("bonus_death_date_and_place", 0)
+    if death_bonus_points != 0:
+        field_scores["dbonus"] = int(death_bonus_points)
+        reason = f"Bonus Death Info ({death_bonus_points}pts)" if death_info_matched else f"Bonus Death Absent ({death_bonus_points}pts)"
+        match_reasons.append(reason)
+        logger.debug(f"SCORE DEBUG ({c_id_debug}): Applied death bonus ({'matched' if death_info_matched else 'both absent'}). Set field_scores['dbonus'] = {death_bonus_points}")
+
+
+def _score_bonuses(date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list, c_id_debug: str) -> None:
+    """Score birth and death bonuses."""
+    _score_birth_bonus(weights, field_scores, match_reasons, c_id_debug)
+    _score_death_bonus(date_flags, weights, field_scores, match_reasons, c_id_debug)
+
+
 # Scoring Function (V18 - Corrected Syntax)
 # ==============================================
 def calculate_match_score(
@@ -1574,198 +1755,17 @@ def calculate_match_score(
     # Name Scoring
     _score_names(t_data, c_data, weights, field_scores, match_reasons)
 
-    # Date Flag Calculation (Restored except clauses)
-    exact_birth_date_match = bool(
-        t_b_date
-        and c_b_date
-        and isinstance(t_b_date, datetime)
-        and isinstance(c_b_date, datetime)
-        and t_b_date.date() == c_b_date.date()
-    )
-    exact_death_date_match = bool(
-        t_d_date
-        and c_d_date
-        and isinstance(t_d_date, datetime)
-        and isinstance(c_d_date, datetime)
-        and t_d_date.date() == c_d_date.date()
-    )
-    birth_year_match = False
-    birth_year_approx_match = False
-    if t_b_year is not None and c_b_year is not None:
-        try:
-            t_b_year_int = int(t_b_year)
-            c_b_year_int = int(c_b_year)
-            birth_year_match = t_b_year_int == c_b_year_int
-            if not birth_year_match:
-                birth_year_approx_match = (
-                    abs(c_b_year_int - t_b_year_int) <= year_score_range
-                )
-        except Exception:
-            pass  # Keep flags False if error occurs
-
-    death_year_match = False
-    death_year_approx_match = False
-    if t_d_year is not None and c_d_year is not None:
-        try:
-            t_d_year_int = int(t_d_year)
-            c_d_year_int = int(c_d_year)
-            death_year_match = t_d_year_int == c_d_year_int
-            if not death_year_match:
-                death_year_approx_match = (
-                    abs(c_d_year_int - t_d_year_int) <= year_score_range
-                )
-        except Exception:
-            pass  # Keep flags False
-
-    death_dates_absent = bool(
-        t_d_date is None and c_d_date is None and t_d_year is None and c_d_year is None
-    )
+    # Calculate date match flags
+    date_flags = _calculate_date_flags(t_data, c_data, year_score_range)
 
     # Date Scoring
-    birth_score_added = False
-    if exact_birth_date_match:
-        points_bdate = weights.get("exact_birth_date", 0)
-        if points_bdate != 0:
-            field_scores["bdate"] = int(points_bdate)
-            match_reasons.append(f"Exact Birth Date ({points_bdate}pts)")
-            birth_score_added = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched exact_birth_date. Set field_scores['bdate'] = {points_bdate}"
-            )
-    if not birth_score_added and birth_year_match:
-        points_byear = weights.get("year_birth", 0)
-        if points_byear != 0:
-            field_scores["byear"] = int(points_byear)
-            match_reasons.append(f"Exact Birth Year ({c_b_year}) ({points_byear}pts)")
-            birth_score_added = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched year_birth. Set field_scores['byear'] = {points_byear}"
-            )
-    if not birth_score_added and birth_year_approx_match:
-        # Try both old and new weight keys for compatibility
-        points_byear_approx = weights.get("approx_year_birth", 0) or weights.get(
-            "birth_year_close", 0
-        )
-        if points_byear_approx != 0:
-            field_scores["byear"] = int(points_byear_approx)
-            match_reasons.append(
-                f"Approx Birth Year ({c_b_year} vs {t_b_year}) ({points_byear_approx}pts)"
-            )
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched birth_year_close. Set field_scores['byear'] = {points_byear_approx}"
-            )
+    _score_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
 
-    death_score_added = False
-    if exact_death_date_match:
-        points_ddate = weights.get("exact_death_date", 0)
-        if points_ddate != 0:
-            field_scores["ddate"] = int(points_ddate)
-            match_reasons.append(f"Exact Death Date ({points_ddate}pts)")
-            death_score_added = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched exact_death_date. Set field_scores['ddate'] = {points_ddate}"
-            )
-    elif death_year_match:
-        points_dyear = weights.get("year_death", 0)
-        if points_dyear != 0:
-            field_scores["dyear"] = int(points_dyear)
-            match_reasons.append(f"Exact Death Year ({c_d_year}) ({points_dyear}pts)")
-            death_score_added = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched year_death. Set field_scores['dyear'] = {points_dyear}"
-            )
-    elif death_year_approx_match:
-        points_dyear_approx = weights.get("approx_year_death", 0)
-        if points_dyear_approx != 0:
-            field_scores["dyear"] = int(points_dyear_approx)
-            match_reasons.append(
-                f"Approx Death Year ({c_d_year} vs {t_d_year}) ({points_dyear_approx}pts)"
-            )
-            death_score_added = True
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched approx_year_death. Set field_scores['dyear'] = {points_dyear_approx}"
-            )
-    elif death_dates_absent and not death_score_added:
-        points_ddate_abs = weights.get("death_dates_both_absent", 0)
-        if points_ddate_abs != 0:
-            field_scores["ddate"] = int(points_ddate_abs)
-            match_reasons.append(f"Death Dates Absent ({points_ddate_abs}pts)")
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched death_dates_both_absent. Set field_scores['ddate'] = {points_ddate_abs}"
-            )
+    # Place and Gender Scoring
+    _score_places_and_gender(t_data, c_data, weights, field_scores, match_reasons)
 
-    # Place Scoring
-    if t_pob and c_bplace and t_pob in c_bplace:
-        # Try both old and new weight keys for compatibility
-        points_pob = weights.get("contains_pob", 0) or weights.get(
-            "birth_place_match", 0
-        )
-        if points_pob != 0:
-            field_scores["bplace"] = int(points_pob)
-            match_reasons.append(f"Birth Place Contains ({points_pob}pts)")
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched birth_place_match. Set field_scores['bplace'] = {points_pob}"
-            )
-    condition1_pod_match = bool(t_pod and c_dplace and t_pod in c_dplace)
-    is_target_pod_absent = not bool(t_pod)
-    is_candidate_dplace_absent = not bool(c_dplace)
-    condition2_pod_absent = bool(is_target_pod_absent and is_candidate_dplace_absent)
-    if condition1_pod_match or condition2_pod_absent:
-        # Try both old and new weight keys for compatibility
-        points_pod = weights.get("contains_pod", 0) or weights.get("death_place_match", 0)
-        if points_pod != 0:
-            field_scores["dplace"] = int(points_pod)
-            reason = (
-                f"Death Place Contains ({points_pod}pts)"
-                if condition1_pod_match
-                else f"Death Places Both Absent ({points_pod}pts)"
-            )
-            match_reasons.append(reason)
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched Death Place condition ({'Contains' if condition1_pod_match else 'Both Absent'}). Set field_scores['dplace'] = {points_pod}"
-            )
-
-    # Gender Scoring
-    if t_gender and c_gender and t_gender == c_gender:
-        points_gender = weights.get("gender_match", 0)
-        if points_gender != 0:
-            field_scores["gender"] = int(points_gender)
-            match_reasons.append(
-                f"Gender Match ({t_gender.upper()}) ({points_gender}pts)"
-            )
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Matched gender_match. Set field_scores['gender'] = {points_gender}"
-            )
-
-    # Birth Bonus Scoring (if both birth year and birth place matched)
-    if field_scores["byear"] > 0 and field_scores["bplace"] > 0:
-        # Try both old and new weight keys for compatibility
-        birth_bonus_points = weights.get("bonus_birth_info", 0) or weights.get(
-            "bonus_birth_date_and_place", 0
-        )
-        if birth_bonus_points != 0:
-            field_scores["bbonus"] = int(birth_bonus_points)
-            match_reasons.append(f"Bonus Birth Info ({birth_bonus_points}pts)")
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Applied bonus_birth_date_and_place. Set field_scores['bbonus'] = {birth_bonus_points}"
-            )
-
-    # Death Bonus Scoring - Apply when BOTH death info matched OR BOTH are absent (living person)
-    death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
-    both_death_info_absent = death_dates_absent and field_scores["dplace"] == 0  # No death date AND no death place
-
-    if death_info_matched or both_death_info_absent:
-        # Try both old and new weight keys for compatibility
-        death_bonus_points = weights.get("bonus_death_info", 0) or weights.get(
-            "bonus_death_date_and_place", 0
-        )
-        if death_bonus_points != 0:
-            field_scores["dbonus"] = int(death_bonus_points)
-            reason = f"Bonus Death Info ({death_bonus_points}pts)" if death_info_matched else f"Bonus Death Absent ({death_bonus_points}pts)"
-            match_reasons.append(reason)
-            logger.debug(
-                f"SCORE DEBUG ({c_id_debug}): Applied death bonus ({'matched' if death_info_matched else 'both absent'}). Set field_scores['dbonus'] = {death_bonus_points}"
-            )
+    # Bonus Scoring
+    _score_bonuses(date_flags, weights, field_scores, match_reasons, c_data["id_debug"])
 
     # Calculate Final Total Score
     final_total_score = sum(field_scores.values())
@@ -1773,12 +1773,8 @@ def calculate_match_score(
     unique_reasons = sorted(set(match_reasons))
 
     # Final Debug Logs
-    logger.debug(
-        f"SCORE DEBUG ({c_id_debug}): Final Field Scores Dict before return: {field_scores}"
-    )
-    logger.debug(
-        f"SCORE DEBUG ({c_id_debug}): Calculated Total Score from dict: {final_total_score}"
-    )
+    logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Final Field Scores Dict before return: {field_scores}")
+    logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Calculated Total Score from dict: {final_total_score}")
 
     # Return a COPY of the dictionary
     return final_total_score, field_scores.copy(), unique_reasons
