@@ -829,7 +829,7 @@ class ConfigurationOptimizer:
         self,
         rate_limiter_stats: RateLimitingStats,
         batch_processor_summary: dict[str, Any],
-        system_metrics: Optional[dict[str, Any]] = None
+        _system_metrics: Optional[dict[str, Any]] = None  # Reserved for future system metrics integration
     ) -> dict[str, Any]:
         """
         Analyze system performance and generate optimization recommendations.

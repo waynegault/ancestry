@@ -1546,7 +1546,7 @@ def _calculate_place_detail_score(event: Dict) -> int:
     return comma_count + 1
 
 
-def _select_best_event(events: List[Dict], event_type: str) -> Optional[Dict]:
+def _select_best_event(events: List[Dict], _event_type: str) -> Optional[Dict]:
     """Select best event from list based on alternate status and place detail."""
     if not events:
         return None

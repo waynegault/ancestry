@@ -1115,7 +1115,7 @@ class IntelligentCacheWarmer:
             logger.debug(f"Could not warm API data for {cache_key}: {e}")
         return False
 
-    def _warm_profile_data(self, cache_key: str, session_manager: Optional[Any] = None) -> bool:
+    def _warm_profile_data(self, cache_key: str, _session_manager: Optional[Any] = None) -> bool:
         """Warm profile-related cache data."""
         try:
             # Warm with basic profile metadata
