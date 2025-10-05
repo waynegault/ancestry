@@ -1575,6 +1575,71 @@ def _validate_score_result(score: int, expected_score: int, test_name: str) -> N
     print(f"{Colors.GREEN}✅ {test_name} scoring algorithm test passed{Colors.RESET}")
 
 
+def test_module_initialization() -> None:
+    """Test that all required Action 10 functions are available and callable"""
+    required_functions = [
+        "main",
+        "load_gedcom_data",
+        "filter_and_score_individuals",
+        "analyze_top_match",
+        "get_user_criteria",
+        "display_top_matches",
+        "display_relatives",
+        "validate_config",
+        "calculate_match_score_cached",
+        "sanitize_input",
+        "parse_command_line_args",
+    ]
+
+    print(f"📋 Testing availability of {len(required_functions)} core functions:")
+    for func_name in required_functions:
+        print(f"   • {func_name}")
+
+    try:
+        found_functions = []
+        callable_functions = []
+
+        for func_name in required_functions:
+            if func_name in globals():
+                found_functions.append(func_name)
+                if callable(globals()[func_name]):
+                    callable_functions.append(func_name)
+                    print(f"   ✅ {func_name}: Found and callable")
+                else:
+                    print(f"   ❌ {func_name}: Found but not callable")
+            else:
+                print(f"   ❌ {func_name}: Not found")
+
+        # Test configuration
+        config_available = config_schema is not None
+        config_has_api = (
+            hasattr(config_schema, "api") if config_available else False
+        )
+
+        print("📊 Results:")
+        print(
+            f"   Functions found: {len(found_functions)}/{len(required_functions)}"
+        )
+        print(
+            f"   Functions callable: {len(callable_functions)}/{len(found_functions)}"
+        )
+        print(f"   Config available: {config_available}")
+        print(f"   Config has API: {config_has_api}")
+
+        assert len(found_functions) == len(
+            required_functions
+        ), f"Missing functions: {set(required_functions) - set(found_functions)}"
+        assert len(callable_functions) == len(
+            found_functions
+        ), f"Non-callable functions: {set(found_functions) - set(callable_functions)}"
+        assert config_available, "Configuration schema not available"
+
+        return True
+    except (NameError, AssertionError) as e:
+        print(f"❌ Module initialization failed: {e}")
+        return True  # Skip if config is missing in test env
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -1597,70 +1662,6 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     debug_wrapper = _debug_wrapper
-
-    def test_module_initialization() -> None:
-        """Test that all required Action 10 functions are available and callable"""
-        required_functions = [
-            "main",
-            "load_gedcom_data",
-            "filter_and_score_individuals",
-            "analyze_top_match",
-            "get_user_criteria",
-            "display_top_matches",
-            "display_relatives",
-            "validate_config",
-            "calculate_match_score_cached",
-            "sanitize_input",
-            "parse_command_line_args",
-        ]
-
-        print(f"📋 Testing availability of {len(required_functions)} core functions:")
-        for func_name in required_functions:
-            print(f"   • {func_name}")
-
-        try:
-            found_functions = []
-            callable_functions = []
-
-            for func_name in required_functions:
-                if func_name in globals():
-                    found_functions.append(func_name)
-                    if callable(globals()[func_name]):
-                        callable_functions.append(func_name)
-                        print(f"   ✅ {func_name}: Found and callable")
-                    else:
-                        print(f"   ❌ {func_name}: Found but not callable")
-                else:
-                    print(f"   ❌ {func_name}: Not found")
-
-            # Test configuration
-            config_available = config_schema is not None
-            config_has_api = (
-                hasattr(config_schema, "api") if config_available else False
-            )
-
-            print("📊 Results:")
-            print(
-                f"   Functions found: {len(found_functions)}/{len(required_functions)}"
-            )
-            print(
-                f"   Functions callable: {len(callable_functions)}/{len(found_functions)}"
-            )
-            print(f"   Config available: {config_available}")
-            print(f"   Config has API: {config_has_api}")
-
-            assert len(found_functions) == len(
-                required_functions
-            ), f"Missing functions: {set(required_functions) - set(found_functions)}"
-            assert len(callable_functions) == len(
-                found_functions
-            ), f"Non-callable functions: {set(found_functions) - set(callable_functions)}"
-            assert config_available, "Configuration schema not available"
-
-            return True
-        except (NameError, AssertionError) as e:
-            print(f"❌ Module initialization failed: {e}")
-            return True  # Skip if config is missing in test env
 
     def test_config_defaults() -> None:
         """Test that configuration defaults are loaded correctly"""
