@@ -2344,6 +2344,111 @@ def _check_family_tree_needs_update(
     return False
 
 
+def _process_person_data(
+    match: Dict[str, Any],
+    existing_person: Optional[Person],
+    prefetched_combined_details: Optional[Dict[str, Any]],
+    prefetched_tree_data: Optional[Dict[str, Any]],
+    match_uuid: str,
+    match_username: str,
+    match_in_my_tree: bool,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """
+    Process Person data with error handling.
+
+    Returns:
+        Tuple of (person_op_data, person_fields_changed)
+    """
+    try:
+        return _prepare_person_operation_data(
+            match=match,
+            existing_person=existing_person,
+            prefetched_combined_details=prefetched_combined_details,
+            prefetched_tree_data=prefetched_tree_data,
+            config_schema_arg=config_schema,
+            match_uuid=match_uuid,
+            formatted_match_username=match_username,
+            match_in_my_tree=match_in_my_tree,
+            log_ref_short=log_ref_short,
+            logger_instance=logger_instance,
+        )
+    except Exception as person_err:
+        logger_instance.error(
+            f"Error in _prepare_person_operation_data for {log_ref_short}: {person_err}",
+            exc_info=True,
+        )
+        return None, False
+
+
+def _process_dna_data(
+    match: Dict[str, Any],
+    dna_match_record: Optional[DnaMatch],
+    prefetched_combined_details: Optional[Dict[str, Any]],
+    match_uuid: str,
+    predicted_relationship: Optional[str],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Optional[Dict[str, Any]]:
+    """
+    Process DNA Match data with error handling.
+
+    Returns:
+        DNA operation data or None
+    """
+    try:
+        return _prepare_dna_match_operation_data(
+            match=match,
+            existing_dna_match=dna_match_record,
+            prefetched_combined_details=prefetched_combined_details,
+            match_uuid=match_uuid,
+            predicted_relationship=predicted_relationship,
+            log_ref_short=log_ref_short,
+            logger_instance=logger_instance,
+        )
+    except Exception as dna_err:
+        logger_instance.error(
+            f"Error in _prepare_dna_match_operation_data for {log_ref_short}: {dna_err}",
+            exc_info=True,
+        )
+        return None
+
+
+def _process_tree_data(
+    family_tree_record: Optional[FamilyTree],
+    prefetched_tree_data: Optional[Dict[str, Any]],
+    match_uuid: str,
+    match_in_my_tree: bool,
+    session_manager: SessionManager,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """
+    Process Family Tree data with error handling.
+
+    Returns:
+        Tuple of (tree_op_data, tree_operation_status)
+    """
+    try:
+        return _prepare_family_tree_operation_data(
+            existing_family_tree=family_tree_record,
+            prefetched_tree_data=prefetched_tree_data,
+            match_uuid=match_uuid,
+            match_in_my_tree=match_in_my_tree,
+            session_manager=session_manager,
+            config_schema_arg=config_schema,
+            log_ref_short=log_ref_short,
+            logger_instance=logger_instance,
+        )
+    except Exception as tree_err:
+        logger_instance.error(
+            f"Error in _prepare_family_tree_operation_data for {log_ref_short}: {tree_err}",
+            exc_info=True,
+        )
+        return None, "none"  # type: ignore
+
+
 def _compare_person_field(
     key: str,
     new_value: Any,
@@ -2778,66 +2883,21 @@ def _do_match(  # type: ignore
     try:
         is_new_person = existing_person is None
 
-        # Process Person data with specific error handling
-        try:
-            person_op_data, person_fields_changed = _prepare_person_operation_data(
-                match=match,
-                existing_person=existing_person,
-                prefetched_combined_details=prefetched_combined_details,
-                prefetched_tree_data=prefetched_tree_data,
-                config_schema_arg=config_schema,  # Pass config schema
-                match_uuid=match_uuid,
-                formatted_match_username=match_username,
-                match_in_my_tree=match_in_my_tree,
-                log_ref_short=log_ref_short,
-                logger_instance=logger_instance,
-            )
-        except Exception as person_err:
-            logger_instance.error(
-                f"Error in _prepare_person_operation_data for {log_ref_short}: {person_err}",
-                exc_info=True,
-            )
-            # Continue with other operations but mark person data as None
-            person_op_data, person_fields_changed = None, False
+        # Process Person, DNA, and Tree data with error handling
+        person_op_data, person_fields_changed = _process_person_data(
+            match, existing_person, prefetched_combined_details, prefetched_tree_data,
+            match_uuid, match_username, match_in_my_tree, log_ref_short, logger_instance
+        )
 
-        # Process DNA Match data with specific error handling
-        try:
-            dna_op_data = _prepare_dna_match_operation_data(
-                match=match,
-                existing_dna_match=dna_match_record,
-                prefetched_combined_details=prefetched_combined_details,
-                match_uuid=match_uuid,
-                predicted_relationship=predicted_relationship,
-                log_ref_short=log_ref_short,
-                logger_instance=logger_instance,
-            )
-        except Exception as dna_err:
-            logger_instance.error(
-                f"Error in _prepare_dna_match_operation_data for {log_ref_short}: {dna_err}",
-                exc_info=True,
-            )
-            # Continue with other operations but mark DNA data as None
-            dna_op_data = None
+        dna_op_data = _process_dna_data(
+            match, dna_match_record, prefetched_combined_details,
+            match_uuid, predicted_relationship, log_ref_short, logger_instance
+        )
 
-        # Process Family Tree data with specific error handling
-        try:
-            tree_op_data, tree_operation_status = _prepare_family_tree_operation_data(
-                existing_family_tree=family_tree_record,
-                prefetched_tree_data=prefetched_tree_data,
-                match_uuid=match_uuid,
-                match_in_my_tree=match_in_my_tree,
-                session_manager=session_manager,
-                config_schema_arg=config_schema,  # Pass config schema
-                log_ref_short=log_ref_short,
-                logger_instance=logger_instance,
-            )
-        except Exception as tree_err:
-            logger_instance.error(
-                f"Error in _prepare_family_tree_operation_data for {log_ref_short}: {tree_err}",
-                exc_info=True,
-            )
-            # Continue with other operations but mark tree data as None
-            tree_op_data, tree_operation_status = None, "none"  # type: ignore
+        tree_op_data, tree_operation_status = _process_tree_data(
+            family_tree_record, prefetched_tree_data, match_uuid,
+            match_in_my_tree, session_manager, log_ref_short, logger_instance
+        )
 
         # Populate prepared data
         if person_op_data:
