@@ -3019,6 +3019,65 @@ def _sync_cookies_and_get_csrf_for_scraper(
     return csrf_token_val
 
 
+def _validate_relationship_prob_session(
+    session_manager: SessionManager,
+    match_uuid: str,
+) -> None:
+    """
+    Validate session manager components for relationship probability fetch.
+
+    Raises:
+        ConnectionError if validation fails
+    """
+    my_uuid = session_manager.my_uuid
+    driver = session_manager.driver
+    scraper = session_manager.scraper
+
+    if not my_uuid or not match_uuid:
+        logger.warning("_fetch_batch_relationship_prob: Missing my_uuid or match_uuid.")
+        raise ValueError("Missing my_uuid or match_uuid")
+    if not scraper:
+        logger.error(
+            "_fetch_batch_relationship_prob: SessionManager scraper not initialized."
+        )
+        raise ConnectionError("SessionManager scraper not initialized.")
+    if not driver or not session_manager.is_sess_valid():
+        logger.error(
+            f"_fetch_batch_relationship_prob: Driver/session invalid for UUID {match_uuid}."
+        )
+        raise ConnectionError(
+            f"WebDriver session invalid for relationship probability fetch (UUID: {match_uuid})"
+        )
+
+
+def _get_csrf_token_for_relationship_prob(
+    driver: Any,
+    scraper: Any,
+    session_manager: SessionManager,
+    api_description: str,
+) -> Optional[str]:
+    """
+    Get CSRF token for relationship probability API request.
+
+    Returns:
+        CSRF token string or None if not available
+    """
+    csrf_token_val = _sync_cookies_and_get_csrf_for_scraper(driver, scraper, api_description)
+
+    if csrf_token_val:
+        return csrf_token_val
+    elif session_manager.csrf_token:
+        logger.warning(
+            f"{api_description}: Using potentially stale CSRF from SessionManager."
+        )
+        return session_manager.csrf_token
+    else:
+        logger.error(
+            f"{api_description}: Failed to add CSRF token to headers. Returning None."
+        )
+        return None
+
+
 def _process_relationship_prob_response(
     response_rel: Any,
     sample_id_upper: str,
@@ -4227,25 +4286,15 @@ def _fetch_batch_relationship_prob(
         A formatted string like "1st cousin [95.5%]" or "Distant relationship?",
         or None if the fetch fails.
     """
+    # Validate session components
+    try:
+        _validate_relationship_prob_session(session_manager, match_uuid)
+    except ValueError:
+        return None
+
     my_uuid = session_manager.my_uuid
     driver = session_manager.driver
     scraper = session_manager.scraper
-
-    if not my_uuid or not match_uuid:
-        logger.warning("_fetch_batch_relationship_prob: Missing my_uuid or match_uuid.")
-        return None  # Changed from "N/A (Error - Missing IDs)"
-    if not scraper:
-        logger.error(
-            "_fetch_batch_relationship_prob: SessionManager scraper not initialized."
-        )
-        raise ConnectionError("SessionManager scraper not initialized.")
-    if not driver or not session_manager.is_sess_valid():
-        logger.error(
-            f"_fetch_batch_relationship_prob: Driver/session invalid for UUID {match_uuid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for relationship probability fetch (UUID: {match_uuid})"
-        )
 
     my_uuid_upper = my_uuid.upper()
     sample_id_upper = match_uuid.upper()
@@ -4262,21 +4311,14 @@ def _fetch_batch_relationship_prob(
         "User-Agent": random.choice(config_schema.api.user_agents),
     }
 
-    # Sync cookies and get CSRF token
-    csrf_token_val = _sync_cookies_and_get_csrf_for_scraper(driver, scraper, api_description)
+    # Get CSRF token
+    csrf_token_val = _get_csrf_token_for_relationship_prob(
+        driver, scraper, session_manager, api_description
+    )
+    if not csrf_token_val:
+        return None
 
-    if csrf_token_val:
-        rel_headers["X-CSRF-Token"] = csrf_token_val
-    elif session_manager.csrf_token:
-        logger.warning(
-            f"{api_description}: Using potentially stale CSRF from SessionManager."
-        )
-        rel_headers["X-CSRF-Token"] = session_manager.csrf_token
-    else:
-        logger.error(
-            f"{api_description}: Failed to add CSRF token to headers. Returning None."
-        )
-        return None  # Changed from "N/A (Error - Missing CSRF)"
+    rel_headers["X-CSRF-Token"] = csrf_token_val
 
     try:
         logger.debug(
