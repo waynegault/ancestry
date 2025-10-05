@@ -449,6 +449,49 @@ def _finalize_progress_bar(progress_bar: Any, state: Dict[str, Any], loop_final_
         pass  # Handle incomplete progress
 
 
+def _process_single_page_iteration(
+    session_manager: SessionManager,
+    current_page_num: int,
+    start_page: int,
+    matches_on_page_for_batch: Optional[List[Dict[str, Any]]],
+    state: Dict[str, Any],
+    progress_bar: tqdm,
+    loop_final_success: bool
+) -> Tuple[bool, bool, Optional[List[Dict[str, Any]]], int]:
+    """Process a single page iteration in the main loop."""
+    # Check session validity
+    if not _check_session_validity(session_manager, current_page_num, state, progress_bar):
+        return False, True, matches_on_page_for_batch, current_page_num
+
+    # Fetch match data if needed
+    if _should_fetch_page_data(current_page_num, start_page, matches_on_page_for_batch):
+        matches_on_page_for_batch = _fetch_and_validate_page_data(
+            session_manager, current_page_num, state, progress_bar
+        )
+
+        if matches_on_page_for_batch is None:
+            loop_final_success, should_break = _handle_db_session_failure(
+                current_page_num, state, progress_bar, loop_final_success
+            )
+            if should_break:
+                return loop_final_success, True, matches_on_page_for_batch, current_page_num
+            return loop_final_success, False, matches_on_page_for_batch, current_page_num + 1
+
+        if not matches_on_page_for_batch:
+            time.sleep(0.5 if loop_final_success else 2.0)
+            return loop_final_success, False, matches_on_page_for_batch, current_page_num + 1
+
+    # Handle empty matches
+    if not matches_on_page_for_batch:
+        _handle_empty_matches(current_page_num, start_page, state, progress_bar)
+        return loop_final_success, False, None, current_page_num + 1
+
+    # Process batch and update state
+    _process_page_batch(session_manager, matches_on_page_for_batch, current_page_num, progress_bar, state)
+
+    return loop_final_success, False, None, current_page_num + 1
+
+
 def _main_page_processing_loop(
     session_manager: SessionManager,
     start_page: int,
@@ -477,43 +520,19 @@ def _main_page_processing_loop(
             matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = initial_matches_on_page
 
             while current_page_num <= last_page_to_process:
-                # Check session validity
-                if not _check_session_validity(session_manager, current_page_num, state, progress_bar):
-                    loop_final_success = False
-                    break
-
-                # Fetch match data if needed
-                if _should_fetch_page_data(current_page_num, start_page, matches_on_page_for_batch):
-                    matches_on_page_for_batch = _fetch_and_validate_page_data(
-                        session_manager, current_page_num, state, progress_bar
+                loop_final_success, should_break, matches_on_page_for_batch, current_page_num = (
+                    _process_single_page_iteration(
+                        session_manager,
+                        current_page_num,
+                        start_page,
+                        matches_on_page_for_batch,
+                        state,
+                        progress_bar,
+                        loop_final_success
                     )
-
-                    if matches_on_page_for_batch is None:
-                        loop_final_success, should_break = _handle_db_session_failure(
-                            current_page_num, state, progress_bar, loop_final_success
-                        )
-                        if should_break:
-                            break
-                        current_page_num += 1
-                        continue
-
-                    if not matches_on_page_for_batch:
-                        current_page_num += 1
-                        time.sleep(0.5 if loop_final_success else 2.0)
-                        continue
-
-                # Handle empty matches
-                if not matches_on_page_for_batch:
-                    _handle_empty_matches(current_page_num, start_page, state, progress_bar)
-                    matches_on_page_for_batch = None
-                    current_page_num += 1
-                    continue
-
-                # Process batch and update state
-                _process_page_batch(session_manager, matches_on_page_for_batch, current_page_num, progress_bar, state)
-
-                matches_on_page_for_batch = None
-                current_page_num += 1
+                )
+                if should_break:
+                    break
         finally:
             _finalize_progress_bar(progress_bar, state, loop_final_success)
             if progress_bar and progress_bar.n < progress_bar.total and not loop_final_success:
