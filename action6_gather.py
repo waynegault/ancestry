@@ -2887,6 +2887,84 @@ def _fetch_match_list_page(
     return api_response
 
 
+def _process_match_list_response(
+    api_response: Any,
+    current_page: int
+) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
+    """
+    Process and validate match list API response.
+
+    Returns:
+        Tuple of (valid_matches, total_pages) if successful, None or ([], None) on error
+    """
+    # Handle None response
+    if api_response is None:
+        logger.warning(
+            f"No response/error from match list API page {current_page}. Assuming empty page."
+        )
+        return [], None
+
+    # Validate response type
+    if not isinstance(api_response, dict):
+        if isinstance(api_response, requests.Response):
+            logger.error(
+                f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
+            )
+        else:
+            logger.error(
+                f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
+            )
+            if isinstance(api_response, str):
+                logger.debug(f"API response content (first 500 chars): {api_response[:500]}")
+            else:
+                logger.debug(f"API response: {api_response}")
+        return None
+
+    # Extract total pages
+    total_pages: Optional[int] = None
+    total_pages_raw = api_response.get("totalPages")
+    if total_pages_raw is not None:
+        try:
+            total_pages = int(total_pages_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
+    else:
+        logger.warning("Total pages missing from match list response.")
+
+    # Extract match list
+    match_data_list = api_response.get("matchList", [])
+    if not match_data_list:
+        logger.info(f"No matches found in 'matchList' array for page {current_page}.")
+        return [], total_pages
+
+    # Filter valid matches (must have sampleId)
+    valid_matches_for_processing: List[Dict[str, Any]] = []
+    skipped_sampleid_count = 0
+
+    for m_idx, m_val in enumerate(match_data_list):
+        if isinstance(m_val, dict) and m_val.get("sampleId"):
+            valid_matches_for_processing.append(m_val)
+        else:
+            skipped_sampleid_count += 1
+            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
+            logger.warning(
+                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
+            )
+
+    if skipped_sampleid_count > 0:
+        logger.warning(
+            f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
+        )
+
+    if not valid_matches_for_processing:
+        logger.warning(
+            f"No valid matches (with sampleId) found on page {current_page} to process further."
+        )
+        return [], total_pages
+
+    return valid_matches_for_processing, total_pages
+
+
 def get_matches(  # type: ignore
     session_manager: SessionManager,
     current_page: int = 1,
@@ -2926,65 +3004,13 @@ def get_matches(  # type: ignore
         driver, session_manager, my_uuid, current_page, specific_csrf_token
     )
 
-
-
-
-    total_pages: Optional[int] = None
-    match_data_list: List[Dict] = []
-    if api_response is None:
-        logger.warning(
-            f"No response/error from match list API page {current_page}. Assuming empty page."
-        )
-        return [], None
-    if not isinstance(api_response, dict):
-        if isinstance(api_response, requests.Response):
-            logger.error(
-                f"Match List API failed page {current_page}. Status: {api_response.status_code} {api_response.reason}"
-            )
-
-
-        else:
-            logger.error(
-                f"Match List API did not return dict. Page {current_page}. Type: {type(api_response)}"
-            )
-            # Debug: Log the actual response content to see what we're getting
-            if isinstance(api_response, str):
-                logger.debug(f"API response content (first 500 chars): {api_response[:500]}")
-            else:
-                logger.debug(f"API response: {api_response}")
+    # Process and validate response
+    processing_result = _process_match_list_response(api_response, current_page)
+    if processing_result is None:
         return None
 
-    total_pages_raw = api_response.get("totalPages")
-    if total_pages_raw is not None:
-        try:
-            total_pages = int(total_pages_raw)
-        except (ValueError, TypeError):
-            logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
-    else:
-        logger.warning("Total pages missing from match list response.")
-    match_data_list = api_response.get("matchList", [])
-    if not match_data_list:
-        logger.info(f"No matches found in 'matchList' array for page {current_page}.")
-
-    valid_matches_for_processing: List[Dict[str, Any]] = []
-    skipped_sampleid_count = 0
-    for m_idx, m_val in enumerate(match_data_list):  # Use enumerate for index
-        if isinstance(m_val, dict) and m_val.get("sampleId"):
-            valid_matches_for_processing.append(m_val)
-        else:
-            skipped_sampleid_count += 1
-            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
-            logger.warning(
-                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
-            )
-    if skipped_sampleid_count > 0:
-        logger.warning(
-            f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
-        )
+    valid_matches_for_processing, total_pages = processing_result
     if not valid_matches_for_processing:
-        logger.warning(
-            f"No valid matches (with sampleId) found on page {current_page} to process further."
-        )
         return [], total_pages
 
     sample_ids_on_page = [
