@@ -2694,6 +2694,70 @@ class SessionManager:
         return stats
 
     # === Reliable Processing API (compatibility with ReliableSessionManager) ===
+    def _check_session_duration_and_refresh(self, page_num: int) -> bool:
+        """Check session duration and perform refresh if needed. Returns True if OK to continue."""
+        hours = (time.time() - self._reliable_state['start_time']) / 3600.0
+        if hours >= self._reliable_state['max_session_hours']:
+            logger.info("⏱️ Max session hours reached - performing proactive refresh")
+            if not self.perform_proactive_browser_refresh():
+                logger.error("❌ Proactive browser refresh failed at duration limit")
+                return False
+            # Reset timer
+            self._reliable_state['start_time'] = time.time()
+        return True
+
+    def _check_page_interval_and_refresh(self, page_num: int) -> bool:
+        """Check page interval and perform refresh if needed. Returns True if OK to continue."""
+        if (self._reliable_state['pages_processed'] > 0 and
+                self._reliable_state['pages_processed'] % self._reliable_state['restart_interval_pages'] == 0):
+            logger.info(f"🔄 Restart interval reached at page {page_num} - proactive browser refresh")
+            if not self.perform_proactive_browser_refresh():
+                logger.error("❌ Proactive browser refresh failed at page interval")
+                return False
+            self._reliable_state['restarts_performed'] += 1
+        return True
+
+    def _perform_health_and_auth_checks(self, page_num: int) -> bool:
+        """Perform health and auth checks before processing page. Returns True if OK to continue."""
+        # Health check before page
+        if not self.check_browser_health():
+            logger.warning("⚠️ Browser health check failed - attempting recovery")
+            if not self.attempt_browser_recovery():
+                logger.critical("🚨 Browser recovery failed - halting")
+                return False
+
+        # Phase 2: Network and auth pre-checks
+        if not self._p2_network_resilience_wait():
+            logger.error("❌ Network not healthy - halting")
+            return False
+
+        if not self._p2_check_auth_if_needed():
+            logger.warning("⚠️ Auth check failed - attempting recovery")
+            if not self._p2_apply_action('auth_recovery', page_num):
+                logger.error("❌ Auth recovery failed - halting")
+                return False
+
+        return True
+
+    def _handle_page_processing_error(self, e: Exception, page_num: int) -> bool:
+        """Handle error during page processing. Returns True if recovery succeeded."""
+        self._reliable_state['errors_encountered'] += 1
+        category, action = self._p2_analyze_error(e)
+        self._p2_record_error(category, e)
+        self._p2_interventions.append({
+            'timestamp': time.time(),
+            'category': category,
+            'action': action,
+            'page_num': page_num
+        })
+        logger.error(f"❌ Error processing page {page_num} ({category}) → action: {action}: {e}")
+
+        if not self._p2_apply_action(action, page_num):
+            logger.critical("🚨 Recovery action failed - halting")
+            return False
+
+        return True
+
     def process_pages(self, start_page: int, end_page: int) -> bool:
         """Main processing loop with restart and health checks.
         This delegates page work to _process_single_page which can be overridden by callers (e.g., Action 6 coordinator/demo).
@@ -2709,56 +2773,24 @@ class SessionManager:
             for page_num in range(start_page, end_page + 1):
                 self._reliable_state['current_page'] = page_num
 
-                # Check session duration
-                hours = (time.time() - self._reliable_state['start_time']) / 3600.0
-                if hours >= self._reliable_state['max_session_hours']:
-                    logger.info("⏱️ Max session hours reached - performing proactive refresh")
-                    if not self.perform_proactive_browser_refresh():
-                        logger.error("❌ Proactive browser refresh failed at duration limit")
-                        return False
-                    # Reset timer
-                    self._reliable_state['start_time'] = time.time()
-
-                # Proactive browser refresh based on pages
-                if (self._reliable_state['pages_processed'] > 0 and
-                        self._reliable_state['pages_processed'] % self._reliable_state['restart_interval_pages'] == 0):
-                    logger.info(f"🔄 Restart interval reached at page {page_num} - proactive browser refresh")
-                    if not self.perform_proactive_browser_refresh():
-                        logger.error("❌ Proactive browser refresh failed at page interval")
-                        return False
-                    self._reliable_state['restarts_performed'] += 1
-
-                # Health check before page
-                if not self.check_browser_health():
-                    logger.warning("⚠️ Browser health check failed - attempting recovery")
-                    if not self.attempt_browser_recovery():
-                        logger.critical("🚨 Browser recovery failed - halting")
-                        return False
-
-                # Phase 2: Network and auth pre-checks
-                if not self._p2_network_resilience_wait():
-                    logger.error("❌ Network not healthy - halting")
+                # Check session duration and page interval
+                if not self._check_session_duration_and_refresh(page_num):
                     return False
-                if not self._p2_check_auth_if_needed():
-                    logger.warning("⚠️ Auth check failed - attempting recovery")
-                    if not self._p2_apply_action('auth_recovery', page_num):
-                        logger.error("❌ Auth recovery failed - halting")
-                        return False
+                if not self._check_page_interval_and_refresh(page_num):
+                    return False
 
+                # Perform health and auth checks
+                if not self._perform_health_and_auth_checks(page_num):
+                    return False
+
+                # Process the page
                 try:
                     result = self._process_single_page(page_num)
                     self._reliable_state['pages_processed'] += 1
                     logger.debug(f"✅ Page {page_num} processed: {result}")
                 except Exception as e:
-                    self._reliable_state['errors_encountered'] += 1
-                    category, action = self._p2_analyze_error(e)
-                    self._p2_record_error(category, e)
-                    self._p2_interventions.append({'timestamp': time.time(), 'category': category, 'action': action, 'page_num': page_num})
-                    logger.error(f"❌ Error processing page {page_num} ({category}) → action: {action}: {e}")
-                    if not self._p2_apply_action(action, page_num):
-                        logger.critical("🚨 Recovery action failed - halting")
+                    if not self._handle_page_processing_error(e, page_num):
                         return False
-                    # continue after recovery
 
             return True
         except Exception as e:
@@ -2834,44 +2866,73 @@ class SessionManager:
                 return category, action
         return 'unknown', 'retry_with_backoff'
 
+    def _p2_action_retry_with_backoff(self) -> bool:
+        """Simple retry with 1 second backoff."""
+        time.sleep(1.0)
+        return True
+
+    def _p2_action_exponential_backoff(self) -> bool:
+        """Exponential backoff with 2 second delay."""
+        time.sleep(2.0)
+        return True
+
+    def _p2_action_adaptive_backoff(self) -> bool:
+        """Adaptive backoff based on error count."""
+        delay = min(5.0, 1.0 + self._reliable_state['errors_encountered'] * 0.5)
+        time.sleep(delay)
+        return True
+
+    def _p2_action_ancestry_service_retry(self) -> bool:
+        """Retry for Ancestry service errors."""
+        time.sleep(3.0)
+        return True
+
+    def _p2_action_selenium_recovery(self) -> bool:
+        """Recover from Selenium errors."""
+        try:
+            return self.perform_proactive_browser_refresh()
+        except Exception:
+            return False
+
+    def _p2_action_page_refresh(self) -> bool:
+        """Refresh the current page."""
+        try:
+            if self.browser_manager and self.browser_manager.driver:
+                self.browser_manager.driver.refresh()
+                return True
+        except Exception:
+            return False
+        return False
+
+    def _p2_action_auth_recovery(self) -> bool:
+        """Recover from authentication errors."""
+        try:
+            from utils import log_in, login_status
+            ok = login_status(self, disable_ui_fallback=False)
+            if ok is True:
+                return True
+            return log_in(self)
+        except Exception:
+            return False
+
     def _p2_apply_action(self, action: str, page_num: int) -> bool:
-        if action == 'retry_with_backoff':
-            time.sleep(1.0)
-            return True
-        if action == 'exponential_backoff':
-            time.sleep(2.0)
-            return True
-        if action == 'adaptive_backoff':
-            delay = min(5.0, 1.0 + self._reliable_state['errors_encountered'] * 0.5)
-            time.sleep(delay)
-            return True
-        if action == 'network_resilience_retry':
-            return self._p2_network_resilience_wait()
-        if action == 'ancestry_service_retry':
-            time.sleep(3.0)
-            return True
-        if action == 'selenium_recovery':
-            try:
-                return self.perform_proactive_browser_refresh()
-            except Exception:
-                return False
-        if action == 'page_refresh':
-            try:
-                if self.browser_manager and self.browser_manager.driver:
-                    self.browser_manager.driver.refresh()
-                    return True
-            except Exception:
-                return False
-        if action == 'auth_recovery':
-            try:
-                # attempt login refresh
-                from utils import log_in, login_status
-                ok = login_status(self, disable_ui_fallback=False)
-                if ok is True:
-                    return True
-                return log_in(self)
-            except Exception:
-                return False
+        """Apply recovery action based on error type. Data-driven dispatch."""
+        # Map actions to handler methods
+        action_handlers = {
+            'retry_with_backoff': self._p2_action_retry_with_backoff,
+            'exponential_backoff': self._p2_action_exponential_backoff,
+            'adaptive_backoff': self._p2_action_adaptive_backoff,
+            'network_resilience_retry': self._p2_network_resilience_wait,
+            'ancestry_service_retry': self._p2_action_ancestry_service_retry,
+            'selenium_recovery': self._p2_action_selenium_recovery,
+            'page_refresh': self._p2_action_page_refresh,
+            'auth_recovery': self._p2_action_auth_recovery,
+        }
+
+        handler = action_handlers.get(action)
+        if handler:
+            return handler()
+
         return False
 
     def _p2_network_resilience_wait(self) -> bool:
