@@ -2234,38 +2234,49 @@ def _check_dna_fields_changed(
     logger_instance: logging.Logger,
 ) -> bool:
     """Check if any DNA fields have changed."""
-    if field_values["api_cm"] != field_values["db_cm"]:
-        logger_instance.debug(f"  DNA change {log_ref_short}: cM")
-        return True
-    elif field_values["api_segments"] != field_values["db_segments"]:
-        logger_instance.debug(f"  DNA change {log_ref_short}: Segments")
-        return True
-    elif (
-        field_values["api_longest"] is not None
-        and field_values["db_longest"] is not None
-        and abs(float(str(field_values["api_longest"])) - float(str(field_values["db_longest"]))) > 0.01
-    ):
-        logger_instance.debug(f"  DNA change {log_ref_short}: Longest Segment")
-        return True
-    elif field_values["db_longest"] is not None and field_values["api_longest"] is None:
-        logger_instance.debug(
-            f"  DNA change {log_ref_short}: Longest Segment (API lost data)"
-        )
-        return True
-    elif str(field_values["db_predicted_rel"]) != str(field_values["api_predicted_rel"]):
-        logger_instance.debug(
-            f"  DNA change {log_ref_short}: Predicted Rel ({field_values['db_predicted_rel']} -> {field_values['api_predicted_rel']})"
-        )
-        return True
-    elif field_values["api_fathers_side"] != field_values["db_fathers_side"]:
-        logger_instance.debug(f"  DNA change {log_ref_short}: Father Side")
-        return True
-    elif field_values["api_mothers_side"] != field_values["db_mothers_side"]:
-        logger_instance.debug(f"  DNA change {log_ref_short}: Mother Side")
-        return True
-    elif field_values["api_meiosis"] is not None and field_values["api_meiosis"] != field_values["db_meiosis"]:
-        logger_instance.debug(f"  DNA change {log_ref_short}: Meiosis")
-        return True
+    # Define field checks as tuples: (condition, message)
+    checks = [
+        (
+            field_values["api_cm"] != field_values["db_cm"],
+            "cM"
+        ),
+        (
+            field_values["api_segments"] != field_values["db_segments"],
+            "Segments"
+        ),
+        (
+            field_values["api_longest"] is not None
+            and field_values["db_longest"] is not None
+            and abs(float(str(field_values["api_longest"])) - float(str(field_values["db_longest"]))) > 0.01,
+            "Longest Segment"
+        ),
+        (
+            field_values["db_longest"] is not None and field_values["api_longest"] is None,
+            "Longest Segment (API lost data)"
+        ),
+        (
+            str(field_values["db_predicted_rel"]) != str(field_values["api_predicted_rel"]),
+            f"Predicted Rel ({field_values['db_predicted_rel']} -> {field_values['api_predicted_rel']})"
+        ),
+        (
+            field_values["api_fathers_side"] != field_values["db_fathers_side"],
+            "Father Side"
+        ),
+        (
+            field_values["api_mothers_side"] != field_values["db_mothers_side"],
+            "Mother Side"
+        ),
+        (
+            field_values["api_meiosis"] is not None and field_values["api_meiosis"] != field_values["db_meiosis"],
+            "Meiosis"
+        ),
+    ]
+
+    # Check each condition
+    for condition, message in checks:
+        if condition:
+            logger_instance.debug(f"  DNA change {log_ref_short}: {message}")
+            return True
 
     return False
 
@@ -4054,64 +4065,16 @@ def _process_match_list_response(
     return valid_matches_for_processing, total_pages
 
 
-def get_matches(  # type: ignore
-    session_manager: SessionManager,
-    current_page: int = 1,
-) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
-    """
-    Fetches a single page of DNA match list data from the Ancestry API v2.
-    Also fetches the 'in_my_tree' status for matches on the page via a separate API call.
-    Refines the raw API data into a more structured format.
-
-    Args:
-        session_manager: The active SessionManager instance.
-        db_session: The active SQLAlchemy database session (not used directly in this function but
-                   passed to maintain interface consistency with other functions).
-        current_page: The page number to fetch (1-based).
-
-    Returns:
-        A tuple containing:
-        - List of refined match data dictionaries for the page, or empty list if none.
-        - Total number of pages available (integer), or None if retrieval fails.
-        Returns None if a critical error occurs during fetching.
-    """
-    # Validate session manager
-    validation_result = _validate_session_for_matches(session_manager)
-    if validation_result is None:
-        return None
-    driver, my_uuid = validation_result
-
-    logger.debug(f"--- Fetching Match List Page {current_page} ---")
-
-    # Get CSRF token
-    specific_csrf_token = _get_csrf_token_for_matches(driver)
-    if not specific_csrf_token:
-        return None
-
-    # Fetch match list page from API
-    api_response = _fetch_match_list_page(
-        driver, session_manager, my_uuid, current_page, specific_csrf_token
-    )
-
-    # Process and validate response
-    processing_result = _process_match_list_response(api_response, current_page)
-    if processing_result is None:
-        return None
-
-    valid_matches_for_processing, total_pages = processing_result
-    if not valid_matches_for_processing:
-        return [], total_pages
-
-    # Fetch in-tree status for matches on this page
-    sample_ids_on_page = [
-        match["sampleId"].upper() for match in valid_matches_for_processing
-    ]
-    in_tree_ids = _fetch_in_tree_status(
-        driver, session_manager, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
-    )
-
+def _refine_match_list(
+    valid_matches_for_processing: List[Dict[str, Any]],
+    my_uuid: str,
+    in_tree_ids: set,
+    current_page: int
+) -> List[Dict[str, Any]]:
+    """Refine raw match data into structured format."""
     refined_matches: List[Dict[str, Any]] = []
     logger.debug(f"Refining {len(valid_matches_for_processing)} valid matches...")
+
     for match_index, match_api_data in enumerate(valid_matches_for_processing):
         try:
             profile_info = match_api_data.get("matchProfile", {})
@@ -4187,6 +4150,69 @@ def get_matches(  # type: ignore
                 f"Problematic match data during critical error: {match_api_data}"
             )
             raise critical_refine_err
+
+    return refined_matches
+
+
+def get_matches(  # type: ignore
+    session_manager: SessionManager,
+    current_page: int = 1,
+) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
+    """
+    Fetches a single page of DNA match list data from the Ancestry API v2.
+    Also fetches the 'in_my_tree' status for matches on the page via a separate API call.
+    Refines the raw API data into a more structured format.
+
+    Args:
+        session_manager: The active SessionManager instance.
+        db_session: The active SQLAlchemy database session (not used directly in this function but
+                   passed to maintain interface consistency with other functions).
+        current_page: The page number to fetch (1-based).
+
+    Returns:
+        A tuple containing:
+        - List of refined match data dictionaries for the page, or empty list if none.
+        - Total number of pages available (integer), or None if retrieval fails.
+        Returns None if a critical error occurs during fetching.
+    """
+    # Validate session manager
+    validation_result = _validate_session_for_matches(session_manager)
+    if validation_result is None:
+        return None
+    driver, my_uuid = validation_result
+
+    logger.debug(f"--- Fetching Match List Page {current_page} ---")
+
+    # Get CSRF token
+    specific_csrf_token = _get_csrf_token_for_matches(driver)
+    if not specific_csrf_token:
+        return None
+
+    # Fetch match list page from API
+    api_response = _fetch_match_list_page(
+        driver, session_manager, my_uuid, current_page, specific_csrf_token
+    )
+
+    # Process and validate response
+    processing_result = _process_match_list_response(api_response, current_page)
+    if processing_result is None:
+        return None
+
+    valid_matches_for_processing, total_pages = processing_result
+    if not valid_matches_for_processing:
+        return [], total_pages
+
+    # Fetch in-tree status for matches on this page
+    sample_ids_on_page = [
+        match["sampleId"].upper() for match in valid_matches_for_processing
+    ]
+    in_tree_ids = _fetch_in_tree_status(
+        driver, session_manager, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
+    )
+
+    refined_matches = _refine_match_list(
+        valid_matches_for_processing, my_uuid, in_tree_ids, current_page
+    )
 
     logger.debug(
         f"Successfully refined {len(refined_matches)} matches on page {current_page}."
