@@ -3473,6 +3473,180 @@ def _test_enhanced_error_handling() -> None:
     assert all(results), "All enhanced error handling tests should pass"
 
 
+def _test_integration_with_shared_modules() -> None:
+    """Test integration with shared modules."""
+    print("📋 Testing integration with shared modules:")
+    results = []
+
+    try:
+        # Test universal session monitor integration (now in SessionManager)
+        try:
+            from core.session_manager import SessionManager
+            monitor_available = hasattr(SessionManager, 'validate_system_health')
+        except ImportError:
+            monitor_available = False
+        status = "✅" if monitor_available else "❌"
+        print(f"   {status} Universal session health validation available")
+        results.append(monitor_available)
+
+        # Test API call framework integration (now in core/api_manager.py)
+        try:
+            from core.api_manager import APIManager
+            api_framework_available = APIManager is not None
+        except ImportError:
+            api_framework_available = False
+        status = "✅" if api_framework_available else "❌"
+        print(f"   {status} Universal API call framework available")
+        results.append(api_framework_available)
+
+        # Test error recovery patterns integration (now in core/enhanced_error_recovery.py)
+        try:
+            from core.enhanced_error_recovery import with_enhanced_recovery
+            error_patterns_available = with_enhanced_recovery is not None
+        except ImportError:
+            error_patterns_available = False
+        status = "✅" if error_patterns_available else "❌"
+        print(f"   {status} Universal error recovery patterns available")
+        results.append(error_patterns_available)
+
+        # Test database session manager integration (now in core/database_manager.py)
+        try:
+            from core.database_manager import DatabaseManager
+
+
+            db_manager_available = DatabaseManager is not None
+        except ImportError:
+            db_manager_available = False
+        status = "✅" if db_manager_available else "❌"
+        print(f"   {status} Universal database session manager available")
+        results.append(db_manager_available)
+
+        # Test performance monitoring integration
+        from performance_monitor import PerformanceMonitor
+        perf_monitor_available = PerformanceMonitor is not None
+        status = "✅" if perf_monitor_available else "❌"
+        print(f"   {status} Performance monitoring available")
+        results.append(perf_monitor_available)
+
+    except Exception as integration_err:
+        print(f"✗ Integration test failed: {integration_err}")
+        results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} integration tests passed")
+    assert all(results), "All integration tests should pass"
+
+
+def _test_system_health_validation_hardening() -> None:
+    from unittest.mock import Mock
+    # None session manager
+    assert _validate_system_health(None) is False  # type: ignore[arg-type]
+    # Healthy mock
+    mock_session = Mock()
+    mock_session.should_halt_operations.return_value = False
+    mock_session.validate_system_health.return_value = True
+    mock_session.session_health_monitor = {'death_cascade_count': 0}
+    for k in set(MESSAGE_TYPES_ACTION8.keys()):
+        MESSAGE_TEMPLATES.setdefault(k, "test template")
+    assert _validate_system_health(mock_session) is True
+    # Death cascade
+    mock_session.should_halt_operations.return_value = True
+    mock_session.validate_system_health.return_value = False
+    mock_session.session_health_monitor = {'death_cascade_count': 5}
+    assert _validate_system_health(mock_session) is False
+
+
+def _test_confidence_scoring_hardening() -> None:
+    from unittest.mock import Mock
+    family = Mock()
+    family.actual_relationship = "6th cousin"
+    family.relationship_path = "Some path"
+    dna = Mock()
+    dna.predicted_relationship = "Distant cousin"
+    key = select_template_by_confidence("In_Tree-Initial", family, dna)
+    assert isinstance(key, str) and key.startswith("In_Tree-Initial")
+
+
+def _test_halt_signal_integration() -> None:
+    from unittest.mock import Mock
+    mock_session = Mock()
+    mock_session.should_halt_operations.return_value = True
+    mock_session.session_health_monitor = {'death_cascade_count': 3}
+    mock_session.validate_system_health.return_value = False
+    assert _validate_system_health(mock_session) is False
+
+
+def _test_real_api_manager_integration_minimal() -> None:
+    class MockSessionManager:
+        def __init__(self) -> None:
+            self.session_health_monitor = {'death_cascade_count': 0}
+            self.should_halt_operations = lambda: False
+            self._my_profile_id = "test_profile_123"
+        def is_sess_valid(self) -> bool:
+            return True
+        @property
+        def my_profile_id(self) -> str:
+            return self._my_profile_id
+    api = ProactiveApiManager(MockSessionManager())
+    delay = api.calculate_delay()
+    assert isinstance(delay, (int, float)) and delay >= 0
+    assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True
+
+
+def _test_error_categorization_integration_minimal() -> None:
+    categorizer = ErrorCategorizer()
+    category, error_type = categorizer.categorize_status("skipped (interval)")
+    assert category == 'skipped' and 'interval' in error_type
+
+
+def _test_logger_respects_info_level() -> None:
+    import logging as _logging
+    class _ListHandler(_logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records = []
+        def emit(self, record: logging.LogRecord) -> None:
+            self.records.append(record)
+    lh = _ListHandler()
+    lh.setLevel(_logging.DEBUG)
+    old_level = logger.level
+    try:
+        logger.addHandler(lh)
+        logger.setLevel(_logging.INFO)
+        logger.debug("debug message should not appear")
+        logger.info("info message should appear")
+    finally:
+        logger.setLevel(old_level)
+        logger.removeHandler(lh)
+    levels = [r.levelno for r in lh.records]
+    # Under suppress_logging(), INFO may be muted; the invariant we require is no DEBUG at INFO level
+    assert not any(lvl == _logging.DEBUG for lvl in levels)
+
+
+def _test_no_debug_when_info() -> None:
+    import logging as _logging
+    class _ListHandler(_logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.messages = []
+        def emit(self, record: logging.LogRecord) -> None:
+            self.messages.append((record.levelno, record.getMessage()))
+    lh = _ListHandler()
+    lh.setLevel(_logging.DEBUG)
+    old_level = logger.level
+    try:
+        logger.addHandler(lh)
+        logger.setLevel(_logging.INFO)
+        logger.debug("DBG: hidden")
+        logger.info("INF: visible")
+        logger.warning("WRN: visible")
+    finally:
+        logger.setLevel(old_level)
+        logger.removeHandler(lh)
+    seen_levels = [lvl for (lvl, _) in lh.messages]
+    debug_records = [msg for (lvl, msg) in lh.messages if lvl == _logging.DEBUG]
+    assert _logging.DEBUG not in seen_levels or len(debug_records) == 0
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -3544,71 +3718,9 @@ def action8_messaging_tests() -> None:
             "Verify error classes and enhanced recovery decorator availability"
         )
 
-        def test_integration_with_shared_modules() -> None:
-            """Test integration with shared modules."""
-            print("📋 Testing integration with shared modules:")
-            results = []
-
-            try:
-                # Test universal session monitor integration (now in SessionManager)
-                try:
-                    from core.session_manager import SessionManager
-                    monitor_available = hasattr(SessionManager, 'validate_system_health')
-                except ImportError:
-                    monitor_available = False
-                status = "✅" if monitor_available else "❌"
-                print(f"   {status} Universal session health validation available")
-                results.append(monitor_available)
-
-                # Test API call framework integration (now in core/api_manager.py)
-                try:
-                    from core.api_manager import APIManager
-                    api_framework_available = APIManager is not None
-                except ImportError:
-                    api_framework_available = False
-                status = "✅" if api_framework_available else "❌"
-                print(f"   {status} Universal API call framework available")
-                results.append(api_framework_available)
-
-                # Test error recovery patterns integration (now in core/enhanced_error_recovery.py)
-                try:
-                    from core.enhanced_error_recovery import with_enhanced_recovery
-                    error_patterns_available = with_enhanced_recovery is not None
-                except ImportError:
-                    error_patterns_available = False
-                status = "✅" if error_patterns_available else "❌"
-                print(f"   {status} Universal error recovery patterns available")
-                results.append(error_patterns_available)
-
-                # Test database session manager integration (now in core/database_manager.py)
-                try:
-                    from core.database_manager import DatabaseManager
-
-
-                    db_manager_available = DatabaseManager is not None
-                except ImportError:
-                    db_manager_available = False
-                status = "✅" if db_manager_available else "❌"
-                print(f"   {status} Universal database session manager available")
-                results.append(db_manager_available)
-
-                # Test performance monitoring integration
-                from performance_monitor import PerformanceMonitor
-                perf_monitor_available = PerformanceMonitor is not None
-                status = "✅" if perf_monitor_available else "❌"
-                print(f"   {status} Performance monitoring available")
-                results.append(perf_monitor_available)
-
-            except Exception as integration_err:
-                print(f"✗ Integration test failed: {integration_err}")
-                results.append(False)
-
-            print(f"📊 Results: {sum(results)}/{len(results)} integration tests passed")
-            assert all(results), "All integration tests should pass"
-
         suite.run_test(
             "Integration with shared modules",
-            test_integration_with_shared_modules,
+            _test_integration_with_shared_modules,
             "All shared modules integrate correctly with Action 8",
             "Test integration with universal session monitor, API framework, error recovery, database manager, and performance monitor",
             "Verify all shared modules are available and properly integrated"
@@ -3616,135 +3728,31 @@ def action8_messaging_tests() -> None:
 
 
         # Additional hardening tests integrated from test_action8_hardening.py
-        def test_system_health_validation_hardening() -> None:
-            from unittest.mock import Mock
-            # None session manager
-            assert _validate_system_health(None) is False  # type: ignore[arg-type]
-            # Healthy mock
-            mock_session = Mock()
-            mock_session.should_halt_operations.return_value = False
-            mock_session.validate_system_health.return_value = True
-            mock_session.session_health_monitor = {'death_cascade_count': 0}
-            for k in set(MESSAGE_TYPES_ACTION8.keys()):
-                MESSAGE_TEMPLATES.setdefault(k, "test template")
-            assert _validate_system_health(mock_session) is True
-            # Death cascade
-            mock_session.should_halt_operations.return_value = True
-            mock_session.validate_system_health.return_value = False
-            mock_session.session_health_monitor = {'death_cascade_count': 5}
-            assert _validate_system_health(mock_session) is False
-
-        def test_confidence_scoring_hardening() -> None:
-            from unittest.mock import Mock
-            family = Mock()
-            family.actual_relationship = "6th cousin"
-            family.relationship_path = "Some path"
-            dna = Mock()
-            dna.predicted_relationship = "Distant cousin"
-            key = select_template_by_confidence("In_Tree-Initial", family, dna)
-            assert isinstance(key, str) and key.startswith("In_Tree-Initial")
-
-        def test_halt_signal_integration() -> None:
-            from unittest.mock import Mock
-            mock_session = Mock()
-            mock_session.should_halt_operations.return_value = True
-            mock_session.session_health_monitor = {'death_cascade_count': 3}
-            mock_session.validate_system_health.return_value = False
-            assert _validate_system_health(mock_session) is False
-
-        def test_real_api_manager_integration_minimal() -> None:
-            class MockSessionManager:
-                def __init__(self) -> None:
-                    self.session_health_monitor = {'death_cascade_count': 0}
-                    self.should_halt_operations = lambda: False
-                    self._my_profile_id = "test_profile_123"
-                def is_sess_valid(self) -> bool:
-                    return True
-                @property
-                def my_profile_id(self) -> str:
-                    return self._my_profile_id
-            api = ProactiveApiManager(MockSessionManager())
-            delay = api.calculate_delay()
-            assert isinstance(delay, (int, float)) and delay >= 0
-            assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True
-
-        def test_error_categorization_integration_minimal() -> None:
-            categorizer = ErrorCategorizer()
-            category, error_type = categorizer.categorize_status("skipped (interval)")
-            assert category == 'skipped' and 'interval' in error_type
-
         suite.run_test(
             "System health validation (hardening)",
-            test_system_health_validation_hardening,
+            _test_system_health_validation_hardening,
             "System health validation mirrors Action 6 patterns and template availability.",
             "Test consolidated health validation and template presence.",
             "Validate None, healthy mock, and death cascade cases.",
         )
         suite.run_test(
             "Confidence scoring (hardening)",
-            test_confidence_scoring_hardening,
+            _test_confidence_scoring_hardening,
             "Confidence scoring avoids overconfident messaging for distant relationships.",
             "Test template selection for distant relationships.",
             "Ensure conservative template selection.",
         )
 
-        def test_logger_respects_info_level() -> None:
-            import logging as _logging
-            class _ListHandler(_logging.Handler):
-                def __init__(self) -> None:
-                    super().__init__()
-                    self.records = []
-                def emit(self, record: logging.LogRecord) -> None:
-                    self.records.append(record)
-            lh = _ListHandler()
-            lh.setLevel(_logging.DEBUG)
-            old_level = logger.level
-            try:
-                logger.addHandler(lh)
-                logger.setLevel(_logging.INFO)
-                logger.debug("debug message should not appear")
-                logger.info("info message should appear")
-            finally:
-                logger.setLevel(old_level)
-                logger.removeHandler(lh)
-            levels = [r.levelno for r in lh.records]
-            # Under suppress_logging(), INFO may be muted; the invariant we require is no DEBUG at INFO level
-            assert not any(lvl == _logging.DEBUG for lvl in levels)
-
-        def test_no_debug_when_info() -> None:
-            import logging as _logging
-            class _ListHandler(_logging.Handler):
-                def __init__(self) -> None:
-                    super().__init__()
-                    self.messages = []
-                def emit(self, record: logging.LogRecord) -> None:
-                    self.messages.append((record.levelno, record.getMessage()))
-            lh = _ListHandler()
-            lh.setLevel(_logging.DEBUG)
-            old_level = logger.level
-            try:
-                logger.addHandler(lh)
-                logger.setLevel(_logging.INFO)
-                logger.debug("DBG: hidden")
-                logger.info("INF: visible")
-                logger.warning("WRN: visible")
-            finally:
-                logger.setLevel(old_level)
-                logger.removeHandler(lh)
-            seen_levels = [lvl for (lvl, _) in lh.messages]
-            debug_records = [msg for (lvl, msg) in lh.messages if lvl == _logging.DEBUG]
-            assert _logging.DEBUG not in seen_levels or len(debug_records) == 0
-
         suite.run_test(
             "Logger respects INFO level",
-            test_logger_respects_info_level,
+            _test_logger_respects_info_level,
             "Logger at INFO should not emit DEBUG messages.",
             "Validate central logger level handling.",
             "Attach memory handler and assert only INFO+ captured.",
         )
         suite.run_test(
             "No DEBUG when INFO",
-            test_no_debug_when_info,
+            _test_no_debug_when_info,
             "Ensure DEBUG logs are suppressed at INFO level.",
             "Validate behavior with in-memory handler.",
             "Guarantee no debug leakage in integrated tests.",
@@ -3752,21 +3760,21 @@ def action8_messaging_tests() -> None:
 
         suite.run_test(
             "Halt signal integration",
-            test_halt_signal_integration,
+            _test_halt_signal_integration,
             "Halt signals cause validation to fail.",
             "Test integration of halt signals.",
             "Confirm fast failure.",
         )
         suite.run_test(
             "Proactive API manager (minimal)",
-            test_real_api_manager_integration_minimal,
+            _test_real_api_manager_integration_minimal,
             "API manager delay and response validation work.",
             "Test delay calculation and response validation.",
             "Avoid external calls.",
         )
         suite.run_test(
             "Error categorization (minimal)",
-            test_error_categorization_integration_minimal,
+            _test_error_categorization_integration_minimal,
             "Error categorization basic path works.",
             "Test skip categorization.",
             "Ensure categorizer returns expected tuple.",
