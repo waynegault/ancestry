@@ -3080,6 +3080,55 @@ def _do_match(  # type: ignore
 # ------------------------------------------------------------------------------
 
 
+def _sync_driver_cookies_to_scraper(
+    driver_cookies_list: List[Dict[str, Any]],
+    scraper: Any,
+    api_description: str
+) -> None:
+    """Sync cookies from WebDriver to scraper."""
+    logger.debug(
+        f"Syncing {len(driver_cookies_list)} WebDriver cookies to shared scraper for {api_description}..."
+    )
+    if hasattr(scraper, "cookies") and isinstance(
+        scraper.cookies, RequestsCookieJar  # type: ignore
+    ):
+        scraper.cookies.clear()
+        for cookie in driver_cookies_list:
+            if "name" in cookie and "value" in cookie:
+                scraper.cookies.set(
+                    cookie["name"],
+                    cookie["value"],
+                    domain=cookie.get("domain"),
+                    path=cookie.get("path", "/"),
+                    secure=cookie.get("secure", False),
+                )
+    else:
+        logger.warning("Scraper cookie jar not accessible for update.")
+
+
+def _extract_csrf_from_cookies(
+    driver_cookies_list: List[Dict[str, Any]],
+    api_description: str
+) -> Optional[str]:
+    """Extract CSRF token from driver cookies."""
+    csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
+    driver_cookies_dict = {
+        c["name"]: c["value"]
+        for c in driver_cookies_list
+        if "name" in c and "value" in c
+    }
+
+    for name in csrf_cookie_names:
+        if driver_cookies_dict.get(name):
+            csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
+            logger.debug(
+                f"Using fresh CSRF token '{name}' from driver cookies for {api_description}."
+            )
+            return csrf_token_val
+
+    return None
+
+
 def _sync_cookies_and_get_csrf_for_scraper(
     driver: Any,
     scraper: Any,
@@ -3091,47 +3140,17 @@ def _sync_cookies_and_get_csrf_for_scraper(
     Returns:
         CSRF token if found, None otherwise
     """
-    csrf_token_val: Optional[str] = None
-    csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
-
     try:
         driver_cookies_list = driver.get_cookies()
-        if driver_cookies_list:
-            logger.debug(
-                f"Syncing {len(driver_cookies_list)} WebDriver cookies to shared scraper for {api_description}..."
-            )
-            if hasattr(scraper, "cookies") and isinstance(
-                scraper.cookies, RequestsCookieJar  # type: ignore
-            ):
-                scraper.cookies.clear()
-                for cookie in driver_cookies_list:
-                    if "name" in cookie and "value" in cookie:
-                        scraper.cookies.set(
-                            cookie["name"],
-                            cookie["value"],
-                            domain=cookie.get("domain"),
-                            path=cookie.get("path", "/"),
-                            secure=cookie.get("secure", False),
-                        )
-            else:
-                logger.warning("Scraper cookie jar not accessible for update.")
-
-            driver_cookies_dict = {
-                c["name"]: c["value"]
-                for c in driver_cookies_list
-                if "name" in c and "value" in c
-            }
-            for name in csrf_cookie_names:
-                if driver_cookies_dict.get(name):
-                    csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-                    logger.debug(
-                        f"Using fresh CSRF token '{name}' from driver cookies for {api_description}."
-                    )
-                    break
-        else:
+        if not driver_cookies_list:
             logger.warning(
                 f"driver.get_cookies() returned empty list during {api_description} prep."
             )
+            return None
+
+        _sync_driver_cookies_to_scraper(driver_cookies_list, scraper, api_description)
+        return _extract_csrf_from_cookies(driver_cookies_list, api_description)
+
     except WebDriverException as csrf_wd_e:
         logger.warning(
             f"WebDriverException getting/setting cookies for {api_description}: {csrf_wd_e}"
@@ -3141,8 +3160,7 @@ def _sync_cookies_and_get_csrf_for_scraper(
         ) from csrf_wd_e
     except Exception as csrf_e:
         logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
-
-    return csrf_token_val
+        return None
 
 
 def _validate_relationship_prob_session(
