@@ -2091,6 +2091,101 @@ def _determine_match_status(
         return "skipped"
 
 
+def _compare_datetime_field(
+    new_value: Any,
+    current_value: Any,
+) -> Tuple[bool, Any]:
+    """Compare datetime fields with UTC normalization."""
+    current_dt_utc = _normalize_datetime_to_utc(current_value)
+    new_dt_utc = _normalize_datetime_to_utc(new_value)
+
+    if new_dt_utc != current_dt_utc:
+        return True, new_value
+    return False, new_value
+
+
+def _compare_status_field(
+    new_value: Any,
+    current_value: Any,
+) -> Tuple[bool, Any]:
+    """Compare status enum fields."""
+    current_enum_val = (
+        current_value.value
+        if isinstance(current_value, PersonStatusEnum)
+        else current_value
+    )
+    new_enum_val = (
+        new_value.value
+        if isinstance(new_value, PersonStatusEnum)
+        else new_value
+    )
+
+    if new_enum_val != current_enum_val:
+        return True, new_value
+    return False, new_value
+
+
+def _compare_birth_year_field(
+    new_value: Any,
+    current_value: Any,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Tuple[bool, Any]:
+    """Compare birth year field - only update if new is valid and current is None."""
+    if new_value is not None and current_value is None:
+        try:
+            value_to_set_int = int(new_value)
+            return True, value_to_set_int
+        except (ValueError, TypeError):
+            logger_instance.warning(
+                f"Invalid birth_year '{new_value}' for update {log_ref_short}"
+            )
+            return False, None
+    return False, new_value
+
+
+def _compare_gender_field(
+    new_value: Any,
+    current_value: Any,
+) -> Tuple[bool, Any]:
+    """Compare gender field - only update if new is valid ('f'/'m') and current is None."""
+    if (
+        new_value is not None
+        and current_value is None
+        and isinstance(new_value, str)
+        and new_value.lower() in ("f", "m")
+    ):
+        return True, new_value.lower()
+    return False, new_value
+
+
+def _compare_profile_id_field(
+    new_value: Any,
+    current_value: Any,
+) -> Tuple[bool, Any]:
+    """Compare profile ID fields with uppercase normalization."""
+    current_str_upper = (
+        str(current_value).upper() if current_value is not None else None
+    )
+    new_str_upper = (
+        str(new_value).upper() if new_value is not None else None
+    )
+
+    if new_str_upper != current_str_upper:
+        return True, new_str_upper
+    return False, new_str_upper
+
+
+def _compare_boolean_field(
+    new_value: Any,
+    current_value: Any,
+) -> Tuple[bool, Any]:
+    """Compare boolean fields."""
+    if bool(current_value) != bool(new_value):
+        return True, bool(new_value)
+    return False, bool(new_value)
+
+
 def _compare_person_field(
     key: str,
     new_value: Any,
@@ -2104,74 +2199,24 @@ def _compare_person_field(
     Returns:
         Tuple of (value_changed, value_to_set)
     """
-    value_changed = False
-    value_to_set = new_value  # Default to new_value
-
-    # Specific comparisons and transformations
+    # Dispatch to field-specific comparison functions
     if key == "last_logged_in":
-        # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
-        current_dt_utc = _normalize_datetime_to_utc(current_value)
-        new_dt_utc = _normalize_datetime_to_utc(new_value)
-
-        if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
-            value_changed = True
-            # value_to_set is already new_value (potentially a datetime obj)
+        return _compare_datetime_field(new_value, current_value)
     elif key == "status":
-        # Ensure comparison is between Enum types or their values
-        current_enum_val = (
-            current_value.value
-            if isinstance(current_value, PersonStatusEnum)
-            else current_value
-        )
-        new_enum_val = (
-            new_value.value
-            if isinstance(new_value, PersonStatusEnum)
-            else new_value
-        )
-        if new_enum_val != current_enum_val:
-            value_changed = True
-            value_to_set = new_value  # Store the Enum object
-    elif key == "birth_year":  # Update only if new is valid and current is None
-        if new_value is not None and current_value is None:
-            try:
-                value_to_set_int = int(new_value)
-                value_changed = True
-                value_to_set = value_to_set_int
-            except (ValueError, TypeError):
-                logger_instance.warning(
-                    f"Invalid birth_year '{new_value}' for update {log_ref_short}"
-                )
-                return False, None  # Skip this field
-        # No change if new_value is None or current_value exists
-    elif key == "gender":  # Update only if new is valid ('f'/'m') and current is None
-        if (
-            new_value is not None
-            and current_value is None
-            and isinstance(new_value, str)
-            and new_value.lower() in ("f", "m")
-        ):
-            value_to_set = new_value.lower()
-            value_changed = True
+        return _compare_status_field(new_value, current_value)
+    elif key == "birth_year":
+        return _compare_birth_year_field(new_value, current_value, log_ref_short, logger_instance)
+    elif key == "gender":
+        return _compare_gender_field(new_value, current_value)
     elif key in ("profile_id", "administrator_profile_id"):
-        # Ensure comparison of uppercase strings, handle None
-        current_str_upper = (
-            str(current_value).upper() if current_value is not None else None
-        )
-        new_str_upper = (
-            str(new_value).upper() if new_value is not None else None
-        )
-        if new_str_upper != current_str_upper:
-            value_changed = True
-            value_to_set = new_str_upper  # Store uppercase
-    elif isinstance(current_value, bool) or isinstance(new_value, bool):  # For boolean fields
-        if bool(current_value) != bool(new_value):
-            value_changed = True
-            value_to_set = bool(new_value)
+        return _compare_profile_id_field(new_value, current_value)
+    elif isinstance(current_value, bool) or isinstance(new_value, bool):
+        return _compare_boolean_field(new_value, current_value)
     # General comparison for other fields
     elif current_value != new_value:
-        value_changed = True
+        return True, new_value
 
-    return value_changed, value_to_set
+    return False, new_value
 
 
 def _prepare_person_operation_data(
