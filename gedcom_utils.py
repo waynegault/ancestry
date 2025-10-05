@@ -322,34 +322,20 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
 
     try:
         # Try multiple methods to extract name, in order of preference
-        formatted_name = None
-        name_source = "Unknown"
+        name_extraction_methods = [
+            (_try_name_format_method, "indi.name.format()"),
+            (_try_sub_tag_format_method, "indi.sub_tag(TAG_NAME).format()"),
+            (_try_manual_name_combination, "manual GIVN/SURN combination"),
+            (_try_sub_tag_value_method, "indi.sub_tag_value(TAG_NAME)"),
+        ]
 
-        # Attempt 1: Use indi.name.format()
-        formatted_name = _try_name_format_method(indi, indi_id_log)
-        if formatted_name:
-            name_source = "indi.name.format()"
-
-        # Attempt 2: Use indi.sub_tag(TAG_NAME).format()
-        if not formatted_name:
-            formatted_name = _try_sub_tag_format_method(indi, indi_id_log)
+        for method, source in name_extraction_methods:
+            formatted_name = method(indi, indi_id_log)
             if formatted_name:
-                name_source = "indi.sub_tag(TAG_NAME).format()"
+                return _clean_and_format_name(formatted_name, source)
 
-        # Attempt 3: Manually combine GIVN and SURN
-        if not formatted_name:
-            formatted_name = _try_manual_name_combination(indi, indi_id_log)
-            if formatted_name:
-                name_source = "manual GIVN/SURN combination"
-
-        # Attempt 4: Use indi.sub_tag_value(TAG_NAME)
-        if not formatted_name:
-            formatted_name = _try_sub_tag_value_method(indi, indi_id_log)
-            if formatted_name:
-                name_source = "indi.sub_tag_value(TAG_NAME)"
-
-        # Clean and format the final name
-        return _clean_and_format_name(formatted_name, name_source)
+        # No method succeeded
+        return _clean_and_format_name(None, "Unknown")
 
     except Exception as e:
         logger.error(f"Unexpected error in _get_full_name for @{indi_id_log}@: {e}", exc_info=True)
@@ -1258,6 +1244,17 @@ def _are_siblings(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> boo
     return bool(parents_1 and parents_2 and not parents_1.isdisjoint(parents_2))
 
 
+def _extract_spouse_ids_from_family(fam: Any) -> tuple[Optional[str], Optional[str]]:
+    """Extract husband and wife IDs from a family record. Returns (husb_id, wife_id)."""
+    husb_ref = fam.sub_tag(TAG_HUSBAND)
+    wife_ref = fam.sub_tag(TAG_WIFE)
+
+    husb_id = _normalize_id(husb_ref.xref_id) if husb_ref and hasattr(husb_ref, "xref_id") else None
+    wife_id = _normalize_id(wife_ref.xref_id) if wife_ref and hasattr(wife_ref, "xref_id") else None
+
+    return husb_id, wife_id
+
+
 def _are_spouses(id1: str, id2: str, reader: GedcomReaderType) -> bool:
     """Check if two individuals are spouses."""
     if not reader:
@@ -1268,25 +1265,10 @@ def _are_spouses(id1: str, id2: str, reader: GedcomReaderType) -> bool:
             if not _is_record(fam):
                 continue
 
-            # Get husband and wife IDs
-            husb_ref = fam.sub_tag(TAG_HUSBAND)
-            wife_ref = fam.sub_tag(TAG_WIFE)
-
-            husb_id = (
-                _normalize_id(husb_ref.xref_id)
-                if husb_ref and hasattr(husb_ref, "xref_id")
-                else None
-            )
-            wife_id = (
-                _normalize_id(wife_ref.xref_id)
-                if wife_ref and hasattr(wife_ref, "xref_id")
-                else None
-            )
+            husb_id, wife_id = _extract_spouse_ids_from_family(fam)
 
             # Check if id1 and id2 are husband and wife in this family
-            if (husb_id == id1 and wife_id == id2) or (
-                husb_id == id2 and wife_id == id1
-            ):
+            if (husb_id == id1 and wife_id == id2) or (husb_id == id2 and wife_id == id1):
                 return True
     except Exception as e:
         logger.error(f"Error checking spouse relationship: {e}", exc_info=False)
@@ -1830,59 +1812,52 @@ class GedcomData:
 
 
 
+    def _process_indi_record(self, indi_record: Any) -> tuple[bool, bool]:
+        """Process an individual record for indexing. Returns (processed, skipped)."""
+        if not (_is_individual(indi_record) and hasattr(indi_record, "xref_id") and indi_record.xref_id):
+            if logger.isEnabledFor(logging.DEBUG):
+                if hasattr(indi_record, "xref_id"):
+                    logger.debug(f"Skipping non-Individual record: Type={type(indi_record).__name__}, Xref={indi_record.xref_id}")
+                else:
+                    logger.debug(f"Skipping record with no xref_id: Type={type(indi_record).__name__}")
+            return False, True
+
+        norm_id = _normalize_id(indi_record.xref_id)
+        if not norm_id:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Skipping INDI with unnormalizable xref_id: {indi_record.xref_id}")
+            return False, True
+
+        if norm_id in self.indi_index:
+            logger.warning(f"Duplicate normalized INDI ID found: {norm_id}. Overwriting.")
+
+        self.indi_index[norm_id] = indi_record  # type: ignore
+        return True, False
+
     def _build_indi_index(self) -> None:
         """Builds a dictionary mapping normalized IDs to Individual records."""
         if not self.reader:
             logger.error("[Cache Build] Cannot build INDI index: GedcomReader is None.")
             return
+
         start_time = time.time()
         logger.debug("[Cache] Building INDI index...")
         self.indi_index = {}
         count = 0
         skipped = 0
         current_record_id = "None"
+
         try:
             for indi_record in self.reader.records0(TAG_INDI):
-                # Track current record ID for error reporting
-                current_record_id = (
-                    getattr(indi_record, "xref_id", "Unknown")
-                    if indi_record
-                    else "None"
-                )
-
-                if (
-                    _is_individual(indi_record)
-                    and hasattr(indi_record, "xref_id")
-                    and indi_record.xref_id
-                ):
-                    norm_id = _normalize_id(indi_record.xref_id)
-                    if norm_id:
-                        if norm_id in self.indi_index:
-                            logger.warning(
-                                f"Duplicate normalized INDI ID found: {norm_id}. Overwriting."
-                            )
-                        # Cast the record to the expected type to satisfy the type checker
-                        self.indi_index[norm_id] = indi_record  # type: ignore
-                        count += 1
-                    elif logger.isEnabledFor(logging.DEBUG):
-                        skipped += 1
-                        logger.debug(
-                            f"Skipping INDI with unnormalizable xref_id: {indi_record.xref_id}"
-                        )
-                elif logger.isEnabledFor(logging.DEBUG):
+                current_record_id = getattr(indi_record, "xref_id", "Unknown") if indi_record else "None"
+                processed, skip = self._process_indi_record(indi_record)
+                if processed:
+                    count += 1
+                if skip:
                     skipped += 1
-                    if hasattr(indi_record, "xref_id"):
-                        logger.debug(
-                            f"Skipping non-Individual record: Type={type(indi_record).__name__}, Xref={indi_record.xref_id}"
-                        )
-                    else:
-                        logger.debug(
-                            f"Skipping record with no xref_id: Type={type(indi_record).__name__}"
-                        )
         except StopIteration:
             logger.debug("[Cache] Finished iterating INDI records for index.")
         except Exception as e:
-            # Enhanced error reporting with record context
             record_context = f"while processing record ID: {current_record_id}"
             logger.error(
                 f"[Cache Build] Error during INDI index build {record_context}: {e}. "
@@ -1890,16 +1865,13 @@ class GedcomData:
                 f"Records processed so far: {count}, skipped: {skipped}.",
                 exc_info=True,
             )
+
         elapsed = time.time() - start_time
         self.indi_index_build_time = elapsed
         if count > 0:
-            logger.debug(
-                f"[Cache] INDI index built with {count} individuals ({skipped} skipped) in {elapsed:.2f}s."
-            )
+            logger.debug(f"[Cache] INDI index built with {count} individuals ({skipped} skipped) in {elapsed:.2f}s.")
         else:
-            logger.error(
-                f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s."
-            )
+            logger.error(f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s.")
 
     def _extract_parents_from_family(self, fam: Any, fam_id_log: str) -> set[str]:
         """Extract parent IDs from a family record."""
@@ -1975,7 +1947,10 @@ class GedcomData:
         except Exception as e:
             logger.error(f"[Cache Build] Unexpected error during family map build: {e}. Maps may be incomplete.", exc_info=True)
 
-        elapsed = time.time() - start_time
+        self._log_family_maps_build_results(time.time() - start_time, fam_count, processed_links, skipped_links)
+
+    def _log_family_maps_build_results(self, elapsed: float, fam_count: int, processed_links: int, skipped_links: int) -> None:
+        """Log the results of family maps building."""
         self.family_maps_build_time = elapsed
         parent_map_count = len(self.id_to_parents)
         child_map_count = len(self.id_to_children)
@@ -2240,15 +2215,8 @@ class GedcomData:
                 processed_fam_ids.add(fam_id)
         return matching_families_with_role
 
-    def _validate_relationship_path_inputs(self, id1_norm: str, id2_norm: str) -> Optional[str]:
-        """Validate inputs for relationship path calculation. Returns error message or None if valid."""
-        if not self.reader:
-            return "Error: GEDCOM Reader unavailable."
-        if not id1_norm or not id2_norm:
-            return "Invalid input IDs."
-        if id1_norm == id2_norm:
-            return "Individuals are the same."
-
+    def _ensure_maps_and_index_built(self) -> Optional[str]:
+        """Ensure family maps and individual index are built. Returns error message or None if successful."""
         # Ensure family maps are built
         if not self.id_to_parents and not self.id_to_children:
             logger.warning("Relationship maps are empty, attempting rebuild.")
@@ -2263,7 +2231,18 @@ class GedcomData:
         if not self.indi_index:
             return "Error: Individual index could not be built."
 
-        return None  # Valid
+        return None  # Success
+
+    def _validate_relationship_path_inputs(self, id1_norm: str, id2_norm: str) -> Optional[str]:
+        """Validate inputs for relationship path calculation. Returns error message or None if valid."""
+        if not self.reader:
+            return "Error: GEDCOM Reader unavailable."
+        if not id1_norm or not id2_norm:
+            return "Invalid input IDs."
+        if id1_norm == id2_norm:
+            return "Individuals are the same."
+
+        return self._ensure_maps_and_index_built()
 
     def get_relationship_path(self, id1: str, id2: str) -> str:
         """
