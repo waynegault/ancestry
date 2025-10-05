@@ -409,7 +409,7 @@ def credential_manager_module_tests() -> bool:
                 return self.tests_failed == 0
 
         class SuppressLogging:
-            def __enter__(self):
+            def __enter__(self) -> "SuppressLogging":
                 return self
 
             def __exit__(
