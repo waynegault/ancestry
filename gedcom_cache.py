@@ -222,48 +222,62 @@ class GedcomCacheModule(BaseCacheModule):
             logger.error(f"Error warming GEDCOM cache: {e}")
             return False
 
+    def _check_memory_cache_health(self) -> tuple[str, list[str], int]:
+        """Check memory cache health. Returns (health_status, issues, stale_count)."""
+        memory_health = "healthy"
+        memory_issues = []
+
+        if len(_MEMORY_CACHE) == 0:
+            memory_issues.append("No memory cache entries")
+
+        # Check for stale entries
+        stale_entries = sum(1 for key in _MEMORY_CACHE if not _is_memory_cache_valid(key))
+        if stale_entries > len(_MEMORY_CACHE) * 0.5:
+            memory_health = "degraded"
+            memory_issues.append(f"High number of stale entries: {stale_entries}")
+
+        return memory_health, memory_issues, stale_entries
+
+    def _check_gedcom_file_health(self) -> tuple[str, list[str]]:
+        """Check GEDCOM file accessibility. Returns (health_status, issues)."""
+        gedcom_health = "healthy"
+        gedcom_issues = []
+
+        if config_schema and hasattr(config_schema.database, "gedcom_file_path"):
+            gedcom_path = config_schema.database.gedcom_file_path
+            if not gedcom_path:
+                gedcom_health = "warning"
+                gedcom_issues.append("No GEDCOM file path configured")
+            elif not Path(gedcom_path).exists():
+                gedcom_health = "error"
+                gedcom_issues.append(f"GEDCOM file not found: {gedcom_path}")
+        else:
+            gedcom_health = "warning"
+            gedcom_issues.append("GEDCOM configuration not available")
+
+        return gedcom_health, gedcom_issues
+
+    def _determine_overall_health(self, gedcom_health: str, memory_health: str) -> str:
+        """Determine overall health based on component health statuses."""
+        if gedcom_health == "error" or memory_health == "degraded":
+            return "degraded"
+        elif gedcom_health == "warning":
+            return "warning"
+        return "healthy"
+
     def get_health_status(self) -> dict[str, Any]:
         """Get detailed health status of GEDCOM cache system."""
         base_health = super().get_health_status()
 
         try:
             # Check memory cache health
-            memory_health = "healthy"
-            memory_issues = []
-
-            if len(_MEMORY_CACHE) == 0:
-                memory_issues.append("No memory cache entries")
-
-            # Check for stale entries
-            stale_entries = sum(
-                1 for key in _MEMORY_CACHE if not _is_memory_cache_valid(key)
-            )
-            if stale_entries > len(_MEMORY_CACHE) * 0.5:
-                memory_health = "degraded"
-                memory_issues.append(f"High number of stale entries: {stale_entries}")
+            memory_health, memory_issues, stale_entries = self._check_memory_cache_health()
 
             # Check GEDCOM file accessibility
-            gedcom_health = "healthy"
-            gedcom_issues = []
-
-            if config_schema and hasattr(config_schema.database, "gedcom_file_path"):
-                gedcom_path = config_schema.database.gedcom_file_path
-                if not gedcom_path:
-                    gedcom_health = "warning"
-                    gedcom_issues.append("No GEDCOM file path configured")
-                elif not Path(gedcom_path).exists():
-                    gedcom_health = "error"
-                    gedcom_issues.append(f"GEDCOM file not found: {gedcom_path}")
-            else:
-                gedcom_health = "warning"
-                gedcom_issues.append("GEDCOM configuration not available")
+            gedcom_health, gedcom_issues = self._check_gedcom_file_health()
 
             # Overall health assessment
-            overall_health = "healthy"
-            if gedcom_health == "error" or memory_health == "degraded":
-                overall_health = "degraded"
-            elif gedcom_health == "warning":
-                overall_health = "warning"
+            overall_health = self._determine_overall_health(gedcom_health, memory_health)
 
             gedcom_health_info = {
                 "memory_cache_health": memory_health,
@@ -339,6 +353,49 @@ def clear_memory_cache() -> int:
 # --- Enhanced GEDCOM Caching Functions ---
 
 
+def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Optional[Any], Optional[str]]:
+    """Check disk cache for GEDCOM data. Returns (cached_data, disk_cache_key)."""
+    try:
+        from pathlib import Path
+        file_mtime = Path(gedcom_path).stat().st_mtime
+        mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
+        disk_cache_key = f"gedcom_load_mtime_{mtime_hash}"
+
+        if cache is not None:
+            from diskcache.core import ENOVAL
+            disk_cached = cache.get(disk_cache_key, default=ENOVAL, retry=True)
+            if disk_cached is not ENOVAL:
+                logger.debug("GEDCOM data loaded from disk cache")
+                # Store in memory cache for faster next access
+                _store_in_memory_cache(memory_key, disk_cached)
+                return disk_cached, disk_cache_key
+        return None, disk_cache_key
+    except Exception as e:
+        logger.debug(f"Error checking disk cache: {e}")
+        return None, None
+
+
+def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str]) -> None:
+    """Store GEDCOM data in disk cache (without reader object)."""
+    try:
+        if cache is not None and disk_cache_key is not None:
+            # Create a serializable version without the reader
+            cache_data = {
+                "path": str(gedcom_data.path),
+                "indi_index": gedcom_data.indi_index,
+                "processed_data_cache": gedcom_data.processed_data_cache,
+                "id_to_parents": gedcom_data.id_to_parents,
+                "id_to_children": gedcom_data.id_to_children,
+                "indi_index_build_time": gedcom_data.indi_index_build_time,
+                "family_maps_build_time": gedcom_data.family_maps_build_time,
+                "data_processing_time": gedcom_data.data_processing_time,
+            }
+            cache.set(disk_cache_key, cache_data, expire=86400, retry=True)
+            logger.debug("GEDCOM data cached (without reader) in disk cache")
+    except Exception as e:
+        logger.debug(f"Error storing in disk cache: {e}")
+
+
 def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
     """
     Load GEDCOM data with aggressive multi-level caching.
@@ -352,35 +409,16 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
     Returns:
         GedcomData instance or None if loading fails
     """
-
     # Check memory cache first
     memory_key = _get_memory_cache_key(gedcom_path, "gedcom_load")
     cached_data = _get_from_memory_cache(memory_key)
     if cached_data is not None:
         return cached_data
 
-    # Initialize disk_cache_key to None
-    disk_cache_key = None
-
     # Check disk cache
-    try:
-        from pathlib import Path
-        file_mtime = Path(gedcom_path).stat().st_mtime
-        mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
-        disk_cache_key = f"gedcom_load_mtime_{mtime_hash}"
-
-        if cache is not None:
-            from diskcache.core import ENOVAL
-
-            disk_cached = cache.get(disk_cache_key, default=ENOVAL, retry=True)
-            if disk_cached is not ENOVAL:
-                logger.debug("GEDCOM data loaded from disk cache")
-                # Store in memory cache for faster next access
-                _store_in_memory_cache(memory_key, disk_cached)
-                return disk_cached
-    except Exception as e:
-        logger.debug(f"Error checking disk cache: {e}")
-        disk_cache_key = None  # Reset to None if there was an error
+    disk_cached, disk_cache_key = _check_disk_cache_for_gedcom(gedcom_path, memory_key)
+    if disk_cached is not None:
+        return disk_cached
 
     logger.debug(f"Loading GEDCOM file with aggressive caching: {gedcom_path}")
     start_time = time.time()
@@ -399,25 +437,8 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
             # Store in memory cache for fastest access
             _store_in_memory_cache(memory_key, gedcom_data)
 
-            # Store in disk cache for persistence - but don't cache the reader object
-            # The GedcomReader contains BinaryFileCR objects that cannot be pickled
-            try:
-                if cache is not None and disk_cache_key is not None:
-                    # Create a serializable version without the reader
-                    cache_data = {
-                        "path": str(gedcom_data.path),
-                        "indi_index": gedcom_data.indi_index,
-                        "processed_data_cache": gedcom_data.processed_data_cache,
-                        "id_to_parents": gedcom_data.id_to_parents,
-                        "id_to_children": gedcom_data.id_to_children,
-                        "indi_index_build_time": gedcom_data.indi_index_build_time,
-                        "family_maps_build_time": gedcom_data.family_maps_build_time,
-                        "data_processing_time": gedcom_data.data_processing_time,
-                    }
-                    cache.set(disk_cache_key, cache_data, expire=86400, retry=True)
-                    logger.debug("GEDCOM data cached (without reader) in disk cache")
-            except Exception as e:
-                logger.debug(f"Error storing in disk cache: {e}")
+            # Store in disk cache for persistence
+            _store_gedcom_in_disk_cache(gedcom_data, disk_cache_key)
 
             # Log cache statistics
             stats = get_cache_stats()
