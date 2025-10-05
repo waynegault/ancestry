@@ -58,6 +58,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 # === LOCAL IMPORTS ===
 # Import SecurityManager
@@ -392,18 +393,8 @@ class UnifiedCredentialManager:
         else:
             print("❌ Failed to save test credentials")
 
-    def import_from_env(self) -> None:
-        """Import credentials from a .env file."""
-        print("\n" + "=" * 50)
-        print("      IMPORT FROM .ENV FILE")
-        print("=" * 50)
-
-        # Ask for .env file path when in interactive mode
-        env_file = input("Enter path to .env file (default: .env): ").strip()
-        if not env_file:
-            env_file = ".env"
-
-        # Try multiple locations for the .env file
+    def _find_env_file(self, env_file: str) -> tuple[Optional[str], list[Path]]:
+        """Find .env file in potential locations. Returns (file_path, potential_paths)."""
         potential_paths = []
         env_path = Path(env_file)
 
@@ -423,12 +414,65 @@ class UnifiedCredentialManager:
             potential_paths.append(parent_dir / env_file)
 
         # Find the first existing file from potential paths
-        env_file_path = None
         for path in potential_paths:
             if path.exists():
-                env_file_path = str(path)
-                break
+                return str(path), potential_paths
 
+        return None, potential_paths
+
+    def _parse_env_file(self, env_file_path: str) -> dict[str, str]:
+        """Parse .env file and return credentials dictionary."""
+        env_credentials = {}
+        with open(env_file_path, encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+
+                # Skip empty lines and comments
+                if not line or line.startswith("#"):
+                    continue
+
+                # Parse KEY=VALUE format
+                if "=" not in line:
+                    print(f"⚠️ Warning: Skipping invalid line {line_num}: {line}")
+                    continue
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+
+                # Remove quotes if present
+                if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                    value = value[1:-1]
+
+                env_credentials[key] = value
+
+        return env_credentials
+
+    def _display_credentials_preview(self, env_credentials: dict[str, str]) -> None:
+        """Display masked preview of credentials."""
+        print(f"📋 Found {len(env_credentials)} credentials in .env file:")
+        for key in sorted(env_credentials.keys()):
+            # Show masked preview
+            masked_value = (
+                env_credentials[key][:3] + "*" * max(0, len(env_credentials[key]) - 6) + env_credentials[key][-3:]
+                if len(env_credentials[key]) > 6
+                else "*" * len(env_credentials[key])
+            )
+            print(f"  {key}: {masked_value}")
+
+    def import_from_env(self) -> None:
+        """Import credentials from a .env file."""
+        print("\n" + "=" * 50)
+        print("      IMPORT FROM .ENV FILE")
+        print("=" * 50)
+
+        # Ask for .env file path when in interactive mode
+        env_file = input("Enter path to .env file (default: .env): ").strip()
+        if not env_file:
+            env_file = ".env"
+
+        # Find the .env file
+        env_file_path, potential_paths = self._find_env_file(env_file)
         if not env_file_path:
             print(f"❌ File not found: {env_file}")
             print("💡 Make sure the .env file exists in one of these locations:")
@@ -438,112 +482,81 @@ class UnifiedCredentialManager:
 
         try:
             print(f"📂 Using .env file: {env_file_path}")
-            # Read and parse .env file
-            env_credentials = {}
-            with env_file_path.open(encoding="utf-8") as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
 
-                    # Skip empty lines and comments
-                    if not line or line.startswith("#"):
-                        continue
-
-                    # Parse KEY=VALUE format
-                    if "=" not in line:
-                        print(f"⚠️ Warning: Skipping invalid line {line_num}: {line}")
-                        continue
-
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    value = value.strip()
-
-                    # Remove quotes if present
-                    if (value.startswith('"') and value.endswith('"')) or (
-                        value.startswith("'") and value.endswith("'")
-                    ):
-                        value = value[1:-1]
-
-                    env_credentials[key] = value
-
+            # Parse .env file
+            env_credentials = self._parse_env_file(env_file_path)
             if not env_credentials:
                 print("❌ No valid credentials found in .env file.")
                 return
 
-            print(f"📋 Found {len(env_credentials)} credentials in .env file:")
-            for key in sorted(env_credentials.keys()):
-                # Show masked preview
-                masked_value = (
-                    env_credentials[key][:3]
-                    + "*" * max(0, len(env_credentials[key]) - 6)
-                    + env_credentials[key][-3:]
-                    if len(env_credentials[key]) > 6
-                    else "*" * len(env_credentials[key])
-                )
-                print(f"  {key}: {masked_value}")
+            # Display preview
+            self._display_credentials_preview(env_credentials)
 
-            # Check for existing credentials
-            existing_creds = self.security_manager.decrypt_credentials()
-            if existing_creds:
-                print(f"\n⚠️ You already have {len(existing_creds)} stored credentials.")
-                print("Import options:")
-                print("  m) Merge (add new, keep existing)")
-                print("  o) Overwrite (replace existing with .env values)")
-                print("  r) Replace all (delete existing, use only .env)")
-                print("  c) Cancel")
+            # Merge with existing credentials
+            final_creds, action_desc = self._merge_credentials_with_existing(env_credentials)
+            if final_creds is None:
+                return  # User cancelled
 
-                choice = input("Choice (m/o/r/c): ").strip().lower()
-                if choice == "c":
-                    return
-                if choice == "m":
-                    # Merge: existing credentials take precedence
-                    final_creds = env_credentials.copy()
-                    final_creds.update(existing_creds)  # existing wins on conflicts
-                    action_desc = "merged with existing"
-                elif choice == "o":
-                    # Overwrite: .env credentials take precedence
-                    final_creds = existing_creds.copy()
-                    final_creds.update(env_credentials)  # .env wins on conflicts
-                    action_desc = "merged (overwriting existing)"
-                elif choice == "r":
-                    # Replace: only use .env credentials
-                    if not self._confirm_action("replace ALL existing credentials"):
-                        return
-                    final_creds = env_credentials
-                    action_desc = "replaced all existing"
-                else:
-                    print("❌ Invalid choice.")
-                    return
-            else:
-                final_creds = env_credentials
-                action_desc = "imported"
-
-            # Save the credentials
-            if self.security_manager.encrypt_credentials(final_creds):
-                print(
-                    f"✅ Successfully {action_desc} {len(env_credentials)} credentials from .env file!"
-                )
-
-                # Show summary
-                required = ["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD"]
-                found_required = [cred for cred in required if cred in final_creds]
-                if found_required:
-                    print(f"✅ Required credentials found: {', '.join(found_required)}")
-
-                missing_required = [
-                    cred for cred in required if cred not in final_creds
-                ]
-                if missing_required:
-                    print(
-                        f"⚠️ Missing required credentials: {', '.join(missing_required)}"
-                    )
-                    print("   Use option 2 to add missing credentials.")
-
-            else:
-                print("❌ Failed to save imported credentials.")
+            # Save and show summary
+            self._save_and_summarize_import(final_creds, env_credentials, action_desc)
 
         except Exception as e:
             print(f"❌ Error reading .env file: {e}")
             print("💡 Make sure the file is readable and in KEY=VALUE format.")
+
+    def _merge_credentials_with_existing(self, env_credentials: dict[str, str]) -> tuple[Optional[dict[str, str]], str]:
+        """Merge env credentials with existing ones. Returns (final_creds, action_desc) or (None, '') if cancelled."""
+        existing_creds = self.security_manager.decrypt_credentials()
+        if not existing_creds:
+            return env_credentials, "imported"
+
+        print(f"\n⚠️ You already have {len(existing_creds)} stored credentials.")
+        print("Import options:")
+        print("  m) Merge (add new, keep existing)")
+        print("  o) Overwrite (replace existing with .env values)")
+        print("  r) Replace all (delete existing, use only .env)")
+        print("  c) Cancel")
+
+        choice = input("Choice (m/o/r/c): ").strip().lower()
+        if choice == "c":
+            return None, ""
+        if choice == "m":
+            # Merge: existing credentials take precedence
+            final_creds = env_credentials.copy()
+            final_creds.update(existing_creds)  # existing wins on conflicts
+            return final_creds, "merged with existing"
+        if choice == "o":
+            # Overwrite: .env credentials take precedence
+            final_creds = existing_creds.copy()
+            final_creds.update(env_credentials)  # .env wins on conflicts
+            return final_creds, "merged (overwriting existing)"
+        if choice == "r":
+            # Replace: only use .env credentials
+            if not self._confirm_action("replace ALL existing credentials"):
+                return None, ""
+            return env_credentials, "replaced all existing"
+
+        print("❌ Invalid choice.")
+        return None, ""
+
+    def _save_and_summarize_import(self, final_creds: dict[str, str], env_credentials: dict[str, str], action_desc: str) -> None:
+        """Save credentials and show summary."""
+        if not self.security_manager.encrypt_credentials(final_creds):
+            print("❌ Failed to save imported credentials.")
+            return
+
+        print(f"✅ Successfully {action_desc} {len(env_credentials)} credentials from .env file!")
+
+        # Show summary
+        required = ["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD"]
+        found_required = [cred for cred in required if cred in final_creds]
+        if found_required:
+            print(f"✅ Required credentials found: {', '.join(found_required)}")
+
+        missing_required = [cred for cred in required if cred not in final_creds]
+        if missing_required:
+            print(f"⚠️ Missing required credentials: {', '.join(missing_required)}")
+            print("   Use option 2 to add missing credentials.")
 
     def export_credentials(self) -> None:
         """Export credentials for backup."""
