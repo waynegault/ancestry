@@ -2708,6 +2708,185 @@ def _do_match(  # type: ignore
 # ------------------------------------------------------------------------------
 
 
+def _validate_session_for_matches(
+    session_manager: SessionManager,
+) -> Optional[Tuple[Any, str]]:
+    """
+    Validate session manager and extract required components.
+
+    Returns:
+        Tuple of (driver, my_uuid) if valid, None if validation fails
+    """
+    if not isinstance(session_manager, SessionManager):
+        logger.error("get_matches: Invalid SessionManager.")
+        return None
+
+    driver = session_manager.driver
+    if not driver:
+        logger.error("get_matches: WebDriver not initialized.")
+        return None
+
+    my_uuid = session_manager.my_uuid
+    if not my_uuid:
+        logger.error("get_matches: SessionManager my_uuid not set.")
+        return None
+
+    if not session_manager.is_sess_valid():
+        logger.error("get_matches: Session invalid at start.")
+        return None
+
+    return driver, my_uuid
+
+
+def _get_csrf_token_for_matches(driver: Any) -> Optional[str]:
+    """
+    Retrieve CSRF token from browser cookies for match list API.
+
+    Returns:
+        CSRF token string if found, None otherwise
+    """
+    csrf_token_cookie_names = (
+        "_dnamatches-matchlistui-x-csrf-token",
+        "_csrf",
+    )
+    specific_csrf_token: Optional[str] = None
+
+    try:
+        logger.debug(f"Attempting to read CSRF cookies: {csrf_token_cookie_names}")
+
+        # Try direct cookie access first
+        for cookie_name in csrf_token_cookie_names:
+            try:
+                cookie_obj = driver.get_cookie(cookie_name)
+                if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
+                    specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
+                    logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
+                    break
+            except NoSuchCookieException:
+                continue
+            except WebDriverException as cookie_e:
+                logger.warning(
+                    f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error getting cookie '{cookie_name}': {e}",
+                    exc_info=True,
+                )
+
+        # Fallback to get_driver_cookies if direct access failed
+        if not specific_csrf_token:
+            logger.debug(
+                "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
+            )
+            all_cookies = get_driver_cookies(driver)
+            if all_cookies:
+                for cookie_name in csrf_token_cookie_names:
+                    for cookie in all_cookies:
+                        if cookie.get("name") == cookie_name and cookie.get("value"):
+                            specific_csrf_token = unquote(cookie["value"]).split("|")[0]
+                            logger.debug(
+                                f"Read CSRF token via fallback from '{cookie_name}'."
+                            )
+                            break
+                    if specific_csrf_token:
+                        break
+            else:
+                logger.warning(
+                    "Fallback get_driver_cookies also failed to retrieve cookies."
+                )
+
+        if not specific_csrf_token:
+            logger.error(
+                "Failed to obtain specific CSRF token required for Match List API."
+            )
+            return None
+
+        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+        return specific_csrf_token
+
+    except Exception as csrf_err:
+        logger.error(
+            f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
+        )
+        return None
+
+
+def _sync_cookies_to_session(driver: Any, session_manager: SessionManager) -> None:
+    """Sync browser cookies to requests session before API call."""
+    try:
+        logger.debug("Syncing browser cookies to API session before Match List API call...")
+        browser_cookies = driver.get_cookies()
+        logger.debug(f"Retrieved {len(browser_cookies)} cookies from browser")
+
+        # Clear and re-sync all cookies to ensure fresh state
+        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
+            session_manager.requests_session.cookies.clear()
+            for cookie in browser_cookies:
+                session_manager.requests_session.cookies.set(
+                    cookie['name'],
+                    cookie['value'],
+                    domain=cookie.get('domain', ''),
+                    path=cookie.get('path', '/')
+                )
+            logger.debug(f"Synced {len(browser_cookies)} cookies to requests session")
+        else:
+            logger.warning("No requests session available for cookie sync")
+    except Exception as cookie_sync_error:
+        logger.error(f"Cookie sync failed: {cookie_sync_error}")
+
+
+def _fetch_match_list_page(
+    driver: Any,
+    session_manager: SessionManager,
+    my_uuid: str,
+    current_page: int,
+    csrf_token: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Fetch match list data for a specific page from the API.
+
+    Returns:
+        API response dict if successful, None otherwise
+    """
+    # Build API URL
+    match_list_url = urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
+    )
+
+    # Build headers
+    match_list_headers = {
+        "X-CSRF-Token": csrf_token,
+        "Accept": "application/json",
+        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "priority": "u=1, i",
+    }
+
+    logger.debug(f"Calling Match List API for page {current_page}...")
+    logger.debug(f"Headers being passed to _api_req for Match List: {match_list_headers}")
+
+    # Sync cookies before API call
+    _sync_cookies_to_session(driver, session_manager)
+
+    # Call the API
+    api_response = _api_req(
+        url=match_list_url,
+        driver=driver,
+        session_manager=session_manager,
+        method="GET",
+        headers=match_list_headers,
+        use_csrf_token=False,
+        api_description="Match List API",
+        allow_redirects=True,
+    )
+
+    return api_response
+
+
 def get_matches(  # type: ignore
     session_manager: SessionManager,
     current_page: int = 1,
@@ -2730,138 +2909,21 @@ def get_matches(  # type: ignore
         Returns None if a critical error occurs during fetching.
     """
     # Validate session manager
-    if not isinstance(session_manager, SessionManager):
-        logger.error("get_matches: Invalid SessionManager.")
+    validation_result = _validate_session_for_matches(session_manager)
+    if validation_result is None:
         return None
-    driver = session_manager.driver
-    if not driver:
-        logger.error("get_matches: WebDriver not initialized.")
-        return None
-    my_uuid = session_manager.my_uuid
-    if not my_uuid:
-        logger.error("get_matches: SessionManager my_uuid not set.")
-        return None
-    if not session_manager.is_sess_valid():
-        logger.error("get_matches: Session invalid at start.")
-        return None
+    driver, my_uuid = validation_result
 
     logger.debug(f"--- Fetching Match List Page {current_page} ---")
 
-    specific_csrf_token: Optional[str] = None
-    csrf_token_cookie_names = (
-        "_dnamatches-matchlistui-x-csrf-token",
-        "_csrf",
-    )
-    try:
-        logger.debug(f"Attempting to read CSRF cookies: {csrf_token_cookie_names}")
-        for cookie_name in csrf_token_cookie_names:
-            try:
-                cookie_obj = driver.get_cookie(cookie_name)
-                if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
-                    specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
-                    logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
-                    break
-            except NoSuchCookieException:
-                continue
-            except WebDriverException as cookie_e:
-                logger.warning(
-                    f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error getting cookie '{cookie_name}': {e}",
-                    exc_info=True,
-                )
-
-        if not specific_csrf_token:
-            logger.debug(
-                "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
-            )
-            all_cookies = get_driver_cookies(driver)
-            if all_cookies:
-                # get_driver_cookies returns a list of cookie dictionaries
-                for cookie_name in csrf_token_cookie_names:
-                    for cookie in all_cookies:
-                        if cookie.get("name") == cookie_name and cookie.get("value"):
-                            specific_csrf_token = unquote(cookie["value"]).split("|")[0]
-                            logger.debug(
-                                f"Read CSRF token via fallback from '{cookie_name}'."
-                            )
-                            break
-                    if specific_csrf_token:
-                        break
-            else:
-                logger.warning(
-                    "Fallback get_driver_cookies also failed to retrieve cookies."
-                )
-
-        if not specific_csrf_token:
-            logger.error(
-                "Failed to obtain specific CSRF token required for Match List API."
-            )
-            return None
-        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
-
-    except Exception as csrf_err:
-        logger.error(
-            f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
-        )
+    # Get CSRF token
+    specific_csrf_token = _get_csrf_token_for_matches(driver)
+    if not specific_csrf_token:
         return None
 
-    # Use the original working API endpoint from 4 weeks ago
-    match_list_url = urljoin(
-        config_schema.api.base_url,
-        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
-    )
-    # Use the exact same simple headers that worked 6 weeks ago
-    # Note: Working version used "X-CSRF-Token" (capital X) not "x-csrf-token"
-    match_list_headers = {
-        "X-CSRF-Token": specific_csrf_token,
-        "Accept": "application/json",
-        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "priority": "u=1, i",
-    }
-    logger.debug(f"Calling Match List API for page {current_page}...")
-    logger.debug(
-        f"Headers being passed to _api_req for Match List: {match_list_headers}"
-    )
-
-    # CRITICAL: Ensure cookies are synced immediately before API call
-    # This was simpler in the working version from 6 weeks ago
-    try:
-        logger.debug("Syncing browser cookies to API session before Match List API call...")
-        browser_cookies = driver.get_cookies()
-        logger.debug(f"Retrieved {len(browser_cookies)} cookies from browser")
-
-        # Clear and re-sync all cookies to ensure fresh state
-        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
-            session_manager.requests_session.cookies.clear()
-            for cookie in browser_cookies:
-                session_manager.requests_session.cookies.set(
-                    cookie['name'],
-                    cookie['value'],
-                    domain=cookie.get('domain', ''),
-                    path=cookie.get('path', '/')
-                )
-            logger.debug(f"Synced {len(browser_cookies)} cookies to requests session")
-        else:
-            logger.warning("No requests session available for cookie sync")
-    except Exception as cookie_sync_error:
-        logger.error(f"Cookie sync failed: {cookie_sync_error}")
-
-    # Call the API with fresh cookie sync
-    api_response = _api_req(
-        url=match_list_url,
-        driver=driver,
-        session_manager=session_manager,
-        method="GET",
-        headers=match_list_headers,
-        use_csrf_token=False,
-        api_description="Match List API",
-        allow_redirects=True,
+    # Fetch match list page from API
+    api_response = _fetch_match_list_page(
+        driver, session_manager, my_uuid, current_page, specific_csrf_token
     )
 
 
