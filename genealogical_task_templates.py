@@ -604,358 +604,381 @@ class GenealogicalTaskGenerator:
 # COMPREHENSIVE TEST SUITE
 # =============================================================================
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+# Extracted from monolithic genealogical_task_templates_module_tests() for better organization
+# Each test function is independent and can be run individually
+
+
+def _test_module_imports():
+    """Test that required modules and dependencies are imported correctly."""
+    # Test core infrastructure imports
+    assert 'logger' in globals(), "Logger should be initialized"
+    assert 'get_logger' in globals(), "get_logger function should be available"
+
+    # Test class availability
+    assert 'GenealogicalTaskGenerator' in globals(), "GenealogicalTaskGenerator class should be available"
+
+    # Test standard imports
+    required_imports = ['json', 'logging', 'datetime']
+    for import_name in required_imports:
+        # Check if import is available either directly or through standard_imports
+        available = (import_name in globals() or
+                    hasattr(__import__('builtins'), import_name) or
+                    import_name in dir(__import__(import_name)))
+        assert available, f"Import {import_name} should be available"
+
+
+def _test_task_generator_initialization():
+    """Test GenealogicalTaskGenerator initialization and setup."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test basic initialization
+    assert hasattr(generator, 'task_templates'), "Generator should have task templates"
+    assert hasattr(generator, 'task_config'), "Generator should have task configuration"
+    assert isinstance(generator.task_templates, dict), "Task templates should be a dictionary"
+    assert isinstance(generator.task_config, dict), "Task config should be a dictionary"
+
+    # Test GEDCOM AI integration setup
+    assert hasattr(generator, 'gedcom_ai_available'), "Should track GEDCOM AI availability"
+    assert hasattr(generator, 'gedcom_ai_integrator'), "Should have integrator attribute"
+
+
+def _test_task_templates_structure():
+    """Test that task templates are properly structured."""
+    generator = GenealogicalTaskGenerator()
+    templates = generator.task_templates
+
+    # Test template keys exist
+    required_templates = [
+        "vital_records_search", "dna_match_analysis", "immigration_research",
+        "census_research", "military_research", "occupation_research"
+    ]
+    for template_key in required_templates:
+        assert template_key in templates, f"Template {template_key} should be available"
+        assert isinstance(templates[template_key], dict), f"Template {template_key} should be a dictionary"
+        assert "title" in templates[template_key], f"Template {template_key} should have title"
+
+
+def _test_basic_task_generation():
+    """Test basic task generation functionality."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test data
+    test_extracted_data = {
+        "structured_names": [
+            {"full_name": "John Smith", "nicknames": [], "maiden_name": None}
+        ],
+        "vital_records": [
+            {"person": "John Smith", "event_type": "birth", "date": "1850", "place": "Aberdeen, Scotland"}
+        ],
+        "locations": [
+            {"place": "Aberdeen, Scotland", "context": "birthplace", "time_period": "1850"}
+        ],
+        "research_questions": ["finding John Smith's parents"]
+    }
+
+    test_person_data = {"username": "TestUser"}
+    test_suggested_tasks = ["Research John Smith's family history"]
+
+    # Test task generation
+    tasks = generator.generate_research_tasks(
+        test_person_data,
+        test_extracted_data,
+        test_suggested_tasks
+    )
+
+    assert isinstance(tasks, list), "Should return a list of tasks"
+    assert len(tasks) > 0, "Should generate at least one task"
+
+    # Test task structure
+    for task in tasks:
+        assert isinstance(task, dict), "Each task should be a dictionary"
+        assert "title" in task, "Task should have a title"
+        assert "description" in task, "Task should have a description"
+
+
+def _test_vital_records_task_generation():
+    """Test specialized vital records task generation."""
+    generator = GenealogicalTaskGenerator()
+
+    extracted_data = {
+        "vital_records": [
+            {"person": "Mary Johnson", "event_type": "marriage", "date": "1875", "place": "Boston, MA"},
+            {"person": "William Johnson", "event_type": "death", "date": "1900", "place": "New York, NY"}
+        ]
+    }
+
+    vital_tasks = generator._generate_vital_records_tasks(extracted_data)
+
+    assert isinstance(vital_tasks, list), "Should return list of vital records tasks"
+    if len(vital_tasks) > 0:  # Only test if tasks were generated
+        task = vital_tasks[0]
+        assert "title" in task, "Vital records task should have title"
+        assert "description" in task, "Vital records task should have description"
+        assert "priority" in task, "Vital records task should have priority"
+
+
+def _test_location_task_generation():
+    """Test location-based task generation."""
+    generator = GenealogicalTaskGenerator()
+
+    extracted_data = {
+        "locations": [
+            {"place": "Dublin, Ireland", "context": "birthplace", "time_period": "1840"},
+            {"place": "Liverpool, England", "context": "immigration", "time_period": "1860"}
+        ]
+    }
+
+    location_tasks = generator._generate_location_tasks(extracted_data)
+
+    assert isinstance(location_tasks, list), "Should return list of location tasks"
+    if len(location_tasks) > 0:  # Only test if tasks were generated
+        for task in location_tasks:
+            assert isinstance(task, dict), "Each location task should be a dictionary"
+            assert "title" in task, "Location task should have title"
+
+
+def _test_occupation_task_generation():
+    """Test occupation-based task generation."""
+    generator = GenealogicalTaskGenerator()
+
+    extracted_data = {
+        "occupations": [
+            {"person": "Thomas Baker", "occupation": "baker", "location": "London", "time_period": "1880-1900"},
+            {"person": "Sarah Miller", "occupation": "seamstress", "location": "Manchester", "time_period": "1870"}
+        ]
+    }
+
+    occupation_tasks = generator._generate_occupation_tasks(extracted_data)
+
+    assert isinstance(occupation_tasks, list), "Should return list of occupation tasks"
+    if len(occupation_tasks) > 0:  # Only test if tasks were generated
+        for task in occupation_tasks:
+            assert isinstance(task, dict), "Each occupation task should be a dictionary"
+            assert "title" in task, "Occupation task should have title"
+
+
+def _test_empty_data_handling():
+    """Test task generation with empty or minimal data."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test with completely empty data
+    empty_tasks = generator.generate_research_tasks({}, {}, [])
+    assert isinstance(empty_tasks, list), "Should return list even with empty data"
+
+    # Test with minimal data
+    minimal_person = {"username": "TestUser"}
+    minimal_extracted = {"structured_names": []}
+    minimal_suggested = []
+
+    minimal_tasks = generator.generate_research_tasks(minimal_person, minimal_extracted, minimal_suggested)
+    assert isinstance(minimal_tasks, list), "Should handle minimal data gracefully"
+
+
+def _test_invalid_template_handling():
+    """Test handling of invalid or missing template data."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test with invalid template key
+    invalid_task = generator._create_task_from_template("nonexistent_template", {"test": "data"})
+    assert invalid_task is None, "Should return None for invalid template"
+
+    # Test with empty task data
+    valid_template = next(iter(generator.task_templates.keys()))
+    empty_task = generator._create_task_from_template(valid_template, {})
+    # Should handle empty data gracefully (may return task or None)
+    assert empty_task is None or isinstance(empty_task, dict), "Should handle empty data gracefully"
+
+
+def _test_fallback_task_creation():
+    """Test fallback task creation when no specialized tasks can be generated."""
+    generator = GenealogicalTaskGenerator()
+
+    person_data = {"username": "TestUser"}
+    suggested_tasks = ["Research family history", "Find birth records"]
+
+    fallback_tasks = generator._create_fallback_tasks(person_data, suggested_tasks)
+
+    assert isinstance(fallback_tasks, list), "Should return list of fallback tasks"
+    assert len(fallback_tasks) > 0, "Should generate at least one fallback task"
+
+    for task in fallback_tasks:
+        assert isinstance(task, dict), "Fallback task should be dictionary"
+        assert "title" in task, "Fallback task should have title"
+        assert "description" in task, "Fallback task should have description"
+
+
+def _test_gedcom_ai_integration():
+    """Test GEDCOM AI integration when available."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test AI availability tracking
+    assert hasattr(generator, 'gedcom_ai_available'), "Should track AI availability"
+    assert isinstance(generator.gedcom_ai_available, bool), "AI availability should be boolean"
+
+    # Test integrator attribute existence
+    assert hasattr(generator, 'gedcom_ai_integrator'), "Should have integrator attribute"
+    # integrator may be None if not available, which is fine
+
+
+def _test_task_prioritization():
+    """Test task prioritization and limiting functionality."""
+    generator = GenealogicalTaskGenerator()
+
+    # Create test tasks with different priorities
+    test_tasks = [
+        {"title": "High Priority Task", "priority": "high", "description": "Test"},
+        {"title": "Medium Priority Task", "priority": "medium", "description": "Test"},
+        {"title": "Low Priority Task", "priority": "low", "description": "Test"},
+        {"title": "Another High Task", "priority": "high", "description": "Test"}
+    ]
+
+    prioritized_tasks = generator._prioritize_and_limit_tasks(test_tasks)
+
+    assert isinstance(prioritized_tasks, list), "Should return list of prioritized tasks"
+    assert len(prioritized_tasks) <= len(test_tasks), "Should not exceed original task count"
+
+    # Check that high priority tasks come first if any prioritization occurred
+    if len(prioritized_tasks) > 1:
+        first_task = prioritized_tasks[0]
+        assert "priority" in first_task, "Prioritized task should have priority field"
+
+
+def _test_template_configuration_loading():
+    """Test loading and validation of task configuration."""
+    generator = GenealogicalTaskGenerator()
+    config = generator.task_config
+
+    # Test configuration structure
+    assert isinstance(config, dict), "Task config should be dictionary"
+
+    # Test for expected configuration keys
+    expected_keys = ["max_tasks_per_person", "priority_weights", "default_priority"]
+    for key in expected_keys:
+        if key in config:  # Optional keys may not exist
+            assert config[key] is not None, f"Config key {key} should not be None"
+
+
+def _test_performance():
+    """Test performance of task generation operations."""
+    import time
+    generator = GenealogicalTaskGenerator()
+
+    # Test data
+    test_extracted_data = {
+        "structured_names": [
+            {"full_name": f"Person {i}", "nicknames": [], "maiden_name": None}
+            for i in range(10)
+        ],
+        "vital_records": [
+            {"person": f"Person {i}", "event_type": "birth", "date": f"{1850+i}", "place": "Test Location"}
+            for i in range(10)
+        ],
+        "locations": [
+            {"place": f"Location {i}", "context": "birthplace", "time_period": f"{1850+i}"}
+            for i in range(5)
+        ]
+    }
+
+    start_time = time.time()
+
+    # Run task generation multiple times
+    for _ in range(5):
+        tasks = generator.generate_research_tasks(
+            {"username": "TestUser"},
+            test_extracted_data,
+            ["Test task"]
+        )
+        assert isinstance(tasks, list), "Should return tasks list"
+
+    elapsed = time.time() - start_time
+    assert elapsed < 1.0, f"Performance test should complete quickly, took {elapsed:.3f}s"
+
+
+def _test_bulk_template_processing():
+    """Test performance with bulk template processing."""
+    import time
+    generator = GenealogicalTaskGenerator()
+
+    start_time = time.time()
+
+    # Process multiple template types
+    template_keys = list(generator.task_templates.keys())[:5]  # Test first 5 templates
+
+    for template_key in template_keys:
+        for i in range(10):
+            task_data = {"person_name": f"Test Person {i}", "time_period": "1850-1900"}
+            task = generator._create_task_from_template(template_key, task_data)
+            # Task may be None or dict, both are acceptable
+            assert task is None or isinstance(task, dict), "Task should be None or dict"
+
+    elapsed = time.time() - start_time
+    assert elapsed < 0.5, f"Bulk template processing should be fast, took {elapsed:.3f}s"
+
+
+def _test_error_handling():
+    """Test error handling with invalid inputs and edge cases."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test with None inputs (using type ignore for intentional testing)
+    result = generator.generate_research_tasks(None, None, None)  # type: ignore
+    assert isinstance(result, list), "Should handle None inputs gracefully"
+
+    # Test with invalid data types (using type ignore for intentional testing)
+    result = generator.generate_research_tasks("invalid", "invalid", "invalid")  # type: ignore
+    assert isinstance(result, list), "Should handle invalid data types"
+
+    # Test private methods with invalid data
+    result = generator._generate_vital_records_tasks({})
+    assert isinstance(result, list), "Should handle empty vital records data"
+
+    result = generator._generate_location_tasks({"locations": "invalid"})
+    assert isinstance(result, list), "Should handle invalid location data"
+
+
+def _test_malformed_data_handling():
+    """Test handling of malformed or corrupted data structures."""
+    generator = GenealogicalTaskGenerator()
+
+    # Test with malformed extracted data
+    malformed_data = {
+        "vital_records": "not_a_list",
+        "locations": [{"incomplete": "data"}],
+        "occupations": [None, {"invalid": True}]
+    }
+
+    tasks = generator.generate_research_tasks(
+        {"username": "Test"},
+        malformed_data,
+        ["test"]
+    )
+
+    assert isinstance(tasks, list), "Should handle malformed data gracefully"
+    # Tasks list may be empty or contain fallback tasks, both are acceptable
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def genealogical_task_templates_module_tests() -> bool:
     """
     Comprehensive test suite for genealogical_task_templates.py.
     Tests genealogical task generation, template management, and specialized research workflows.
     """
-    import time
-
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Genealogical Task Templates & Research Generation", "genealogical_task_templates.py")
     suite.start_suite()
 
-    # === INITIALIZATION TESTS ===
-    def test_module_imports():
-        """Test that required modules and dependencies are imported correctly."""
-        # Test core infrastructure imports
-        assert 'logger' in globals(), "Logger should be initialized"
-        assert 'get_logger' in globals(), "get_logger function should be available"
-
-        # Test class availability
-        assert 'GenealogicalTaskGenerator' in globals(), "GenealogicalTaskGenerator class should be available"
-
-        # Test standard imports
-        required_imports = ['json', 'logging', 'datetime']
-        for import_name in required_imports:
-            # Check if import is available either directly or through standard_imports
-            available = (import_name in globals() or
-                        hasattr(__import__('builtins'), import_name) or
-                        import_name in dir(__import__(import_name)))
-            assert available, f"Import {import_name} should be available"
-
-    def test_task_generator_initialization():
-        """Test GenealogicalTaskGenerator initialization and setup."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test basic initialization
-        assert hasattr(generator, 'task_templates'), "Generator should have task templates"
-        assert hasattr(generator, 'task_config'), "Generator should have task configuration"
-        assert isinstance(generator.task_templates, dict), "Task templates should be a dictionary"
-        assert isinstance(generator.task_config, dict), "Task config should be a dictionary"
-
-        # Test GEDCOM AI integration setup
-        assert hasattr(generator, 'gedcom_ai_available'), "Should track GEDCOM AI availability"
-        assert hasattr(generator, 'gedcom_ai_integrator'), "Should have integrator attribute"
-
-    def test_task_templates_structure():
-        """Test that task templates are properly structured."""
-        generator = GenealogicalTaskGenerator()
-        templates = generator.task_templates
-
-        # Test template keys exist
-        required_templates = [
-            "vital_records_search", "dna_match_analysis", "immigration_research",
-            "census_research", "military_research", "occupation_research"
-        ]
-        for template_key in required_templates:
-            assert template_key in templates, f"Template {template_key} should be available"
-            assert isinstance(templates[template_key], dict), f"Template {template_key} should be a dictionary"
-            assert "title" in templates[template_key], f"Template {template_key} should have title"
-
-    # === CORE FUNCTIONALITY TESTS ===
-    def test_basic_task_generation():
-        """Test basic task generation functionality."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test data
-        test_extracted_data = {
-            "structured_names": [
-                {"full_name": "John Smith", "nicknames": [], "maiden_name": None}
-            ],
-            "vital_records": [
-                {"person": "John Smith", "event_type": "birth", "date": "1850", "place": "Aberdeen, Scotland"}
-            ],
-            "locations": [
-                {"place": "Aberdeen, Scotland", "context": "birthplace", "time_period": "1850"}
-            ],
-            "research_questions": ["finding John Smith's parents"]
-        }
-
-        test_person_data = {"username": "TestUser"}
-        test_suggested_tasks = ["Research John Smith's family history"]
-
-        # Test task generation
-        tasks = generator.generate_research_tasks(
-            test_person_data,
-            test_extracted_data,
-            test_suggested_tasks
-        )
-
-        assert isinstance(tasks, list), "Should return a list of tasks"
-        assert len(tasks) > 0, "Should generate at least one task"
-
-        # Test task structure
-        for task in tasks:
-            assert isinstance(task, dict), "Each task should be a dictionary"
-            assert "title" in task, "Task should have a title"
-            assert "description" in task, "Task should have a description"
-
-    def test_vital_records_task_generation():
-        """Test specialized vital records task generation."""
-        generator = GenealogicalTaskGenerator()
-
-        extracted_data = {
-            "vital_records": [
-                {"person": "Mary Johnson", "event_type": "marriage", "date": "1875", "place": "Boston, MA"},
-                {"person": "William Johnson", "event_type": "death", "date": "1900", "place": "New York, NY"}
-            ]
-        }
-
-        vital_tasks = generator._generate_vital_records_tasks(extracted_data)
-
-        assert isinstance(vital_tasks, list), "Should return list of vital records tasks"
-        if len(vital_tasks) > 0:  # Only test if tasks were generated
-            task = vital_tasks[0]
-            assert "title" in task, "Vital records task should have title"
-            assert "description" in task, "Vital records task should have description"
-            assert "priority" in task, "Vital records task should have priority"
-
-    def test_location_task_generation():
-        """Test location-based task generation."""
-        generator = GenealogicalTaskGenerator()
-
-        extracted_data = {
-            "locations": [
-                {"place": "Dublin, Ireland", "context": "birthplace", "time_period": "1840"},
-                {"place": "Liverpool, England", "context": "immigration", "time_period": "1860"}
-            ]
-        }
-
-        location_tasks = generator._generate_location_tasks(extracted_data)
-
-        assert isinstance(location_tasks, list), "Should return list of location tasks"
-        if len(location_tasks) > 0:  # Only test if tasks were generated
-            for task in location_tasks:
-                assert isinstance(task, dict), "Each location task should be a dictionary"
-                assert "title" in task, "Location task should have title"
-
-    def test_occupation_task_generation():
-        """Test occupation-based task generation."""
-        generator = GenealogicalTaskGenerator()
-
-        extracted_data = {
-            "occupations": [
-                {"person": "Thomas Baker", "occupation": "baker", "location": "London", "time_period": "1880-1900"},
-                {"person": "Sarah Miller", "occupation": "seamstress", "location": "Manchester", "time_period": "1870"}
-            ]
-        }
-
-        occupation_tasks = generator._generate_occupation_tasks(extracted_data)
-
-        assert isinstance(occupation_tasks, list), "Should return list of occupation tasks"
-        if len(occupation_tasks) > 0:  # Only test if tasks were generated
-            for task in occupation_tasks:
-                assert isinstance(task, dict), "Each occupation task should be a dictionary"
-                assert "title" in task, "Occupation task should have title"
-
-    # === EDGE CASE TESTS ===
-    def test_empty_data_handling():
-        """Test task generation with empty or minimal data."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test with completely empty data
-        empty_tasks = generator.generate_research_tasks({}, {}, [])
-        assert isinstance(empty_tasks, list), "Should return list even with empty data"
-
-        # Test with minimal data
-        minimal_person = {"username": "TestUser"}
-        minimal_extracted = {"structured_names": []}
-        minimal_suggested = []
-
-        minimal_tasks = generator.generate_research_tasks(minimal_person, minimal_extracted, minimal_suggested)
-        assert isinstance(minimal_tasks, list), "Should handle minimal data gracefully"
-
-    def test_invalid_template_handling():
-        """Test handling of invalid or missing template data."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test with invalid template key
-        invalid_task = generator._create_task_from_template("nonexistent_template", {"test": "data"})
-        assert invalid_task is None, "Should return None for invalid template"
-
-        # Test with empty task data
-        valid_template = next(iter(generator.task_templates.keys()))
-        empty_task = generator._create_task_from_template(valid_template, {})
-        # Should handle empty data gracefully (may return task or None)
-        assert empty_task is None or isinstance(empty_task, dict), "Should handle empty data gracefully"
-
-    def test_fallback_task_creation():
-        """Test fallback task creation when no specialized tasks can be generated."""
-        generator = GenealogicalTaskGenerator()
-
-        person_data = {"username": "TestUser"}
-        suggested_tasks = ["Research family history", "Find birth records"]
-
-        fallback_tasks = generator._create_fallback_tasks(person_data, suggested_tasks)
-
-        assert isinstance(fallback_tasks, list), "Should return list of fallback tasks"
-        assert len(fallback_tasks) > 0, "Should generate at least one fallback task"
-
-        for task in fallback_tasks:
-            assert isinstance(task, dict), "Fallback task should be dictionary"
-            assert "title" in task, "Fallback task should have title"
-            assert "description" in task, "Fallback task should have description"
-
-    # === INTEGRATION TESTS ===
-    def test_gedcom_ai_integration():
-        """Test GEDCOM AI integration when available."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test AI availability tracking
-        assert hasattr(generator, 'gedcom_ai_available'), "Should track AI availability"
-        assert isinstance(generator.gedcom_ai_available, bool), "AI availability should be boolean"
-
-        # Test integrator attribute existence
-        assert hasattr(generator, 'gedcom_ai_integrator'), "Should have integrator attribute"
-        # integrator may be None if not available, which is fine
-
-    def test_task_prioritization():
-        """Test task prioritization and limiting functionality."""
-        generator = GenealogicalTaskGenerator()
-
-        # Create test tasks with different priorities
-        test_tasks = [
-            {"title": "High Priority Task", "priority": "high", "description": "Test"},
-            {"title": "Medium Priority Task", "priority": "medium", "description": "Test"},
-            {"title": "Low Priority Task", "priority": "low", "description": "Test"},
-            {"title": "Another High Task", "priority": "high", "description": "Test"}
-        ]
-
-        prioritized_tasks = generator._prioritize_and_limit_tasks(test_tasks)
-
-        assert isinstance(prioritized_tasks, list), "Should return list of prioritized tasks"
-        assert len(prioritized_tasks) <= len(test_tasks), "Should not exceed original task count"
-
-        # Check that high priority tasks come first if any prioritization occurred
-        if len(prioritized_tasks) > 1:
-            first_task = prioritized_tasks[0]
-            assert "priority" in first_task, "Prioritized task should have priority field"
-
-    def test_template_configuration_loading():
-        """Test loading and validation of task configuration."""
-        generator = GenealogicalTaskGenerator()
-        config = generator.task_config
-
-        # Test configuration structure
-        assert isinstance(config, dict), "Task config should be dictionary"
-
-        # Test for expected configuration keys
-        expected_keys = ["max_tasks_per_person", "priority_weights", "default_priority"]
-        for key in expected_keys:
-            if key in config:  # Optional keys may not exist
-                assert config[key] is not None, f"Config key {key} should not be None"
-
-    # === PERFORMANCE TESTS ===
-    def test_performance():
-        """Test performance of task generation operations."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test data
-        test_extracted_data = {
-            "structured_names": [
-                {"full_name": f"Person {i}", "nicknames": [], "maiden_name": None}
-                for i in range(10)
-            ],
-            "vital_records": [
-                {"person": f"Person {i}", "event_type": "birth", "date": f"{1850+i}", "place": "Test Location"}
-                for i in range(10)
-            ],
-            "locations": [
-                {"place": f"Location {i}", "context": "birthplace", "time_period": f"{1850+i}"}
-                for i in range(5)
-            ]
-        }
-
-        start_time = time.time()
-
-        # Run task generation multiple times
-        for _ in range(5):
-            tasks = generator.generate_research_tasks(
-                {"username": "TestUser"},
-                test_extracted_data,
-                ["Test task"]
-            )
-            assert isinstance(tasks, list), "Should return tasks list"
-
-        elapsed = time.time() - start_time
-        assert elapsed < 1.0, f"Performance test should complete quickly, took {elapsed:.3f}s"
-
-    def test_bulk_template_processing():
-        """Test performance with bulk template processing."""
-        generator = GenealogicalTaskGenerator()
-
-        start_time = time.time()
-
-        # Process multiple template types
-        template_keys = list(generator.task_templates.keys())[:5]  # Test first 5 templates
-
-        for template_key in template_keys:
-            for i in range(10):
-                task_data = {"person_name": f"Test Person {i}", "time_period": "1850-1900"}
-                task = generator._create_task_from_template(template_key, task_data)
-                # Task may be None or dict, both are acceptable
-                assert task is None or isinstance(task, dict), "Task should be None or dict"
-
-        elapsed = time.time() - start_time
-        assert elapsed < 0.5, f"Bulk template processing should be fast, took {elapsed:.3f}s"
-
-    # === ERROR HANDLING TESTS ===
-    def test_error_handling():
-        """Test error handling with invalid inputs and edge cases."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test with None inputs (using type ignore for intentional testing)
-        result = generator.generate_research_tasks(None, None, None)  # type: ignore
-        assert isinstance(result, list), "Should handle None inputs gracefully"
-
-        # Test with invalid data types (using type ignore for intentional testing)
-        result = generator.generate_research_tasks("invalid", "invalid", "invalid")  # type: ignore
-        assert isinstance(result, list), "Should handle invalid data types"
-
-        # Test private methods with invalid data
-        result = generator._generate_vital_records_tasks({})
-        assert isinstance(result, list), "Should handle empty vital records data"
-
-        result = generator._generate_location_tasks({"locations": "invalid"})
-        assert isinstance(result, list), "Should handle invalid location data"
-
-    def test_malformed_data_handling():
-        """Test handling of malformed or corrupted data structures."""
-        generator = GenealogicalTaskGenerator()
-
-        # Test with malformed extracted data
-        malformed_data = {
-            "vital_records": "not_a_list",
-            "locations": [{"incomplete": "data"}],
-            "occupations": [None, {"invalid": True}]
-        }
-
-        tasks = generator.generate_research_tasks(
-            {"username": "Test"},
-            malformed_data,
-            ["test"]
-        )
-
-        assert isinstance(tasks, list), "Should handle malformed data gracefully"
-        # Tasks list may be empty or contain fallback tasks, both are acceptable
-
     # Run all tests
     with suppress_logging():
         suite.run_test(
             "Module imports and initialization",
-            test_module_imports,
+            _test_module_imports,
             "All required modules and dependencies are properly imported",
             "Test import availability of core infrastructure and genealogical components",
             "Module initialization provides complete dependency access"
@@ -963,7 +986,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Task generator initialization",
-            test_task_generator_initialization,
+            _test_task_generator_initialization,
             "GenealogicalTaskGenerator initializes correctly with templates and configuration",
             "Test GenealogicalTaskGenerator initialization and setup",
             "Task generator initialization provides complete template and AI integration setup"
@@ -971,7 +994,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Task templates structure validation",
-            test_task_templates_structure,
+            _test_task_templates_structure,
             "Task templates are properly structured with required fields and formats",
             "Test that task templates are properly structured",
             "Task templates provide complete genealogical research template library"
@@ -979,7 +1002,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Basic task generation functionality",
-            test_basic_task_generation,
+            _test_basic_task_generation,
             "Task generation creates valid, structured genealogical research tasks",
             "Test basic task generation functionality",
             "Basic task generation provides actionable genealogical research tasks"
@@ -987,7 +1010,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Vital records task generation",
-            test_vital_records_task_generation,
+            _test_vital_records_task_generation,
             "Vital records tasks are generated with proper structure and priority",
             "Test specialized vital records task generation",
             "Vital records task generation provides focused genealogical research objectives"
@@ -995,7 +1018,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Location-based task generation",
-            test_location_task_generation,
+            _test_location_task_generation,
             "Location tasks are generated based on geographical research opportunities",
             "Test location-based task generation",
             "Location task generation provides place-specific research strategies"
@@ -1003,7 +1026,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Occupation-based task generation",
-            test_occupation_task_generation,
+            _test_occupation_task_generation,
             "Occupation tasks are generated to explore professional and trade connections",
             "Test occupation-based task generation",
             "Occupation task generation provides professional research pathways"
@@ -1011,7 +1034,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Empty data handling",
-            test_empty_data_handling,
+            _test_empty_data_handling,
             "Task generation handles empty or minimal data gracefully",
             "Test task generation with empty or minimal data",
             "Empty data handling ensures robust operation with incomplete information"
@@ -1019,7 +1042,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Invalid template handling",
-            test_invalid_template_handling,
+            _test_invalid_template_handling,
             "Invalid or missing template data is handled gracefully",
             "Test handling of invalid or missing template data",
             "Invalid template handling provides robust template processing"
@@ -1027,7 +1050,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Fallback task creation",
-            test_fallback_task_creation,
+            _test_fallback_task_creation,
             "Fallback tasks are created when specialized tasks cannot be generated",
             "Test fallback task creation when no specialized tasks can be generated",
             "Fallback task creation ensures users always receive actionable research tasks"
@@ -1035,7 +1058,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "GEDCOM AI integration",
-            test_gedcom_ai_integration,
+            _test_gedcom_ai_integration,
             "GEDCOM AI integration is properly configured and tracked",
             "Test GEDCOM AI integration when available",
             "GEDCOM AI integration provides enhanced genealogical analysis capabilities"
@@ -1043,7 +1066,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Task prioritization and limiting",
-            test_task_prioritization,
+            _test_task_prioritization,
             "Task prioritization orders research tasks by importance and limits output",
             "Test task prioritization and limiting functionality",
             "Task prioritization ensures most important research tasks are presented first"
@@ -1051,7 +1074,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Template configuration loading",
-            test_template_configuration_loading,
+            _test_template_configuration_loading,
             "Task configuration is loaded and validated correctly",
             "Test loading and validation of task configuration",
             "Configuration loading provides proper task generation parameters"
@@ -1059,7 +1082,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Performance validation",
-            test_performance,
+            _test_performance,
             "Task generation operations complete within reasonable time limits",
             "Test performance of task generation operations",
             "Performance validation ensures efficient genealogical task generation"
@@ -1067,7 +1090,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Bulk template processing performance",
-            test_bulk_template_processing,
+            _test_bulk_template_processing,
             "Bulk template processing handles multiple templates efficiently",
             "Test performance with bulk template processing",
             "Bulk processing provides scalable template-based task generation"
@@ -1075,7 +1098,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Error handling robustness",
-            test_error_handling,
+            _test_error_handling,
             "Error handling gracefully manages invalid inputs and edge cases",
             "Test error handling with invalid inputs and edge cases",
             "Error handling ensures stable operation under adverse conditions"
@@ -1083,7 +1106,7 @@ def genealogical_task_templates_module_tests() -> bool:
 
         suite.run_test(
             "Malformed data handling",
-            test_malformed_data_handling,
+            _test_malformed_data_handling,
             "Malformed or corrupted data structures are handled gracefully",
             "Test handling of malformed or corrupted data structures",
             "Malformed data handling provides robust data processing capabilities"
