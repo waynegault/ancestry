@@ -1116,80 +1116,134 @@ def generate_record_research_strategy(
 # --- Self-Test Functions ---
 
 
+def _validate_ai_provider(ai_provider: str) -> bool:
+    """Validate AI provider setting."""
+    if not ai_provider:
+        logger.error("❌ AI_PROVIDER not configured")
+        return False
+    if ai_provider not in ["deepseek", "gemini"]:
+        logger.error(f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek' or 'gemini'")
+        return False
+    logger.info(f"✅ AI_PROVIDER: {ai_provider}")
+    return True
+
+
+def _validate_deepseek_config() -> bool:
+    """Validate DeepSeek-specific configuration."""
+    config_valid = True
+
+    if not openai_available:
+        logger.error("❌ OpenAI library not available for DeepSeek")
+        config_valid = False
+    else:
+        logger.info("✅ OpenAI library available")
+
+    api_key = config_schema.api.deepseek_api_key
+    model_name = config_schema.api.deepseek_ai_model
+    base_url = config_schema.api.deepseek_ai_base_url
+
+    if not api_key:
+        logger.error("❌ DEEPSEEK_API_KEY not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ DEEPSEEK_API_KEY configured (length: {len(api_key)})")
+
+    if not model_name:
+        logger.error("❌ DEEPSEEK_AI_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ DEEPSEEK_AI_MODEL: {model_name}")
+
+    if not base_url:
+        logger.error("❌ DEEPSEEK_AI_BASE_URL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ DEEPSEEK_AI_BASE_URL: {base_url}")
+
+    return config_valid
+
+
+def _validate_gemini_config() -> bool:
+    """Validate Gemini-specific configuration."""
+    config_valid = True
+
+    if not genai_available:
+        logger.error("❌ Google GenerativeAI library not available for Gemini")
+        config_valid = False
+    else:
+        logger.info("✅ Google GenerativeAI library available")
+
+    api_key = config_schema.api.google_api_key
+    model_name = config_schema.api.google_ai_model
+
+    if not api_key:
+        logger.error("❌ GOOGLE_API_KEY not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ GOOGLE_API_KEY configured (length: {len(api_key)})")
+
+    if not model_name:
+        logger.error("❌ GOOGLE_AI_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ GOOGLE_AI_MODEL: {model_name}")
+
+    return config_valid
+
+
 def test_configuration() -> bool:
     """
     Tests AI configuration and dependencies.
     Returns True if all configurations are valid.
     """
     logger.info("=== Testing AI Configuration ===")
-    config_valid = True
 
     # Test AI provider setting
     ai_provider = config_schema.ai_provider.lower()
-    if not ai_provider:
-        logger.error("❌ AI_PROVIDER not configured")
-        config_valid = False
-    elif ai_provider not in ["deepseek", "gemini"]:
-        logger.error(
-            f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek' or 'gemini'"
-        )
-        config_valid = False
-    else:
-        logger.info(f"✅ AI_PROVIDER: {ai_provider}")
+    if not _validate_ai_provider(ai_provider):
+        return False
 
     # Test provider-specific configuration
     if ai_provider == "deepseek":
-        if not openai_available:
-            logger.error("❌ OpenAI library not available for DeepSeek")
-            config_valid = False
-        else:
-            logger.info("✅ OpenAI library available")
-
-        api_key = config_schema.api.deepseek_api_key
-        model_name = config_schema.api.deepseek_ai_model
-        base_url = config_schema.api.deepseek_ai_base_url
-
-        if not api_key:
-            logger.error("❌ DEEPSEEK_API_KEY not configured")
-            config_valid = False
-        else:
-            logger.info(f"✅ DEEPSEEK_API_KEY configured (length: {len(api_key)})")
-
-        if not model_name:
-            logger.error("❌ DEEPSEEK_AI_MODEL not configured")
-            config_valid = False
-        else:
-            logger.info(f"✅ DEEPSEEK_AI_MODEL: {model_name}")
-
-        if not base_url:
-            logger.error("❌ DEEPSEEK_AI_BASE_URL not configured")
-            config_valid = False
-        else:
-            logger.info(f"✅ DEEPSEEK_AI_BASE_URL: {base_url}")
-
+        return _validate_deepseek_config()
     elif ai_provider == "gemini":
-        if not genai_available:
-            logger.error("❌ Google GenerativeAI library not available for Gemini")
-            config_valid = False
-        else:
-            logger.info("✅ Google GenerativeAI library available")
+        return _validate_gemini_config()
 
-        api_key = config_schema.api.google_api_key
-        model_name = config_schema.api.google_ai_model
+    return True
 
-        if not api_key:
-            logger.error("❌ GOOGLE_API_KEY not configured")
-            config_valid = False
-        else:
-            logger.info(f"✅ GOOGLE_API_KEY configured (length: {len(api_key)})")
 
-        if not model_name:
-            logger.error("❌ GOOGLE_AI_MODEL not configured")
-            config_valid = False
-        else:
-            logger.info(f"✅ GOOGLE_AI_MODEL: {model_name}")
+def _validate_extraction_task_structure(prompt_content: str) -> bool:
+    """Validate extraction_task prompt structure."""
+    has_nested_structure = "suggested_tasks" in prompt_content and "extracted_data" in prompt_content
+    has_flat_structure = "mentioned_names" in prompt_content and "dates" in prompt_content and "locations" in prompt_content
 
-    return config_valid
+    if has_nested_structure or has_flat_structure:
+        structure_type = "nested" if has_nested_structure else "flat"
+        logger.info(f"✅ extraction_task: contains valid {structure_type} structure keywords")
+        return True
+    else:
+        logger.warning("⚠️ extraction_task: missing required structure keywords for either nested or flat format")
+        return False
+
+
+def _validate_single_prompt(prompt_name: str) -> bool:
+    """Validate a single prompt can be loaded and has correct structure."""
+    try:
+        prompt_content = get_prompt(prompt_name)
+        if not prompt_content:
+            logger.error(f"❌ {prompt_name}: failed to load")
+            return False
+
+        logger.info(f"✅ {prompt_name}: loaded ({len(prompt_content)} characters)")
+
+        # Test for key indicators in specific prompts
+        if prompt_name == "extraction_task":
+            return _validate_extraction_task_structure(prompt_content)
+
+        return True
+    except Exception as e:
+        logger.error(f"❌ {prompt_name}: error loading - {e}")
+        return False
 
 
 def test_prompt_loading() -> bool:
@@ -1198,13 +1252,8 @@ def test_prompt_loading() -> bool:
     Returns True if all required prompts can be loaded.
     """
     logger.info("=== Testing Prompt Loading ===")
-    prompts_valid = True
 
-    required_prompts = [
-        "intent_classification",
-        "extraction_task",
-        "genealogical_reply",
-    ]
+    required_prompts = ["intent_classification", "extraction_task", "genealogical_reply"]
 
     try:
         # Test loading all prompts
@@ -1216,51 +1265,12 @@ def test_prompt_loading() -> bool:
         logger.info(f"✅ Loaded {len(all_prompts)} prompts from JSON file")
 
         # Test each required prompt
-        for prompt_name in required_prompts:
-            try:
-                prompt_content = get_prompt(prompt_name)
-                if prompt_content:
-                    logger.info(
-                        f"✅ {prompt_name}: loaded ({len(prompt_content)} characters)"
-                    )
-
-                    # Test for key indicators in specific prompts
-                    if prompt_name == "extraction_task":
-                        # Check for either the nested structure keywords OR the flat structure keywords
-                        has_nested_structure = (
-                            "suggested_tasks" in prompt_content
-                            and "extracted_data" in prompt_content
-                        )
-                        has_flat_structure = (
-                            "mentioned_names" in prompt_content
-                            and "dates" in prompt_content
-                            and "locations" in prompt_content
-                        )
-
-                        if has_nested_structure or has_flat_structure:
-                            structure_type = (
-                                "nested" if has_nested_structure else "flat"
-                            )
-                            logger.info(
-                                f"✅ {prompt_name}: contains valid {structure_type} structure keywords"
-                            )
-                        else:
-                            logger.warning(
-                                f"⚠️ {prompt_name}: missing required structure keywords for either nested or flat format"
-                            )
-                            prompts_valid = False
-                else:
-                    logger.error(f"❌ {prompt_name}: failed to load")
-                    prompts_valid = False
-            except Exception as e:
-                logger.error(f"❌ {prompt_name}: error loading - {e}")
-                prompts_valid = False
+        prompts_valid = all(_validate_single_prompt(prompt_name) for prompt_name in required_prompts)
+        return prompts_valid
 
     except Exception as e:
         logger.error(f"❌ Prompt loading system error: {e}")
-        prompts_valid = False
-
-    return prompts_valid
+        return False
 
 
 def test_pydantic_compatibility() -> bool:
@@ -1315,6 +1325,123 @@ def test_pydantic_compatibility() -> bool:
         return False
 
 
+def _test_ai_fallback_behavior(session_manager: SessionManager) -> bool:
+    """Test AI fallback behavior when provider is not configured."""
+    logger.info("⚠️ AI provider not configured - testing fallback behavior")
+    result = classify_message_intent("Test message", session_manager)
+    if result is None:
+        logger.info("✅ Fallback behavior works correctly")
+        return True
+    logger.error(f"❌ Expected None for disabled AI, got: {result}")
+    return False
+
+
+def _test_intent_classification(session_manager: SessionManager) -> bool:
+    """Test AI intent classification functionality."""
+    test_message = "Hello, I'm interested in genealogy research and finding common ancestors."
+    logger.info("Testing intent classification...")
+    intent_result = classify_message_intent(test_message, session_manager)
+
+    if intent_result and intent_result in EXPECTED_INTENT_CATEGORIES:
+        logger.info(f"✅ Intent classification successful: {intent_result}")
+        return True
+    elif intent_result is None:
+        logger.warning("⚠️ Intent classification returned None (AI may be unavailable)")
+        return False
+    else:
+        logger.warning(f"⚠️ Intent classification returned unexpected result: {intent_result}")
+        return False
+
+
+def _test_genealogical_extraction(session_manager: SessionManager) -> bool:
+    """Test AI genealogical data extraction functionality."""
+    test_context = "SCRIPT: Hello! I'm researching genealogy.\nUSER: My great-grandfather John Smith was born in Aberdeen, Scotland around 1880. He was a fisherman who immigrated to Boston in 1905."
+    logger.info("Testing genealogical data extraction...")
+    extraction_result = extract_genealogical_entities(test_context, session_manager)
+
+    if not extraction_result or not isinstance(extraction_result, dict):
+        logger.error(f"❌ Extraction failed or returned invalid structure: {extraction_result}")
+        return False
+
+    extracted_data = extraction_result.get("extracted_data", {})
+    suggested_tasks = extraction_result.get("suggested_tasks", [])
+
+    # Count extracted items
+    names_count = len(extracted_data.get("mentioned_names", []))
+    locations_count = len(extracted_data.get("mentioned_locations", []))
+    dates_count = len(extracted_data.get("mentioned_dates", []))
+    relationships_count = len(extracted_data.get("potential_relationships", []))
+    facts_count = len(extracted_data.get("key_facts", []))
+    tasks_count = len(suggested_tasks)
+
+    logger.info(
+        f"✅ Extraction successful: extracted {names_count} names, {locations_count} locations, "
+        f"{dates_count} dates, {relationships_count} relationships, {facts_count} key facts, "
+        f"{tasks_count} suggested tasks"
+    )
+
+    # Basic validation that some data was extracted
+    if names_count > 0 or locations_count > 0 or dates_count > 0:
+        logger.info("✅ AI successfully extracted meaningful genealogical data")
+        return True
+    else:
+        logger.warning("⚠️ AI did not extract expected genealogical entities from test context")
+        return True  # Still return True as extraction worked, just didn't find expected data
+
+
+def _test_reply_generation(session_manager: SessionManager) -> bool:
+    """Test AI reply generation functionality."""
+    test_genealogical_data = "Person: John Smith, Born: 1880 Aberdeen Scotland, Occupation: Fisherman, Relationship: Great-grandfather"
+    logger.info("Testing genealogical reply generation...")
+    reply_result = generate_genealogical_reply(
+        "Previous conversation context",
+        "Can you tell me about John Smith?",
+        test_genealogical_data,
+        session_manager,
+    )
+
+    if reply_result and isinstance(reply_result, str) and len(reply_result) > 10:
+        logger.info(f"✅ Reply generation successful (length: {len(reply_result)} characters)")
+        return True
+    else:
+        logger.warning(f"⚠️ Reply generation returned unexpected result: {reply_result}")
+        return True  # Non-critical warning
+
+
+def _test_specialized_analysis_functions(session_manager: SessionManager) -> bool:
+    """Test specialized genealogical analysis functions."""
+    logger.info("Testing specialized genealogical analysis functions...")
+
+    # Test DNA match analysis
+    dna_test_context = "SCRIPT: Hello! I'm researching DNA matches.\nUSER: I have a DNA match showing 150 cM shared with someone named Sarah Johnson. AncestryDNA estimates we're 2nd cousins. We seem to share ancestors from Ireland in the 1800s."
+    dna_result = analyze_dna_match_conversation(dna_test_context, session_manager)
+
+    if dna_result and isinstance(dna_result, dict):
+        logger.info("✅ DNA match analysis function working")
+    else:
+        logger.warning("⚠️ DNA match analysis returned unexpected result")
+
+    # Test family tree verification
+    verification_test_context = "SCRIPT: Hello! I'm verifying family connections.\nUSER: I'm not sure if William Smith is really my great-grandfather. I have conflicting information about his birth year - some records say 1850, others say 1855."
+    verification_result = verify_family_tree_connections(verification_test_context, session_manager)
+
+    if verification_result and isinstance(verification_result, dict):
+        logger.info("✅ Family tree verification function working")
+    else:
+        logger.warning("⚠️ Family tree verification returned unexpected result")
+
+    # Test record research strategy
+    research_test_context = "SCRIPT: Hello! I need research help.\nUSER: I'm looking for birth records for my ancestor Mary O'Brien who was born around 1870 in County Cork, Ireland. She immigrated to Boston around 1890."
+    research_result = generate_record_research_strategy(research_test_context, session_manager)
+
+    if research_result and isinstance(research_result, dict):
+        logger.info("✅ Record research strategy function working")
+    else:
+        logger.warning("⚠️ Record research strategy returned unexpected result")
+
+    return True
+
+
 def test_ai_functionality(session_manager: SessionManager) -> bool:
     """
     Tests actual AI functionality if configuration allows.
@@ -1325,121 +1452,25 @@ def test_ai_functionality(session_manager: SessionManager) -> bool:
     ai_provider = config_schema.ai_provider.lower()
 
     if not ai_provider:
-        logger.info("⚠️ AI provider not configured - testing fallback behavior")
-        result = classify_message_intent("Test message", session_manager)
-        if result is None:
-            logger.info("✅ Fallback behavior works correctly")
-            return True
-        logger.error(f"❌ Expected None for disabled AI, got: {result}")
-        return False
+        return _test_ai_fallback_behavior(session_manager)
 
     # Test with simple inputs if AI is configured
     logger.info(f"Testing with AI provider: {ai_provider}")
 
     try:
         # Test intent classification
-        test_message = (
-            "Hello, I'm interested in genealogy research and finding common ancestors."
-        )
-        logger.info("Testing intent classification...")
-        intent_result = classify_message_intent(test_message, session_manager)
-
-        if intent_result and intent_result in EXPECTED_INTENT_CATEGORIES:
-            logger.info(f"✅ Intent classification successful: {intent_result}")
-        elif intent_result is None:
-            logger.warning(
-                "⚠️ Intent classification returned None (AI may be unavailable)"
-            )
-            return False
-        else:
-            logger.warning(
-                f"⚠️ Intent classification returned unexpected result: {intent_result}"
-            )
+        if not _test_intent_classification(session_manager):
             return False
 
         # Test extraction with genealogical content
-        test_context = "SCRIPT: Hello! I'm researching genealogy.\nUSER: My great-grandfather John Smith was born in Aberdeen, Scotland around 1880. He was a fisherman who immigrated to Boston in 1905."
-        logger.info("Testing genealogical data extraction...")
-        extraction_result = extract_genealogical_entities(test_context, session_manager)
-
-        if extraction_result and isinstance(extraction_result, dict):
-            extracted_data = extraction_result.get("extracted_data", {})
-            suggested_tasks = extraction_result.get("suggested_tasks", [])
-
-            # Count extracted items
-            names_count = len(extracted_data.get("mentioned_names", []))
-            locations_count = len(extracted_data.get("mentioned_locations", []))
-            dates_count = len(extracted_data.get("mentioned_dates", []))
-            relationships_count = len(extracted_data.get("potential_relationships", []))
-            facts_count = len(extracted_data.get("key_facts", []))
-            tasks_count = len(suggested_tasks)
-
-            logger.info(
-                f"✅ Extraction successful: extracted {names_count} names, {locations_count} locations, {dates_count} dates, {relationships_count} relationships, {facts_count} key facts, {tasks_count} suggested tasks"
-            )
-
-            # Basic validation that some data was extracted
-            if names_count > 0 or locations_count > 0 or dates_count > 0:
-                logger.info("✅ AI successfully extracted meaningful genealogical data")
-            else:
-                logger.warning(
-                    "⚠️ AI did not extract expected genealogical entities from test context"
-                )
-
-        else:
-            logger.error(
-                f"❌ Extraction failed or returned invalid structure: {extraction_result}"
-            )
+        if not _test_genealogical_extraction(session_manager):
             return False
 
         # Test reply generation
-        test_genealogical_data = "Person: John Smith, Born: 1880 Aberdeen Scotland, Occupation: Fisherman, Relationship: Great-grandfather"
-        logger.info("Testing genealogical reply generation...")
-        reply_result = generate_genealogical_reply(
-            "Previous conversation context",
-            "Can you tell me about John Smith?",
-            test_genealogical_data,
-            session_manager,
-        )
-
-        if reply_result and isinstance(reply_result, str) and len(reply_result) > 10:
-            logger.info(
-                f"✅ Reply generation successful (length: {len(reply_result)} characters)"
-            )
-        else:
-            logger.warning(
-                f"⚠️ Reply generation returned unexpected result: {reply_result}"
-            )
+        _test_reply_generation(session_manager)
 
         # Test specialized genealogical analysis functions
-        logger.info("Testing specialized genealogical analysis functions...")
-
-        # Test DNA match analysis
-        dna_test_context = "SCRIPT: Hello! I'm researching DNA matches.\nUSER: I have a DNA match showing 150 cM shared with someone named Sarah Johnson. AncestryDNA estimates we're 2nd cousins. We seem to share ancestors from Ireland in the 1800s."
-        dna_result = analyze_dna_match_conversation(dna_test_context, session_manager)
-
-        if dna_result and isinstance(dna_result, dict):
-            logger.info("✅ DNA match analysis function working")
-        else:
-            logger.warning("⚠️ DNA match analysis returned unexpected result")
-
-        # Test family tree verification
-        verification_test_context = "SCRIPT: Hello! I'm verifying family connections.\nUSER: I'm not sure if William Smith is really my great-grandfather. I have conflicting information about his birth year - some records say 1850, others say 1855."
-        verification_result = verify_family_tree_connections(verification_test_context, session_manager)
-
-        if verification_result and isinstance(verification_result, dict):
-            logger.info("✅ Family tree verification function working")
-        else:
-            logger.warning("⚠️ Family tree verification returned unexpected result")
-
-        # Test record research strategy
-        research_test_context = "SCRIPT: Hello! I need research help.\nUSER: I'm looking for birth records for my ancestor Mary O'Brien who was born around 1870 in County Cork, Ireland. She immigrated to Boston around 1890."
-        research_result = generate_record_research_strategy(research_test_context, session_manager)
-
-        if research_result and isinstance(research_result, dict):
-            logger.info("✅ Record research strategy function working")
-        else:
-            logger.warning("⚠️ Record research strategy returned unexpected result")
+        _test_specialized_analysis_functions(session_manager)
 
         logger.info("✅ All AI functionality tests completed successfully")
         return True
@@ -1483,6 +1514,45 @@ from test_utilities import create_standard_test_runner
 run_comprehensive_tests = create_standard_test_runner(ai_interface_tests)
 
 
+def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:
+    """Check if API key is configured and dependencies are available."""
+    if ai_provider == "deepseek":
+        return bool(config_schema.api.deepseek_api_key), openai_available
+    elif ai_provider == "gemini":
+        return bool(config_schema.api.google_api_key), genai_available
+    return False, False
+
+
+def _check_prompts_loaded(errors: list[str]) -> bool:
+    """Check if prompts are loaded successfully."""
+    try:
+        prompts = load_prompts()
+        return bool(prompts and "extraction_task" in prompts)
+    except Exception as e:
+        errors.append(f"Prompt loading error: {e}")
+        return False
+
+
+def _perform_test_call(session_manager: SessionManager, api_key_configured: bool, dependencies_available: bool, errors: list[str]) -> bool:
+    """Perform a quick test call if configuration looks good."""
+    if not (api_key_configured and dependencies_available):
+        return False
+
+    try:
+        result = classify_message_intent("Test", session_manager)
+        return result is not None
+    except Exception as e:
+        errors.append(f"Test call error: {e}")
+        return False
+
+
+def _determine_overall_health(api_key_configured: bool, prompts_loaded: bool, dependencies_available: bool, test_call_successful: bool) -> str:
+    """Determine overall health status based on checks."""
+    if api_key_configured and prompts_loaded and dependencies_available:
+        return "healthy" if test_call_successful else "degraded"
+    return "unhealthy"
+
+
 def quick_health_check(session_manager: SessionManager) -> dict[str, Any]:
     """
     Performs a quick health check of the AI interface.
@@ -1499,49 +1569,28 @@ def quick_health_check(session_manager: SessionManager) -> dict[str, Any]:
     }
 
     try:
-        # Check API key
+        # Check API key and dependencies
         ai_provider = config_schema.ai_provider.lower()
-        if ai_provider == "deepseek":
-            health_status["api_key_configured"] = bool(
-                config_schema.api.deepseek_api_key
-            )
-            health_status["dependencies_available"] = openai_available
-        elif ai_provider == "gemini":
-            health_status["api_key_configured"] = bool(config_schema.api.google_api_key)
-            health_status["dependencies_available"] = genai_available
+        health_status["api_key_configured"], health_status["dependencies_available"] = _check_api_key_and_dependencies(ai_provider)
 
         # Check prompts
-        try:
-            prompts = load_prompts()
-            health_status["prompts_loaded"] = bool(
-                prompts and "extraction_task" in prompts
-            )
-        except Exception as e:
-            health_status["errors"].append(f"Prompt loading error: {e}")
+        health_status["prompts_loaded"] = _check_prompts_loaded(health_status["errors"])
 
-        # Quick test call (only if configuration looks good)
-        if (
-            health_status["api_key_configured"]
-            and health_status["dependencies_available"]
-        ):
-            try:
-                result = classify_message_intent("Test", session_manager)
-                health_status["test_call_successful"] = result is not None
-            except Exception as e:
-                health_status["errors"].append(f"Test call error: {e}")
+        # Quick test call
+        health_status["test_call_successful"] = _perform_test_call(
+            session_manager,
+            health_status["api_key_configured"],
+            health_status["dependencies_available"],
+            health_status["errors"]
+        )
 
         # Determine overall health
-        if (
-            health_status["api_key_configured"]
-            and health_status["prompts_loaded"]
-            and health_status["dependencies_available"]
-        ):
-            if health_status["test_call_successful"]:
-                health_status["overall_health"] = "healthy"
-            else:
-                health_status["overall_health"] = "degraded"
-        else:
-            health_status["overall_health"] = "unhealthy"
+        health_status["overall_health"] = _determine_overall_health(
+            health_status["api_key_configured"],
+            health_status["prompts_loaded"],
+            health_status["dependencies_available"],
+            health_status["test_call_successful"]
+        )
 
     except Exception as e:
         health_status["errors"].append(f"Health check error: {e}")
