@@ -89,7 +89,7 @@ from utils import SessionManager
 def search_gedcom_persons(
     search_criteria: Optional[dict[str, Any]],
     max_results: int = 10,
-    gedcom_path: Optional[str] = None,
+    _gedcom_path: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """
     Search for persons in GEDCOM data based on criteria.
@@ -162,8 +162,8 @@ def search_ancestry_api_persons(
 def get_person_family_details(
     person_id: Optional[str],
     source: str = "auto",
-    session_manager: Optional[SessionManager] = None,
-    gedcom_path: Optional[str] = None,
+    _session_manager: Optional[SessionManager] = None,
+    _gedcom_path: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Get family details for a person from GEDCOM or API.
@@ -199,9 +199,9 @@ def get_person_family_details(
 def get_person_relationship_path(
     person_id: Optional[str],
     reference_id: Optional[str] = None,
-    source: str = "auto",
-    session_manager: Optional[SessionManager] = None,
-    gedcom_path: Optional[str] = None,
+    _source: str = "auto",
+    _session_manager: Optional[SessionManager] = None,
+    _gedcom_path: Optional[str] = None,
 ) -> str:
     """
     Get relationship path between person and reference person.

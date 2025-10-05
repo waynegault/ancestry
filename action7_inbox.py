@@ -1397,7 +1397,7 @@ class InboxProcessor:
         conv_log_upserts_dicts: list[dict],
         person_updates: dict[int, PersonStatusEnum],
         exception_type: str,
-        error: Exception,
+        _error: Exception,
     ) -> tuple[int, int]:
         """Handle exception and attempt final save."""
         logger.warning(f"Attempting final save due to {exception_type}...")

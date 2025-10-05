@@ -611,7 +611,7 @@ def _calculate_processing_range(total_pages_api: int, start_page: int) -> tuple[
 @timeout_protection(timeout=300)
 @error_context("DNA match gathering coordination")
 def coord(  # type: ignore
-    session_manager: SessionManager, config_schema_arg: "ConfigSchema", start: int = 1
+    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
@@ -1318,7 +1318,7 @@ def _process_and_append_match(
 
 
 def _prepare_bulk_db_data(
-    session: SqlAlchemySession,
+    _session: SqlAlchemySession,
     session_manager: SessionManager,
     matches_to_process: List[Dict[str, Any]],
     existing_persons_map: Dict[str, Person],
@@ -3066,7 +3066,7 @@ def _do_match(  # type: ignore
     existing_person_arg: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
     prefetched_tree_data: Optional[Dict[str, Any]],
-    config_schema_arg: "ConfigSchema",
+    _config_schema_arg: "ConfigSchema",
     logger_instance: logging.Logger,
 ) -> Tuple[
     Optional[Dict[str, Any]],
