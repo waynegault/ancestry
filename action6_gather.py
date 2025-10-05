@@ -2751,6 +2751,97 @@ def _prepare_dna_match_operation_data(
 # End of _prepare_dna_match_operation_data
 
 
+def _extract_tree_links_from_data(
+    prefetched_tree_data: Optional[Dict[str, Any]],
+    session_manager: SessionManager,
+    config_schema_arg: "ConfigSchema",
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract CFPID and build tree links from prefetched data."""
+    their_cfpid_final = None
+    facts_link, view_in_tree_link = None, None
+
+    if prefetched_tree_data:
+        their_cfpid_final = prefetched_tree_data.get("their_cfpid")
+        if their_cfpid_final:
+            facts_link, view_in_tree_link = _build_tree_links(
+                their_cfpid_final, session_manager, config_schema_arg
+            )
+
+    return their_cfpid_final, facts_link, view_in_tree_link
+
+
+def _determine_tree_operation(
+    match_in_my_tree: bool,
+    existing_family_tree: Optional[FamilyTree],
+    prefetched_tree_data: Optional[Dict[str, Any]],
+    their_cfpid_final: Optional[str],
+    facts_link: Optional[str],
+    view_in_tree_link: Optional[str],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Literal["create", "update", "none"]:
+    """Determine the tree operation based on match status and existing data."""
+    if match_in_my_tree and existing_family_tree is None:
+        return "create"
+
+    if match_in_my_tree and existing_family_tree is not None:
+        if prefetched_tree_data:  # Only check if we have new data
+            needs_update = _check_family_tree_needs_update(
+                existing_family_tree,
+                prefetched_tree_data,
+                their_cfpid_final,
+                facts_link,
+                view_in_tree_link,
+                log_ref_short,
+                logger_instance,
+            )
+            if needs_update:
+                return "update"
+        return "none"
+
+    if not match_in_my_tree and existing_family_tree is not None:
+        logger_instance.warning(
+            f"{log_ref_short}: Data mismatch - API says not 'in_my_tree', but FamilyTree record exists (ID: {existing_family_tree.id}). Skipping."
+        )
+
+    return "none"
+
+
+def _build_tree_dict_from_data(
+    match_uuid: str,
+    their_cfpid_final: Optional[str],
+    facts_link: Optional[str],
+    view_in_tree_link: Optional[str],
+    prefetched_tree_data: Dict[str, Any],
+    tree_operation: Literal["create", "update"],
+    existing_family_tree: Optional[FamilyTree],
+) -> Dict[str, Any]:
+    """Build tree dictionary from prefetched data."""
+    tree_person_name = prefetched_tree_data.get("their_firstname", "Unknown")
+    tree_dict_base = {
+        "uuid": match_uuid.upper(),
+        "cfpid": their_cfpid_final,
+        "person_name_in_tree": tree_person_name,
+        "facts_link": facts_link,
+        "view_in_tree_link": view_in_tree_link,
+        "actual_relationship": prefetched_tree_data.get("actual_relationship"),
+        "relationship_path": prefetched_tree_data.get("relationship_path"),
+        "_operation": tree_operation,
+        "_existing_tree_id": (
+            existing_family_tree.id
+            if tree_operation == "update" and existing_family_tree
+            else None
+        ),
+    }
+    # Keep all keys for _operation and _existing_tree_id, otherwise only non-None values
+    return {
+        k: v
+        for k, v in tree_dict_base.items()
+        if v is not None
+        or k in ["_operation", "_existing_tree_id", "uuid"]  # Keep uuid
+    }
+
+
 def _prepare_family_tree_operation_data(
     existing_family_tree: Optional[FamilyTree],
     prefetched_tree_data: Optional[Dict[str, Any]],
@@ -2781,65 +2872,35 @@ def _prepare_family_tree_operation_data(
         - tree_operation (Literal["create", "update", "none"]): The operation type determined
           for this family tree record.
     """
-    tree_operation: Literal["create", "update", "none"] = "none"
-    their_cfpid_final = None
-    facts_link, view_in_tree_link = None, None
+    # Extract CFPID and build links
+    their_cfpid_final, facts_link, view_in_tree_link = _extract_tree_links_from_data(
+        prefetched_tree_data, session_manager, config_schema_arg
+    )
 
-    # Extract CFPID and build links if tree data is available
-    if prefetched_tree_data:
-        their_cfpid_final = prefetched_tree_data.get("their_cfpid")
-        if their_cfpid_final:
-            facts_link, view_in_tree_link = _build_tree_links(
-                their_cfpid_final, session_manager, config_schema_arg
-            )
+    # Determine tree operation
+    tree_operation = _determine_tree_operation(
+        match_in_my_tree,
+        existing_family_tree,
+        prefetched_tree_data,
+        their_cfpid_final,
+        facts_link,
+        view_in_tree_link,
+        log_ref_short,
+        logger_instance,
+    )
 
-    # Determine tree operation based on match status and existing data
-    if match_in_my_tree and existing_family_tree is None:
-        tree_operation = "create"
-    elif match_in_my_tree and existing_family_tree is not None:
-        if prefetched_tree_data:  # Only check if we have new data
-            needs_update = _check_family_tree_needs_update(
-                existing_family_tree,
-                prefetched_tree_data,
+    # Build tree dict if operation is needed
+    if tree_operation != "none":
+        if prefetched_tree_data:  # Can only build if data was fetched
+            incoming_tree_data = _build_tree_dict_from_data(
+                match_uuid,
                 their_cfpid_final,
                 facts_link,
                 view_in_tree_link,
-                log_ref_short,
-                logger_instance,
+                prefetched_tree_data,
+                tree_operation,
+                existing_family_tree,
             )
-            if needs_update:
-                tree_operation = "update"
-    elif not match_in_my_tree and existing_family_tree is not None:
-        logger_instance.warning(
-            f"{log_ref_short}: Data mismatch - API says not 'in_my_tree', but FamilyTree record exists (ID: {existing_family_tree.id}). Skipping."
-        )
-        tree_operation = "none"
-
-    if tree_operation != "none":
-        if prefetched_tree_data:  # Can only build if data was fetched
-            tree_person_name = prefetched_tree_data.get("their_firstname", "Unknown")
-            tree_dict_base = {
-                "uuid": match_uuid.upper(),
-                "cfpid": their_cfpid_final,
-                "person_name_in_tree": tree_person_name,
-                "facts_link": facts_link,
-                "view_in_tree_link": view_in_tree_link,
-                "actual_relationship": prefetched_tree_data.get("actual_relationship"),
-                "relationship_path": prefetched_tree_data.get("relationship_path"),
-                "_operation": tree_operation,
-                "_existing_tree_id": (
-                    existing_family_tree.id
-                    if tree_operation == "update" and existing_family_tree
-                    else None
-                ),
-            }
-            # Keep all keys for _operation and _existing_tree_id, otherwise only non-None values
-            incoming_tree_data = {
-                k: v
-                for k, v in tree_dict_base.items()
-                if v is not None
-                or k in ["_operation", "_existing_tree_id", "uuid"]  # Keep uuid
-            }
             return incoming_tree_data, tree_operation
         logger_instance.warning(
             f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
