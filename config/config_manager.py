@@ -779,54 +779,41 @@ class ConfigManager:
         if selenium_config:
             config["selenium"] = selenium_config
 
+    def _set_string_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+        """Set a string configuration value from environment variable."""
+        value = os.getenv(env_var)
+        if value:
+            if section not in config:
+                config[section] = {}
+            config[section][key] = value
+
+    def _set_int_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+        """Set an integer configuration value from environment variable."""
+        value = os.getenv(env_var)
+        if value:
+            try:
+                if section not in config:
+                    config[section] = {}
+                config[section][key] = int(value)
+            except ValueError:
+                logger.warning(f"Invalid {env_var} value: {value}")
+
     def _load_additional_api_config_from_env(self, config: dict[str, Any]) -> None:
         """Load additional API configuration from environment variables."""
         if "api" not in config:
             config["api"] = {}
 
-        base_url_value = os.getenv("BASE_URL")
-        if base_url_value:
-            config["api"]["base_url"] = base_url_value
+        # String configurations
+        self._set_string_config(config, "api", "base_url", "BASE_URL")
+        self._set_string_config(config, "api", "api_base_url", "API_BASE_URL")
+        self._set_string_config(config, "api", "tree_name", "TREE_NAME")
+        self._set_string_config(config, "api", "tree_id", "TREE_ID")
 
-        api_base_url_value = os.getenv("API_BASE_URL")
-        if api_base_url_value:
-            config["api"]["api_base_url"] = api_base_url_value
-
-        request_timeout_value = os.getenv("REQUEST_TIMEOUT")
-        if request_timeout_value:
-            try:
-                config["api"]["request_timeout"] = int(request_timeout_value)
-            except ValueError:
-                logger.warning(f"Invalid REQUEST_TIMEOUT value: {request_timeout_value}")
-
-        tree_name_value = os.getenv("TREE_NAME")
-        if tree_name_value:
-            config["api"]["tree_name"] = tree_name_value
-
-        tree_id_value = os.getenv("TREE_ID")
-        if tree_id_value:
-            config["api"]["tree_id"] = tree_id_value
-
-        max_pages_value = os.getenv("MAX_PAGES")
-        if max_pages_value:
-            try:
-                config["api"]["max_pages"] = int(max_pages_value)
-            except ValueError:
-                logger.warning(f"Invalid MAX_PAGES value: {max_pages_value}")
-
-        max_concurrency_value = os.getenv("MAX_CONCURRENCY")
-        if max_concurrency_value:
-            try:
-                config["api"]["max_concurrency"] = int(max_concurrency_value)
-            except ValueError:
-                logger.warning(f"Invalid MAX_CONCURRENCY value: {max_concurrency_value}")
-
-        thread_pool_workers_value = os.getenv("THREAD_POOL_WORKERS")
-        if thread_pool_workers_value:
-            try:
-                config["api"]["thread_pool_workers"] = int(thread_pool_workers_value)
-            except ValueError:
-                logger.warning(f"Invalid THREAD_POOL_WORKERS value: {thread_pool_workers_value}")
+        # Integer configurations
+        self._set_int_config(config, "api", "request_timeout", "REQUEST_TIMEOUT")
+        self._set_int_config(config, "api", "max_pages", "MAX_PAGES")
+        self._set_int_config(config, "api", "max_concurrency", "MAX_CONCURRENCY")
+        self._set_int_config(config, "api", "thread_pool_workers", "THREAD_POOL_WORKERS")
 
     def _load_processing_limits_from_env(self, config: dict[str, Any]) -> None:
         """Load processing limit configuration from environment variables."""
