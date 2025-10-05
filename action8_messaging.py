@@ -1292,6 +1292,73 @@ class ErrorCategorizer:
         }
         self.monitoring_hooks = []
 
+    def _categorize_success_status(self, status_lower: str) -> tuple[str, str] | None:
+        """Categorize successful status. Returns None if not a success status."""
+        success_statuses = {
+            'sent': ['sent', 'delivered ok'],
+            'acked': ['acked', 'acknowledged'],
+        }
+
+        for category, status_list in success_statuses.items():
+            if status_lower in status_list:
+                return category, 'success'
+
+        return None
+
+    def _categorize_skip_status(self, status_lower: str) -> tuple[str, str] | None:
+        """Categorize skip status. Returns None if not a skip status."""
+        if not status_lower.startswith('skipped'):
+            return None
+
+        business_logic_skips = [
+            'interval', 'cooldown', 'recent_message', 'duplicate',
+            'filter', 'rule', 'preference', 'opt_out', 'blocked'
+        ]
+
+        for skip_type in business_logic_skips:
+            if skip_type in status_lower:
+                self.error_counts['business_logic_skips'] += 1
+                return 'skipped', f'business_logic_{skip_type}'
+
+        # Generic skip
+        self.error_counts['business_logic_skips'] += 1
+        return 'skipped', 'business_logic_generic'
+
+    def _categorize_error_detail(self, error_detail: str) -> tuple[str, str]:
+        """Categorize error based on detail string. Returns (category, error_type)."""
+        # Data-driven error mapping
+        error_patterns = [
+            (['auth', 'login'], 'authentication_errors', 'authentication_failure'),
+            (['rate', '429'], 'rate_limit_errors', 'rate_limit_exceeded'),
+            (['cascade'], 'cascade_errors', 'session_cascade'),
+            (['template'], 'template_errors', 'template_failure'),
+            (['database', 'db'], 'database_errors', 'database_failure'),
+            (['api'], 'api_failures', 'api_failure'),
+        ]
+
+        for keywords, counter_key, error_type in error_patterns:
+            if any(keyword in error_detail for keyword in keywords):
+                self.error_counts[counter_key] += 1
+                return 'error', error_type
+
+        # Generic technical error
+        self.error_counts['technical_errors'] += 1
+        return 'error', 'technical_failure'
+
+    def _categorize_error_status(self, status: str, status_lower: str) -> tuple[str, str] | None:
+        """Categorize error status. Returns None if not an error status."""
+        if not status_lower.startswith('error'):
+            return None
+
+        # Extract error type from parentheses
+        if '(' in status and ')' in status:
+            error_detail = status[status.find('(')+1:status.find(')')].lower()
+            return self._categorize_error_detail(error_detail)
+
+        # Generic technical error
+        self.error_counts['technical_errors'] += 1
+        return 'error', 'technical_failure'
+
     def categorize_status(self, status: str) -> tuple[str, str]:
         """
         Categorize a status string into proper category and type.
@@ -1307,56 +1374,20 @@ class ErrorCategorizer:
 
         status_lower = status.lower()
 
-        # Successful outcomes
-        if status_lower in ['sent', 'delivered ok']:
-            return 'sent', 'success'
-        if status_lower in ['acked', 'acknowledged']:
-            return 'acked', 'success'
+        # Try categorizing as success
+        result = self._categorize_success_status(status_lower)
+        if result:
+            return result
 
-        # Business logic skips (not errors)
-        business_logic_skips = [
-            'interval', 'cooldown', 'recent_message', 'duplicate',
-            'filter', 'rule', 'preference', 'opt_out', 'blocked'
-        ]
+        # Try categorizing as skip
+        result = self._categorize_skip_status(status_lower)
+        if result:
+            return result
 
-        if status_lower.startswith('skipped'):
-            for skip_type in business_logic_skips:
-                if skip_type in status_lower:
-                    self.error_counts['business_logic_skips'] += 1
-                    return 'skipped', f'business_logic_{skip_type}'
-
-            # Generic skip
-            self.error_counts['business_logic_skips'] += 1
-            return 'skipped', 'business_logic_generic'
-
-        # Technical errors
-        if status_lower.startswith('error'):
-            # Extract error type from parentheses
-            if '(' in status and ')' in status:
-                error_detail = status[status.find('(')+1:status.find(')')].lower()
-
-                if 'auth' in error_detail or 'login' in error_detail:
-                    self.error_counts['authentication_errors'] += 1
-                    return 'error', 'authentication_failure'
-                if 'rate' in error_detail or '429' in error_detail:
-                    self.error_counts['rate_limit_errors'] += 1
-                    return 'error', 'rate_limit_exceeded'
-                if 'cascade' in error_detail:
-                    self.error_counts['cascade_errors'] += 1
-                    return 'error', 'session_cascade'
-                if 'template' in error_detail:
-                    self.error_counts['template_errors'] += 1
-                    return 'error', 'template_failure'
-                if 'database' in error_detail or 'db' in error_detail:
-                    self.error_counts['database_errors'] += 1
-                    return 'error', 'database_failure'
-                if 'api' in error_detail:
-                    self.error_counts['api_failures'] += 1
-                    return 'error', 'api_failure'
-
-            # Generic technical error
-            self.error_counts['technical_errors'] += 1
-            return 'error', 'technical_failure'
+        # Try categorizing as error
+        result = self._categorize_error_status(status, status_lower)
+        if result:
+            return result
 
         # Default to error for unknown status
         self.error_counts['technical_errors'] += 1
@@ -1577,6 +1608,34 @@ class ProactiveApiManager:
         jitter = random.uniform(0.8, 1.2)  # ±20% jitter
         return delay * jitter
 
+    def _validate_message_send_response(self, response_data: Any, operation: str) -> bool | None:
+        """Validate message send response. Returns True/False if validated, None if not applicable."""
+        if not operation.startswith("send_message"):
+            return None
+
+        if not isinstance(response_data, tuple) or len(response_data) < 2:
+            return None
+
+        status = response_data[0]
+        if status and "delivered OK" in status:
+            logger.debug(f"✅ API validation passed for {operation}: {status}")
+            return True
+
+        if status and "error" in status.lower():
+            logger.warning(f"❌ API validation failed for {operation}: {status}")
+            return False
+
+        return None
+
+    def _validate_generic_response(self, response_data: Any, operation: str) -> bool:
+        """Validate generic API response. Returns True if valid."""
+        if isinstance(response_data, dict) and ("error" in response_data or "errors" in response_data):
+            logger.warning(f"❌ API validation failed for {operation}: Response contains errors")
+            return False
+
+        logger.debug(f"✅ API validation passed for {operation}")
+        return True
+
     def validate_api_response(self, response_data: Any, operation: str) -> bool:
         """
         Validate API response to ensure it's actually successful.
@@ -1592,24 +1651,13 @@ class ProactiveApiManager:
             logger.warning(f"API validation failed for {operation}: Response is None")
             return False
 
-        # For message sending, check for specific success indicators
-        if operation.startswith("send_message") and isinstance(response_data, tuple) and len(response_data) >= 2:
-                status = response_data[0]
-                if status and "delivered OK" in status:
-                    logger.debug(f"✅ API validation passed for {operation}: {status}")
-                    return True
-                if status and "error" in status.lower():
-                    logger.warning(f"❌ API validation failed for {operation}: {status}")
-                    return False
+        # Try message send validation
+        result = self._validate_message_send_response(response_data, operation)
+        if result is not None:
+            return result
 
-        # Generic validation for other responses
-        if isinstance(response_data, dict) and ("error" in response_data or "errors" in response_data):
-            # Check for common error indicators
-                logger.warning(f"❌ API validation failed for {operation}: Response contains errors")
-                return False
-
-        logger.debug(f"✅ API validation passed for {operation}")
-        return True
+        # Fall back to generic validation
+        return self._validate_generic_response(response_data, operation)
 
     def record_api_result(self, success: bool, operation: str) -> None:
         """
@@ -2603,6 +2651,60 @@ def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates
     return commit_success, batch_num
 
 
+def _create_result_dict(sent_count: int, acked_count: int, skipped_count: int,
+                       error_count: int, batch_num: int, critical_db_error: bool = False,
+                       overall_success: bool = True, should_continue: bool = True) -> dict:
+    """Create standardized result dictionary."""
+    return {
+        'sent_count': sent_count,
+        'acked_count': acked_count,
+        'skipped_count': skipped_count,
+        'error_count': error_count,
+        'batch_num': batch_num,
+        'critical_db_error_occurred': critical_db_error,
+        'overall_success': overall_success,
+        'should_continue': should_continue
+    }
+
+
+def _log_message_creation_debug(new_log_object: Any, db_session: Session, person_id_int: int) -> None:
+    """Log message creation for debugging."""
+    if new_log_object and hasattr(new_log_object, 'direction') and new_log_object.direction == MessageDirectionEnum.OUT:
+        template_info = "Unknown"
+        if new_log_object.message_template_id:
+            message_template_obj = db_session.query(MessageTemplate).filter(
+                MessageTemplate.id == new_log_object.message_template_id
+            ).first()
+            if message_template_obj:
+                template_info = message_template_obj.template_key
+        logger.debug(f"Created new OUT message for Person {person_id_int}: {template_info}")
+
+
+def _handle_batch_commit_if_needed(
+    db_session: Session,
+    db_logs_to_add_dicts: list,
+    person_updates: dict,
+    batch_num: int,
+    session_manager: SessionManager,
+    db_commit_batch_size: int,
+    MAX_BATCH_MEMORY_MB: int,
+    MAX_BATCH_ITEMS: int
+) -> tuple[bool, int, bool]:
+    """Handle batch commit if needed. Returns (critical_error, batch_num, overall_success)."""
+    current_batch_size, memory_usage_mb = _calculate_batch_memory(db_logs_to_add_dicts, person_updates)
+
+    if _should_commit_batch(current_batch_size, memory_usage_mb,
+                           db_commit_batch_size, MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS):
+        commit_success, batch_num = _perform_batch_commit(
+            db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager
+        )
+
+        if not commit_success:
+            return True, batch_num, False
+
+    return False, batch_num, True
+
+
 def _process_single_candidate_iteration(
     person: Any,
     db_session: Session,
@@ -2634,33 +2736,15 @@ def _process_single_candidate_iteration(
     # Check message send limit
     if _check_message_send_limit(max_messages_to_send_this_run, sent_count, acked_count,
                                   progress_bar, skipped_count, error_count):
-        return {
-            'sent_count': sent_count,
-            'acked_count': acked_count,
-            'skipped_count': skipped_count + 1,
-            'error_count': error_count,
-            'batch_num': batch_num,
-            'critical_db_error_occurred': False,
-            'overall_success': True,
-            'should_continue': True
-        }
+        return _create_result_dict(sent_count, acked_count, skipped_count + 1, error_count, batch_num)
 
     # Check halt signal
-    if _check_halt_signal(session_manager, processed_in_loop, 0):  # total_candidates not needed here
-        return {
-            'sent_count': sent_count,
-            'acked_count': acked_count,
-            'skipped_count': skipped_count,
-            'error_count': error_count,
-            'batch_num': batch_num,
-            'critical_db_error_occurred': False,
-            'overall_success': True,
-            'should_continue': False
-        }
+    if _check_halt_signal(session_manager, processed_in_loop, 0):
+        return _create_result_dict(sent_count, acked_count, skipped_count, error_count, batch_num,
+                                  should_continue=False)
 
     # Log periodic progress
-    _log_periodic_progress(processed_in_loop, 0, sent_count,  # total_candidates not needed here
-                          acked_count, skipped_count, error_count)
+    _log_periodic_progress(processed_in_loop, 0, sent_count, acked_count, skipped_count, error_count)
 
     # Get person ID and message history
     person_id_int = int(safe_column_value(person, "id", 0))
@@ -2683,27 +2767,11 @@ def _process_single_candidate_iteration(
             f"🚨 SESSION DEATH CASCADE in person processing for {person_name}: {cascade_err}. "
             f"Halting remaining processing to prevent infinite cascade."
         )
-        return {
-            'sent_count': sent_count,
-            'acked_count': acked_count,
-            'skipped_count': skipped_count,
-            'error_count': error_count,
-            'batch_num': batch_num,
-            'critical_db_error_occurred': False,
-            'overall_success': True,
-            'should_continue': False
-        }
+        return _create_result_dict(sent_count, acked_count, skipped_count, error_count, batch_num,
+                                  should_continue=False)
 
     # Log message creation for debugging
-    if new_log_object and hasattr(new_log_object, 'direction') and new_log_object.direction == MessageDirectionEnum.OUT:
-        template_info = "Unknown"
-        if new_log_object.message_template_id:
-            message_template_obj = db_session.query(MessageTemplate).filter(
-                MessageTemplate.id == new_log_object.message_template_id
-            ).first()
-            if message_template_obj:
-                template_info = message_template_obj.template_key
-        logger.debug(f"Created new OUT message for Person {person_id_int}: {template_info}")
+    _log_message_creation_debug(new_log_object, db_session, person_id_int)
 
     # Update performance tracking
     person_duration = time.time() - person_start_time
@@ -2714,7 +2782,7 @@ def _process_single_candidate_iteration(
         status, new_log_object, person_update_tuple,
         sent_count, acked_count, skipped_count, error_count,
         db_logs_to_add_dicts, person_updates,
-        error_categorizer, person, True  # overall_success always True here
+        error_categorizer, person, True
     )
 
     # Update progress bar
@@ -2724,30 +2792,14 @@ def _process_single_candidate_iteration(
         )
         progress_bar.update(1)
 
-    # Check if batch commit is needed
-    current_batch_size, memory_usage_mb = _calculate_batch_memory(db_logs_to_add_dicts, person_updates)
+    # Handle batch commit if needed
+    critical_db_error, batch_num, overall_success = _handle_batch_commit_if_needed(
+        db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager,
+        db_commit_batch_size, MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS
+    )
 
-    critical_db_error_occurred = False
-    if _should_commit_batch(current_batch_size, memory_usage_mb,
-                           db_commit_batch_size, MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS):
-        commit_success, batch_num = _perform_batch_commit(
-            db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager
-        )
-
-        if not commit_success:
-            critical_db_error_occurred = True
-            overall_success = False
-
-    return {
-        'sent_count': sent_count,
-        'acked_count': acked_count,
-        'skipped_count': skipped_count,
-        'error_count': error_count,
-        'batch_num': batch_num,
-        'critical_db_error_occurred': critical_db_error_occurred,
-        'overall_success': overall_success,
-        'should_continue': not critical_db_error_occurred
-    }
+    return _create_result_dict(sent_count, acked_count, skipped_count, error_count, batch_num,
+                              critical_db_error, overall_success, not critical_db_error)
 
 
 def _log_final_summary(total_candidates: int, processed_in_loop: int, sent_count: int,
