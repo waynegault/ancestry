@@ -25,7 +25,8 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from typing import Any, Optional
+from types import TracebackType
+from typing import Any, Callable, Optional
 
 
 class CredentialManager:
@@ -818,6 +819,53 @@ def _test_import_dependencies() -> None:
 
 
 # ==============================================
+# FALLBACK TEST FRAMEWORK CLASSES
+# ==============================================
+
+
+class _FallbackTestSuite:
+    """Fallback TestSuite implementation when test_framework is not available."""
+    def __init__(self, name: str, _module: Any = None):
+        self.name = name
+        self.tests_passed = 0
+        self.tests_failed = 0
+
+    def start_suite(self) -> None:
+        print(f"Starting {self.name} tests...")
+
+    def run_test(self, name: str, func: Callable, _description: str = "") -> None:
+        try:
+            func()
+            self.tests_passed += 1
+            print(f"✓ {name}")
+        except Exception as e:
+            self.tests_failed += 1
+            print(f"✗ {name}: {e}")
+
+    def run_all_tests(self) -> bool:
+        return self.tests_failed == 0
+
+
+class _FallbackSuppressLogging:
+    """Fallback suppress_logging context manager."""
+    def __enter__(self) -> "_FallbackSuppressLogging":
+        return self
+
+    def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> None:
+        pass
+
+
+def _fallback_create_mock_data() -> dict:
+    """Fallback create_mock_data function."""
+    return {}
+
+
+def _fallback_assert_valid_function(func: Any, func_name: str = "") -> None:
+    """Fallback assert_valid_function."""
+    assert callable(func), f"{func_name} should be callable"
+
+
+# ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
 
@@ -828,44 +876,7 @@ def _get_test_framework():
         from test_framework import TestSuite, assert_valid_function, create_mock_data, suppress_logging
         return TestSuite, assert_valid_function, create_mock_data, suppress_logging
     except ImportError:
-        from types import TracebackType
-        from typing import Any, Callable, Optional
-
-        class TestSuite:
-            def __init__(self, name: str, _module: Any = None):
-                self.name = name
-                self.tests_passed = 0
-                self.tests_failed = 0
-
-            def start_suite(self) -> None:
-                print(f"Starting {self.name} tests...")
-
-            def run_test(self, name: str, func: Callable, _description: str = "") -> None:
-                try:
-                    func()
-                    self.tests_passed += 1
-                    print(f"✓ {name}")
-                except Exception as e:
-                    self.tests_failed += 1
-                    print(f"✗ {name}: {e}")
-
-            def run_all_tests(self) -> bool:
-                return self.tests_failed == 0
-
-        class SuppressLogging:
-            def __enter__(self) -> "SuppressLogging":
-                return self
-
-            def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> None:
-                pass
-
-        def create_mock_data() -> dict:
-            return {}
-
-        def assert_valid_function(func: Any, func_name: str = "") -> None:
-            assert callable(func), f"{func_name} should be callable"
-
-        return TestSuite, assert_valid_function, create_mock_data, SuppressLogging
+        return _FallbackTestSuite, _fallback_assert_valid_function, _fallback_create_mock_data, _FallbackSuppressLogging
 
 
 def credential_manager_module_tests() -> bool:
