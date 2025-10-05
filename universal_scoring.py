@@ -241,6 +241,46 @@ def _get_field_description(field_key: str, score: float) -> str:
     return "No match"
 
 
+def _normalize_name_fields(criteria: dict[str, Any], normalized: dict[str, Any]) -> None:
+    """Normalize name fields to lowercase."""
+    if 'first_name' in criteria:
+        normalized['first_name'] = str(criteria['first_name']).lower().strip()
+    if 'surname' in criteria:
+        normalized['surname'] = str(criteria['surname']).lower().strip()
+
+
+def _normalize_numeric_fields(criteria: dict[str, Any], normalized: dict[str, Any]) -> None:
+    """Normalize numeric fields with validation."""
+    for field in ['birth_year', 'death_year']:
+        if field in criteria and criteria[field] is not None:
+            try:
+                normalized[field] = int(criteria[field])
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid {field}: {criteria[field]}")
+                normalized[field] = None
+
+
+def _normalize_gender_field(criteria: dict[str, Any], normalized: dict[str, Any]) -> None:
+    """Normalize gender field to standard format."""
+    if 'gender' not in criteria:
+        return
+
+    gender = str(criteria['gender']).lower().strip()
+    if gender in ['m', 'male', 'man']:
+        normalized['gender'] = 'm'
+    elif gender in ['f', 'female', 'woman']:
+        normalized['gender'] = 'f'
+    else:
+        normalized['gender'] = gender
+
+
+def _copy_remaining_fields(criteria: dict[str, Any], normalized: dict[str, Any]) -> None:
+    """Copy remaining fields that weren't normalized."""
+    for key, value in criteria.items():
+        if key not in normalized:
+            normalized[key] = value
+
+
 def validate_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
     """
     Validate and normalize search criteria for consistent scoring.
@@ -253,35 +293,11 @@ def validate_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
     """
     normalized = {}
 
-    # Normalize names to lowercase
-    if 'first_name' in criteria:
-        normalized['first_name'] = str(criteria['first_name']).lower().strip()
-    if 'surname' in criteria:
-        normalized['surname'] = str(criteria['surname']).lower().strip()
-
-    # Normalize numeric fields
-    for field in ['birth_year', 'death_year']:
-        if field in criteria and criteria[field] is not None:
-            try:
-                normalized[field] = int(criteria[field])
-            except (ValueError, TypeError):
-                logger.warning(f"Invalid {field}: {criteria[field]}")
-                normalized[field] = None
-
-    # Normalize gender
-    if 'gender' in criteria:
-        gender = str(criteria['gender']).lower().strip()
-        if gender in ['m', 'male', 'man']:
-            normalized['gender'] = 'm'
-        elif gender in ['f', 'female', 'woman']:
-            normalized['gender'] = 'f'
-        else:
-            normalized['gender'] = gender
-
-    # Copy other fields as-is
-    for key, value in criteria.items():
-        if key not in normalized:
-            normalized[key] = value
+    # Normalize different field types
+    _normalize_name_fields(criteria, normalized)
+    _normalize_numeric_fields(criteria, normalized)
+    _normalize_gender_field(criteria, normalized)
+    _copy_remaining_fields(criteria, normalized)
 
     return normalized
 
