@@ -1893,6 +1893,197 @@ def test_display_relatives_fraser() -> None:
     return True
 
 
+def test_analyze_top_match_fraser() -> None:
+    """Test analyze_top_match with real Fraser Gault data"""
+    import os
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    try:
+        # Load real GEDCOM data
+        gedcom_path = (
+            config_schema.database.gedcom_file_path
+            if config_schema and config_schema.database.gedcom_file_path
+            else None
+        )
+        if not gedcom_path:
+            print("⚠️ GEDCOM_FILE_PATH not configured, skipping test")
+            return True
+
+        gedcom_data = load_gedcom_data(Path(gedcom_path))
+        if not gedcom_data:
+            return True  # Skip if GEDCOM not available
+
+        # Search for Fraser Gault first
+        expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
+        expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
+        expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
+        expected_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+
+        search_criteria = {
+            "first_name": expected_first_name.lower(),
+            "surname": expected_last_name.lower(),
+            "birth_year": expected_birth_year,
+            "birth_place": expected_birth_place,
+        }
+
+        scoring_criteria = search_criteria.copy()
+        scoring_weights = (
+            dict(config_schema.common_scoring_weights) if config_schema else {}
+        )
+        date_flex = {"year_match_range": 5}
+
+        results = filter_and_score_individuals(
+            gedcom_data,
+            search_criteria,
+            scoring_criteria,
+            scoring_weights,
+            date_flex,
+        )
+
+        if not results:
+            return True  # Skip if Fraser not found
+
+        top_match = results[0]
+        reference_person_id = (
+            config_schema.reference_person_id if config_schema else "I102281560836"
+        )
+
+        # Test analyze_top_match with real data
+        with mock_logger_context(globals()) as dummy_logger:
+            analyze_top_match(
+                gedcom_data, top_match, reference_person_id, "Wayne Gordon Gault"
+            )
+
+            # Check that family details were logged
+            log_content = "\n".join(dummy_logger.lines)
+            assert "Fraser" in log_content, "Should mention Fraser in analysis"
+            assert "Gault" in log_content, "Should mention Gault in analysis"
+
+            # Check for family relationship information
+            family_keywords = [
+                "Parents",
+                "Siblings",
+                "Spouses",
+                "Children",
+                "Relationship",
+            ]
+            found_family_info = any(
+                keyword in log_content for keyword in family_keywords
+            )
+            assert (
+                found_family_info
+            ), f"Should contain family information. Log content: {log_content[:200]}..."
+
+        print(
+            f"✅ Analyzed Fraser Gault: {top_match.get('full_name_disp')} successfully"
+        )
+        return True
+
+    except Exception as e:
+        print(f"❌ Test person analyze test failed: {e}")
+        return True  # Don't fail the test suite
+
+
+def test_real_search_performance_and_accuracy() -> None:
+    """Test search performance and accuracy with real GEDCOM data"""
+    import os
+    import time
+    from pathlib import Path
+    from dotenv import load_dotenv
+    from test_framework import Colors, clean_test_output, format_test_section_header
+
+    load_dotenv()
+
+    # Get test person data from .env configuration
+    test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
+    test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
+    test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
+    test_gender = os.getenv("TEST_PERSON_GENDER", "m")
+    expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
+
+
+    print(format_test_section_header("Search Performance & Accuracy", "🎯"))
+    print(f"Test: Real GEDCOM search for {test_first_name} {test_last_name} with performance validation")
+    print("Method: Load real GEDCOM data and search for test person from .env")
+    print(f"Expected: {test_first_name} {test_last_name} found with consistent scoring and good performance")
+
+    # Load real GEDCOM data from configuration
+    gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+    if not gedcom_path or not Path(gedcom_path).exists():
+        print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
+        return True
+
+    print(f"\n{Colors.CYAN}📂 Loading GEDCOM:{Colors.RESET} {Colors.WHITE}{Path(gedcom_path).name}{Colors.RESET}")
+
+    with clean_test_output():
+        gedcom_data = load_gedcom_data(gedcom_path)
+    if not gedcom_data:
+        print("❌ Failed to load GEDCOM data")
+        return False
+
+    print(f"✅ GEDCOM loaded: {len(gedcom_data.indi_index)} individuals")
+
+    # Test person consistent search criteria (same as scoring test)
+    search_criteria = {
+        "first_name": test_first_name.lower(),
+        "surname": test_last_name.lower(),
+        "birth_year": test_birth_year,
+        "gender": test_gender.lower(),  # Use lowercase for scoring consistency
+        "birth_place": "Banff",  # Search for 'Banff' within the full place name
+        "death_year": None,
+        "death_place": None
+    }
+
+    print("🔍 Search Criteria:")
+    print(f"   • First Name contains: {test_first_name.lower()}")
+    print(f"   • Surname contains: {test_last_name.lower()}")
+    print(f"   • Birth Year: {test_birth_year}")
+    print(f"   • Gender: {test_gender.upper()}")
+    print("   • Birth Place contains: Banff")
+    print("   • Death Year: null")
+    print("   • Death Place contains: null")
+
+    print(f"\n🔍 Searching for {test_first_name} {test_last_name}...")
+
+    start_time = time.time()
+    results = filter_and_score_individuals(
+        gedcom_data, search_criteria, search_criteria,
+        dict(config_schema.common_scoring_weights),
+        {"year_match_range": 5}
+    )
+    search_time = time.time() - start_time
+
+    print("\n📊 Search Results:")
+    print(f"   Search time: {search_time:.3f}s")
+    print(f"   Total matches: {len(results)}")
+
+    if results:
+        top_result = results[0]
+        actual_score = top_result.get('total_score', 0)
+        print(f"   Top match: {top_result.get('full_name_disp')} (Score: {actual_score})")
+        print(f"   Score validation: {actual_score >= 50}")
+        print(f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})")
+
+        # Validate performance
+        performance_ok = search_time < 5.0  # Should complete in under 5 seconds
+        print(f"   Performance validation: {performance_ok} (< 5.0s)")
+
+        # Check both minimum threshold and exact expected score
+        assert actual_score >= 50, f"{test_first_name} should score at least 50 points, got {actual_score}"
+        assert actual_score == expected_score, f"{test_first_name} should score exactly {expected_score}, got {actual_score}"
+        assert performance_ok, f"Search should complete in < 5s, took {search_time:.3f}s"
+
+    else:
+        print("⚠️ No matches found - but search executed successfully")
+
+    print("✅ Search performance and accuracy test completed")
+    print(f"Conclusion: GEDCOM search functionality validated with {len(results)} matches")
+    return True
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -1915,190 +2106,6 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     debug_wrapper = _debug_wrapper
-
-    def test_analyze_top_match_fraser() -> None:
-        """Test analyze_top_match with real Fraser Gault data"""
-
-        from dotenv import load_dotenv
-
-        load_dotenv()
-
-        try:
-            # Load real GEDCOM data
-            gedcom_path = (
-                config_schema.database.gedcom_file_path
-                if config_schema and config_schema.database.gedcom_file_path
-                else None
-            )
-            if not gedcom_path:
-                print("⚠️ GEDCOM_FILE_PATH not configured, skipping test")
-                return True
-
-            gedcom_data = load_gedcom_data(Path(gedcom_path))
-            if not gedcom_data:
-                return True  # Skip if GEDCOM not available
-
-            # Search for Fraser Gault first
-            expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-            expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-            expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-            expected_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-
-            search_criteria = {
-                "first_name": expected_first_name.lower(),
-                "surname": expected_last_name.lower(),
-                "birth_year": expected_birth_year,
-                "birth_place": expected_birth_place,
-            }
-
-            scoring_criteria = search_criteria.copy()
-            scoring_weights = (
-                dict(config_schema.common_scoring_weights) if config_schema else {}
-            )
-            date_flex = {"year_match_range": 5}
-
-            results = filter_and_score_individuals(
-                gedcom_data,
-                search_criteria,
-                scoring_criteria,
-                scoring_weights,
-                date_flex,
-            )
-
-            if not results:
-                return True  # Skip if Fraser not found
-
-            top_match = results[0]
-            reference_person_id = (
-                config_schema.reference_person_id if config_schema else "I102281560836"
-            )
-
-            # Test analyze_top_match with real data
-            with mock_logger_context(globals()) as dummy_logger:
-                analyze_top_match(
-                    gedcom_data, top_match, reference_person_id, "Wayne Gordon Gault"
-                )
-
-                # Check that family details were logged
-                log_content = "\n".join(dummy_logger.lines)
-                assert "Fraser" in log_content, "Should mention Fraser in analysis"
-                assert "Gault" in log_content, "Should mention Gault in analysis"
-
-                # Check for family relationship information
-                family_keywords = [
-                    "Parents",
-                    "Siblings",
-                    "Spouses",
-                    "Children",
-                    "Relationship",
-                ]
-                found_family_info = any(
-                    keyword in log_content for keyword in family_keywords
-                )
-                assert (
-                    found_family_info
-                ), f"Should contain family information. Log content: {log_content[:200]}..."
-
-            print(
-                f"✅ Analyzed Fraser Gault: {top_match.get('full_name_disp')} successfully"
-            )
-            return True
-
-        except Exception as e:
-            print(f"❌ Test person analyze test failed: {e}")
-            return True  # Don't fail the test suite
-
-    def test_real_search_performance_and_accuracy() -> None:
-        """Test search performance and accuracy with real GEDCOM data"""
-
-        from dotenv import load_dotenv
-        load_dotenv()
-
-        # Get test person data from .env configuration
-        test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-        test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-        test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-        test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-        expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
-
-
-        print(format_test_section_header("Search Performance & Accuracy", "🎯"))
-        print(f"Test: Real GEDCOM search for {test_first_name} {test_last_name} with performance validation")
-        print("Method: Load real GEDCOM data and search for test person from .env")
-        print(f"Expected: {test_first_name} {test_last_name} found with consistent scoring and good performance")
-
-        # Load real GEDCOM data from configuration
-        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
-        if not gedcom_path or not Path(gedcom_path).exists():
-            print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
-            return True
-
-        print(f"\n{Colors.CYAN}📂 Loading GEDCOM:{Colors.RESET} {Colors.WHITE}{Path(gedcom_path).name}{Colors.RESET}")
-
-        with clean_test_output():
-            gedcom_data = load_gedcom_data(gedcom_path)
-        if not gedcom_data:
-            print("❌ Failed to load GEDCOM data")
-            return False
-
-        print(f"✅ GEDCOM loaded: {len(gedcom_data.indi_index)} individuals")
-
-        # Test person consistent search criteria (same as scoring test)
-        search_criteria = {
-            "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(),
-            "birth_year": test_birth_year,
-            "gender": test_gender.lower(),  # Use lowercase for scoring consistency
-            "birth_place": "Banff",  # Search for 'Banff' within the full place name
-            "death_year": None,
-            "death_place": None
-        }
-
-        print("🔍 Search Criteria:")
-        print(f"   • First Name contains: {test_first_name.lower()}")
-        print(f"   • Surname contains: {test_last_name.lower()}")
-        print(f"   • Birth Year: {test_birth_year}")
-        print(f"   • Gender: {test_gender.upper()}")
-        print("   • Birth Place contains: Banff")
-        print("   • Death Year: null")
-        print("   • Death Place contains: null")
-
-        print(f"\n🔍 Searching for {test_first_name} {test_last_name}...")
-
-        start_time = time.time()
-        results = filter_and_score_individuals(
-            gedcom_data, search_criteria, search_criteria,
-            dict(config_schema.common_scoring_weights),
-            {"year_match_range": 5}
-        )
-        search_time = time.time() - start_time
-
-        print("\n� Search Results:")
-        print(f"   Search time: {search_time:.3f}s")
-        print(f"   Total matches: {len(results)}")
-
-        if results:
-            top_result = results[0]
-            actual_score = top_result.get('total_score', 0)
-            print(f"   Top match: {top_result.get('full_name_disp')} (Score: {actual_score})")
-            print(f"   Score validation: {actual_score >= 50}")
-            print(f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})")
-
-            # Validate performance
-            performance_ok = search_time < 5.0  # Should complete in under 5 seconds
-            print(f"   Performance validation: {performance_ok} (< 5.0s)")
-
-            # Check both minimum threshold and exact expected score
-            assert actual_score >= 50, f"{test_first_name} should score at least 50 points, got {actual_score}"
-            assert actual_score == expected_score, f"{test_first_name} should score exactly {expected_score}, got {actual_score}"
-            assert performance_ok, f"Search should complete in < 5s, took {search_time:.3f}s"
-
-        else:
-            print("⚠️ No matches found - but search executed successfully")
-
-        print("✅ Search performance and accuracy test completed")
-        print(f"Conclusion: GEDCOM search functionality validated with {len(results)} matches")
-        return True
 
     def test_family_relationship_analysis() -> None:
         """Test family relationship analysis with test person from .env"""
