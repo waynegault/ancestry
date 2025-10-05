@@ -1901,13 +1901,51 @@ class GedcomData:
                 f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s."
             )
 
+    def _extract_parents_from_family(self, fam: Any, fam_id_log: str) -> set[str]:
+        """Extract parent IDs from a family record."""
+        parents: set[str] = set()
+        for parent_tag in [TAG_HUSBAND, TAG_WIFE]:
+            parent_ref = fam.sub_tag(parent_tag)
+            if parent_ref and hasattr(parent_ref, "xref_id"):
+                parent_id = _normalize_id(parent_ref.xref_id)
+                if parent_id:
+                    parents.add(parent_id)
+                elif logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Skipping parent with invalid/unnormalizable ID {getattr(parent_ref, 'xref_id', '?')} in FAM {fam_id_log}")
+        return parents
+
+    def _process_child_in_family(self, child_tag: Any, parents: set[str], fam_id_log: str) -> tuple[bool, bool]:
+        """Process a child tag and update family maps. Returns (processed, skipped)."""
+        if not (child_tag and hasattr(child_tag, "xref_id")):
+            if child_tag is not None and logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Skipping CHIL record in FAM {fam_id_log} with invalid format: Type={type(child_tag).__name__}")
+            return False, True
+
+        child_id = _normalize_id(child_tag.xref_id)
+        if not child_id:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Skipping child with invalid/unnormalizable ID {getattr(child_tag, 'xref_id', '?')} in FAM {fam_id_log}")
+            return False, True
+
+        # Add child to each parent's children set
+        for parent_id in parents:
+            self.id_to_children.setdefault(parent_id, set()).add(child_id)
+
+        # Add parents to child's parents set
+        if parents:
+            self.id_to_parents.setdefault(child_id, set()).update(parents)
+            return True, False
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Child {child_id} found in FAM {fam_id_log} but no valid parents identified in this specific record.")
+        return False, False
+
     def _build_family_maps(self) -> None:
         """Builds dictionaries mapping child IDs to parent IDs and parent IDs to child IDs."""
         if not self.reader:
-            logger.error(
-                "[Cache Build] Cannot build family maps: GedcomReader is None."
-            )
+            logger.error("[Cache Build] Cannot build family maps: GedcomReader is None.")
             return
+
         start_time = time.time()
         logger.debug("[Cache] Building family maps...")
         self.id_to_parents = {}
@@ -1915,70 +1953,39 @@ class GedcomData:
         fam_count = 0
         processed_links = 0
         skipped_links = 0
+
         try:
             for fam in self.reader.records0("FAM"):
                 fam_count += 1
                 if not _is_record(fam):
                     logger.debug(f"Skipping non-record FAM entry: {type(fam)}")
                     continue
+
                 fam_id_log = getattr(fam, "xref_id", "N/A_FAM")
-                parents: set[str] = set()
-                for parent_tag in [TAG_HUSBAND, TAG_WIFE]:
-                    parent_ref = fam.sub_tag(parent_tag)
-                    if parent_ref and hasattr(parent_ref, "xref_id"):
-                        parent_id = _normalize_id(parent_ref.xref_id)
-                        if parent_id:
-                            parents.add(parent_id)
-                        elif logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Skipping parent with invalid/unnormalizable ID {getattr(parent_ref, 'xref_id', '?')} in FAM {fam_id_log}"
-                            )
-                children_tags = fam.sub_tags(TAG_CHILD)
-                for child_tag in children_tags:
-                    if child_tag and hasattr(child_tag, "xref_id"):
-                        child_id = _normalize_id(child_tag.xref_id)
-                        if child_id:
-                            for parent_id in parents:
-                                self.id_to_children.setdefault(parent_id, set()).add(
-                                    child_id
-                                )
-                            if parents:
-                                self.id_to_parents.setdefault(child_id, set()).update(
-                                    parents
-                                )
-                                processed_links += 1
-                            elif logger.isEnabledFor(logging.DEBUG):
-                                logger.debug(
-                                    f"Child {child_id} found in FAM {fam_id_log} but no valid parents identified in this specific record."
-                                )
-                        elif logger.isEnabledFor(logging.DEBUG):
-                            skipped_links += 1
-                            logger.debug(
-                                f"Skipping child with invalid/unnormalizable ID {getattr(child_tag, 'xref_id', '?')} in FAM {fam_id_log}"
-                            )
-                    elif child_tag is not None and logger.isEnabledFor(logging.DEBUG):
+                parents = self._extract_parents_from_family(fam, fam_id_log)
+
+                for child_tag in fam.sub_tags(TAG_CHILD):
+                    processed, skipped = self._process_child_in_family(child_tag, parents, fam_id_log)
+                    if processed:
+                        processed_links += 1
+                    if skipped:
                         skipped_links += 1
-                        logger.debug(
-                            f"Skipping CHIL record in FAM {fam_id_log} with invalid format: Type={type(child_tag).__name__}"
-                        )
         except StopIteration:
             logger.debug("[Cache] Finished iterating FAM records for maps.")
         except Exception as e:
-            logger.error(
-                f"[Cache Build] Unexpected error during family map build: {e}. Maps may be incomplete.",
-                exc_info=True,
-            )
+            logger.error(f"[Cache Build] Unexpected error during family map build: {e}. Maps may be incomplete.", exc_info=True)
+
         elapsed = time.time() - start_time
         self.family_maps_build_time = elapsed
         parent_map_count = len(self.id_to_parents)
         child_map_count = len(self.id_to_children)
         logger.debug(
-            f"[Cache] Family maps built: {fam_count} FAMs processed. Added {processed_links} child-parent relationships ({skipped_links} skipped invalid links/IDs). Map sizes: {parent_map_count} child->parents entries, {child_map_count} parent->children entries in {elapsed:.2f}s."
+            f"[Cache] Family maps built: {fam_count} FAMs processed. Added {processed_links} child-parent relationships "
+            f"({skipped_links} skipped invalid links/IDs). Map sizes: {parent_map_count} child->parents entries, "
+            f"{child_map_count} parent->children entries in {elapsed:.2f}s."
         )
         if parent_map_count == 0 and child_map_count == 0 and fam_count > 0:
-            logger.warning(
-                "[Cache Build] Family maps are EMPTY despite processing FAM records. Check GEDCOM structure or parsing logic."
-            )
+            logger.warning("[Cache Build] Family maps are EMPTY despite processing FAM records. Check GEDCOM structure or parsing logic.")
 
     def _pre_process_individual_data(self) -> None:
         """NEW: Extracts and caches key data points for each individual."""
@@ -2101,85 +2108,81 @@ class GedcomData:
             )
         return found_indi
 
+    def _get_sibling_ids(self, target_id: str) -> set[str]:
+        """Get sibling IDs for a target individual."""
+        parents = self.id_to_parents.get(target_id, set())
+        if not parents:
+            return set()
+        potential_siblings = set().union(*(self.id_to_children.get(p_id, set()) for p_id in parents))
+        return potential_siblings - {target_id}
+
+    def _get_spouse_ids(self, target_id: str) -> set[str]:
+        """Get spouse IDs for a target individual."""
+        spouse_ids: set[str] = set()
+        parent_families = self._find_family_records_where_individual_is_parent(target_id)
+        for fam_record, is_husband, _is_wife in parent_families:
+            other_spouse_tag = TAG_WIFE if is_husband else TAG_HUSBAND
+            spouse_ref = fam_record.sub_tag(other_spouse_tag) if fam_record is not None else None
+            if spouse_ref and hasattr(spouse_ref, "xref_id"):
+                spouse_id = _normalize_id(spouse_ref.xref_id)
+                if spouse_id:
+                    spouse_ids.add(spouse_id)
+        return spouse_ids
+
+    def _get_related_ids_by_type(self, target_id: str, relationship_type: str) -> Optional[set[str]]:
+        """Get related IDs based on relationship type. Returns None for unknown types."""
+        if relationship_type == "parents":
+            return self.id_to_parents.get(target_id, set())
+        if relationship_type == "children":
+            return self.id_to_children.get(target_id, set())
+        if relationship_type == "siblings":
+            return self._get_sibling_ids(target_id)
+        if relationship_type == "spouses":
+            return self._get_spouse_ids(target_id)
+        logger.warning(f"Unknown relationship type requested: '{relationship_type}'")
+        return None
+
     def get_related_individuals(
         self, individual: GedcomIndividualType, relationship_type: str
     ) -> list[GedcomIndividualType]:
         """Gets parents, children, siblings, or spouses using cached maps."""
-        related_individuals: list[GedcomIndividualType] = []
+        # Validate input
         if not _is_individual(individual) or not hasattr(individual, "xref_id"):
-            logger.warning(
-                f"get_related_individuals: Invalid input individual object: {type(individual)}"
-            )
-            return related_individuals
-        # Add null check before accessing xref_id
-        target_id = _normalize_id(
-            individual.xref_id if individual is not None else None
-        )
+            logger.warning(f"get_related_individuals: Invalid input individual object: {type(individual)}")
+            return []
+
+        target_id = _normalize_id(individual.xref_id if individual is not None else None)
         if not target_id:
-            return related_individuals
+            return []
+
+        # Ensure maps are built
         if not self.id_to_parents and not self.id_to_children:
-            logger.warning(
-                "get_related_individuals: Relationship maps empty. Attempting build."
-            )
+            logger.warning("get_related_individuals: Relationship maps empty. Attempting build.")
             self._build_family_maps()
         if not self.id_to_parents and not self.id_to_children:
-            logger.error(
-                "get_related_individuals: Maps still empty after build attempt."
-            )
-            return related_individuals
+            logger.error("get_related_individuals: Maps still empty after build attempt.")
+            return []
+
+        # Get related IDs
         try:
-            related_ids: set[str] = set()
-            if relationship_type == "parents":
-                related_ids = self.id_to_parents.get(target_id, set())
-            elif relationship_type == "children":
-                related_ids = self.id_to_children.get(target_id, set())
-            elif relationship_type == "siblings":
-                parents = self.id_to_parents.get(target_id, set())
-                if parents:
-                    potential_siblings = set().union(
-                        *(self.id_to_children.get(p_id, set()) for p_id in parents)
-                    )
-                    related_ids = potential_siblings - {target_id}
-                else:
-                    related_ids = set()
-            elif relationship_type == "spouses":
-                parent_families = self._find_family_records_where_individual_is_parent(
-                    target_id
-                )
-                for fam_record, is_husband, _is_wife in parent_families:  # _is_wife unused
-                    other_spouse_tag = TAG_WIFE if is_husband else TAG_HUSBAND
-                    # Add null check before calling sub_tag
-                    spouse_ref = (
-                        fam_record.sub_tag(other_spouse_tag)
-                        if fam_record is not None
-                        else None
-                    )
-                    if spouse_ref and hasattr(spouse_ref, "xref_id"):
-                        spouse_id = _normalize_id(spouse_ref.xref_id)
-                    if spouse_id:
-                        related_ids.add(spouse_id)
-            else:
-                logger.warning(
-                    f"Unknown relationship type requested: '{relationship_type}'"
-                )
+            related_ids = self._get_related_ids_by_type(target_id, relationship_type)
+            if related_ids is None:
                 return []
+
+            # Convert IDs to Individual objects
+            related_individuals: list[GedcomIndividualType] = []
             for rel_id in related_ids:
                 if rel_id != target_id:
                     indi = self.find_individual_by_id(rel_id)
-                if indi:
-                    related_individuals.append(indi)
-                elif logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Could not find Individual object for related ID: {rel_id}"
-                    )
+                    if indi:
+                        related_individuals.append(indi)
+                    elif logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Could not find Individual object for related ID: {rel_id}")
         except Exception as e:
-            logger.error(
-                f"Error getting {relationship_type} for {target_id}: {e}", exc_info=True
-            )
+            logger.error(f"Error getting {relationship_type} for {target_id}: {e}", exc_info=True)
             return []
-        related_individuals.sort(
-            key=lambda x: (_normalize_id(getattr(x, "xref_id", None)) or "")
-        )
+
+        related_individuals.sort(key=lambda x: (_normalize_id(getattr(x, "xref_id", None)) or ""))
         return related_individuals
 
     def _find_family_records(
