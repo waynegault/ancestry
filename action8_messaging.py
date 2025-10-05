@@ -1808,7 +1808,7 @@ def _check_person_eligibility(person: Person, log_prefix: str) -> None:
         raise StopIteration("skipped (status)")
 
 
-def _handle_desist_status(person: Person, log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]) -> tuple[Optional[str], str]:
+def _handle_desist_status(_person: Person, log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]) -> tuple[Optional[str], str]:
     """Handle DESIST status and return message key and reason if ACK needed."""
     logger.debug(f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed.")
 
@@ -2710,7 +2710,7 @@ def _process_single_candidate_iteration(
     db_session: Session,
     session_manager: SessionManager,
     message_type_map: dict,
-    resource_manager: Any,
+    _resource_manager: Any,
     error_categorizer: Any,
     max_messages_to_send_this_run: int,
     db_commit_batch_size: int,
