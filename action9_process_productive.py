@@ -860,21 +860,10 @@ class PersonProcessor:
 
         return extracted_data, suggested_tasks
 
-    def _create_ms_tasks(
-        self,
-        person: Person,
-        suggested_tasks: List[str],
-        log_prefix: str,
-        progress_bar=None,
-    ):
-        """Create MS Graph tasks if configured and available."""
+    def _should_skip_ms_task_creation(self, log_prefix: str, suggested_tasks: List[str]) -> bool:
+        """Check if MS task creation should be skipped. Returns True if should skip."""
         if not suggested_tasks:
-            return
-
-        if progress_bar:
-            progress_bar.set_description(
-                f"Processing {person.username}: Creating {len(suggested_tasks)} tasks"
-            )
+            return True
 
         # Initialize MS Graph if needed
         self._initialize_ms_graph()
@@ -883,37 +872,71 @@ class PersonProcessor:
             logger.warning(
                 f"{log_prefix}: Skipping MS task creation - MS Auth/List ID unavailable."
             )
-            return
+            return True
 
-        # Create tasks
+        # Check dry run mode
         app_mode = config_schema.app_mode
         if app_mode == "dry_run":
             logger.info(
                 f"{log_prefix}: DRY RUN - Skipping MS To-Do task creation for {len(suggested_tasks)} tasks."
             )
+            return True
+
+        return False
+
+    def _create_single_ms_task(
+        self,
+        person: Person,
+        task_desc: str,
+        task_index: int,
+        total_tasks: int,
+        log_prefix: str,
+    ) -> bool:
+        """Create a single MS To-Do task. Returns True if successful."""
+        task_title = f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
+        task_body = (
+            f"AI Suggested Task ({task_index+1}/{total_tasks}): {task_desc}\n\n"
+            f"Match: {person.username or 'Unknown'} (#{person.id})\n"
+            f"Profile: {person.profile_id or 'N/A'}"
+        )
+
+        task_ok = ms_graph_utils.create_todo_task(
+            self.ms_state.token,
+            self.ms_state.list_id,
+            task_title,
+            task_body,
+        )
+
+        if not task_ok:
+            logger.warning(
+                f"{log_prefix}: Failed to create MS task: '{task_desc[:100]}...'"
+            )
+
+        return task_ok
+
+    def _create_ms_tasks(
+        self,
+        person: Person,
+        suggested_tasks: List[str],
+        log_prefix: str,
+        progress_bar=None,
+    ):
+        """Create MS Graph tasks if configured and available."""
+        if progress_bar:
+            progress_bar.set_description(
+                f"Processing {person.username}: Creating {len(suggested_tasks)} tasks"
+            )
+
+        # Check if we should skip task creation
+        if self._should_skip_ms_task_creation(log_prefix, suggested_tasks):
             return
 
+        # Create tasks
         logger.info(f"{log_prefix}: Creating {len(suggested_tasks)} MS To-Do tasks...")
         for task_index, task_desc in enumerate(suggested_tasks):
-            task_title = (
-                f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
+            self._create_single_ms_task(
+                person, task_desc, task_index, len(suggested_tasks), log_prefix
             )
-            task_body = f"AI Suggested Task ({task_index+1}/{len(suggested_tasks)}): {task_desc}\n\nMatch: {person.username or 'Unknown'} (#{person.id})\nProfile: {person.profile_id or 'N/A'}"
-
-            task_ok = ms_graph_utils.create_todo_task(
-                self.ms_state.token,
-                self.ms_state.list_id,
-                task_title,
-                task_body,
-            )
-
-            if task_ok:
-                # This will be tracked by the caller
-                pass
-            else:
-                logger.warning(
-                    f"{log_prefix}: Failed to create MS task: '{task_desc[:100]}...'"
-                )
 
     def _initialize_ms_graph(self):
         """Initialize MS Graph authentication and list ID if needed."""
@@ -1226,6 +1249,56 @@ class PersonProcessor:
             )
             return None
 
+    def _create_log_data(
+        self,
+        person: Person,
+        message_text: str,
+        message_type_id: int,
+        send_status: str,
+        effective_conv_id: str,
+    ) -> dict[str, Any]:
+        """Create log data dictionary for database insertion."""
+        person_id_int = int(str(person.id))
+
+        return {
+            "conversation_id": str(effective_conv_id),
+            "direction": MessageDirectionEnum.OUT,
+            "people_id": person_id_int,
+            "latest_message_content": message_text[: config_schema.message_truncation_length],
+            "latest_timestamp": datetime.now(timezone.utc),
+            "message_type_id": message_type_id,
+            "script_message_status": send_status,
+            "ai_sentiment": None,
+        }
+
+    def _update_custom_reply_timestamp(
+        self,
+        custom_reply: Optional[str],
+        latest_message: ConversationLog,
+        message_type_id: int,
+        log_prefix: str,
+    ) -> None:
+        """Update custom_reply_sent_at timestamp if this was a custom reply."""
+        if (
+            custom_reply
+            and latest_message
+            and message_type_id == self.msg_config.custom_reply_msg_type_id
+        ):
+            try:
+                if self.db_state.session:
+                    latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
+                    self.db_state.session.add(latest_message)
+                    self.db_state.session.flush()
+                    logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
+            except Exception as e:
+                logger.error(f"{log_prefix}: Failed to update custom_reply_sent_at: {e}")
+
+    def _stage_person_for_archive(self, person_id_int: int, log_prefix: str) -> None:
+        """Stage person for archiving."""
+        if self.db_state.person_updates is not None:
+            self.db_state.person_updates[person_id_int] = PersonStatusEnum.ARCHIVE
+        logger.debug(f"{log_prefix}: Person status staged for ARCHIVE.")
+
     def _stage_database_updates(
         self,
         person: Person,
@@ -1246,53 +1319,25 @@ class PersonProcessor:
             return False
 
         # Handle successful sends
-        if send_status in ("delivered OK", "typed (dry_run)") or send_status.startswith(
-            "skipped ("
-        ):
+        if send_status in ("delivered OK", "typed (dry_run)") or send_status.startswith("skipped ("):
             try:
                 # Get person ID as int
                 person_id_int = int(str(person.id))
 
-                # Prepare log data
-                log_data = {
-                    "conversation_id": str(effective_conv_id),
-                    "direction": MessageDirectionEnum.OUT,
-                    "people_id": person_id_int,
-                    "latest_message_content": message_text[
-                        : config_schema.message_truncation_length
-                    ],
-                    "latest_timestamp": datetime.now(timezone.utc),
-                    "message_type_id": message_type_id,
-                    "script_message_status": send_status,
-                    "ai_sentiment": None,
-                }
-
+                # Prepare and stage log data
+                log_data = self._create_log_data(
+                    person, message_text, message_type_id, send_status, effective_conv_id
+                )
                 if self.db_state.logs_to_add is not None:
                     self.db_state.logs_to_add.append(log_data)
 
-                # Update custom_reply_sent_at if this was a custom reply
-                if (
-                    custom_reply
-                    and latest_message
-                    and message_type_id == self.msg_config.custom_reply_msg_type_id
-                ):
-                    try:
-                        if self.db_state.session:
-                            latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
-                            self.db_state.session.add(latest_message)
-                            self.db_state.session.flush()
-                            logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
-                    except Exception as e:
-                        logger.error(
-                            f"{log_prefix}: Failed to update custom_reply_sent_at: {e}"
-                        )
+                # Update custom_reply_sent_at if needed
+                self._update_custom_reply_timestamp(
+                    custom_reply, latest_message, message_type_id, log_prefix
+                )
 
                 # Stage person for archiving
-                if self.db_state.person_updates is not None:
-                    self.db_state.person_updates[person_id_int] = (
-                        PersonStatusEnum.ARCHIVE
-                    )
-                logger.debug(f"{log_prefix}: Person status staged for ARCHIVE.")
+                self._stage_person_for_archive(person_id_int, log_prefix)
 
                 return True
 
@@ -1300,9 +1345,7 @@ class PersonProcessor:
                 logger.error(f"{log_prefix}: Failed to stage database updates: {e}")
                 return False
         else:
-            logger.error(
-                f"{log_prefix}: Failed to send message (Status: {send_status})."
-            )
+            logger.error(f"{log_prefix}: Failed to send message (Status: {send_status}).")
             return False
 
 
