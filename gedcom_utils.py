@@ -2142,6 +2142,29 @@ class GedcomData:
         logger.warning(f"Unknown relationship type requested: '{relationship_type}'")
         return None
 
+    def _ensure_family_maps_built(self) -> bool:
+        """Ensure family maps are built. Returns True if maps are available."""
+        if not self.id_to_parents and not self.id_to_children:
+            logger.warning("get_related_individuals: Relationship maps empty. Attempting build.")
+            self._build_family_maps()
+        if not self.id_to_parents and not self.id_to_children:
+            logger.error("get_related_individuals: Maps still empty after build attempt.")
+            return False
+        return True
+
+    def _convert_ids_to_individuals(self, related_ids: set[str], target_id: str) -> list[GedcomIndividualType]:
+        """Convert a set of IDs to Individual objects."""
+        related_individuals: list[GedcomIndividualType] = []
+        for rel_id in related_ids:
+            if rel_id != target_id:
+                indi = self.find_individual_by_id(rel_id)
+                if indi:
+                    related_individuals.append(indi)
+                elif logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Could not find Individual object for related ID: {rel_id}")
+        related_individuals.sort(key=lambda x: (_normalize_id(getattr(x, "xref_id", None)) or ""))
+        return related_individuals
+
     def get_related_individuals(
         self, individual: GedcomIndividualType, relationship_type: str
     ) -> list[GedcomIndividualType]:
@@ -2156,34 +2179,18 @@ class GedcomData:
             return []
 
         # Ensure maps are built
-        if not self.id_to_parents and not self.id_to_children:
-            logger.warning("get_related_individuals: Relationship maps empty. Attempting build.")
-            self._build_family_maps()
-        if not self.id_to_parents and not self.id_to_children:
-            logger.error("get_related_individuals: Maps still empty after build attempt.")
+        if not self._ensure_family_maps_built():
             return []
 
-        # Get related IDs
+        # Get related IDs and convert to Individual objects
         try:
             related_ids = self._get_related_ids_by_type(target_id, relationship_type)
             if related_ids is None:
                 return []
-
-            # Convert IDs to Individual objects
-            related_individuals: list[GedcomIndividualType] = []
-            for rel_id in related_ids:
-                if rel_id != target_id:
-                    indi = self.find_individual_by_id(rel_id)
-                    if indi:
-                        related_individuals.append(indi)
-                    elif logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f"Could not find Individual object for related ID: {rel_id}")
+            return self._convert_ids_to_individuals(related_ids, target_id)
         except Exception as e:
             logger.error(f"Error getting {relationship_type} for {target_id}: {e}", exc_info=True)
             return []
-
-        related_individuals.sort(key=lambda x: (_normalize_id(getattr(x, "xref_id", None)) or ""))
-        return related_individuals
 
     def _find_family_records(
         self, target_id: str, role_tag: str
