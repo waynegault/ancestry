@@ -1736,6 +1736,163 @@ def test_sanitize_input() -> None:
     return True
 
 
+def test_get_validated_year_input_patch() -> None:
+    """Test year input validation with various input formats"""
+    import builtins
+
+    test_inputs = [
+        ("1990", 1990, "Simple year"),
+        ("1 Jan 1942", 1942, "Date with day and month"),
+        ("1/1/1942", 1942, "Date in MM/DD/YYYY format"),
+        ("1942/1/1", 1942, "Date in YYYY/MM/DD format"),
+        ("2000", 2000, "Y2K year"),
+    ]
+
+    print("📋 Testing year input validation with formats:")
+    results = []
+    orig_input = builtins.input
+
+    try:
+        for input_val, expected, description in test_inputs:
+            try:
+                def mock_input(_prompt: str, val: str = input_val) -> str:  # _prompt unused
+                    return val
+                builtins.input = mock_input
+                actual = get_validated_year_input("Enter year: ")
+                passed = actual == expected
+                status = "✅" if passed else "❌"
+
+                print(f"   {status} {description}")
+                print(
+                    f"      Input: '{input_val}' → Output: {actual} (Expected: {expected})"
+                )
+
+                results.append(passed)
+                assert (
+                    actual == expected
+                ), f"Failed for '{input_val}': expected {expected}, got {actual}"
+
+            except Exception as e:
+                print(f"   ❌ {description}: Exception {e}")
+                results.append(False)
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly"
+        )
+        return True
+
+    finally:
+        builtins.input = orig_input
+
+
+def test_fraser_gault_scoring_algorithm() -> None:
+    """Test match scoring algorithm with test person's real data from .env"""
+    from test_framework import Colors, format_score_breakdown_table, format_search_criteria
+
+    # Load test person data from .env
+    test_data = _load_test_person_data_from_env()
+
+    # Load GEDCOM data or skip if not available
+    gedcom_data = _get_gedcom_data_or_skip()
+    if not gedcom_data:
+        return True
+
+    # Create search criteria and search for person
+    search_criteria = _create_search_criteria(test_data)
+    print(format_search_criteria(search_criteria))
+
+    search_results = _search_for_person(gedcom_data, search_criteria)
+    if not search_results:
+        print(f"{Colors.YELLOW}⚠️ Test person not found in GEDCOM, skipping scoring test{Colors.RESET}")
+        return True
+
+    # Analyze scoring results
+    top_result = search_results[0]
+    score = top_result.get('total_score', 0)
+    field_scores = top_result.get('field_scores', {})
+
+    if not field_scores:
+        # Fallback to default scoring pattern
+        field_scores = {'givn': 25, 'surn': 25, 'gender': 15, 'byear': 20, 'bdate': 0, 'bplace': 25, 'bbonus': 25, 'dyear': 0, 'ddate': 25, 'dplace': 25, 'dbonus': 25, 'bonus': 25}
+
+    print(format_score_breakdown_table(field_scores, int(score)))
+    print(f"   Has field scores: {Colors.GREEN if field_scores else Colors.RED}{bool(field_scores)}{Colors.RESET}")
+
+    # Validate results
+    test_name = f"{test_data['first_name']} {test_data['last_name']}"
+    _validate_score_result(score, test_data['expected_score'], test_name)
+    return True
+
+
+def test_display_relatives_fraser() -> None:
+    """Test display_relatives with real Fraser Gault data"""
+    import os
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    gedcom_path = (
+        config_schema.database.gedcom_file_path
+        if config_schema and config_schema.database.gedcom_file_path
+        else None
+    )
+    if not gedcom_path:
+        print("⚠️ GEDCOM_FILE_PATH not set, skipping test")
+        return True
+
+    gedcom_data = load_gedcom_data(Path(gedcom_path))
+    if not gedcom_data:
+        print("⚠️ Could not load GEDCOM data, skipping test")
+        return True
+
+    # Use Fraser Gault for testing
+    expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
+    expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
+    expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
+
+    # Search for Fraser Gault
+    search_criteria = {
+        "first_name": expected_first_name.lower(),
+        "surname": expected_last_name.lower(),
+        "birth_year": expected_birth_year,
+    }
+
+    scoring_criteria = search_criteria.copy()
+    scoring_weights = (
+        dict(config_schema.common_scoring_weights) if config_schema else {}
+    )
+    date_flex = {"year_match_range": 5}
+
+    results = filter_and_score_individuals(
+        gedcom_data, search_criteria, scoring_criteria, scoring_weights, date_flex
+    )
+
+    if not results:
+        print("⚠️ Fraser Gault not found, skipping relatives test")
+        return True
+
+    fraser_data = results[0]
+    fraser_individual = gedcom_data.find_individual_by_id(fraser_data.get("id"))
+
+    if not fraser_individual:
+        print("⚠️ Fraser individual data not found, skipping test")
+        return True
+
+    with mock_logger_context(globals()) as dummy_logger:
+        display_relatives(gedcom_data, fraser_individual)
+        # Check that relatives information was displayed
+
+        assert (
+            len(dummy_logger.lines) > 0
+        ), "Should display some relatives information"
+
+    print(
+        f"✅ Display relatives test completed for {fraser_data.get('full_name_disp', 'Fraser Gault')}"
+    )
+    return True
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -1758,155 +1915,6 @@ def action10_module_tests() -> bool:
 
     # --- TESTS ---
     debug_wrapper = _debug_wrapper
-
-    def test_get_validated_year_input_patch() -> None:
-        """Test year input validation with various input formats"""
-        test_inputs = [
-            ("1990", 1990, "Simple year"),
-            ("1 Jan 1942", 1942, "Date with day and month"),
-            ("1/1/1942", 1942, "Date in MM/DD/YYYY format"),
-            ("1942/1/1", 1942, "Date in YYYY/MM/DD format"),
-            ("2000", 2000, "Y2K year"),
-        ]
-
-        print("📋 Testing year input validation with formats:")
-        results = []
-        orig_input = builtins.input
-
-        try:
-            for input_val, expected, description in test_inputs:
-                try:
-                    def mock_input(_prompt: str, val: str = input_val) -> str:  # _prompt unused
-                        return val
-                    builtins.input = mock_input
-                    actual = get_validated_year_input("Enter year: ")
-                    passed = actual == expected
-                    status = "✅" if passed else "❌"
-
-                    print(f"   {status} {description}")
-                    print(
-                        f"      Input: '{input_val}' → Output: {actual} (Expected: {expected})"
-                    )
-
-                    results.append(passed)
-                    assert (
-                        actual == expected
-                    ), f"Failed for '{input_val}': expected {expected}, got {actual}"
-
-                except Exception as e:
-                    print(f"   ❌ {description}: Exception {e}")
-                    results.append(False)
-
-            print(
-                f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly"
-            )
-            return True
-
-        finally:
-            builtins.input = orig_input
-
-    def test_fraser_gault_scoring_algorithm() -> None:
-        """Test match scoring algorithm with test person's real data from .env"""
-        # Load test person data from .env
-        test_data = _load_test_person_data_from_env()
-
-        # Load GEDCOM data or skip if not available
-        gedcom_data = _get_gedcom_data_or_skip()
-        if not gedcom_data:
-            return True
-
-        # Create search criteria and search for person
-        search_criteria = _create_search_criteria(test_data)
-        print(format_search_criteria(search_criteria))
-
-        search_results = _search_for_person(gedcom_data, search_criteria)
-        if not search_results:
-            print(f"{Colors.YELLOW}⚠️ Test person not found in GEDCOM, skipping scoring test{Colors.RESET}")
-            return True
-
-        # Analyze scoring results
-        top_result = search_results[0]
-        score = top_result.get('total_score', 0)
-        field_scores = top_result.get('field_scores', {})
-
-        if not field_scores:
-            # Fallback to default scoring pattern
-            field_scores = {'givn': 25, 'surn': 25, 'gender': 15, 'byear': 20, 'bdate': 0, 'bplace': 25, 'bbonus': 25, 'dyear': 0, 'ddate': 25, 'dplace': 25, 'dbonus': 25, 'bonus': 25}
-
-        print(format_score_breakdown_table(field_scores, int(score)))
-        print(f"   Has field scores: {Colors.GREEN if field_scores else Colors.RED}{bool(field_scores)}{Colors.RESET}")
-
-        # Validate results
-        test_name = f"{test_data['first_name']} {test_data['last_name']}"
-        _validate_score_result(score, test_data['expected_score'], test_name)
-        return True
-
-    def test_display_relatives_fraser() -> None:
-        """Test display_relatives with real Fraser Gault data"""
-
-        from dotenv import load_dotenv
-
-        load_dotenv()
-
-        gedcom_path = (
-            config_schema.database.gedcom_file_path
-            if config_schema and config_schema.database.gedcom_file_path
-            else None
-        )
-        if not gedcom_path:
-            print("⚠️ GEDCOM_FILE_PATH not set, skipping test")
-            return True
-
-        gedcom_data = load_gedcom_data(Path(gedcom_path))
-        if not gedcom_data:
-            print("⚠️ Could not load GEDCOM data, skipping test")
-            return True
-
-        # Use Fraser Gault for testing
-        expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-        expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-        expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-
-        # Search for Fraser Gault
-        search_criteria = {
-            "first_name": expected_first_name.lower(),
-            "surname": expected_last_name.lower(),
-            "birth_year": expected_birth_year,
-        }
-
-        scoring_criteria = search_criteria.copy()
-        scoring_weights = (
-            dict(config_schema.common_scoring_weights) if config_schema else {}
-        )
-        date_flex = {"year_match_range": 5}
-
-        results = filter_and_score_individuals(
-            gedcom_data, search_criteria, scoring_criteria, scoring_weights, date_flex
-        )
-
-        if not results:
-            print("⚠️ Fraser Gault not found, skipping relatives test")
-            return True
-
-        fraser_data = results[0]
-        fraser_individual = gedcom_data.find_individual_by_id(fraser_data.get("id"))
-
-        if not fraser_individual:
-            print("⚠️ Fraser individual data not found, skipping test")
-            return True
-
-        with mock_logger_context(globals()) as dummy_logger:
-            display_relatives(gedcom_data, fraser_individual)
-            # Check that relatives information was displayed
-
-            assert (
-                len(dummy_logger.lines) > 0
-            ), "Should display some relatives information"
-
-        print(
-            f"✅ Display relatives test completed for {fraser_data.get('full_name_disp', 'Fraser Gault')}"
-        )
-        return True
 
     def test_analyze_top_match_fraser() -> None:
         """Test analyze_top_match with real Fraser Gault data"""
