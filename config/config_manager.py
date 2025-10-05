@@ -1109,7 +1109,7 @@ def _test_config_file_integration():
         import os
         try:
             os.unlink(temp_path)
-        except:
+        except Exception:
             pass
 
 
