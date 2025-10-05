@@ -648,7 +648,7 @@ def register_error_handler(handler: ErrorHandler) -> None:
 
 def error_handler(
     category: ErrorCategory = ErrorCategory.SYSTEM,
-    severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+    _severity: ErrorSeverity = ErrorSeverity.MEDIUM,  # Reserved for future severity-based handling
     log_errors: bool = True,
     reraise: bool = False,
 ):
@@ -789,7 +789,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
 
     # Default handler for unknown types
     class DefaultHandler(ErrorHandler):
-        def can_handle(self, error: Exception) -> bool:
+        def can_handle(self, _error: Exception) -> bool:
             return True  # Catch-all for unknown errors
 
         def handle(
@@ -1043,7 +1043,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
             # Unix-like systems can use signal
             import signal
 
-            def timeout_handler(signum: int, frame: Any) -> None:
+            def timeout_handler(_signum: int, _frame: Any) -> None:
                 raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
 
             # Set the signal handler and a timeout alarm
@@ -1125,19 +1125,19 @@ def with_recovery(recovery_strategy: Callable) -> Callable:
 
 # === RECOVERY STRATEGIES ===
 
-def ancestry_session_recovery(*args, **kwargs) -> None:
+def ancestry_session_recovery(*_args, **_kwargs) -> None:
     """Recovery strategy for session-related failures."""
     logger.info("Attempting session recovery...")
     # Placeholder for session recovery logic
 
 
-def ancestry_api_recovery(*args, **kwargs) -> None:
+def ancestry_api_recovery(*_args, **_kwargs) -> None:
     """Recovery strategy for API-related failures."""
     logger.info("Attempting API recovery...")
     # Placeholder for API recovery logic
 
 
-def ancestry_database_recovery(*args, **kwargs) -> None:
+def ancestry_database_recovery(*_args, **_kwargs) -> None:
     """Recovery strategy for database-related failures."""
     logger.info("Attempting database recovery...")
     # Placeholder for database recovery logic
