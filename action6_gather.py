@@ -2986,6 +2986,68 @@ def _parse_ladder_html(
     return ladder_data
 
 
+def _parse_jsonp_ladder_response(
+    response_text: str,
+    cfpid: str,
+) -> Optional[Dict[str, Optional[str]]]:
+    """
+    Parse JSONP response from getladder API and extract ladder data.
+
+    Returns:
+        Dictionary with 'actual_relationship' and 'relationship_path' keys, or None
+    """
+    # Parse JSONP wrapper
+    match_jsonp = re.match(
+        r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE
+    )
+    if not match_jsonp:
+        logger.error(
+            f"Could not parse JSONP format for CFPID {cfpid}. Response: {response_text[:200]}..."
+        )
+        return None
+
+    json_string = match_jsonp.group(1).strip()
+
+    # Parse JSON content
+    if not json_string or json_string in ('""', "''"):
+        logger.warning(f"Empty JSON content within JSONP for CFPID {cfpid}.")
+        return None
+
+    try:
+        ladder_json = json.loads(json_string)
+    except json.JSONDecodeError as inner_json_err:
+        logger.error(
+            f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
+        )
+        logger.debug(f"JSON string causing decode error: '{json_string[:200]}...'")
+        return None
+
+    # Extract HTML and parse
+    if not isinstance(ladder_json, dict) or "html" not in ladder_json:
+        logger.warning(
+            f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+        )
+        return None
+
+    html_content = ladder_json["html"]
+    if not html_content:
+        logger.warning(f"Empty HTML in getladder response for CFPID {cfpid}.")
+        return None
+
+    ladder_data = _parse_ladder_html(html_content, cfpid)
+    logger.debug(f"Successfully parsed ladder details for CFPID {cfpid}.")
+
+    # Return only if at least one piece of data was found
+    if ladder_data["actual_relationship"] or ladder_data["relationship_path"]:
+        return ladder_data
+
+    # No data found after parsing
+    logger.warning(
+        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
+    )
+    return None
+
+
 def _fetch_match_details_api(
     session_manager: SessionManager,
     my_uuid: str,
@@ -3930,6 +3992,7 @@ def _fetch_batch_ladder(
             force_text_response=True,
         )
 
+        # Validate API response
         if isinstance(api_result, requests.Response):
             logger.warning(
                 f"Get Ladder API call failed for CFPID {cfpid} (Status: {api_result.status_code})."
@@ -3944,51 +4007,8 @@ def _fetch_batch_ladder(
             )
             return None
 
-        response_text = api_result
-        match_jsonp = re.match(
-            r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE
-        )
-        if not match_jsonp:
-            logger.error(
-                f"Could not parse JSONP format for CFPID {cfpid}. Response: {response_text[:200]}..."
-            )
-            return None
-
-        json_string = match_jsonp.group(1).strip()
-        try:
-            if not json_string or json_string in ('""', "''"):
-                logger.warning(f"Empty JSON content within JSONP for CFPID {cfpid}.")
-                return None
-            ladder_json = json.loads(json_string)
-
-            if isinstance(ladder_json, dict) and "html" in ladder_json:
-                html_content = ladder_json["html"]
-                if html_content:
-                    ladder_data = _parse_ladder_html(html_content, cfpid)
-                    logger.debug(f"Successfully parsed ladder details for CFPID {cfpid}.")
-
-                    # Return only if at least one piece of data was found
-                    if ladder_data["actual_relationship"] or ladder_data["relationship_path"]:
-                        return ladder_data
-
-                    # No data found after parsing
-                    logger.warning(
-                        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
-                    )
-                    return None
-
-                logger.warning(f"Empty HTML in getladder response for CFPID {cfpid}.")
-                return None
-            logger.warning(
-                f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
-            )
-            return None
-        except json.JSONDecodeError as inner_json_err:
-            logger.error(
-                f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
-            )
-            logger.debug(f"JSON string causing decode error: '{json_string[:200]}...'")
-            return None
+        # Parse JSONP response
+        return _parse_jsonp_ladder_response(api_result, cfpid)
 
     except ConnectionError as conn_err:
         logger.error(
