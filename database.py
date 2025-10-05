@@ -3212,9 +3212,9 @@ def _test_model_attributes() -> None:
 def _test_database_utilities() -> None:
     """Test database utility functions."""
     # Test that utility functions exist
-    assert callable(get_engine), "get_engine should be callable"
-    assert callable(get_session), "get_session should be callable"
-    assert callable(init_db), "init_db should be callable"
+    assert callable(backup_database), "backup_database should be callable"
+    assert callable(create_person), "create_person should be callable"
+    assert callable(soft_delete_person), "soft_delete_person should be callable"
 
 
 def _test_enum_edge_cases() -> None:
@@ -3298,9 +3298,9 @@ def _test_import_error_handling() -> None:
 
 def _test_configuration_error_handling() -> None:
     """Test error handling for configuration issues."""
-    # Test that database configuration is accessible
-    assert callable(get_engine), "get_engine should be callable"
-    # Note: get_session is not a module-level function, it's a context manager from get_engine
+    # Test that database configuration is accessible via config_schema
+    assert config_schema is not None, "config_schema should be available"
+    # Note: Database uses SessionManager for session management, not standalone functions
 
 
 # ==============================================
