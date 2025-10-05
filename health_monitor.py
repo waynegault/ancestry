@@ -1066,6 +1066,71 @@ class SessionHealthMonitor:
             logger.error(f"Failed to create session checkpoint: {e}")
             return ""
 
+    def _restore_metrics_from_state(self, session_state: dict[str, Any]) -> None:
+        """Restore current metrics from session state."""
+        if "current_metrics" not in session_state:
+            return
+
+        for name, metric_data in session_state["current_metrics"].items():
+            metric = HealthMetric(
+                name=name,
+                value=metric_data["value"],
+                threshold_warning=metric_data["threshold_warning"],
+                threshold_critical=metric_data["threshold_critical"],
+                timestamp=metric_data.get("timestamp", time.time())
+            )
+            self.current_metrics[name] = metric
+
+    def _restore_alerts_from_state(self, session_state: dict[str, Any]) -> None:
+        """Restore alerts from session state."""
+        if "alerts" not in session_state:
+            return
+
+        self.alerts = []
+        for alert_data in session_state["alerts"]:
+            level = AlertLevel(alert_data["level"])
+            alert = HealthAlert(
+                level=level,
+                component=alert_data["component"],
+                message=alert_data["message"],
+                metric_name=alert_data["metric_name"],
+                metric_value=alert_data["metric_value"],
+                threshold=alert_data["threshold"],
+                timestamp=alert_data["timestamp"]
+            )
+            self.alerts.append(alert)
+
+    def _restore_error_data_from_state(self, session_state: dict[str, Any]) -> None:
+        """Restore error tracking data from session state."""
+        if "error_timestamps" in session_state:
+            self.error_timestamps = deque(session_state["error_timestamps"], maxlen=self.error_timestamps.maxlen)
+
+        if "error_counts" in session_state:
+            self.error_counts.update(session_state["error_counts"])
+
+    def _restore_performance_data_from_state(self, session_state: dict[str, Any]) -> None:
+        """Restore performance tracking data from session state."""
+        if "api_response_times" in session_state:
+            self.api_response_times = deque(session_state["api_response_times"], maxlen=self.api_response_times.maxlen)
+
+        if "page_processing_times" in session_state:
+            self.page_processing_times = deque(session_state["page_processing_times"], maxlen=self.page_processing_times.maxlen)
+
+        if "memory_usage_history" in session_state:
+            self.memory_usage_history = deque(session_state["memory_usage_history"], maxlen=self.memory_usage_history.maxlen)
+
+    def _restore_intervention_state_from_state(self, session_state: dict[str, Any]) -> None:
+        """Restore intervention state from session state."""
+        if "intervention_state" not in session_state:
+            return
+
+        intervention = session_state["intervention_state"]
+        self._emergency_halt_requested = intervention.get("emergency_halt_requested", False)
+        self._immediate_intervention_requested = intervention.get("immediate_intervention_requested", False)
+        self._enhanced_monitoring_active = intervention.get("enhanced_monitoring_active", False)
+        self._monitoring_interval = intervention.get("monitoring_interval", 30.0)
+        self._last_cleanup_time = intervention.get("last_cleanup_time", time.time())
+
     def restore_from_checkpoint(self, checkpoint_path: str) -> bool:
         """Restore session state from a checkpoint file."""
         try:
@@ -1085,59 +1150,12 @@ class SessionHealthMonitor:
             if "health_score_history" in session_state:
                 self.health_score_history = deque(session_state["health_score_history"], maxlen=100)
 
-            # Restore current metrics
-            if "current_metrics" in session_state:
-                for name, metric_data in session_state["current_metrics"].items():
-                    metric = HealthMetric(
-                        name=name,
-                        value=metric_data["value"],
-                        threshold_warning=metric_data["threshold_warning"],
-                        threshold_critical=metric_data["threshold_critical"],
-                        timestamp=metric_data.get("timestamp", time.time())
-                    )
-                    self.current_metrics[name] = metric
-
-            # Restore alerts
-            if "alerts" in session_state:
-                self.alerts = []
-                for alert_data in session_state["alerts"]:
-                    level = AlertLevel(alert_data["level"])
-                    alert = HealthAlert(
-                        level=level,
-                        component=alert_data["component"],
-                        message=alert_data["message"],
-                        metric_name=alert_data["metric_name"],
-                        metric_value=alert_data["metric_value"],
-                        threshold=alert_data["threshold"],
-                        timestamp=alert_data["timestamp"]
-                    )
-                    self.alerts.append(alert)
-
-            # Restore error data
-            if "error_timestamps" in session_state:
-                self.error_timestamps = deque(session_state["error_timestamps"], maxlen=self.error_timestamps.maxlen)
-
-            if "error_counts" in session_state:
-                self.error_counts.update(session_state["error_counts"])
-
-            # Restore performance data
-            if "api_response_times" in session_state:
-                self.api_response_times = deque(session_state["api_response_times"], maxlen=self.api_response_times.maxlen)
-
-            if "page_processing_times" in session_state:
-                self.page_processing_times = deque(session_state["page_processing_times"], maxlen=self.page_processing_times.maxlen)
-
-            if "memory_usage_history" in session_state:
-                self.memory_usage_history = deque(session_state["memory_usage_history"], maxlen=self.memory_usage_history.maxlen)
-
-            # Restore intervention state
-            if "intervention_state" in session_state:
-                intervention = session_state["intervention_state"]
-                self._emergency_halt_requested = intervention.get("emergency_halt_requested", False)
-                self._immediate_intervention_requested = intervention.get("immediate_intervention_requested", False)
-                self._enhanced_monitoring_active = intervention.get("enhanced_monitoring_active", False)
-                self._monitoring_interval = intervention.get("monitoring_interval", 30.0)
-                self._last_cleanup_time = intervention.get("last_cleanup_time", time.time())
+            # Restore all state components
+            self._restore_metrics_from_state(session_state)
+            self._restore_alerts_from_state(session_state)
+            self._restore_error_data_from_state(session_state)
+            self._restore_performance_data_from_state(session_state)
+            self._restore_intervention_state_from_state(session_state)
 
             logger.info(f"🔄 Session state restored from checkpoint: {checkpoint_file.name}")
             return True
