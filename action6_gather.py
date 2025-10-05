@@ -1985,46 +1985,18 @@ def _do_batch(
 # ------------------------------------------------------------------------------
 
 
-def _prepare_person_operation_data(
+def _determine_profile_ids(
+    details_part: Dict[str, Any],
     match: Dict[str, Any],
-    existing_person: Optional[Person],
-    prefetched_combined_details: Optional[Dict[str, Any]],
-    prefetched_tree_data: Optional[Dict[str, Any]],
-    config_schema_arg: "ConfigSchema",  # Config schema argument
-    match_uuid: str,
     formatted_match_username: str,
-    match_in_my_tree: bool,
-    log_ref_short: str,
-    logger_instance: logging.Logger,
-) -> Tuple[Optional[Dict[str, Any]], bool]:
+) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
-    Prepares Person data for create or update operations based on API data and existing records.
-
-    Args:
-        match: Dictionary containing data for one match from the match list API.
-        existing_person: The existing Person object from the database, or None if this is a new person.
-        prefetched_combined_details: Prefetched data from '/details' & '/profiles/details' APIs.
-        prefetched_tree_data: Prefetched data from 'badgedetails' & 'getladder' APIs.
-        config_schema_arg: The application configuration schema.
-        match_uuid: The UUID (Sample ID) of the match.
-        formatted_match_username: The formatted username of the match.
-        match_in_my_tree: Boolean indicating if the match is in the user's family tree.
-        log_ref_short: Short reference string for logging.
-        logger_instance: The logger instance.
+    Determine profile IDs and admin information from API data.
 
     Returns:
-        A tuple containing:
-        - person_op_dict (Optional[Dict]): Dictionary with person data and '_operation' key
-          set to 'create' or 'update'. None if no update is needed.
-        - person_fields_changed (bool): True if any fields were changed for an existing person,
-          False otherwise.
+        Tuple of (person_profile_id, person_admin_id, person_admin_username, message_target_id)
     """
-    details_part = prefetched_combined_details or {}
-    profile_part = details_part
-
-    raw_tester_profile_id = details_part.get("tester_profile_id") or match.get(
-        "profile_id"
-    )
+    raw_tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
     raw_admin_profile_id = details_part.get("admin_profile_id") or match.get(
         "administrator_profile_id_hint"
     )
@@ -2067,6 +2039,159 @@ def _prepare_person_operation_data(
         person_admin_username_to_save = formatted_admin_username
 
     message_target_id = person_profile_id_to_save or person_admin_id_to_save
+
+    return (
+        person_profile_id_to_save,
+        person_admin_id_to_save,
+        person_admin_username_to_save,
+        message_target_id,
+    )
+
+
+def _compare_person_field(
+    key: str,
+    new_value: Any,
+    current_value: Any,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Tuple[bool, Any]:
+    """
+    Compare a single person field and determine if it changed.
+
+    Returns:
+        Tuple of (value_changed, value_to_set)
+    """
+    value_changed = False
+    value_to_set = new_value  # Default to new_value
+
+    # Specific comparisons and transformations
+    if key == "last_logged_in":
+        # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
+        current_dt_utc = (
+            current_value.astimezone(timezone.utc).replace(microsecond=0)
+            if isinstance(current_value, datetime) and current_value.tzinfo
+            else (
+                current_value.replace(tzinfo=timezone.utc, microsecond=0)
+                if isinstance(current_value, datetime)
+                else None
+            )
+        )
+        new_dt_utc = (
+            new_value.astimezone(timezone.utc).replace(microsecond=0)
+            if isinstance(new_value, datetime) and new_value.tzinfo
+            else (
+                new_value.replace(tzinfo=timezone.utc, microsecond=0)
+                if isinstance(new_value, datetime)
+                else None
+            )
+        )
+        if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
+            value_changed = True
+            # value_to_set is already new_value (potentially a datetime obj)
+    elif key == "status":
+        # Ensure comparison is between Enum types or their values
+        current_enum_val = (
+            current_value.value
+            if isinstance(current_value, PersonStatusEnum)
+            else current_value
+        )
+        new_enum_val = (
+            new_value.value
+            if isinstance(new_value, PersonStatusEnum)
+            else new_value
+        )
+        if new_enum_val != current_enum_val:
+            value_changed = True
+            value_to_set = new_value  # Store the Enum object
+    elif key == "birth_year":  # Update only if new is valid and current is None
+        if new_value is not None and current_value is None:
+            try:
+                value_to_set_int = int(new_value)
+                value_changed = True
+                value_to_set = value_to_set_int
+            except (ValueError, TypeError):
+                logger_instance.warning(
+                    f"Invalid birth_year '{new_value}' for update {log_ref_short}"
+                )
+                return False, None  # Skip this field
+        # No change if new_value is None or current_value exists
+    elif key == "gender":  # Update only if new is valid ('f'/'m') and current is None
+        if (
+            new_value is not None
+            and current_value is None
+            and isinstance(new_value, str)
+            and new_value.lower() in ("f", "m")
+        ):
+            value_to_set = new_value.lower()
+            value_changed = True
+    elif key in ("profile_id", "administrator_profile_id"):
+        # Ensure comparison of uppercase strings, handle None
+        current_str_upper = (
+            str(current_value).upper() if current_value is not None else None
+        )
+        new_str_upper = (
+            str(new_value).upper() if new_value is not None else None
+        )
+        if new_str_upper != current_str_upper:
+            value_changed = True
+            value_to_set = new_str_upper  # Store uppercase
+    elif isinstance(current_value, bool) or isinstance(new_value, bool):  # For boolean fields
+        if bool(current_value) != bool(new_value):
+            value_changed = True
+            value_to_set = bool(new_value)
+    # General comparison for other fields
+    elif current_value != new_value:
+        value_changed = True
+
+    return value_changed, value_to_set
+
+
+def _prepare_person_operation_data(
+    match: Dict[str, Any],
+    existing_person: Optional[Person],
+    prefetched_combined_details: Optional[Dict[str, Any]],
+    prefetched_tree_data: Optional[Dict[str, Any]],
+    config_schema_arg: "ConfigSchema",  # Config schema argument
+    match_uuid: str,
+    formatted_match_username: str,
+    match_in_my_tree: bool,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """
+    Prepares Person data for create or update operations based on API data and existing records.
+
+    Args:
+        match: Dictionary containing data for one match from the match list API.
+        existing_person: The existing Person object from the database, or None if this is a new person.
+        prefetched_combined_details: Prefetched data from '/details' & '/profiles/details' APIs.
+        prefetched_tree_data: Prefetched data from 'badgedetails' & 'getladder' APIs.
+        config_schema_arg: The application configuration schema.
+        match_uuid: The UUID (Sample ID) of the match.
+        formatted_match_username: The formatted username of the match.
+        match_in_my_tree: Boolean indicating if the match is in the user's family tree.
+        log_ref_short: Short reference string for logging.
+        logger_instance: The logger instance.
+
+    Returns:
+        A tuple containing:
+        - person_op_dict (Optional[Dict]): Dictionary with person data and '_operation' key
+          set to 'create' or 'update'. None if no update is needed.
+        - person_fields_changed (bool): True if any fields were changed for an existing person,
+          False otherwise.
+    """
+    details_part = prefetched_combined_details or {}
+    profile_part = details_part
+
+    # Determine profile IDs and admin information
+    (
+        person_profile_id_to_save,
+        person_admin_id_to_save,
+        person_admin_username_to_save,
+        message_target_id,
+    ) = _determine_profile_ids(details_part, match, formatted_match_username)
+
+    # Construct message link
     constructed_message_link = (
         urljoin(config_schema_arg.api.base_url, f"/messaging/?p={message_target_id.upper()}")  # type: ignore
         if message_target_id
@@ -2121,92 +2246,15 @@ def _prepare_person_operation_data(
     for key, new_value in incoming_person_data.items():
         if key == "uuid":  # UUID should not be changed for existing records
             continue
-        current_value = getattr(existing_person, key, None)
-        value_changed = False
-        value_to_set = new_value  # Default to new_value
 
-        # Specific comparisons and transformations
-        if key == "last_logged_in":
-            # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
-            current_dt_utc = (
-                current_value.astimezone(timezone.utc).replace(microsecond=0)
-                if isinstance(current_value, datetime) and current_value.tzinfo
-                else (
-                    current_value.replace(tzinfo=timezone.utc, microsecond=0)
-                    if isinstance(current_value, datetime)
-                    else None
-                )
-            )
-            new_dt_utc = (
-                new_value.astimezone(timezone.utc).replace(microsecond=0)
-                if isinstance(new_value, datetime) and new_value.tzinfo
-                else (
-                    new_value.replace(tzinfo=timezone.utc, microsecond=0)
-                    if isinstance(new_value, datetime)
-                    else None
-                )
-            )
-            if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
-                value_changed = True
-                # value_to_set is already new_value (potentially a datetime obj)
-        elif key == "status":
-            # Ensure comparison is between Enum types or their values
-            current_enum_val = (
-                current_value.value
-                if isinstance(current_value, PersonStatusEnum)
-                else current_value
-            )
-            new_enum_val = (
-                new_value.value
-                if isinstance(new_value, PersonStatusEnum)
-                else new_value
-            )
-            if new_enum_val != current_enum_val:
-                value_changed = True
-                value_to_set = new_value  # Store the Enum object
-        elif key == "birth_year":  # Update only if new is valid and current is None
-            if new_value is not None and current_value is None:
-                try:
-                    value_to_set_int = int(new_value)
-                    value_changed = True
-                    value_to_set = value_to_set_int
-                except (ValueError, TypeError):
-                    logger_instance.warning(
-                        f"Invalid birth_year '{new_value}' for update {log_ref_short}"
-                    )
-                    continue  # Skip this field
-            # No change if new_value is None or current_value exists
-        elif (
-            key == "gender"
-        ):  # Update only if new is valid ('f'/'m') and current is None
-            if (
-                new_value is not None
-                and current_value is None
-                and isinstance(new_value, str)
-                and new_value.lower() in ("f", "m")
-            ):
-                value_to_set = new_value.lower()
-                value_changed = True
-        elif key in ("profile_id", "administrator_profile_id"):
-            # Ensure comparison of uppercase strings, handle None
-            current_str_upper = (
-                str(current_value).upper() if current_value is not None else None
-            )
-            new_str_upper = (
-                str(new_value).upper() if new_value is not None else None
-            )
-            if new_str_upper != current_str_upper:
-                value_changed = True
-                value_to_set = new_str_upper  # Store uppercase
-        elif isinstance(current_value, bool) or isinstance(
-            new_value, bool
-        ):  # For boolean fields
-            if bool(current_value) != bool(new_value):
-                value_changed = True
-                value_to_set = bool(new_value)
-        # General comparison for other fields
-        elif current_value != new_value:
-            value_changed = True
+        current_value = getattr(existing_person, key, None)
+        value_changed, value_to_set = _compare_person_field(
+            key, new_value, current_value, log_ref_short, logger_instance
+        )
+
+        # Handle skip case (when value_to_set is None and not changed)
+        if not value_changed and value_to_set is None:
+            continue
 
         if value_changed:
             person_data_for_update[key] = value_to_set
