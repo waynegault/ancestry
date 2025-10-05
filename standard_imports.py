@@ -289,225 +289,184 @@ logger = setup_module(globals(), __name__)
 from test_utilities import create_standard_test_runner
 
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+
+
+def _test_module_setup() -> None:
+    """Test setup_module function."""
+    test_globals = {}
+    logger = setup_module(test_globals, "test_module")
+    assert logger is not None, "setup_module should return a logger"
+    assert hasattr(logger, "info"), "Logger should have info method"
+    assert hasattr(logger, "error"), "Logger should have error method"
+
+
+def _test_logger_creation() -> None:
+    """Test logger creation."""
+    logger = get_standard_logger("test_logger_module")
+    assert logger is not None, "get_standard_logger should return a logger"
+    assert hasattr(logger, "debug"), "Logger should have debug method"
+    assert hasattr(logger, "warning"), "Logger should have warning method"
+
+
+def _test_function_registration():
+    """Test function registration."""
+    from test_utilities import sample_function
+    register_function("test_sample_func", sample_function)
+    assert is_function_available("test_sample_func"), "Function should be registered"
+    retrieved_func = get_function("test_sample_func")
+    assert retrieved_func is not None, "Should retrieve registered function"
+    assert retrieved_func() == "sample_result", "Retrieved function should work"
+
+
+def _test_safe_imports():
+    """Test safe imports."""
+    result = safe_import("os")
+    assert result is not None, "Should successfully import existing module"
+    assert hasattr(result, "path"), "Should have os.path"
+    result = safe_import("nonexistent_module", "fallback_value")
+    assert result == "fallback_value", "Should return fallback for missing module"
+    result = safe_import_from("os", "path")
+    assert result is not None, "Should import os.path"
+    result = safe_import_from("nonexistent_module", "item", "fallback")
+    assert result == "fallback", "Should return fallback for missing item"
+
+
+def _test_import_standardization():
+    """Test import standardization."""
+    try:
+        standardize_module_imports()
+        success = True
+    except Exception:
+        success = False
+    assert success, "standardize_module_imports should not crash"
+
+
+def _test_core_imports_availability():
+    """Test core imports availability."""
+    required_functions = [
+        "auto_register_module", "get_logger", "standardize_module_imports",
+        "safe_execute", "register_function", "get_function", "is_function_available",
+    ]
+    for func_name in required_functions:
+        assert func_name in globals(), f"Function {func_name} should be available"
+        assert callable(globals()[func_name]), f"Function {func_name} should be callable"
+
+
+def _test_standard_library_availability():
+    """Test standard library availability."""
+    required_modules = ["os", "sys", "time", "logging"]
+    for module_name in required_modules:
+        assert module_name in globals(), f"Module {module_name} should be imported"
+
+
+def _test_module_cleanup():
+    """Test module cleanup."""
+    from test_utilities import temp_function
+    register_function("temp_test_function", temp_function)
+    assert is_function_available("temp_test_function"), "Temp function should be registered"
+    try:
+        cleanup_registry()
+    except Exception:
+        pass
+
+
+def _test_performance():
+    """Test performance."""
+    import time
+    start_time = time.time()
+    for i in range(100):
+        get_standard_logger(f"test_module_{i}")
+        register_function(f"test_func_{i}", lambda: i)
+    duration = time.time() - start_time
+    assert duration < 1.0, f"Module operations should be fast, took {duration:.3f}s"
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def standard_imports_module_tests() -> bool:
-    """
-    Comprehensive test suite for standard_imports.py.
-    Tests all import standardization and module setup functionality.
-    """
+    """Comprehensive test suite for standard_imports.py."""
     from test_framework import TestSuite, suppress_logging
 
     print("🔧 Running Standard Imports comprehensive test suite...")
 
     # Quick basic test first
     try:
-        # Test basic module setup
         logger = setup_module(globals(), __name__)
         assert logger is not None
         print("✅ Module setup test passed")
-
-        # Test function registration using centralized test utilities
         from test_utilities import test_func
-
         register_function("test_standard_imports", test_func)
         assert is_function_available("test_standard_imports")
         print("✅ Function registration test passed")
-
         print("✅ Basic Standard Imports tests completed")
     except Exception as e:
         print(f"❌ Basic Standard Imports tests failed: {e}")
         return False
 
+    suite = TestSuite("Standard Imports & Module Setup", "standard_imports.py")
+    suite.start_suite()
+
+    # Assign module-level test functions
+    test_module_setup = _test_module_setup
+    test_logger_creation = _test_logger_creation
+    test_function_registration = _test_function_registration
+    test_safe_imports = _test_safe_imports
+    test_import_standardization = _test_import_standardization
+    test_core_imports_availability = _test_core_imports_availability
+    test_standard_library_availability = _test_standard_library_availability
+    test_module_cleanup = _test_module_cleanup
+    test_performance = _test_performance
+
+    # Define all tests in a data structure to reduce complexity
+    tests = [
+        ("Module setup and initialization", test_module_setup,
+         "Module setup function properly initializes logging and registration",
+         "Test setup_module function with test globals and module name",
+         "Module setup creates valid logger with expected methods"),
+        ("Logger creation and functionality", test_logger_creation,
+         "Standard logger creation works correctly with proper methods",
+         "Test get_standard_logger function and verify logger methods",
+         "Logger creation provides complete logging interface"),
+        ("Function registration system", test_function_registration,
+         "Function registration and retrieval works correctly",
+         "Test register_function, is_function_available, and get_function",
+         "Function registration system properly stores and retrieves functions"),
+        ("Safe import functionality", test_safe_imports,
+         "Safe import functions handle both success and failure cases",
+         "Test safe_import and safe_import_from with existing and missing modules",
+         "Safe imports provide proper fallback handling for missing modules"),
+        ("Import standardization", test_import_standardization,
+         "Import standardization runs without errors",
+         "Test standardize_module_imports function execution",
+         "Import standardization completes successfully"),
+        ("Core imports availability", test_core_imports_availability,
+         "All required core import functions are available and callable",
+         "Test availability of auto_register_module, get_logger, and other core functions",
+         "Core imports provide complete function registry and logging capabilities"),
+        ("Standard library availability", test_standard_library_availability,
+         "Required standard library modules are imported and available",
+         "Test availability of os, sys, time, logging modules",
+         "Standard library modules are properly imported and accessible"),
+        ("Module cleanup functionality", test_module_cleanup,
+         "Module cleanup and registry management works correctly",
+         "Test cleanup_registry function and temporary function cleanup",
+         "Module cleanup provides proper registry management"),
+        ("Performance validation", test_performance,
+         "Module operations complete within reasonable time limits",
+         "Test performance of logger creation and function registration",
+         "Performance operations complete efficiently for batch operations"),
+    ]
+
+    # Run all tests from the list
     with suppress_logging():
-        suite = TestSuite("Standard Imports & Module Setup", "standard_imports.py")
-        suite.start_suite()
-
-    # Module setup and initialization
-    def test_module_setup() -> None:
-        # Test setup_module function
-        test_globals = {}
-        logger = setup_module(test_globals, "test_module")
-        assert logger is not None, "setup_module should return a logger"
-        assert hasattr(logger, "info"), "Logger should have info method"
-        assert hasattr(logger, "error"), "Logger should have error method"
-
-    # Logger functionality
-    def test_logger_creation() -> None:
-        logger = get_standard_logger("test_logger_module")
-        assert logger is not None, "get_standard_logger should return a logger"
-        assert hasattr(logger, "debug"), "Logger should have debug method"
-        assert hasattr(logger, "warning"), "Logger should have warning method"
-
-    # Function registration
-    def test_function_registration():
-        from test_utilities import sample_function
-
-        # Test registration
-        register_function("test_sample_func", sample_function)
-        assert is_function_available(
-            "test_sample_func"
-        ), "Function should be registered"
-
-        # Test retrieval
-        retrieved_func = get_function("test_sample_func")
-        assert retrieved_func is not None, "Should retrieve registered function"
-        assert retrieved_func() == "sample_result", "Retrieved function should work"
-
-    # Safe imports
-    def test_safe_imports():
-        # Test successful import
-        result = safe_import("os")
-        assert result is not None, "Should successfully import existing module"
-        assert hasattr(result, "path"), "Should have os.path"
-
-        # Test failed import with fallback
-        result = safe_import("nonexistent_module", "fallback_value")
-        assert result == "fallback_value", "Should return fallback for missing module"
-
-        # Test safe_import_from
-        result = safe_import_from("os", "path")
-        assert result is not None, "Should import os.path"
-
-        # Test safe_import_from with fallback
-        result = safe_import_from("nonexistent_module", "item", "fallback")
-        assert result == "fallback", "Should return fallback for missing item"
-
-    # Import standardization
-    def test_import_standardization():
-        # Test that standardize_module_imports doesn't crash
-        try:
-            standardize_module_imports()
-            success = True
-        except Exception:
-            success = False
-        assert success, "standardize_module_imports should not crash"
-
-    # Core imports availability
-    def test_core_imports_availability():
-        required_functions = [
-            "auto_register_module",
-            "get_logger",
-            "standardize_module_imports",
-            "safe_execute",
-            "register_function",
-            "get_function",
-            "is_function_available",
-        ]
-
-        for func_name in required_functions:
-            assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(
-                globals()[func_name]
-            ), f"Function {func_name} should be callable"
-
-    # Standard library imports availability
-    def test_standard_library_availability():
-        required_modules = ["os", "sys", "time", "logging"]
-        for module_name in required_modules:
-            assert module_name in globals(), f"Module {module_name} should be imported"
-
-    # Module cleanup
-    def test_module_cleanup():
-        # Test that we can clean up registered functions
-        from test_utilities import temp_function
-
-        register_function("temp_test_function", temp_function)
-        assert is_function_available(
-            "temp_test_function"
-        ), "Temp function should be registered"
-
-        # Test cleanup if available
-        try:
-            cleanup_registry()
-            # After cleanup, function might or might not be available depending on implementation
-            # This is more of a smoke test
-        except Exception:
-            pass  # Cleanup might not be implemented or might fail gracefully
-
-    # Performance test
-    def test_performance():
-        import time
-
-        start_time = time.time()
-        for i in range(100):
-            get_standard_logger(f"test_module_{i}")
-            register_function(f"test_func_{i}", lambda: i)
-        duration = time.time() - start_time
-
-        assert duration < 1.0, f"Module operations should be fast, took {duration:.3f}s"
-
-    # Run all tests
-    with suppress_logging():
-        suite.run_test(
-            "Module setup and initialization",
-            test_module_setup,
-            "Module setup function properly initializes logging and registration",
-            "Test setup_module function with test globals and module name",
-            "Module setup creates valid logger with expected methods",
-        )
-
-        suite.run_test(
-            "Logger creation and functionality",
-            test_logger_creation,
-            "Standard logger creation works correctly with proper methods",
-            "Test get_standard_logger function and verify logger methods",
-            "Logger creation provides complete logging interface",
-        )
-
-        suite.run_test(
-            "Function registration system",
-            test_function_registration,
-            "Function registration and retrieval works correctly",
-            "Test register_function, is_function_available, and get_function",
-            "Function registration system properly stores and retrieves functions",
-        )
-
-        suite.run_test(
-            "Safe import functionality",
-            test_safe_imports,
-            "Safe import functions handle both success and failure cases",
-            "Test safe_import and safe_import_from with existing and missing modules",
-            "Safe imports provide proper fallback handling for missing modules",
-        )
-
-        suite.run_test(
-            "Import standardization",
-            test_import_standardization,
-            "Import standardization runs without errors",
-            "Test standardize_module_imports function execution",
-            "Import standardization completes successfully",
-        )
-
-        suite.run_test(
-            "Core imports availability",
-            test_core_imports_availability,
-            "All required core import functions are available and callable",
-            "Test availability of auto_register_module, get_logger, and other core functions",
-            "Core imports provide complete function registry and logging capabilities",
-        )
-
-        suite.run_test(
-            "Standard library availability",
-            test_standard_library_availability,
-            "Required standard library modules are imported and available",
-            "Test availability of os, sys, time, logging modules",
-            "Standard library modules are properly imported and accessible",
-        )
-
-        suite.run_test(
-            "Module cleanup functionality",
-            test_module_cleanup,
-            "Module cleanup and registry management works correctly",
-            "Test cleanup_registry function and temporary function cleanup",
-            "Module cleanup provides proper registry management",
-        )
-
-        suite.run_test(
-            "Performance validation",
-            test_performance,
-            "Module operations complete within reasonable time limits",
-            "Test performance of logger creation and function registration",
-            "Performance operations complete efficiently for batch operations",
-        )
+        for test_name, test_func, expected, method, details in tests:
+            suite.run_test(test_name, test_func, expected, method, details)
 
     return suite.finish_suite()
 
