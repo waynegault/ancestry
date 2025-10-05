@@ -15,7 +15,9 @@
     "*.git",
     "*.git/**",
     ".git",
-    ".git/**"
+    ".git/**",
+    "**/Cache/**",
+    "Cache/**"
   ],
   "typeCheckingMode": "basic",
   "reportMissingImports": "none",
