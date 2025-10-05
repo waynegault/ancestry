@@ -633,45 +633,58 @@ class IntelligentResearchPrioritizer:
 
         return min(100.0, max(0.0, base_score))
 
+    def _score_conflict_severity(self, severity: str) -> float:
+        """Calculate score based on conflict severity."""
+        severity_scores = {
+            "critical": 35,  # Major tree accuracy issues
+            "major": 25,     # Significant discrepancies
+            "moderate": 15,  # Notable inconsistencies
+            "minor": 8       # Small discrepancies
+        }
+        return severity_scores.get(severity, 0)
+
+    def _score_conflict_type(self, conflict_type: str) -> float:
+        """Calculate score based on conflict type."""
+        type_scores = {
+            "relationship_conflict": 20,  # Family structure accuracy is critical
+            "date_conflict": 15,          # Timeline accuracy is crucial
+            "location_conflict": 12,      # Geographic accuracy affects research strategy
+            "name_conflict": 10           # Identity verification important
+        }
+        return type_scores.get(conflict_type, 0)
+
+    def _score_people_involved(self, people_count: int) -> float:
+        """Calculate score based on number of people involved."""
+        if people_count > 3:
+            return 10  # Multi-person conflicts have broader impact
+        elif people_count > 1:
+            return 5
+        return 0
+
+    def _score_resolution_evidence(self, evidence_level: str) -> float:
+        """Calculate score based on available resolution evidence."""
+        evidence_scores = {
+            "high": 12,    # High chance of successful resolution
+            "medium": 6
+        }
+        return evidence_scores.get(evidence_level, 0)
+
     def _calculate_conflict_priority_score(self, conflict: dict[str, Any]) -> float:
         """Calculate enhanced priority score for a conflict using genealogical accuracy principles."""
         base_score = 60.0
 
         # Enhanced severity scoring with genealogical impact assessment
-        severity = conflict.get("severity", "minor")
-        if severity == "critical":
-            base_score += 35  # Major tree accuracy issues
-        elif severity == "major":
-            base_score += 25  # Significant discrepancies
-        elif severity == "moderate":
-            base_score += 15  # Notable inconsistencies
-        elif severity == "minor":
-            base_score += 8   # Small discrepancies
+        base_score += self._score_conflict_severity(conflict.get("severity", "minor"))
 
         # Conflict type impact on research
-        conflict_type = conflict.get("conflict_type", "")
-        if conflict_type == "date_conflict":
-            base_score += 15  # Timeline accuracy is crucial
-        elif conflict_type == "location_conflict":
-            base_score += 12  # Geographic accuracy affects research strategy
-        elif conflict_type == "relationship_conflict":
-            base_score += 20  # Family structure accuracy is critical
-        elif conflict_type == "name_conflict":
-            base_score += 10  # Identity verification important
+        base_score += self._score_conflict_type(conflict.get("conflict_type", ""))
 
         # Number of people affected
         people_involved = conflict.get("people_involved", [])
-        if len(people_involved) > 3:
-            base_score += 10  # Multi-person conflicts have broader impact
-        elif len(people_involved) > 1:
-            base_score += 5
+        base_score += self._score_people_involved(len(people_involved))
 
         # Available resolution evidence
-        resolution_evidence = conflict.get("resolution_evidence", "low")
-        if resolution_evidence == "high":
-            base_score += 12  # High chance of successful resolution
-        elif resolution_evidence == "medium":
-            base_score += 6
+        base_score += self._score_resolution_evidence(conflict.get("resolution_evidence", "low"))
 
         # Research blocking factor
         if conflict.get("blocks_research", False):
