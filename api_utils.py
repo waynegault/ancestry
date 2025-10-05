@@ -1765,6 +1765,32 @@ def call_facts_user_api(
 # End of call_facts_user_api
 
 
+def _process_getladder_response(relationship_data: Any, api_description: str) -> Optional[str]:
+    """Process GetLadder API response."""
+    if not isinstance(relationship_data, str):
+        logger.warning(f"{api_description} call returned non-string or None: {type(relationship_data)}")
+        return None
+
+    if len(relationship_data) <= 10:
+        logger.warning(f"{api_description} call returned a very short string: '{relationship_data}'")
+        return None
+
+    # Validate response with Pydantic if available and try to parse as JSON
+    if PYDANTIC_AVAILABLE:
+        try:
+            import json
+            parsed_data = json.loads(relationship_data)
+            GetLadderResponse(**parsed_data)
+            logger.debug("GetLadder API response validation successful")
+        except json.JSONDecodeError:
+            logger.debug("GetLadder API returned non-JSON string response")
+        except Exception as validation_err:
+            logger.warning(f"GetLadder API response validation warning: {validation_err}")
+
+    logger.debug(f"{api_description} call successful, received string response.")
+    return relationship_data
+
+
 def call_getladder_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
@@ -1773,35 +1799,17 @@ def call_getladder_api(
     timeout: Optional[int] = None,
 ) -> Optional[str]:
     if not callable(_api_req):
-        logger.critical(
-            "GetLadder API call failed: _api_req function unavailable (Import Failed?)."
-        )
+        logger.critical("GetLadder API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
-    # End of if
     if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("GetLadder API call failed: Invalid SessionManager passed.")
         return None
-    # End of if
     if not all([owner_tree_id, target_person_id]):
-        logger.error(
-            "GetLadder API call failed: owner_tree_id and target_person_id are required."
-        )
+        logger.error("GetLadder API call failed: owner_tree_id and target_person_id are required.")
         return None
-    # End of if
 
     api_description = "Get Tree Ladder API"
-
-    # Apply rate limiting if available
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
-
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
+    _apply_rate_limiting(api_description)
 
     formatted_path = API_PATH_PERSON_GETLADDER.format(
         tree_id=owner_tree_id, person_id=target_person_id
@@ -1830,35 +1838,7 @@ def call_getladder_api(
             force_text_response=True,
             timeout=api_timeout_val,
         )
-        if isinstance(relationship_data, str) and len(relationship_data) > 10:
-            # Validate response with Pydantic if available and try to parse as JSON
-            if PYDANTIC_AVAILABLE:
-                try:
-                    # Try to parse the string response as JSON for validation
-                    import json
-
-                    parsed_data = json.loads(relationship_data)
-                    GetLadderResponse(**parsed_data)
-                    logger.debug("GetLadder API response validation successful")
-                except json.JSONDecodeError:
-                    logger.debug("GetLadder API returned non-JSON string response")
-                except Exception as validation_err:
-                    logger.warning(
-                        f"GetLadder API response validation warning: {validation_err}"
-                    )
-
-            logger.debug(f"{api_description} call successful, received string response.")
-            return relationship_data
-        if isinstance(relationship_data, str):
-            logger.warning(
-                f"{api_description} call returned a very short string: '{relationship_data}'"
-            )
-            return None
-        logger.warning(
-            f"{api_description} call returned non-string or None: {type(relationship_data)}"
-        )
-        return None
-        # End of if/elif/else
+        return _process_getladder_response(relationship_data, api_description)
     except requests.exceptions.Timeout:
         logger.error(f"{api_description} call timed out after {api_timeout_val}s.")
         return None
