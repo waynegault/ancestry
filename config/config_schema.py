@@ -1053,6 +1053,7 @@ def _test_edge_cases() -> None:
     """Test edge cases and error scenarios."""
     import tempfile
     from pathlib import Path
+
     from test_framework import suppress_logging
 
     with suppress_logging():
@@ -1101,6 +1102,7 @@ def _test_integration() -> None:
 def _test_performance() -> None:
     """Test performance and memory efficiency."""
     import time
+
     from test_framework import suppress_logging
 
     with suppress_logging():
@@ -1129,7 +1131,7 @@ def _test_performance() -> None:
 
 def _test_function_structure() -> None:
     """Test that all expected methods and properties exist."""
-    from test_framework import suppress_logging, assert_valid_function
+    from test_framework import assert_valid_function, suppress_logging
 
     with suppress_logging():
         # Test ConfigSchema methods
