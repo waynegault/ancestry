@@ -1280,6 +1280,40 @@ class InboxProcessor:
 
         return latest_ctx_in, latest_ctx_out
 
+    def _downgrade_if_non_actionable(
+        self, label: Optional[str], messages: list[dict], my_pid_lower: str
+    ) -> Optional[str]:
+        """Downgrade PRODUCTIVE label if message lacks actionable cues."""
+        try:
+            if (not label) or label != "PRODUCTIVE":
+                return label
+
+            # Find last user message
+            last_user = None
+            for m in reversed(messages):
+                if m.get("author", "").lower() != my_pid_lower:
+                    last_user = str(m.get("content", ""))
+                    break
+
+            if not last_user:
+                return label
+
+            txt = last_user.lower()
+            actionable_cues = (
+                "share", "send", "attach", "tree", "record", "certificate",
+                "born", "married", "died", "parents", "ancestor", "where", "how",
+                "i will", "i'll", "i can", "i'll send", "i can share", "link"
+            )
+
+            if not any(cue in txt for cue in actionable_cues):
+                return "ENTHUSIASTIC" if any(
+                    k in txt for k in ("thanks", "thank you", "cheers", "take care")
+                ) else "OTHER"
+
+            return label
+        except Exception:
+            return label
+
     def _classify_message_with_ai(
         self, context_messages: list[dict], my_pid_lower: str, api_conv_id: str
     ) -> Optional[str]:
@@ -1295,46 +1329,15 @@ class InboxProcessor:
         def _classify_with_recovery(context=formatted_context) -> Optional[str]:
             return classify_message_intent(context, self.session_manager)
 
-        def _downgrade_if_non_actionable(
-            label: Optional[str], messages=context_messages
-        ) -> Optional[str]:
-            try:
-                if (not label) or label != "PRODUCTIVE":
-                    return label
-
-                last_user = None
-                for m in reversed(messages):
-                    if m.get("author", "").lower() != my_pid_lower:
-                        last_user = str(m.get("content", ""))
-                        break
-
-                if not last_user:
-                    return label
-
-                txt = last_user.lower()
-                actionable_cues = (
-                    "share", "send", "attach", "tree", "record", "certificate",
-                    "born", "married", "died", "parents", "ancestor", "where", "how",
-                    "i will", "i'll", "i can", "i'll send", "i can share", "link"
-                )
-
-                if not any(cue in txt for cue in actionable_cues):
-                    return "ENTHUSIASTIC" if any(
-                        k in txt for k in ("thanks", "thank you", "cheers", "take care")
-                    ) else "OTHER"
-
-                return label
-            except Exception:
-                return label
-
         ai_result = _classify_with_recovery()
 
+        # Extract sentiment from result
         if isinstance(ai_result, tuple):
             ai_sentiment_result = ai_result[0] if ai_result else None
         else:
             ai_sentiment_result = ai_result
 
-        return _downgrade_if_non_actionable(ai_sentiment_result)
+        return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
 
     def _create_conversation_log_upsert(
         self,
