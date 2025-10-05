@@ -2336,40 +2336,102 @@ def call_send_message_api(
 # End of call_send_message_api
 
 
-def call_profile_details_api(
-    session_manager: "SessionManager", profile_id: str
-) -> Optional[dict[str, Any]]:
+def _process_profile_response(profile_response: Any, profile_id: str) -> Optional[dict[str, Any]]:
+    """Process and validate profile API response."""
+    if not profile_response or not isinstance(profile_response, dict):
+        if isinstance(profile_response, requests.Response):
+            logger.warning(f"Failed profile details fetch for {profile_id}. Status: {profile_response.status_code}.")
+        elif profile_response is None:
+            logger.warning(f"Failed profile details fetch for {profile_id} (_api_req returned None).")
+        else:
+            logger.warning(f"Failed profile details fetch for {profile_id} (Invalid response type: {type(profile_response)}).")
+        return None
+
+    # Validate response with Pydantic if available
+    if PYDANTIC_AVAILABLE:
+        try:
+            ProfileDetailsResponse(**profile_response)
+            logger.debug("Profile Details API response validation successful")
+        except Exception as validation_err:
+            logger.warning(f"Profile Details API response validation warning: {validation_err}")
+
+    logger.debug(f"Successfully fetched profile details for {profile_id}.")
+    return {
+        "first_name": _extract_first_name(profile_response, profile_id),
+        "last_logged_in_dt": _parse_last_login_date(profile_response, profile_id),
+        "contactable": bool(profile_response.get(KEY_IS_CONTACTABLE)),
+    }
+
+
+def _extract_first_name(profile_response: dict[str, Any], profile_id: str) -> Optional[str]:
+    """Extract first name from profile response."""
+    first_name_raw = profile_response.get(KEY_FIRST_NAME)
+    if first_name_raw and isinstance(first_name_raw, str):
+        return format_name(first_name_raw)
+
+    display_name_raw = profile_response.get(KEY_DISPLAY_NAME)
+    if display_name_raw and isinstance(display_name_raw, str):
+        formatted_dn = format_name(display_name_raw)
+        return formatted_dn.split()[0] if formatted_dn != "Valued Relative" else None
+
+    logger.warning(f"Could not extract FirstName or DisplayName for profile {profile_id}")
+    return None
+
+
+def _parse_last_login_date(profile_response: dict[str, Any], profile_id: str) -> Optional[datetime]:
+    """Parse last login date from profile response."""
+    last_login_str = profile_response.get(KEY_LAST_LOGIN_DATE)
+    if not last_login_str or not isinstance(last_login_str, str):
+        logger.debug(f"LastLoginDate missing or invalid for profile {profile_id}")
+        return None
+
+    try:
+        if last_login_str.endswith("Z"):
+            dt_aware = datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
+        elif "+" in last_login_str or "-" in last_login_str[10:]:
+            dt_aware = datetime.fromisoformat(last_login_str)
+        else:
+            dt_naive = datetime.fromisoformat(last_login_str)
+            dt_aware = dt_naive.replace(tzinfo=timezone.utc)
+        return dt_aware.astimezone(timezone.utc)
+    except (ValueError, TypeError) as date_parse_err:
+        logger.warning(f"Could not parse LastLoginDate '{last_login_str}' for {profile_id}: {date_parse_err}")
+        return None
+
+
+def _validate_profile_request(session_manager: "SessionManager", profile_id: str) -> bool:
+    """Validate profile request prerequisites."""
     if not profile_id or not isinstance(profile_id, str):
         logger.warning("call_profile_details_api: Profile ID missing or invalid.")
-        return None
-    # End of if
+        return False
     if not session_manager or not session_manager.my_profile_id:
-        logger.error(
-            "call_profile_details_api: SessionManager or own profile ID missing."
-        )
-        return None
-    # End of if
-
+        logger.error("call_profile_details_api: SessionManager or own profile ID missing.")
+        return False
     if not session_manager.is_sess_valid():
-        logger.error(
-            f"call_profile_details_api: Session invalid for Profile ID {profile_id}."
-        )
-        return None
-    # End of if
+        logger.error(f"call_profile_details_api: Session invalid for Profile ID {profile_id}.")
+        return False
+    return True
 
-    api_description = "Profile Details API (Single)"
 
-    # Apply rate limiting if available
+def _apply_rate_limiting(api_description: str) -> None:
+    """Apply rate limiting if available."""
     if api_rate_limiter and PYDANTIC_AVAILABLE:
         if not api_rate_limiter.can_make_request():
             wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
+            logger.warning(f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s")
             import time
-
             time.sleep(wait_time)
         api_rate_limiter.record_request()
+
+
+def call_profile_details_api(
+    session_manager: "SessionManager", profile_id: str
+) -> Optional[dict[str, Any]]:
+    if not _validate_profile_request(session_manager, profile_id):
+        return None
+
+    api_description = "Profile Details API (Single)"
+    _apply_rate_limiting(api_description)
 
     base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
     profile_url = urljoin(
@@ -2394,88 +2456,7 @@ def call_profile_details_api(
             referer_url=referer_url,
         )
 
-        if profile_response and isinstance(profile_response, dict):
-            # Validate response with Pydantic if available
-            if PYDANTIC_AVAILABLE:
-                try:
-                    ProfileDetailsResponse(**profile_response)
-                    logger.debug("Profile Details API response validation successful")
-                except Exception as validation_err:
-                    logger.warning(
-                        f"Profile Details API response validation warning: {validation_err}"
-                    )
-
-            logger.debug(f"Successfully fetched profile details for {profile_id}.")
-            result_data: dict[str, Any] = {
-                "first_name": None,
-                "last_logged_in_dt": None,
-                "contactable": False,
-            }
-
-            first_name_raw = profile_response.get(KEY_FIRST_NAME)
-            if first_name_raw and isinstance(first_name_raw, str):
-                result_data["first_name"] = format_name(first_name_raw)
-            else:
-                display_name_raw = profile_response.get(KEY_DISPLAY_NAME)
-                if display_name_raw and isinstance(display_name_raw, str):
-                    formatted_dn = format_name(display_name_raw)
-                    result_data["first_name"] = (
-                        formatted_dn.split()[0]
-                        if formatted_dn != "Valued Relative"
-                        else None
-                    )
-                else:
-                    logger.warning(
-                        f"Could not extract FirstName or DisplayName for profile {profile_id}"
-                    )
-                # End of if/else
-            # End of if/else
-
-            contactable_val = profile_response.get(KEY_IS_CONTACTABLE)
-            result_data["contactable"] = (
-                bool(contactable_val) if contactable_val is not None else False
-            )
-
-            last_login_str = profile_response.get(KEY_LAST_LOGIN_DATE)
-            if last_login_str and isinstance(last_login_str, str):
-                try:
-                    if last_login_str.endswith("Z"):
-                        dt_aware = datetime.fromisoformat(
-                            last_login_str.replace("Z", "+00:00")
-                        )
-                    elif "+" in last_login_str or "-" in last_login_str[10:]:
-                        dt_aware = datetime.fromisoformat(last_login_str)
-                    else:
-                        dt_naive = datetime.fromisoformat(last_login_str)
-                        dt_aware = dt_naive.replace(tzinfo=timezone.utc)
-                    # End of if/elif/else
-                    result_data["last_logged_in_dt"] = dt_aware.astimezone(timezone.utc)
-                except (ValueError, TypeError) as date_parse_err:
-                    logger.warning(
-                        f"Could not parse LastLoginDate '{last_login_str}' for {profile_id}: {date_parse_err}"
-                    )
-                # End of try/except
-            else:
-                logger.debug(
-                    f"LastLoginDate missing or invalid for profile {profile_id}"
-                )
-            # End of if/else
-            return result_data
-        if isinstance(profile_response, requests.Response):
-            logger.warning(
-                f"Failed profile details fetch for {profile_id}. Status: {profile_response.status_code}."
-            )
-            return None
-        if profile_response is None:
-            logger.warning(
-                f"Failed profile details fetch for {profile_id} (_api_req returned None)."
-            )
-            return None
-        logger.warning(
-            f"Failed profile details fetch for {profile_id} (Invalid response type: {type(profile_response)})."
-        )
-        return None
-        # End of if/elif/else
+        return _process_profile_response(profile_response, profile_id)
     except requests.exceptions.RequestException as req_e:
         logger.error(
             f"RequestException fetching profile details for {profile_id}: {req_e}",
