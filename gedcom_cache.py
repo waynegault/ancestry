@@ -261,7 +261,7 @@ class GedcomCacheModule(BaseCacheModule):
         """Determine overall health based on component health statuses."""
         if gedcom_health == "error" or memory_health == "degraded":
             return "degraded"
-        elif gedcom_health == "warning":
+        if gedcom_health == "warning":
             return "warning"
         return "healthy"
 

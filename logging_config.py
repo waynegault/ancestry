@@ -183,9 +183,9 @@ class AlignedMessageFormatter(logging.Formatter):
 
         if level >= logging.CRITICAL:
             return Colors.red(message)
-        elif level >= logging.ERROR:
+        if level >= logging.ERROR:
             return Colors.red(message)
-        elif level >= logging.WARNING:
+        if level >= logging.WARNING:
             return Colors.yellow(message)
 
         return message

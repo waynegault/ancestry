@@ -1206,7 +1206,7 @@ def test_configuration() -> bool:
     # Test provider-specific configuration
     if ai_provider == "deepseek":
         return _validate_deepseek_config()
-    elif ai_provider == "gemini":
+    if ai_provider == "gemini":
         return _validate_gemini_config()
 
     return True
@@ -1221,9 +1221,8 @@ def _validate_extraction_task_structure(prompt_content: str) -> bool:
         structure_type = "nested" if has_nested_structure else "flat"
         logger.info(f"✅ extraction_task: contains valid {structure_type} structure keywords")
         return True
-    else:
-        logger.warning("⚠️ extraction_task: missing required structure keywords for either nested or flat format")
-        return False
+    logger.warning("⚠️ extraction_task: missing required structure keywords for either nested or flat format")
+    return False
 
 
 def _validate_single_prompt(prompt_name: str) -> bool:
@@ -1345,12 +1344,11 @@ def _test_intent_classification(session_manager: SessionManager) -> bool:
     if intent_result and intent_result in EXPECTED_INTENT_CATEGORIES:
         logger.info(f"✅ Intent classification successful: {intent_result}")
         return True
-    elif intent_result is None:
+    if intent_result is None:
         logger.warning("⚠️ Intent classification returned None (AI may be unavailable)")
         return False
-    else:
-        logger.warning(f"⚠️ Intent classification returned unexpected result: {intent_result}")
-        return False
+    logger.warning(f"⚠️ Intent classification returned unexpected result: {intent_result}")
+    return False
 
 
 def _test_genealogical_extraction(session_manager: SessionManager) -> bool:
@@ -1384,9 +1382,8 @@ def _test_genealogical_extraction(session_manager: SessionManager) -> bool:
     if names_count > 0 or locations_count > 0 or dates_count > 0:
         logger.info("✅ AI successfully extracted meaningful genealogical data")
         return True
-    else:
-        logger.warning("⚠️ AI did not extract expected genealogical entities from test context")
-        return True  # Still return True as extraction worked, just didn't find expected data
+    logger.warning("⚠️ AI did not extract expected genealogical entities from test context")
+    return True  # Still return True as extraction worked, just didn't find expected data
 
 
 def _test_reply_generation(session_manager: SessionManager) -> bool:
@@ -1403,9 +1400,8 @@ def _test_reply_generation(session_manager: SessionManager) -> bool:
     if reply_result and isinstance(reply_result, str) and len(reply_result) > 10:
         logger.info(f"✅ Reply generation successful (length: {len(reply_result)} characters)")
         return True
-    else:
-        logger.warning(f"⚠️ Reply generation returned unexpected result: {reply_result}")
-        return True  # Non-critical warning
+    logger.warning(f"⚠️ Reply generation returned unexpected result: {reply_result}")
+    return True  # Non-critical warning
 
 
 def _test_specialized_analysis_functions(session_manager: SessionManager) -> bool:
@@ -1518,7 +1514,7 @@ def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:
     """Check if API key is configured and dependencies are available."""
     if ai_provider == "deepseek":
         return bool(config_schema.api.deepseek_api_key), openai_available
-    elif ai_provider == "gemini":
+    if ai_provider == "gemini":
         return bool(config_schema.api.google_api_key), genai_available
     return False, False
 

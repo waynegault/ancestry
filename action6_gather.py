@@ -2149,8 +2149,7 @@ def _normalize_datetime_to_utc(dt_value: Any) -> Optional[datetime]:
 
     if dt_value.tzinfo:
         return dt_value.astimezone(timezone.utc).replace(microsecond=0)
-    else:
-        return dt_value.replace(tzinfo=timezone.utc, microsecond=0)
+    return dt_value.replace(tzinfo=timezone.utc, microsecond=0)
 
 
 def _determine_match_status(
@@ -2176,8 +2175,7 @@ def _determine_match_status(
         or (tree_op_data and tree_operation_status != "none")
     ):
         return "updated"
-    else:
-        return "skipped"
+    return "skipped"
 
 
 def _compare_datetime_field(
@@ -2416,8 +2414,7 @@ def _process_last_logged_in(
     if isinstance(last_logged_in_val, datetime):
         if last_logged_in_val.tzinfo is None:
             return last_logged_in_val.replace(tzinfo=timezone.utc)
-        else:
-            return last_logged_in_val.astimezone(timezone.utc)
+        return last_logged_in_val.astimezone(timezone.utc)
     return None
 
 
@@ -2655,18 +2652,18 @@ def _compare_person_field(
     # Dispatch to field-specific comparison functions
     if key == "last_logged_in":
         return _compare_datetime_field(new_value, current_value)
-    elif key == "status":
+    if key == "status":
         return _compare_status_field(new_value, current_value)
-    elif key == "birth_year":
+    if key == "birth_year":
         return _compare_birth_year_field(new_value, current_value, log_ref_short, logger_instance)
-    elif key == "gender":
+    if key == "gender":
         return _compare_gender_field(new_value, current_value)
-    elif key in ("profile_id", "administrator_profile_id"):
+    if key in ("profile_id", "administrator_profile_id"):
         return _compare_profile_id_field(new_value, current_value)
-    elif isinstance(current_value, bool) or isinstance(new_value, bool):
+    if isinstance(current_value, bool) or isinstance(new_value, bool):
         return _compare_boolean_field(new_value, current_value)
     # General comparison for other fields
-    elif current_value != new_value:
+    if current_value != new_value:
         return True, new_value
 
     return False, new_value
@@ -3323,16 +3320,15 @@ def _get_csrf_token_for_relationship_prob(
 
     if csrf_token_val:
         return csrf_token_val
-    elif session_manager.csrf_token:
+    if session_manager.csrf_token:
         logger.warning(
             f"{api_description}: Using potentially stale CSRF from SessionManager."
         )
         return session_manager.csrf_token
-    else:
-        logger.error(
-            f"{api_description}: Failed to add CSRF token to headers. Returning None."
-        )
-        return None
+    logger.error(
+        f"{api_description}: Failed to add CSRF token to headers. Returning None."
+    )
+    return None
 
 
 def _process_relationship_prob_response(
@@ -3643,16 +3639,15 @@ def _fetch_match_details_api(
         combined_data["from_my_mothers_side"] = bool(details_response.get("mothersSide", False))
         logger.debug(f"Successfully fetched /details for UUID {match_uuid}.")
         return combined_data
-    elif isinstance(details_response, requests.Response):
+    if isinstance(details_response, requests.Response):
         logger.error(
             f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
         )
         return None
-    else:
-        logger.error(
-            f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}"
-        )
-        return None
+    logger.error(
+        f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}"
+    )
+    return None
 
 
 def _fetch_profile_details_api(
@@ -3850,16 +3845,15 @@ def _fetch_in_tree_from_api(
         in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
         logger.debug(f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}.")
         return in_tree_ids
-    else:
-        status_code_log = (
-            f" Status: {response_in_tree.status_code}"  # type: ignore
-            if isinstance(response_in_tree, requests.Response)
-            else ""
-        )
-        logger.warning(
-            f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
-        )
-        return set()
+    status_code_log = (
+        f" Status: {response_in_tree.status_code}"  # type: ignore
+        if isinstance(response_in_tree, requests.Response)
+        else ""
+    )
+    logger.warning(
+        f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
+    )
+    return set()
 
 
 def _fetch_in_tree_status(

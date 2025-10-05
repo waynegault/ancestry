@@ -312,9 +312,9 @@ def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
 
     if "-" in lifespan:
         return _parse_hyphenated_lifespan(lifespan)
-    elif "b." in lifespan.lower():
+    if "b." in lifespan.lower():
         return _parse_birth_notation(lifespan), None
-    elif "d." in lifespan.lower():
+    if "d." in lifespan.lower():
         return None, _parse_death_notation(lifespan)
 
     return None, None

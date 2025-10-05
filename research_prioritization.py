@@ -657,7 +657,7 @@ class IntelligentResearchPrioritizer:
         """Calculate score based on number of people involved."""
         if people_count > 3:
             return 10  # Multi-person conflicts have broader impact
-        elif people_count > 1:
+        if people_count > 1:
             return 5
         return 0
 
