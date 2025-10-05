@@ -361,7 +361,7 @@ class APIManager:
 
         return all_ok
 
-    def verify_api_login_status(self, session_manager=None) -> Optional[bool]:
+    def verify_api_login_status(self, _session_manager=None) -> Optional[bool]:
         """
         Verify login status via API using comprehensive verification with fallbacks.
         Based on the original working implementation from git history.

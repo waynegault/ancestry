@@ -479,7 +479,7 @@ def _should_retry_status_code(response: Any, retry_codes: set[int]) -> tuple[boo
 
 
 def _handle_status_code_retry(
-    response: Any,
+    _response: Any,
     status_code: int,
     retries: int,
     max_retries: int,
@@ -2129,7 +2129,7 @@ TWO_STEP_VERIFICATION_HEADER_SELECTOR = "h1.two-step-verification-header"
 
 # Helper functions for handle_twoFA
 
-def _wait_for_2fa_header(driver: WebDriver, element_wait: WebDriverWait, session_manager: SessionManager) -> bool:  # type: ignore
+def _wait_for_2fa_header(_driver: WebDriver, element_wait: WebDriverWait, session_manager: SessionManager) -> bool:  # type: ignore
     """Wait for 2FA page header to appear."""
     try:
         logger.debug(f"Waiting for 2FA page header using selector: '{TWO_STEP_VERIFICATION_HEADER_SELECTOR}'")
@@ -3176,7 +3176,7 @@ def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:  # type: i
 def _handle_webdriver_exception(
     driver: WebDriver,  # type: ignore
     session_manager: SessionManagerType,
-    attempt: int,
+    _attempt: int,
 ) -> Tuple[str, Optional[WebDriver]]:  # type: ignore
     """Handle WebDriver exception. Returns (action, driver) where action is 'continue' or 'fail'."""
     if session_manager and not is_browser_open(driver):
