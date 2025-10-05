@@ -493,7 +493,7 @@ class IntelligentResearchPrioritizer:
             f"Birth records unavailable for early {surname} generations"
         ]
 
-    def _identify_priority_targets(self, surname: str, gedcom_analysis: dict[str, Any]) -> list[str]:
+    def _identify_priority_targets(self, surname: str, _gedcom_analysis: dict[str, Any]) -> list[str]:
         """Identify priority research targets for this family line."""
         return [
             f"Research {surname} family immigration",
@@ -550,7 +550,7 @@ class IntelligentResearchPrioritizer:
 
         return min(1.0, base_score + location_bonus)
 
-    def _generate_cluster_research_plan(self, location: str, items: list[dict[str, Any]]) -> list[str]:
+    def _generate_cluster_research_plan(self, location: str, _items: list[dict[str, Any]]) -> list[str]:
         """Generate research plan for a location cluster."""
         return [
             f"Research {location} records for multiple family members",
