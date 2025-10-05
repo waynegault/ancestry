@@ -1629,85 +1629,99 @@ def _run_basic_functionality_tests(suite: "TestSuite") -> None:
     )
 
 
+def _test_gedcom_path_conversion() -> None:
+    """Test GEDCOM path conversion"""
+    # Create mock GEDCOM data
+    class MockReader:
+        def get_element_by_id(self, id_val: str) -> dict[str, str]:
+            return {"name": f"Person {id_val}", "id": id_val}
+
+    reader = MockReader()
+    gedcom_path = ["@I1@", "@I2@"]
+    id_to_parents = {"@I2@": {"@I1@"}}
+    id_to_children = {"@I1@": {"@I2@"}}
+    indi_index = {"@I1@": {"name": "Parent"}, "@I2@": {"name": "Child"}}
+
+    try:
+        unified = convert_gedcom_path_to_unified_format(
+            gedcom_path, reader, id_to_parents, id_to_children, indi_index
+        )
+        assert unified is not None, "Should convert GEDCOM path"
+        assert isinstance(unified, list), "Should return list format"
+    except Exception:
+        # Function might require more complex setup, so pass if it fails gracefully
+        pass
+
+
+def _test_discovery_api_conversion() -> None:
+    """Test Discovery API path conversion"""
+    # Test function availability
+    assert callable(
+        convert_discovery_api_path_to_unified_format
+    ), "Function should be callable"
+
+    # Test with minimal valid data structure (if we can determine it)
+    try:
+        # This function requires specific data format - test that it's available
+        func = convert_discovery_api_path_to_unified_format
+        assert func is not None, "Function should be available"
+    except Exception:
+        # Complex function - just verify it exists
+        pass
+
+
+def _test_general_api_conversion() -> None:
+    """Test General API path conversion"""
+    # Test function availability
+    assert callable(
+        convert_api_path_to_unified_format
+    ), "Function should be callable"
+
+    # Test basic availability
+    try:
+        func = convert_api_path_to_unified_format
+        assert func is not None, "Function should be available"
+    except Exception:
+        # Complex function - just verify it exists
+        pass
+
+
+def _test_unified_path_formatting() -> None:
+    """Test Unified path formatting"""
+    # Test function availability
+    assert callable(format_relationship_path_unified), "Function should be callable"
+
+    # Test basic availability
+    try:
+        func = format_relationship_path_unified
+        assert func is not None, "Function should be available"
+    except Exception:
+        # Complex function - just verify it exists
+        pass
+
+
+def _test_api_relationship_formatting() -> None:
+    """Test API relationship path formatting"""
+    # Test function availability
+    assert callable(format_api_relationship_path), "Function should be callable"
+
+    # Test basic availability
+    try:
+        func = format_api_relationship_path
+        assert func is not None, "Function should be available"
+    except Exception:
+        # Complex function - just verify it exists
+        pass
+
+
 def _run_conversion_tests(suite: "TestSuite") -> None:
     """Run conversion tests for relationship_utils module."""
-    def test_gedcom_path_conversion():
-        # Create mock GEDCOM data
-        class MockReader:
-            def get_element_by_id(self, id_val: str) -> dict[str, str]:
-                return {"name": f"Person {id_val}", "id": id_val}
-
-        reader = MockReader()
-        gedcom_path = ["@I1@", "@I2@"]
-        id_to_parents = {"@I2@": {"@I1@"}}
-        id_to_children = {"@I1@": {"@I2@"}}
-        indi_index = {"@I1@": {"name": "Parent"}, "@I2@": {"name": "Child"}}
-
-        try:
-            unified = convert_gedcom_path_to_unified_format(
-                gedcom_path, reader, id_to_parents, id_to_children, indi_index
-            )
-            assert unified is not None, "Should convert GEDCOM path"
-            assert isinstance(unified, list), "Should return list format"
-        except Exception:
-            # Function might require more complex setup, so pass if it fails gracefully
-            pass
-
-    # Discovery API path conversion
-    def test_discovery_api_conversion():
-        # Test function availability
-        assert callable(
-            convert_discovery_api_path_to_unified_format
-        ), "Function should be callable"
-
-        # Test with minimal valid data structure (if we can determine it)
-        try:
-            # This function requires specific data format - test that it's available
-            func = convert_discovery_api_path_to_unified_format
-            assert func is not None, "Function should be available"
-        except Exception:
-            # Complex function - just verify it exists
-            pass
-
-    # General API path conversion
-    def test_general_api_conversion():
-        # Test function availability
-        assert callable(
-            convert_api_path_to_unified_format
-        ), "Function should be callable"
-
-        # Test basic availability
-        try:
-            func = convert_api_path_to_unified_format
-            assert func is not None, "Function should be available"
-        except Exception:
-            # Complex function - just verify it exists
-            pass
-
-    # Unified path formatting
-    def test_unified_path_formatting():
-        # Test function availability
-        assert callable(format_relationship_path_unified), "Function should be callable"
-
-        # Test basic availability
-        try:
-            func = format_relationship_path_unified
-            assert func is not None, "Function should be available"
-        except Exception:
-            # Complex function - just verify it exists
-            pass
-
-    def test_api_relationship_formatting():
-        # Test function availability
-        assert callable(format_api_relationship_path), "Function should be callable"
-
-        # Test basic availability
-        try:
-            func = format_api_relationship_path
-            assert func is not None, "Function should be available"
-        except Exception:
-            # Complex function - just verify it exists
-            pass
+    # Assign module-level test functions
+    test_gedcom_path_conversion = _test_gedcom_path_conversion
+    test_discovery_api_conversion = _test_discovery_api_conversion
+    test_general_api_conversion = _test_general_api_conversion
+    test_unified_path_formatting = _test_unified_path_formatting
+    test_api_relationship_formatting = _test_api_relationship_formatting
 
     suite.run_test(
         "GEDCOM path conversion",
