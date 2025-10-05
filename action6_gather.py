@@ -2821,6 +2821,78 @@ def _sync_cookies_and_get_csrf_for_scraper(
     return csrf_token_val
 
 
+def _parse_ladder_html(
+    html_content: str,
+    cfpid: str,
+) -> Dict[str, Optional[str]]:
+    """
+    Parse HTML content from getladder API to extract relationship information.
+
+    Returns:
+        Dictionary with 'actual_relationship' and 'relationship_path' keys
+    """
+    ladder_data: Dict[str, Optional[str]] = {
+        "actual_relationship": None,
+        "relationship_path": None,
+    }
+
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # Extract actual relationship
+    rel_elem = soup.select_one(
+        "ul.textCenter > li:first-child > i > b"
+    ) or soup.select_one("ul.textCenter > li > i > b")
+
+    if rel_elem:
+        raw_relationship = rel_elem.get_text(strip=True)
+        ladder_data["actual_relationship"] = ordinal_case(raw_relationship.title())
+    else:
+        logger.warning(f"Could not extract actual_relationship for CFPID {cfpid}")
+
+    # Extract relationship path
+    path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
+    path_list = []
+    num_items = len(path_items)
+
+    for i, item in enumerate(path_items):
+        name_text, desc_text = "", ""
+        name_container = item.find("a") or item.find("b")
+
+        if name_container:
+            name_text = format_name(
+                name_container.get_text(strip=True).replace('"', "'")
+            )
+
+        if i > 0:  # Description is not for the first person (the target)
+            desc_element = item.find("i")
+            if desc_element:
+                raw_desc_full = desc_element.get_text(strip=True).replace('"', "'")
+
+                # Check if it's the "You are the..." line
+                if i == num_items - 1 and raw_desc_full.lower().startswith("you are the "):
+                    desc_text = format_name(raw_desc_full[len("You are the ") :].strip())
+                else:  # Normal relationship "of" someone else
+                    match_rel = re.match(
+                        r"^(.*?)\s+of\s+(.*)$",
+                        raw_desc_full,
+                        re.IGNORECASE,
+                    )
+                    if match_rel:
+                        desc_text = f"{match_rel.group(1).strip().capitalize()} of {format_name(match_rel.group(2).strip())}"
+                    else:  # Fallback if "of" not found (e.g., "Wife")
+                        desc_text = format_name(raw_desc_full)
+
+        if name_text:  # Only add if name was found
+            path_list.append(f"{name_text} ({desc_text})" if desc_text else name_text)
+
+    if path_list:
+        ladder_data["relationship_path"] = "\n↓\n".join(path_list)
+    else:
+        logger.warning(f"Could not construct relationship_path for CFPID {cfpid}.")
+
+    return ladder_data
+
+
 def _validate_session_for_matches(
     session_manager: SessionManager,
 ) -> Optional[Tuple[Any, str]]:
@@ -3775,86 +3847,20 @@ def _fetch_batch_ladder(
             if isinstance(ladder_json, dict) and "html" in ladder_json:
                 html_content = ladder_json["html"]
                 if html_content:
-                    soup = BeautifulSoup(html_content, "html.parser")
-                    rel_elem = soup.select_one(
-                        "ul.textCenter > li:first-child > i > b"
-                    ) or soup.select_one("ul.textCenter > li > i > b")
-                    if rel_elem:
-                        raw_relationship = rel_elem.get_text(strip=True)
-                        ladder_data["actual_relationship"] = ordinal_case(
-                            raw_relationship.title()
-                        )
-                    else:
-                        logger.warning(
-                            f"Could not extract actual_relationship for CFPID {cfpid}"
-                        )
+                    ladder_data = _parse_ladder_html(html_content, cfpid)
+                    logger.debug(f"Successfully parsed ladder details for CFPID {cfpid}.")
 
-                    path_items = soup.select(
-                        'ul.textCenter > li:not([class*="iconArrowDown"])'
-                    )
-                    path_list = []
-                    num_items = len(path_items)
-                    for i, item in enumerate(path_items):
-                        name_text, desc_text = "", ""
-                        name_container = item.find("a") or item.find("b")
-                        if name_container:
-                            name_text = format_name(
-                                name_container.get_text(strip=True).replace('"', "'")
-                            )
-                        if (
-                            i > 0
-                        ):  # Description is not for the first person (the target)
-                            desc_element = item.find("i")
-                            if desc_element:
-                                raw_desc_full = desc_element.get_text(
-                                    strip=True
-                                ).replace('"', "'")
-                                # Check if it's the "You are the..." line
-                                if (
-                                    i == num_items - 1
-                                    and raw_desc_full.lower().startswith("you are the ")
-                                ):
-                                    desc_text = format_name(
-                                        raw_desc_full[len("You are the ") :].strip()
-                                    )
-                                else:  # Normal relationship "of" someone else
-                                    match_rel = re.match(
-                                        r"^(.*?)\s+of\s+(.*)$",
-                                        raw_desc_full,
-                                        re.IGNORECASE,
-                                    )
-                                    if match_rel:
-                                        desc_text = f"{match_rel.group(1).strip().capitalize()} of {format_name(match_rel.group(2).strip())}"
-                                    else:  # Fallback if "of" not found (e.g., "Wife")
-                                        desc_text = format_name(raw_desc_full)
-                        if name_text:  # Only add if name was found
-                            path_list.append(
-                                f"{name_text} ({desc_text})" if desc_text else name_text
-                            )
-                    if path_list:
-                        ladder_data["relationship_path"] = "\n↓\n".join(path_list)
-                    else:
-                        logger.warning(
-                            f"Could not construct relationship_path for CFPID {cfpid}."
-                        )
-                    logger.debug(
-                        f"Successfully parsed ladder details for CFPID {cfpid}."
-                    )
                     # Return only if at least one piece of data was found
-                    if (
-                        ladder_data["actual_relationship"]
-                        or ladder_data["relationship_path"]
-                    ):
+                    if ladder_data["actual_relationship"] or ladder_data["relationship_path"]:
                         return ladder_data
+
                     # No data found after parsing
                     logger.warning(
                         f"No actual_relationship or path found for CFPID {cfpid} after parsing."
                     )
                     return None
 
-                logger.warning(
-                    f"Empty HTML in getladder response for CFPID {cfpid}."
-                )
+                logger.warning(f"Empty HTML in getladder response for CFPID {cfpid}.")
                 return None
             logger.warning(
                 f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
