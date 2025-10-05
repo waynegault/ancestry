@@ -3098,6 +3098,40 @@ def load_test_person_from_env():
 # ==============================================
 
 
+def _require_env(keys: list[str]) -> None:
+    """Check that required environment variables are set."""
+    missing = [k for k in keys if not os.getenv(k)]
+    assert not missing, f"Missing required env vars for Action 11 tests: {missing}"
+
+
+def _ensure_session(skip_live_tests: bool) -> SessionManager:
+    """Ensure session is ready for live API tests."""
+    if skip_live_tests:
+        logger.info("Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
+        return None  # type: ignore[return-value]
+    _require_env(["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD", "TREE_NAME", "API_BASE_URL"])
+    sm = SessionManager()
+    started = sm.start_sess("Action 11 Tests")
+    assert started, "Failed to start session"
+    ready = sm.ensure_session_ready("Action 11 Tests")
+    assert ready, "Session not ready (login/cookies/ids missing)"
+    assert sm.my_profile_id, "Profile ID not available"
+    # TREE_NAME is required; ensure we can resolve a tree id
+    assert sm.my_tree_id, "Tree ID not available (check TREE_NAME in .env)"
+    return sm
+
+
+def _build_search_criteria_from_test_person(tp: dict[str, Any]) -> dict[str, Any]:
+    """Build search criteria from test person data."""
+    return {
+        "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
+        "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
+        "gender": str(tp.get("gender", "M")).lower()[0],
+        "birth_year": int(tp.get("birth_year", 1941)),
+        "birth_place": str(tp.get("birth_place", "Banff")).lower(),
+    }
+
+
 def action11_module_tests() -> bool:
     """
     Comprehensive test suite for action11.py following the standardized 6-category TestSuite framework.
@@ -3142,41 +3176,16 @@ def action11_module_tests() -> bool:
             print("ℹ️  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
             logger.info("Skipping all live API tests due to SKIP_LIVE_API_TESTS environment variable")
 
-        def _require_env(keys: list[str]):
-            missing = [k for k in keys if not os.getenv(k)]
-            assert not missing, f"Missing required env vars for Action 11 tests: {missing}"
-
-        def _ensure_session() -> SessionManager:
-            if skip_live_tests:
-                logger.info("Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
-                return None  # type: ignore[return-value]
-            _require_env(["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD", "TREE_NAME", "API_BASE_URL"])
-            sm = SessionManager()
-            started = sm.start_sess("Action 11 Tests")
-            assert started, "Failed to start session"
-            ready = sm.ensure_session_ready("Action 11 Tests")
-            assert ready, "Session not ready (login/cookies/ids missing)"
-            assert sm.my_profile_id, "Profile ID not available"
-            # TREE_NAME is required; ensure we can resolve a tree id
-            assert sm.my_tree_id, "Tree ID not available (check TREE_NAME in .env)"
-            return sm
-
         def test_live_search_fraser():
             """Live API: search for Fraser Gault and ensure a scored match is returned."""
             if skip_live_tests:
                 logger.info("Skipping live API test: test_live_search_fraser")
                 return True
-            sm = _ensure_session()
+            sm = _ensure_session(skip_live_tests)
             if not sm:
                 return True
             tp = load_test_person_from_env()
-            criteria = {
-                "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
-                "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
-                "gender": str(tp.get("gender", "M")).lower()[0],
-                "birth_year": int(tp.get("birth_year", 1941)),
-                "birth_place": str(tp.get("birth_place", "Banff")).lower(),
-            }
+            criteria = _build_search_criteria_from_test_person(tp)
             results = search_ancestry_api_for_person(sm, criteria, max_results=5)
             assert results, "No results returned from live API search"
             top = results[0]
@@ -3193,18 +3202,12 @@ def action11_module_tests() -> bool:
             if skip_live_tests:
                 logger.info("Skipping live API test: test_live_family_matches_env")
                 return True
-            sm = _ensure_session()
+            sm = _ensure_session(skip_live_tests)
             if not sm:
                 return True
             tp = load_test_person_from_env()
             # Reuse search to pick id/tree
-            criteria = {
-                "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
-                "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
-                "gender": str(tp.get("gender", "M")).lower()[0],
-                "birth_year": int(tp.get("birth_year", 1941)),
-                "birth_place": str(tp.get("birth_place", "Banff")).lower(),
-            }
+            criteria = _build_search_criteria_from_test_person(tp)
             results = search_ancestry_api_for_person(sm, criteria, max_results=3)
             assert results, "No results available for details test"
             raw = results[0].get("raw_data", {})
@@ -3227,18 +3230,12 @@ def action11_module_tests() -> bool:
             if skip_live_tests:
                 logger.info("Skipping live API test: test_live_relationship_uncle")
                 return True
-            sm = _ensure_session()
+            sm = _ensure_session(skip_live_tests)
             if not sm:
                 return True
             tp = load_test_person_from_env()
             # Search to get ids
-            criteria = {
-                "first_name": tp.get("name", "Fraser Gault").split()[0].lower(),
-                "surname": tp.get("name", "Fraser Gault").split()[-1].lower(),
-                "gender": str(tp.get("gender", "M")).lower()[0],
-                "birth_year": int(tp.get("birth_year", 1941)),
-                "birth_place": str(tp.get("birth_place", "Banff")).lower(),
-            }
+            criteria = _build_search_criteria_from_test_person(tp)
             results = search_ancestry_api_for_person(sm, criteria, max_results=3)
             assert results, "No results available for relationship test"
             top = results[0]
