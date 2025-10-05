@@ -1122,7 +1122,7 @@ class CacheDependencyTracker:
     Tracks dependencies between cache entries for intelligent invalidation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.dependencies: dict[str, set[str]] = {}  # key -> set of dependent keys
         self.reverse_dependencies: dict[str, set[str]] = {}  # key -> set of keys it depends on
 

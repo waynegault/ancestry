@@ -984,7 +984,7 @@ class MessageEffectivenessTracker:
     Tracks response rates, engagement quality, and optimization opportunities.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the effectiveness tracker."""
         self.effectiveness_data = self._load_effectiveness_data()
         self.response_categories = {
