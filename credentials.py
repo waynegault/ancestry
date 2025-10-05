@@ -733,6 +733,106 @@ class UnifiedCredentialManager:
 
         return security_ok
 
+    def _load_cred_types_config(self, cred_types_file: Path) -> tuple[dict[str, str], dict[str, str]]:
+        """Load credential types configuration from file."""
+        if cred_types_file.exists():
+            try:
+                with cred_types_file.open(encoding="utf-8") as f:
+                    cred_types = json.load(f)
+                required_creds = cred_types.get("required_credentials", {})
+                optional_creds = cred_types.get("optional_credentials", {})
+                print("✅ Loaded credential types from configuration file")
+                return required_creds, optional_creds
+            except Exception as e:
+                print(f"⚠️ Error loading credential types: {e}, using defaults")
+                return self._load_credential_types()
+
+        print("⚠️ Configuration file not found, creating new one")
+        return self._load_credential_types()
+
+    def _display_cred_types_config(self, required_creds: dict[str, str], optional_creds: dict[str, str]) -> None:
+        """Display current credential types configuration."""
+        print("\nCurrent Configuration:")
+        print("Required Credentials:")
+        for key, desc in required_creds.items():
+            print(f"  {key}: {desc}")
+
+        print("\nOptional Credentials:")
+        for key, desc in optional_creds.items():
+            print(f"  {key}: {desc}")
+
+    def _add_edit_credential(self, creds_dict: dict[str, str], cred_type: str) -> None:
+        """Add or edit a credential in the given dictionary."""
+        key = input("Credential Key (e.g., API_KEY_NAME): ").strip().upper()
+        if not key:
+            print("❌ Key cannot be empty")
+            return
+
+        desc = input(f"Description for {key}: ").strip()
+        if not desc:
+            desc = f"{key} ({cred_type})"
+
+        creds_dict[key] = desc
+        print(f"✅ Added/Updated {cred_type} credential: {key}")
+
+    def _move_credential(self, required_creds: dict[str, str], optional_creds: dict[str, str]) -> None:
+        """Move a credential between required and optional."""
+        print("\nAvailable Credentials:")
+        print("Required:")
+        for i, (key, _) in enumerate(required_creds.items(), 1):
+            print(f"  {i}. {key}")
+
+        print("Optional:")
+        for i, (key, _) in enumerate(optional_creds.items(), len(required_creds) + 1):
+            print(f"  {i}. {key}")
+
+        try:
+            idx = int(input("\nSelect credential number to move: ").strip())
+            if 1 <= idx <= len(required_creds):
+                # Move from required to optional
+                key = list(required_creds.keys())[idx - 1]
+                desc = required_creds.pop(key)
+                optional_creds[key] = desc
+                print(f"✅ Moved {key} from Required to Optional")
+            elif len(required_creds) < idx <= len(required_creds) + len(optional_creds):
+                # Move from optional to required
+                key = list(optional_creds.keys())[idx - len(required_creds) - 1]
+                desc = optional_creds.pop(key)
+                required_creds[key] = desc
+                print(f"✅ Moved {key} from Optional to Required")
+            else:
+                print("❌ Invalid selection")
+        except (ValueError, IndexError):
+            print("❌ Invalid selection")
+
+    def _remove_credential_from_config(self, required_creds: dict[str, str], optional_creds: dict[str, str]) -> None:
+        """Remove a credential from configuration."""
+        print("\nAvailable Credentials:")
+        all_creds = []
+        print("Required:")
+        for i, (key, _) in enumerate(required_creds.items()):
+            all_creds.append(("required", key))
+            print(f"  {i+1}. {key}")
+
+        print("Optional:")
+        for i, (key, _) in enumerate(optional_creds.items()):
+            all_creds.append(("optional", key))
+            print(f"  {i+len(required_creds)+1}. {key}")
+
+        try:
+            idx = int(input("\nSelect credential number to remove: ").strip())
+            if 1 <= idx <= len(all_creds):
+                cred_type, key = all_creds[idx - 1]
+                if cred_type == "required":
+                    del required_creds[key]
+                else:
+                    del optional_creds[key]
+                print(f"✅ Removed {key}")
+            else:
+                print("❌ Invalid selection")
+        except (ValueError, IndexError):
+            print("❌ Invalid selection")
+
     def edit_credential_types(self) -> None:
         """Edit credential types configuration."""
         print("\n" + "=" * 50)
@@ -742,28 +842,10 @@ class UnifiedCredentialManager:
         cred_types_file = Path(__file__).parent / "credential_types.json"
 
         # Load current configuration
-        if cred_types_file.exists():
-            try:
-                with cred_types_file.open(encoding="utf-8") as f:
-                    cred_types = json.load(f)
-                required_creds = cred_types.get("required_credentials", {})
-                optional_creds = cred_types.get("optional_credentials", {})
-                print("✅ Loaded credential types from configuration file")
-            except Exception as e:
-                print(f"⚠️ Error loading credential types: {e}, using defaults")
-                required_creds, optional_creds = self._load_credential_types()
-        else:
-            print("⚠️ Configuration file not found, creating new one")
-            required_creds, optional_creds = self._load_credential_types()
+        required_creds, optional_creds = self._load_cred_types_config(cred_types_file)
 
-        print("\nCurrent Configuration:")
-        print("Required Credentials:")
-        for key, desc in required_creds.items():
-            print(f"  {key}: {desc}")
-
-        print("\nOptional Credentials:")
-        for key, desc in optional_creds.items():
-            print(f"  {key}: {desc}")
+        # Display configuration
+        self._display_cred_types_config(required_creds, optional_creds)
 
         print("\nOptions:")
         print("  1. Add/Edit Required Credential")
@@ -776,97 +858,14 @@ class UnifiedCredentialManager:
             choice = input("\nChoice (1-5): ").strip()
 
             if choice == "1":
-                # Add/Edit Required Credential
-                key = input("Credential Key (e.g., API_KEY_NAME): ").strip().upper()
-                if not key:
-                    print("❌ Key cannot be empty")
-                    continue
-
-                desc = input(f"Description for {key}: ").strip()
-                if not desc:
-                    desc = f"{key} (required)"
-
-                required_creds[key] = desc
-                print(f"✅ Added/Updated required credential: {key}")
-
+                self._add_edit_credential(required_creds, "required")
             elif choice == "2":
-                # Add/Edit Optional Credential
-                key = input("Credential Key (e.g., API_KEY_NAME): ").strip().upper()
-                if not key:
-                    print("❌ Key cannot be empty")
-                    continue
-
-                desc = input(f"Description for {key}: ").strip()
-                if not desc:
-                    desc = f"{key} (optional)"
-
-                optional_creds[key] = desc
-                print(f"✅ Added/Updated optional credential: {key}")
+                self._add_edit_credential(optional_creds, "optional")
 
             elif choice == "3":
-                # Move Credential
-                print("\nAvailable Credentials:")
-                print("Required:")
-                for i, (key, _) in enumerate(required_creds.items(), 1):
-                    print(f"  {i}. {key}")
-
-                print("Optional:")
-                for i, (key, _) in enumerate(
-                    optional_creds.items(), len(required_creds) + 1
-                ):
-                    print(f"  {i}. {key}")
-
-                try:
-                    idx = int(input("\nSelect credential number to move: ").strip())
-                    if 1 <= idx <= len(required_creds):
-                        # Move from required to optional
-                        key = list(required_creds.keys())[idx - 1]
-                        desc = required_creds.pop(key)
-                        optional_creds[key] = desc
-                        print(f"✅ Moved {key} from Required to Optional")
-                    elif (
-                        len(required_creds)
-                        < idx
-                        <= len(required_creds) + len(optional_creds)
-                    ):
-                        # Move from optional to required
-                        key = list(optional_creds.keys())[idx - len(required_creds) - 1]
-                        desc = optional_creds.pop(key)
-                        required_creds[key] = desc
-                        print(f"✅ Moved {key} from Optional to Required")
-                    else:
-                        print("❌ Invalid selection")
-                except (ValueError, IndexError):
-                    print("❌ Invalid selection")
-
+                self._move_credential(required_creds, optional_creds)
             elif choice == "4":
-                # Remove Credential
-                print("\nAvailable Credentials:")
-                all_creds = []
-                print("Required:")
-                for i, (key, _) in enumerate(required_creds.items()):
-                    all_creds.append(("required", key))
-                    print(f"  {i+1}. {key}")
-
-                print("Optional:")
-                for i, (key, _) in enumerate(optional_creds.items()):
-                    all_creds.append(("optional", key))
-                    print(f"  {i+len(required_creds)+1}. {key}")
-
-                try:
-                    idx = int(input("\nSelect credential number to remove: ").strip())
-                    if 1 <= idx <= len(all_creds):
-                        cred_type, key = all_creds[idx - 1]
-                        if cred_type == "required":
-                            del required_creds[key]
-                        else:
-                            del optional_creds[key]
-                        print(f"✅ Removed {key}")
-                    else:
-                        print("❌ Invalid selection")
-                except (ValueError, IndexError):
-                    print("❌ Invalid selection")
-
+                self._remove_credential_from_config(required_creds, optional_creds)
             elif choice == "5":
                 # Save and return
                 try:
@@ -880,9 +879,7 @@ class UnifiedCredentialManager:
                     with cred_types_file.open("w", encoding="utf-8") as f:
                         json.dump(updated_config, f, indent=4)
 
-                    print(
-                        f"✅ Saved credential types configuration to {cred_types_file}"
-                    )
+                    print(f"✅ Saved credential types configuration to {cred_types_file}")
                     break
                 except Exception as e:
                     print(f"❌ Error saving configuration: {e}")
