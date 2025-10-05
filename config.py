@@ -80,12 +80,12 @@ def _test_config_manager_functionality():
 def _test_module_exports():
     """Test module __all__ exports"""
     import sys
-    expected_exports = ["config_manager", "config_schema", "ConfigManager"]
-    assert __all__ == expected_exports
+    expected_exports = ["ConfigManager", "config_manager", "config_schema"]
+    assert __all__ == expected_exports, f"Expected {expected_exports}, got {__all__}"
     current_module = sys.modules[__name__]
     for export_name in __all__:
-        assert hasattr(current_module, export_name)
-        assert getattr(current_module, export_name) is not None
+        assert hasattr(current_module, export_name), f"Module should have {export_name}"
+        assert getattr(current_module, export_name) is not None, f"{export_name} should not be None"
 
 
 def _test_config_schema_validity():

@@ -531,14 +531,14 @@ def monitor_memory_pressure() -> bool:
 # PERFORMANCE OPTIMIZATION DECORATOR
 # ==============================================
 
-def optimize_on_high_usage(_memory_threshold: float = 85.0):
+def optimize_on_high_usage(memory_threshold: float = 85.0):
     """Decorator to automatically optimize performance when resource usage is high."""
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Check memory pressure before execution
             if monitor_memory_pressure():
-                logger.info("High memory pressure detected, running optimization before function execution")
+                logger.info(f"High memory pressure detected (threshold: {memory_threshold}%), running optimization before function execution")
                 optimize_performance()
 
             # Execute function and track performance
@@ -566,7 +566,6 @@ def optimize_on_high_usage(_memory_threshold: float = 85.0):
 
 # Use centralized test runner utility
 from test_utilities import create_standard_test_runner
-
 
 # ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
