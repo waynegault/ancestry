@@ -420,7 +420,7 @@ class GedcomAIIntegrator:
 
         return tasks
 
-    def _fallback_research_tasks(self, person_data: dict[str, Any], extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def _fallback_research_tasks(self, person_data: dict[str, Any], _extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate fallback research tasks when GEDCOM AI is not available."""
         return [
             {
@@ -448,12 +448,12 @@ class GedcomAIIntegrator:
         opportunities = analysis.get("research_opportunities", [])
         return [opp for opp in opportunities if person_identifier in opp.get("target_people", [])]
 
-    def _get_person_family_context(self, person_identifier: str, gedcom_data: Any) -> dict[str, Any]:
+    def _get_person_family_context(self, _person_identifier: str, _gedcom_data: Any) -> dict[str, Any]:
         """Get family context for a specific person."""
         # This would extract family relationships and context
         return {"family_context": "Analysis not yet implemented"}
 
-    def _get_person_ai_recommendations(self, person_identifier: str, analysis: dict[str, Any]) -> list[str]:
+    def _get_person_ai_recommendations(self, person_identifier: str, _analysis: dict[str, Any]) -> list[str]:
         """Get AI recommendations for a specific person."""
         return [
             f"Focus on high-priority research for {person_identifier}",

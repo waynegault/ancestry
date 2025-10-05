@@ -168,7 +168,7 @@ def _get_confidence_level(score: float) -> str:
 
 def format_scoring_breakdown(
     result: dict[str, Any],
-    search_criteria: dict[str, Any],
+    _search_criteria: dict[str, Any],
     title: str = "Scoring Breakdown"
 ) -> str:
     """
@@ -228,7 +228,7 @@ def format_scoring_breakdown(
         return f"Scoring breakdown unavailable: {e}"
 
 
-def _get_field_description(field_key: str, score: float) -> str:
+def _get_field_description(_field_key: str, score: float) -> str:
     """Get description for a field score."""
     if score >= 25:
         return "Excellent match"
