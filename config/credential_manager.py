@@ -369,6 +369,7 @@ class CredentialManager:
 def _test_initialization() -> None:
     """Test CredentialManager initialization with detailed verification."""
     import os
+
     from test_framework import suppress_logging  # type: ignore
 
     print("📋 Testing CredentialManager initialization:")
@@ -415,6 +416,7 @@ def _test_initialization() -> None:
 def _test_environment_loading() -> None:
     """Test loading credentials from environment variables."""
     import os
+
     from test_framework import suppress_logging  # type: ignore
 
     with suppress_logging():
@@ -675,6 +677,7 @@ def _test_error_handling() -> None:
 def _test_integration() -> None:
     """Test integration between different components."""
     import os
+
     from test_framework import suppress_logging  # type: ignore
 
     with suppress_logging():
@@ -721,6 +724,7 @@ def _test_integration() -> None:
 def _test_performance() -> None:
     """Test performance of credential operations."""
     import time
+
     from test_framework import suppress_logging  # type: ignore
 
     with suppress_logging():
@@ -752,7 +756,7 @@ def _test_performance() -> None:
 
 def _test_function_structure() -> None:
     """Test that all expected methods and properties exist."""
-    from test_framework import suppress_logging, assert_valid_function  # type: ignore
+    from test_framework import assert_valid_function, suppress_logging  # type: ignore
 
     with suppress_logging():
         cm = CredentialManager()
@@ -818,29 +822,12 @@ def _test_import_dependencies() -> None:
 # ==============================================
 
 
-def credential_manager_module_tests() -> bool:
-    """
-    Run comprehensive tests for the CredentialManager class.
-
-    This function tests all major functionality of the CredentialManager
-    to ensure proper credential handling and security integration.
-    """
-    import os  # Test framework imports with fallback
-    import traceback
-    from typing import Any
-
+def _get_test_framework():
+    """Get test framework with fallback implementations."""
     try:
-        from test_framework import (
-            TestSuite,  # type: ignore
-            assert_valid_function,  # type: ignore
-            create_mock_data,
-            suppress_logging,  # type: ignore
-        )
-
+        from test_framework import TestSuite, assert_valid_function, create_mock_data, suppress_logging
+        return TestSuite, assert_valid_function, create_mock_data, suppress_logging
     except ImportError:
-        # Fallback implementations
-
-        # Define minimal fallback classes that match expected interface
         from types import TracebackType
         from typing import Any, Callable, Optional
 
@@ -853,9 +840,7 @@ def credential_manager_module_tests() -> bool:
             def start_suite(self) -> None:
                 print(f"Starting {self.name} tests...")
 
-            def run_test(
-                self, name: str, func: Callable, _description: str = ""
-            ) -> None:
+            def run_test(self, name: str, func: Callable, _description: str = "") -> None:
                 try:
                     func()
                     self.tests_passed += 1
@@ -871,12 +856,7 @@ def credential_manager_module_tests() -> bool:
             def __enter__(self) -> "SuppressLogging":
                 return self
 
-            def __exit__(
-                self,
-                exc_type: Optional[type[BaseException]],
-                exc_val: Optional[BaseException],
-                exc_tb: Optional[TracebackType],
-            ) -> None:
+            def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> None:
                 pass
 
         def create_mock_data() -> dict:
@@ -884,6 +864,15 @@ def credential_manager_module_tests() -> bool:
 
         def assert_valid_function(func: Any, func_name: str = "") -> None:
             assert callable(func), f"{func_name} should be callable"
+
+        return TestSuite, assert_valid_function, create_mock_data, SuppressLogging
+
+
+def credential_manager_module_tests() -> bool:
+    """Run comprehensive tests for the CredentialManager class."""
+    import traceback
+
+    TestSuite, assert_valid_function, create_mock_data, suppress_logging = _get_test_framework()
 
     print("============================================================")
     print("🔧 Testing: Configuration Management & Credential Storage")
