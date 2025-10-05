@@ -3077,6 +3077,121 @@ def _fetch_profile_details_api(
     return result
 
 
+def _fetch_in_tree_status(
+    driver: Any,
+    session_manager: SessionManager,
+    my_uuid: str,
+    sample_ids_on_page: List[str],
+    specific_csrf_token: str,
+    current_page: int,
+) -> Set[str]:
+    """
+    Fetch in-tree status for a list of sample IDs, with caching.
+
+    Returns:
+        Set of sample IDs that are in the user's tree
+    """
+    in_tree_ids: Set[str] = set()
+    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
+
+    # Try to get from cache first
+    try:
+        if global_cache is not None:
+            cached_in_tree = global_cache.get(cache_key_tree, default=ENOVAL, retry=True)
+            if cached_in_tree is not ENOVAL:
+                if isinstance(cached_in_tree, set):
+                    in_tree_ids = cached_in_tree
+                logger.debug(
+                    f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
+                )
+                return in_tree_ids
+            else:
+                logger.debug(
+                    f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
+                )
+    except Exception as cache_read_err:
+        logger.error(
+            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
+            exc_info=True,
+        )
+
+    # Fetch from API if cache miss or error
+    if not session_manager.is_sess_valid():
+        logger.error(
+            f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch."
+        )
+        return in_tree_ids
+
+    in_tree_url = urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
+    )
+    parsed_base_url = urlparse(config_schema.api.base_url)
+    origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
+
+    ua_in_tree = None
+    if driver and session_manager.is_sess_valid():
+        try:
+            ua_in_tree = driver.execute_script("return navigator.userAgent;")
+        except Exception:
+            pass
+    ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
+
+    in_tree_headers = {
+        "X-CSRF-Token": specific_csrf_token,
+        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
+        "Origin": origin_header_value,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": ua_in_tree,
+    }
+    in_tree_headers = {k: v for k, v in in_tree_headers.items() if v}
+
+    logger.debug(
+        f"Fetching in-tree status for {len(sample_ids_on_page)} matches on page {current_page}..."
+    )
+
+    response_in_tree = _api_req(
+        url=in_tree_url,
+        driver=driver,
+        session_manager=session_manager,
+        method="POST",
+        json_data={"sampleIds": sample_ids_on_page},
+        headers=in_tree_headers,
+        use_csrf_token=False,
+        api_description="In-Tree Status Check",
+    )
+
+    if isinstance(response_in_tree, list):
+        in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
+        logger.debug(f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}.")
+
+        # Cache the result
+        try:
+            if global_cache is not None:
+                global_cache.set(
+                    cache_key_tree,
+                    in_tree_ids,
+                    expire=config_schema.cache.memory_cache_ttl,
+                    retry=True,
+                )
+            logger.debug(f"Cached in-tree status result for page {current_page}.")
+        except Exception as cache_write_err:
+            logger.error(f"Error writing in-tree status to cache: {cache_write_err}")
+    else:
+        status_code_log = (
+            f" Status: {response_in_tree.status_code}"  # type: ignore
+            if isinstance(response_in_tree, requests.Response)
+            else ""
+        )
+        logger.warning(
+            f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
+        )
+        logger.debug(f"In-Tree check response: {response_in_tree}")
+
+    return in_tree_ids
+
+
 def _validate_session_for_matches(
     session_manager: SessionManager,
 ) -> Optional[Tuple[Any, str]]:
@@ -3398,119 +3513,13 @@ def get_matches(  # type: ignore
     if not valid_matches_for_processing:
         return [], total_pages
 
+    # Fetch in-tree status for matches on this page
     sample_ids_on_page = [
         match["sampleId"].upper() for match in valid_matches_for_processing
     ]
-    in_tree_ids: Set[str] = set()
-    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
-
-    try:
-        if global_cache is not None:
-            cached_in_tree = global_cache.get(
-                cache_key_tree, default=ENOVAL, retry=True
-            )
-            if cached_in_tree is not ENOVAL:
-                if isinstance(cached_in_tree, set):
-                    in_tree_ids = cached_in_tree
-                logger.debug(
-                    f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
-                )
-            else:  # Cache miss or ENOVAL (which means miss in this context)
-                logger.debug(
-                    f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
-                )
-                # Fall through to API fetch
-        # If global_cache is None, also fall through to API fetch
-    except Exception as cache_read_err:
-        logger.error(
-            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
-            exc_info=True,
-        )
-        in_tree_ids = (
-            set()
-        )  # Ensure it's an empty set before API fetch if cache read fails
-
-    if not in_tree_ids:  # Fetch if cache miss, cache error, or cache was disabled
-        if not session_manager.is_sess_valid():
-            logger.error(
-                f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch."
-            )
-        else:
-            in_tree_url = urljoin(
-                config_schema.api.base_url,
-                f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
-            )
-            parsed_base_url = urlparse(config_schema.api.base_url)
-            origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
-            ua_in_tree = None
-            if driver and session_manager.is_sess_valid():
-                try:
-                    ua_in_tree = driver.execute_script("return navigator.userAgent;")
-                except Exception:
-                    pass
-            ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
-            in_tree_headers = {
-                "X-CSRF-Token": specific_csrf_token,
-                "Referer": urljoin(
-                    config_schema.api.base_url, "/discoveryui-matches/list/"
-                ),
-                "Origin": origin_header_value,
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": ua_in_tree,
-            }
-            in_tree_headers = {k: v for k, v in in_tree_headers.items() if v}
-
-            logger.debug(
-                f"Fetching in-tree status for {len(sample_ids_on_page)} matches on page {current_page}..."
-            )
-            logger.debug(
-                f"In-Tree Check Headers FULLY set in get_matches: {in_tree_headers}"
-            )
-            response_in_tree = _api_req(
-                url=in_tree_url,
-                driver=driver,
-                session_manager=session_manager,
-                method="POST",
-                json_data={
-                    "sampleIds": sample_ids_on_page
-                },  # This is correct - _api_req expects json_data
-                headers=in_tree_headers,
-                use_csrf_token=False,
-                api_description="In-Tree Status Check",
-            )
-            if isinstance(response_in_tree, list):
-                in_tree_ids = {
-                    item.upper() for item in response_in_tree if isinstance(item, str)
-                }
-                logger.debug(
-                    f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}."
-                )
-                try:
-                    if global_cache is not None:
-                        global_cache.set(
-                            cache_key_tree,
-                            in_tree_ids,
-                            expire=config_schema.cache.memory_cache_ttl,
-                            retry=True,
-                        )
-                    logger.debug(
-                        f"Cached in-tree status result for page {current_page}."
-                    )
-                except Exception as cache_write_err:
-                    logger.error(
-                        f"Error writing in-tree status to cache: {cache_write_err}"
-                    )
-            else:
-                status_code_log = (
-                    f" Status: {response_in_tree.status_code}"  # type: ignore
-                    if isinstance(response_in_tree, requests.Response)
-                    else ""
-                )
-                logger.warning(
-                    f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
-                )
-                logger.debug(f"In-Tree check response: {response_in_tree}")
+    in_tree_ids = _fetch_in_tree_status(
+        driver, session_manager, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
+    )
 
     refined_matches: List[Dict[str, Any]] = []
     logger.debug(f"Refining {len(valid_matches_for_processing)} valid matches...")
