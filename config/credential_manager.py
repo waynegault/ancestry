@@ -359,6 +359,118 @@ class CredentialManager:
         }
 
 
+# === EXTRACTED TEST FUNCTIONS ===
+
+
+def _test_initialization() -> None:
+    """Test CredentialManager initialization with detailed verification."""
+    import os
+    from test_framework import suppress_logging  # type: ignore
+
+    print("📋 Testing CredentialManager initialization:")
+
+    with suppress_logging():
+        results = []
+
+        # Test default initialization
+        print("   • Testing default initialization...")
+        cm = CredentialManager()
+
+        default_app_correct = cm.app_name == "AncestryAutomation"
+        security_manager_none = cm._security_manager is None
+        cache_none = cm._credentials_cache is None
+
+        print(
+            f"   ✅ Default app name: {cm.app_name} (Expected: AncestryAutomation)"
+        )
+        print(
+            f"   ✅ Security manager initial state: {cm._security_manager} (Expected: None)"
+        )
+        print(
+            f"   ✅ Credentials cache initial state: {cm._credentials_cache} (Expected: None)"
+        )
+
+        results.extend([default_app_correct, security_manager_none, cache_none])
+
+        # Test custom app name
+        print("   • Testing custom app name initialization...")
+        custom_cm = CredentialManager("TestApp")
+        custom_app_correct = custom_cm.app_name == "TestApp"
+
+        print(f"   ✅ Custom app name: {custom_cm.app_name} (Expected: TestApp)")
+
+        results.append(custom_app_correct)
+
+        print(
+            f"📊 Results: {sum(results)}/{len(results)} initialization checks passed"
+        )
+
+        assert all(results), "All initialization checks should pass"
+
+
+def _test_environment_loading() -> None:
+    """Test loading credentials from environment variables."""
+    import os
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Store original environment
+        original_env = {}
+        test_keys = ["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD", "DEEPSEEK_API_KEY"]
+        for key in test_keys:
+            original_env[key] = os.environ.get(key)
+
+        try:
+            # Set test environment variables
+            os.environ["ANCESTRY_USERNAME"] = "test_user"
+            os.environ["ANCESTRY_PASSWORD"] = "test_pass"
+            os.environ["DEEPSEEK_API_KEY"] = "test_key"
+
+            # Load from environment
+            env_creds = cm._load_from_environment()
+            assert "ANCESTRY_USERNAME" in env_creds
+            assert env_creds["ANCESTRY_USERNAME"] == "test_user"
+            assert env_creds["ANCESTRY_PASSWORD"] == "test_pass"
+            assert env_creds["DEEPSEEK_API_KEY"] == "test_key"
+
+        finally:
+            # Restore original environment
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+
+def _test_credential_validation() -> None:
+    """Test credential validation logic."""
+    from test_framework import suppress_logging  # type: ignore
+
+    with suppress_logging():
+        cm = CredentialManager()
+
+        # Test valid credentials
+        valid_creds = {
+            "ANCESTRY_USERNAME": "test_user",
+            "ANCESTRY_PASSWORD": "test_pass",
+        }
+        assert cm.validate_credentials(valid_creds) is True
+
+        # Test missing username
+        invalid_creds1 = {"ANCESTRY_PASSWORD": "test_pass"}
+        assert cm.validate_credentials(invalid_creds1) is False
+
+        # Test missing password
+        invalid_creds2 = {"ANCESTRY_USERNAME": "test_user"}
+        assert cm.validate_credentials(invalid_creds2) is False
+
+        # Test empty values
+        invalid_creds3 = {"ANCESTRY_USERNAME": "", "ANCESTRY_PASSWORD": "test_pass"}
+        assert cm.validate_credentials(invalid_creds3) is False
+
+
 def credential_manager_module_tests() -> bool:
     """
     Run comprehensive tests for the CredentialManager class.
@@ -455,106 +567,13 @@ def credential_manager_module_tests() -> bool:
             return False
 
     # Test 1: Basic Initialization
-    def test_initialization():
-        """Test CredentialManager initialization with detailed verification."""
-
-        print("📋 Testing CredentialManager initialization:")
-
-        with suppress_logging():
-            results = []
-
-            # Test default initialization
-            print("   • Testing default initialization...")
-            cm = CredentialManager()
-
-            default_app_correct = cm.app_name == "AncestryAutomation"
-            security_manager_none = cm._security_manager is None
-            cache_none = cm._credentials_cache is None
-
-            print(
-                f"   ✅ Default app name: {cm.app_name} (Expected: AncestryAutomation)"
-            )
-            print(
-                f"   ✅ Security manager initial state: {cm._security_manager} (Expected: None)"
-            )
-            print(
-                f"   ✅ Credentials cache initial state: {cm._credentials_cache} (Expected: None)"
-            )
-
-            results.extend([default_app_correct, security_manager_none, cache_none])
-
-            # Test custom app name
-            print("   • Testing custom app name initialization...")
-            custom_cm = CredentialManager("TestApp")
-            custom_app_correct = custom_cm.app_name == "TestApp"
-
-            print(f"   ✅ Custom app name: {custom_cm.app_name} (Expected: TestApp)")
-
-            results.append(custom_app_correct)
-
-            print(
-                f"📊 Results: {sum(results)}/{len(results)} initialization checks passed"
-            )
-
-            assert all(results), "All initialization checks should pass"
+    test_initialization = _test_initialization
 
     # Test 2: Environment Variable Loading
-    def test_environment_loading():
-        """Test loading credentials from environment variables."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Store original environment
-            original_env = {}
-            test_keys = ["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD", "DEEPSEEK_API_KEY"]
-            for key in test_keys:
-                original_env[key] = os.environ.get(key)
-
-            try:
-                # Set test environment variables
-                os.environ["ANCESTRY_USERNAME"] = "test_user"
-                os.environ["ANCESTRY_PASSWORD"] = "test_pass"
-                os.environ["DEEPSEEK_API_KEY"] = "test_key"
-
-                # Load from environment
-                env_creds = cm._load_from_environment()
-                assert "ANCESTRY_USERNAME" in env_creds
-                assert env_creds["ANCESTRY_USERNAME"] == "test_user"
-                assert env_creds["ANCESTRY_PASSWORD"] == "test_pass"
-                assert env_creds["DEEPSEEK_API_KEY"] == "test_key"
-
-            finally:
-                # Restore original environment
-                for key, value in original_env.items():
-                    if value is None:
-                        os.environ.pop(key, None)
-                    else:
-                        os.environ[key] = value
+    test_environment_loading = _test_environment_loading
 
     # Test 3: Credential Validation
-    def test_credential_validation():
-        """Test credential validation logic."""
-        with suppress_logging():
-            cm = CredentialManager()
-
-            # Test valid credentials
-            valid_creds = {
-                "ANCESTRY_USERNAME": "test_user",
-                "ANCESTRY_PASSWORD": "test_pass",
-            }
-            assert cm.validate_credentials(valid_creds) is True
-
-            # Test missing username
-            invalid_creds1 = {"ANCESTRY_PASSWORD": "test_pass"}
-            assert cm.validate_credentials(invalid_creds1) is False
-
-            # Test missing password
-            invalid_creds2 = {"ANCESTRY_USERNAME": "test_user"}
-            assert cm.validate_credentials(invalid_creds2) is False
-
-            # Test empty values
-            invalid_creds3 = {"ANCESTRY_USERNAME": "", "ANCESTRY_PASSWORD": "test_pass"}
-            assert cm.validate_credentials(invalid_creds3) is False
+    test_credential_validation = _test_credential_validation
 
     # Test 4: Credential Getting and Checking
     def test_credential_access():
