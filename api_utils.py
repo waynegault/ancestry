@@ -2468,6 +2468,22 @@ def call_profile_details_api(
 # End of call_profile_details_api
 
 
+def _parse_tree_id_from_url(tree_url: Any, tree_name_config: str) -> Optional[str]:
+    """Parse tree ID from tree URL."""
+    if not tree_url or not isinstance(tree_url, str):
+        logger.warning(f"Found tree '{tree_name_config}', but '{KEY_URL}' key missing or invalid.")
+        return None
+
+    match = re.search(r"/tree/(\d+)", tree_url)
+    if match:
+        my_tree_id_val = match.group(1)
+        logger.debug(f"Found tree ID '{my_tree_id_val}' for tree '{tree_name_config}'.")
+        return my_tree_id_val
+
+    logger.warning(f"Found tree '{tree_name_config}', but URL format unexpected: {tree_url}")
+    return None
+
+
 def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
     """Extract tree ID from header trees API response."""
     if not response_data or not isinstance(response_data, dict):
@@ -2493,17 +2509,7 @@ def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, ap
 
     for item in response_data[KEY_MENUITEMS]:
         if isinstance(item, dict) and item.get(KEY_TEXT) == tree_name_config:
-            tree_url = item.get(KEY_URL)
-            if tree_url and isinstance(tree_url, str):
-                match = re.search(r"/tree/(\d+)", tree_url)
-                if match:
-                    my_tree_id_val = match.group(1)
-                    logger.debug(f"Found tree ID '{my_tree_id_val}' for tree '{tree_name_config}'.")
-                    return my_tree_id_val
-                logger.warning(f"Found tree '{tree_name_config}', but URL format unexpected: {tree_url}")
-            else:
-                logger.warning(f"Found tree '{tree_name_config}', but '{KEY_URL}' key missing or invalid.")
-            break
+            return _parse_tree_id_from_url(item.get(KEY_URL), tree_name_config)
 
     logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
     return None
