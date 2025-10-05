@@ -1567,359 +1567,284 @@ def _get_recovery_recommendations(checkpoints: list[dict], crash_recovery: bool)
 
 # === TEST FRAMEWORK ===
 
+# ==============================================
+# MODULE-LEVEL TEST FUNCTIONS
+# ==============================================
+
+
+def _test_health_monitor_initialization():
+    """Test health monitor initialization."""
+    monitor = SessionHealthMonitor()
+    assert monitor is not None
+    assert len(monitor.current_metrics) > 0
+    assert monitor.session_start_time > 0
+
+
+def _test_metric_updates():
+    """Test metric update functionality."""
+    monitor = SessionHealthMonitor()
+    monitor.update_metric("api_response_time", 3.5)
+    assert monitor.current_metrics["api_response_time"].value == 3.5
+    assert len(monitor.metrics_history["api_response_time"]) == 1
+
+
+def _test_health_score_calculation():
+    """Test health score calculation."""
+    monitor = SessionHealthMonitor()
+    # Set all metrics to excellent values
+    for metric_name in monitor.current_metrics:
+        monitor.update_metric(metric_name, 0.0)
+    score = monitor.calculate_health_score()
+    assert score >= 80, f"Expected high score for excellent metrics, got {score}"
+    # Set all metrics to critical values
+    for metric_name, metric in monitor.current_metrics.items():
+        monitor.update_metric(metric_name, metric.threshold_critical + 1)
+    score = monitor.calculate_health_score()
+    assert score <= 20, f"Expected low score for critical metrics, got {score}"
+
+
+def _test_risk_prediction():
+    """Test session death risk prediction."""
+    monitor = SessionHealthMonitor()
+    risk = monitor.predict_session_death_risk()
+    assert 0.0 <= risk <= 1.0, f"Risk score should be 0-1, got {risk}"
+    # Test with bad conditions
+    monitor.api_response_times.extend([10.0, 12.0, 15.0, 20.0, 25.0])
+    monitor.error_counts["test_error"] = 15
+    monitor.memory_usage_history.extend([100, 200, 300])
+    risk = monitor.predict_session_death_risk()
+    assert risk > 0.3, f"Expected elevated risk with bad conditions, got {risk}"
+
+
+def _test_alert_system():
+    """Test health alert system."""
+    monitor = SessionHealthMonitor()
+    monitor.update_metric("api_response_time", 16.0)
+    warning_alerts = [a for a in monitor.alerts if a.level == AlertLevel.WARNING]
+    assert len(warning_alerts) > 0, "Warning alert should have been created"
+    monitor.update_metric("api_response_time", 26.0)
+    critical_alerts = [a for a in monitor.alerts if a.level == AlertLevel.CRITICAL]
+    assert len(critical_alerts) > 0, "Critical alert should have been created"
+
+
+def _test_performance_tracking():
+    """Test performance tracking functionality."""
+    monitor = SessionHealthMonitor()
+    monitor.record_api_response_time(2.5)
+    assert len(monitor.api_response_times) == 1
+    monitor.record_error("ConnectionError")
+    assert monitor.error_counts["ConnectionError"] == 1
+    monitor.record_page_processing_time(45.0)
+    assert len(monitor.page_processing_times) == 1
+
+
+def _test_dashboard_generation():
+    """Test health dashboard generation."""
+    monitor = SessionHealthMonitor()
+    dashboard = monitor.get_health_dashboard()
+    required_fields = ["health_score", "health_status", "risk_score", "metrics", "recommended_actions"]
+    for req_field in required_fields:
+        assert req_field in dashboard, f"Dashboard missing required field: {req_field}"
+    assert isinstance(dashboard["health_score"], (int, float))
+    assert isinstance(dashboard["risk_score"], (float))
+    assert isinstance(dashboard["metrics"], dict)
+    assert isinstance(dashboard["recommended_actions"], list)
+
+
+def _test_integration_helpers():
+    """Test integration helper functions."""
+    recommendations = get_performance_recommendations(90.0, 0.1)
+    assert "max_concurrency" in recommendations
+    assert "action_required" in recommendations
+    emergency_recs = get_performance_recommendations(20.0, 0.9)
+    assert emergency_recs["max_concurrency"] == 1
+    assert emergency_recs["action_required"] == "emergency_refresh"
+
+
+def _test_global_instance():
+    """Test global health monitor instance."""
+    monitor1 = get_health_monitor()
+    monitor2 = get_health_monitor()
+    assert monitor1 is monitor2, "get_health_monitor should return singleton instance"
+
+
+def _test_memory_pressure_monitoring():
+    """Test health monitoring under memory pressure conditions."""
+    import time
+    monitor = SessionHealthMonitor()
+    monitor.optimize_for_long_session()
+    assert monitor._monitoring_interval == 60.0, "Should optimize monitoring interval"
+    assert monitor.error_timestamps.maxlen == 3000, "Should increase error timestamp capacity"
+    stats = monitor.get_performance_stats()
+    assert "memory_efficiency" in stats, "Should include memory efficiency stats"
+    assert "error_timestamps_usage" in stats["memory_efficiency"], "Should track memory usage"
+    current_time = time.time()
+    for i in range(100):
+        monitor.error_timestamps.append(current_time - i)
+    assert len(monitor.error_timestamps) == 100, "Should have 100 error timestamps"
+    assert monitor.error_timestamps.maxlen == 3000, "Should have increased capacity for long sessions"
+
+
+def _test_resource_constraint_handling():
+    """Test system behavior under resource constraints."""
+    import time
+    monitor = SessionHealthMonitor()
+    current_time = time.time()
+    for i in range(100):
+        monitor.error_timestamps.append(current_time - i)
+    interval = monitor._get_adaptive_monitoring_interval(current_time)
+    assert interval <= 10.0, f"Should use short interval under high error rate, got {interval}"
+    monitor._trigger_enhanced_monitoring("RESOURCE_CONSTRAINT", 100, "5-minute")
+    assert monitor.is_enhanced_monitoring_active(), "Should activate enhanced monitoring"
+    interval = monitor._get_adaptive_monitoring_interval(current_time)
+    assert interval == 5.0, f"Enhanced monitoring should use 5s interval, got {interval}"
+
+
+def _test_long_session_resource_management():
+    """Test resource management for 20+ hour sessions."""
+    import time
+    monitor = SessionHealthMonitor()
+    session_start = time.time() - (20 * 3600)
+    monitor.session_start_time = session_start
+    monitor.optimize_for_long_session()
+    current_time = time.time()
+    for i in range(200):
+        error_time = session_start + (i * (20 * 3600) / 200)
+        monitor.error_timestamps.append(error_time)
+    for i in range(100):
+        alert_time = session_start + (i * (20 * 3600) / 100)
+        alert = HealthAlert(
+            level=AlertLevel.WARNING,
+            component="test",
+            message=f"Test alert {i}",
+            metric_name="test_metric",
+            metric_value=i,
+            threshold=50,
+            timestamp=alert_time
+        )
+        monitor.alerts.append(alert)
+    stats = monitor.get_performance_stats()
+    assert stats["session_duration_hours"] >= 19.9, "Should report ~20 hour session"
+    assert stats["error_timestamps_count"] == 200, "Should track all errors"
+    assert stats["alerts_count"] == 100, "Should track all alerts"
+    initial_alerts = len(monitor.alerts)
+    initial_errors = len(monitor.error_timestamps)
+    monitor._last_cleanup_time = current_time - 601
+    monitor._perform_efficient_cleanup(current_time)
+    final_alerts = len(monitor.alerts)
+    final_errors = len(monitor.error_timestamps)
+    assert final_alerts <= initial_alerts, "Should clean up old alerts"
+    assert final_errors <= initial_errors, "Should clean up old errors"
+    assert final_alerts > 0, "Should keep some recent alerts"
+    assert final_errors > 0, "Should keep some recent errors"
+
+
+def _test_session_checkpoint_creation():
+    """Test session checkpoint creation and restoration."""
+    from pathlib import Path
+    monitor = SessionHealthMonitor()
+    monitor.update_metric("error_rate", 50.0)
+    monitor.record_error("test_error")
+    checkpoint_path = monitor.create_session_checkpoint("test_checkpoint")
+    assert checkpoint_path != "", "Should create checkpoint successfully"
+    assert Path(checkpoint_path).exists(), "Checkpoint file should exist"
+    new_monitor = SessionHealthMonitor()
+    success = new_monitor.restore_from_checkpoint(checkpoint_path)
+    assert success, "Should restore checkpoint successfully"
+    assert "error_rate" in new_monitor.current_metrics, "Should restore metrics"
+    assert new_monitor.current_metrics["error_rate"].value >= 0, "Should restore metric with valid value"
+    assert len(new_monitor.error_timestamps) > 0, "Should restore error timestamps"
+
+
+def _test_session_state_persistence():
+    """Test session state persistence to disk."""
+    monitor = SessionHealthMonitor()
+    monitor.update_metric("memory_usage_mb", 75.0)
+    monitor.record_error("persistence_error")
+    test_data = {"test_key": "test_value", "page_count": 100}
+    state_file = monitor.persist_session_state_to_disk(test_data)
+    assert state_file != "", "Should persist session state successfully"
+    recovered_data = monitor.recover_session_state_from_disk()
+    assert recovered_data is not None, "Should recover session state"
+    assert "test_key" in recovered_data, "Should recover custom data"
+    assert "health_monitor" in recovered_data, "Should include health monitor state"
+
+
+def _test_checkpoint_management():
+    """Test checkpoint listing and cleanup functionality."""
+    monitor = SessionHealthMonitor()
+    monitor.create_session_checkpoint("test_checkpoint_1")
+    monitor.create_session_checkpoint("test_checkpoint_2")
+    checkpoints = monitor.list_available_checkpoints()
+    assert len(checkpoints) >= 2, "Should list created checkpoints"
+    for checkpoint in checkpoints:
+        assert "name" in checkpoint, "Should include checkpoint name"
+        assert "created_time" in checkpoint, "Should include creation time"
+        assert "file_size_kb" in checkpoint, "Should include file size"
+
+
+def _test_auto_checkpoint_functionality():
+    """Test automatic checkpoint creation."""
+    import time
+    monitor = SessionHealthMonitor()
+    monitor.auto_checkpoint(interval_minutes=1)
+    monitor._last_checkpoint_time = time.time() - 120
+    monitor.auto_checkpoint(interval_minutes=1)
+    checkpoints = monitor.list_available_checkpoints()
+    auto_checkpoints = [cp for cp in checkpoints if cp["name"].startswith("auto_checkpoint")]
+    assert len(auto_checkpoints) >= 1, "Should create auto checkpoints"
+
+
+# ==============================================
+# MAIN TEST SUITE RUNNER
+# ==============================================
+
+
 def health_monitor_tests() -> bool:
-    """
-    Run all health monitor tests and return True if successful.
-
-    Returns:
-        bool: True if all tests pass, False otherwise
-    """
-
-    def test_health_monitor_initialization():
-        """Test health monitor initialization."""
-        monitor = SessionHealthMonitor()
-        assert monitor is not None
-        assert len(monitor.current_metrics) > 0
-        assert monitor.session_start_time > 0
-        return True
-
-    def test_metric_updates():
-        """Test metric update functionality."""
-        monitor = SessionHealthMonitor()
-
-        # Test updating a metric
-        monitor.update_metric("api_response_time", 3.5)
-        assert monitor.current_metrics["api_response_time"].value == 3.5
-
-        # Test metric history
-        assert len(monitor.metrics_history["api_response_time"]) == 1
-        return True
-
-    def test_health_score_calculation():
-        """Test health score calculation."""
-        monitor = SessionHealthMonitor()
-
-        # Set all metrics to excellent values
-        for metric_name in monitor.current_metrics:
-            monitor.update_metric(metric_name, 0.0)
-
-        score = monitor.calculate_health_score()
-        assert score >= 80, f"Expected high score for excellent metrics, got {score}"
-
-        # Set all metrics to critical values
-        for metric_name, metric in monitor.current_metrics.items():
-            monitor.update_metric(metric_name, metric.threshold_critical + 1)
-
-        score = monitor.calculate_health_score()
-        assert score <= 20, f"Expected low score for critical metrics, got {score}"
-        return True
-
-    def test_risk_prediction():
-        """Test session death risk prediction."""
-        monitor = SessionHealthMonitor()
-
-        # Test with good conditions
-        risk = monitor.predict_session_death_risk()
-        assert 0.0 <= risk <= 1.0, f"Risk score should be 0-1, got {risk}"
-
-        # Test with bad conditions
-        monitor.api_response_times.extend([10.0, 12.0, 15.0, 20.0, 25.0])
-        monitor.error_counts["test_error"] = 15
-        monitor.memory_usage_history.extend([100, 200, 300])  # Increasing memory
-
-        risk = monitor.predict_session_death_risk()
-        assert risk > 0.3, f"Expected elevated risk with bad conditions, got {risk}"
-        return True
-
-    def test_alert_system():
-        """Test health alert system."""
-        monitor = SessionHealthMonitor()
-
-        # Trigger a warning alert (warning threshold is 15.0)
-        monitor.update_metric("api_response_time", 16.0)  # Above warning threshold
-
-        # Check that alert was created
-        warning_alerts = [a for a in monitor.alerts if a.level == AlertLevel.WARNING]
-        assert len(warning_alerts) > 0, "Warning alert should have been created"
-
-        # Trigger a critical alert (critical threshold is 25.0)
-        monitor.update_metric("api_response_time", 26.0)  # Above critical threshold
-
-        critical_alerts = [a for a in monitor.alerts if a.level == AlertLevel.CRITICAL]
-        assert len(critical_alerts) > 0, "Critical alert should have been created"
-        return True
-
-    def test_performance_tracking():
-        """Test performance tracking functionality."""
-        monitor = SessionHealthMonitor()
-
-        # Test API response time tracking
-        monitor.record_api_response_time(2.5)
-        assert len(monitor.api_response_times) == 1
-
-        # Test error tracking
-        monitor.record_error("ConnectionError")
-        assert monitor.error_counts["ConnectionError"] == 1
-
-        # Test page processing time tracking
-        monitor.record_page_processing_time(45.0)
-        assert len(monitor.page_processing_times) == 1
-        return True
-
-    def test_dashboard_generation():
-        """Test health dashboard generation."""
-        monitor = SessionHealthMonitor()
-
-        dashboard = monitor.get_health_dashboard()
-
-        # Check required fields
-        required_fields = ["health_score", "health_status", "risk_score", "metrics", "recommended_actions"]
-        for req_field in required_fields:
-            assert req_field in dashboard, f"Dashboard missing required field: {req_field}"
-
-        # Check data types
-        assert isinstance(dashboard["health_score"], (int, float))
-        assert isinstance(dashboard["risk_score"], (float))
-        assert isinstance(dashboard["metrics"], dict)
-        assert isinstance(dashboard["recommended_actions"], list)
-        return True
-
-    def test_integration_helpers():
-        """Test integration helper functions."""
-        # Test performance recommendations
-        recommendations = get_performance_recommendations(90.0, 0.1)
-        assert "max_concurrency" in recommendations
-        assert "action_required" in recommendations
-
-        # Test emergency recommendations
-        emergency_recs = get_performance_recommendations(20.0, 0.9)
-        assert emergency_recs["max_concurrency"] == 1
-        assert emergency_recs["action_required"] == "emergency_refresh"
-        return True
-
-    def test_global_instance():
-        """Test global health monitor instance."""
-        monitor1 = get_health_monitor()
-        monitor2 = get_health_monitor()
-
-        # Should return the same instance
-        assert monitor1 is monitor2, "get_health_monitor should return singleton instance"
-        return True
-
-    # Run all tests
+    """Run all health monitor tests and return True if successful."""
     test_suite = TestSuite("Health Monitoring System", "health_monitor.py")
 
-    test_suite.run_test("Health Monitor Initialization", test_health_monitor_initialization)
-    test_suite.run_test("Metric Updates", test_metric_updates)
-    test_suite.run_test("Health Score Calculation", test_health_score_calculation)
-    test_suite.run_test("Risk Prediction", test_risk_prediction)
-    test_suite.run_test("Alert System", test_alert_system)
-    test_suite.run_test("Performance Tracking", test_performance_tracking)
-    test_suite.run_test("Dashboard Generation", test_dashboard_generation)
-    test_suite.run_test("Integration Helpers", test_integration_helpers)
-    test_suite.run_test("Global Instance", test_global_instance)
+    # Assign module-level test functions
+    test_health_monitor_initialization = _test_health_monitor_initialization
+    test_metric_updates = _test_metric_updates
+    test_health_score_calculation = _test_health_score_calculation
+    test_risk_prediction = _test_risk_prediction
+    test_alert_system = _test_alert_system
+    test_performance_tracking = _test_performance_tracking
+    test_dashboard_generation = _test_dashboard_generation
+    test_integration_helpers = _test_integration_helpers
+    test_global_instance = _test_global_instance
+    test_memory_pressure_monitoring = _test_memory_pressure_monitoring
+    test_resource_constraint_handling = _test_resource_constraint_handling
+    test_long_session_resource_management = _test_long_session_resource_management
+    test_session_checkpoint_creation = _test_session_checkpoint_creation
+    test_session_state_persistence = _test_session_state_persistence
+    test_checkpoint_management = _test_checkpoint_management
+    test_auto_checkpoint_functionality = _test_auto_checkpoint_functionality
 
-    # === PHASE 4: MEMORY & RESOURCE TESTING ===
-    def test_memory_pressure_monitoring():
-        """Test health monitoring under memory pressure conditions."""
+    # Define all tests in a data structure to reduce complexity
+    tests = [
+        ("Health Monitor Initialization", test_health_monitor_initialization),
+        ("Metric Updates", test_metric_updates),
+        ("Health Score Calculation", test_health_score_calculation),
+        ("Risk Prediction", test_risk_prediction),
+        ("Alert System", test_alert_system),
+        ("Performance Tracking", test_performance_tracking),
+        ("Dashboard Generation", test_dashboard_generation),
+        ("Integration Helpers", test_integration_helpers),
+        ("Global Instance", test_global_instance),
+        ("Memory Pressure Monitoring", test_memory_pressure_monitoring),
+        ("Resource Constraint Handling", test_resource_constraint_handling),
+        ("Long Session Resource Management", test_long_session_resource_management),
+        ("Session Checkpoint Creation", test_session_checkpoint_creation),
+        ("Session State Persistence", test_session_state_persistence),
+        ("Checkpoint Management", test_checkpoint_management),
+        ("Auto Checkpoint Functionality", test_auto_checkpoint_functionality),
+    ]
 
-        monitor = SessionHealthMonitor()
-
-        # Test memory optimization for long sessions
-        monitor.optimize_for_long_session()
-
-        # Verify optimization settings
-        assert monitor._monitoring_interval == 60.0, "Should optimize monitoring interval"
-        assert monitor.error_timestamps.maxlen == 3000, "Should increase error timestamp capacity"
-
-        # Test performance stats under memory pressure
-        stats = monitor.get_performance_stats()
-        assert "memory_efficiency" in stats, "Should include memory efficiency stats"
-        assert "error_timestamps_usage" in stats["memory_efficiency"], "Should track memory usage"
-
-        # Test basic memory management functionality
-        import time
-        current_time = time.time()
-
-        # Add some error timestamps
-        for i in range(100):
-            monitor.error_timestamps.append(current_time - i)
-
-        # Verify timestamps were added
-        assert len(monitor.error_timestamps) == 100, "Should have 100 error timestamps"
-
-        # Test that memory optimization settings are working
-        assert monitor.error_timestamps.maxlen == 3000, "Should have increased capacity for long sessions"
-
-    def test_resource_constraint_handling():
-        """Test system behavior under resource constraints."""
-
-        monitor = SessionHealthMonitor()
-
-        # Test adaptive monitoring under resource constraints
-        current_time = time.time()
-
-        # Simulate high error rate (resource constraint indicator)
-        for i in range(100):
-            monitor.error_timestamps.append(current_time - i)
-
-        # Should adapt to shorter intervals under high error rate
-        interval = monitor._get_adaptive_monitoring_interval(current_time)
-        assert interval <= 10.0, f"Should use short interval under high error rate, got {interval}"
-
-        # Test enhanced monitoring activation
-        monitor._trigger_enhanced_monitoring("RESOURCE_CONSTRAINT", 100, "5-minute")
-        assert monitor.is_enhanced_monitoring_active(), "Should activate enhanced monitoring"
-
-        # Enhanced monitoring should use very short intervals
-        interval = monitor._get_adaptive_monitoring_interval(current_time)
-        assert interval == 5.0, f"Enhanced monitoring should use 5s interval, got {interval}"
-
-    def test_long_session_resource_management():
-        """Test resource management for 20+ hour sessions."""
-        import time
-
-        monitor = SessionHealthMonitor()
-
-        # Simulate 20-hour session
-        session_start = time.time() - (20 * 3600)
-        monitor.session_start_time = session_start
-
-        # Optimize for long session
-        monitor.optimize_for_long_session()
-
-        # Add realistic data for 20-hour session
-        current_time = time.time()
-
-        # Add 200 errors distributed over 20 hours
-        for i in range(200):
-            error_time = session_start + (i * (20 * 3600) / 200)
-            monitor.error_timestamps.append(error_time)
-
-        # Add 100 alerts distributed over time
-        for i in range(100):
-            alert_time = session_start + (i * (20 * 3600) / 100)
-            alert = HealthAlert(
-                level=AlertLevel.WARNING,
-                component="test",
-                message=f"Test alert {i}",
-                metric_name="test_metric",
-                metric_value=i,
-                threshold=50,
-                timestamp=alert_time
-            )
-            monitor.alerts.append(alert)
-
-        # Test performance stats for long session
-        stats = monitor.get_performance_stats()
-        assert stats["session_duration_hours"] >= 19.9, "Should report ~20 hour session"
-        assert stats["error_timestamps_count"] == 200, "Should track all errors"
-        assert stats["alerts_count"] == 100, "Should track all alerts"
-
-        # Test cleanup efficiency for long session
-        initial_alerts = len(monitor.alerts)
-        initial_errors = len(monitor.error_timestamps)
-
-        # Force cleanup
-        monitor._last_cleanup_time = current_time - 601
-        monitor._perform_efficient_cleanup(current_time)
-
-        # Should clean up old data but keep recent data
-        final_alerts = len(monitor.alerts)
-        final_errors = len(monitor.error_timestamps)
-
-        assert final_alerts <= initial_alerts, "Should clean up old alerts"
-        assert final_errors <= initial_errors, "Should clean up old errors"
-        assert final_alerts > 0, "Should keep some recent alerts"
-        assert final_errors > 0, "Should keep some recent errors"
-
-    test_suite.run_test("Memory Pressure Monitoring", test_memory_pressure_monitoring)
-    test_suite.run_test("Resource Constraint Handling", test_resource_constraint_handling)
-    test_suite.run_test("Long Session Resource Management", test_long_session_resource_management)
-
-    # === SESSION STATE PERSISTENCE TESTS ===
-    def test_session_checkpoint_creation():
-        """Test session checkpoint creation and restoration."""
-
-        monitor = SessionHealthMonitor()
-
-        # Add some test data using existing metrics
-        monitor.update_metric("error_rate", 50.0)
-        monitor.record_error("test_error")
-
-        # Create checkpoint
-        checkpoint_path = monitor.create_session_checkpoint("test_checkpoint")
-        assert checkpoint_path != "", "Should create checkpoint successfully"
-        assert Path(checkpoint_path).exists(), "Checkpoint file should exist"
-
-        # Test checkpoint restoration
-        new_monitor = SessionHealthMonitor()
-        success = new_monitor.restore_from_checkpoint(checkpoint_path)
-        assert success, "Should restore checkpoint successfully"
-
-        # Verify restored data
-        assert "error_rate" in new_monitor.current_metrics, "Should restore metrics"
-        # Check that the metric was restored (value might be recalculated)
-        assert new_monitor.current_metrics["error_rate"].value >= 0, "Should restore metric with valid value"
-        assert len(new_monitor.error_timestamps) > 0, "Should restore error timestamps"
-
-    def test_session_state_persistence():
-        """Test session state persistence to disk."""
-        monitor = SessionHealthMonitor()
-
-        # Add some test data using existing metrics
-        monitor.update_metric("memory_usage_mb", 75.0)
-        monitor.record_error("persistence_error")
-
-        # Test session data persistence
-        test_data = {"test_key": "test_value", "page_count": 100}
-        state_file = monitor.persist_session_state_to_disk(test_data)
-        assert state_file != "", "Should persist session state successfully"
-
-        # Test session state recovery
-        recovered_data = monitor.recover_session_state_from_disk()
-        assert recovered_data is not None, "Should recover session state"
-        assert "test_key" in recovered_data, "Should recover custom data"
-        assert "health_monitor" in recovered_data, "Should include health monitor state"
-
-    def test_checkpoint_management():
-        """Test checkpoint listing and cleanup functionality."""
-        monitor = SessionHealthMonitor()
-
-        # Create multiple checkpoints
-        monitor.create_session_checkpoint("test_checkpoint_1")
-        monitor.create_session_checkpoint("test_checkpoint_2")
-
-        # List checkpoints
-        checkpoints = monitor.list_available_checkpoints()
-        assert len(checkpoints) >= 2, "Should list created checkpoints"
-
-        # Verify checkpoint metadata
-        for checkpoint in checkpoints:
-            assert "name" in checkpoint, "Should include checkpoint name"
-            assert "created_time" in checkpoint, "Should include creation time"
-            assert "file_size_kb" in checkpoint, "Should include file size"
-
-    def test_auto_checkpoint_functionality():
-        """Test automatic checkpoint creation."""
-        monitor = SessionHealthMonitor()
-
-        # Test auto checkpoint (with very short interval for testing)
-        monitor.auto_checkpoint(interval_minutes=1)  # 1 minute for testing
-
-        # Manually trigger checkpoint by setting old timestamp
-        monitor._last_checkpoint_time = time.time() - 120  # 2 minutes ago
-        monitor.auto_checkpoint(interval_minutes=1)
-
-        # Should have created at least one auto checkpoint
-        checkpoints = monitor.list_available_checkpoints()
-        auto_checkpoints = [cp for cp in checkpoints if cp["name"].startswith("auto_checkpoint")]
-        assert len(auto_checkpoints) >= 1, "Should create auto checkpoints"
-
-    test_suite.run_test("Session Checkpoint Creation", test_session_checkpoint_creation)
-    test_suite.run_test("Session State Persistence", test_session_state_persistence)
-    test_suite.run_test("Checkpoint Management", test_checkpoint_management)
-    test_suite.run_test("Auto Checkpoint Functionality", test_auto_checkpoint_functionality)
+    # Run all tests from the list
+    for test_name, test_func in tests:
+        test_suite.run_test(test_name, test_func)
 
     return test_suite.tests_failed == 0
 
