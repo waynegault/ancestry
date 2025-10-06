@@ -85,7 +85,7 @@ class ApiIdentifiers:
 class BatchCounters:
     """
     Batch processing counters.
-    
+
     Used in action6_gather.py and other batch processing modules.
     """
     new: int = 0
@@ -93,6 +93,21 @@ class BatchCounters:
     skipped: int = 0
     errors: int = 0
     total: int = 0
+    sent: int = 0
+    acked: int = 0
+
+
+@dataclass
+class BatchConfig:
+    """
+    Batch processing configuration.
+
+    Used in action8_messaging.py and other batch processing modules.
+    """
+    commit_batch_size: int
+    max_memory_mb: int
+    max_items: int
+    max_messages_to_send: int = 0
 
 
 @dataclass
