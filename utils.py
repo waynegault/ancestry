@@ -1249,42 +1249,13 @@ def _log_request_details(
 # End of _log_request_details
 
 def _prepare_api_request(
-    session_manager: SessionManager,
-    driver: DriverType,
-    url: str,
-    method: str,
-    api_description: str,
-    attempt: int,
-    headers: Optional[Dict[str, str]] = None,
-    referer_url: Optional[str] = None,
-    use_csrf_token: bool = True,
-    add_default_origin: bool = True,
-    timeout: Optional[int] = None,
-    cookie_jar: Optional[RequestsCookieJar] = None,  # type: ignore
-    allow_redirects: bool = True,
-    data: Optional[Dict] = None,
-    json_data: Optional[Dict] = None,
-    json: Optional[Dict] = None,
+    config: ApiRequestConfig,
 ) -> Dict[str, Any]:
     """
     Prepares all aspects of an API request including headers, cookies, and rate limiting.
 
     Args:
-        session_manager: The session manager instance
-        driver: The WebDriver instance
-        url: The URL to request
-        method: The HTTP method to use
-        api_description: Description of the API being called
-        attempt: The current attempt number
-        headers: Optional additional headers
-        referer_url: Optional referer URL
-        use_csrf_token: Whether to include the CSRF token
-        add_default_origin: Whether to add the default origin header
-        timeout: Optional request timeout
-        cookie_jar: Optional cookie jar to use
-        allow_redirects: Whether to follow redirects
-        data: Optional form data
-        json_data: Optional JSON data
+        config: ApiRequestConfig containing all request parameters
 
     Returns:
         Dictionary containing all prepared request parameters
@@ -1293,71 +1264,71 @@ def _prepare_api_request(
 
     # Prepare base headers
     base_headers = _prepare_base_headers(
-        method=method,
-        api_description=api_description,
-        referer_url=referer_url,
-        headers=headers,
+        method=config.method,
+        api_description=config.api_description,
+        referer_url=config.referer_url,
+        headers=config.headers,
     )
 
     # Prepare request details
-    request_timeout = timeout if timeout is not None else sel_cfg.api_timeout
-    req_session = session_manager._requests_session
-    effective_cookie_jar = cookie_jar if cookie_jar is not None else req_session.cookies
-    http_method = method.upper()
+    request_timeout = config.timeout if config.timeout is not None else sel_cfg.api_timeout
+    req_session = config.session_manager._requests_session
+    effective_cookie_jar = config.cookie_jar if config.cookie_jar is not None else req_session.cookies
+    http_method = config.method.upper()
 
     # Handle specific API quirks (e.g., allow_redirects)
-    effective_allow_redirects = allow_redirects
+    effective_allow_redirects = config.allow_redirects
     # Note: Match List API should allow redirects (as it did in working version from 2 months ago)
 
     logger.debug(
-        f"[{api_description}] Preparing Request: Method={http_method}, URL={url}, Timeout={request_timeout}s, AllowRedirects={effective_allow_redirects}"
+        f"[{config.api_description}] Preparing Request: Method={http_method}, URL={config.url}, Timeout={request_timeout}s, AllowRedirects={effective_allow_redirects}"
     )
 
     # Sync cookies
     _sync_cookies_for_request(
-        session_manager=session_manager,
-        driver=driver,
-        api_description=api_description,
-        attempt=attempt,
+        session_manager=config.session_manager,
+        driver=config.driver,
+        api_description=config.api_description,
+        attempt=config.attempt,
     )
 
     # Generate final headers
     final_headers = _prepare_api_headers(
-        session_manager=session_manager,
-        driver=driver,
-        api_description=api_description,
+        session_manager=config.session_manager,
+        driver=config.driver,
+        api_description=config.api_description,
         base_headers=base_headers,
-        use_csrf_token=use_csrf_token,
-        add_default_origin=add_default_origin,
+        use_csrf_token=config.use_csrf_token,
+        add_default_origin=config.add_default_origin,
     )
 
     # Apply rate limiting
     _apply_rate_limiting(
-        session_manager=session_manager,
-        api_description=api_description,
-        attempt=attempt,
+        session_manager=config.session_manager,
+        api_description=config.api_description,
+        attempt=config.attempt,
     )
 
     # Use json parameter if provided, otherwise use json_data
-    effective_json_data = json if json is not None else json_data
+    effective_json_data = config.json if config.json is not None else config.json_data
 
     # Log request details
     _log_request_details(
-        api_description=api_description,
-        attempt=attempt,
+        api_description=config.api_description,
+        attempt=config.attempt,
         http_method=http_method,
-        url=url,
+        url=config.url,
         headers=final_headers,
-        data=data,
+        data=config.data,
         json_data=effective_json_data,
     )
 
     # Return all prepared request parameters
     return {
         "method": http_method,
-        "url": url,
+        "url": config.url,
         "headers": final_headers,
-        "data": data,
+        "data": config.data,
         "json": effective_json_data,  # Use 'json' for requests.request, not 'json_data'
         "timeout": request_timeout,
         "verify": True,  # Standard verification
@@ -1794,24 +1765,7 @@ def _process_request_attempt(
 
     try:
         # Prepare and execute the request
-        request_params = _prepare_api_request(
-            session_manager=config.session_manager,
-            driver=config.driver,
-            url=config.url,
-            method=config.method,
-            api_description=config.api_description,
-            attempt=config.attempt,
-            headers=config.headers,
-            referer_url=config.referer_url,
-            use_csrf_token=config.use_csrf_token,
-            add_default_origin=config.add_default_origin,
-            timeout=config.timeout,
-            cookie_jar=config.cookie_jar,
-            allow_redirects=config.allow_redirects,
-            data=config.data,
-            json_data=config.json_data,
-            json=config.json,
-        )
+        request_params = _prepare_api_request(config)
 
         response = _execute_api_request(
             session_manager=config.session_manager,
