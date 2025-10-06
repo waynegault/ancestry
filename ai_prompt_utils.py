@@ -51,40 +51,38 @@ def load_prompts() -> Dict[str, Any]:
         "prompts": {},
     }
 
+    result = default_data
+
     try:
         if not PROMPTS_FILE.exists():
             logger.warning(f"AI prompts file not found at {PROMPTS_FILE}")
-            return default_data
+        else:
+            with open(PROMPTS_FILE, encoding="utf-8") as f:
+                prompts_data = json.load(f)
 
-        with open(PROMPTS_FILE, encoding="utf-8") as f:
-            prompts_data = json.load(f)
-
-            # Validate loaded data structure
-            is_valid, validation_errors = validate_prompt_structure(prompts_data)
-            if not is_valid:
-                logger.warning(
-                    f"Invalid prompts structure detected: {validation_errors}"
-                )
-                # Try to create backup before returning default
-                backup_prompts_file()
-                return default_data
-
-            logger.info(f"Loaded AI prompts from {PROMPTS_FILE}")
-            return prompts_data
+                # Validate loaded data structure
+                is_valid, validation_errors = validate_prompt_structure(prompts_data)
+                if not is_valid:
+                    logger.warning(
+                        f"Invalid prompts structure detected: {validation_errors}"
+                    )
+                    # Try to create backup before returning default
+                    backup_prompts_file()
+                else:
+                    logger.info(f"Loaded AI prompts from {PROMPTS_FILE}")
+                    result = prompts_data
 
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON format in prompts file: {e}", exc_info=True)
         backup_prompts_file()  # Backup corrupted file
-        return default_data
     except PermissionError as e:
         logger.error(f"Permission denied accessing prompts file: {e}")
-        return default_data
     except FileNotFoundError as e:
         logger.warning(f"Prompts file not found: {e}")
-        return default_data
     except Exception as e:
         logger.error(f"Unexpected error loading AI prompts: {e}", exc_info=True)
-        return default_data
+
+    return result
 
 
 def save_prompts(prompts_data: Dict[str, Any]) -> bool:
