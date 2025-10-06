@@ -1348,10 +1348,13 @@ def credentials_module_tests() -> bool:
     test_manager_initialization = _test_manager_initialization
     test_manager_initialization_with_security_unavailable = _test_manager_initialization_with_security_unavailable
     test_menu_methods = _test_menu_methods
-    test_load_credential_types_with_valid_file = lambda: _test_load_credential_types_with_valid_file(create_test_credential_file)
+    def test_load_credential_types_with_valid_file():
+        return _test_load_credential_types_with_valid_file(create_test_credential_file)
     test_load_credential_types_with_missing_file = _test_load_credential_types_with_missing_file
-    test_load_credential_types_with_invalid_json = lambda: _test_load_credential_types_with_invalid_json(test_dir_path)
-    test_load_credential_types_with_invalid_structure = lambda: _test_load_credential_types_with_invalid_structure(create_test_credential_file)
+    def test_load_credential_types_with_invalid_json():
+        return _test_load_credential_types_with_invalid_json(test_dir_path)
+    def test_load_credential_types_with_invalid_structure():
+        return _test_load_credential_types_with_invalid_structure(create_test_credential_file)
     test_edit_credential_types_error_handling = _test_edit_credential_types_error_handling
     test_check_status_with_missing_credentials = _test_check_status_with_missing_credentials
     test_setup_credentials_permission_error = _test_setup_credentials_permission_error

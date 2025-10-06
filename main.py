@@ -189,8 +189,7 @@ def menu() -> str:
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
     print("q. Exit")
-    choice = input("\nEnter choice: ").strip().lower()
-    return choice
+    return input("\nEnter choice: ").strip().lower()
 
 
 # End of menu
@@ -1880,7 +1879,7 @@ def _test_reset_db_actn_integration():
         logger.debug("reset_db_actn integration test: All required methods and attributes verified")
 
     except AttributeError as e:
-        assert False, f"reset_db_actn integration test failed with AttributeError: {e}"
+        raise AssertionError(f"reset_db_actn integration test failed with AttributeError: {e}")
     except Exception as e:
         # Other exceptions are acceptable for this test (we're only checking for AttributeError)
         logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")

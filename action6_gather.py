@@ -68,6 +68,8 @@ from core.error_handling import (
 if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
+import contextlib
+
 from cache import cache as global_cache  # Use the initialized global cache instance
 from common_params import MatchIdentifiers, PrefetchedData
 from config import config_schema
@@ -861,10 +863,7 @@ def _should_fetch_match_details(
     # Check tree status changes
     api_in_tree = match_api_data.get("in_my_tree", False)
     db_in_tree = existing_person.in_my_tree
-    if _check_tree_status_changes(api_in_tree, db_in_tree, existing_person.family_tree, uuid_val):
-        return True
-
-    return False
+    return bool(_check_tree_status_changes(api_in_tree, db_in_tree, existing_person.family_tree, uuid_val))
 
 
 def _identify_fetch_candidates(
@@ -1896,12 +1895,11 @@ def _handle_batch_critical_error(page_statuses: Dict[str, int], num_matches_on_p
                 logger.warning(f"Progress bar update error during critical exception handling: {pbar_e}")
 
     # Calculate final error count
-    final_error_count_for_page = page_statuses["error"] + max(
+    return page_statuses["error"] + max(
         0,
         num_matches_on_page - (page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"] + page_statuses["error"]),
     )
 
-    return final_error_count_for_page
 
 
 def _execute_batch_pipeline(
@@ -3825,10 +3823,8 @@ def _fetch_in_tree_from_api(
 
     ua_in_tree = None
     if driver and session_manager.is_sess_valid():
-        try:
+        with contextlib.suppress(Exception):
             ua_in_tree = driver.execute_script("return navigator.userAgent;")
-        except Exception:
-            pass
     ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
 
     in_tree_headers = {
@@ -4091,7 +4087,7 @@ def _fetch_match_list_page(
     _sync_cookies_to_session(driver, session_manager)
 
     # Call the API
-    api_response = _api_req(
+    return _api_req(
         url=match_list_url,
         driver=driver,
         session_manager=session_manager,
@@ -4102,7 +4098,6 @@ def _fetch_match_list_page(
         allow_redirects=True,
     )
 
-    return api_response
 
 
 def _validate_response_type(api_response: Any, current_page: int) -> bool:
@@ -4627,10 +4622,6 @@ def _fetch_batch_ladder(
     )
     logger.debug(f"Fetching /getladder API for CFPID {cfpid} in Tree {tree_id}...")
 
-    ladder_data: Dict[str, Optional[str]] = {
-        "actual_relationship": None,
-        "relationship_path": None,
-    }
     try:
         api_result = _api_req(
             url=ladder_api_url,
@@ -4755,10 +4746,8 @@ def _fetch_batch_relationship_prob(
             logger.warning(
                 f"{api_description} failed for {sample_id_upper}. Status: {status_code}, Reason: {response_rel.reason}"
             )
-            try:
+            with contextlib.suppress(Exception):
                 logger.debug(f"  Response Body: {response_rel.text[:500]}")
-            except Exception:
-                pass
             response_rel.raise_for_status()
             return None  # Fallback if raise_for_status doesn't trigger retry
 

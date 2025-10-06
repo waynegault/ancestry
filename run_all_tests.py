@@ -472,9 +472,8 @@ def _extract_first_meaningful_line(docstring_lines: list[str], module_path: str)
         # Clean up common patterns
         description = line.replace(module_base, '').strip()
         description = description.replace(' - ', ' - ').strip()
-        description = _clean_description_text(description, module_base)
+        return _clean_description_text(description, module_base)
 
-        return description
 
     return None
 

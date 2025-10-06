@@ -1553,14 +1553,13 @@ def _search_for_person(gedcom_data: Any, search_criteria: dict[str, Any]) -> lis
     from test_framework import clean_test_output  # type: ignore[import-not-found]
 
     with clean_test_output():
-        search_results = filter_and_score_individuals(
+        return filter_and_score_individuals(
             gedcom_data,
             search_criteria,
             search_criteria,
             dict(config_schema.common_scoring_weights),
             {"year_match_range": 5.0}
         )
-    return search_results
 
 
 def _validate_score_result(score: int, expected_score: int, test_name: str) -> None:

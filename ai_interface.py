@@ -594,10 +594,8 @@ def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any]
 
         anomaly_summary = None
         if parsed_json:
-            try:
+            with contextlib.suppress(Exception):
                 anomaly_summary = compute_anomaly_summary(parsed_json)
-            except Exception:
-                pass
 
         record_extraction_experiment_event(
             variant_label=variant_label,
@@ -1264,8 +1262,7 @@ def test_prompt_loading() -> bool:
         logger.info(f"✅ Loaded {len(all_prompts)} prompts from JSON file")
 
         # Test each required prompt
-        prompts_valid = all(_validate_single_prompt(prompt_name) for prompt_name in required_prompts)
-        return prompts_valid
+        return all(_validate_single_prompt(prompt_name) for prompt_name in required_prompts)
 
     except Exception as e:
         logger.error(f"❌ Prompt loading system error: {e}")

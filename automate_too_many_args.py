@@ -86,7 +86,7 @@ def identify_parameter_patterns(functions: List[FunctionInfo]) -> Dict[str, List
                 param_types[param_name].add(param_type)
 
     # Group parameters by common patterns
-    patterns = {
+    return {
         'counters': ['new', 'updated', 'skipped', 'errors', 'count', 'total'],
         'identifiers': ['uuid', 'id', 'username', 'name', 'ref'],
         'session': ['session', 'session_manager', 'driver', 'db_session'],
@@ -96,7 +96,6 @@ def identify_parameter_patterns(functions: List[FunctionInfo]) -> Dict[str, List
         'flags': ['in_my_tree', 'is_valid', 'should_update', 'needs_update'],
     }
 
-    return patterns
 
 
 def suggest_parameter_groupings(func_info: FunctionInfo) -> List[ParameterGroup]:

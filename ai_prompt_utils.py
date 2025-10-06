@@ -467,7 +467,7 @@ def get_prompts_summary() -> Dict[str, Any]:
         prompts_data = load_prompts()
         prompts = prompts_data.get("prompts", {})
 
-        summary = {
+        return {
             "total_prompts": len(prompts),
             "version": prompts_data.get("version", "unknown"),
             "last_updated": prompts_data.get("last_updated", "unknown"),
@@ -481,7 +481,6 @@ def get_prompts_summary() -> Dict[str, Any]:
             ),
         }
 
-        return summary
 
     except Exception as e:
         logger.error(f"Error generating prompts summary: {e}")

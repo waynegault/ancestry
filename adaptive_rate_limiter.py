@@ -216,9 +216,7 @@ class AdaptiveRateLimiter:
         """Check if adaptation should be skipped."""
         if current_time - self.last_adaptation_time < self.adaptation_cooldown:
             return True
-        if len(recent_responses) < 10:
-            return True
-        return False
+        return len(recent_responses) < 10
 
     def _calculate_adaptation_metrics(self, recent_responses: list) -> tuple[float, float, float]:
         """Calculate metrics for adaptation decision."""

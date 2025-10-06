@@ -524,9 +524,7 @@ def _is_valid_name_for_search(name: str, first_name: str, surname: str) -> bool:
     """Check if a name is valid for searching."""
     if not name or len(name.strip()) < 2:
         return False
-    if not first_name and not surname:
-        return False
-    return True
+    return not (not first_name and not surname)
 
 
 def _search_single_name_via_api(
@@ -1942,10 +1940,7 @@ def _format_context_for_ai_extraction(
 
         # Step 3c: Truncate content by word count if necessary
         words = content.split()
-        if len(words) > max_words:
-            truncated_content = " ".join(words[:max_words]) + "..."
-        else:
-            truncated_content = content
+        truncated_content = " ".join(words[:max_words]) + "..." if len(words) > max_words else content
 
         # Step 3d: Append formatted line to the list
         context_lines.append(

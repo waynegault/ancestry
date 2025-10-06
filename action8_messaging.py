@@ -2263,15 +2263,15 @@ def _process_single_person(
     dna_match = None
     new_log_entry: Optional[ConversationLog] = None  # Prepared log object
     person_update: Optional[tuple[int, PersonStatusEnum]] = None  # Staged status update
-    now_utc = datetime.now(timezone.utc)  # Consistent timestamp for checks
-    min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
+    datetime.now(timezone.utc)  # Consistent timestamp for checks
+    datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
 
     # Processing person (removed verbose debug logging)
     # Debug-only: log a quality summary of any extracted genealogical data attached to the person
     try:
         # Import locally to avoid module-level dependency if file moves
         if hasattr(person, 'extracted_genealogical_data'):
-            extracted_data = getattr(person, 'extracted_genealogical_data', {}) or {}
+            getattr(person, 'extracted_genealogical_data', {}) or {}
             # Quality summary (removed verbose debug logging)
             pass
     except Exception as _qa_err:

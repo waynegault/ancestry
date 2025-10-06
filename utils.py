@@ -178,6 +178,8 @@ except ImportError as import_err:
     raise import_err
 
 # --- Test framework imports ---
+import contextlib
+
 from test_framework import (
     TestSuite,
     suppress_logging,
@@ -1495,10 +1497,8 @@ def _handle_retryable_status(
         logger.error(
             f"{api_description}: Failed after {retry_ctx.max_attempts} attempts (Final Status {status}). Returning Response object."
         )
-        try:
+        with contextlib.suppress(Exception):
             logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
-        except Exception:
-            pass
         return False, response, retries_left, current_delay
 
     sleep_time = _calculate_retry_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
@@ -1509,10 +1509,8 @@ def _handle_retryable_status(
     logger.warning(
         f"{api_description}: Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). Retrying in {sleep_time:.2f}s..."
     )
-    try:
+    with contextlib.suppress(Exception):
         logger.debug(f"   << Response Text (Retry): {response.text[:500]}...")
-    except Exception:
-        pass
 
     time.sleep(sleep_time)
     new_delay = current_delay * retry_ctx.backoff_factor
@@ -1572,10 +1570,8 @@ def _handle_error_status(
     else:
         logger.error(f"{api_description}: Non-retryable error: {status} {reason}.")
 
-    try:
+    with contextlib.suppress(Exception):
         logger.debug(f"   << Error Response Text: {response.text[:500]}...")
-    except Exception:
-        pass
 
     return response
 
@@ -1628,12 +1624,10 @@ def _process_api_response(
                     logger.error(
                         f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
                     )
-                    try:
+                    with contextlib.suppress(Exception):
                         logger.debug(
                             f"   << Response Text (JSON Error): {response.text[:500]}..."
                         )
-                    except Exception:
-                        pass
                     # Return None because caller expected JSON but didn't get it
                     result = None
             elif api_description == "CSRF Token API" and "text/plain" in content_type:
@@ -2000,8 +1994,7 @@ def _encode_ube_payload(ube_data: Dict[str, str]) -> Optional[str]:
     """Encode UBE payload to base64."""
     try:
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
-        encoded_payload = base64.b64encode(json_payload).decode("utf-8")
-        return encoded_payload
+        return base64.b64encode(json_payload).decode("utf-8")
     except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
         logger.error(f"Error encoding UBE header data: {encode_e}", exc_info=True)
         return None
@@ -2932,7 +2925,7 @@ def _parse_and_normalize_url(url: str) -> Optional[str]:
     """Parse and normalize URL to base form."""
     try:
         target_url_parsed = urlparse(url)
-        target_url_base = urlunparse(
+        return urlunparse(
             (
                 target_url_parsed.scheme,
                 target_url_parsed.netloc,
@@ -2942,7 +2935,6 @@ def _parse_and_normalize_url(url: str) -> Optional[str]:
                 "",
             )
         ).rstrip("/")
-        return target_url_base
     except ValueError as url_parse_err:
         logger.error(f"Failed to parse target URL '{url}': {url_parse_err}")
         return None
@@ -3117,10 +3109,8 @@ def _wait_for_element(
         return "success"
     except TimeoutException:  # type: ignore
         current_url_on_timeout = "Unknown"
-        try:
+        with contextlib.suppress(Exception):
             current_url_on_timeout = driver.current_url
-        except Exception:
-            pass
         logger.warning(f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout} (URL base was correct).")
 
         action, wait_time = _check_for_unavailability(driver, unavailability_selectors)
@@ -3368,7 +3358,7 @@ def nav_to_page(
             return True
         if action == "fail":
             return False
-        if action == "retry" or action == "continue":
+        if action in ("retry", "continue"):
             driver = new_driver if new_driver else driver
             continue
 
