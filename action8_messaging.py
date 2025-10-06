@@ -2090,18 +2090,23 @@ def _get_existing_conversation_id(latest_out_log: Optional[ConversationLog], lat
     return existing_conversation_id
 
 
-def _send_or_simulate_message(session_manager: SessionManager, person: Person, message_text: str, existing_conversation_id: Optional[str], send_message_flag: bool, skip_log_reason: str, latest_out_log: Optional[ConversationLog], latest_in_log: Optional[ConversationLog]) -> tuple[str, Optional[str]]:
+def _send_or_simulate_message(
+    session_manager: SessionManager,
+    msg_ctx: 'MessageContext',
+    conv_state: 'ConversationState',
+    msg_flags: 'MessageFlags'
+) -> tuple[str, Optional[str]]:
     """Send or simulate message and return status and conversation ID."""
-    if send_message_flag:
-        log_prefix_for_api = f"Action8: {person.username} #{person.id}"
+    if msg_flags.send_message_flag:
+        log_prefix_for_api = f"Action8: {msg_ctx.person.username} #{msg_ctx.person.id}"
         api_success, api_result = _safe_api_call_with_validation(
             session_manager,
             call_send_message_api,
-            f"send_message_{person.username}",
+            f"send_message_{msg_ctx.person.username}",
             session_manager,
-            person,
-            message_text,
-            existing_conversation_id,
+            msg_ctx.person,
+            msg_ctx.message_text,
+            conv_state.existing_conversation_id,
             log_prefix_for_api,
         )
 
@@ -2110,35 +2115,40 @@ def _send_or_simulate_message(session_manager: SessionManager, person: Person, m
         else:
             message_status = "error (api_validation_failed)"
             effective_conv_id = None
-            logger.warning(f"API call failed for {person.username}: validation or execution error")
+            logger.warning(f"API call failed for {msg_ctx.person.username}: validation or execution error")
     else:
-        message_status = skip_log_reason
-        effective_conv_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
+        message_status = msg_flags.skip_log_reason
+        effective_conv_id = _get_existing_conversation_id(conv_state.latest_out_log, conv_state.latest_in_log)
         if effective_conv_id is None:
             effective_conv_id = f"skipped_{uuid.uuid4()}"
 
     return message_status, effective_conv_id
 
 
-def _prepare_conversation_log_entry(person: Person, message_to_send_key: str, message_text: str, message_status: str, template_selection_reason: str, effective_conv_id: Optional[str], message_type_map: dict[str, int], send_message_flag: bool, log_prefix: str) -> ConversationLog:
+def _prepare_conversation_log_entry(
+    msg_ctx: 'MessageContext',
+    conv_state: 'ConversationState',
+    msg_flags: 'MessageFlags',
+    message_type_map: dict[str, int]
+) -> ConversationLog:
     """Prepare new conversation log entry for database."""
-    message_template_id_to_log = message_type_map.get(message_to_send_key)
+    message_template_id_to_log = message_type_map.get(msg_ctx.message_to_send_key)
     if not message_template_id_to_log:
-        logger.error(f"CRITICAL: MessageTemplate ID missing for key '{message_to_send_key}' for {log_prefix}.")
+        logger.error(f"CRITICAL: MessageTemplate ID missing for key '{msg_ctx.message_to_send_key}' for {msg_ctx.log_prefix}.")
         raise StopIteration("error (db_config)")
-    if not effective_conv_id:
-        logger.error(f"CRITICAL: effective_conv_id missing after successful send/simulation/skip for {log_prefix}.")
+    if not conv_state.effective_conv_id:
+        logger.error(f"CRITICAL: effective_conv_id missing after successful send/simulation/skip for {msg_ctx.log_prefix}.")
         raise StopIteration("error (internal)")
 
-    log_content = (f"[{message_status.upper()}] {message_text}" if not send_message_flag else message_text)[:config_schema.message_truncation_length]
+    log_content = (f"[{msg_flags.message_status.upper()}] {msg_ctx.message_text}" if not msg_flags.send_message_flag else msg_ctx.message_text)[:config_schema.message_truncation_length]
     current_time_for_db = datetime.now(timezone.utc)
-    logger.debug(f"Preparing new OUT log entry for ConvID {effective_conv_id}, PersonID {person.id}")
-    enhanced_status = f"{message_status} | Template: {message_to_send_key} ({template_selection_reason})"
+    logger.debug(f"Preparing new OUT log entry for ConvID {conv_state.effective_conv_id}, PersonID {msg_ctx.person.id}")
+    enhanced_status = f"{msg_flags.message_status} | Template: {msg_ctx.message_to_send_key} ({msg_ctx.template_selection_reason})"
 
     return ConversationLog(
-        conversation_id=effective_conv_id,
+        conversation_id=conv_state.effective_conv_id,
         direction=MessageDirectionEnum.OUT,
-        people_id=person.id,
+        people_id=msg_ctx.person.id,
         latest_message_content=log_content,
         latest_timestamp=current_time_for_db,
         ai_sentiment=None,
@@ -2284,17 +2294,34 @@ def _process_single_person(
 
         # --- Step 5: Send/Simulate Message ---
         existing_conversation_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
+        from common_params import MessageContext, ConversationState, MessageFlags
+        msg_ctx = MessageContext(
+            person=person,
+            message_text=message_text,
+            message_to_send_key=message_to_send_key,
+            template_selection_reason=template_selection_reason,
+            log_prefix=log_prefix
+        )
+        conv_state = ConversationState(
+            existing_conversation_id=existing_conversation_id,
+            latest_out_log=latest_out_log,
+            latest_in_log=latest_in_log
+        )
+        msg_flags = MessageFlags(
+            send_message_flag=send_message_flag,
+            skip_log_reason=skip_log_reason
+        )
         message_status, effective_conv_id = _send_or_simulate_message(
-            session_manager, person, message_text, existing_conversation_id,
-            send_message_flag, skip_log_reason, latest_out_log, latest_in_log
+            session_manager, msg_ctx, conv_state, msg_flags
         )
 
         # --- Step 6: Prepare Database Updates based on outcome ---
         if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
+            # Update conv_state and msg_flags with new values
+            conv_state.effective_conv_id = effective_conv_id
+            msg_flags.message_status = message_status
             new_log_entry = _prepare_conversation_log_entry(
-                person, message_to_send_key, message_text, message_status,
-                template_selection_reason, effective_conv_id, message_type_map,
-                send_message_flag, log_prefix
+                msg_ctx, conv_state, msg_flags, message_type_map
             )
             status_string, person_update = _determine_final_status(
                 message_to_send_key, message_status, send_message_flag, person_id, log_prefix
