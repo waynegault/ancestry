@@ -2188,99 +2188,99 @@ def test_relationship_path_calculation() -> None:
     reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
 
     # Use cached GEDCOM data (already loaded in Test 3)
+    result = False
     gedcom_data = get_cached_gedcom()
+
     if not gedcom_data:
         print("❌ No GEDCOM data available (should have been loaded in Test 3)")
-        return False
+    else:
+        print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
 
-    print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
+        # Search for test person using consistent criteria
+        person_search = {
+            "first_name": test_first_name.lower(),
+            "surname": test_last_name.lower(),
+            "birth_year": test_birth_year,
+            "gender": test_gender,  # Add gender for consistency
+            "birth_place": test_birth_place  # Add birth place for consistency
+        }
 
-    # Search for test person using consistent criteria
-    person_search = {
-        "first_name": test_first_name.lower(),
-        "surname": test_last_name.lower(),
-        "birth_year": test_birth_year,
-        "gender": test_gender,  # Add gender for consistency
-        "birth_place": test_birth_place  # Add birth place for consistency
-    }
+        print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
 
-    print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
-
-    person_results = filter_and_score_individuals(
-        gedcom_data,
-        person_search,
-        person_search,
-        dict(config_schema.common_scoring_weights),
-        {"year_match_range": 5}
-    )
-
-    if not person_results:
-        print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
-        return False
-
-    person = person_results[0]
-    person_id = person.get('id')
-
-    print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
-    print(f"   Person ID: {person_id}")
-
-    # Get reference person (tree owner) from config
-    reference_person_id = config_schema.reference_person_id if config_schema else None
-
-    if not reference_person_id:
-        print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
-        return True
-
-    print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
-
-    # Test relationship path calculation
-    try:
-        print("\n🔍 Calculating relationship path...")
-
-        # Get the individual record for relationship calculation
-        person_individual = gedcom_data.find_individual_by_id(person_id)
-        if not person_individual:
-            print("❌ Could not retrieve individual record for relationship calculation")
-            return False
-
-        # Find the relationship path using the consolidated function
-        path_ids = fast_bidirectional_bfs(
-            person_id,  # type: ignore[arg-type]
-            reference_person_id,
-            gedcom_data.id_to_parents,
-            gedcom_data.id_to_children,
-            max_depth=25,
-            node_limit=150000,
-            timeout_sec=45,
+        person_results = filter_and_score_individuals(
+            gedcom_data,
+            person_search,
+            person_search,
+            dict(config_schema.common_scoring_weights),
+            {"year_match_range": 5}
         )
 
-        # Convert the GEDCOM path to the unified format
-        unified_path = convert_gedcom_path_to_unified_format(
-            path_ids,
-            gedcom_data.reader,
-            gedcom_data.id_to_parents,
-            gedcom_data.id_to_children,
-            gedcom_data.indi_index,
-        )
+        if not person_results:
+            print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
+        else:
+            person = person_results[0]
+            person_id = person.get('id')
 
-        if unified_path:
-            # Format the path using the unified formatter
-            relationship_explanation = format_relationship_path_unified(
-                unified_path, person.get('full_name_disp'), reference_person_name, None  # type: ignore[arg-type]
-            )
+            print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
+            print(f"   Person ID: {person_id}")
 
-            # Print the formatted relationship path without logger prefix
-            print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
+            # Get reference person (tree owner) from config
+            reference_person_id = config_schema.reference_person_id if config_schema else None
 
-            print("✅ Relationship path calculation completed successfully")
-            print("Conclusion: Relationship path between test person and tree owner successfully calculated")
-            return True
-        print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
-        return False
+            if not reference_person_id:
+                print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
+                result = True
+            else:
+                print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
 
-    except Exception as e:
-        print(f"❌ Relationship path calculation failed: {e}")
-        return False
+                # Test relationship path calculation
+                try:
+                    print("\n🔍 Calculating relationship path...")
+
+                    # Get the individual record for relationship calculation
+                    person_individual = gedcom_data.find_individual_by_id(person_id)
+                    if not person_individual:
+                        print("❌ Could not retrieve individual record for relationship calculation")
+                    else:
+                        # Find the relationship path using the consolidated function
+                        path_ids = fast_bidirectional_bfs(
+                            person_id,  # type: ignore[arg-type]
+                            reference_person_id,
+                            gedcom_data.id_to_parents,
+                            gedcom_data.id_to_children,
+                            max_depth=25,
+                            node_limit=150000,
+                            timeout_sec=45,
+                        )
+
+                        # Convert the GEDCOM path to the unified format
+                        unified_path = convert_gedcom_path_to_unified_format(
+                            path_ids,
+                            gedcom_data.reader,
+                            gedcom_data.id_to_parents,
+                            gedcom_data.id_to_children,
+                            gedcom_data.indi_index,
+                        )
+
+                        if unified_path:
+                            # Format the path using the unified formatter
+                            relationship_explanation = format_relationship_path_unified(
+                                unified_path, person.get('full_name_disp'), reference_person_name, None  # type: ignore[arg-type]
+                            )
+
+                            # Print the formatted relationship path without logger prefix
+                            print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
+
+                            print("✅ Relationship path calculation completed successfully")
+                            print("Conclusion: Relationship path between test person and tree owner successfully calculated")
+                            result = True
+                        else:
+                            print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
+
+                except Exception as e:
+                    print(f"❌ Relationship path calculation failed: {e}")
+
+    return result
 
 
 def test_main_patch() -> None:
