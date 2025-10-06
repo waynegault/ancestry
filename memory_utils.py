@@ -54,63 +54,69 @@ def fast_json_loads(json_str: str) -> Optional[dict[str, Any]]:
         return None
 
 
-# Test functions
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests for memory utilities."""
-    print("\n" + "=" * 70)
-    print("MEMORY UTILITIES - COMPREHENSIVE TESTS")
-    print("=" * 70)
+# ==============================================
+# Module Tests
+# ==============================================
 
-    all_passed = True
 
-    # Test ObjectPool
-    print("\n[1/2] Testing ObjectPool...")
-    try:
-        pool = ObjectPool(lambda: {"value": 0}, max_size=5)
+def _test_object_pool() -> None:
+    """Test ObjectPool functionality."""
+    pool = ObjectPool(lambda: {"value": 0}, max_size=5)
 
-        # Test acquire
-        obj1 = pool.acquire()
-        assert obj1 is not None, "Should create new object"
-        assert "value" in obj1, "Object should have expected structure"
+    # Test acquire
+    obj1 = pool.acquire()
+    assert obj1 is not None, "Should create new object"
+    assert "value" in obj1, "Object should have expected structure"
 
-        # Test release and reacquire
-        pool.release(obj1)
-        obj2 = pool.acquire()
-        assert obj2 is obj1, "Should reuse released object"
+    # Test release and reacquire
+    pool.release(obj1)
+    obj2 = pool.acquire()
+    assert obj2 is obj1, "Should reuse released object"
 
-        print("   ✅ ObjectPool tests passed")
-    except AssertionError as e:
-        print(f"   ❌ ObjectPool test failed: {e}")
-        all_passed = False
 
-    # Test fast_json_loads
-    print("\n[2/2] Testing fast_json_loads...")
-    try:
-        # Test valid JSON
-        result = fast_json_loads('{"key": "value"}')
-        assert result is not None, "Should parse valid JSON"
-        assert result["key"] == "value", "Should parse correctly"
+def _test_fast_json_loads() -> None:
+    """Test fast_json_loads functionality."""
+    # Test valid JSON
+    result = fast_json_loads('{"key": "value"}')
+    assert result is not None, "Should parse valid JSON"
+    assert result["key"] == "value", "Should parse correctly"
 
-        # Test invalid JSON
-        result = fast_json_loads("invalid json")
-        assert result is None, "Should return None for invalid JSON"
+    # Test invalid JSON
+    result = fast_json_loads("invalid json")
+    assert result is None, "Should return None for invalid JSON"
 
-        print("   ✅ fast_json_loads tests passed")
-    except AssertionError as e:
-        print(f"   ❌ fast_json_loads test failed: {e}")
-        all_passed = False
 
-    print("\n" + "=" * 70)
-    if all_passed:
-        print("✅ ALL TESTS PASSED")
-    else:
-        print("❌ SOME TESTS FAILED")
-    print("=" * 70)
+def memory_utils_module_tests() -> bool:
+    """Module-specific tests for memory_utils.py functionality."""
+    from test_framework import TestSuite, suppress_logging
 
-    return all_passed
+    suite = TestSuite("Memory Utilities", "memory_utils.py")
 
+    tests = [
+        ("ObjectPool functionality", _test_object_pool, True, "direct", "Test object pooling"),
+        ("fast_json_loads functionality", _test_fast_json_loads, True, "direct", "Test JSON parsing"),
+    ]
+
+    with suppress_logging():
+        for test_name, test_func, expected, method, details in tests:
+            suite.run_test(test_name, test_func, expected, method, details)
+
+    return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(memory_utils_module_tests)
+
+
+# ==============================================
+# Standalone Test Block
+# ==============================================
 
 if __name__ == "__main__":
     import sys
-    sys.exit(0 if run_comprehensive_tests() else 1)
+    print("🔧 Running Memory Utilities comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 
