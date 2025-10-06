@@ -1802,51 +1802,36 @@ def _test_auto_checkpoint_functionality():
 
 def health_monitor_tests() -> bool:
     """Run all health monitor tests and return True if successful."""
-    test_suite = TestSuite("Health Monitoring System", "health_monitor.py")
+    from test_framework import suppress_logging
 
-    # Assign module-level test functions
-    test_health_monitor_initialization = _test_health_monitor_initialization
-    test_metric_updates = _test_metric_updates
-    test_health_score_calculation = _test_health_score_calculation
-    test_risk_prediction = _test_risk_prediction
-    test_alert_system = _test_alert_system
-    test_performance_tracking = _test_performance_tracking
-    test_dashboard_generation = _test_dashboard_generation
-    test_integration_helpers = _test_integration_helpers
-    test_global_instance = _test_global_instance
-    test_memory_pressure_monitoring = _test_memory_pressure_monitoring
-    test_resource_constraint_handling = _test_resource_constraint_handling
-    test_long_session_resource_management = _test_long_session_resource_management
-    test_session_checkpoint_creation = _test_session_checkpoint_creation
-    test_session_state_persistence = _test_session_state_persistence
-    test_checkpoint_management = _test_checkpoint_management
-    test_auto_checkpoint_functionality = _test_auto_checkpoint_functionality
+    test_suite = TestSuite("Health Monitoring System", "health_monitor.py")
 
     # Define all tests in a data structure to reduce complexity
     tests = [
-        ("Health Monitor Initialization", test_health_monitor_initialization),
-        ("Metric Updates", test_metric_updates),
-        ("Health Score Calculation", test_health_score_calculation),
-        ("Risk Prediction", test_risk_prediction),
-        ("Alert System", test_alert_system),
-        ("Performance Tracking", test_performance_tracking),
-        ("Dashboard Generation", test_dashboard_generation),
-        ("Integration Helpers", test_integration_helpers),
-        ("Global Instance", test_global_instance),
-        ("Memory Pressure Monitoring", test_memory_pressure_monitoring),
-        ("Resource Constraint Handling", test_resource_constraint_handling),
-        ("Long Session Resource Management", test_long_session_resource_management),
-        ("Session Checkpoint Creation", test_session_checkpoint_creation),
-        ("Session State Persistence", test_session_state_persistence),
-        ("Checkpoint Management", test_checkpoint_management),
-        ("Auto Checkpoint Functionality", test_auto_checkpoint_functionality),
+        ("Health Monitor Initialization", _test_health_monitor_initialization, True, "direct", "Test initialization"),
+        ("Metric Updates", _test_metric_updates, True, "direct", "Test metric updates"),
+        ("Health Score Calculation", _test_health_score_calculation, True, "direct", "Test health scoring"),
+        ("Risk Prediction", _test_risk_prediction, True, "direct", "Test risk prediction"),
+        ("Alert System", _test_alert_system, True, "direct", "Test alert system"),
+        ("Performance Tracking", _test_performance_tracking, True, "direct", "Test performance tracking"),
+        ("Dashboard Generation", _test_dashboard_generation, True, "direct", "Test dashboard generation"),
+        ("Integration Helpers", _test_integration_helpers, True, "direct", "Test integration helpers"),
+        ("Global Instance", _test_global_instance, True, "direct", "Test global instance"),
+        ("Memory Pressure Monitoring", _test_memory_pressure_monitoring, True, "direct", "Test memory monitoring"),
+        ("Resource Constraint Handling", _test_resource_constraint_handling, True, "direct", "Test resource constraints"),
+        ("Long Session Resource Management", _test_long_session_resource_management, True, "direct", "Test long session management"),
+        ("Session Checkpoint Creation", _test_session_checkpoint_creation, True, "direct", "Test checkpoint creation"),
+        ("Session State Persistence", _test_session_state_persistence, True, "direct", "Test state persistence"),
+        ("Checkpoint Management", _test_checkpoint_management, True, "direct", "Test checkpoint management"),
+        ("Auto Checkpoint Functionality", _test_auto_checkpoint_functionality, True, "direct", "Test auto checkpoint"),
     ]
 
     # Run all tests from the list
-    for test_name, test_func in tests:
-        test_suite.run_test(test_name, test_func)
+    with suppress_logging():
+        for test_name, test_func, expected, method, details in tests:
+            test_suite.run_test(test_name, test_func, expected, method, details)
 
-    return test_suite.tests_failed == 0
+    return test_suite.finish_suite()
 
 
 # Register functions for external access
