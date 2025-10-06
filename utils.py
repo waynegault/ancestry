@@ -1477,13 +1477,8 @@ def _handle_retryable_status(
     response: RequestsResponseTypeOptional,
     status: int,
     reason: str,
-    retries_left: int,
-    max_retries: int,
+    retry_ctx: RetryContext,
     api_description: str,
-    attempt: int,
-    current_delay: float,
-    backoff_factor: float,
-    max_delay: float,
     session_manager: SessionManager,
 ) -> tuple[bool, Optional[RequestsResponseTypeOptional], int, float]:
     """
@@ -1492,14 +1487,15 @@ def _handle_retryable_status(
     Returns:
         Tuple of (should_continue, response_to_return, new_retries_left, new_current_delay)
     """
-    retries_left -= 1
+    retries_left = (retry_ctx.retries_left or 0) - 1
+    current_delay = retry_ctx.current_delay
     logger.warning(
-        f"[_api_req Attempt {attempt} '{api_description}'] Received retryable status: {status} {reason}"
+        f"[_api_req Attempt {retry_ctx.attempt} '{api_description}'] Received retryable status: {status} {reason}"
     )
 
     if retries_left <= 0:
         logger.error(
-            f"{api_description}: Failed after {max_retries} attempts (Final Status {status}). Returning Response object."
+            f"{api_description}: Failed after {retry_ctx.max_attempts} attempts (Final Status {status}). Returning Response object."
         )
         try:
             logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
@@ -1507,13 +1503,13 @@ def _handle_retryable_status(
             pass
         return False, response, retries_left, current_delay
 
-    sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
+    sleep_time = _calculate_retry_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
     if status == 429:  # Too Many Requests
         session_manager.dynamic_rate_limiter.increase_delay()
 
     logger.warning(
-        f"{api_description}: Status {status} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
+        f"{api_description}: Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). Retrying in {sleep_time:.2f}s..."
     )
     try:
         logger.debug(f"   << Response Text (Retry): {response.text[:500]}...")
@@ -1521,7 +1517,7 @@ def _handle_retryable_status(
         pass
 
     time.sleep(sleep_time)
-    new_delay = current_delay * backoff_factor
+    new_delay = current_delay * retry_ctx.backoff_factor
     return True, None, retries_left, new_delay
 
 
@@ -1713,8 +1709,7 @@ def _handle_response_status(
     # Handle retryable status codes
     if retry_ctx.retry_status_codes and status in retry_ctx.retry_status_codes:
         should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
-            response, status, reason, retries_left, retry_ctx.max_attempts, api_description,
-            retry_ctx.attempt, current_delay, retry_ctx.backoff_factor, retry_ctx.max_delay, session_manager
+            response, status, reason, retry_ctx, api_description, session_manager
         )
         if not should_continue:
             return (return_response, False, retries_left, current_delay, None)
