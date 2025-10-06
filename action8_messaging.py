@@ -75,7 +75,6 @@ from typing import Any, Literal, Optional
 from sqlalchemy import (
     func,
     inspect as sa_inspect,
-    tuple_,
 )  # Minimal imports
 
 # === LOCAL IMPORTS ===
@@ -150,7 +149,6 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
 
 
 # Corrected SQLAlchemy ORM imports
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import (
     Session,  # Use Session directly
     joinedload,
@@ -187,7 +185,6 @@ from database import (  # Database models and utilities
     MessageTemplate,
     Person,
     commit_bulk_data,
-    db_transn,
 )
 from performance_monitor import start_advanced_monitoring, stop_advanced_monitoring
 
@@ -443,21 +440,21 @@ def _log_personalization_sanity_for_template(
             "estimated_relationship": lambda d: has_list(d, "dna_information"),
             "shared_dna_amount": lambda d: has_list(d, "dna_information"),
             # Often defaulted; considered neutral (always True)
-            "dna_context": lambda d: True,
-            "shared_ancestor_information": lambda d: True,
-            "research_collaboration_request": lambda d: True,
-            "personalized_response": lambda d: True,
+            "dna_context": lambda _: True,
+            "shared_ancestor_information": lambda _: True,
+            "research_collaboration_request": lambda _: True,
+            "personalized_response": lambda _: True,
             "research_insights": lambda d: has_list(d, "vital_records") or has_list(d, "relationships"),
             "follow_up_questions": lambda d: has_list(d, "research_questions"),
             "research_topic": lambda d: has_list(d, "research_questions"),
-            "specific_research_needs": lambda d: True,
-            "collaboration_proposal": lambda d: True,
+            "specific_research_needs": lambda _: True,
+            "collaboration_proposal": lambda _: True,
             # Standard/base placeholders are handled elsewhere; ignore here (always True)
-            "name": lambda d: True,
-            "predicted_relationship": lambda d: True,
-            "actual_relationship": lambda d: True,
-            "relationship_path": lambda d: True,
-            "total_rows": lambda d: True,
+            "name": lambda _: True,
+            "predicted_relationship": lambda _: True,
+            "actual_relationship": lambda _: True,
+            "relationship_path": lambda _: True,
+            "total_rows": lambda _: True,
         }
 
         scored_fields = [f for f in fields_used if f in checks]
