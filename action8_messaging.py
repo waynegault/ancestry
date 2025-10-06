@@ -167,6 +167,7 @@ from api_utils import (  # API utilities
 # --- Local application imports ---
 # Import standardization handled by setup_module above
 from cache import cache_result  # Caching utility
+from common_params import BatchConfig, BatchCounters
 from config import config_schema  # Configuration singletons
 from core.enhanced_error_recovery import with_enhanced_recovery
 from core.error_handling import (
@@ -2712,14 +2713,8 @@ def _process_single_candidate_iteration(
     message_type_map: dict,
     _resource_manager: Any,
     error_categorizer: Any,
-    max_messages_to_send_this_run: int,
-    db_commit_batch_size: int,
-    MAX_BATCH_MEMORY_MB: int,
-    MAX_BATCH_ITEMS: int,
-    sent_count: int,
-    acked_count: int,
-    skipped_count: int,
-    error_count: int,
+    batch_config: BatchConfig,
+    counters: BatchCounters,
     db_logs_to_add_dicts: list,
     person_updates: dict,
     batch_num: int,
@@ -2734,17 +2729,17 @@ def _process_single_candidate_iteration(
     import time
 
     # Check message send limit
-    if _check_message_send_limit(max_messages_to_send_this_run, sent_count, acked_count,
-                                  progress_bar, skipped_count, error_count):
-        return _create_result_dict(sent_count, acked_count, skipped_count + 1, error_count, batch_num)
+    if _check_message_send_limit(batch_config.max_messages_to_send, counters.sent, counters.acked,
+                                  progress_bar, counters.skipped, counters.errors):
+        return _create_result_dict(counters.sent, counters.acked, counters.skipped + 1, counters.errors, batch_num)
 
     # Check halt signal
     if _check_halt_signal(session_manager, processed_in_loop, 0):
-        return _create_result_dict(sent_count, acked_count, skipped_count, error_count, batch_num,
+        return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, batch_num,
                                   should_continue=False)
 
     # Log periodic progress
-    _log_periodic_progress(processed_in_loop, 0, sent_count, acked_count, skipped_count, error_count)
+    _log_periodic_progress(processed_in_loop, 0, counters.sent, counters.acked, counters.skipped, counters.errors)
 
     # Get person ID and message history
     person_id_int = int(safe_column_value(person, "id", 0))
@@ -2767,7 +2762,7 @@ def _process_single_candidate_iteration(
             f"🚨 SESSION DEATH CASCADE in person processing for {person_name}: {cascade_err}. "
             f"Halting remaining processing to prevent infinite cascade."
         )
-        return _create_result_dict(sent_count, acked_count, skipped_count, error_count, batch_num,
+        return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, batch_num,
                                   should_continue=False)
 
     # Log message creation for debugging
@@ -2778,9 +2773,9 @@ def _process_single_candidate_iteration(
     _update_messaging_performance(session_manager, person_duration)
 
     # Update counters and collect data
-    sent_count, acked_count, skipped_count, error_count, overall_success = _update_counters_and_collect_data(
+    counters.sent, counters.acked, counters.skipped, counters.errors, overall_success = _update_counters_and_collect_data(
         status, new_log_object, person_update_tuple,
-        sent_count, acked_count, skipped_count, error_count,
+        counters.sent, counters.acked, counters.skipped, counters.errors,
         db_logs_to_add_dicts, person_updates,
         error_categorizer, person, True
     )
@@ -2788,17 +2783,17 @@ def _process_single_candidate_iteration(
     # Update progress bar
     if progress_bar:
         progress_bar.set_description(
-            f"Processing: Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count}"
+            f"Processing: Sent={counters.sent} ACK={counters.acked} Skip={counters.skipped} Err={counters.errors}"
         )
         progress_bar.update(1)
 
     # Handle batch commit if needed
     critical_db_error, batch_num, overall_success = _handle_batch_commit_if_needed(
         db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager,
-        db_commit_batch_size, MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS
+        batch_config.commit_batch_size, batch_config.max_memory_mb, batch_config.max_items
     )
 
-    return _create_result_dict(sent_count, acked_count, skipped_count, error_count, batch_num,
+    return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, batch_num,
                               critical_db_error, overall_success, not critical_db_error)
 
 
@@ -3049,12 +3044,18 @@ def _process_all_candidates(
                 resource_manager.periodic_maintenance()
 
             # Process single candidate iteration
+            batch_config = BatchConfig(
+                commit_batch_size=db_commit_batch_size,
+                max_memory_mb=MAX_BATCH_MEMORY_MB,
+                max_items=MAX_BATCH_ITEMS,
+                max_messages_to_send=max_messages_to_send_this_run
+            )
+            counters = BatchCounters(sent=sent_count, acked=acked_count, skipped=skipped_count, errors=error_count)
+
             iteration_result = _process_single_candidate_iteration(
                 person, db_session, session_manager, message_type_map,
                 resource_manager, error_categorizer,
-                max_messages_to_send_this_run, db_commit_batch_size,
-                MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS,
-                sent_count, acked_count, skipped_count, error_count,
+                batch_config, counters,
                 db_logs_to_add_dicts, person_updates, batch_num,
                 progress_bar, processed_in_loop
             )
