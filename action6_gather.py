@@ -2649,23 +2649,27 @@ def _compare_person_field(
         Tuple of (value_changed, value_to_set)
     """
     # Dispatch to field-specific comparison functions
-    if key == "last_logged_in":
-        return _compare_datetime_field(new_value, current_value)
-    if key == "status":
-        return _compare_status_field(new_value, current_value)
-    if key == "birth_year":
-        return _compare_birth_year_field(new_value, current_value, log_ref_short, logger_instance)
-    if key == "gender":
-        return _compare_gender_field(new_value, current_value)
-    if key in ("profile_id", "administrator_profile_id"):
-        return _compare_profile_id_field(new_value, current_value)
-    if isinstance(current_value, bool) or isinstance(new_value, bool):
-        return _compare_boolean_field(new_value, current_value)
-    # General comparison for other fields
-    if current_value != new_value:
-        return True, new_value
+    result = None
 
-    return False, new_value
+    if key == "last_logged_in":
+        result = _compare_datetime_field(new_value, current_value)
+    elif key == "status":
+        result = _compare_status_field(new_value, current_value)
+    elif key == "birth_year":
+        result = _compare_birth_year_field(new_value, current_value, log_ref_short, logger_instance)
+    elif key == "gender":
+        result = _compare_gender_field(new_value, current_value)
+    elif key in ("profile_id", "administrator_profile_id"):
+        result = _compare_profile_id_field(new_value, current_value)
+    elif isinstance(current_value, bool) or isinstance(new_value, bool):
+        result = _compare_boolean_field(new_value, current_value)
+    elif current_value != new_value:
+        # General comparison for other fields
+        result = (True, new_value)
+    else:
+        result = (False, new_value)
+
+    return result
 
 
 def _prepare_person_operation_data(
@@ -3521,6 +3525,8 @@ def _parse_jsonp_ladder_response(
     Returns:
         Dictionary with 'actual_relationship' and 'relationship_path' keys, or None
     """
+    result = None
+
     # Parse JSONP wrapper
     match_jsonp = re.match(
         r"^[^(]*\((.*)\)[^)]*$", response_text, re.DOTALL | re.IGNORECASE
@@ -3529,48 +3535,43 @@ def _parse_jsonp_ladder_response(
         logger.error(
             f"Could not parse JSONP format for CFPID {cfpid}. Response: {response_text[:200]}..."
         )
-        return None
+    else:
+        json_string = match_jsonp.group(1).strip()
 
-    json_string = match_jsonp.group(1).strip()
+        # Parse JSON content
+        if not json_string or json_string in ('""', "''"):
+            logger.warning(f"Empty JSON content within JSONP for CFPID {cfpid}.")
+        else:
+            try:
+                ladder_json = json.loads(json_string)
 
-    # Parse JSON content
-    if not json_string or json_string in ('""', "''"):
-        logger.warning(f"Empty JSON content within JSONP for CFPID {cfpid}.")
-        return None
+                # Extract HTML and parse
+                if not isinstance(ladder_json, dict) or "html" not in ladder_json:
+                    logger.warning(
+                        f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+                    )
+                elif not ladder_json["html"]:
+                    logger.warning(f"Empty HTML in getladder response for CFPID {cfpid}.")
+                else:
+                    html_content = ladder_json["html"]
+                    ladder_data = _parse_ladder_html(html_content, cfpid)
+                    logger.debug(f"Successfully parsed ladder details for CFPID {cfpid}.")
 
-    try:
-        ladder_json = json.loads(json_string)
-    except json.JSONDecodeError as inner_json_err:
-        logger.error(
-            f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
-        )
-        logger.debug(f"JSON string causing decode error: '{json_string[:200]}...'")
-        return None
+                    # Return only if at least one piece of data was found
+                    if ladder_data["actual_relationship"] or ladder_data["relationship_path"]:
+                        result = ladder_data
+                    else:
+                        # No data found after parsing
+                        logger.warning(
+                            f"No actual_relationship or path found for CFPID {cfpid} after parsing."
+                        )
+            except json.JSONDecodeError as inner_json_err:
+                logger.error(
+                    f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
+                )
+                logger.debug(f"JSON string causing decode error: '{json_string[:200]}...'")
 
-    # Extract HTML and parse
-    if not isinstance(ladder_json, dict) or "html" not in ladder_json:
-        logger.warning(
-            f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
-        )
-        return None
-
-    html_content = ladder_json["html"]
-    if not html_content:
-        logger.warning(f"Empty HTML in getladder response for CFPID {cfpid}.")
-        return None
-
-    ladder_data = _parse_ladder_html(html_content, cfpid)
-    logger.debug(f"Successfully parsed ladder details for CFPID {cfpid}.")
-
-    # Return only if at least one piece of data was found
-    if ladder_data["actual_relationship"] or ladder_data["relationship_path"]:
-        return ladder_data
-
-    # No data found after parsing
-    logger.warning(
-        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
-    )
-    return None
+    return result
 
 
 def _fetch_match_details_api(

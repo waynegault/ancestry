@@ -1042,8 +1042,130 @@ def get_api_relationship_path(
         return f"(Error formatting relationship path: {e!s})"
 
 
+def _test_module_initialization() -> None:
+    """Test module initialization and configuration."""
+    # Test configuration access
+    result = getattr(config_schema, "TEST_KEY_12345", "default_value")
+    assert isinstance(result, str), "Should return string value"
+    assert result == "default_value", "Should return default value for missing keys"
+
+    # Test configuration structure
+    assert isinstance(
+        config_schema.common_scoring_weights, dict
+    ), "common_scoring_weights should be a dictionary"
+    assert (
+        "contains_first_name" in config_schema.common_scoring_weights
+    ), "Should have contains_first_name weight"
+    assert isinstance(
+        config_schema.date_flexibility, (int, float)
+    ), "Should have date_flexibility as number"
+
+
+def _test_core_functionality() -> None:
+    """Test all core API search and scoring functions."""
+    # Test _extract_year_from_date function
+    result = _extract_year_from_date("15 Jan 1985")
+    assert result == 1985, "Should extract year from simple date"
+
+    result = _extract_year_from_date("Born circa 1850, died 1920")
+    assert result == 1850, "Should extract first year from complex date"
+
+    result = _extract_year_from_date("no year here")
+    assert result is None, "Should return None for dates without years"
+
+    # Test _run_simple_suggestion_scoring function
+    search_criteria = {
+        "first_name": "John",
+        "surname": "Smith",
+        "birth_year": 1985,
+        "birth_place": "New York",
+    }
+    suggestion = {
+        "First Name": "John",
+        "Surname": "Smith",
+        "Birth Year": "1985",
+        "Birth Place": "New York, NY",
+    }
+
+    score, field_scores, reasons = _run_simple_suggestion_scoring(
+        search_criteria, suggestion
+    )
+    assert isinstance(score, (int, float)), "Should return numeric score"
+    assert isinstance(field_scores, dict), "Should return field scores dictionary"
+    assert isinstance(reasons, list), "Should return reasons list"
+    assert score > 0, "Should have positive score for matching data"
+
+
+def _test_edge_cases() -> None:
+    """Test edge cases and boundary conditions."""
+    # Test _extract_year_from_date with edge cases
+    result = _extract_year_from_date("")
+    assert result is None, "Should handle empty string"
+
+    result = _extract_year_from_date(None)
+    assert result is None, "Should handle None input"
+
+    result = _extract_year_from_date("1800-2000")
+    assert result == 1800, "Should extract first year from range"
+
+    # Test scoring with empty data
+    score, field_scores, _reasons = _run_simple_suggestion_scoring({}, {})
+    assert score == 0, "Should return zero score for empty inputs"
+    assert len(field_scores) == 0, "Should return empty field scores"
+
+
+def _test_integration() -> None:
+    """Test integration with mocked external dependencies."""
+    from unittest.mock import MagicMock, patch
+
+    # Test search_api_for_criteria with mock session
+    mock_session = MagicMock()
+    mock_session.is_sess_valid.return_value = True
+
+    with patch("api_search_utils.call_suggest_api") as mock_suggest:
+        mock_suggest.return_value = [{"First Name": "Test User 12345"}]
+
+        result = search_api_for_criteria(
+            mock_session, {"first_name": "Test", "surname": "User"}
+        )
+        assert isinstance(result, list), "Should return list of results"
+
+
+def _test_performance() -> None:
+    """Test performance of scoring operations."""
+    import time
+
+    # Test multiple scoring operations
+    start_time = time.time()
+    for i in range(100):
+        _run_simple_suggestion_scoring(
+            {"first_name": f"Test{i}_12345"}, {"First Name": f"Test{i}_12345"}
+        )
+    duration = time.time() - start_time
+
+    assert (
+        duration < 1.0
+    ), f"100 scoring operations should be fast, took {duration:.3f}s"
+
+
+def _test_error_handling() -> None:
+    """Test error handling scenarios."""
+    from unittest.mock import MagicMock
+
+    # Test configuration access with error
+    result = getattr(config_schema, "NONEXISTENT_KEY_12345", "fallback")
+    assert result == "fallback", "Should return fallback value"
+
+    # Test search_api_for_criteria with invalid session
+    mock_session = MagicMock()
+    mock_session.is_sess_valid.side_effect = Exception("Test error 12345")
+
+    result = search_api_for_criteria(mock_session, {"first_name": "Test"})
+    assert result == [], "Should return empty list on error"
+
+
 def api_search_utils_module_tests() -> bool:
-    # Comprehensive test suite for api_search_utils.py
+    """Comprehensive test suite for api_search_utils.py."""
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
@@ -1051,134 +1173,12 @@ def api_search_utils_module_tests() -> bool:
     )
     suite.start_suite()
 
-    # INITIALIZATION TESTS
-    def test_module_initialization():
-        # Test module initialization and configuration
-        # Test configuration access
-        result = getattr(config_schema, "TEST_KEY_12345", "default_value")
-        assert isinstance(result, str), "Should return string value"
-        assert result == "default_value", "Should return default value for missing keys"
-
-        # Test configuration structure
-        assert isinstance(
-            config_schema.common_scoring_weights, dict
-        ), "common_scoring_weights should be a dictionary"
-        assert (
-            "contains_first_name" in config_schema.common_scoring_weights
-        ), "Should have contains_first_name weight"
-        assert isinstance(
-            config_schema.date_flexibility, (int, float)
-        ), "Should have date_flexibility as number"
-
-    # CORE FUNCTIONALITY TESTS
-    def test_core_functionality():
-        # Test all core API search and scoring functions
-        # Test _extract_year_from_date function
-        result = _extract_year_from_date("15 Jan 1985")
-        assert result == 1985, "Should extract year from simple date"
-
-        result = _extract_year_from_date("Born circa 1850, died 1920")
-        assert result == 1850, "Should extract first year from complex date"
-
-        result = _extract_year_from_date("no year here")
-        assert result is None, "Should return None for dates without years"
-
-        # Test _run_simple_suggestion_scoring function
-        search_criteria = {
-            "first_name": "John",
-            "surname": "Smith",
-            "birth_year": 1985,
-            "birth_place": "New York",
-        }
-        suggestion = {
-            "First Name": "John",
-            "Surname": "Smith",
-            "Birth Year": "1985",
-            "Birth Place": "New York, NY",
-        }
-
-        score, field_scores, reasons = _run_simple_suggestion_scoring(
-            search_criteria, suggestion
-        )
-        assert isinstance(score, (int, float)), "Should return numeric score"
-        assert isinstance(field_scores, dict), "Should return field scores dictionary"
-        assert isinstance(reasons, list), "Should return reasons list"
-        assert score > 0, "Should have positive score for matching data"
-
-    # EDGE CASE TESTS
-    def test_edge_cases():
-        # Test edge cases and boundary conditions
-        # Test _extract_year_from_date with edge cases
-        result = _extract_year_from_date("")
-        assert result is None, "Should handle empty string"
-
-        result = _extract_year_from_date(None)
-        assert result is None, "Should handle None input"
-
-        result = _extract_year_from_date("1800-2000")
-        assert result == 1800, "Should extract first year from range"
-
-        # Test scoring with empty data
-        score, field_scores, _reasons = _run_simple_suggestion_scoring({}, {})  # reasons unused
-        assert score == 0, "Should return zero score for empty inputs"
-        assert len(field_scores) == 0, "Should return empty field scores"
-
-    # INTEGRATION TESTS
-    def test_integration():
-        # Test integration with mocked external dependencies
-        from unittest.mock import MagicMock, patch
-
-        # Test search_api_for_criteria with mock session
-        mock_session = MagicMock()
-        mock_session.is_sess_valid.return_value = True
-
-        with patch("api_search_utils.call_suggest_api") as mock_suggest:
-            mock_suggest.return_value = [{"First Name": "Test User 12345"}]
-
-            result = search_api_for_criteria(
-                mock_session, {"first_name": "Test", "surname": "User"}
-            )
-            assert isinstance(result, list), "Should return list of results"
-
-    # PERFORMANCE TESTS
-    def test_performance():
-        # Test performance of scoring operations
-        import time
-
-        # Test multiple scoring operations
-        start_time = time.time()
-        for i in range(100):
-            _run_simple_suggestion_scoring(
-                {"first_name": f"Test{i}_12345"}, {"First Name": f"Test{i}_12345"}
-            )
-        duration = time.time() - start_time
-
-        assert (
-            duration < 1.0
-        ), f"100 scoring operations should be fast, took {duration:.3f}s"
-
-    # ERROR HANDLING TESTS
-    def test_error_handling():
-        # Test error handling scenarios
-        from unittest.mock import MagicMock
-
-        # Test configuration access with error
-        result = getattr(config_schema, "NONEXISTENT_KEY_12345", "fallback")
-        assert result == "fallback", "Should return fallback value"
-
-        # Test search_api_for_criteria with invalid session
-        mock_session = MagicMock()
-        mock_session.is_sess_valid.side_effect = Exception("Test error 12345")
-
-        result = search_api_for_criteria(mock_session, {"first_name": "Test"})
-        assert result == [], "Should return empty list on error"
-
     # Run all tests with suppress_logging
     with suppress_logging():
         # INITIALIZATION TESTS
         suite.run_test(
             test_name="Module initialization and DEFAULT_CONFIG",
-            test_func=test_module_initialization,
+            test_func=_test_module_initialization,
             expected_behavior="Module initializes correctly with proper configuration access and valid DEFAULT_CONFIG structure",
             test_description="Module initialization and configuration setup processes",
             method_description="Testing configuration access and DEFAULT_CONFIG structure validation",
@@ -1187,7 +1187,7 @@ def api_search_utils_module_tests() -> bool:
         # CORE FUNCTIONALITY TESTS
         suite.run_test(
             test_name="_extract_year_from_date(), _run_simple_suggestion_scoring()",
-            test_func=test_core_functionality,
+            test_func=_test_core_functionality,
             expected_behavior="All core functions execute correctly, extracting years properly and generating accurate scores",
             test_description="Core API search and scoring functionality operations",
             method_description="Testing year extraction from various date formats and suggestion scoring with matching criteria",
@@ -1196,7 +1196,7 @@ def api_search_utils_module_tests() -> bool:
         # EDGE CASE TESTS
         suite.run_test(
             test_name="ALL functions with edge case inputs",
-            test_func=test_edge_cases,
+            test_func=_test_edge_cases,
             expected_behavior="All functions handle edge cases gracefully without crashes or unexpected behavior",
             test_description="Edge case handling across all module functions",
             method_description="Testing functions with empty, None, and boundary condition inputs",
@@ -1205,7 +1205,7 @@ def api_search_utils_module_tests() -> bool:
         # INTEGRATION TESTS
         suite.run_test(
             test_name="search_api_for_criteria() with mocked dependencies",
-            test_func=test_integration,
+            test_func=_test_integration,
             expected_behavior="Integration functions work correctly with mocked external dependencies",
             test_description="Integration with external API dependencies using mocks",
             method_description="Testing API search functionality with mocked session and API call responses",
@@ -1214,7 +1214,7 @@ def api_search_utils_module_tests() -> bool:
         # PERFORMANCE TESTS
         suite.run_test(
             test_name="_run_simple_suggestion_scoring() performance testing",
-            test_func=test_performance,
+            test_func=_test_performance,
             expected_behavior="Scoring operations complete within acceptable time limits",
             test_description="Performance characteristics of scoring operations",
             method_description="Testing execution speed of multiple scoring operations in sequence",
@@ -1223,7 +1223,7 @@ def api_search_utils_module_tests() -> bool:
         # ERROR HANDLING TESTS
         suite.run_test(
             test_name="search_api_for_criteria() error handling",
-            test_func=test_error_handling,
+            test_func=_test_error_handling,
             expected_behavior="All error conditions handled gracefully with appropriate fallback responses",
             test_description="Error handling and recovery functionality",
             method_description="Testing error scenarios with invalid inputs and failed dependencies",

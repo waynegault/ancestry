@@ -994,6 +994,92 @@ def test_configuration_optimizer() -> bool:
     return True
 
 
+def _test_caching_methods_exist(limiter: AdaptiveRateLimiter) -> list[bool]:
+    """Test that caching methods exist on the limiter."""
+    results = []
+
+    if hasattr(limiter, '_load_cached_optimal_settings'):
+        print("   ✅ _load_cached_optimal_settings method exists")
+        results.append(True)
+    else:
+        print("   ❌ _load_cached_optimal_settings method missing")
+        results.append(False)
+
+    if hasattr(limiter, '_save_optimal_settings'):
+        print("   ✅ _save_optimal_settings method exists")
+        results.append(True)
+    else:
+        print("   ❌ _save_optimal_settings method missing")
+        results.append(False)
+
+    return results
+
+
+def _test_initial_rps_reasonable(limiter: AdaptiveRateLimiter) -> bool:
+    """Test that initial RPS is within reasonable bounds."""
+    initial_rps = limiter.current_rps
+    if 0.1 <= initial_rps <= 100.0:  # Reasonable bounds
+        print(f"   ✅ Initial RPS reasonable: {initial_rps}")
+        return True
+    print(f"   ❌ Initial RPS suspicious: {initial_rps}")
+    return False
+
+
+def _test_save_load_cycle(limiter: AdaptiveRateLimiter) -> bool:
+    """Test save/load cycle for rate limiter settings."""
+    try:
+        # Adjust RPS and save
+        test_rps = 2.5
+        limiter.current_rps = test_rps
+        limiter._save_optimal_settings()
+
+        # Create new limiter (should load saved settings)
+        limiter2 = AdaptiveRateLimiter()
+
+        print(f"   ✅ Save/load cycle test completed (RPS: {limiter.current_rps} -> {limiter2.current_rps})")
+        return True
+
+    except Exception as cache_error:
+        print(f"   ⚠️  Save/load cycle test failed: {cache_error}")
+        return False
+
+
+def _test_cache_file_functionality(limiter: AdaptiveRateLimiter) -> list[bool]:
+    """Test cache file path and directory accessibility."""
+    results = []
+
+    try:
+        # Check that the cache file path is accessible in the actual implementation
+        import inspect
+        source = inspect.getsource(limiter._load_cached_optimal_settings)
+
+        # Look for the cache file path in the actual code
+        cache_path_found = "Cache/adaptive_rate_cache.json" in source
+
+        if cache_path_found:
+            print("   ✅ Cache file path correctly implemented in source code")
+            results.append(True)
+        else:
+            print("   ⚠️  Cache file path not found in expected location")
+            results.append(False)
+
+        # Test that Cache directory exists or can be created
+        from pathlib import Path
+        cache_dir = Path("Cache")
+        if cache_dir.exists() or True:  # Directory can be created if needed
+            print("   ✅ Cache directory accessible for rate limiter cache")
+            results.append(True)
+        else:
+            print("   ⚠️  Cache directory not accessible")
+            results.append(False)
+
+    except Exception as cache_path_error:
+        print(f"   ⚠️  Cache file path test failed: {cache_path_error}")
+        results.append(False)
+
+    return results
+
+
 def test_regression_prevention_rate_limiter_caching() -> bool:
     """
     🛡️ REGRESSION TEST: Rate limiter optimal settings caching.
@@ -1006,78 +1092,19 @@ def test_regression_prevention_rate_limiter_caching() -> bool:
     results = []
 
     try:
-        # Test 1: Verify caching methods exist
         limiter = AdaptiveRateLimiter()
 
-        if hasattr(limiter, '_load_cached_optimal_settings'):
-            print("   ✅ _load_cached_optimal_settings method exists")
-            results.append(True)
-        else:
-            print("   ❌ _load_cached_optimal_settings method missing")
-            results.append(False)
+        # Test 1: Verify caching methods exist
+        results.extend(_test_caching_methods_exist(limiter))
 
-        if hasattr(limiter, '_save_optimal_settings'):
-            print("   ✅ _save_optimal_settings method exists")
-            results.append(True)
-        else:
-            print("   ❌ _save_optimal_settings method missing")
-            results.append(False)
-
-        # Test 2: Verify initial RPS is reasonable (should be from cache or default)
-        initial_rps = limiter.current_rps
-        if 0.1 <= initial_rps <= 100.0:  # Reasonable bounds
-            print(f"   ✅ Initial RPS reasonable: {initial_rps}")
-            results.append(True)
-        else:
-            print(f"   ❌ Initial RPS suspicious: {initial_rps}")
-            results.append(False)
+        # Test 2: Verify initial RPS is reasonable
+        results.append(_test_initial_rps_reasonable(limiter))
 
         # Test 3: Test save/load cycle
-        try:
-            # Adjust RPS and save
-            test_rps = 2.5
-            limiter.current_rps = test_rps
-            limiter._save_optimal_settings()
+        results.append(_test_save_load_cycle(limiter))
 
-            # Create new limiter (should load saved settings)
-            limiter2 = AdaptiveRateLimiter()
-
-            print(f"   ✅ Save/load cycle test completed (RPS: {limiter.current_rps} -> {limiter2.current_rps})")
-            results.append(True)
-
-        except Exception as cache_error:
-            print(f"   ⚠️  Save/load cycle test failed: {cache_error}")
-            results.append(False)
-
-        # Test 4: Verify cache file functionality (actual implementation check)
-        try:
-            # Check that the cache file path is accessible in the actual implementation
-            import inspect
-            source = inspect.getsource(limiter._load_cached_optimal_settings)
-
-            # Look for the cache file path in the actual code
-            cache_path_found = "Cache/adaptive_rate_cache.json" in source
-
-            if cache_path_found:
-                print("   ✅ Cache file path correctly implemented in source code")
-                results.append(True)
-            else:
-                print("   ⚠️  Cache file path not found in expected location")
-                results.append(False)
-
-            # Test that Cache directory exists or can be created
-            from pathlib import Path
-            cache_dir = Path("Cache")
-            if cache_dir.exists() or True:  # Directory can be created if needed
-                print("   ✅ Cache directory accessible for rate limiter cache")
-                results.append(True)
-            else:
-                print("   ⚠️  Cache directory not accessible")
-                results.append(False)
-
-        except Exception as cache_path_error:
-            print(f"   ⚠️  Cache file path test failed: {cache_path_error}")
-            results.append(False)
+        # Test 4: Verify cache file functionality
+        results.extend(_test_cache_file_functionality(limiter))
 
     except Exception as e:
         print(f"   ❌ Rate limiter caching test failed: {e}")

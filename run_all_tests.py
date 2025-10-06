@@ -91,6 +91,29 @@ class TestSuitePerformance:
     optimization_suggestions: list[str]
 
 
+@dataclass
+class TestExecutionConfig:
+    """Configuration for test execution."""
+    modules_with_descriptions: list[tuple[str, str]]
+    discovered_modules: list[str]
+    module_descriptions: dict[str, str]
+    enable_fast_mode: bool
+    enable_monitoring: bool
+    enable_benchmark: bool
+
+
+@dataclass
+class PerformanceMetricsConfig:
+    """Configuration for performance metrics printing."""
+    all_metrics: list[Any]
+    total_duration: float
+    total_tests_run: int
+    passed_count: int
+    failed_count: int
+    enable_fast_mode: bool
+    enable_benchmark: bool
+
+
 class PerformanceMonitor:
     """Monitor system performance during test execution."""
 
@@ -484,6 +507,8 @@ def _generate_module_description(module_name: str, description: str | None = Non
         return description
 
     # Create a meaningful description based on module name
+    result = None
+
     if "core/" in module_name:
         component = (
             module_name.replace("core/", "")
@@ -491,32 +516,35 @@ def _generate_module_description(module_name: str, description: str | None = Non
             .replace("_", " ")
             .title()
         )
-        return f"Core {component} functionality"
-    if "config/" in module_name:
+        result = f"Core {component} functionality"
+    elif "config/" in module_name:
         component = (
             module_name.replace("config/", "")
             .replace(".py", "")
             .replace("_", " ")
             .title()
         )
-        return f"Configuration {component} management"
-    if "action" in module_name:
+        result = f"Configuration {component} management"
+    elif "action" in module_name:
         action_name = module_name.replace(".py", "").replace("_", " ").title()
-        return f"{action_name} automation"
-    if module_name.endswith("_utils.py"):
+        result = f"{action_name} automation"
+    elif module_name.endswith("_utils.py"):
         util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
-        return f"{util_type} utility functions"
-    if module_name.endswith("_manager.py"):
+        result = f"{util_type} utility functions"
+    elif module_name.endswith("_manager.py"):
         manager_type = (
             module_name.replace("_manager.py", "").replace("_", " ").title()
         )
-        return f"{manager_type} management system"
-    if module_name.endswith("_cache.py"):
+        result = f"{manager_type} management system"
+    elif module_name.endswith("_cache.py"):
         cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
-        return f"{cache_type} caching system"
-    # Generic fallback
-    clean_name = module_name.replace(".py", "").replace("_", " ").title()
-    return f"{clean_name} module functionality"
+        result = f"{cache_type} caching system"
+    else:
+        # Generic fallback
+        clean_name = module_name.replace(".py", "").replace("_", " ").title()
+        result = f"{clean_name} module functionality"
+
+    return result
 
 
 def _try_pattern_passed_failed(stdout_lines: list[str]) -> str:
@@ -844,26 +872,28 @@ def _run_quality_analysis(module_name: str):
 
 def _create_test_metrics(
     module_name: str,
-    duration: float,
-    success: bool,
-    numeric_test_count: int,
-    perf_metrics: dict,
-    start_datetime: str,
-    end_datetime: str,
-    result,
-    quality_metrics
+    test_result: dict,
+    quality_metrics: Optional[QualityMetrics] = None
 ) -> TestExecutionMetrics:
-    """Create TestExecutionMetrics object."""
+    """
+    Create TestExecutionMetrics object from test result data.
+
+    Args:
+        module_name: Name of the module being tested
+        test_result: Dict containing duration, success, test_count, perf_metrics,
+                     result, start_time, end_time
+        quality_metrics: Optional quality assessment metrics
+    """
     return TestExecutionMetrics(
         module_name=module_name,
-        duration=duration,
-        success=success,
-        test_count=numeric_test_count,
-        memory_usage_mb=perf_metrics.get("memory_mb", 0.0),
-        cpu_usage_percent=perf_metrics.get("cpu_percent", 0.0),
-        start_time=start_datetime,
-        end_time=end_datetime,
-        error_message=result.stderr if not success and result.stderr else None,
+        duration=test_result["duration"],
+        success=test_result["success"],
+        test_count=test_result["test_count"],
+        memory_usage_mb=test_result["perf_metrics"].get("memory_mb", 0.0),
+        cpu_usage_percent=test_result["perf_metrics"].get("cpu_percent", 0.0),
+        start_time=test_result["start_time"],
+        end_time=test_result["end_time"],
+        error_message=test_result["result"].stderr if not test_result["success"] and test_result["result"].stderr else None,
         quality_metrics=quality_metrics
     )
 
@@ -961,10 +991,16 @@ def run_module_tests(
 
         # Create performance metrics if monitoring was enabled
         if enable_monitoring:
-            metrics = _create_test_metrics(
-                module_name, duration, success, numeric_test_count,
-                perf_metrics, start_datetime, end_datetime, result, quality_metrics
-            )
+            test_result = {
+                "duration": duration,
+                "success": success,
+                "test_count": numeric_test_count,
+                "perf_metrics": perf_metrics,
+                "result": result,
+                "start_time": start_datetime,
+                "end_time": end_datetime
+            }
+            metrics = _create_test_metrics(module_name, test_result, quality_metrics)
 
         return success, numeric_test_count, metrics
 
@@ -1169,24 +1205,25 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
     return discovered_modules, module_descriptions, modules_with_descriptions
 
 
-def _execute_tests(
-    modules_with_descriptions: list[tuple[str, str]],
-    discovered_modules: list[str],
-    module_descriptions: dict[str, str],
-    enable_fast_mode: bool,
-    enable_monitoring: bool,
-    enable_benchmark: bool
-) -> tuple[list[tuple[str, str, bool]], list[Any], int, int]:
+def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bool]], list[Any], int, int]:
     """
     Execute tests in parallel or sequential mode.
+
+    Args:
+        config: TestExecutionConfig with all test execution parameters
 
     Returns:
         Tuple of (results, all_metrics, total_tests_run, passed_count)
     """
-    if enable_fast_mode:
+    if config.enable_fast_mode:
         print("🚀 Running tests in parallel...")
-        all_metrics, passed_count, total_tests_run = run_tests_parallel(modules_with_descriptions, enable_monitoring)
-        results = [(m.module_name, module_descriptions.get(m.module_name, ""), m.success) for m in all_metrics]
+        all_metrics, passed_count, total_tests_run = run_tests_parallel(
+            config.modules_with_descriptions, config.enable_monitoring
+        )
+        results = [
+            (m.module_name, config.module_descriptions.get(m.module_name, ""), m.success)
+            for m in all_metrics
+        ]
     else:
         print("🔄 Running tests sequentially...")
         results = []
@@ -1194,10 +1231,12 @@ def _execute_tests(
         total_tests_run = 0
         passed_count = 0
 
-        for i, (module_name, description) in enumerate(modules_with_descriptions, 1):
-            print(f"\n🧪 [{i:2d}/{len(discovered_modules)}] Testing: {module_name}")
+        for i, (module_name, description) in enumerate(config.modules_with_descriptions, 1):
+            print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
 
-            success, test_count, metrics = run_module_tests(module_name, description, enable_monitoring, coverage=enable_benchmark)
+            success, test_count, metrics = run_module_tests(
+                module_name, description, config.enable_monitoring, coverage=config.enable_benchmark
+            )
             total_tests_run += test_count
             if success:
                 passed_count += 1
@@ -1285,46 +1324,43 @@ def _print_quality_summary(all_metrics: list[Any]) -> None:
         _print_violation_summary(all_violations)
 
 
-def _print_performance_metrics(
-    all_metrics: list[Any],
-    total_duration: float,
-    total_tests_run: int,
-    passed_count: int,
-    failed_count: int,
-    enable_fast_mode: bool,
-    enable_benchmark: bool
-) -> None:
-    """Print performance metrics and analysis."""
-    if not all_metrics:
+def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
+    """
+    Print performance metrics and analysis.
+
+    Args:
+        config: PerformanceMetricsConfig with all metrics and settings
+    """
+    if not config.all_metrics:
         return
 
-    avg_memory = sum(m.memory_usage_mb for m in all_metrics) / len(all_metrics)
-    peak_memory = max(m.memory_usage_mb for m in all_metrics)
-    avg_cpu = sum(m.cpu_usage_percent for m in all_metrics) / len(all_metrics)
-    peak_cpu = max(m.cpu_usage_percent for m in all_metrics)
+    avg_memory = sum(m.memory_usage_mb for m in config.all_metrics) / len(config.all_metrics)
+    peak_memory = max(m.memory_usage_mb for m in config.all_metrics)
+    avg_cpu = sum(m.cpu_usage_percent for m in config.all_metrics) / len(config.all_metrics)
+    peak_cpu = max(m.cpu_usage_percent for m in config.all_metrics)
 
     # Calculate parallel efficiency
-    sequential_time = sum(m.duration for m in all_metrics)
-    parallel_efficiency = (sequential_time / total_duration) if total_duration > 0 else 1.0
+    sequential_time = sum(m.duration for m in config.all_metrics)
+    parallel_efficiency = (sequential_time / config.total_duration) if config.total_duration > 0 else 1.0
 
     print("\n📊 PERFORMANCE METRICS:")
     print(f"   💾 Memory Usage: {avg_memory:.1f}MB avg, {peak_memory:.1f}MB peak")
     print(f"   ⚡ CPU Usage: {avg_cpu:.1f}% avg, {peak_cpu:.1f}% peak")
-    if enable_fast_mode:
+    if config.enable_fast_mode:
         print(f"   🚀 Parallel Efficiency: {parallel_efficiency:.1f}x speedup")
 
     # Create suite performance metrics
     suite_performance = TestSuitePerformance(
-        total_duration=total_duration,
-        total_tests=total_tests_run,
-        passed_modules=passed_count,
-        failed_modules=failed_count,
+        total_duration=config.total_duration,
+        total_tests=config.total_tests_run,
+        passed_modules=config.passed_count,
+        failed_modules=config.failed_count,
         avg_memory_usage=avg_memory,
         peak_memory_usage=peak_memory,
         avg_cpu_usage=avg_cpu,
         peak_cpu_usage=peak_cpu,
         parallel_efficiency=parallel_efficiency,
-        optimization_suggestions=analyze_performance_trends(all_metrics)
+        optimization_suggestions=analyze_performance_trends(config.all_metrics)
     )
 
     # Show optimization suggestions
@@ -1334,8 +1370,8 @@ def _print_performance_metrics(
             print(f"   {suggestion}")
 
     # Save metrics for trend analysis
-    if enable_benchmark:
-        save_performance_metrics(all_metrics, suite_performance)
+    if config.enable_benchmark:
+        save_performance_metrics(config.all_metrics, suite_performance)
 
 
 def _print_final_results(
@@ -1401,14 +1437,15 @@ def main() -> bool:
     total_start_time = time.time()
 
     # Execute tests
-    results, all_metrics, total_tests_run, passed_count = _execute_tests(
-        modules_with_descriptions,
-        discovered_modules,
-        module_descriptions,
-        enable_fast_mode,
-        enable_monitoring,
-        enable_benchmark
+    test_config = TestExecutionConfig(
+        modules_with_descriptions=modules_with_descriptions,
+        discovered_modules=discovered_modules,
+        module_descriptions=module_descriptions,
+        enable_fast_mode=enable_fast_mode,
+        enable_monitoring=enable_monitoring,
+        enable_benchmark=enable_benchmark
     )
+    results, all_metrics, total_tests_run, passed_count = _execute_tests(test_config)
 
     # Calculate final metrics
     total_duration = time.time() - total_start_time
@@ -1421,15 +1458,16 @@ def main() -> bool:
     _print_quality_summary(all_metrics)
 
     if enable_monitoring:
-        _print_performance_metrics(
-            all_metrics,
-            total_duration,
-            total_tests_run,
-            passed_count,
-            failed_count,
-            enable_fast_mode,
-            enable_benchmark
+        perf_config = PerformanceMetricsConfig(
+            all_metrics=all_metrics,
+            total_duration=total_duration,
+            total_tests_run=total_tests_run,
+            passed_count=passed_count,
+            failed_count=failed_count,
+            enable_fast_mode=enable_fast_mode,
+            enable_benchmark=enable_benchmark
         )
+        _print_performance_metrics(perf_config)
 
     _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
 

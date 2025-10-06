@@ -132,34 +132,40 @@ class GenealogicalTaskGenerator:
         """Generate location-specific research strategies based on geographical and historical context."""
         location_lower = location.lower()
 
+        # Determine strategy based on location
+        strategy = None
+
         # Scotland-specific strategies
         if any(term in location_lower for term in ['scotland', 'scottish', 'edinburgh', 'glasgow', 'aberdeen', 'dundee']):
-            return "Focus on Old Parish Registers (OPR) pre-1855 and statutory records post-1855. Check National Records of Scotland online. Review kirk session records and heritors' records. Consider Highland Clearances impact if applicable."
+            strategy = "Focus on Old Parish Registers (OPR) pre-1855 and statutory records post-1855. Check National Records of Scotland online. Review kirk session records and heritors' records. Consider Highland Clearances impact if applicable."
 
         # Ireland-specific strategies
-        if any(term in location_lower for term in ['ireland', 'irish', 'dublin', 'cork', 'belfast', 'galway']):
-            return "Search civil registration from 1864 (births/deaths) and 1845 (marriages). Check Catholic parish records and Church of Ireland registers. Review Griffith's Valuation and Tithe Applotment Books. Consider Famine emigration records."
+        elif any(term in location_lower for term in ['ireland', 'irish', 'dublin', 'cork', 'belfast', 'galway']):
+            strategy = "Search civil registration from 1864 (births/deaths) and 1845 (marriages). Check Catholic parish records and Church of Ireland registers. Review Griffith's Valuation and Tithe Applotment Books. Consider Famine emigration records."
 
         # England-specific strategies
-        if any(term in location_lower for term in ['england', 'english', 'london', 'manchester', 'birmingham', 'liverpool']):
-            return "Search parish registers and Bishop's Transcripts. Check Probate Court of Canterbury (PCC) wills. Review Quarter Sessions and Manorial records. Consider Industrial Revolution migration patterns."
+        elif any(term in location_lower for term in ['england', 'english', 'london', 'manchester', 'birmingham', 'liverpool']):
+            strategy = "Search parish registers and Bishop's Transcripts. Check Probate Court of Canterbury (PCC) wills. Review Quarter Sessions and Manorial records. Consider Industrial Revolution migration patterns."
 
         # Wales-specific strategies
-        if any(term in location_lower for term in ['wales', 'welsh', 'cardiff', 'swansea', 'newport']):
-            return "Focus on Welsh parish registers and Nonconformist records. Check National Library of Wales collections. Review tithe maps and schedules. Consider Welsh language variations in records."
+        elif any(term in location_lower for term in ['wales', 'welsh', 'cardiff', 'swansea', 'newport']):
+            strategy = "Focus on Welsh parish registers and Nonconformist records. Check National Library of Wales collections. Review tithe maps and schedules. Consider Welsh language variations in records."
 
         # US state-specific strategies
-        if any(term in location_lower for term in ['massachusetts', 'boston', 'ma']):
-            return "Check Massachusetts Vital Records to 1850. Review Mayflower descendant records if applicable. Search Boston immigration records and ship manifests. Check town clerk records."
+        elif any(term in location_lower for term in ['massachusetts', 'boston', 'ma']):
+            strategy = "Check Massachusetts Vital Records to 1850. Review Mayflower descendant records if applicable. Search Boston immigration records and ship manifests. Check town clerk records."
 
-        if any(term in location_lower for term in ['new york', 'ny', 'manhattan', 'brooklyn']):
-            return "Search Ellis Island and Castle Garden immigration records. Check NYC Municipal Archives. Review tenement records and city directories. Consider ethnic neighborhood concentrations."
+        elif any(term in location_lower for term in ['new york', 'ny', 'manhattan', 'brooklyn']):
+            strategy = "Search Ellis Island and Castle Garden immigration records. Check NYC Municipal Archives. Review tenement records and city directories. Consider ethnic neighborhood concentrations."
 
-        if any(term in location_lower for term in ['pennsylvania', 'philadelphia', 'pa']):
-            return "Check Pennsylvania German records if applicable. Search Quaker meeting records. Review Philadelphia port records. Check county courthouse records."
+        elif any(term in location_lower for term in ['pennsylvania', 'philadelphia', 'pa']):
+            strategy = "Check Pennsylvania German records if applicable. Search Quaker meeting records. Review Philadelphia port records. Check county courthouse records."
 
         # Generic strategies for other locations
-        return "Research local archives and historical societies. Check county courthouse records. Review local newspapers and obituaries. Consider regional migration patterns and historical events."
+        else:
+            strategy = "Research local archives and historical societies. Check county courthouse records. Review local newspapers and obituaries. Consider regional migration patterns and historical events."
+
+        return strategy
 
     def _apply_letter_substitutions(self, name_parts: list[str]) -> list[str]:
         """Apply common letter substitutions to name parts."""

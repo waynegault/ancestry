@@ -26,33 +26,41 @@ from typing import Any, Callable, Optional
 _lock = threading.RLock()
 
 # Global state tracking with enhanced metrics
-_initialized = False
-_project_root: Optional[Path] = None
+class _ImportSystemState:
+    """Manages import system state."""
+    initialized = False
+    project_root: Optional[Path] = None
+
+
 _registry: dict[str, Any] = {}
 _import_cache: dict[str, bool] = {}
 _error_log: list[dict[str, Any]] = []
-_stats = {
-    "functions_registered": 0,
-    "imports_resolved": 0,
-    "cache_hits": 0,
-    "cache_misses": 0,
-    "errors_encountered": 0,
-    "initialization_time": 0.0,
+
+
+class _ImportStats:
+    """Manages import system statistics."""
+    data = {
+        "functions_registered": 0,
+        "imports_resolved": 0,
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "errors_encountered": 0,
+        "initialization_time": 0.0,
     "last_cleanup": 0.0,
-}
+    }
 
 
 def get_import_stats() -> dict[str, Any]:
     """Get comprehensive import system statistics."""
     with _lock:
         return {
-            **_stats.copy(),
+            **_ImportStats.data.copy(),
             "registry_size": len(_registry),
             "cache_size": len(_import_cache),
             "error_count": len(_error_log),
             "hit_ratio": (
-                _stats["cache_hits"]
-                / max(1, _stats["cache_hits"] + _stats["cache_misses"])
+                _ImportStats.data["cache_hits"]
+                / max(1, _ImportStats.data["cache_hits"] + _ImportStats.data["cache_misses"])
             )
             * 100,
         }
@@ -60,10 +68,8 @@ def get_import_stats() -> dict[str, Any]:
 
 def get_project_root() -> Path:
     """Get the project root directory with caching and enhanced error handling."""
-    global _project_root
-
     with _lock:
-        if _project_root is None:
+        if _ImportSystemState.project_root is None:
             try:
                 # Start from current file and work up
                 current = Path(__file__).resolve()
@@ -84,23 +90,23 @@ def get_project_root() -> Path:
                 ]:
                     for marker in markers:
                         if (parent / marker).exists():
-                            _project_root = parent
+                            _ImportSystemState.project_root = parent
                             _log_info(
-                                f"Project root identified: {_project_root} (marker: {marker})"
+                                f"Project root identified: {_ImportSystemState.project_root} (marker: {marker})"
                             )
-                            return _project_root
+                            return _ImportSystemState.project_root
 
                 # Fallback to current file's parent
-                _project_root = current.parent
-                _log_warning(f"Using fallback project root: {_project_root}")
+                _ImportSystemState.project_root = current.parent
+                _log_warning(f"Using fallback project root: {_ImportSystemState.project_root}")
 
             except Exception as e:
                 # Ultimate fallback
-                _project_root = Path.cwd()
+                _ImportSystemState.project_root = Path.cwd()
                 _log_error(f"Error determining project root, using CWD: {e}")
-                _stats["errors_encountered"] += 1
+                _ImportStats.data["errors_encountered"] += 1
 
-        return _project_root
+        return _ImportSystemState.project_root
 
 
 def _log_info(message: str) -> None:
@@ -136,8 +142,7 @@ def _log_error(message: str) -> None:
 
 def ensure_imports() -> None:
     """Ensure all imports are properly configured. Call once per module."""
-    global _initialized
-    if _initialized:
+    if _ImportSystemState.initialized:
         return
 
     start_time = time.time()
@@ -145,9 +150,9 @@ def ensure_imports() -> None:
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
-    _stats["initialization_time"] = time.time() - start_time
-    _stats["imports_resolved"] += 1
-    _initialized = True
+    _ImportStats.data["initialization_time"] = time.time() - start_time
+    _ImportStats.data["imports_resolved"] += 1
+    _ImportSystemState.initialized = True
 
 
 @contextmanager
@@ -165,7 +170,7 @@ def register_function(name: str, func: Callable) -> None:
     """Register a function in the unified registry with performance tracking."""
     if callable(func):
         _registry[name] = func
-        _stats["functions_registered"] += 1
+        _ImportStats.data["functions_registered"] += 1
         # Clear cache when registry changes
         _import_cache.clear()
 
@@ -175,7 +180,7 @@ def register_many(**functions) -> None:
     for name, func in functions.items():
         if callable(func):
             _registry[name] = func
-            _stats["functions_registered"] += 1
+            _ImportStats.data["functions_registered"] += 1
     _import_cache.clear()
 
 
@@ -187,7 +192,7 @@ def get_function(name: str, default: Any = None) -> Any:
 def is_function_available(name: str) -> bool:
     """Check if a function is available with performance caching."""
     if name in _import_cache:
-        _stats["cache_hits"] += 1
+        _ImportStats.data["cache_hits"] += 1
         return _import_cache[name]
 
     result = name in _registry and callable(_registry[name])
@@ -264,11 +269,11 @@ def standardize_module_imports() -> bool:
 def get_stats() -> dict[str, Any]:
     """Get performance statistics for the unified system."""
     return {
-        **_stats,
+        **_ImportStats.data,
         "registry_size": len(_registry),
         "cache_size": len(_import_cache),
         "cache_hit_rate": (
-            _stats["cache_hits"] / max(1, _stats["cache_hits"] + len(_import_cache))
+            _ImportStats.data["cache_hits"] / max(1, _ImportStats.data["cache_hits"] + len(_import_cache))
         )
         * 100,
     }
@@ -323,14 +328,16 @@ def safe_execute(
 
 def cleanup_registry() -> None:
     """Clean up the registry and reset caches."""
-    global _stats
     _registry.clear()
     _import_cache.clear()
-    _stats = {
+    _ImportStats.data = {
         "functions_registered": 0,
         "imports_resolved": 0,
         "cache_hits": 0,
+        "cache_misses": 0,
+        "errors_encountered": 0,
         "initialization_time": 0.0,
+        "last_cleanup": 0.0,
     }
 
 

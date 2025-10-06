@@ -2688,60 +2688,53 @@ def _handle_supplementary_info_phase(
 def handle_api_report(session_manager_param: Optional[Any] = None) -> bool:
     """Orchestrates the process using only initial API data for comparison."""
 
-    # Use the session_manager passed by the framework if available
-    global session_manager
+    # Use the session_manager passed by the framework if available, otherwise use module-level instance
+    active_session_manager = session_manager_param if session_manager_param else session_manager
     if session_manager_param:
-        session_manager = session_manager_param
         logger.debug("Using session_manager passed by framework.")
+
+    result = False  # Default to failure
 
     # Dependency Checks
     dependencies_ok, missing = _check_dependencies()
     if not dependencies_ok:
         logger.critical(f"handle_api_report: Dependencies missing: {', '.join(missing)}.")
         print(f"\nCRITICAL ERROR: Dependencies unavailable ({', '.join(missing)}). Check logs.")
-        return False
-
-    # Session Setup
-    logger.debug("Using session initialized by action execution framework.")
-
     # Browser Session Validation
-    if not _validate_browser_session():
-        return False
+    elif not _validate_browser_session() or not _ensure_authenticated_session():
+        pass  # result already False
+    else:
+        # Phase 1: Search...
+        search_criteria = _get_search_criteria()
+        if not search_criteria:
+            logger.info("Search cancelled.")
+            result = True
+        else:
+            suggestions_to_score = _handle_search_phase(active_session_manager, search_criteria)
+            if suggestions_to_score is None:
+                result = False  # Critical API failure
+            elif not suggestions_to_score:
+                result = True  # Search successful, no results
+            else:
+                # Phase 2: Score, Select & Display Initial Comparison...
+                selection = _handle_selection_phase(
+                    suggestions_to_score, search_criteria
+                )  # Includes initial comparison display
+                if not selection:
+                    result = True  # No candidate selected or comparison failed gracefully
+                else:
+                    selected_candidate_processed, _ = selection  # Raw data unused
 
-    # Ensure Authenticated Session
-    if not _ensure_authenticated_session():
-        return False
+                    # Phase 3: Skip detailed data fetching - Action 11 simplified
+                    # Phase 4: Display Relationship Path Only...
+                    _handle_supplementary_info_phase(
+                        None,  # No detailed data needed for simplified Action 11
+                        selected_candidate_processed,
+                        active_session_manager,
+                    )
+                    result = True
 
-    # Phase 1: Search...
-    search_criteria = _get_search_criteria()
-    if not search_criteria:
-        logger.info("Search cancelled.")
-        return True
-    suggestions_to_score = _handle_search_phase(session_manager, search_criteria)
-    if suggestions_to_score is None:
-        return False  # Critical API failure
-    if not suggestions_to_score:
-        return True  # Search successful, no results
-
-    # Phase 2: Score, Select & Display Initial Comparison...
-    selection = _handle_selection_phase(
-        suggestions_to_score, search_criteria
-    )  # Includes initial comparison display
-    if not selection:
-        return True  # No candidate selected or comparison failed gracefully
-    selected_candidate_processed, _ = selection  # Raw data unused
-
-    # Phase 3: Skip detailed data fetching - Action 11 simplified
-    # Phase 4: Display Relationship Path Only...
-
-    _handle_supplementary_info_phase(
-        None,  # No detailed data needed for simplified Action 11
-        selected_candidate_processed,
-        session_manager,
-    )
-    # Finish...
-
-    return True
+    return result
 
 
 # End of handle_api_report

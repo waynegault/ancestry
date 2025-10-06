@@ -105,24 +105,28 @@ from relationship_utils import (  # type: ignore[import-not-found]
 )
 from test_framework import mock_logger_context  # type: ignore[import-not-found]
 
+
 # --- Module-level GEDCOM cache for tests ---
-_gedcom_cache = None
+class _GedcomCacheState:
+    """Manages GEDCOM cache state for tests."""
+    cache: Optional[GedcomData] = None
+
 
 def get_cached_gedcom() -> Optional[GedcomData]:
     """Load GEDCOM data once and cache it for all tests"""
-    global _gedcom_cache
-    if _gedcom_cache is None:
+    if _GedcomCacheState.cache is None:
         gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
         if gedcom_path and Path(gedcom_path).exists():
             print(f"📂 Loading GEDCOM: {Path(gedcom_path).name}")
-            _gedcom_cache = load_gedcom_data(Path(gedcom_path))
-            if _gedcom_cache:
-                print(f"✅ GEDCOM loaded: {len(_gedcom_cache.indi_index)} individuals")
-    return _gedcom_cache
+            _GedcomCacheState.cache = load_gedcom_data(Path(gedcom_path))
+            if _GedcomCacheState.cache:
+                print(f"✅ GEDCOM loaded: {len(_GedcomCacheState.cache.indi_index)} individuals")
+    return _GedcomCacheState.cache
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION CONFIGURATION ===
-# Global flag to enable ultra-fast mock mode for tests
-_mock_mode_enabled = False  # Changed from uppercase to avoid pylance constant warning
+class _MockModeState:
+    """Manages mock mode state for ultra-fast testing."""
+    enabled = False
 
 
 def enable_mock_mode() -> None:
@@ -140,8 +144,7 @@ def enable_mock_mode() -> None:
         >>> enable_mock_mode()
         >>> print("Mock mode enabled for fast testing")
     """
-    global _mock_mode_enabled
-    _mock_mode_enabled = True
+    _MockModeState.enabled = True
     logger.info("🚀 Mock mode enabled for ultra-fast testing")
 
 
@@ -160,13 +163,12 @@ def disable_mock_mode() -> None:
         >>> disable_mock_mode()
         >>> print("Mock mode disabled - using real data")
     """
-    global _mock_mode_enabled
-    _mock_mode_enabled = False
+    _MockModeState.enabled = False
 
 
 def is_mock_mode() -> bool:
     """Check if mock mode is enabled"""
-    return _mock_mode_enabled
+    return _MockModeState.enabled
 
 
 def _format_search_criteria(search_criteria: dict[str, Any]) -> list[str]:
@@ -1989,30 +1991,71 @@ def test_analyze_top_match_fraser() -> None:
         return True  # Don't fail the test suite
 
 
+def _get_test_person_config():
+    """Get test person configuration from environment variables."""
+    import os
+
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    return {
+        "first_name": os.getenv("TEST_PERSON_FIRST_NAME", "Fraser"),
+        "last_name": os.getenv("TEST_PERSON_LAST_NAME", "Gault"),
+        "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
+        "gender": os.getenv("TEST_PERSON_GENDER", "m"),
+        "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
+        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
+    }
+
+
+def _print_search_criteria(config: dict) -> None:
+    """Print search criteria for test output."""
+    print("🔍 Search Criteria:")
+    print(f"   • First Name contains: {config['first_name'].lower()}")
+    print(f"   • Surname contains: {config['last_name'].lower()}")
+    print(f"   • Birth Year: {config['birth_year']}")
+    print(f"   • Gender: {config['gender'].upper()}")
+    print(f"   • Birth Place contains: {config.get('birth_place', 'N/A')}")
+    print("   • Death Year: null")
+    print("   • Death Place contains: null")
+
+
+def _print_search_results(results: list, search_time: float, expected_score: int, test_name: str) -> None:
+    """Print search results and validate performance."""
+    print("\n📊 Search Results:")
+    print(f"   Search time: {search_time:.3f}s")
+    print(f"   Total matches: {len(results)}")
+
+    if results:
+        top_result = results[0]
+        actual_score = top_result.get('total_score', 0)
+        print(f"   Top match: {top_result.get('full_name_disp')} (Score: {actual_score})")
+        print(f"   Score validation: {actual_score >= 50}")
+        print(f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})")
+
+        performance_ok = search_time < 5.0
+        print(f"   Performance validation: {performance_ok} (< 5.0s)")
+
+        assert actual_score >= 50, f"{test_name} should score at least 50 points, got {actual_score}"
+        assert actual_score == expected_score, f"{test_name} should score exactly {expected_score}, got {actual_score}"
+        assert performance_ok, f"Search should complete in < 5s, took {search_time:.3f}s"
+    else:
+        print("⚠️ No matches found - but search executed successfully")
+
+
 def test_real_search_performance_and_accuracy() -> None:
     """Test search performance and accuracy with real GEDCOM data"""
-    import os
     import time
     from pathlib import Path
 
-    from dotenv import load_dotenv
-
     from test_framework import Colors, clean_test_output, format_test_section_header
 
-    load_dotenv()
-
-    # Get test person data from .env configuration
-    test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-    test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-    test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-    test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-    expected_score = int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
-
+    config = _get_test_person_config()
 
     print(format_test_section_header("Search Performance & Accuracy", "🎯"))
-    print(f"Test: Real GEDCOM search for {test_first_name} {test_last_name} with performance validation")
+    print(f"Test: Real GEDCOM search for {config['first_name']} {config['last_name']} with performance validation")
     print("Method: Load real GEDCOM data and search for test person from .env")
-    print(f"Expected: {test_first_name} {test_last_name} found with consistent scoring and good performance")
+    print(f"Expected: {config['first_name']} {config['last_name']} found with consistent scoring and good performance")
 
     # Load real GEDCOM data from configuration
     gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
@@ -2030,27 +2073,19 @@ def test_real_search_performance_and_accuracy() -> None:
 
     print(f"✅ GEDCOM loaded: {len(gedcom_data.indi_index)} individuals")
 
-    # Test person consistent search criteria (same as scoring test)
+    # Test person consistent search criteria
     search_criteria = {
-        "first_name": test_first_name.lower(),
-        "surname": test_last_name.lower(),
-        "birth_year": test_birth_year,
-        "gender": test_gender.lower(),  # Use lowercase for scoring consistency
-        "birth_place": "Banff",  # Search for 'Banff' within the full place name
+        "first_name": config['first_name'].lower(),
+        "surname": config['last_name'].lower(),
+        "birth_year": config['birth_year'],
+        "gender": config['gender'].lower(),
+        "birth_place": config['birth_place'],
         "death_year": None,
         "death_place": None
     }
 
-    print("🔍 Search Criteria:")
-    print(f"   • First Name contains: {test_first_name.lower()}")
-    print(f"   • Surname contains: {test_last_name.lower()}")
-    print(f"   • Birth Year: {test_birth_year}")
-    print(f"   • Gender: {test_gender.upper()}")
-    print("   • Birth Place contains: Banff")
-    print("   • Death Year: null")
-    print("   • Death Place contains: null")
-
-    print(f"\n🔍 Searching for {test_first_name} {test_last_name}...")
+    _print_search_criteria(config)
+    print(f"\n🔍 Searching for {config['first_name']} {config['last_name']}...")
 
     start_time = time.time()
     results = filter_and_score_individuals(
@@ -2060,28 +2095,7 @@ def test_real_search_performance_and_accuracy() -> None:
     )
     search_time = time.time() - start_time
 
-    print("\n📊 Search Results:")
-    print(f"   Search time: {search_time:.3f}s")
-    print(f"   Total matches: {len(results)}")
-
-    if results:
-        top_result = results[0]
-        actual_score = top_result.get('total_score', 0)
-        print(f"   Top match: {top_result.get('full_name_disp')} (Score: {actual_score})")
-        print(f"   Score validation: {actual_score >= 50}")
-        print(f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})")
-
-        # Validate performance
-        performance_ok = search_time < 5.0  # Should complete in under 5 seconds
-        print(f"   Performance validation: {performance_ok} (< 5.0s)")
-
-        # Check both minimum threshold and exact expected score
-        assert actual_score >= 50, f"{test_first_name} should score at least 50 points, got {actual_score}"
-        assert actual_score == expected_score, f"{test_first_name} should score exactly {expected_score}, got {actual_score}"
-        assert performance_ok, f"Search should complete in < 5s, took {search_time:.3f}s"
-
-    else:
-        print("⚠️ No matches found - but search executed successfully")
+    _print_search_results(results, search_time, config['expected_score'], config['first_name'])
 
     print("✅ Search performance and accuracy test completed")
     print(f"Conclusion: GEDCOM search functionality validated with {len(results)} matches")
@@ -2165,24 +2179,13 @@ def test_family_relationship_analysis() -> None:
 
 def test_relationship_path_calculation() -> None:
     """Test relationship path calculation from test person to tree owner"""
-    import os
-
-    from dotenv import load_dotenv
-
     from relationship_utils import (  # type: ignore[import-not-found]
         convert_gedcom_path_to_unified_format,
         fast_bidirectional_bfs,
         format_relationship_path_unified,
     )
 
-    load_dotenv()
-
-    # Get test person data from .env configuration
-    test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-    test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-    test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-    test_gender = os.getenv("TEST_PERSON_GENDER", "m")
-    test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
+    config = _get_test_person_config()
 
     # Get tree owner data from configuration
     reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
@@ -2198,14 +2201,14 @@ def test_relationship_path_calculation() -> None:
 
         # Search for test person using consistent criteria
         person_search = {
-            "first_name": test_first_name.lower(),
-            "surname": test_last_name.lower(),
-            "birth_year": test_birth_year,
-            "gender": test_gender,  # Add gender for consistency
-            "birth_place": test_birth_place  # Add birth place for consistency
+            "first_name": config['first_name'].lower(),
+            "surname": config['last_name'].lower(),
+            "birth_year": config['birth_year'],
+            "gender": config['gender'],
+            "birth_place": config['birth_place']
         }
 
-        print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
+        print(f"\n🔍 Locating {config['first_name']} {config['last_name']}...")
 
         person_results = filter_and_score_individuals(
             gedcom_data,
@@ -2216,12 +2219,12 @@ def test_relationship_path_calculation() -> None:
         )
 
         if not person_results:
-            print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
+            print(f"❌ Could not find {config['first_name']} {config['last_name']} in GEDCOM data")
         else:
             person = person_results[0]
             person_id = person.get('id')
 
-            print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
+            print(f"✅ Found {config['first_name']}: {person.get('full_name_disp')}")
             print(f"   Person ID: {person_id}")
 
             # Get reference person (tree owner) from config

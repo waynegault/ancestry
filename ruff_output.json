@@ -1,0 +1,665 @@
+[
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 25,
+      "row": 113
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action10.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 113
+    },
+    "message": "Using the global statement to update `_gedcom_cache` is discouraged",
+    "noqa_row": 113,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 30,
+      "row": 143
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action10.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 143
+    },
+    "message": "Using the global statement to update `_mock_mode_enabled` is discouraged",
+    "noqa_row": 143,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 30,
+      "row": 163
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action10.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 163
+    },
+    "message": "Using the global statement to update `_mock_mode_enabled` is discouraged",
+    "noqa_row": 163,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 31,
+      "row": 275
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action9_process_productive.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 275
+    },
+    "message": "Using the global statement to update `_CACHED_GEDCOM_DATA` is discouraged",
+    "noqa_row": 275,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 25,
+      "row": 20
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\cancellation.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 20
+    },
+    "message": "Using the global statement to update `_cancel_scope` is discouraged",
+    "noqa_row": 20,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 25,
+      "row": 27
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\cancellation.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 27
+    },
+    "message": "Using the global statement to update `_cancel_scope` is discouraged",
+    "noqa_row": 27,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 38,
+      "row": 47
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\logging_utils.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 47
+    },
+    "message": "Using the global statement to update `_centralized_logging_setup` is discouraged",
+    "noqa_row": 47,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 42,
+      "row": 354
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\logging_utils.py",
+    "fix": null,
+    "location": {
+      "column": 16,
+      "row": 354
+    },
+    "message": "Using the global statement to update `_centralized_logging_setup` is discouraged",
+    "noqa_row": 354,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 42,
+      "row": 354
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\logging_utils.py",
+    "fix": null,
+    "location": {
+      "column": 16,
+      "row": 354
+    },
+    "message": "Using the global statement to update `_centralized_logging_setup` is discouraged",
+    "noqa_row": 354,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 25,
+      "row": 63
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core_imports.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 63
+    },
+    "message": "Using the global statement to update `_project_root` is discouraged",
+    "noqa_row": 63,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 25,
+      "row": 63
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core_imports.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 63
+    },
+    "message": "Using the global statement to update `_project_root` is discouraged",
+    "noqa_row": 63,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 25,
+      "row": 63
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core_imports.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 63
+    },
+    "message": "Using the global statement to update `_project_root` is discouraged",
+    "noqa_row": 63,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 24,
+      "row": 139
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core_imports.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 139
+    },
+    "message": "Using the global statement to update `_initialized` is discouraged",
+    "noqa_row": 139,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 18,
+      "row": 326
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core_imports.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 326
+    },
+    "message": "Using the global statement to update `_stats` is discouraged",
+    "noqa_row": 326,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 30,
+      "row": 1100
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\credentials.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 1100
+    },
+    "message": "Using the global statement to update `SECURITY_AVAILABLE` is discouraged",
+    "noqa_row": 1100,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 30,
+      "row": 1100
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\credentials.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 1100
+    },
+    "message": "Using the global statement to update `SECURITY_AVAILABLE` is discouraged",
+    "noqa_row": 1100,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 31,
+      "row": 118
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\gedcom_search_utils.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 118
+    },
+    "message": "Using the global statement to update `_CACHED_GEDCOM_DATA` is discouraged",
+    "noqa_row": 118,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 31,
+      "row": 196
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\gedcom_search_utils.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 196
+    },
+    "message": "Using the global statement to update `_CACHED_GEDCOM_DATA` is discouraged",
+    "noqa_row": 196,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 31,
+      "row": 196
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\gedcom_search_utils.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 196
+    },
+    "message": "Using the global statement to update `_CACHED_GEDCOM_DATA` is discouraged",
+    "noqa_row": 196,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 31,
+      "row": 196
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\gedcom_search_utils.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 196
+    },
+    "message": "Using the global statement to update `_CACHED_GEDCOM_DATA` is discouraged",
+    "noqa_row": 196,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 27,
+      "row": 1335
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\health_monitor.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 1335
+    },
+    "message": "Using the global statement to update `_health_monitor` is discouraged",
+    "noqa_row": 1335,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 278
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 278
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 278,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 29,
+      "row": 560
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 16,
+      "row": 560
+    },
+    "message": "Using the global statement to update `LOG_DIRECTORY` is discouraged",
+    "noqa_row": 560,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 29,
+      "row": 560
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 16,
+      "row": 560
+    },
+    "message": "Using the global statement to update `LOG_DIRECTORY` is discouraged",
+    "noqa_row": 560,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 51,
+      "row": 560
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 560
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 560,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 51,
+      "row": 560
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 560
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 560,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 598
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 598
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 598,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 598
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 598
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 598,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 29,
+      "row": 639
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 16,
+      "row": 639
+    },
+    "message": "Using the global statement to update `LOG_DIRECTORY` is discouraged",
+    "noqa_row": 639,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 29,
+      "row": 639
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 16,
+      "row": 639
+    },
+    "message": "Using the global statement to update `LOG_DIRECTORY` is discouraged",
+    "noqa_row": 639,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 51,
+      "row": 639
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 639
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 639,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 51,
+      "row": 639
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 639
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 639,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 662
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 662
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 662,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 662
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 662
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 662,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 678
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 678
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 678,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 678
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 678
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 678,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 742
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 742
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 742,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 32,
+      "row": 742
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\logging_config.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 742
+    },
+    "message": "Using the global statement to update `_logging_initialized` is discouraged",
+    "noqa_row": 742,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  },
+  {
+    "cell": null,
+    "code": "PLW0603",
+    "end_location": {
+      "column": 29,
+      "row": 500
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\performance_orchestrator.py",
+    "fix": null,
+    "location": {
+      "column": 12,
+      "row": 500
+    },
+    "message": "Using the global statement to update `_global_optimizer` is discouraged",
+    "noqa_row": 500,
+    "url": "https://docs.astral.sh/ruff/rules/global-statement"
+  }
+]

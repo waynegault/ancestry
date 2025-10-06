@@ -44,6 +44,7 @@ import re
 import sys
 import time
 import uuid  # For make_ube, make_traceparent, make_tracestate
+from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import (
@@ -74,6 +75,49 @@ DriverType = Optional[WebDriver]
 SessionManagerType = Optional[
     "SessionManager"
 ]  # Use string literal for forward reference
+
+
+# === API REQUEST CONFIGURATION ===
+@dataclass
+class ApiRequestConfig:
+    """
+    Configuration object for API requests to reduce parameter count.
+    Encapsulates all parameters needed for _api_req and related functions.
+    """
+    # Required parameters
+    url: str
+    driver: DriverType
+    session_manager: "SessionManager"
+
+    # HTTP method and data
+    method: str = "GET"
+    data: Optional[Dict] = None
+    json_data: Optional[Dict] = None
+    json: Optional[Dict] = None
+
+    # Headers and authentication
+    headers: Optional[Dict[str, str]] = None
+    referer_url: Optional[str] = None
+    use_csrf_token: bool = True
+    add_default_origin: bool = True
+
+    # Request behavior
+    timeout: Optional[int] = None
+    cookie_jar: Optional["RequestsCookieJar"] = None
+    allow_redirects: bool = True
+    force_text_response: bool = False
+
+    # Retry configuration
+    max_retries: int = 3
+    initial_delay: float = 1.0
+    backoff_factor: float = 2.0
+    max_delay: float = 60.0
+    retry_status_codes: List[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
+
+    # Metadata
+    api_description: str = "API Call"
+    attempt: int = 1
+
 
 # === MODULE CONSTANTS ===
 # Key constants remain here or moved to api_utils as appropriate
@@ -298,41 +342,42 @@ def _format_initial(part: str) -> Optional[str]:
 def _format_name_part(part: str, index: int, lowercase_particles: set[str], uppercase_exceptions: set[str]) -> str:
     """Format a single part of a name with all special case handling."""
     part_lower = part.lower()
+    result = None
 
     # Lowercase particles (but not at start)
     if index > 0 and part_lower in lowercase_particles:
-        return part_lower
-
+        result = part_lower
     # Uppercase exceptions (II, III, SR, JR)
-    if part.upper() in uppercase_exceptions:
-        return part.upper()
+    elif part.upper() in uppercase_exceptions:
+        result = part.upper()
+    else:
+        # Quoted nicknames
+        quoted = _format_quoted_nickname(part)
+        if quoted:
+            result = quoted
+        # Hyphenated names
+        elif "-" in part:
+            result = _format_hyphenated_name(part, lowercase_particles)
+        else:
+            # Apostrophe names (O'Malley)
+            apostrophe = _format_apostrophe_name(part)
+            if apostrophe:
+                result = apostrophe
+            else:
+                # Mc/Mac prefixes
+                mc_mac = _format_mc_mac_prefix(part)
+                if mc_mac:
+                    result = mc_mac
+                else:
+                    # Initials
+                    initial = _format_initial(part)
+                    if initial:
+                        result = initial
+                    else:
+                        # Default: capitalize
+                        result = part.capitalize()
 
-    # Quoted nicknames
-    quoted = _format_quoted_nickname(part)
-    if quoted:
-        return quoted
-
-    # Hyphenated names
-    if "-" in part:
-        return _format_hyphenated_name(part, lowercase_particles)
-
-    # Apostrophe names (O'Malley)
-    apostrophe = _format_apostrophe_name(part)
-    if apostrophe:
-        return apostrophe
-
-    # Mc/Mac prefixes
-    mc_mac = _format_mc_mac_prefix(part)
-    if mc_mac:
-        return mc_mac
-
-    # Initials
-    initial = _format_initial(part)
-    if initial:
-        return initial
-
-    # Default: capitalize
-    return part.capitalize()
+    return result
 
 
 def format_name(name: Optional[str]) -> str:
@@ -2391,9 +2436,48 @@ def _enter_password(driver: WebDriver, element_wait: WebDriverWait) -> tuple[boo
     return True, password_input
 
 
+def _try_standard_click(sign_in_button) -> bool:
+    """Try standard click on sign in button."""
+    try:
+        logger.debug("Attempting standard click on sign in button...")
+        sign_in_button.click()
+        logger.debug("Standard click executed.")
+        return True
+    except (ElementClickInterceptedException, ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
+        logger.warning(f"Standard click failed ({type(e).__name__}).")
+        return False
+    except WebDriverException as e:  # type: ignore
+        logger.error(f"WebDriver error during standard click: {e}.")
+        return False
+
+
+def _try_javascript_click(driver: WebDriver, sign_in_button) -> bool:
+    """Try JavaScript click on sign in button."""
+    try:
+        logger.debug("Attempting JavaScript click on sign in button...")
+        driver.execute_script("arguments[0].click();", sign_in_button)
+        logger.info("JavaScript click executed.")
+        return True
+    except WebDriverException as js_click_e:  # type: ignore
+        logger.error(f"Error during JavaScript click: {js_click_e}")
+        return False
+
+
+def _try_return_key_fallback(password_input) -> bool:
+    """Try sending RETURN key to password field as fallback."""
+    try:
+        logger.warning("Attempting fallback: Sending RETURN key to password field.")
+        password_input.send_keys(Keys.RETURN)
+        logger.info("Fallback RETURN key sent to password field.")
+        return True
+    except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
+        logger.error(f"Failed to send RETURN key: {key_e}")
+        return False
+
+
 def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input) -> bool:
     """Click the sign in button or use fallback methods."""
-    sign_in_button = None
+    # Try to locate sign in button
     try:
         logger.debug(f"Waiting for sign in button presence: '{SIGN_IN_BUTTON_SELECTOR}'...")  # type: ignore
         WebDriverWait(driver, 5).until(  # type: ignore
@@ -2406,14 +2490,7 @@ def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password
         logger.debug("Sign in button located and deemed clickable.")
     except TimeoutException:  # type: ignore
         logger.error("Sign in button not found or not clickable within timeout.")
-        logger.warning("Attempting fallback: Sending RETURN key to password field.")
-        try:
-            password_input.send_keys(Keys.RETURN)
-            logger.info("Fallback RETURN key sent to password field.")
-            return True
-        except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
-            logger.error(f"Failed to send RETURN key: {key_e}")
-            return False
+        return _try_return_key_fallback(password_input)
     except WebDriverException as find_e:  # type: ignore
         logger.error(f"Unexpected WebDriver error finding sign in button: {find_e}")
         return False
@@ -2421,35 +2498,18 @@ def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password
     if not sign_in_button:
         return False
 
-    # Try standard click
-    try:
-        logger.debug("Attempting standard click on sign in button...")
-        sign_in_button.click()
-        logger.debug("Standard click executed.")
+    # Try standard click first
+    if _try_standard_click(sign_in_button):
         return True
-    except (ElementClickInterceptedException, ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
-        logger.warning(f"Standard click failed ({type(e).__name__}). Trying JS click...")
-    except WebDriverException as e:  # type: ignore
-        logger.error(f"WebDriver error during standard click: {e}. Trying JS click...")
 
-    # Try JavaScript click
-    try:
-        logger.debug("Attempting JavaScript click on sign in button...")
-        driver.execute_script("arguments[0].click();", sign_in_button)
-        logger.info("JavaScript click executed.")
+    # Try JavaScript click if standard click failed
+    logger.warning("Standard click failed. Trying JS click...")
+    if _try_javascript_click(driver, sign_in_button):
         return True
-    except WebDriverException as js_click_e:  # type: ignore
-        logger.error(f"Error during JavaScript click: {js_click_e}")
 
     # Try RETURN key as final fallback
-    logger.warning("Both standard and JS clicks failed. Attempting fallback: Sending RETURN key.")
-    try:
-        password_input.send_keys(Keys.RETURN)
-        logger.info("Fallback RETURN key sent to password field after failed clicks.")
-        return True
-    except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
-        logger.error(f"Failed to send RETURN key as final fallback: {key_e}")
-        return False
+    logger.warning("Both standard and JS clicks failed.")
+    return _try_return_key_fallback(password_input)
 
 
 def enter_creds(driver: WebDriver) -> bool:  # type: ignore
@@ -3227,37 +3287,40 @@ def _validate_post_navigation(
     Validate navigation after landing on page.
     Returns (action, driver) where action is 'success', 'fail', or 'continue'.
     """
+    result_action = "continue"
+    result_driver = driver
+
     # Check for MFA page
     if _check_for_mfa_page(driver):
         logger.error("Landed on MFA page unexpectedly during navigation. Navigation failed.")
-        return ("fail", driver)
-
+        result_action = "fail"
     # Check for Login page
-    if _check_for_login_page(driver, target_url_base, signin_page_url_base):
+    elif _check_for_login_page(driver, target_url_base, signin_page_url_base):
         login_action = _handle_login_redirect(session_manager)
         if login_action == "retry":
-            return ("continue", driver)
-        if login_action in ("fail", "no_manager"):
-            return ("fail", driver)
+            result_action = "continue"
+        elif login_action in ("fail", "no_manager"):
+            result_action = "fail"
+    else:
+        # Check for URL mismatch
+        url_check_result, driver = _check_url_mismatch_and_handle(
+            driver, landed_url_base, target_url_base, signin_page_url_base,
+            unavailability_selectors, session_manager
+        )
+        if url_check_result is not None:
+            result_action = url_check_result
+            result_driver = driver
+        else:
+            # --- Final Check: Element on Page ---
+            element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
+            if element_result == "success":
+                result_action = "success"
+            elif element_result == "fail":
+                result_action = "fail"
+            elif element_result == "continue":
+                result_action = "continue"
 
-    # Check for URL mismatch
-    url_check_result, driver = _check_url_mismatch_and_handle(
-        driver, landed_url_base, target_url_base, signin_page_url_base,
-        unavailability_selectors, session_manager
-    )
-    if url_check_result is not None:
-        return (url_check_result, driver)
-
-    # --- Final Check: Element on Page ---
-    element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
-    if element_result == "success":
-        return ("success", driver)
-    if element_result == "fail":
-        return ("fail", driver)
-    if element_result == "continue":
-        return ("continue", driver)
-
-    return ("continue", driver)
+    return (result_action, result_driver)
 
 
 def _perform_navigation_attempt(
@@ -3276,47 +3339,48 @@ def _perform_navigation_attempt(
     Perform a single navigation attempt.
     Returns (action, driver) where action is 'success', 'fail', 'continue', or 'retry'.
     """
+    result_action = "continue"
+    result_driver = driver
+
     try:
         # --- Pre-Navigation Checks ---
         driver_check = _check_browser_session(driver, session_manager, attempt)
         if driver_check is None:
-            return ("fail", driver)
-        if driver_check != driver:
-            return ("retry", driver_check)
+            result_action = "fail"
+        elif driver_check != driver:
+            result_action = "retry"
+            result_driver = driver_check
+        else:
+            # --- Navigation Execution ---
+            _execute_navigation(driver, url, page_timeout)
 
-        # --- Navigation Execution ---
-        _execute_navigation(driver, url, page_timeout)
-
-        # --- Post-Navigation Checks ---
-        landed_url_base = _get_landed_url_base(driver, attempt)
-        if landed_url_base is None:
-            return ("continue", driver)
-
-        # Validate post-navigation state
-        return _validate_post_navigation(
-            driver, landed_url_base, target_url_base, signin_page_url_base,
-            selector, element_timeout, unavailability_selectors, session_manager
-        )
+            # --- Post-Navigation Checks ---
+            landed_url_base = _get_landed_url_base(driver, attempt)
+            if landed_url_base is None:
+                result_action = "continue"
+            else:
+                # Validate post-navigation state
+                result_action, result_driver = _validate_post_navigation(
+                    driver, landed_url_base, target_url_base, signin_page_url_base,
+                    selector, element_timeout, unavailability_selectors, session_manager
+                )
 
     except UnexpectedAlertPresentException:  # type: ignore
         alert_action = _handle_navigation_alert(driver, attempt)
-        if alert_action == "fail":
-            return ("fail", driver)
-        return ("continue", driver)
+        result_action = "fail" if alert_action == "fail" else "continue"
 
     except WebDriverException as wd_e:  # type: ignore
         logger.error(f"WebDriverException during navigation (Attempt {attempt}): {wd_e}", exc_info=False)
         wd_action, new_driver = _handle_webdriver_exception(driver, session_manager, attempt)
-        if wd_action == "fail":
-            return ("fail", driver)
-        return ("continue", new_driver if new_driver else driver)
+        result_action = "fail" if wd_action == "fail" else "continue"
+        result_driver = new_driver if new_driver else driver
 
     except Exception as e:
         logger.error(f"Unexpected error during navigation (Attempt {attempt}): {e}", exc_info=True)
         time.sleep(random.uniform(2, 4))
-        return ("continue", driver)
+        result_action = "continue"
 
-    return ("continue", driver)
+    return (result_action, result_driver)
 
 
 def nav_to_page(

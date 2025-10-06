@@ -541,6 +541,74 @@ def assert_valid_config(config: Any, required_attrs: list[str]) -> None:
         assert hasattr(config, attr), f"Config should have attribute {attr}"
 
 
+def _test_colors() -> None:
+    """Test that all color constants are properly defined."""
+    assert Colors.RED == "\033[91m"
+    assert Colors.GREEN == "\033[92m"
+    assert Colors.YELLOW == "\033[93m"
+    assert Colors.BLUE == "\033[94m"
+    assert Colors.MAGENTA == "\033[95m"
+    assert Colors.CYAN == "\033[96m"
+    assert Colors.WHITE == "\033[97m"
+    assert Colors.GRAY == "\033[90m"
+    assert Colors.BOLD == "\033[1m"
+    assert Colors.UNDERLINE == "\033[4m"
+    assert Colors.RESET == "\033[0m"
+    assert Colors.END == "\033[0m"  # Test both naming conventions
+
+
+def _test_icons() -> None:
+    """Test that all icon constants are properly defined."""
+    assert Icons.PASS == "✅"
+    assert Icons.FAIL == "❌"
+    assert Icons.WARNING == "⚠️"
+    assert Icons.INFO == "i"
+    assert Icons.GEAR == "⚙️"
+    assert Icons.ROCKET == "🚀"
+    assert Icons.BUG == "🐛"
+    assert Icons.CLOCK == "⏰"
+    assert Icons.MAGNIFY == "🔍"
+
+
+def _test_mock_data(test_data: Any) -> None:
+    """Test mock data creation functionality."""
+    data = test_data["mock_data"]
+    assert isinstance(data, dict)
+    assert "mock_session_manager" in data
+    assert "sample_dna_data" in data
+    assert data["sample_dna_data"]["cM_DNA"] == 85
+    assert isinstance(data["mock_session_manager"], MagicMock)
+    return True
+
+
+def _test_standardized_data_factory(test_data: Any) -> None:
+    """Test standardized test data factory."""
+    assert "test_person" in test_data
+    assert "test_environment" in test_data
+    assert test_data["test_person"]["first_name"] in ["Fraser", "John"]  # Allow both mock and real
+    assert isinstance(test_data["test_environment"]["use_real_data"], bool)
+    return True
+
+
+def _test_test_suite_creation() -> None:
+    """Test that TestSuite can be created and initialized properly."""
+    test_suite = TestSuite("Test Suite", "test_module.py")
+    assert test_suite.suite_name == "Test Suite"
+    assert test_suite.module_name == "test_module.py"
+    assert test_suite.start_time is None
+
+
+def _test_context_managers() -> None:
+    """Test that context managers work properly."""
+    with suppress_logging():
+        logging.critical("This logging should be suppressed")
+
+    # Test that it doesn't raise an exception
+    from pathlib import Path  # Should work fine
+
+    assert Path().exists()
+
+
 def test_framework_module_tests() -> bool:
     """
     Comprehensive test suite for the test framework module.
@@ -551,92 +619,30 @@ def test_framework_module_tests() -> bool:
     suite = TestSuite("Test Framework Comprehensive Tests", "test_framework.py")
     suite.start_suite()
 
-    def test_colors() -> None:
-        """Test that all color constants are properly defined."""
-        assert Colors.RED == "\033[91m"
-        assert Colors.GREEN == "\033[92m"
-        assert Colors.YELLOW == "\033[93m"
-        assert Colors.BLUE == "\033[94m"
-        assert Colors.MAGENTA == "\033[95m"
-        assert Colors.CYAN == "\033[96m"
-        assert Colors.WHITE == "\033[97m"
-        assert Colors.GRAY == "\033[90m"
-        assert Colors.BOLD == "\033[1m"
-        assert Colors.UNDERLINE == "\033[4m"
-        assert Colors.RESET == "\033[0m"
-        assert Colors.END == "\033[0m"  # Test both naming conventions
-
-    def test_icons() -> None:
-        """Test that all icon constants are properly defined."""
-        assert Icons.PASS == "✅"
-        assert Icons.FAIL == "❌"
-        assert Icons.WARNING == "⚠️"
-        assert Icons.INFO == "i"
-        assert Icons.GEAR == "⚙️"
-        assert Icons.ROCKET == "🚀"
-        assert Icons.BUG == "🐛"
-        assert Icons.CLOCK == "⏰"
-        assert Icons.MAGNIFY == "🔍"
-
-    def test_mock_data(test_data: Any) -> None:
-        """Test mock data creation functionality."""
-        data = test_data["mock_data"]
-        assert isinstance(data, dict)
-        assert "mock_session_manager" in data
-        assert "sample_dna_data" in data
-        assert data["sample_dna_data"]["cM_DNA"] == 85
-        assert isinstance(data["mock_session_manager"], MagicMock)
-        return True
-
-    def test_standardized_data_factory(test_data: Any) -> None:
-        """Test standardized test data factory."""
-        assert "test_person" in test_data
-        assert "test_environment" in test_data
-        assert test_data["test_person"]["first_name"] in ["Fraser", "John"]  # Allow both mock and real
-        assert isinstance(test_data["test_environment"]["use_real_data"], bool)
-        return True
-
-    def test_test_suite_creation() -> None:
-        """Test that TestSuite can be created and initialized properly."""
-        test_suite = TestSuite("Test Suite", "test_module.py")
-        assert test_suite.suite_name == "Test Suite"
-        assert test_suite.module_name == "test_module.py"
-        assert test_suite.start_time is None
-
-    def test_context_managers() -> None:
-        """Test that context managers work properly."""
-        with suppress_logging():
-            logging.critical("This logging should be suppressed")
-
-        # Test that it doesn't raise an exception
-        from pathlib import Path  # Should work fine
-
-        assert Path().exists()
-
     suite.run_test(
-        "Color constants", test_colors, "Should define all standard ANSI color codes"
+        "Color constants", _test_colors, "Should define all standard ANSI color codes"
     )
     suite.run_test(
-        "Icon constants", test_icons, "Should define all standard Unicode icons"
+        "Icon constants", _test_icons, "Should define all standard Unicode icons"
     )
     suite.run_test(
         "Mock data creation",
-        standardized_test_wrapper(test_mock_data, "Mock data creation"),
+        standardized_test_wrapper(_test_mock_data, "Mock data creation"),
         "Should create valid test data structures with standardized factory",
     )
     suite.run_test(
         "Standardized data factory",
-        standardized_test_wrapper(test_standardized_data_factory, "Standardized data factory"),
+        standardized_test_wrapper(_test_standardized_data_factory, "Standardized data factory"),
         "Should create consistent test data across different test modes",
     )
     suite.run_test(
         "TestSuite creation",
-        test_test_suite_creation,
+        _test_test_suite_creation,
         "Should create TestSuite instances properly",
     )
     suite.run_test(
         "Context managers",
-        test_context_managers,
+        _test_context_managers,
         "Should provide working context managers",
     )
 
