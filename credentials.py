@@ -60,6 +60,29 @@ import time
 from pathlib import Path
 from typing import Optional
 
+
+def _print_security_resource_hint() -> None:
+    """Print consolidated reference to security setup resources."""
+    print("\n📚 Additional resources:")
+    print("  - README.md (Security setup & credential management section)")
+    print("  - Run: python credentials.py --interactive for guided setup")
+
+
+DEFAULT_REQUIRED_CREDENTIALS: dict[str, str] = {
+    "ANCESTRY_USERNAME": "Ancestry.com username/email",
+    "ANCESTRY_PASSWORD": "Ancestry.com password",
+}
+DEFAULT_OPTIONAL_CREDENTIALS: dict[str, str] = {
+    "DEEPSEEK_API_KEY": "DeepSeek AI API key (optional)",
+    "OPENAI_API_KEY": "OpenAI API key (optional)",
+}
+
+
+def _default_credential_types() -> tuple[dict[str, str], dict[str, str]]:
+    """Return copies of the default required and optional credential maps."""
+    return DEFAULT_REQUIRED_CREDENTIALS.copy(), DEFAULT_OPTIONAL_CREDENTIALS.copy()
+
+
 # === LOCAL IMPORTS ===
 # Import SecurityManager
 try:
@@ -91,7 +114,7 @@ except ImportError as e:
     print("• If you have build errors with cryptography:")
     print("  - Windows: Ensure Visual C++ Build Tools are installed")
     print("  - Linux: Install 'python3-dev' and 'libffi-dev' packages")
-    print("• For more information, see SECURITY_STREAMLINED.md")
+    _print_security_resource_hint()
     print("\n💡 Quick Fix:")
     print(
         "Run the credential manager again and select 'y' when prompted to install dependencies"
@@ -118,6 +141,7 @@ def _print_manual_install_instructions() -> None:
     print("  - OR -")
     print("  - pip install -r requirements.txt")
     print("\n💡 After installation, run: python credentials.py")
+    _print_security_resource_hint()
 
 
 def _print_install_error_help(error: Exception) -> None:
@@ -138,6 +162,7 @@ def _print_install_error_help(error: Exception) -> None:
     print("\nIf you're encountering build errors with cryptography:")
     print("  - Windows: Ensure Visual C++ Build Tools are installed")
     print("  - Linux: Install python3-dev and libffi-dev packages")
+    _print_security_resource_hint()
 
 
 def _install_linux_keyring_backend() -> None:
@@ -156,6 +181,27 @@ def _install_linux_keyring_backend() -> None:
             print("  Ubuntu/Debian: sudo apt-get install python3-dbus")
             print("  Fedora: sudo dnf install python3-dbus")
             print("Then try: pip install keyrings.alt")
+
+
+def _load_credential_types_from_file(file_path: Path) -> tuple[dict[str, str], dict[str, str]]:
+    """Load credential type mappings from the provided JSON configuration file."""
+    try:
+        with file_path.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON - {exc}") from exc
+    except OSError as exc:
+        raise ValueError(f"unable to read file - {exc}") from exc
+
+    required = data.get("required_credentials")
+    optional = data.get("optional_credentials")
+
+    if not isinstance(required, dict) or not isinstance(optional, dict):
+        raise ValueError(
+            "invalid structure - expected 'required_credentials' and 'optional_credentials' dictionaries"
+        )
+
+    return dict(required), dict(optional)
 
 
 class UnifiedCredentialManager:
@@ -673,6 +719,7 @@ class UnifiedCredentialManager:
                 print("\n  For Linux/macOS users:")
                 print("  Run: pip install keyrings.alt")
                 print("  Some Linux distros may require: sudo apt-get install python3-dbus")
+            _print_security_resource_hint()
 
     def _check_stored_credentials(self) -> bool:
         """Check stored credentials status. Returns True if all required credentials present."""
@@ -703,7 +750,7 @@ class UnifiedCredentialManager:
         # Check for credentials not in configuration
         unknown_creds = [cred for cred in credentials if cred not in all_configured_creds]
         if unknown_creds:
-            print(f"ℹ️  Additional Credentials: {', '.join(unknown_creds)}")
+            print(f"INFO  Additional Credentials: {', '.join(unknown_creds)}")
 
         return True
 
@@ -761,18 +808,15 @@ class UnifiedCredentialManager:
         """Load credential types configuration from file."""
         if cred_types_file.exists():
             try:
-                with cred_types_file.open(encoding="utf-8") as f:
-                    cred_types = json.load(f)
-                required_creds = cred_types.get("required_credentials", {})
-                optional_creds = cred_types.get("optional_credentials", {})
+                required_creds, optional_creds = _load_credential_types_from_file(cred_types_file)
                 print("✅ Loaded credential types from configuration file")
                 return required_creds, optional_creds
-            except Exception as e:
-                print(f"⚠️ Error loading credential types: {e}, using defaults")
-                return self._load_credential_types()
+            except ValueError as err:
+                print(f"⚠️ Error loading credential types: {err}, using defaults")
+        else:
+            print("⚠️ Configuration file not found, creating new one")
 
-        print("⚠️ Configuration file not found, creating new one")
-        return self._load_credential_types()
+        return _default_credential_types()
 
     def _display_cred_types_config(self, required_creds: dict[str, str], optional_creds: dict[str, str]) -> None:
         """Display current credential types configuration."""
@@ -976,40 +1020,15 @@ class UnifiedCredentialManager:
             Tuple of (required_creds, optional_creds)
         """
         cred_types_file = Path(__file__).parent / "credential_types.json"
-        try:
-            if cred_types_file.exists():
-                with cred_types_file.open(encoding="utf-8") as f:
-                    cred_types = json.load(f)
-                required_creds = cred_types.get("required_credentials", {})
-                optional_creds = cred_types.get("optional_credentials", {})
-                return required_creds, optional_creds
-            # Fallback to default credential types if file doesn't exist
-            print(
-                "⚠️ Credential types configuration file not found, using defaults"
-            )
-            return (
-                {
-                    "ANCESTRY_USERNAME": "Ancestry.com username/email",
-                    "ANCESTRY_PASSWORD": "Ancestry.com password",
-                },
-                {
-                    "DEEPSEEK_API_KEY": "DeepSeek AI API key (optional)",
-                    "OPENAI_API_KEY": "OpenAI API key (optional)",
-                },
-            )
-        except Exception as e:
-            print(f"⚠️ Error loading credential types: {e}, using defaults")
-            # Fallback to default credential types if there's an error
-            return (
-                {
-                    "ANCESTRY_USERNAME": "Ancestry.com username/email",
-                    "ANCESTRY_PASSWORD": "Ancestry.com password",
-                },
-                {
-                    "DEEPSEEK_API_KEY": "DeepSeek AI API key (optional)",
-                    "OPENAI_API_KEY": "OpenAI API key (optional)",
-                },
-            )
+        if cred_types_file.exists():
+            try:
+                return _load_credential_types_from_file(cred_types_file)
+            except ValueError as err:
+                print(f"⚠️ Error loading credential types: {err}, using defaults")
+        else:
+            print("⚠️ Credential types configuration file not found, using defaults")
+
+        return _default_credential_types()
 
     def _save_credential(self, key: str, value: str, _description: str) -> bool:
         """Save a credential to the secure store.
@@ -1058,9 +1077,7 @@ class UnifiedCredentialManager:
             }
 
             try:
-                import builtins
-                # Use builtins.open so tests that patch builtins.open can simulate failures
-                with builtins.open(cred_types_file, "w", encoding="utf-8") as f:
+                with cred_types_file.open("w", encoding="utf-8") as f:
                     json.dump(cred_types, f, indent=4)
             except Exception as e:
                 print(f"❌ Error saving credential types: {e}")
@@ -1074,9 +1091,6 @@ class UnifiedCredentialManager:
 # ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
-# These test functions are extracted from the main test suite for better
-# modularity, maintainability, and reduced complexity. Each function tests
-# a specific aspect of the credentials functionality.
 
 
 def _test_security_availability() -> None:
@@ -1146,19 +1160,20 @@ def _test_load_credential_types_with_valid_file(create_test_credential_file) -> 
         test_file = create_test_credential_file(valid=True)
 
         # Mock Path's parent/__truediv__ combination that's used in _load_credential_types
-        with patch.object(Path, "__truediv__", return_value=test_file):
-            # Mock exists to return True
-            with patch.object(Path, "exists", return_value=True):
-                # Load credential types
-                required, optional = manager._load_credential_types()
+        with (
+            patch.object(Path, "__truediv__", return_value=test_file),
+            patch.object(Path, "exists", return_value=True),
+        ):
+            # Load credential types
+            required, optional = manager._load_credential_types()
 
-                # Verify loaded credentials
-                assert (
-                    "TEST_REQUIRED" in required
-                ), "Should load required credentials"
-                assert (
-                    "TEST_OPTIONAL" in optional
-                ), "Should load optional credentials"
+            # Verify loaded credentials
+            assert (
+                "TEST_REQUIRED" in required
+            ), "Should load required credentials"
+            assert (
+                "TEST_OPTIONAL" in optional
+            ), "Should load optional credentials"
 
 
 def _test_load_credential_types_with_missing_file() -> None:
@@ -1196,12 +1211,7 @@ def _test_load_credential_types_with_invalid_json(test_dir_path) -> None:
             f.write("{invalid json")
 
         # Mock file operations
-        with patch(
-            "pathlib.Path.open",
-            side_effect=lambda *args, **kwargs: Path(test_file).open(
-                *args[1:], **kwargs
-            ),
-        ), patch("pathlib.Path.exists", return_value=True):
+        with patch.object(Path, "__truediv__", return_value=test_file), patch("pathlib.Path.exists", return_value=True):
 
             # Load credential types
             required, optional = manager._load_credential_types()
@@ -1227,12 +1237,7 @@ def _test_load_credential_types_with_invalid_structure(create_test_credential_fi
         test_file = create_test_credential_file(valid=False)
 
         # Mock file operations
-        with patch(
-            "pathlib.Path.open",
-            side_effect=lambda *args, **kwargs: Path(test_file).open(
-                *args[1:], **kwargs
-            ),
-        ), patch("pathlib.Path.exists", return_value=True):
+        with patch.object(Path, "__truediv__", return_value=test_file), patch("pathlib.Path.exists", return_value=True):
 
             # Load credential types
             required, optional = manager._load_credential_types()
@@ -1253,9 +1258,7 @@ def _test_edit_credential_types_error_handling() -> None:
         manager = UnifiedCredentialManager()
 
         # Mock open to simulate file access error
-        with patch(
-            "builtins.open", side_effect=PermissionError("Permission denied")
-        ):
+        with patch("pathlib.Path.open", side_effect=PermissionError("Permission denied")):
 
             # This should handle the error gracefully without crashing
             success = manager._save_credential_types({}, {})
@@ -1360,10 +1363,13 @@ def credentials_module_tests() -> bool:
     test_setup_credentials_permission_error = _test_setup_credentials_permission_error
 
     with suppress_logging():
-        suite.run_test("SECURITY_AVAILABLE, SecurityManager import", test_security_availability,
-                      "Security dependencies are properly available and importable",
-                      "Test security manager import and availability flag",
-                      "Security components are available for credential management")
+        if SECURITY_AVAILABLE:
+            suite.run_test("SECURITY_AVAILABLE, SecurityManager import", test_security_availability,
+                          "Security dependencies are properly available and importable",
+                          "Test security manager import and availability flag",
+                          "Security components are available for credential management")
+        else:
+            suite.add_warning("Security dependencies not available; skipping availability verification test.")
 
         suite.run_test("UnifiedCredentialManager initialization", test_manager_initialization,
                       "Credential manager initializes with working SecurityManager instance",
@@ -1498,7 +1504,7 @@ def _handle_missing_dependencies() -> bool:
         print("  pip install cryptography keyring")
         print("  - OR -")
         print("  pip install -r requirements.txt")
-        print("\nFor more information, see SECURITY_STREAMLINED.md")
+        _print_security_resource_hint()
 
     return False
 

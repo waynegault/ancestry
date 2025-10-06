@@ -20,7 +20,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, ClassVar, Optional
 
 # Thread-safe locks for concurrent access
 _lock = threading.RLock()
@@ -39,14 +39,15 @@ _error_log: list[dict[str, Any]] = []
 
 class _ImportStats:
     """Manages import system statistics."""
-    data = {
+
+    data: ClassVar[dict[str, Any]] = {
         "functions_registered": 0,
         "imports_resolved": 0,
         "cache_hits": 0,
         "cache_misses": 0,
         "errors_encountered": 0,
         "initialization_time": 0.0,
-    "last_cleanup": 0.0,
+        "last_cleanup": 0.0,
     }
 
 

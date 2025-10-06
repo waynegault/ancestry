@@ -571,7 +571,7 @@ def determine_next_message_type(
     # Step 2: Extract the last message type (or None if no previous message)
     last_message_type = None
     if last_message_details:
-        last_message_type, last_sent_at_utc, last_message_status = last_message_details
+        last_message_type, _last_sent_at_utc, _last_message_status = last_message_details
         # Last message details (removed verbose debug logging)
 
     # Step 3: Look up the next message type in the transition table
@@ -1518,7 +1518,7 @@ class ResourceManager:
         self.operation_count += 1
 
         # Check memory and cleanup if needed
-        memory_mb, should_cleanup = self.check_memory_usage()
+        _memory_mb, should_cleanup = self.check_memory_usage()
 
         if should_cleanup:
             self.cleanup_resources()
@@ -2036,7 +2036,7 @@ def _format_message_text(message_to_send_key: str, person: Person, format_data: 
                         log_prefix,
                     )
 
-                message_text, functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
+                message_text, _functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
                     enhanced_template_key,
                     person_data,
                     extracted_data,
@@ -2250,7 +2250,7 @@ def _process_single_person(
     _check_halt_signal(session_manager)
 
     # --- Step 1: Initialization and Logging ---
-    log_prefix, person_id, username, status_name = _initialize_person_processing(person)
+    log_prefix, person_id, _username, _status_name = _initialize_person_processing(person)
     message_to_send_key: Optional[str] = None  # Key from MESSAGE_TEMPLATES
     send_reason = "Unknown"  # Reason for sending/skipping
     template_selection_reason = "Unknown"  # CONSOLIDATED: Track template selection reason
@@ -2290,6 +2290,7 @@ def _process_single_person(
         message_to_send_key, send_reason, template_selection_reason, dna_match, family_tree = _handle_person_status(
             person, log_prefix, latest_in_log, latest_out_log, latest_out_template_key, message_type_map
         )
+        logger.debug(f"{log_prefix}: Messaging decision reason - {send_reason}")
 
         # --- Step 3: Format the Selected Message ---
         if not message_to_send_key or message_to_send_key not in MESSAGE_TEMPLATES:

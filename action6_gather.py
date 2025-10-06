@@ -646,7 +646,7 @@ def coord(  # type: ignore
 
     try:
         # Step 3: Initial Navigation and Total Pages Fetch
-        initial_matches, total_pages_api, initial_fetch_ok = _process_initial_navigation(
+        _initial_matches, total_pages_api, initial_fetch_ok = _process_initial_navigation(
             session_manager, start_page, state
         )
 
@@ -654,7 +654,7 @@ def coord(  # type: ignore
             return False
 
         # Step 4: Determine Page Range
-        last_page_to_process, total_pages_in_run, total_matches_estimate = _calculate_processing_range(
+        last_page_to_process, total_pages_in_run, _total_matches_estimate = _calculate_processing_range(
             total_pages_api, start_page
         )
 
@@ -1080,7 +1080,7 @@ def _process_ladder_results(
 
     logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
     for future in as_completed(ladder_futures):
-        task_type, identifier_cfpid = ladder_futures[future]
+        _task_type, identifier_cfpid = ladder_futures[future]
         uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
         if not uuid_for_ladder:
             logger.warning(f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID (task likely cancelled or map error).")

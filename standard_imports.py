@@ -375,7 +375,7 @@ def _test_performance():
     start_time = time.time()
     for i in range(100):
         get_standard_logger(f"test_module_{i}")
-        register_function(f"test_func_{i}", lambda: i)
+        register_function(f"test_func_{i}", lambda value=i: value)
     duration = time.time() - start_time
     assert duration < 1.0, f"Module operations should be fast, took {duration:.3f}s"
 

@@ -449,16 +449,18 @@ class IntelligentResearchPrioritizer:
     def _is_prerequisite(self, task1: ResearchPriority, task2: ResearchPriority) -> bool:
         """Determine if task1 is a prerequisite for task2."""
         # Vital records often prerequisite for other research
-        if (task1.task_type == "vital_records" and task2.task_type in ["census", "immigration"] and
-            any(person in task2.target_people for person in task1.target_people)):
-            return True
-
-        # Conflict resolution prerequisite for verification tasks
-        if (task1.task_type == "conflict_resolution" and task2.task_type == "dna_verification" and
-            any(person in task2.target_people for person in task1.target_people)):
-            return True
-
-        return False
+        return (
+            (
+                task1.task_type == "vital_records"
+                and task2.task_type in ["census", "immigration"]
+                and any(person in task2.target_people for person in task1.target_people)
+            )
+            or (
+                task1.task_type == "conflict_resolution"
+                and task2.task_type == "dna_verification"
+                and any(person in task2.target_people for person in task1.target_people)
+            )
+        )
 
     def _extract_location_from_context(self, context: dict[str, Any]) -> str:
         """Extract location information from research context."""

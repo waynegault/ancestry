@@ -54,7 +54,7 @@ standard library modules for safety.
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 # Minimal constants for expected keys used across the codebase
 STRUCTURED_KEYS = [
@@ -103,13 +103,13 @@ def _detect_approximate_indicator(date_str: str) -> bool:
     return any(indicator in date_str.lower() for indicator in approx_indicators)
 
 
-def _extract_year_from_date(date_str: str) -> Optional[str]:
+def _extract_year_from_date(date_str: str) -> str | None:
     """Extract year from date string (genealogically relevant range: 1400-2100)."""
     year_match = re.search(r'\b(1[4-9]\d{2}|20\d{2}|21\d{2})\b', date_str)
     return year_match.group(1) if year_match else None
 
 
-def _extract_month_from_date(date_str: str) -> Optional[str]:
+def _extract_month_from_date(date_str: str) -> str | None:
     """Extract month number from date string."""
     month_patterns = {
         r'\b(jan|january)\b': '01', r'\b(feb|february)\b': '02', r'\b(mar|march)\b': '03',
@@ -125,7 +125,7 @@ def _extract_month_from_date(date_str: str) -> Optional[str]:
     return None
 
 
-def _extract_day_from_date(date_str: str, month: Optional[str]) -> Optional[str]:
+def _extract_day_from_date(date_str: str, month: str | None) -> str | None:
     """Extract day from date string if month is present."""
     if not month:
         return None
@@ -139,7 +139,7 @@ def _extract_day_from_date(date_str: str, month: Optional[str]) -> Optional[str]
     return None
 
 
-def _construct_normalized_date(year: str, month: Optional[str], day: Optional[str]) -> str:
+def _construct_normalized_date(year: str, month: str | None, day: str | None) -> str:
     """Construct normalized date string from components."""
     if day and month:
         return f"{year}-{month}-{day}"

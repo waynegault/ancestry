@@ -55,10 +55,45 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import psutil
+try:
+    import psutil
+
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+    PSUTIL_AVAILABLE = False
 
 # Import code quality checker
 from code_quality_checker import CodeQualityChecker, QualityMetrics
+
+
+def _invoke_ruff(args: list[str]) -> subprocess.CompletedProcess:
+    """Run Ruff with the provided arguments and return the completed process."""
+    command = [sys.executable, "-m", "ruff", *args]
+    return subprocess.run(command, check=False, capture_output=True, text=True, cwd=Path.cwd())
+
+
+def _ruff_available() -> bool:
+    """Return True if Ruff CLI is available in the environment."""
+    return _invoke_ruff(["--version"]).returncode == 0
+
+
+def _print_tail(output: str, *, limit: int = 40) -> None:
+    """Print the final lines of command output to avoid overwhelming logs."""
+    if not output:
+        return
+    tail_lines = [line for line in output.splitlines() if line.strip()][-limit:]
+    for line in tail_lines:
+        print(line)
+
+
+def _print_nonempty_lines(output: str, *, limit: int = 25) -> None:
+    """Print up to ``limit`` non-empty lines from a command's stdout."""
+    if not output:
+        return
+    lines = [line for line in output.splitlines() if line.strip()]
+    for line in lines[-limit:]:
+        print(line)
 
 
 @dataclass
@@ -118,13 +153,15 @@ class PerformanceMonitor:
     """Monitor system performance during test execution."""
 
     def __init__(self) -> None:
-        self.process = psutil.Process()
+        self.process = psutil.Process() if PSUTIL_AVAILABLE else None
         self.monitoring = False
         self.metrics = []
         self.monitor_thread = None
 
     def start_monitoring(self) -> None:
         """Start performance monitoring in background thread."""
+        if not self.process:
+            return
         self.monitoring = True
         self.metrics = []
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
@@ -132,6 +169,8 @@ class PerformanceMonitor:
 
     def stop_monitoring(self) -> dict[str, float]:
         """Stop monitoring and return aggregated metrics."""
+        if not self.process:
+            return {"memory_mb": 0.0, "cpu_percent": 0.0}
         self.monitoring = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=1.0)
@@ -151,6 +190,8 @@ class PerformanceMonitor:
 
     def _monitor_loop(self) -> None:
         """Background monitoring loop."""
+        if not self.process:
+            return
         while self.monitoring:
             try:
                 memory_info = self.process.memory_info()
@@ -178,64 +219,43 @@ def run_linter() -> bool:
     """
     try:
         # Check if ruff is available
-        import subprocess
-        result = subprocess.run([sys.executable, "-m", "ruff", "--version"],
-                              check=False, capture_output=True, text=True)
-        if result.returncode != 0:
+        if not _ruff_available():
             print("🧹 LINTER: Ruff not available, skipping linting checks...")
             return True
 
         # Step 1: safe auto-fixes
         print("🧹 LINTER: Applying safe auto-fixes (W291/W292/W293/E401)...")
-        fix_cmd = [
-            sys.executable,
-            "-m",
-            "ruff",
+        _invoke_ruff([
             "check",
             "--fix",
             "--select",
             "W291,W292,W293,E401",
             ".",
-        ]
-        subprocess.run(fix_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())
+        ])
 
         # Step 2: blocking rule set (only critical errors)
         print("🧹 LINTER: Enforcing critical blocking rules (E722,F821,F811,F823)...")
-        block_cmd = [
-            sys.executable,
-            "-m",
-            "ruff",
+        block_res = _invoke_ruff([
             "check",
             "--select",
             "E722,F821,F811,F823",
             ".",
-        ]
-        block_res = subprocess.run(block_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())
+        ])
         if block_res.returncode != 0:
             print("❌ LINTER FAILED (blocking): critical violations found")
-            # Tail the output to keep logs compact
-            tail = (block_res.stdout or block_res.stderr or "").splitlines()[-40:]
-            for line in tail:
-                print(line)
+            _print_tail(block_res.stdout or block_res.stderr or "")
             return False
 
         # Step 3: non-blocking diagnostics (excluding PLR2004 and PLC0415)
         print("🧹 LINTER: Repository diagnostics (non-blocking summary)...")
-        diag_cmd = [
-            sys.executable,
-            "-m",
-            "ruff",
+        diag_res = _invoke_ruff([
             "check",
             "--statistics",
             "--exit-zero",
             "--ignore=PLR2004,PLC0415",
             ".",
-        ]
-        diag_res = subprocess.run(diag_cmd, check=False, capture_output=True, text=True, cwd=Path.cwd())
-        if diag_res.stdout:
-            lines = [ln for ln in diag_res.stdout.splitlines() if ln.strip()]
-            for line in lines[-25:]:
-                print(line)
+        ])
+        _print_nonempty_lines(diag_res.stdout)
         return True
     except Exception as e:
         print(f"⚠️ LINTER step skipped due to error: {e}")
@@ -917,7 +937,7 @@ def run_module_tests(
 ) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
     """Run tests for a specific module with optional performance monitoring."""
     # Initialize performance monitoring
-    monitor = PerformanceMonitor() if enable_monitoring else None
+    monitor = PerformanceMonitor() if enable_monitoring and PSUTIL_AVAILABLE else None
     metrics = None
 
     # Show description
@@ -1016,7 +1036,7 @@ def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_
     total_test_count = 0
 
     # Determine optimal number of workers (don't exceed CPU count)
-    cpu_count = psutil.cpu_count() or 1  # Fallback to 1 if cpu_count() returns None
+    cpu_count = (psutil.cpu_count() if PSUTIL_AVAILABLE else os.cpu_count()) or 1
     max_workers = min(len(modules_with_descriptions), cpu_count)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1128,6 +1148,10 @@ def _setup_test_environment() -> tuple[bool, bool, bool]:
     enable_fast_mode = "--fast" in sys.argv
     enable_benchmark = "--benchmark" in sys.argv
     enable_monitoring = enable_benchmark or enable_fast_mode
+
+    if enable_monitoring and not PSUTIL_AVAILABLE:
+        print("⚠️ PERFORMANCE: psutil not installed; disabling monitoring features.")
+        enable_monitoring = False
 
     # Set environment variable to skip live API tests that require browser/network
     os.environ["SKIP_LIVE_API_TESTS"] = "true"
@@ -1264,17 +1288,6 @@ def _print_basic_summary(
     print(f"✅ Passed: {passed_count}")
     print(f"❌ Failed: {failed_count}")
     print(f"📈 Success Rate: {success_rate:.1f}%")
-
-
-def _categorize_violation(violation: str) -> str:
-    """Categorize a quality violation by type."""
-    if "too long" in violation:
-        return "Function Length"
-    if "too complex" in violation:
-        return "Complexity"
-    if "missing type hint" in violation:
-        return "Type Hints"
-    return "Other"
 
 
 def _collect_violations(all_metrics: list[Any]) -> list[str]:

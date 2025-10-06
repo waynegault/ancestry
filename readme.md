@@ -23,7 +23,7 @@ This platform automates time-consuming genealogical research tasks on Ancestry.c
 - **Better Results**: AI-powered personalization increases response rates by 50-80%
 - **Stay Organized**: Automatic task generation keeps research focused and prioritized
 - **Track Changes**: Monitor DNA match updates and conversation history automatically
-- **Quality Assured**: 100% test coverage with 513 tests across 62 modules ensures reliability
+- **Quality Assured**: Comprehensive automated test suite (run `python run_all_tests.py`) keeps core workflows stable
 
 ---
 
@@ -243,7 +243,7 @@ Typical results from users:
 - **50-80% increase** in DNA match response rates
 - **3-5x faster** research progress
 - **90% reduction** in manual data entry
-- **100% test coverage** ensures reliability
+- **Extensive automated test suite** helps ensure reliability (re-run after significant changes)
 
 ---
 
@@ -278,7 +278,7 @@ Typical results from users:
 - **Repository**: https://github.com/waynegault/ancestry
 - **License**: MIT License
 - **Python Version**: 3.9+ (3.11+ recommended)
-- **Test Coverage**: 100% (513 tests across 62 modules)
+- **Test Coverage**: Historically near 100% (run `python run_all_tests.py` to confirm after changes)
 
 ---
 
@@ -708,7 +708,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 ### Current Quality Metrics (Latest: 2025-10-04)
 - **Average Quality Score**: 78.8-86.2/100
 - **Type Hint Coverage**: 97.9-99.3%
-- **Test Pass Rate**: 100% (62 modules, 488 tests)
+- **Test Pass Rate**: Latest recorded suite (Oct 2025) passed across 62 modules (re-run to verify)
 - **Total Functions**: 2,745-2,928
 - **Files Analyzed**: 71
 
@@ -724,7 +724,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 ### Current Refactoring Initiative (Session 3)
 **Status**: Active - 24 tasks identified
 **Goal**: Address remaining complexity hotspots and architectural issues
-**Detailed Analysis**: See `CODEBASE_ANALYSIS_MAJOR_CHALLENGES.md`
+**Detailed Analysis**: Earlier refactoring reports (now archived) capture root-cause analysis and can be re-generated via fresh audits
 
 #### Top Priority Areas:
 1. **CRITICAL** (3 functions requiring immediate attention):
@@ -756,7 +756,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 - ✅ KISS (Keep It Simple, Stupid) - Prefer simple solutions
 - ✅ YAGNI (You Aren't Gonna Need It) - Only build what's needed
 - ✅ Single Responsibility Principle - One function, one purpose
-- ✅ Comprehensive testing at each phase - 100% pass rate maintained
+- ✅ Comprehensive testing at each phase with enforced pass criteria
 - ✅ Git commits with baseline validation - Revert on failures
 
 **Total Estimated Effort**: 60-86 hours across 24 tasks
@@ -767,7 +767,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 
 **Last Updated**: October 2025
 **Version**: 1.0.0
-**Status**: Production Ready - 100% Test Coverage
+**Status**: Production Ready - Requires passing automated test suite prior to deployment
 
 **🎉 The Ancestry Research Automation Platform is ready for genealogical research!**
 
