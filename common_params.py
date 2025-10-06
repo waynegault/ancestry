@@ -28,7 +28,7 @@ class GraphContext:
 class RetryContext:
     """
     Retry logic parameters for API calls and error handling.
-    
+
     Used across multiple modules for exponential backoff retry logic.
     """
     attempt: int
@@ -36,6 +36,8 @@ class RetryContext:
     max_delay: float
     backoff_factor: float = 2.0
     current_delay: float = 1.0
+    retries_left: Optional[int] = None
+    retry_status_codes: Optional[List[int]] = None
 
 
 @dataclass
@@ -97,7 +99,7 @@ class BatchCounters:
 class SearchCriteria:
     """
     Search criteria for person/match searches.
-    
+
     Used in api_search_utils.py and action10.py.
     """
     search_name: str
@@ -105,6 +107,28 @@ class SearchCriteria:
     test_name: Optional[str] = None
     candidate_data: Optional[Dict[str, Any]] = None
     name_flex: Optional[str] = None
+
+
+@dataclass
+class RequestConfig:
+    """
+    HTTP request configuration parameters.
+
+    Used in utils.py for _api_req and related functions.
+    """
+    url: str
+    method: str = "GET"
+    headers: Optional[Dict[str, str]] = None
+    referer_url: Optional[str] = None
+    use_csrf_token: bool = False
+    add_default_origin: bool = False
+    timeout: Optional[int] = None
+    allow_redirects: bool = True
+    data: Optional[Dict[str, Any]] = None
+    json_data: Optional[Dict[str, Any]] = None
+    json: Optional[Dict[str, Any]] = None
+    force_text_response: bool = False
+    cookie_jar: Optional[Any] = None
 
 
 # End of common_params.py

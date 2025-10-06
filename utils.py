@@ -1780,29 +1780,9 @@ def _handle_response_status(
 
 
 def _process_request_attempt(
-    session_manager: SessionManager,
-    driver: DriverType,
-    url: str,
-    method: str,
-    api_description: str,
-    attempt: int,
-    headers: Optional[Dict[str, str]],
-    referer_url: Optional[str],
-    use_csrf_token: bool,
-    add_default_origin: bool,
-    timeout: Optional[int],
-    cookie_jar: Optional[RequestsCookieJar],  # type: ignore
-    allow_redirects: bool,
-    data: Optional[Dict],
-    json_data: Optional[Dict],
-    json: Optional[Dict],
-    force_text_response: bool,
-    retry_status_codes: List[int],
+    config: ApiRequestConfig,
     retries_left: int,
-    max_retries: int,
     current_delay: float,
-    backoff_factor: float,
-    max_delay: float,
 ) -> tuple[Optional[Any], bool, int, float, Optional[Exception]]:
     """
     Process a single request attempt.
@@ -1815,55 +1795,55 @@ def _process_request_attempt(
     try:
         # Prepare and execute the request
         request_params = _prepare_api_request(
-            session_manager=session_manager,
-            driver=driver,
-            url=url,
-            method=method,
-            api_description=api_description,
-            attempt=attempt,
-            headers=headers,
-            referer_url=referer_url,
-            use_csrf_token=use_csrf_token,
-            add_default_origin=add_default_origin,
-            timeout=timeout,
-            cookie_jar=cookie_jar,
-            allow_redirects=allow_redirects,
-            data=data,
-            json_data=json_data,
-            json=json,
+            session_manager=config.session_manager,
+            driver=config.driver,
+            url=config.url,
+            method=config.method,
+            api_description=config.api_description,
+            attempt=config.attempt,
+            headers=config.headers,
+            referer_url=config.referer_url,
+            use_csrf_token=config.use_csrf_token,
+            add_default_origin=config.add_default_origin,
+            timeout=config.timeout,
+            cookie_jar=config.cookie_jar,
+            allow_redirects=config.allow_redirects,
+            data=config.data,
+            json_data=config.json_data,
+            json=config.json,
         )
 
         response = _execute_api_request(
-            session_manager=session_manager,
-            api_description=api_description,
+            session_manager=config.session_manager,
+            api_description=config.api_description,
             request_params=request_params,
-            attempt=attempt,
+            attempt=config.attempt,
         )
 
         # Handle failed request (response is None)
         if response is None:
             should_continue, retries_left, current_delay = _handle_failed_request_response(
-                retries_left, max_retries, api_description, current_delay, backoff_factor, attempt, max_delay
+                retries_left, config.max_retries, config.api_description, current_delay, config.backoff_factor, config.attempt, config.max_delay
             )
             result_should_continue = should_continue
         else:
             # Handle response status
             return _handle_response_status(
-                response, retries_left, max_retries, api_description, attempt,
-                current_delay, backoff_factor, max_delay, retry_status_codes,
-                session_manager, force_text_response, request_params
+                response, retries_left, config.max_retries, config.api_description, config.attempt,
+                current_delay, config.backoff_factor, config.max_delay, config.retry_status_codes,
+                config.session_manager, config.force_text_response, request_params
             )
 
     except RequestException as e:  # type: ignore
         should_continue, retries_left, current_delay = _handle_request_exception(
-            e, attempt, max_retries, retries_left, api_description, current_delay, backoff_factor, max_delay
+            e, config.attempt, config.max_retries, retries_left, config.api_description, current_delay, config.backoff_factor, config.max_delay
         )
         result_should_continue = should_continue
         result_exception = e
 
     except Exception as e:
         logger.critical(
-            f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
+            f"{config.api_description}: CRITICAL Unexpected error during request attempt {config.attempt}: {e}",
             exc_info=True,
         )
         result_should_continue = False
@@ -1872,45 +1852,25 @@ def _process_request_attempt(
 
 
 def _execute_request_with_retries(
-    session_manager: SessionManager,
-    driver: DriverType,
-    url: str,
-    method: str,
-    api_description: str,
-    max_retries: int,
-    initial_delay: float,
-    backoff_factor: float,
-    max_delay: float,
-    retry_status_codes: List[int],
-    headers: Optional[Dict[str, str]],
-    referer_url: Optional[str],
-    use_csrf_token: bool,
-    add_default_origin: bool,
-    timeout: Optional[int],
-    cookie_jar: Optional[RequestsCookieJar],  # type: ignore
-    allow_redirects: bool,
-    data: Optional[Dict],
-    json_data: Optional[Dict],
-    json: Optional[Dict],
-    force_text_response: bool,
+    config: ApiRequestConfig,
 ) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
     """Execute API request with retry logic."""
-    retries_left = max_retries
+    retries_left = config.max_retries
     last_exception: Optional[Exception] = None
     response: RequestsResponseTypeOptional = None
-    current_delay = initial_delay
+    current_delay = config.initial_delay
 
     while retries_left > 0:
-        attempt = max_retries - retries_left + 1
+        attempt = config.max_retries - retries_left + 1
         logger.debug(
-            f"[_api_req LOOP ENTRY] api_description: '{api_description}', attempt: {attempt}/{max_retries}, retries_left: {retries_left}"
+            f"[_api_req LOOP ENTRY] api_description: '{config.api_description}', attempt: {attempt}/{config.max_retries}, retries_left: {retries_left}"
         )
 
+        # Update attempt in config
+        config.attempt = attempt
+
         result, should_continue, retries_left, current_delay, exception = _process_request_attempt(
-            session_manager, driver, url, method, api_description, attempt,
-            headers, referer_url, use_csrf_token, add_default_origin, timeout,
-            cookie_jar, allow_redirects, data, json_data, json, force_text_response,
-            retry_status_codes, retries_left, max_retries, current_delay, backoff_factor, max_delay
+            config, retries_left, current_delay
         )
 
         if exception:
@@ -1972,18 +1932,15 @@ def _api_req(
         f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
     )
 
-    # Execute request with retry loop
-    response = _execute_request_with_retries(
-        session_manager=session_manager,
-        driver=driver,
+    # Create request configuration
+    config = ApiRequestConfig(
         url=url,
+        driver=driver,
+        session_manager=session_manager,
         method=method,
-        api_description=api_description,
-        max_retries=max_retries,
-        initial_delay=initial_delay,
-        backoff_factor=backoff_factor,
-        max_delay=max_delay,
-        retry_status_codes=retry_status_codes,
+        data=data,
+        json_data=json_data,
+        json=json,
         headers=headers,
         referer_url=referer_url,
         use_csrf_token=use_csrf_token,
@@ -1991,11 +1948,17 @@ def _api_req(
         timeout=timeout,
         cookie_jar=cookie_jar,
         allow_redirects=allow_redirects,
-        data=data,
-        json_data=json_data,
-        json=json,
         force_text_response=force_text_response,
+        max_retries=max_retries,
+        initial_delay=initial_delay,
+        backoff_factor=backoff_factor,
+        max_delay=max_delay,
+        retry_status_codes=retry_status_codes,
+        api_description=api_description,
     )
+
+    # Execute request with retry loop
+    response = _execute_request_with_retries(config)
 
     logger.debug(f"[_api_req EXIT] api_description: '{api_description}'")
     return response
