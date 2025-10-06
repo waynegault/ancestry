@@ -36,6 +36,7 @@ from urllib.parse import unquote, urlencode, urljoin, urlparse
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
+from dataclasses import dataclass
 from diskcache.core import ENOVAL  # For checking cache misses
 from requests.cookies import RequestsCookieJar
 from requests.exceptions import ConnectionError, RequestException
@@ -113,6 +114,29 @@ class MaxApiFailuresExceededError(Exception):
 
 
 # End of MaxApiFailuresExceededError
+
+
+# ------------------------------------------------------------------------------
+# Parameter Grouping Dataclasses
+# ------------------------------------------------------------------------------
+
+
+@dataclass
+class BatchCounters:
+    """Groups batch processing counters to reduce parameter count."""
+    new: int = 0
+    updated: int = 0
+    skipped: int = 0
+    errors: int = 0
+
+
+@dataclass
+class MatchIdentifiers:
+    """Groups match identification parameters."""
+    uuid: str
+    username: str
+    in_my_tree: bool
+    log_ref_short: str
 
 
 # ------------------------------------------------------------------------------
@@ -345,12 +369,12 @@ def _check_session_validity(session_manager: SessionManager, current_page_num: i
     return True
 
 
-def _update_state_after_batch(state: Dict[str, Any], page_new: int, page_updated: int, page_skipped: int, page_errors: int, progress_bar):
+def _update_state_after_batch(state: Dict[str, Any], counters: BatchCounters, progress_bar):
     """Update state counters and progress bar after processing a batch."""
-    state["total_new"] += page_new
-    state["total_updated"] += page_updated
-    state["total_skipped"] += page_skipped
-    state["total_errors"] += page_errors
+    state["total_new"] += counters.new
+    state["total_updated"] += counters.updated
+    state["total_skipped"] += counters.skipped
+    state["total_errors"] += counters.errors
     state["total_pages_processed"] += 1
 
     progress_bar.set_postfix(
@@ -423,7 +447,8 @@ def _process_page_batch(
     )
 
     # Update state
-    _update_state_after_batch(state, page_new, page_updated, page_skipped, page_errors, progress_bar)
+    counters = BatchCounters(new=page_new, updated=page_updated, skipped=page_skipped, errors=page_errors)
+    _update_state_after_batch(state, counters, progress_bar)
 
     # Apply rate limiting
     _adjust_delay(session_manager, current_page_num)
