@@ -561,19 +561,15 @@ class IntelligentResearchPrioritizer:
 
     def _score_gap_type(self, gap_type: str) -> float:
         """Calculate score based on gap type."""
-        if gap_type == "missing_parents":
-            return 25.0  # Critical for family tree extension
-        if gap_type == "missing_spouse":
-            return 22.0  # Important for family completeness
-        if gap_type == "missing_children":
-            return 20.0  # Valuable for descendant research
-        if gap_type == "missing_dates":
-            return 18.0  # Essential for timeline verification
-        if gap_type == "missing_places":
-            return 15.0  # Important for location-based research
-        if gap_type == "missing_occupation":
-            return 10.0  # Useful for social history
-        return 0.0
+        gap_scores = {
+            "missing_parents": 25.0,      # Critical for family tree extension
+            "missing_spouse": 22.0,       # Important for family completeness
+            "missing_children": 20.0,     # Valuable for descendant research
+            "missing_dates": 18.0,        # Essential for timeline verification
+            "missing_places": 15.0,       # Important for location-based research
+            "missing_occupation": 10.0,   # Useful for social history
+        }
+        return gap_scores.get(gap_type, 0.0)
 
     def _score_priority_level(self, priority: str) -> float:
         """Calculate score based on priority level."""
