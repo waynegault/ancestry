@@ -334,54 +334,80 @@ def cleanup_registry() -> None:
     }
 
 
+# ==============================================
+# Module Tests
+# ==============================================
+
+
+def _test_function_registration() -> None:
+    """Test function registration and retrieval."""
+    from test_utilities import test_func_with_param as test_func
+
+    register_function("test_func", test_func)
+    assert is_function_available(
+        "test_func"
+    ), "Function should be available after registration"
+    assert call_function("test_func", 5) == 10, "Function should execute correctly"
+
+
+def _test_auto_registration() -> None:
+    """Test auto-registration of module functions."""
+    test_globals = {"test_function": lambda: "test", "_private": lambda: "private"}
+    auto_register_module(test_globals, "test_module")
+    assert is_function_available(
+        "test_module.test_function"
+    ), "Auto-registered function should be available"
+
+
+def _test_performance_caching() -> None:
+    """Test performance caching."""
+    start_time = time.time()
+    for _ in range(1000):
+        is_function_available("test_func")
+    duration = time.time() - start_time
+
+    stats = get_stats()
+    cache_hit_rate = stats["cache_hit_rate"]
+
+    assert duration < 0.1, f"1000 lookups should be fast, took {duration:.3f}s"
+    assert (
+        cache_hit_rate > 50
+    ), f"Cache hit rate should be high, got {cache_hit_rate:.1f}%"
+
+
+def _test_import_standardization() -> None:
+    """Test import standardization."""
+    result = standardize_module_imports()
+    assert result, "Import standardization should succeed"
+
+
+def _test_context_manager() -> None:
+    """Test import context manager."""
+    original_path = sys.path.copy()
+    with import_context():
+        pass
+    assert sys.path == original_path, "Context manager should restore sys.path"
+
+
 def core_imports_module_tests() -> bool:
     """Module-specific tests for core_imports.py functionality."""
-    try:
-        # Test 1: Function registration and retrieval
-        from test_utilities import test_func_with_param as test_func
+    from test_framework import TestSuite, suppress_logging
 
-        register_function("test_func", test_func)
-        assert is_function_available(
-            "test_func"
-        ), "Function should be available after registration"
-        assert call_function("test_func", 5) == 10, "Function should execute correctly"
+    suite = TestSuite("Core Imports", "core_imports.py")
 
-        # Test 2: Auto-registration
-        test_globals = {"test_function": lambda: "test", "_private": lambda: "private"}
-        auto_register_module(test_globals, "test_module")
-        assert is_function_available(
-            "test_module.test_function"
-        ), "Auto-registered function should be available"
+    tests = [
+        ("Function registration and retrieval", _test_function_registration, True, "direct", "Test function registry"),
+        ("Auto-registration", _test_auto_registration, True, "direct", "Test module auto-registration"),
+        ("Performance caching", _test_performance_caching, True, "direct", "Test lookup caching"),
+        ("Import standardization", _test_import_standardization, True, "direct", "Test import standardization"),
+        ("Context manager", _test_context_manager, True, "direct", "Test import context manager"),
+    ]
 
-        # Test 3: Performance caching
-        start_time = time.time()
-        for _ in range(1000):
-            is_function_available("test_func")
-        duration = time.time() - start_time
+    with suppress_logging():
+        for test_name, test_func, expected, method, details in tests:
+            suite.run_test(test_name, test_func, expected, method, details)
 
-        stats = get_stats()
-        cache_hit_rate = stats["cache_hit_rate"]
-
-        assert duration < 0.1, f"1000 lookups should be fast, took {duration:.3f}s"
-        assert (
-            cache_hit_rate > 50
-        ), f"Cache hit rate should be high, got {cache_hit_rate:.1f}%"
-
-        # Test 4: Import standardization
-        result = standardize_module_imports()
-        assert result, "Import standardization should succeed"
-
-        # Test 5: Context manager
-        original_path = sys.path.copy()
-        with import_context():
-            pass
-        assert sys.path == original_path, "Context manager should restore sys.path"
-
-        return True
-    except Exception as e:
-        logger = get_logger(__name__)
-        logger.error(f"Core imports module tests failed: {e}")
-        return False
+    return suite.finish_suite()
 
 
 # Use centralized test runner utility
