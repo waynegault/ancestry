@@ -27,7 +27,7 @@ auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
@@ -68,23 +68,23 @@ def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
 
 # Helper functions for _run_simple_suggestion_scoring
 
-def _get_scoring_weights(weights: Optional[Dict[str, Union[int, float]]]) -> Dict[str, Union[int, float]]:
+def _get_scoring_weights(weights: Optional[dict[str, Union[int, float]]]) -> dict[str, Union[int, float]]:
     """Get scoring weights with defaults."""
     if weights is None:
         return dict(config_schema.common_scoring_weights)
     return weights
 
 
-def _get_year_range(date_flex: Optional[Dict[str, Any]]) -> int:
+def _get_year_range(date_flex: Optional[dict[str, Any]]) -> int:
     """Get year range for flexible matching."""
     if date_flex and isinstance(date_flex, dict):
         return date_flex.get("year_match_range", 10)
     return 10
 
 
-def _extract_search_criteria(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean search criteria."""
-    def clean_param(p):
+    def clean_param(p: Optional[str]) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(search_criteria.get("first_name")),
@@ -97,9 +97,9 @@ def _extract_search_criteria(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _extract_candidate_data(candidate: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean candidate data - handle both camelCase and Title Case field names."""
-    def clean_param(p):
+    def clean_param(p: Optional[str]) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),
@@ -112,7 +112,7 @@ def _extract_candidate_data(candidate: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score name matching (first name or surname)."""
     if search_name and cand_name and search_name in cand_name:
         total_score += score_value
@@ -121,7 +121,7 @@ def _score_name_match(search_name: Optional[str], cand_name: Optional[str], fiel
     return total_score
 
 
-def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score gender matching."""
     if search_gender and cand_gender and search_gender == cand_gender:
         total_score += score_value
@@ -130,7 +130,7 @@ def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str]
     return total_score
 
 
-def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: int, close_score: int, year_range: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: int, close_score: int, year_range: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score year matching (birth or death year)."""
     if search_year and cand_year:
         try:
@@ -150,7 +150,7 @@ def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_s
     return total_score
 
 
-def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score place matching (birth or death place)."""
     if search_place and cand_place and search_place in cand_place:
         total_score += score_value
@@ -159,7 +159,7 @@ def _score_place_match(search_place: Optional[str], cand_place: Optional[str], f
     return total_score
 
 
-def _apply_bonus_scores(field_scores: Dict[str, int], weights: Dict[str, Union[int, float]], total_score: int, reasons: List[str]) -> int:
+def _apply_bonus_scores(field_scores: dict[str, int], weights: dict[str, Union[int, float]], total_score: int, reasons: list[str]) -> int:
     """Apply bonus scores for multiple matching fields."""
     # Bonus for both names matching
     if "first_name" in field_scores and "surname" in field_scores:
@@ -186,11 +186,11 @@ def _apply_bonus_scores(field_scores: Dict[str, int], weights: Dict[str, Union[i
 
 
 def _run_simple_suggestion_scoring(
-    search_criteria: Dict[str, Any],
-    candidate: Dict[str, Any],
-    weights: Optional[Dict[str, Union[int, float]]] = None,
-    date_flex: Optional[Dict[str, Any]] = None,
-) -> Tuple[int, Dict[str, int], List[str]]:
+    search_criteria: dict[str, Any],
+    candidate: dict[str, Any],
+    weights: Optional[dict[str, Union[int, float]]] = None,
+    date_flex: Optional[dict[str, Any]] = None,
+) -> tuple[int, dict[str, int], list[str]]:
     """
     Simple scoring function for API suggestions when gedcom_utils is not available.
 
@@ -241,7 +241,7 @@ def _run_simple_suggestion_scoring(
 
 # Helper functions for search_api_for_criteria
 
-def _build_search_query(search_criteria: Dict[str, Any]) -> str:
+def _build_search_query(search_criteria: dict[str, Any]) -> str:
     """Build search query string from criteria."""
     search_query = ""
     if search_criteria.get("first_name"):
@@ -322,7 +322,7 @@ def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
     return None, None
 
 
-def _process_suggest_result(suggestion: Dict[str, Any], search_criteria: Dict[str, Any], scoring_weights: Dict[str, int], date_flex: Dict[str, int]) -> Optional[Dict[str, Any]]:
+def _process_suggest_result(suggestion: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, int], date_flex: dict[str, int]) -> Optional[dict[str, Any]]:
     """Process a single suggestion result and return match record if score > 0."""
     try:
         person_id = suggestion.get("id")
@@ -381,7 +381,7 @@ def _process_suggest_result(suggestion: Dict[str, Any], search_criteria: Dict[st
         return None
 
 
-def _process_treesui_person(person: Dict[str, Any], search_criteria: Dict[str, Any], scoring_weights: Dict[str, int], date_flex: Dict[str, int], scored_matches: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, int], date_flex: dict[str, int], scored_matches: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     """Process a single treesui-list person and return match record if score > 0 and not duplicate."""
     try:
         person_id = person.get("id")
@@ -464,7 +464,7 @@ def _validate_session(session_manager: SessionManager) -> bool:
         return False
 
 
-def _call_suggest_api_for_search(session_manager: SessionManager, search_criteria: Dict[str, Any], tree_id: str, owner_profile_id: str) -> List[Dict[str, Any]]:
+def _call_suggest_api_for_search(session_manager: SessionManager, search_criteria: dict[str, Any], tree_id: str, owner_profile_id: str) -> list[dict[str, Any]]:
     """Call suggest API and return results."""
     base_url = config_schema.api.base_url
 
@@ -489,7 +489,7 @@ def _call_suggest_api_for_search(session_manager: SessionManager, search_criteri
     return suggest_results
 
 
-def _process_suggest_results(suggest_results: List[Dict[str, Any]], search_criteria: Dict[str, Any], max_suggestions: int) -> List[Dict[str, Any]]:
+def _process_suggest_results(suggest_results: list[dict[str, Any]], search_criteria: dict[str, Any], max_suggestions: int) -> list[dict[str, Any]]:
     """Process suggest API results and return scored matches."""
     scoring_weights = config_schema.common_scoring_weights
     date_flex = {"year_match_range": config_schema.date_flexibility}
@@ -503,7 +503,7 @@ def _process_suggest_results(suggest_results: List[Dict[str, Any]], search_crite
     return scored_matches
 
 
-def _build_treesui_search_params(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
+def _build_treesui_search_params(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Build search parameters for treesui-list API."""
     search_params = {}
 
@@ -524,7 +524,7 @@ def _build_treesui_search_params(search_criteria: Dict[str, Any]) -> Dict[str, A
     return search_params
 
 
-def _call_treesui_api_for_search(session_manager: SessionManager, search_params: Dict[str, Any], tree_id: str, owner_profile_id: str) -> Optional[Dict[str, Any]]:
+def _call_treesui_api_for_search(session_manager: SessionManager, search_params: dict[str, Any], tree_id: str, owner_profile_id: str) -> Optional[dict[str, Any]]:
     """Call treesui-list API and return results."""
     if not search_params:
         return None
@@ -541,7 +541,7 @@ def _call_treesui_api_for_search(session_manager: SessionManager, search_params:
     )
 
 
-def _process_treesui_results(treesui_results: Optional[Dict[str, Any]], search_criteria: Dict[str, Any], scored_matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _process_treesui_results(treesui_results: Optional[dict[str, Any]], search_criteria: dict[str, Any], scored_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Process treesui-list API results and add to scored matches."""
     if not treesui_results or not isinstance(treesui_results, dict):
         return scored_matches
@@ -563,9 +563,9 @@ def _process_treesui_results(treesui_results: Optional[Dict[str, Any]], search_c
 
 def search_api_for_criteria(
     session_manager: SessionManager,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     max_results: int = 10,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search Ancestry API for individuals matching the given criteria.
 
@@ -659,7 +659,7 @@ def _get_facts_data_from_api(
     person_id: str,
     tree_id: str,
     owner_profile_id: str,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """Call facts API and return data."""
     logger.info(f"Getting facts for person {person_id} in tree {tree_id}")
     base_url = config_schema.api.base_url
@@ -679,7 +679,7 @@ def _get_facts_data_from_api(
     return facts_data
 
 
-def _initialize_family_result(person_id: str) -> Dict[str, Any]:
+def _initialize_family_result(person_id: str) -> dict[str, Any]:
     """Initialize empty family details result structure."""
     return {
         "id": person_id,
@@ -700,7 +700,7 @@ def _initialize_family_result(person_id: str) -> Dict[str, Any]:
     }
 
 
-def _extract_person_name_info(person_data: Dict[str, Any], result: Dict[str, Any]) -> None:
+def _extract_person_name_info(person_data: dict[str, Any], result: dict[str, Any]) -> None:
     """Extract and parse person name information."""
     result["name"] = person_data.get("personName", "Unknown")
 
@@ -711,7 +711,7 @@ def _extract_person_name_info(person_data: Dict[str, Any], result: Dict[str, Any
             result["surname"] = name_parts[-1]
 
 
-def _extract_person_gender(person_data: Dict[str, Any], result: Dict[str, Any]) -> None:
+def _extract_person_gender(person_data: dict[str, Any], result: dict[str, Any]) -> None:
     """Extract and normalize person gender."""
     gender_raw = person_data.get("gender", "").lower()
     if gender_raw == "male":
@@ -720,7 +720,7 @@ def _extract_person_gender(person_data: Dict[str, Any], result: Dict[str, Any]) 
         result["gender"] = "F"
 
 
-def _extract_birth_info(facts_data: Dict[str, Any], result: Dict[str, Any]) -> None:
+def _extract_birth_info(facts_data: dict[str, Any], result: dict[str, Any]) -> None:
     """Extract birth information from facts data."""
     birth_facts = [f for f in facts_data.get("facts", []) if f.get("type") == "Birth"]
     if not birth_facts:
@@ -738,7 +738,7 @@ def _extract_birth_info(facts_data: Dict[str, Any], result: Dict[str, Any]) -> N
             result["birth_year"] = birth_year
 
 
-def _extract_death_info(facts_data: Dict[str, Any], result: Dict[str, Any]) -> None:
+def _extract_death_info(facts_data: dict[str, Any], result: dict[str, Any]) -> None:
     """Extract death information from facts data."""
     death_facts = [f for f in facts_data.get("facts", []) if f.get("type") == "Death"]
     if not death_facts:
@@ -756,7 +756,7 @@ def _extract_death_info(facts_data: Dict[str, Any], result: Dict[str, Any]) -> N
             result["death_year"] = death_year
 
 
-def _extract_year_from_relationship(relationship: Dict[str, Any], year_key: str) -> Optional[int]:
+def _extract_year_from_relationship(relationship: dict[str, Any], year_key: str) -> Optional[int]:
     """Extract and parse year from relationship data."""
     year_str = relationship.get(year_key)
     if not year_str:
@@ -768,7 +768,7 @@ def _extract_year_from_relationship(relationship: Dict[str, Any], year_key: str)
         return None
 
 
-def _process_parent_relationship(parent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _process_parent_relationship(parent: dict[str, Any]) -> Optional[dict[str, Any]]:
     """Process a single parent relationship."""
     parent_id = parent.get("personId")
     if not parent_id:
@@ -787,7 +787,7 @@ def _process_parent_relationship(parent: Dict[str, Any]) -> Optional[Dict[str, A
 
 
 
-def _process_parents(relationships: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
+def _process_parents(relationships: list[dict[str, Any]], result: dict[str, Any]) -> None:
     """Process all parent relationships."""
     parents = [r for r in relationships if r.get("relationshipType") in ["Father", "Mother"]]
     for parent in parents:
@@ -796,7 +796,7 @@ def _process_parents(relationships: List[Dict[str, Any]], result: Dict[str, Any]
             result["parents"].append(parent_info)
 
 
-def _extract_marriage_info(facts_data: Dict[str, Any], spouse_id: str) -> Dict[str, str]:
+def _extract_marriage_info(facts_data: dict[str, Any], spouse_id: str) -> dict[str, str]:
     """Extract marriage information for a specific spouse."""
     marriage_facts = [
         f for f in facts_data.get("facts", [])
@@ -813,7 +813,7 @@ def _extract_marriage_info(facts_data: Dict[str, Any], spouse_id: str) -> Dict[s
     }
 
 
-def _process_spouse_relationship(spouse: Dict[str, Any], facts_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _process_spouse_relationship(spouse: dict[str, Any], facts_data: dict[str, Any]) -> Optional[dict[str, Any]]:
     """Process a single spouse relationship."""
     spouse_id = spouse.get("personId")
     if not spouse_id:
@@ -835,7 +835,7 @@ def _process_spouse_relationship(spouse: Dict[str, Any], facts_data: Dict[str, A
     return spouse_info
 
 
-def _process_spouses(relationships: List[Dict[str, Any]], facts_data: Dict[str, Any], result: Dict[str, Any]) -> None:
+def _process_spouses(relationships: list[dict[str, Any]], facts_data: dict[str, Any], result: dict[str, Any]) -> None:
     """Process all spouse relationships."""
     spouses = [r for r in relationships if r.get("relationshipType") in ["Spouse"]]
     for spouse in spouses:
@@ -844,7 +844,7 @@ def _process_spouses(relationships: List[Dict[str, Any]], facts_data: Dict[str, 
             result["spouses"].append(spouse_info)
 
 
-def _process_child_relationship(child: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _process_child_relationship(child: dict[str, Any]) -> Optional[dict[str, Any]]:
     """Process a single child relationship."""
     child_id = child.get("personId")
     if not child_id:
@@ -861,7 +861,7 @@ def _process_child_relationship(child: Dict[str, Any]) -> Optional[Dict[str, Any
 
 
 
-def _process_children(relationships: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
+def _process_children(relationships: list[dict[str, Any]], result: dict[str, Any]) -> None:
     """Process all child relationships."""
     children = [r for r in relationships if r.get("relationshipType") in ["Child"]]
     for child in children:
@@ -870,7 +870,7 @@ def _process_children(relationships: List[Dict[str, Any]], result: Dict[str, Any
             result["children"].append(child_info)
 
 
-def _process_sibling_relationship(sibling: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _process_sibling_relationship(sibling: dict[str, Any]) -> Optional[dict[str, Any]]:
     """Process a single sibling relationship."""
     sibling_id = sibling.get("personId")
     if not sibling_id:
@@ -887,7 +887,7 @@ def _process_sibling_relationship(sibling: Dict[str, Any]) -> Optional[Dict[str,
 
 
 
-def _process_siblings(relationships: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
+def _process_siblings(relationships: list[dict[str, Any]], result: dict[str, Any]) -> None:
     """Process all sibling relationships."""
     siblings = [r for r in relationships if r.get("relationshipType") in ["Sibling"]]
     for sibling in siblings:
@@ -900,7 +900,7 @@ def get_api_family_details(
     session_manager: SessionManager,
     person_id: str,
     tree_id: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get family details for a specific individual from Ancestry API.
 

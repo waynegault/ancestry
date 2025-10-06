@@ -20,7 +20,7 @@ import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -153,7 +153,7 @@ class NameData(BaseModel):
     """Model for structured name information."""
 
     full_name: str
-    nicknames: List[str] = Field(default_factory=list)
+    nicknames: list[str] = Field(default_factory=list)
     maiden_name: Optional[str] = None
     generational_suffix: Optional[str] = None
 
@@ -198,15 +198,15 @@ class ExtractedData(BaseModel):
     """Enhanced Pydantic model for validating the extracted_data structure in AI responses."""
 
     # Enhanced structured fields
-    structured_names: List[NameData] = Field(default_factory=list)
-    vital_records: List[VitalRecord] = Field(default_factory=list)
-    relationships: List[Relationship] = Field(default_factory=list)
-    locations: List[Location] = Field(default_factory=list)
-    occupations: List[Occupation] = Field(default_factory=list)
-    research_questions: List[str] = Field(default_factory=list)
-    documents_mentioned: List[str] = Field(default_factory=list)
-    dna_information: List[str] = Field(default_factory=list)
-    suggested_tasks: List[str] = Field(default_factory=list)
+    structured_names: list[NameData] = Field(default_factory=list)
+    vital_records: list[VitalRecord] = Field(default_factory=list)
+    relationships: list[Relationship] = Field(default_factory=list)
+    locations: list[Location] = Field(default_factory=list)
+    occupations: list[Occupation] = Field(default_factory=list)
+    research_questions: list[str] = Field(default_factory=list)
+    documents_mentioned: list[str] = Field(default_factory=list)
+    dna_information: list[str] = Field(default_factory=list)
+    suggested_tasks: list[str] = Field(default_factory=list)
 
     @field_validator(
         "research_questions",
@@ -216,7 +216,7 @@ class ExtractedData(BaseModel):
         mode="before",
     )
     @classmethod
-    def ensure_list_of_strings(cls, v: Any) -> List[str]:
+    def ensure_list_of_strings(cls, v: Any) -> list[str]:
         """Ensures all fields are lists of strings."""
         if v is None:
             return []
@@ -224,7 +224,7 @@ class ExtractedData(BaseModel):
             return []
         return [str(item) for item in v if item is not None]
 
-    def get_all_names(self) -> List[str]:
+    def get_all_names(self) -> list[str]:
         """Get all names from structured fields."""
         names = []
         for name_data in self.structured_names:
@@ -232,7 +232,7 @@ class ExtractedData(BaseModel):
             names.extend(name_data.nicknames)
         return list(set(names))
 
-    def get_all_locations(self) -> List[str]:
+    def get_all_locations(self) -> list[str]:
         """Get all locations from structured fields."""
         locations = []
         for vital_record in self.vital_records:
@@ -245,11 +245,11 @@ class AIResponse(BaseModel):
     """Pydantic model for validating the complete AI response structure."""
 
     extracted_data: ExtractedData = Field(default_factory=ExtractedData)
-    suggested_tasks: List[str] = Field(default_factory=list)
+    suggested_tasks: list[str] = Field(default_factory=list)
 
     @field_validator("suggested_tasks", mode="before")
     @classmethod
-    def ensure_tasks_list(cls, v: Any) -> List[str]:
+    def ensure_tasks_list(cls, v: Any) -> list[str]:
         """Ensures suggested_tasks is a list of strings."""
         if v is None:
             return []
@@ -330,7 +330,7 @@ def _parse_name_parts(name: str) -> tuple[str, str]:
     return first_name, surname
 
 
-def _create_search_criteria(first_name: str, surname: str) -> Dict[str, Any]:
+def _create_search_criteria(first_name: str, surname: str) -> dict[str, Any]:
     """Create search criteria from name parts."""
     return {
         "first_name": first_name.lower() if first_name else None,
@@ -338,7 +338,7 @@ def _create_search_criteria(first_name: str, surname: str) -> Dict[str, Any]:
     }
 
 
-def _get_scoring_config() -> tuple[Dict[str, Any], Dict[str, Any]]:
+def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any]]:
     """Get scoring weights and date flexibility config."""
     scoring_weights = config_schema.common_scoring_weights
     date_flex = {
@@ -348,7 +348,7 @@ def _get_scoring_config() -> tuple[Dict[str, Any], Dict[str, Any]]:
     return scoring_weights, date_flex
 
 
-def _check_name_match(indi_data: Dict[str, Any], filter_criteria: Dict[str, Any]) -> bool:
+def _check_name_match(indi_data: dict[str, Any], filter_criteria: dict[str, Any]) -> bool:
     """Check if individual matches name filter criteria."""
     # Skip individuals with no name
     if not indi_data.get("first_name") and not indi_data.get("surname"):
@@ -361,7 +361,7 @@ def _check_name_match(indi_data: Dict[str, Any], filter_criteria: Dict[str, Any]
     return fn_match or sn_match
 
 
-def _create_match_record(indi_id: str, indi_data: Dict[str, Any], total_score: float, field_scores: Dict[str, Any], reasons: List[str]) -> Dict[str, Any]:
+def _create_match_record(indi_id: str, indi_data: dict[str, Any], total_score: float, field_scores: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
     """Create a match record from individual data."""
     return {
         "id": indi_id,
@@ -380,7 +380,7 @@ def _create_match_record(indi_id: str, indi_data: Dict[str, Any], total_score: f
     }
 
 
-def _process_gedcom_individuals(gedcom_data: Any, filter_criteria: Dict[str, Any], scoring_criteria: Dict[str, Any], scoring_weights: Dict[str, Any], date_flex: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _process_gedcom_individuals(gedcom_data: Any, filter_criteria: dict[str, Any], scoring_criteria: dict[str, Any], scoring_weights: dict[str, Any], date_flex: dict[str, Any]) -> list[dict[str, Any]]:
     """Process GEDCOM individuals and return scored matches."""
     scored_matches = []
 
@@ -418,8 +418,8 @@ def _process_gedcom_individuals(gedcom_data: Any, filter_criteria: Dict[str, Any
 
 
 def _search_gedcom_for_names(
-    names: List[str], gedcom_data: Optional[Any] = None
-) -> List[Dict[str, Any]]:
+    names: list[str], gedcom_data: Optional[Any] = None
+) -> list[dict[str, Any]]:
     """
     Searches the configured GEDCOM file for names and returns matching individuals.
     Uses the cached GEDCOM data to avoid loading the file multiple times.
@@ -472,14 +472,14 @@ def _search_gedcom_for_names(
     except Exception as e:
         error_msg = f"Error searching GEDCOM file: {e}"
         logger.error(error_msg, exc_info=True)
-        raise RuntimeError(error_msg)
+        raise RuntimeError(error_msg) from e
 
 
 # Helper functions for _search_api_for_names
 
 def _validate_api_search_inputs(
-    session_manager: Optional[SessionManager], names: Optional[List[str]]
-) -> List[str]:
+    session_manager: Optional[SessionManager], names: Optional[list[str]]
+) -> list[str]:
     """Validate inputs for API search and return validated names list."""
     if not session_manager:
         error_msg = "Session manager not provided. Cannot search Ancestry API."
@@ -529,7 +529,7 @@ def _is_valid_name_for_search(name: str, first_name: str, surname: str) -> bool:
 
 def _search_single_name_via_api(
     name: str, first_name: str, surname: str
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Search for a single name via the API and return top matches."""
     # Create search criteria
     search_criteria = {
@@ -567,8 +567,8 @@ def _search_single_name_via_api(
 
 def _search_api_for_names(
     session_manager: Optional[SessionManager] = None,
-    names: Optional[List[str]] = None,
-) -> List[Dict[str, Any]]:
+    names: Optional[list[str]] = None,
+) -> list[dict[str, Any]]:
     """
     Searches Ancestry API for names and returns matching individuals.
 
@@ -612,7 +612,7 @@ def _search_api_for_names(
     except Exception as e:
         error_msg = f"Error searching Ancestry API: {e}"
         logger.error(error_msg, exc_info=True)
-        raise RuntimeError(error_msg)
+        raise RuntimeError(error_msg) from e
 
 
 #####################################################
@@ -651,8 +651,8 @@ class DatabaseState:
     """Manages database session and batch operations."""
 
     session: Optional[DbSession] = None
-    logs_to_add: Optional[List[Dict[str, Any]]] = None
-    person_updates: Optional[Dict[int, PersonStatusEnum]] = None
+    logs_to_add: Optional[list[dict[str, Any]]] = None
+    person_updates: Optional[dict[int, PersonStatusEnum]] = None
     batch_size: int = 10
     commit_threshold: int = 10
 
@@ -667,7 +667,7 @@ class DatabaseState:
 class MessageConfig:
     """Manages message types and templates."""
 
-    templates: Optional[Dict[str, str]] = None
+    templates: Optional[dict[str, str]] = None
     ack_msg_type_id: Optional[int] = None
     custom_reply_msg_type_id: Optional[int] = None
 
@@ -701,7 +701,7 @@ class PersonProcessor:
             else ""
         )
 
-    def process_person(self, person: Person, progress_bar=None) -> Tuple[bool, str]:
+    def process_person(self, person: Person, progress_bar=None) -> tuple[bool, str]:
         """
         Process a single person and return (success, status_message).
 
@@ -748,7 +748,7 @@ class PersonProcessor:
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
-    ) -> Optional[List[ConversationLog]]:
+    ) -> Optional[list[ConversationLog]]:
         """Get message context for the person."""
         if self.db_state.session is None:
             logger.error(f"Database session is None for {log_prefix}")
@@ -761,7 +761,7 @@ class PersonProcessor:
         return context_logs
 
     def _should_skip_person(
-        self, person: Person, context_logs: List[ConversationLog], log_prefix: str
+        self, person: Person, context_logs: list[ConversationLog], log_prefix: str
     ) -> bool:
         """Check if person should be skipped based on various criteria."""
 
@@ -806,7 +806,7 @@ class PersonProcessor:
         return False
 
     def _get_latest_incoming_message(
-        self, context_logs: List[ConversationLog]
+        self, context_logs: list[ConversationLog]
     ) -> Optional[ConversationLog]:
         """Get the latest incoming message from context logs."""
         for log in reversed(context_logs):
@@ -816,8 +816,8 @@ class PersonProcessor:
         return None
 
     def _process_with_ai(
-        self, person: Person, context_logs: List[ConversationLog], progress_bar=None
-    ) -> Optional[Tuple[Dict[str, Any], List[str]]]:
+        self, person: Person, context_logs: list[ConversationLog], progress_bar=None
+    ) -> Optional[tuple[dict[str, Any], list[str]]]:
         """Process message content with AI and return extracted data and tasks."""
         if progress_bar:
             progress_bar.set_description(
@@ -858,7 +858,7 @@ class PersonProcessor:
 
         return extracted_data, suggested_tasks
 
-    def _should_skip_ms_task_creation(self, log_prefix: str, suggested_tasks: List[str]) -> bool:
+    def _should_skip_ms_task_creation(self, log_prefix: str, suggested_tasks: list[str]) -> bool:
         """Check if MS task creation should be skipped. Returns True if should skip."""
         if not suggested_tasks:
             return True
@@ -915,7 +915,7 @@ class PersonProcessor:
     def _create_ms_tasks(
         self,
         person: Person,
-        suggested_tasks: List[str],
+        suggested_tasks: list[str],
         log_prefix: str,
         progress_bar=None,
     ):
@@ -960,8 +960,8 @@ class PersonProcessor:
     def _handle_message_response(
         self,
         person: Person,
-        context_logs: List[ConversationLog],
-        extracted_data: Dict[str, Any],
+        context_logs: list[ConversationLog],
+        extracted_data: dict[str, Any],
         log_prefix: str,
         progress_bar=None,
     ) -> bool:
@@ -1021,8 +1021,8 @@ class PersonProcessor:
     def _generate_custom_reply(
         self,
         person: Person,
-        context_logs: List[ConversationLog],
-        extracted_data: Dict[str, Any],
+        context_logs: list[ConversationLog],
+        extracted_data: dict[str, Any],
         latest_message: ConversationLog,
         log_prefix: str,
         progress_bar=None,
@@ -1091,10 +1091,10 @@ class PersonProcessor:
     def _format_message(
         self,
         person: Person,
-        extracted_data: Dict[str, Any],
+        extracted_data: dict[str, Any],
         custom_reply: Optional[str],
         log_prefix: str,
-    ) -> Tuple[str, int]:
+    ) -> tuple[str, int]:
         """Format the message text and determine message type ID."""
 
         try:
@@ -1147,7 +1147,7 @@ class PersonProcessor:
     def _send_message(
         self,
         person: Person,
-        context_logs: List[ConversationLog],
+        context_logs: list[ConversationLog],
         message_text: str,
         message_type_id: int,
         custom_reply: Optional[str],
@@ -1202,7 +1202,7 @@ class PersonProcessor:
             log_prefix,
         )
 
-    def _should_send_message(self, person: Person, _log_prefix: str) -> Tuple[bool, str]:
+    def _should_send_message(self, person: Person, _log_prefix: str) -> tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
         app_mode = config_schema.app_mode
@@ -1225,7 +1225,7 @@ class PersonProcessor:
         return True, ""
 
     def _get_conversation_id(
-        self, context_logs: List[ConversationLog], log_prefix: str
+        self, context_logs: list[ConversationLog], log_prefix: str
     ) -> Optional[str]:
         """Get conversation ID from context logs."""
         if not context_logs:
@@ -1362,7 +1362,7 @@ class BatchCommitManager:
         total_pending = logs_count + updates_count
         return total_pending >= self.db_state.commit_threshold
 
-    def commit_batch(self, batch_num: int) -> Tuple[bool, int, int]:
+    def commit_batch(self, batch_num: int) -> tuple[bool, int, int]:
         """
         Commit current batch to database.
 
@@ -1546,7 +1546,7 @@ def _setup_configuration(
 # @cached_database_query(ttl=300)  # 5-minute cache for candidate queries - module doesn't exist yet
 def _query_candidates(
     db_state: DatabaseState, msg_config: MessageConfig, limit: int
-) -> List[Person]:
+) -> list[Person]:
     """Query for candidate persons to process."""
 
     if not db_state.session:
@@ -1623,7 +1623,7 @@ def _query_candidates(
 
 def _process_candidates(
     session_manager: SessionManager,
-    candidates: List[Person],
+    candidates: list[Person],
     state: ProcessingState,
     ms_state: MSGraphState,
     db_state: DatabaseState,
@@ -1751,7 +1751,7 @@ def _log_summary(state: ProcessingState):
 
 # Helper functions for _process_ai_response
 
-def _get_default_ai_response_structure() -> Dict[str, Any]:
+def _get_default_ai_response_structure() -> dict[str, Any]:
     """Get the default empty structure for AI response."""
     return {
         "extracted_data": {
@@ -1765,7 +1765,7 @@ def _get_default_ai_response_structure() -> Dict[str, Any]:
     }
 
 
-def _validate_with_pydantic(ai_response: dict, log_prefix: str) -> Optional[Dict[str, Any]]:
+def _validate_with_pydantic(ai_response: dict, log_prefix: str) -> Optional[dict[str, Any]]:
     """Try to validate AI response with Pydantic schema."""
     try:
         validated_response = AIResponse.model_validate(ai_response)
@@ -1777,7 +1777,7 @@ def _validate_with_pydantic(ai_response: dict, log_prefix: str) -> Optional[Dict
         return None
 
 
-def _salvage_extracted_data(ai_response: dict, log_prefix: str) -> Dict[str, list]:
+def _salvage_extracted_data(ai_response: dict, log_prefix: str) -> dict[str, list]:
     """Try to salvage extracted_data from malformed AI response."""
     result = _get_default_ai_response_structure()["extracted_data"]
 
@@ -1823,7 +1823,7 @@ def _salvage_suggested_tasks(ai_response: dict, log_prefix: str) -> list:
     ]
 
 
-def _salvage_partial_data(ai_response: dict, log_prefix: str) -> Dict[str, Any]:
+def _salvage_partial_data(ai_response: dict, log_prefix: str) -> dict[str, Any]:
     """Try to salvage partial data from malformed AI response."""
     try:
         extracted_data = _salvage_extracted_data(ai_response, log_prefix)
@@ -1840,7 +1840,7 @@ def _salvage_partial_data(ai_response: dict, log_prefix: str) -> Dict[str, Any]:
         return _get_default_ai_response_structure()
 
 
-def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
+def _process_ai_response(ai_response: Any, log_prefix: str) -> dict[str, Any]:
     """
     Processes and validates the AI response using Pydantic models for robust parsing.
 
@@ -1879,7 +1879,7 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> Dict[str, Any]:
 
 
 def _format_context_for_ai_extraction(
-    context_logs: List[ConversationLog],
+    context_logs: list[ConversationLog],
     # my_pid_lower parameter is kept for compatibility but not used
     # pylint: disable=unused-argument
     _: str = "",  # Renamed to underscore to indicate unused parameter
@@ -1953,7 +1953,7 @@ def _get_message_context(
     db_session: DbSession,
     person_id: Union[int, Any],  # Accept SQLAlchemy Column type or int
     limit: int = config_schema.ai_context_messages_count,
-) -> List[ConversationLog]:
+) -> list[ConversationLog]:
     """
     Fetches the last 'limit' ConversationLog entries for a given person_id,
     ordered by timestamp ascending (oldest first).
@@ -2004,7 +2004,7 @@ def _get_message_context(
         return []
 
 
-def _load_templates_for_action9() -> Dict[str, str]:
+def _load_templates_for_action9() -> dict[str, str]:
     """
     Loads message templates for Action 9 from action8_messaging.
 
@@ -2032,8 +2032,8 @@ def _load_templates_for_action9() -> Dict[str, str]:
 
 
 def _search_ancestry_tree(
-    extracted_data: Union[ExtractedData, List[str]]
-) -> Dict[str, Any]:
+    extracted_data: Union[ExtractedData, list[str]]
+) -> dict[str, Any]:
     """
     Searches the user's tree (GEDCOM or API) for names extracted by the AI.
 
@@ -2083,7 +2083,7 @@ def _search_ancestry_tree(
 
 def _identify_and_get_person_details(
     log_prefix: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Simplified version that returns None (no person details found).
     """
@@ -2094,7 +2094,7 @@ def _identify_and_get_person_details(
 
 
 def _format_genealogical_data_for_ai(
-    genealogical_data: Dict[str, Any]
+    genealogical_data: dict[str, Any]
 ) -> str:
     """
     Simplified version that formats genealogical data for AI consumption.
@@ -2139,7 +2139,7 @@ def generate_genealogical_reply(
         return None
 
 
-def _generate_ack_summary(extracted_data: Dict[str, Any]) -> str:
+def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
     """
     Generates a summary from extracted data for acknowledgment messages.
     """

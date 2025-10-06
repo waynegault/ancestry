@@ -48,6 +48,7 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import json
 import re
 import sys
@@ -224,10 +225,10 @@ class TreeOwnerResponse:
     """Dataclass model for validating Tree Owner API responses."""
 
     owner: Optional[dict[str, Any]] = None
-    displayName: Optional[str] = None
+    displayName: Optional[str] = None  # noqa: N815 - API field name
     id: Optional[str] = None  # Add missing 'id' field
-    peopleCount: Optional[int] = None  # Add missing 'peopleCount' field
-    photoCount: Optional[int] = None  # Add missing 'photoCount' field
+    peopleCount: Optional[int] = None  # noqa: N815 - API field name
+    photoCount: Optional[int] = None  # noqa: N815 - API field name
     membership: Optional[dict[str, Any]] = None  # Add missing 'membership' field
 
     @classmethod
@@ -264,7 +265,7 @@ class PersonFactsResponse:
     """Dataclass model for validating Person Facts API responses."""
 
     data: Optional[dict[str, Any]] = None
-    personResearch: Optional[dict[str, Any]] = None
+    personResearch: Optional[dict[str, Any]] = None  # noqa: N815 - API field name
     PersonFacts: Optional[list[dict[str, Any]]] = None
     PersonFullName: Optional[str] = None
     FirstName: Optional[str] = None
@@ -524,7 +525,7 @@ def _extract_name_from_api_details(
 
     Args:
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+        facts_data (Optional[dict]): Data from Facts API or detailed person information
 
     Returns:
         str: The formatted person's name, or "Unknown" if no name could be extracted
@@ -650,7 +651,7 @@ def _extract_gender_from_api_details(
 
     Args:
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+        facts_data (Optional[dict]): Data from Facts API or detailed person information
 
     Returns:
         Optional[str]: "M" for male, "F" for female, or None if gender cannot be determined
@@ -728,7 +729,7 @@ def _extract_living_status_from_api_details(
 
     Args:
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+        facts_data (Optional[dict]): Data from Facts API or detailed person information
 
     Returns:
         Optional[bool]: True if person is living, False if deceased, None if unknown
@@ -994,10 +995,10 @@ def _extract_event_from_api_details(
     Args:
         event_type (str): Type of event to extract ("Birth", "Death", etc.)
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[Dict]): Data from Facts API or detailed person information
+        facts_data (Optional[dict]): Data from Facts API or detailed person information
 
     Returns:
-        Tuple[Optional[str], Optional[str], Optional[datetime]]: A tuple containing:
+        tuple[Optional[str], Optional[str], Optional[datetime]]: A tuple containing:
             - date_str: Raw date string from API
             - place_str: Place name string from API
             - date_obj: Parsed datetime object (if date parsing successful)
@@ -1523,7 +1524,7 @@ def _execute_suggest_api_with_retries(
 def call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    _owner_profile_id: Optional[str],  # noqa: ARG001 - Unused but kept for API consistency
+    _owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
@@ -2028,7 +2029,7 @@ def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[
 def call_treesui_list_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    _owner_profile_id: Optional[str],  # noqa: ARG001 - Unused but kept for API consistency
+    _owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
@@ -2671,7 +2672,7 @@ def call_tree_owner_api(
 async def async_call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    _owner_profile_id: Optional[str],  # noqa: ARG001 - Unused but kept for API consistency
+    _owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: dict[str, Any],
     timeout: Optional[int] = None,
@@ -2967,7 +2968,7 @@ def call_relationship_ladder_api(
 def get_relationship_path_data(
     session_manager: "SessionManager",
     person_id: str,
-    _reference_person_id: Optional[str] = None  # noqa: ARG001 - Unused but kept for future use
+    _reference_person_id: Optional[str] = None
 ) -> Optional[dict[str, Any]]:
     """
     Get comprehensive relationship path data for a person using the enhanced API.
@@ -3199,10 +3200,8 @@ def _run_edge_case_tests(suite: "TestSuite") -> None:
         ]
 
         for invalid_json in invalid_json_strings:
-            try:
-                json.loads(invalid_json)
-            except (json.JSONDecodeError, TypeError):
-                pass  # Expected behavior for invalid JSON
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
+                json.loads(invalid_json)  # Expected behavior for invalid JSON
 
     def test_empty_data_handling():
         """Test handling of empty or missing data."""

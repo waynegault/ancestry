@@ -31,7 +31,7 @@ import os
 import re  # Added for robust lifespan splitting
 import sys
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Optional
 from urllib.parse import quote, urlencode
 
 # === THIRD-PARTY IMPORTS ===
@@ -204,7 +204,7 @@ def _parse_year_from_string(date_str: str, parse_date_func: Optional[Callable]) 
     return year, date_obj
 
 
-def _get_user_input() -> Dict[str, str]:
+def _get_user_input() -> dict[str, str]:
     """Get search criteria input from user."""
     print("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---\n")
     return {
@@ -227,7 +227,7 @@ def _validate_required_fields(first_name: str, surname: str) -> bool:
     return True
 
 
-def _get_search_criteria() -> Optional[Dict[str, Any]]:
+def _get_search_criteria() -> Optional[dict[str, Any]]:
     """Gets search criteria from the user via input prompts."""
 
     # Get user input
@@ -244,7 +244,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
         gender = user_input["gender_input"][0].lower()
 
     # Parse dates
-    def clean_param(p):
+    def clean_param(p: Optional[str]) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
 
@@ -294,7 +294,7 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
 
 # === SIMPLE SCORING HELPER FUNCTIONS ===
 
-def _get_scoring_weights() -> Dict[str, int]:
+def _get_scoring_weights() -> dict[str, int]:
     """Get scoring weights from config schema."""
     weights = getattr(config_schema, 'common_scoring_weights', {})
     return {
@@ -310,7 +310,7 @@ def _get_scoring_weights() -> Dict[str, int]:
     }
 
 
-def _score_name_match(search_fn: str, search_sn: str, cand_fn: str, cand_sn: str) -> Tuple[int, Dict[str, int], List[str]]:
+def _score_name_match(search_fn: str, search_sn: str, cand_fn: str, cand_sn: str) -> tuple[int, dict[str, int], list[str]]:
     """Score name matching (first name, surname, and bonus)."""
     score = 0
     field_scores = {"givn": 0, "surn": 0, "bonus": 0}
@@ -334,7 +334,7 @@ def _score_name_match(search_fn: str, search_sn: str, cand_fn: str, cand_sn: str
     return score, field_scores, reasons
 
 
-def _score_birth_info(search_by: int, search_bp: str, cand_by: int, cand_bp: str, weights: Dict[str, int]) -> Tuple[int, Dict[str, int], List[str]]:
+def _score_birth_info(search_by: int, search_bp: str, cand_by: int, cand_bp: str, weights: dict[str, int]) -> tuple[int, dict[str, int], list[str]]:
     """Score birth year and place matching."""
     score = 0
     field_scores = {"byear": 0, "bplace": 0, "bbonus": 0}
@@ -373,7 +373,7 @@ def _score_birth_info(search_by: int, search_bp: str, cand_by: int, cand_bp: str
 
 # Helper functions for _score_death_info
 
-def _score_death_year(search_dy: int, cand_dy: int, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+def _score_death_year(search_dy: int, cand_dy: int, weights: dict[str, int]) -> tuple[int, int, list[str]]:
     """Score death year matching."""
     if not cand_dy or not search_dy:
         return 0, 0, []
@@ -400,7 +400,7 @@ def _score_death_year(search_dy: int, cand_dy: int, weights: Dict[str, int]) -> 
     return 0, 0, []
 
 
-def _score_death_date_absent(search_dy: int, cand_dy: int, is_living: bool, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+def _score_death_date_absent(search_dy: int, cand_dy: int, is_living: bool, weights: dict[str, int]) -> tuple[int, int, list[str]]:
     """Score when both death dates are absent."""
     if not search_dy and not cand_dy and is_living in [False, None]:
         return (
@@ -411,7 +411,7 @@ def _score_death_date_absent(search_dy: int, cand_dy: int, is_living: bool, weig
     return 0, 0, []
 
 
-def _score_death_place(search_dp: str, cand_dp: str, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+def _score_death_place(search_dp: str, cand_dp: str, weights: dict[str, int]) -> tuple[int, int, list[str]]:
     """Score death place matching."""
     if cand_dp and search_dp and search_dp in cand_dp:
         return (
@@ -422,7 +422,7 @@ def _score_death_place(search_dp: str, cand_dp: str, weights: Dict[str, int]) ->
     return 0, 0, []
 
 
-def _score_death_bonus(dyear_score: int, ddate_score: int, dplace_score: int, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+def _score_death_bonus(dyear_score: int, ddate_score: int, dplace_score: int, weights: dict[str, int]) -> tuple[int, int, list[str]]:
     """Score death bonus when both date and place are present."""
     if (dyear_score > 0 or ddate_score > 0) and dplace_score > 0:
         return (
@@ -433,7 +433,7 @@ def _score_death_bonus(dyear_score: int, ddate_score: int, dplace_score: int, we
     return 0, 0, []
 
 
-def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str, is_living: bool, weights: Dict[str, int]) -> Tuple[int, Dict[str, int], List[str]]:
+def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str, is_living: bool, weights: dict[str, int]) -> tuple[int, dict[str, int], list[str]]:
     """Score death year and place matching."""
     score = 0
     field_scores = {"dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0}
@@ -469,7 +469,7 @@ def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str
     return score, field_scores, reasons
 
 
-def _score_gender_match(search_gn: str, cand_gn: str, weights: Dict[str, int]) -> Tuple[int, int, List[str]]:
+def _score_gender_match(search_gn: str, cand_gn: str, weights: dict[str, int]) -> tuple[int, int, list[str]]:
     """Score gender matching."""
     score = 0
     gender_score = 0
@@ -487,8 +487,8 @@ def _score_gender_match(search_gn: str, cand_gn: str, weights: Dict[str, int]) -
 
 # Simple scoring fallback (Uses 'gender_match' key)
 def _run_simple_suggestion_scoring(
-    search_criteria: Dict[str, Any], candidate_data_dict: Dict[str, Any]
-) -> Tuple[float, Dict[str, Any], List[str]]:
+    search_criteria: dict[str, Any], candidate_data_dict: dict[str, Any]
+) -> tuple[float, dict[str, Any], list[str]]:
     """Performs simple fallback scoring based on hardcoded rules. Uses 'gender_match' key."""
     logger.warning("Using simple fallback scoring for suggestion.")
 
@@ -563,7 +563,7 @@ def _run_simple_suggestion_scoring(
 
 # === SUGGESTION PROCESSING HELPER FUNCTIONS ===
 
-def _extract_candidate_data(raw_candidate: Dict, idx: int, clean_param: Callable, parse_date_func: Optional[Callable]) -> Dict[str, Any]:
+def _extract_candidate_data(raw_candidate: dict, idx: int, clean_param: Callable, parse_date_func: Optional[Callable]) -> dict[str, Any]:
     """Extract and normalize candidate data from raw API response."""
     full_name_disp = raw_candidate.get("FullName", "Unknown")
     person_id = raw_candidate.get("PersonId", f"Unknown_{idx}")
@@ -621,14 +621,14 @@ def _extract_candidate_data(raw_candidate: Dict, idx: int, clean_param: Callable
 
 
 def _calculate_candidate_score(
-    candidate_data_dict: Dict[str, Any],
-    search_criteria: Dict[str, Any],
+    candidate_data_dict: dict[str, Any],
+    search_criteria: dict[str, Any],
     scoring_func: Optional[Callable],
-    scoring_weights: Dict[str, int],
+    scoring_weights: dict[str, int],
     name_flex: int,
-    date_flex: Dict[str, int],
+    date_flex: dict[str, int],
     gender_weight: int,
-) -> Tuple[float, Dict[str, Any], List[str]]:
+) -> tuple[float, dict[str, Any], list[str]]:
     """Calculate match score for a candidate using available scoring function."""
     person_id = candidate_data_dict.get("norm_id", "Unknown")
 
@@ -700,12 +700,12 @@ def _calculate_candidate_score(
 
 
 def _build_processed_candidate(
-    raw_candidate: Dict,
-    candidate_data_dict: Dict[str, Any],
+    raw_candidate: dict,
+    candidate_data_dict: dict[str, Any],
     score: float,
-    field_scores: Dict[str, Any],
-    reasons: List[str],
-) -> Dict[str, Any]:
+    field_scores: dict[str, Any],
+    reasons: list[str],
+) -> dict[str, Any]:
     """Build processed candidate dictionary with all required fields."""
     person_id = candidate_data_dict.get("norm_id", "Unknown")
     full_name_disp = candidate_data_dict.get("full_name_disp", "Unknown")
@@ -738,8 +738,8 @@ def _build_processed_candidate(
 
 # Suggestion processing and scoring (Uses 'gender_match' key)
 def _process_and_score_suggestions(
-    suggestions: List[Dict], search_criteria: Dict[str, Any]
-) -> List[Dict]:
+    suggestions: list[dict], search_criteria: dict[str, Any]
+) -> list[dict]:
     """
     Processes raw API suggestions, calculates match scores, and returns sorted list.
     Uses 'gender_match' key from config weights.
@@ -747,7 +747,7 @@ def _process_and_score_suggestions(
     processed_candidates = []
 
     # Setup
-    def clean_param(p):
+    def clean_param(p: Optional[str]) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None
@@ -799,7 +799,7 @@ def _process_and_score_suggestions(
 
 # Helper functions for _display_search_results
 
-def _extract_field_scores_for_display(candidate: Dict) -> Dict[str, int]:
+def _extract_field_scores_for_display(candidate: dict) -> dict[str, int]:
     """Extract all field scores from candidate."""
     fs = candidate.get("field_scores", {})
     return {
@@ -816,7 +816,7 @@ def _extract_field_scores_for_display(candidate: Dict) -> Dict[str, int]:
     }
 
 
-def _fix_gender_score_from_reasons(candidate: Dict, gender_score: int) -> int:
+def _fix_gender_score_from_reasons(candidate: dict, gender_score: int) -> int:
     """Fix gender score by extracting from reasons if score is 0."""
     if gender_score != 0:
         return gender_score
@@ -830,7 +830,7 @@ def _fix_gender_score_from_reasons(candidate: Dict, gender_score: int) -> int:
     return gender_score
 
 
-def _calculate_display_bonuses(scores: Dict[str, int]) -> Dict[str, int]:
+def _calculate_display_bonuses(scores: dict[str, int]) -> dict[str, int]:
     """Calculate display bonus values for birth and death."""
     birth_date_component = max(scores["byear"], scores["bdate"])
     death_date_component = max(scores["dyear"], scores["ddate"])
@@ -844,7 +844,7 @@ def _calculate_display_bonuses(scores: Dict[str, int]) -> Dict[str, int]:
     }
 
 
-def _format_name_display_with_score(candidate: Dict, scores: Dict[str, int], bonuses: Dict[str, int]) -> str:
+def _format_name_display_with_score(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> str:
     """Format name display with scores."""
     name_disp = candidate.get("name", "N/A")
     name_disp_short = name_disp[:30] + ("..." if len(name_disp) > 30 else "")
@@ -857,14 +857,14 @@ def _format_name_display_with_score(candidate: Dict, scores: Dict[str, int], bon
     return f"{name_disp_short} {name_score_str}"
 
 
-def _format_gender_display_with_score(candidate: Dict, gender_score: int) -> str:
+def _format_gender_display_with_score(candidate: dict, gender_score: int) -> str:
     """Format gender display with score."""
     gender_disp_val = candidate.get("gender", "N/A")
     gender_disp_str = str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
     return f"{gender_disp_str} [{gender_score}]"
 
 
-def _format_birth_displays_with_scores(candidate: Dict, scores: Dict[str, int], bonuses: Dict[str, int]) -> tuple[str, str]:
+def _format_birth_displays_with_scores(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
     """Format birth date and place displays with scores."""
     # Birth date
     bdate_disp = str(candidate.get("birth_date", "N/A"))
@@ -882,7 +882,7 @@ def _format_birth_displays_with_scores(candidate: Dict, scores: Dict[str, int], 
     return bdate_with_score, bplace_with_score
 
 
-def _format_death_displays_with_scores(candidate: Dict, scores: Dict[str, int], bonuses: Dict[str, int]) -> tuple[str, str]:
+def _format_death_displays_with_scores(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
     """Format death date and place displays with scores."""
     # Death date
     ddate_disp = str(candidate.get("death_date", "N/A"))
@@ -900,7 +900,7 @@ def _format_death_displays_with_scores(candidate: Dict, scores: Dict[str, int], 
     return ddate_with_score, dplace_with_score
 
 
-def _create_table_row_for_candidate(candidate: Dict) -> List[str]:
+def _create_table_row_for_candidate(candidate: dict) -> list[str]:
     """Create a table row for a single candidate."""
     # Extract scores
     scores = _extract_field_scores_for_display(candidate)
@@ -931,7 +931,7 @@ def _create_table_row_for_candidate(candidate: Dict) -> List[str]:
     ]
 
 
-def _print_results_table(table_data: List[List[str]], headers: List[str]) -> None:
+def _print_results_table(table_data: list[list[str]], headers: list[str]) -> None:
     """Print the results table using tabulate or fallback."""
     try:
         print(tabulate(table_data, headers=headers, tablefmt="simple"))
@@ -946,7 +946,7 @@ def _print_results_table(table_data: List[List[str]], headers: List[str]) -> Non
 
 
 # Display search results (Uses 'gender_match' key)
-def _display_search_results(candidates: List[Dict], max_to_display: int):
+def _display_search_results(candidates: list[dict], max_to_display: int):
     """Displays the scored search results. Uses 'gender_match' score key."""
     if not candidates:
         print("\nNo candidates to display.")
@@ -966,8 +966,8 @@ def _display_search_results(candidates: List[Dict], max_to_display: int):
 
 # Select top candidate
 def _select_top_candidate(
-    scored_candidates: List[Dict],
-) -> Optional[Tuple[Dict, Dict]]:
+    scored_candidates: list[dict],
+) -> Optional[tuple[dict, dict]]:
     """Selects the highest-scoring candidate and retrieves its original raw suggestion data."""
     if not scored_candidates:
         logger.info("No scored candidates available to select from.")
@@ -1002,7 +1002,7 @@ def _select_top_candidate(
 
 # Helper functions for _extract_best_name_from_details
 
-def _try_person_full_name(person_research_data: Dict) -> Optional[str]:
+def _try_person_full_name(person_research_data: dict) -> Optional[str]:
     """Try to extract name from PersonFullName field."""
     person_full_name = person_research_data.get("PersonFullName")
     if person_full_name and person_full_name != "Valued Relative":
@@ -1011,7 +1011,7 @@ def _try_person_full_name(person_research_data: Dict) -> Optional[str]:
     return None
 
 
-def _try_name_fact(person_research_data: Dict) -> Optional[str]:
+def _try_name_fact(person_research_data: dict) -> Optional[str]:
     """Try to extract name from PersonFacts Name fact."""
     person_facts_list = person_research_data.get("PersonFacts", [])
     if not isinstance(person_facts_list, list):
@@ -1040,7 +1040,7 @@ def _try_name_fact(person_research_data: Dict) -> Optional[str]:
     return None
 
 
-def _try_constructed_name(person_research_data: Dict) -> Optional[str]:
+def _try_constructed_name(person_research_data: dict) -> Optional[str]:
     """Try to construct name from FirstName and LastName fields."""
     first_name_comp = person_research_data.get("FirstName", "")
     last_name_comp = person_research_data.get("LastName", "")
@@ -1054,7 +1054,7 @@ def _try_constructed_name(person_research_data: Dict) -> Optional[str]:
     return None
 
 
-def _try_fallback_suggestion_name(candidate_raw: Dict) -> Optional[str]:
+def _try_fallback_suggestion_name(candidate_raw: dict) -> Optional[str]:
     """Try to use fallback suggestion name from candidate."""
     cand_name = candidate_raw.get("FullName")
     if cand_name and cand_name != "Unknown":
@@ -1076,7 +1076,7 @@ def _format_extracted_name(name: str) -> str:
 
 # Detailed Info Extraction (Only called if proceeding to supplementary info)
 def _extract_best_name_from_details(
-    person_research_data: Dict, candidate_raw: Dict
+    person_research_data: dict, candidate_raw: dict
 ) -> str:
     """Extracts the best available name from detailed API response."""
     logger.debug(
@@ -1190,7 +1190,7 @@ def _validate_requests_session(session_manager_local: SessionManager) -> bool:
 def _build_treesui_api_url(
     base_url: str,
     owner_tree_id: str,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
 ) -> str:
     """Build TreesUI List API URL with search parameters."""
     first_name = search_criteria.get("first_name_raw", "")
@@ -1204,7 +1204,7 @@ def _build_treesui_api_url(
     return f"{base_url}/api/treesui-list/trees/{owner_tree_id}/persons?{encoded_params}"
 
 
-def _get_api_cookies(session_manager_local: SessionManager) -> Optional[Dict]:
+def _get_api_cookies(session_manager_local: SessionManager) -> Optional[dict]:
     """Get cookies for API call from session manager."""
     cookies = None
     if (
@@ -1227,7 +1227,7 @@ def _get_api_cookies(session_manager_local: SessionManager) -> Optional[Dict]:
     return cookies
 
 
-def _build_treesui_api_headers(base_url: str, owner_tree_id: str) -> Dict[str, str]:
+def _build_treesui_api_headers(base_url: str, owner_tree_id: str) -> dict[str, str]:
     """Build headers for TreesUI API request."""
     return {
         "Accept": "application/json",
@@ -1240,7 +1240,7 @@ def _build_treesui_api_headers(base_url: str, owner_tree_id: str) -> Dict[str, s
     }
 
 
-def _handle_treesui_api_response(response: requests.Response) -> Optional[List[Dict]]:
+def _handle_treesui_api_response(response: requests.Response) -> Optional[list[dict]]:
     """Handle TreesUI API response and extract data."""
     logger.debug(f"API Response Status Code: {response.status_code}")
 
@@ -1275,9 +1275,9 @@ def _handle_treesui_api_response(response: requests.Response) -> Optional[List[D
 def _call_direct_treesui_list_api(
     session_manager_local: SessionManager,
     owner_tree_id: str,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     base_url: str,
-) -> Optional[List[Dict]]:
+) -> Optional[list[dict]]:
     """
     Directly calls the TreesUI List API with the specific format requested.
     """
@@ -1409,7 +1409,7 @@ def _validate_base_url(base_url: str) -> bool:
     return True
 
 
-def _limit_search_results(parsed_results: List[Dict]) -> List[Dict]:
+def _limit_search_results(parsed_results: list[dict]) -> list[dict]:
     """Limit search results based on configuration."""
     max_score_limit = getattr(config_schema, "max_suggestions_to_score", 100)
     if (
@@ -1427,8 +1427,8 @@ def _limit_search_results(parsed_results: List[Dict]) -> List[Dict]:
 # Search Phase (Includes Limit, Calls API func defined above)
 def _handle_search_phase(
     session_manager_local: SessionManager,
-    search_criteria: Dict[str, Any],
-) -> Optional[List[Dict]]:
+    search_criteria: dict[str, Any],
+) -> Optional[list[dict]]:
     """Handles the API search phase using the direct TreesUI List API."""
     base_url = getattr(config_schema.api, "base_url", "").rstrip("/")
 
@@ -1466,7 +1466,7 @@ def _handle_search_phase(
 
 # Helper functions for _parse_treesui_list_response
 
-def _extract_gid_parts(person_raw: Dict, idx: int) -> Optional[Tuple[str, str]]:
+def _extract_gid_parts(person_raw: dict, idx: int) -> Optional[tuple[str, str]]:
     """Extract person_id and tree_id from gid field."""
     gid_data = person_raw.get("gid", {}).get("v", "")
 
@@ -1485,7 +1485,7 @@ def _extract_gid_parts(person_raw: Dict, idx: int) -> Optional[Tuple[str, str]]:
     return person_id, tree_id
 
 
-def _extract_name_parts(person_raw: Dict, idx: int) -> Tuple[str, str, str]:
+def _extract_name_parts(person_raw: dict, idx: int) -> tuple[str, str, str]:
     """Extract first name, surname, and full name from Names field."""
     first_name_part = ""
     surname_part = ""
@@ -1515,7 +1515,7 @@ def _extract_name_parts(person_raw: Dict, idx: int) -> Tuple[str, str, str]:
     return first_name_part, surname_part, full_name
 
 
-def _extract_gender(person_raw: Dict, idx: int) -> Optional[str]:
+def _extract_gender(person_raw: dict, idx: int) -> Optional[str]:
     """Extract gender from Genders array or 'l' field."""
     # Try Genders array first
     genders_list = person_raw.get("Genders", [])
@@ -1537,7 +1537,7 @@ def _extract_gender(person_raw: Dict, idx: int) -> Optional[str]:
     return None
 
 
-def _calculate_place_detail_score(event: Dict) -> int:
+def _calculate_place_detail_score(event: dict) -> int:
     """Calculate place detail score based on comma count."""
     place = event.get("p", "")
     if not place:
@@ -1548,7 +1548,7 @@ def _calculate_place_detail_score(event: Dict) -> int:
     return comma_count + 1
 
 
-def _select_best_event(events: List[Dict], _event_type: str) -> Optional[Dict]:
+def _select_best_event(events: list[dict], _event_type: str) -> Optional[dict]:
     """Select best event from list based on alternate status and place detail."""
     if not events:
         return None
@@ -1579,7 +1579,7 @@ def _extract_year_from_date(date_str: Optional[str], idx: int, event_type: str) 
     return None
 
 
-def _extract_birth_info(events_list: List[Dict], idx: int) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+def _extract_birth_info(events_list: list[dict], idx: int) -> tuple[Optional[int], Optional[str], Optional[str]]:
     """Extract birth year, date, and place from events list."""
     birth_events = [e for e in events_list if isinstance(e, dict) and e.get("t") == "Birth"]
 
@@ -1623,7 +1623,7 @@ def _extract_birth_info(events_list: List[Dict], idx: int) -> Tuple[Optional[int
     return birth_year, birth_date_str, birth_place
 
 
-def _extract_death_info(events_list: List[Dict], idx: int) -> Tuple[Optional[int], Optional[str], Optional[str], bool]:
+def _extract_death_info(events_list: list[dict], idx: int) -> tuple[Optional[int], Optional[str], Optional[str], bool]:
     """Extract death year, date, place, and living status from events list."""
     death_events = [e for e in events_list if isinstance(e, dict) and e.get("t") == "Death"]
 
@@ -1657,8 +1657,8 @@ def _extract_death_info(events_list: List[Dict], idx: int) -> Tuple[Optional[int
 
 # Parsing (Definition before use in _handle_search_phase)
 def _parse_treesui_list_response(  # type: ignore
-    treesui_response: List[Dict[str, Any]],
-) -> Optional[List[Dict[str, Any]]]:
+    treesui_response: list[dict[str, Any]],
+) -> Optional[list[dict[str, Any]]]:
     """
     Parses the specific TreesUI List API response provided by the user
     to extract information needed for scoring and display.
@@ -1733,9 +1733,9 @@ def _parse_treesui_list_response(  # type: ignore
 
 # Selection Phase (Includes Initial Comparison Call)
 def _handle_selection_phase(
-    suggestions_to_score: List[Dict],
-    search_criteria: Dict[str, Any],
-) -> Optional[Tuple[Dict, Dict]]:
+    suggestions_to_score: list[dict],
+    search_criteria: dict[str, Any],
+) -> Optional[tuple[dict, dict]]:
     """
     Handles scoring, display table, selection of the top candidate,
     AND calls the initial comparison display.
@@ -1765,9 +1765,9 @@ def _handle_selection_phase(
 
 # Details Fetch Phase
 def _handle_details_phase(
-    selected_candidate_raw: Dict,
+    selected_candidate_raw: dict,
     session_manager_local: SessionManager,
-) -> Optional[Dict]:
+) -> Optional[dict]:
     """Handles fetching detailed person information using the Facts API."""
     owner_profile_id = getattr(session_manager_local, "my_profile_id", None)
     base_url = config_schema.api.base_url.rstrip("/")
@@ -1818,7 +1818,7 @@ def _handle_details_phase(
 
 # Helper functions for _handle_supplementary_info_phase - Phase 1: Base Info Retrieval
 
-def _get_base_owner_info(session_manager_local: SessionManager) -> Tuple[str, Optional[str], Optional[str], str]:
+def _get_base_owner_info(session_manager_local: SessionManager) -> tuple[str, Optional[str], Optional[str], str]:
     """Get base URL and owner information from session manager."""
     base_url = config_schema.api.base_url.rstrip("/")
     owner_tree_id = getattr(session_manager_local, "my_tree_id", None)
@@ -1868,9 +1868,9 @@ def _resolve_owner_name(session_manager_local: SessionManager, owner_name: str, 
 # Helper functions for _handle_supplementary_info_phase - Phase 2: ID Extraction
 
 def _extract_ids_from_detailed_data(
-    person_research_data: Dict,
-    selected_candidate_processed: Dict,
-) -> Tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
+    person_research_data: dict,
+    selected_candidate_processed: dict,
+) -> tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
     """Extract IDs from detailed person research data."""
     logger.debug("Attempting to extract relationship IDs from detailed person_research_data...")
 
@@ -1893,8 +1893,8 @@ def _extract_ids_from_detailed_data(
 
 
 def _extract_ids_from_raw_suggestion(
-    selected_candidate_processed: Dict,
-) -> Tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
+    selected_candidate_processed: dict,
+) -> tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
     """Extract IDs from raw suggestion data as fallback."""
     logger.debug("Attempting to extract relationship IDs from raw suggestion data (Fallback)...")
 
@@ -1923,9 +1923,9 @@ def _extract_ids_from_raw_suggestion(
 
 
 def _extract_selected_person_ids(
-    person_research_data: Optional[Dict],
-    selected_candidate_processed: Dict,
-) -> Tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
+    person_research_data: Optional[dict],
+    selected_candidate_processed: dict,
+) -> tuple[Optional[str], Optional[str], Optional[str], str, bool, str]:
     """Extract selected person IDs from detailed data or raw suggestion fallback."""
     # Attempt 1: Extract from detailed person_research_data
     if person_research_data:
@@ -1979,7 +1979,7 @@ def _determine_relationship_calculation_method(
     selected_person_tree_id: Optional[str],
     selected_tree_id: Optional[str],
     selected_person_global_id: Optional[str],
-) -> Tuple[bool, bool, bool, Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> tuple[bool, bool, bool, Optional[str], Optional[str], Optional[str], Optional[str]]:
     """Determine which relationship calculation method to use."""
     can_attempt_calculation = essential_ids_found
     owner_tree_id_str = str(owner_tree_id) if owner_tree_id else None
@@ -2044,7 +2044,7 @@ def _log_relationship_calculation_checks(ctx: RelationshipCalcContext) -> None:
 
 # Helper functions for _handle_supplementary_info_phase - Phase 4: API Call Logic
 
-def _handle_owner_relationship(selected_name: str, owner_name: str) -> Tuple[str, bool]:
+def _handle_owner_relationship(selected_name: str, owner_name: str) -> tuple[str, bool]:
     """Handle case where selected person is the tree owner."""
     print(f"=== Relationship Path to {owner_name} ===")
     print(f"  {selected_name} is the tree owner ({owner_name}).")
@@ -2053,7 +2053,7 @@ def _handle_owner_relationship(selected_name: str, owner_name: str) -> Tuple[str
     return formatted_path, True
 
 
-def _parse_jsonp_response(relationship_result_data: str) -> Optional[Dict]:
+def _parse_jsonp_response(relationship_result_data: str) -> Optional[dict]:
     """Parse JSONP response to extract JSON data."""
     jsonp_match = re.search(r"no\((.*)\)", relationship_result_data)
     if not jsonp_match:
@@ -2073,7 +2073,7 @@ def _parse_jsonp_response(relationship_result_data: str) -> Optional[Dict]:
         return None
 
 
-def _extract_relationship_data_from_html(html_content: str) -> List[Dict]:
+def _extract_relationship_data_from_html(html_content: str) -> list[dict]:
     """Extract relationship data from HTML content using BeautifulSoup."""
     relationship_data = []
 
@@ -2111,7 +2111,7 @@ def _extract_relationship_data_from_html(html_content: str) -> List[Dict]:
 
 
 def _format_tree_ladder_path(
-    api_response_dict: Dict,
+    api_response_dict: dict,
     selected_name: str,
     owner_name: str,
 ) -> Optional[str]:
@@ -2145,7 +2145,7 @@ def _handle_tree_ladder_api_call(
     selected_person_tree_id: str,
     selected_name: str,
     owner_name: str,
-) -> Tuple[Optional[str], bool, str]:
+) -> tuple[Optional[str], bool, str]:
     """Handle Tree Ladder API call and formatting."""
     api_called_for_rel = "Tree Ladder (/getladder)"
     logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
@@ -2180,7 +2180,7 @@ def _handle_tree_ladder_api_call(
 
 
 def _format_discovery_api_path_fallback(
-    discovery_api_response: Dict,
+    discovery_api_response: dict,
     selected_name: str,
     owner_name: str,
 ) -> str:
@@ -2199,7 +2199,7 @@ def _format_discovery_api_path_fallback(
 
 
 def _format_discovery_api_path(
-    discovery_api_response: Dict,
+    discovery_api_response: dict,
     selected_name: str,
     owner_name: str,
 ) -> Optional[str]:
@@ -2232,7 +2232,7 @@ def _handle_discovery_api_call(
     owner_profile_id_str: str,
     selected_name: str,
     owner_name: str,
-) -> Tuple[Optional[str], bool, str]:
+) -> tuple[Optional[str], bool, str]:
     """Handle Discovery Relationship API call and formatting."""
     api_called_for_rel = "Discovery Relationship API"
     logger.debug(f"Attempting relationship calculation via {api_called_for_rel}...")
@@ -2390,7 +2390,7 @@ def _display_relationship_result(
 
 # Helper functions for handle_api_report - Phase 1: Dependency and Session Validation
 
-def _check_dependencies() -> Tuple[bool, List[str]]:
+def _check_dependencies() -> tuple[bool, list[str]]:
     """Check if all required dependencies are available."""
     dependencies = [
         ("Core Utils", CORE_UTILS_AVAILABLE),
@@ -2555,8 +2555,8 @@ def _ensure_authenticated_session() -> bool:
 
 
 def _handle_supplementary_info_phase(
-    person_research_data: Optional[Dict],
-    selected_candidate_processed: Dict,
+    person_research_data: Optional[dict],
+    selected_candidate_processed: dict,
     session_manager_local: SessionManager,
 ):
     """
@@ -2769,9 +2769,9 @@ def main() -> None:
 
 def search_ancestry_api_for_person(
     session_manager: SessionManager,
-    search_criteria: Dict[str, Any],
+    search_criteria: dict[str, Any],
     max_results: int = 5,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Search Ancestry API for individuals matching the provided criteria.
     This function is designed to be called from other modules.
@@ -2827,7 +2827,7 @@ def get_ancestry_person_details(
     session_manager: SessionManager,
     person_id: str,
     tree_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get detailed information about a person from Ancestry API.
 

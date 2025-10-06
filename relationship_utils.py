@@ -1247,15 +1247,15 @@ def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
     if len(path_data) < 3:
         return None
 
-    if path_data[1].get("relationship") in ["father", "mother"]:
-        if path_data[2].get("relationship") in ["son", "daughter"]:
-            gender_val = path_data[0].get("gender")
-            gender_str = str(gender_val) if gender_val is not None else ""
-            if gender_str.upper() == "M":
-                return "Uncle"
-            if gender_str.upper() == "F":
-                return "Aunt"
-            return "Aunt/Uncle"
+    if (path_data[1].get("relationship") in ["father", "mother"] and
+        path_data[2].get("relationship") in ["son", "daughter"]):
+        gender_val = path_data[0].get("gender")
+        gender_str = str(gender_val) if gender_val is not None else ""
+        if gender_str.upper() == "M":
+            return "Uncle"
+        if gender_str.upper() == "F":
+            return "Aunt"
+        return "Aunt/Uncle"
 
     return None
 

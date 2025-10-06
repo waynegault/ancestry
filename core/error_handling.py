@@ -148,7 +148,7 @@ class CircuitBreakerOpenError(Exception):
 
 # === LEGACY EXCEPTION CLASSES FOR BACKWARD COMPATIBILITY ===
 
-class AncestryException(Exception):
+class AncestryException(Exception):  # noqa: N818 - Legacy base exception name
     """Base exception class for all Ancestry project errors."""
     pass
 

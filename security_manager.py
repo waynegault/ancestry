@@ -227,7 +227,7 @@ class SecurityManager:
         Decrypt and retrieve stored credentials.
 
         Returns:
-            Dict[str, str]: Decrypted credentials or None if failed
+            dict[str, str]: Decrypted credentials or None if failed
         """
         if not self.credentials_file.exists():
             logger.info("No encrypted credentials file found")
@@ -254,8 +254,8 @@ class SecurityManager:
         """Extract sensitive credentials from .env file."""
         credentials = {}
         with env_path.open() as f:
-            for line in f:
-                line = line.strip()
+            for raw_line in f:
+                line = raw_line.strip()
                 if "=" in line and not line.startswith("#"):
                     key, value = line.split("=", 1)
                     key = key.strip()
@@ -388,7 +388,7 @@ class SecurityManager:
         Prompt user for credentials interactively.
 
         Returns:
-            Dict[str, str]: User-provided credentials
+            dict[str, str]: User-provided credentials
         """
         print("\n=== Secure Credential Setup ===")
         print("Enter your credentials. They will be encrypted and stored securely.")

@@ -1068,8 +1068,8 @@ def _get_simple_messaging_data(
 
     Returns:
         A tuple containing:
-        - message_type_map (Dict[str, int]): Map of template_key to MessageTemplate ID.
-        - candidate_persons (List[Person]): List of Person objects meeting criteria.
+        - message_type_map (dict[str, int]): Map of template_key to MessageTemplate ID.
+        - candidate_persons (list[Person]): List of Person objects meeting criteria.
         Returns (None, None) if essential data fetching fails.
     """
     try:
@@ -2243,7 +2243,7 @@ def _process_single_person(
     Returns:
         A tuple containing:
         - new_log_entry (Optional[ConversationLog]): The prepared OUT log object if a message was sent/simulated, else None.
-        - person_update (Optional[Tuple[int, PersonStatusEnum]]): Tuple of (person_id, new_status) if status needs update, else None.
+        - person_update (Optional[tuple[int, PersonStatusEnum]]): Tuple of (person_id, new_status) if status needs update, else None.
         - status_string (str): "sent", "acked", "skipped", or "error".
     """
     # --- Step 0: Session Validation and Initialization ---
@@ -2657,12 +2657,12 @@ def _update_counters_and_collect_data(
 
 
 def _should_commit_batch(current_batch_size: int, memory_usage_mb: float,
-                         db_commit_batch_size: int, MAX_BATCH_MEMORY_MB: int, MAX_BATCH_ITEMS: int) -> bool:
+                         db_commit_batch_size: int, max_batch_memory_mb: int, max_batch_items: int) -> bool:
     """Determine if batch should be committed based on size, memory, or item limits."""
     return (
         current_batch_size >= db_commit_batch_size or
-        memory_usage_mb >= MAX_BATCH_MEMORY_MB or
-        current_batch_size >= MAX_BATCH_ITEMS
+        memory_usage_mb >= max_batch_memory_mb or
+        current_batch_size >= max_batch_items
     )
 
 

@@ -20,30 +20,27 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 # --- Test framework imports ---
 # Imports removed - not used in this module
 
 # Path to the AI prompts JSON file
-PROMPTS_FILE = Path(os.path.dirname(os.path.abspath(__file__))) / "ai_prompts.json"
+PROMPTS_FILE = Path(__file__).parent / "ai_prompts.json"
 
 # Path to the improved prompts directory
-IMPROVED_PROMPTS_DIR = (
-    Path(os.path.dirname(os.path.abspath(__file__))) / "improved_prompts"
-)
+IMPROVED_PROMPTS_DIR = Path(__file__).parent / "improved_prompts"
 
 
-def load_prompts() -> Dict[str, Any]:
+def load_prompts() -> dict[str, Any]:
     """
     Load AI prompts from the JSON file.
 
     Returns:
-        Dict[str, Any]: The loaded prompts data
+        dict[str, Any]: The loaded prompts data
     """
     default_data = {
         "version": "1.0",
@@ -57,7 +54,7 @@ def load_prompts() -> Dict[str, Any]:
         if not PROMPTS_FILE.exists():
             logger.warning(f"AI prompts file not found at {PROMPTS_FILE}")
         else:
-            with open(PROMPTS_FILE, encoding="utf-8") as f:
+            with PROMPTS_FILE.open(encoding="utf-8") as f:
                 prompts_data = json.load(f)
 
                 # Validate loaded data structure
@@ -85,7 +82,7 @@ def load_prompts() -> Dict[str, Any]:
     return result
 
 
-def save_prompts(prompts_data: Dict[str, Any]) -> bool:
+def save_prompts(prompts_data: dict[str, Any]) -> bool:
     """
     Save AI prompts to the JSON file.
 
@@ -109,7 +106,7 @@ def save_prompts(prompts_data: Dict[str, Any]) -> bool:
         prompts_data["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
         # Save the prompts to the JSON file
-        with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
+        with PROMPTS_FILE.open("w", encoding="utf-8") as f:
             json.dump(prompts_data, indent=2, ensure_ascii=False, fp=f)
             logger.info(f"Saved AI prompts to {PROMPTS_FILE}")
         return True
@@ -190,12 +187,12 @@ def update_prompt(
         return False
 
 
-def import_improved_prompts() -> Tuple[int, List[str]]:
+def import_improved_prompts() -> tuple[int, list[str]]:
     """
     Import improved prompts from the improved_prompts directory.
 
     Returns:
-        Tuple[int, List[str]]: Number of prompts imported and list of imported prompt keys
+        tuple[int, list[str]]: Number of prompts imported and list of imported prompt keys
     """
     try:
         if not IMPROVED_PROMPTS_DIR.exists():
@@ -227,7 +224,7 @@ def import_improved_prompts() -> Tuple[int, List[str]]:
             prompt_file = IMPROVED_PROMPTS_DIR / filename
             if prompt_file.exists():
                 try:
-                    with open(prompt_file, encoding="utf-8") as f:
+                    with prompt_file.open(encoding="utf-8") as f:
                         improved_prompt = f.read().strip()
 
                     if improved_prompt and update_prompt(
@@ -249,7 +246,7 @@ def import_improved_prompts() -> Tuple[int, List[str]]:
         return 0, []
 
 
-def validate_prompt_structure(prompts_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+def validate_prompt_structure(prompts_data: dict[str, Any]) -> tuple[bool, list[str]]:
     """
     Validate the structure of prompts data.
 
@@ -257,7 +254,7 @@ def validate_prompt_structure(prompts_data: Dict[str, Any]) -> Tuple[bool, List[
         prompts_data: The prompts data to validate
 
     Returns:
-        Tuple[bool, List[str]]: (is_valid, list_of_errors)
+        tuple[bool, list[str]]: (is_valid, list_of_errors)
     """
     errors = []
 
@@ -456,12 +453,12 @@ def run_comprehensive_tests() -> bool:
     return ai_prompt_utils_module_tests()
 
 
-def get_prompts_summary() -> Dict[str, Any]:
+def get_prompts_summary() -> dict[str, Any]:
     """
     Get a summary of the current prompts configuration.
 
     Returns:
-        Dict[str, Any]: Summary information about prompts
+        dict[str, Any]: Summary information about prompts
     """
     try:
         prompts_data = load_prompts()
@@ -496,12 +493,12 @@ def get_prompts_summary() -> Dict[str, Any]:
         }
 
 
-def quick_test() -> Dict[str, Any]:
+def quick_test() -> dict[str, Any]:
     """
     Perform a quick test of the AI prompt utilities.
 
     Returns:
-        Dict[str, Any]: Test results
+        dict[str, Any]: Test results
     """
     results = {"passed": 0, "failed": 0, "errors": []}
 

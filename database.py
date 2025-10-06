@@ -343,7 +343,7 @@ class DnaMatch(Base):
         nullable=False,
         comment="Direct URL to the Ancestry DNA comparison page.",
     )
-    cM_DNA = Column(
+    cM_DNA = Column(  # noqa: N815 - Database column name matches Ancestry convention
         Integer,
         nullable=False,
         index=True,  # Added index
@@ -703,7 +703,7 @@ def db_transn(session: Session):
                     "transaction_time": time.time() - transaction_start,
                 },
                 recovery_hint="Check database connectivity and retry transaction",
-            )
+            ) from commit_error
 
     except DatabaseConnectionError:
         # Re-raise database-specific errors
@@ -762,7 +762,7 @@ def db_transn(session: Session):
                     "rollback_error": str(rb_err),
                 },
                 recovery_hint="Database may be corrupted, check database integrity",
-            )
+            ) from rb_err
 
     finally:
         transaction_time = time.time() - transaction_start
@@ -989,7 +989,7 @@ def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref
             validated_data["cM_DNA"] = cm_dna_val
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid cM_DNA value '{match_data.get('cM_DNA')}' for {log_ref}: {e}")
-            raise ValueError(f"Invalid cM_DNA value: {e}")
+            raise ValueError(f"Invalid cM_DNA value: {e}") from e
     except (KeyError, ValueError, TypeError) as e:
         logger.error(f"create_or_update_dna_match: Missing/Invalid required data for {log_ref}: {e}")
         return None
@@ -2007,20 +2007,16 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
     # Step 5: Handle database errors
     except SQLAlchemyError as e:
         logger.error(f"DB error soft-deleting person {log_ref}: {e}", exc_info=True)
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()  # Attempt rollback
-        except Exception:
-            pass
         return False
     # Step 6: Handle unexpected errors
     except Exception as e:
         logger.critical(
             f"Unexpected error soft_delete_person {log_ref}: {e}", exc_info=True
         )
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()  # Attempt rollback
-        except Exception:
-            pass
         return False
 
 
@@ -2082,20 +2078,16 @@ def hard_delete_person(session: Session, profile_id: str, username: str) -> bool
     # Step 5: Handle database errors
     except SQLAlchemyError as e:
         logger.error(f"DB error hard-deleting person {log_ref}: {e}", exc_info=True)
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()  # Attempt rollback
-        except Exception:
-            pass
         return False
     # Step 6: Handle unexpected errors
     except Exception as e:
         logger.critical(
             f"Unexpected error hard_delete_person {log_ref}: {e}", exc_info=True
         )
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()  # Attempt rollback
-        except Exception:
-            pass
         return False
 
 
@@ -2243,12 +2235,12 @@ def _validate_backup_paths() -> tuple[Path, Path, Path]:
     try:
         with db_path.open("rb") as f:
             f.read(1)
-    except PermissionError:
+    except PermissionError as e:
         raise DatabaseConnectionError(
             f"Permission denied accessing database file '{db_path}'",
             context={"db_path": str(db_path)},
             recovery_hint="Check file permissions and ensure database is not locked",
-        )
+        ) from e
 
     backup_path = backup_dir / "ancestry_backup.db"
     return db_path, backup_dir, backup_path
@@ -2258,12 +2250,12 @@ def _prepare_backup_directory(backup_dir: Path, db_path: Path) -> None:
     """Prepare backup directory and check disk space."""
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
+    except PermissionError as e:
         raise DatabaseConnectionError(
             f"Permission denied creating backup directory '{backup_dir}'",
             context={"backup_dir": str(backup_dir)},
             recovery_hint="Check directory permissions",
-        )
+        ) from e
 
     # Check available disk space
     import shutil as disk_utils
@@ -2306,13 +2298,13 @@ def _perform_backup_copy(db_path: Path, backup_path: Path) -> None:
             f"Permission denied during backup operation: {perm_error}",
             context={"source": str(db_path), "destination": str(backup_path)},
             recovery_hint="Check file and directory permissions",
-        )
+        ) from perm_error
     except OSError as os_error:
         raise DatabaseConnectionError(
             f"File system error during backup: {os_error}",
             context={"source": str(db_path), "destination": str(backup_path)},
             recovery_hint="Check disk space and file system health",
-        )
+        ) from os_error
 
 
 @timeout_protection(timeout=300)  # 5 minutes for large database backups
@@ -2356,7 +2348,7 @@ def backup_database(_session_manager: Optional[Any] = None) -> bool:
             f"Unexpected error during database backup: {unexpected_error}",
             context={"backup_time": backup_time, "error_type": type(unexpected_error).__name__},
             recovery_hint="Check system resources and retry",
-        )
+        ) from unexpected_error
 
 
 # End of backup_database

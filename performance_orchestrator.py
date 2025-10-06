@@ -207,10 +207,9 @@ class MemoryPressureMonitor:
                 gc.set_threshold(700, 10, 10)  # More aggressive GC
 
             # Clear any large cached objects if memory pressure is very high
-            if initial_memory["percent"] > 90.0:
+            if initial_memory["percent"] > 90.0 and hasattr(sys, '_clear_type_cache'):
                 # Clear various internal caches
-                if hasattr(sys, '_clear_type_cache'):
-                    sys._clear_type_cache()
+                sys._clear_type_cache()
 
             final_memory = self.get_memory_info()
             memory_saved = max(0, initial_memory["rss_mb"] - final_memory["rss_mb"])
