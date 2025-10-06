@@ -1356,7 +1356,7 @@ def _print_config_error_message() -> None:
     print("      pip install cryptography keyring")
 
     print("\n📚 For detailed instructions:")
-    print("   See ENV_IMPORT_GUIDE.md")
+    print("   Refer to README.md (Security setup & credential management)")
 
     print("\n⚠️ Security Note:")
     print("   The secure credential manager requires:")
@@ -1476,9 +1476,9 @@ def _run_credential_manager() -> None:
                     "     Some Linux distributions may require: sudo apt-get install python3-dbus"
                 )
 
-            print("\n📚 For more information, see:")
-            print("  - ENV_IMPORT_GUIDE.md")
-            print("  - SECURITY_STREAMLINED.md")
+            print("\n📚 For more information, review:")
+            print("  - README.md (Security setup & credential management)")
+            print("  - Run: python credentials.py --interactive for guided setup")
         else:
             print(
                 "Error: credentials.py not found or has other import issues."

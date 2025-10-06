@@ -904,7 +904,7 @@ def credential_manager_module_tests() -> bool:
     """Run comprehensive tests for the CredentialManager class."""
     import traceback
 
-    TestSuite, assert_valid_function, create_mock_data, suppress_logging = _get_test_framework()
+    _get_test_framework()
 
     print("============================================================")
     print("🔧 Testing: Configuration Management & Credential Storage")

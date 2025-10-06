@@ -977,7 +977,7 @@ class MessagePersonalizer:
     def _create_generational_gap_analysis(self, extracted_data: dict[str, Any]) -> str:
         """Analyze generational gaps and their implications."""
         vital_records = extracted_data.get("vital_records", [])
-        birth_years, marriage_years = self._extract_birth_and_marriage_years(vital_records)
+        birth_years, _ = self._extract_birth_and_marriage_years(vital_records)
 
         analysis = self._analyze_birth_year_gap(birth_years)
         if analysis:

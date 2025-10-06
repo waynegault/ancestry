@@ -631,9 +631,21 @@ def test_gap_detection_with_mocked_birth_year() -> None:
         'id_to_children': {}
     })()
     # Monkey patch birth year extractor
-    analyzer._extract_birth_year = lambda person_record: 1865  # type: ignore
-    analyzer._extract_birth_place = lambda person_record: None  # ensure place gap  # type: ignore
-    analyzer._extract_person_name = lambda person_record: 'Alice Example'  # type: ignore
+    def _mock_birth_year(person_record: Any) -> Optional[int]:
+        _ = person_record
+        return 1865
+
+    def _mock_birth_place(person_record: Any) -> Optional[str]:
+        _ = person_record
+        return None
+
+    def _mock_person_name(person_record: Any) -> str:
+        _ = person_record
+        return 'Alice Example'
+
+    analyzer._extract_birth_year = _mock_birth_year  # type: ignore
+    analyzer._extract_birth_place = _mock_birth_place  # type: ignore
+    analyzer._extract_person_name = _mock_person_name  # type: ignore
     result = analyzer.analyze_gedcom_data(mock_gedcom)
     gap_types = {g['gap_type'] for g in result['gaps_identified']}
     assert 'missing_parents' in gap_types or 'missing_parents' in ''.join(gap_types), "Should include missing parents gap"

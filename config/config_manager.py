@@ -1100,15 +1100,14 @@ def _test_config_file_integration():
     # Test with temporary config file
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         f.write("test: value\n")
-        temp_path = f.name
+        temp_path = Path(f.name)
 
     try:
         manager = ConfigManager(auto_load=False)
         assert manager is not None
     finally:
-        import os
         with contextlib.suppress(Exception):
-            os.unlink(temp_path)
+            temp_path.unlink()
 
 
 def _test_environment_integration():

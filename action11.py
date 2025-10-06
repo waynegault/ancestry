@@ -3085,6 +3085,156 @@ def _require_env(keys: list[str]) -> None:
     assert not missing, f"Missing required env vars for Action 11 tests: {missing}"
 
 
+# ==============================================
+# UNIT TESTS FOR UTILITY FUNCTIONS (Priority 1)
+# ==============================================
+
+
+def _test_display_search_results_formatting() -> bool:
+    """Test search results display formatting and truncation (Priority 1)."""
+    import io
+    import sys
+
+    # Test with empty list
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+    _display_search_results([], max_to_display=10)
+    sys.stdout = sys.__stdout__
+    output = captured_output.getvalue()
+    assert "No candidates to display" in output, "Should handle empty candidate list"
+
+    # Test with single candidate
+    mock_candidates = [
+        {
+            "id": "test123",
+            "name": "John Smith",
+            "gender": "M",
+            "birth_year": 1940,
+            "birth_place": "London",
+            "death_year": 2010,
+            "death_place": "Manchester",
+            "total_score": 95.5,
+            "gender_match": 10,
+            "name_similarity": 85.5,
+        }
+    ]
+
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+    _display_search_results(mock_candidates, max_to_display=10)
+    sys.stdout = sys.__stdout__
+    output = captured_output.getvalue()
+    assert "John Smith" in output, "Should display person name"
+    assert "1940" in output or "London" in output, "Should display birth info"
+
+    # Test truncation with max_to_display
+    large_candidate_list = [
+        {
+            "id": f"person{i}",
+            "name": f"Person {i}",
+            "gender": "M",
+            "birth_year": 1900 + i,
+            "birth_place": "Place",
+            "death_year": None,
+            "death_place": None,
+            "total_score": 100 - i,
+            "gender_match": 10,
+            "name_similarity": 90 - i,
+        }
+        for i in range(20)
+    ]
+
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+    _display_search_results(large_candidate_list, max_to_display=5)
+    sys.stdout = sys.__stdout__
+    output = captured_output.getvalue()
+    assert "Person 0" in output, "Should display first person"
+    assert "Person 4" in output, "Should display 5th person (max_to_display=5)"
+    assert "Person 10" not in output, "Should NOT display beyond max_to_display"
+    assert "Top 5 Matches" in output, "Should indicate truncation"
+
+    logger.info("✅ _display_search_results() formatting tests passed")
+    return True
+
+
+def _test_load_test_person_from_env() -> bool:
+    """Test loading test person data from environment variables (Priority 1)."""
+    # Save original environment variables
+    original_env = {
+        "TEST_PERSON_NAME": os.getenv("TEST_PERSON_NAME"),
+        "TEST_PERSON_BIRTH_YEAR": os.getenv("TEST_PERSON_BIRTH_YEAR"),
+        "TEST_PERSON_BIRTH_PLACE": os.getenv("TEST_PERSON_BIRTH_PLACE"),
+        "TEST_PERSON_GENDER": os.getenv("TEST_PERSON_GENDER"),
+        "TEST_PERSON_SPOUSE": os.getenv("TEST_PERSON_SPOUSE"),
+        "TEST_PERSON_CHILD1": os.getenv("TEST_PERSON_CHILD1"),
+        "TEST_PERSON_CHILD2": os.getenv("TEST_PERSON_CHILD2"),
+        "TEST_PERSON_CHILD3": os.getenv("TEST_PERSON_CHILD3"),
+        "TEST_PERSON_RELATIONSHIP": os.getenv("TEST_PERSON_RELATIONSHIP"),
+    }
+
+    try:
+        # Test with custom environment variables
+        os.environ["TEST_PERSON_NAME"] = "Test Person"
+        os.environ["TEST_PERSON_BIRTH_YEAR"] = "1950"
+        os.environ["TEST_PERSON_BIRTH_PLACE"] = "TestCity"
+        os.environ["TEST_PERSON_GENDER"] = "F"
+        os.environ["TEST_PERSON_SPOUSE"] = "TestSpouse"
+        os.environ["TEST_PERSON_CHILD1"] = "Child1"
+        os.environ["TEST_PERSON_CHILD2"] = "Child2"
+        os.environ["TEST_PERSON_CHILD3"] = "Child3"
+        os.environ["TEST_PERSON_RELATIONSHIP"] = "cousin"
+
+        result = load_test_person_from_env()
+
+        # Validate structure
+        assert isinstance(result, dict), "Should return dictionary"
+        assert "name" in result, "Should have 'name' key"
+        assert "birth_year" in result, "Should have 'birth_year' key"
+        assert "children" in result, "Should have 'children' key"
+
+        # Validate values
+        assert result["name"] == "Test Person", f"Expected 'Test Person', got {result['name']}"
+        assert result["birth_year"] == 1950, f"Expected 1950, got {result['birth_year']}"
+        assert result["birth_place"] == "TestCity", f"Expected 'TestCity', got {result['birth_place']}"
+        assert result["gender"] == "F", f"Expected 'F', got {result['gender']}"
+        assert result["spouse_name"] == "TestSpouse", f"Expected 'TestSpouse', got {result['spouse_name']}"
+        assert result["relationship"] == "cousin", f"Expected 'cousin', got {result['relationship']}"
+
+        # Validate children list
+        assert isinstance(result["children"], list), "Children should be a list"
+        assert len(result["children"]) == 3, f"Expected 3 children, got {len(result['children'])}"
+        assert "Child1" in result["children"], "Should contain Child1"
+        assert "Child2" in result["children"], "Should contain Child2"
+        assert "Child3" in result["children"], "Should contain Child3"
+
+        # Test with defaults (clear environment variables)
+        # Note: load_test_person_from_env() calls load_dotenv() which reads from .env file,
+        # so we can't test pure defaults. Instead, verify structure is correct.
+        for key in ["TEST_PERSON_NAME", "TEST_PERSON_BIRTH_YEAR", "TEST_PERSON_BIRTH_PLACE"]:
+            if key in os.environ:
+                del os.environ[key]
+
+        default_result = load_test_person_from_env()
+        # Verify structure is correct regardless of .env file contents
+        assert "name" in default_result, "Should have 'name' key in defaults"
+        assert "birth_year" in default_result, "Should have 'birth_year' key in defaults"
+        assert "birth_place" in default_result, "Should have 'birth_place' key in defaults"
+        assert isinstance(default_result["birth_year"], int), "birth_year should be an integer"
+        assert isinstance(default_result["children"], list), "children should be a list in defaults"
+
+        logger.info("✅ load_test_person_from_env() tests passed")
+        return True
+
+    finally:
+        # Restore original environment variables
+        for key, value in original_env.items():
+            if value is not None:
+                os.environ[key] = value
+            elif key in os.environ:
+                del os.environ[key]
+
+
 def _ensure_session(skip_live_tests: bool) -> SessionManager:
     """Ensure session is ready for live API tests."""
     if skip_live_tests:
@@ -3238,10 +3388,29 @@ def action11_module_tests() -> bool:
     # - test_exception_handling (9 lines)
 
     # === RUN ALL TESTS ===
+
+    # === UNIT TESTS (Priority 1) ===
+    with suppress_logging():
+        suite.run_test(
+            test_name="_display_search_results() output formatting and truncation",
+            test_func=_test_display_search_results_formatting,
+            test_description="Test search results display with various result counts and truncation",
+            method_description="Testing output formatting with 0, 1, 5, and 20 candidates; validating max_to_display truncation",
+            expected_behavior="Function formats results correctly, handles empty lists, and truncates at max_to_display limit",
+        )
+
+        suite.run_test(
+            test_name="load_test_person_from_env() environment variable parsing",
+            test_func=_test_load_test_person_from_env,
+            test_description="Test loading test person data from environment variables with custom and default values",
+            method_description="Testing env var parsing for name, birth year, gender, spouse, children; validating defaults",
+            expected_behavior="Function loads custom values from env vars and falls back to defaults when missing",
+        )
+
     # Skip live API tests when running through test runner to avoid hanging
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
-        print("ℹ️  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
+        print("INFO  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
         logger.info("Skipping all live API tests due to SKIP_LIVE_API_TESTS environment variable")
 
     # Create wrapper functions that pass skip_live_tests parameter
