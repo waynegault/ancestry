@@ -88,6 +88,7 @@ except ImportError:
     )
 
 # === LOCAL IMPORTS ===
+from common_params import GraphContext
 from config.config_manager import ConfigManager
 from utils import format_name
 
@@ -751,31 +752,34 @@ def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple:
     return queue_fwd, queue_bwd, visited_fwd, visited_bwd
 
 
-def _expand_forward_node(current_id: str, depth: int, path: list[str],
-                        visited_fwd: dict, queue_fwd: deque,
-                        id_to_parents: dict, id_to_children: dict, max_depth: int):
+def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
+                        visited_fwd: dict, queue_fwd: deque, max_depth: int):
     """Expand a node in the forward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
         return
 
+    current_id = graph.current_id
+    if not current_id:
+        return
+
     # Expand to parents (direct relationship)
-    for parent_id in id_to_parents.get(current_id, set()):
+    for parent_id in graph.id_to_parents.get(current_id, set()):
         if parent_id not in visited_fwd:
             new_path = [*path, parent_id]
             visited_fwd[parent_id] = (depth + 1, new_path)
             queue_fwd.append((parent_id, depth + 1, new_path))
 
     # Expand to children (direct relationship)
-    for child_id in id_to_children.get(current_id, set()):
+    for child_id in graph.id_to_children.get(current_id, set()):
         if child_id not in visited_fwd:
             new_path = [*path, child_id]
             visited_fwd[child_id] = (depth + 1, new_path)
             queue_fwd.append((child_id, depth + 1, new_path))
 
     # Expand to siblings (through parent)
-    for parent_id in id_to_parents.get(current_id, set()):
-        for sibling_id in id_to_children.get(parent_id, set()):
+    for parent_id in graph.id_to_parents.get(current_id, set()):
+        for sibling_id in graph.id_to_children.get(parent_id, set()):
             if sibling_id != current_id and sibling_id not in visited_fwd:
                 # Include parent in path for proper relationship context
                 new_path = [*path, parent_id, sibling_id]
@@ -783,31 +787,34 @@ def _expand_forward_node(current_id: str, depth: int, path: list[str],
                 queue_fwd.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_backward_node(current_id: str, depth: int, path: list[str],
-                         visited_bwd: dict, queue_bwd: deque,
-                         id_to_parents: dict, id_to_children: dict, max_depth: int):
+def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],
+                         visited_bwd: dict, queue_bwd: deque, max_depth: int):
     """Expand a node in the backward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
         return
 
+    current_id = graph.current_id
+    if not current_id:
+        return
+
     # Expand to parents (direct relationship)
-    for parent_id in id_to_parents.get(current_id, set()):
+    for parent_id in graph.id_to_parents.get(current_id, set()):
         if parent_id not in visited_bwd:
             new_path = [parent_id, *path]
             visited_bwd[parent_id] = (depth + 1, new_path)
             queue_bwd.append((parent_id, depth + 1, new_path))
 
     # Expand to children (direct relationship)
-    for child_id in id_to_children.get(current_id, set()):
+    for child_id in graph.id_to_children.get(current_id, set()):
         if child_id not in visited_bwd:
             new_path = [child_id, *path]
             visited_bwd[child_id] = (depth + 1, new_path)
             queue_bwd.append((child_id, depth + 1, new_path))
 
     # Expand to siblings (through parent)
-    for parent_id in id_to_parents.get(current_id, set()):
-        for sibling_id in id_to_children.get(parent_id, set()):
+    for parent_id in graph.id_to_parents.get(current_id, set()):
+        for sibling_id in graph.id_to_children.get(parent_id, set()):
             if sibling_id != current_id and sibling_id not in visited_bwd:
                 # Include parent in path for proper relationship context
                 new_path = [sibling_id, parent_id, *path]
@@ -816,10 +823,7 @@ def _expand_backward_node(current_id: str, depth: int, path: list[str],
 
 
 def fast_bidirectional_bfs(
-    start_id: str,
-    end_id: str,
-    id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
+    graph: GraphContext,
     max_depth: int = 25,
     node_limit: int = 150000,
     timeout_sec: int = 45,
@@ -835,6 +839,11 @@ def fast_bidirectional_bfs(
     The algorithm prioritizes shorter paths with direct relationships over longer paths.
     """
     start_time = time.time()
+
+    start_id = graph.start_id
+    end_id = graph.end_id
+    id_to_parents = graph.id_to_parents
+    id_to_children = graph.id_to_children
 
     # Validate inputs
     if not _validate_bfs_inputs(start_id, end_id, id_to_parents, id_to_children):
@@ -918,8 +927,12 @@ def _process_forward_queue_item(
         return 1
 
     # Expand this node in forward direction
-    _expand_forward_node(current_id, depth, path, visited_fwd, queue_fwd,
-                        id_to_parents, id_to_children, max_depth)
+    graph_ctx = GraphContext(
+        id_to_parents=id_to_parents,
+        id_to_children=id_to_children,
+        current_id=current_id
+    )
+    _expand_forward_node(graph_ctx, depth, path, visited_fwd, queue_fwd, max_depth)
     return 1
 
 
@@ -956,8 +969,12 @@ def _process_backward_queue_item(
         return 1
 
     # Expand this node in backward direction
-    _expand_backward_node(current_id, depth, path, visited_bwd, queue_bwd,
-                         id_to_parents, id_to_children, max_depth)
+    graph_ctx = GraphContext(
+        id_to_parents=id_to_parents,
+        id_to_children=id_to_children,
+        current_id=current_id
+    )
+    _expand_backward_node(graph_ctx, depth, path, visited_bwd, queue_bwd, max_depth)
     return 1
 
 
@@ -2274,11 +2291,14 @@ class GedcomData:
             f"Calculating relationship path (FastBiBFS): {id1_norm} <-> {id2_norm}"
         )
         search_start = time.time()
+        graph_ctx = GraphContext(
+            id_to_parents=self.id_to_parents,
+            id_to_children=self.id_to_children,
+            start_id=id1_norm,
+            end_id=id2_norm
+        )
         path_ids = fast_bidirectional_bfs(
-            id1_norm,
-            id2_norm,
-            self.id_to_parents,
-            self.id_to_children,
+            graph_ctx,
             max_depth,
             node_limit,
             timeout_sec,
@@ -2629,7 +2649,8 @@ def test_bfs_pathfinding():
     if "fast_bidirectional_bfs" in globals():
         # Test with empty graph
         try:
-            result = fast_bidirectional_bfs("start", "end", {}, {})
+            graph_ctx = GraphContext(id_to_parents={}, id_to_children={}, start_id="start", end_id="end")
+            result = fast_bidirectional_bfs(graph_ctx)
             assert isinstance(result, list)
         except Exception:
             pass  # May fail with missing IDs, which is acceptable
