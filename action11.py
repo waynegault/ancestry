@@ -140,7 +140,7 @@ from api_utils import (
     call_facts_user_api,
     call_getladder_api,
 )
-from common_params import ApiIdentifiers
+from common_params import ApiIdentifiers, RelationshipCalcContext
 
 # Import relationship utilities
 from relationship_utils import (
@@ -2022,33 +2022,22 @@ def _determine_relationship_calculation_method(
     )
 
 
-def _log_relationship_calculation_checks(
-    can_attempt_calculation: bool,
-    is_owner: bool,
-    can_calc_tree_ladder: bool,
-    can_calc_discovery_api: bool,
-    owner_tree_id_str: Optional[str],
-    selected_tree_id_str: Optional[str],
-    owner_profile_id_str: Optional[str],
-    selected_global_id_str: Optional[str],
-    selected_person_tree_id: Optional[str],
-    source_of_ids: str,
-) -> None:
+def _log_relationship_calculation_checks(ctx: RelationshipCalcContext) -> None:
     """Log relationship calculation method checks."""
-    logger.debug(f"Relationship calculation checks (Source: {source_of_ids}):")
-    logger.debug(f"  Can Attempt Calc?     : {can_attempt_calculation}")
+    logger.debug(f"Relationship calculation checks (Source: {ctx.source_of_ids}):")
+    logger.debug(f"  Can Attempt Calc?     : {ctx.can_attempt_calculation}")
     logger.debug(
-        f"  is_owner              : {is_owner} "
-        f"(OwnerG='{owner_profile_id_str}', SelectedG='{selected_global_id_str}')"
+        f"  is_owner              : {ctx.is_owner} "
+        f"(OwnerG='{ctx.owner_profile_id_str}', SelectedG='{ctx.selected_global_id_str}')"
     )
     logger.debug(
-        f"  can_calc_tree_ladder  : {can_calc_tree_ladder} "
-        f"(OwnerT='{owner_tree_id_str}', SelectedT='{selected_tree_id_str}', "
-        f"SelectedP_in_Tree exists?={bool(selected_person_tree_id)})"
+        f"  can_calc_tree_ladder  : {ctx.can_calc_tree_ladder} "
+        f"(OwnerT='{ctx.owner_tree_id_str}', SelectedT='{ctx.selected_tree_id_str}', "
+        f"SelectedP_in_Tree exists?={bool(ctx.selected_person_tree_id)})"
     )
     logger.debug(
-        f"  can_calc_discovery_api: {can_calc_discovery_api} "
-        f"(OwnerG exists?={bool(owner_profile_id_str)}, SelectedG exists?={bool(selected_global_id_str)})"
+        f"  can_calc_discovery_api: {ctx.can_calc_discovery_api} "
+        f"(OwnerG exists?={bool(ctx.owner_profile_id_str)}, SelectedG exists?={bool(ctx.selected_global_id_str)})"
     )
 
 
@@ -2629,18 +2618,19 @@ def _handle_supplementary_info_phase(
 
     can_attempt_calculation = essential_ids_found
 
-    _log_relationship_calculation_checks(
-        can_attempt_calculation,
-        is_owner,
-        can_calc_tree_ladder,
-        can_calc_discovery_api,
-        owner_tree_id_str,
-        selected_tree_id_str,
-        owner_profile_id_str,
-        selected_global_id_str,
-        selected_person_tree_id,
-        source_of_ids,
+    rel_calc_ctx = RelationshipCalcContext(
+        can_attempt_calculation=can_attempt_calculation,
+        is_owner=is_owner,
+        can_calc_tree_ladder=can_calc_tree_ladder,
+        can_calc_discovery_api=can_calc_discovery_api,
+        owner_tree_id_str=owner_tree_id_str,
+        selected_tree_id_str=selected_tree_id_str,
+        owner_profile_id_str=owner_profile_id_str,
+        selected_global_id_str=selected_global_id_str,
+        selected_person_tree_id=selected_person_tree_id,
+        source_of_ids=source_of_ids,
     )
+    _log_relationship_calculation_checks(rel_calc_ctx)
 
     # Initialize relationship calculation variables
     api_called_for_rel = "None"

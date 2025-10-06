@@ -69,6 +69,7 @@ if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
 from cache import cache as global_cache  # Use the initialized global cache instance
+from common_params import MatchIdentifiers, PrefetchedData
 from config import config_schema
 from core.session_manager import SessionManager
 from database import (
@@ -2573,16 +2574,22 @@ def _process_person_data(
         Tuple of (person_op_data, person_fields_changed)
     """
     try:
+        prefetched_data = PrefetchedData(
+            combined_details=prefetched_combined_details,
+            tree_data=prefetched_tree_data
+        )
+        match_ids = MatchIdentifiers(
+            uuid=match_uuid,
+            username=match_username,
+            in_my_tree=match_in_my_tree,
+            log_ref_short=log_ref_short
+        )
         return _prepare_person_operation_data(
             match=match,
             existing_person=existing_person,
-            prefetched_combined_details=prefetched_combined_details,
-            prefetched_tree_data=prefetched_tree_data,
+            prefetched_data=prefetched_data,
             config_schema_arg=config_schema,
-            match_uuid=match_uuid,
-            formatted_match_username=match_username,
-            match_in_my_tree=match_in_my_tree,
-            log_ref_short=log_ref_short,
+            match_ids=match_ids,
             logger_instance=logger_instance,
         )
     except Exception as person_err:
@@ -2700,13 +2707,9 @@ def _compare_person_field(
 def _prepare_person_operation_data(
     match: Dict[str, Any],
     existing_person: Optional[Person],
-    prefetched_combined_details: Optional[Dict[str, Any]],
-    prefetched_tree_data: Optional[Dict[str, Any]],
+    prefetched_data: PrefetchedData,
     config_schema_arg: "ConfigSchema",  # Config schema argument
-    match_uuid: str,
-    formatted_match_username: str,
-    match_in_my_tree: bool,
-    log_ref_short: str,
+    match_ids: MatchIdentifiers,
     logger_instance: logging.Logger,
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
     """
@@ -2715,13 +2718,9 @@ def _prepare_person_operation_data(
     Args:
         match: Dictionary containing data for one match from the match list API.
         existing_person: The existing Person object from the database, or None if this is a new person.
-        prefetched_combined_details: Prefetched data from '/details' & '/profiles/details' APIs.
-        prefetched_tree_data: Prefetched data from 'badgedetails' & 'getladder' APIs.
+        prefetched_data: Prefetched data from APIs (combined_details and tree_data).
         config_schema_arg: The application configuration schema.
-        match_uuid: The UUID (Sample ID) of the match.
-        formatted_match_username: The formatted username of the match.
-        match_in_my_tree: Boolean indicating if the match is in the user's family tree.
-        log_ref_short: Short reference string for logging.
+        match_ids: Match identification parameters (uuid, username, in_my_tree, log_ref_short).
         logger_instance: The logger instance.
 
     Returns:
@@ -2731,7 +2730,7 @@ def _prepare_person_operation_data(
         - person_fields_changed (bool): True if any fields were changed for an existing person,
           False otherwise.
     """
-    details_part = prefetched_combined_details or {}
+    details_part = prefetched_data.combined_details or {}
     profile_part = details_part
 
     # Determine profile IDs and admin information
@@ -2740,7 +2739,7 @@ def _prepare_person_operation_data(
         person_admin_id_to_save,
         person_admin_username_to_save,
         message_target_id,
-    ) = _determine_profile_ids(details_part, match, formatted_match_username)
+    ) = _determine_profile_ids(details_part, match, match_ids.username)
 
     # Construct message link
     constructed_message_link = (
@@ -2749,16 +2748,16 @@ def _prepare_person_operation_data(
         else None
     )
 
-    birth_year_val = _process_birth_year(prefetched_tree_data)
+    birth_year_val = _process_birth_year(prefetched_data.tree_data)
     last_logged_in_val = _process_last_logged_in(profile_part)
 
     incoming_person_data = {
-        "uuid": match_uuid.upper(),
+        "uuid": match_ids.uuid.upper(),
         "profile_id": person_profile_id_to_save,
-        "username": formatted_match_username,
+        "username": match_ids.username,
         "administrator_profile_id": person_admin_id_to_save,
         "administrator_username": person_admin_username_to_save,
-        "in_my_tree": match_in_my_tree,
+        "in_my_tree": match_ids.in_my_tree,
         "first_name": match.get("first_name"),
         "last_logged_in": last_logged_in_val,
         "contactable": bool(profile_part.get("contactable", True)),
@@ -2775,7 +2774,7 @@ def _prepare_person_operation_data(
 
     # Person exists - compare and update
     person_data_for_update, person_fields_changed = _compare_and_update_person_fields(
-        incoming_person_data, existing_person, log_ref_short, logger_instance
+        incoming_person_data, existing_person, match_ids.log_ref_short, logger_instance
     )
 
     return (

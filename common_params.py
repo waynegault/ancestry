@@ -128,6 +128,113 @@ class ConversationProcessingContext:
 
 
 @dataclass
+class MessagingBatchData:
+    """
+    Batch data collections for messaging operations.
+
+    Used in action8_messaging.py for collecting database updates.
+    """
+    db_logs_to_add_dicts: List[Dict[str, Any]]
+    person_updates: Dict[str, Any]
+
+
+@dataclass
+class ProcessingState:
+    """
+    Processing state for batch operations.
+
+    Used in action8_messaging.py for tracking processing progress.
+    """
+    batch_num: int
+    progress_bar: Optional[Any] = None
+    processed_in_loop: int = 0
+
+
+@dataclass
+class NavigationConfig:
+    """
+    Navigation configuration for browser navigation operations.
+
+    Used in utils.py for navigate_to_page_with_retry.
+    """
+    url: str
+    selector: str
+    target_url_base: str
+    signin_page_url_base: str
+    unavailability_selectors: Dict[str, tuple]
+    page_timeout: int
+    element_timeout: int
+
+
+@dataclass
+class ProgressIndicatorConfig:
+    """
+    Configuration for progress indicators.
+
+    Used in core/progress_indicators.py for ProgressIndicator.
+    """
+    unit: str = "items"
+    show_memory: bool = True
+    show_rate: bool = True
+    update_interval: float = 3.0
+    show_bar: bool = True
+    log_start: bool = True
+    log_finish: bool = True
+    leave: bool = True
+
+
+@dataclass
+class PrefetchedData:
+    """
+    Prefetched API data for person operations.
+
+    Used in action6_gather.py for _prepare_person_operation_data.
+    """
+    combined_details: Optional[Dict[str, Any]] = None
+    tree_data: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class RelationshipCalcContext:
+    """
+    Context for relationship calculation checks.
+
+    Used in action11.py for _log_relationship_calculation_checks.
+    """
+    can_attempt_calculation: bool
+    is_owner: bool
+    can_calc_tree_ladder: bool
+    can_calc_discovery_api: bool
+    owner_tree_id_str: Optional[str]
+    selected_tree_id_str: Optional[str]
+    owner_profile_id_str: Optional[str]
+    selected_global_id_str: Optional[str]
+    selected_person_tree_id: Optional[str]
+    source_of_ids: str
+
+
+@dataclass
+class ExtractionExperimentEvent:
+    """
+    Telemetry event data for extraction experiments.
+
+    Used in prompt_telemetry.py for record_extraction_experiment_event.
+    """
+    variant_label: str
+    prompt_key: str
+    parse_success: bool
+    prompt_version: Optional[str] = None
+    extracted_data: Optional[Dict[str, Any]] = None
+    suggested_tasks: Optional[Any] = None
+    raw_response_text: Optional[str] = None
+    user_id: Optional[str] = None
+    error: Optional[str] = None
+    quality_score: Optional[float] = None
+    component_coverage: Optional[float] = None
+    anomaly_summary: Optional[str] = None
+
+
+@dataclass
 class SearchCriteria:
     """
     Search criteria for person/match searches.

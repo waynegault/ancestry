@@ -1466,12 +1466,8 @@ class InboxProcessor:
         latest_ctx_in: Optional[dict],
         api_conv_id: str,
         people_id: int,
-        existing_conv_logs: dict[tuple[str, str], ConversationLog],
-        min_aware_dt: datetime,
+        ctx: ConversationProcessingContext,
         context_messages: list[dict],
-        my_pid_lower: str,
-        conv_log_upserts_dicts: list[dict],
-        person_updates: dict[int, dict],
         ai_classified_count: int,
     ) -> int:
         """Process incoming message and return updated AI classification count."""
@@ -1480,12 +1476,12 @@ class InboxProcessor:
 
         ctx_ts_in_aware = latest_ctx_in.get("timestamp")
         db_latest_ts_in_compare = self._get_db_timestamp_for_comparison(
-            existing_conv_logs, api_conv_id, MessageDirectionEnum.IN, min_aware_dt
+            ctx.existing_conv_logs, api_conv_id, MessageDirectionEnum.IN, ctx.min_aware_dt
         )
 
         if ctx_ts_in_aware and ctx_ts_in_aware > db_latest_ts_in_compare:
             ai_sentiment_result = self._classify_message_with_ai(
-                context_messages, my_pid_lower, api_conv_id
+                context_messages, ctx.my_pid_lower, api_conv_id
             )
 
             if ai_sentiment_result:
@@ -1497,9 +1493,9 @@ class InboxProcessor:
                 api_conv_id, MessageDirectionEnum.IN, people_id,
                 latest_ctx_in.get("content", ""), ctx_ts_in_aware, ai_sentiment_result,
             )
-            conv_log_upserts_dicts.append(upsert_dict_in)
+            ctx.conv_log_upserts_dicts.append(upsert_dict_in)
 
-            self._update_person_status_from_ai(ai_sentiment_result, people_id, person_updates)
+            self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
 
         return ai_classified_count
 
@@ -1508,9 +1504,7 @@ class InboxProcessor:
         latest_ctx_out: Optional[dict],
         api_conv_id: str,
         people_id: int,
-        existing_conv_logs: dict[tuple[str, str], ConversationLog],
-        min_aware_dt: datetime,
-        conv_log_upserts_dicts: list[dict],
+        ctx: ConversationProcessingContext,
     ) -> None:
         """Process outgoing message."""
         if not latest_ctx_out:
@@ -1518,7 +1512,7 @@ class InboxProcessor:
 
         ctx_ts_out_aware = latest_ctx_out.get("timestamp")
         db_latest_ts_out_compare = self._get_db_timestamp_for_comparison(
-            existing_conv_logs, api_conv_id, MessageDirectionEnum.OUT, min_aware_dt
+            ctx.existing_conv_logs, api_conv_id, MessageDirectionEnum.OUT, ctx.min_aware_dt
         )
 
         if ctx_ts_out_aware and ctx_ts_out_aware > db_latest_ts_out_compare:
@@ -1526,7 +1520,7 @@ class InboxProcessor:
                 api_conv_id, MessageDirectionEnum.OUT, people_id,
                 latest_ctx_out.get("content", ""), ctx_ts_out_aware,
             )
-            conv_log_upserts_dicts.append(upsert_dict_out)
+            ctx.conv_log_upserts_dicts.append(upsert_dict_out)
 
     def _check_inbox_limit(self, items_processed: int) -> tuple[bool, Optional[str]]:
         """Check if inbox limit reached. Returns (should_stop, stop_reason)."""
@@ -1596,14 +1590,11 @@ class InboxProcessor:
 
         # Process IN and OUT messages
         ai_classified_count = self._process_in_message(
-            latest_ctx_in, api_conv_id, people_id, ctx.existing_conv_logs,
-            ctx.min_aware_dt, context_messages, ctx.my_pid_lower,
-            ctx.conv_log_upserts_dicts, ctx.person_updates, ai_classified_count
+            latest_ctx_in, api_conv_id, people_id, ctx, context_messages, ai_classified_count
         )
 
         self._process_out_message(
-            latest_ctx_out, api_conv_id, people_id, ctx.existing_conv_logs,
-            ctx.min_aware_dt, ctx.conv_log_upserts_dicts
+            latest_ctx_out, api_conv_id, people_id, ctx
         )
 
         return False, None, error_count_delta, ai_classified_count
@@ -1612,12 +1603,7 @@ class InboxProcessor:
         self,
         session: DbSession,
         all_conversations_batch: list[dict],
-        existing_persons_map: dict[str, Person],
-        existing_conv_logs: dict[tuple[str, str], ConversationLog],
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
-        my_pid_lower: str,
-        min_aware_dt: datetime,
+        ctx: ConversationProcessingContext,
         progress_bar: Optional[tqdm],
         state: dict[str, Any],
     ) -> tuple[bool, Optional[str]]:
@@ -1630,8 +1616,6 @@ class InboxProcessor:
         error_count_this_loop = state["error_count_this_loop"]
         ai_classified_count = state["ai_classified_count"]
         status_updated_count = state["status_updated_count"]
-        conv_log_upserts_dicts = state["conv_log_upserts_dicts"]
-        person_updates = state["person_updates"]
         conversations_needing_processing = state["conversations_needing_processing"]
 
         stop_processing = False
@@ -1645,17 +1629,7 @@ class InboxProcessor:
 
             items_processed_before_stop += 1
 
-            # Process single conversation
-            ctx = ConversationProcessingContext(
-                existing_persons_map=existing_persons_map,
-                existing_conv_logs=existing_conv_logs,
-                conv_log_upserts_dicts=conv_log_upserts_dicts,
-                person_updates=person_updates,
-                comp_conv_id=comp_conv_id,
-                comp_ts=comp_ts,
-                my_pid_lower=my_pid_lower,
-                min_aware_dt=min_aware_dt
-            )
+            # Process single conversation (ctx already contains all needed data)
             should_stop, conv_stop_reason, error_delta, ai_classified_count = self._process_single_conversation(
                 session, conversation_info, ctx, progress_bar, ai_classified_count
             )
@@ -1821,9 +1795,18 @@ class InboxProcessor:
             return True, prefetch_error
 
         # Process conversations in batch
+        ctx = ConversationProcessingContext(
+            existing_persons_map=existing_persons_map,
+            existing_conv_logs=existing_conv_logs,
+            conv_log_upserts_dicts=state["conv_log_upserts_dicts"],
+            person_updates=state["person_updates"],
+            comp_conv_id=comp_conv_id,
+            comp_ts=comp_ts,
+            my_pid_lower=my_pid_lower,
+            min_aware_dt=state["min_aware_dt"]
+        )
         batch_stop, batch_stop_reason = self._process_conversations_in_batch(
-            session, all_conversations_batch, existing_persons_map, existing_conv_logs,
-            comp_conv_id, comp_ts, my_pid_lower, state["min_aware_dt"], progress_bar, state
+            session, all_conversations_batch, ctx, progress_bar, state
         )
 
         # Commit batch updates
