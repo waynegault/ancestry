@@ -302,80 +302,80 @@ def validate_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-# Test functions for quality validation
-def test_universal_scoring() -> bool:
-    """Test universal scoring functionality."""
-    try:
-        # Mock candidate data
-        candidates = [
-            {
-                "id": "@I1@",
-                "first_name": "john",
-                "surname": "smith",
-                "birth_year": 1950,
-                "gender": "m"
-            }
-        ]
+# ==============================================
+# Module Tests
+# ==============================================
 
-        search_criteria = {
+
+def _test_universal_scoring() -> None:
+    """Test universal scoring functionality."""
+    # Mock candidate data
+    candidates = [
+        {
+            "id": "@I1@",
             "first_name": "john",
             "surname": "smith",
-            "birth_year": 1950
+            "birth_year": 1950,
+            "gender": "m"
         }
+    ]
 
-        # This would normally call the real scoring function
-        # For testing, we'll just validate the structure
-        results = apply_universal_scoring(candidates, search_criteria, max_results=1)
+    search_criteria = {
+        "first_name": "john",
+        "surname": "smith",
+        "birth_year": 1950
+    }
 
-        # Validate result structure
-        assert isinstance(results, list)
-        if results:  # Only check if we got results
-            result = results[0]
-            assert 'total_score' in result
-            assert 'confidence' in result
-            assert 'full_name_disp' in result
+    # This would normally call the real scoring function
+    # For testing, we'll just validate the structure
+    results = apply_universal_scoring(candidates, search_criteria, max_results=1)
 
-        return True
-    except Exception as e:
-        logger.error(f"Universal scoring test failed: {e}")
-        return False
+    # Validate result structure
+    assert isinstance(results, list)
+    if results:  # Only check if we got results
+        result = results[0]
+        assert 'total_score' in result
+        assert 'confidence' in result
+        assert 'full_name_disp' in result
 
 
-def test_criteria_validation() -> bool:
+def _test_criteria_validation() -> None:
     """Test search criteria validation."""
-    try:
-        criteria = {
-            "first_name": "  JOHN  ",
-            "surname": "SMITH",
-            "birth_year": "1950",
-            "gender": "Male"
-        }
+    criteria = {
+        "first_name": "  JOHN  ",
+        "surname": "SMITH",
+        "birth_year": "1950",
+        "gender": "Male"
+    }
 
-        normalized = validate_search_criteria(criteria)
+    normalized = validate_search_criteria(criteria)
 
-        assert normalized['first_name'] == "john"
-        assert normalized['surname'] == "smith"
-        assert normalized['birth_year'] == 1950
-        assert normalized['gender'] == "m"
-
-        return True
-    except Exception as e:
-        logger.error(f"Criteria validation test failed: {e}")
-        return False
-
-
-# Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+    assert normalized['first_name'] == "john"
+    assert normalized['surname'] == "smith"
+    assert normalized['birth_year'] == 1950
+    assert normalized['gender'] == "m"
 
 
 def universal_scoring_module_tests() -> bool:
     """Run all universal scoring tests."""
-    try:
-        test_universal_scoring()
-        test_criteria_validation()
-        return True
-    except Exception:
-        return False
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Universal Scoring", "universal_scoring.py")
+
+    tests = [
+        ("Universal scoring functionality", _test_universal_scoring, True, "direct", "Test scoring algorithm"),
+        ("Search criteria validation", _test_criteria_validation, True, "direct", "Test criteria normalization"),
+    ]
+
+    with suppress_logging():
+        for test_name, test_func, expected, method, details in tests:
+            suite.run_test(test_name, test_func, expected, method, details)
+
+    return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
 
 
 # Use centralized test runner utility
