@@ -167,7 +167,7 @@ from api_utils import (  # API utilities
 # --- Local application imports ---
 # Import standardization handled by setup_module above
 from cache import cache_result  # Caching utility
-from common_params import BatchConfig, BatchCounters
+from common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
 from config import config_schema  # Configuration singletons
 from core.enhanced_error_recovery import with_enhanced_recovery
 from core.error_handling import (
@@ -2588,7 +2588,7 @@ def _handle_error_or_skip_status(
     return skipped_count, error_count + 1, False
 
 def _update_counters_and_collect_data(status: str, new_log_object, person_update_tuple,
-                                       sent_count: int, acked_count: int, skipped_count: int, error_count: int,
+                                       counters: BatchCounters,
                                        db_logs_to_add_dicts: list, person_updates: dict,
                                        error_categorizer, person, overall_success: bool) -> tuple[int, int, int, int, bool]:
     """Update counters and collect database updates based on processing status."""
@@ -2597,15 +2597,15 @@ def _update_counters_and_collect_data(status: str, new_log_object, person_update
         status = "error"
 
     if status == "sent":
-        sent_count = _handle_sent_status(sent_count, log_dict, db_logs_to_add_dicts)
+        counters.sent = _handle_sent_status(counters.sent, log_dict, db_logs_to_add_dicts)
     elif status == "acked":
-        acked_count = _handle_acked_status(acked_count, log_dict, person_update_tuple, db_logs_to_add_dicts, person_updates)
+        counters.acked = _handle_acked_status(counters.acked, log_dict, person_update_tuple, db_logs_to_add_dicts, person_updates)
     else:
-        skipped_count, error_count, overall_success = _handle_error_or_skip_status(
-            status, skipped_count, error_count, log_dict, db_logs_to_add_dicts, error_categorizer, person, overall_success
+        counters.skipped, counters.errors, overall_success = _handle_error_or_skip_status(
+            status, counters.skipped, counters.errors, log_dict, db_logs_to_add_dicts, error_categorizer, person, overall_success
         )
 
-    return sent_count, acked_count, skipped_count, error_count, overall_success
+    return counters.sent, counters.acked, counters.skipped, counters.errors, overall_success
 
 
 def _should_commit_batch(current_batch_size: int, memory_usage_mb: float,
@@ -2715,11 +2715,8 @@ def _process_single_candidate_iteration(
     error_categorizer: Any,
     batch_config: BatchConfig,
     counters: BatchCounters,
-    db_logs_to_add_dicts: list,
-    person_updates: dict,
-    batch_num: int,
-    progress_bar: Any,
-    processed_in_loop: int
+    batch_data: MessagingBatchData,
+    state: ProcessingState
 ) -> dict:
     """
     Process a single candidate iteration in the main loop.
@@ -2730,16 +2727,16 @@ def _process_single_candidate_iteration(
 
     # Check message send limit
     if _check_message_send_limit(batch_config.max_messages_to_send, counters.sent, counters.acked,
-                                  progress_bar, counters.skipped, counters.errors):
-        return _create_result_dict(counters.sent, counters.acked, counters.skipped + 1, counters.errors, batch_num)
+                                  state.progress_bar, counters.skipped, counters.errors):
+        return _create_result_dict(counters.sent, counters.acked, counters.skipped + 1, counters.errors, state.batch_num)
 
     # Check halt signal
-    if _check_halt_signal(session_manager, processed_in_loop, 0):
-        return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, batch_num,
+    if _check_halt_signal(session_manager, state.processed_in_loop, 0):
+        return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, state.batch_num,
                                   should_continue=False)
 
     # Log periodic progress
-    _log_periodic_progress(processed_in_loop, 0, counters.sent, counters.acked, counters.skipped, counters.errors)
+    _log_periodic_progress(state.processed_in_loop, 0, counters.sent, counters.acked, counters.skipped, counters.errors)
 
     # Get person ID and message history
     person_id_int = int(safe_column_value(person, "id", 0))
@@ -2762,7 +2759,7 @@ def _process_single_candidate_iteration(
             f"🚨 SESSION DEATH CASCADE in person processing for {person_name}: {cascade_err}. "
             f"Halting remaining processing to prevent infinite cascade."
         )
-        return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, batch_num,
+        return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, state.batch_num,
                                   should_continue=False)
 
     # Log message creation for debugging
@@ -2775,25 +2772,25 @@ def _process_single_candidate_iteration(
     # Update counters and collect data
     counters.sent, counters.acked, counters.skipped, counters.errors, overall_success = _update_counters_and_collect_data(
         status, new_log_object, person_update_tuple,
-        counters.sent, counters.acked, counters.skipped, counters.errors,
-        db_logs_to_add_dicts, person_updates,
+        counters,
+        batch_data.db_logs_to_add_dicts, batch_data.person_updates,
         error_categorizer, person, True
     )
 
     # Update progress bar
-    if progress_bar:
-        progress_bar.set_description(
+    if state.progress_bar:
+        state.progress_bar.set_description(
             f"Processing: Sent={counters.sent} ACK={counters.acked} Skip={counters.skipped} Err={counters.errors}"
         )
-        progress_bar.update(1)
+        state.progress_bar.update(1)
 
     # Handle batch commit if needed
-    critical_db_error, batch_num, overall_success = _handle_batch_commit_if_needed(
-        db_session, db_logs_to_add_dicts, person_updates, batch_num, session_manager,
+    critical_db_error, state.batch_num, overall_success = _handle_batch_commit_if_needed(
+        db_session, batch_data.db_logs_to_add_dicts, batch_data.person_updates, state.batch_num, session_manager,
         batch_config.commit_batch_size, batch_config.max_memory_mb, batch_config.max_items
     )
 
-    return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, batch_num,
+    return _create_result_dict(counters.sent, counters.acked, counters.skipped, counters.errors, state.batch_num,
                               critical_db_error, overall_success, not critical_db_error)
 
 
@@ -2925,10 +2922,7 @@ def _perform_final_cleanup(
     critical_db_error_occurred: bool,
     total_candidates: int,
     processed_in_loop: int,
-    skipped_count: int,
-    sent_count: int,
-    acked_count: int,
-    error_count: int,
+    counters: BatchCounters,
     overall_success: bool,
     error_categorizer: Any
 ) -> int:
@@ -2947,14 +2941,14 @@ def _perform_final_cleanup(
         logger.warning(
             f"Adding {unprocessed_count} unprocessed candidates to skipped count due to DB commit failure."
         )
-        skipped_count += unprocessed_count
+        counters.skipped += unprocessed_count
 
     # Log final summary
-    _log_final_summary(total_candidates, processed_in_loop, sent_count,
-                      acked_count, skipped_count, error_count, overall_success,
+    _log_final_summary(total_candidates, processed_in_loop, counters.sent,
+                      counters.acked, counters.skipped, counters.errors, overall_success,
                       error_categorizer)
 
-    return skipped_count
+    return counters.skipped
 
 
 def _perform_resource_cleanup(resource_manager: Any) -> None:
@@ -2990,10 +2984,7 @@ def _process_all_candidates(
     message_type_map: dict,
     resource_manager: Any,
     error_categorizer: Any,
-    max_messages_to_send_this_run: int,
-    db_commit_batch_size: int,
-    MAX_BATCH_MEMORY_MB: int,
-    MAX_BATCH_ITEMS: int,
+    batch_config: BatchConfig,
 ) -> dict:
     """Process all candidate persons for messaging. Returns dict with counters and results."""
 
@@ -3044,20 +3035,14 @@ def _process_all_candidates(
                 resource_manager.periodic_maintenance()
 
             # Process single candidate iteration
-            batch_config = BatchConfig(
-                commit_batch_size=db_commit_batch_size,
-                max_memory_mb=MAX_BATCH_MEMORY_MB,
-                max_items=MAX_BATCH_ITEMS,
-                max_messages_to_send=max_messages_to_send_this_run
-            )
             counters = BatchCounters(sent=sent_count, acked=acked_count, skipped=skipped_count, errors=error_count)
+            batch_data = MessagingBatchData(db_logs_to_add_dicts=db_logs_to_add_dicts, person_updates=person_updates)
+            proc_state = ProcessingState(batch_num=batch_num, progress_bar=progress_bar, processed_in_loop=processed_in_loop)
 
             iteration_result = _process_single_candidate_iteration(
                 person, db_session, session_manager, message_type_map,
                 resource_manager, error_categorizer,
-                batch_config, counters,
-                db_logs_to_add_dicts, person_updates, batch_num,
-                progress_bar, processed_in_loop
+                batch_config, counters, batch_data, proc_state
             )
 
             # Update counters from iteration result
@@ -3158,11 +3143,16 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         # --- Step 3: Main Processing Loop ---
         if total_candidates > 0:
             # Process all candidates
+            batch_config = BatchConfig(
+                commit_batch_size=db_commit_batch_size,
+                max_memory_mb=MAX_BATCH_MEMORY_MB,
+                max_items=MAX_BATCH_ITEMS,
+                max_messages_to_send=max_messages_to_send_this_run
+            )
             processing_result = _process_all_candidates(
                 candidate_persons, total_candidates, db_session, session_manager,
                 message_type_map, resource_manager, error_categorizer,
-                max_messages_to_send_this_run, db_commit_batch_size,
-                MAX_BATCH_MEMORY_MB, MAX_BATCH_ITEMS
+                batch_config
             )
 
             # Unpack results
@@ -3198,10 +3188,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             logger.error(f"Emergency resource cleanup failed: {emergency_cleanup_err}")
     # --- Step 6: Final Cleanup and Summary ---
     finally:
+        counters_final = BatchCounters(sent=sent_count, acked=acked_count, skipped=skipped_count, errors=error_count)
         skipped_count = _perform_final_cleanup(
             db_session, session_manager, critical_db_error_occurred,
-            total_candidates, processed_in_loop, skipped_count,
-            sent_count, acked_count, error_count, overall_success,
+            total_candidates, processed_in_loop, counters_final, overall_success,
             error_categorizer
         )
 

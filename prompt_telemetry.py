@@ -79,7 +79,7 @@ def _stable_hash(value: str | None) -> str | None:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
-def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, prompt_version: str | None, parse_success: bool, extracted_data: dict[str, Any] | None = None, suggested_tasks: Iterable[Any] | None = None, raw_response_text: str | None = None, user_id: str | None = None, error: str | None = None, quality_score: float | None = None, component_coverage: float | None = None, anomaly_summary: str | None = None) -> None:
+def record_extraction_experiment_event(event_data: 'ExtractionExperimentEvent') -> None:
     """Append a single telemetry event (best effort).
 
     Added (Phase 1 - 2025-08-11): component_coverage → proportion (0-1) of
@@ -88,26 +88,27 @@ def record_extraction_experiment_event(*, variant_label: str, prompt_key: str, p
     independent of task quality. Safe additive field; downstream readers ignore
     unknown keys.
     """
+    from common_params import ExtractionExperimentEvent
     try:
         counts: dict[str, int] = {}
-        if isinstance(extracted_data, dict):
-            for k, v in extracted_data.items():
+        if isinstance(event_data.extracted_data, dict):
+            for k, v in event_data.extracted_data.items():
                 if isinstance(v, list):
                     counts[k] = len(v)
         event = {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "variant_label": variant_label,
-            "prompt_key": prompt_key,
-            "prompt_version": prompt_version,
-            "parse_success": parse_success,
-            "error": (error[:MAX_ERROR_LEN] if error else None),
+            "variant_label": event_data.variant_label,
+            "prompt_key": event_data.prompt_key,
+            "prompt_version": event_data.prompt_version,
+            "parse_success": event_data.parse_success,
+            "error": (event_data.error[:MAX_ERROR_LEN] if event_data.error else None),
             "extracted_counts": counts or None,
-            "suggested_tasks_count": len(list(suggested_tasks)) if suggested_tasks else 0,
-            "raw_chars": len(raw_response_text) if isinstance(raw_response_text, str) else None,
-            "user_hash": _stable_hash(user_id),
-            "quality_score": round(float(quality_score), 2) if isinstance(quality_score, (int, float)) else None,
-            "component_coverage": round(float(component_coverage), 3) if isinstance(component_coverage, (int, float)) else None,
-            "anomaly_summary": anomaly_summary or None,
+            "suggested_tasks_count": len(list(event_data.suggested_tasks)) if event_data.suggested_tasks else 0,
+            "raw_chars": len(event_data.raw_response_text) if isinstance(event_data.raw_response_text, str) else None,
+            "user_hash": _stable_hash(event_data.user_id),
+            "quality_score": round(float(event_data.quality_score), 2) if isinstance(event_data.quality_score, (int, float)) else None,
+            "component_coverage": round(float(event_data.component_coverage), 3) if isinstance(event_data.component_coverage, (int, float)) else None,
+            "anomaly_summary": event_data.anomaly_summary or None,
         }
         with Path(TELEMETRY_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -409,7 +410,8 @@ def _test_record_and_summarize() -> None:
     # Capture starting count
     initial = summarize_experiments().get("events", 0)
     for i in range(3):
-        record_extraction_experiment_event(
+        from common_params import ExtractionExperimentEvent
+        event = ExtractionExperimentEvent(
             variant_label="control",
             prompt_key=f"k{i}",
             prompt_version="v1",
@@ -421,13 +423,15 @@ def _test_record_and_summarize() -> None:
             quality_score=50 + i,
             component_coverage=0.8,
         )
+        record_extraction_experiment_event(event)
     summary = summarize_experiments()
     assert summary.get("events", 0) >= initial + 3, "Summary should show newly added events"
 
 def _test_variant_analysis() -> None:
     """Add alt variant events then run analyze_experiments for improvement structure."""
     for i in range(2):
-        record_extraction_experiment_event(
+        from common_params import ExtractionExperimentEvent
+        event = ExtractionExperimentEvent(
             variant_label="alt",
             prompt_key=f"alt{i}",
             prompt_version="v1",
@@ -437,6 +441,7 @@ def _test_variant_analysis() -> None:
             quality_score=60 + i,
             component_coverage=0.6,
         )
+        record_extraction_experiment_event(event)
     analysis = analyze_experiments(window=50, min_events_per_variant=1)
     assert "variants" in analysis and analysis.get("events",0) > 0
 
@@ -448,7 +453,8 @@ def _test_build_baseline_and_regression() -> None:
     existing = summary.get("variants", {}).get("control", {}).get("count", 0)
     to_add = max(0, needed - existing)
     for i in range(to_add):
-        record_extraction_experiment_event(
+        from common_params import ExtractionExperimentEvent
+        event = ExtractionExperimentEvent(
             variant_label="control",
             prompt_key=f"b{i}",
             prompt_version="v1",
@@ -458,6 +464,7 @@ def _test_build_baseline_and_regression() -> None:
             quality_score=70 + (i % 5),
             component_coverage=0.9,
         )
+        record_extraction_experiment_event(event)
     baseline = build_quality_baseline(variant="control", window=300, min_events=8)
     assert baseline is None or baseline.get("variant") == "control"
     reg = detect_quality_regression(current_window=120, drop_threshold=9999, variant="control")  # Force non-regression

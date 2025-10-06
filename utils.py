@@ -66,7 +66,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
-from common_params import RetryContext
+from common_params import NavigationConfig, RetryContext
 
 # === TYPE ALIASES ===
 # Define type aliases
@@ -1846,7 +1846,7 @@ def _execute_request_with_retries(
     return response
 
 
-def _api_req(
+def _api_req(  # noqa: PLR0913
     url: str,
     driver: DriverType,
     session_manager: SessionManager,  # type: ignore
@@ -1869,24 +1869,13 @@ def _api_req(
     Handles dynamic header generation, cookie synchronization, rate limiting,
     retries, and basic response processing. Includes enhanced logging.
 
+    NOTE: This function maintains backward compatibility with 16 parameters.
+    New code should use _api_req_impl(ApiRequestConfig) instead.
+
     Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
              or Response object on non-retryable error/redirect disabled.
     """
-    logger.debug(f"[_api_req ENTRY] api_description: '{api_description}', url: {url}")
-
-    # Validate prerequisites
-    if not _validate_api_req_prerequisites(session_manager, api_description):
-        return None
-
-    # Get retry configuration
-    max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
-
-    logger.debug(
-        f"[_api_req PRE-LOOP] api_description: '{api_description}', max_retries: {max_retries}, "
-        f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
-    )
-
-    # Create request configuration
+    # Convert parameters to ApiRequestConfig and delegate to internal implementation
     config = ApiRequestConfig(
         url=url,
         driver=driver,
@@ -1895,26 +1884,54 @@ def _api_req(
         data=data,
         json_data=json_data,
         json=json,
+        use_csrf_token=use_csrf_token,
         headers=headers,
         referer_url=referer_url,
-        use_csrf_token=use_csrf_token,
-        add_default_origin=add_default_origin,
+        api_description=api_description,
         timeout=timeout,
         cookie_jar=cookie_jar,
         allow_redirects=allow_redirects,
         force_text_response=force_text_response,
-        max_retries=max_retries,
-        initial_delay=initial_delay,
-        backoff_factor=backoff_factor,
-        max_delay=max_delay,
-        retry_status_codes=retry_status_codes,
-        api_description=api_description,
+        add_default_origin=add_default_origin,
     )
+    return _api_req_impl(config)
+
+
+def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
+    """
+    Internal implementation of _api_req using ApiRequestConfig.
+    Makes an HTTP request using the shared requests.Session from SessionManager.
+    Handles dynamic header generation, cookie synchronization, rate limiting,
+    retries, and basic response processing. Includes enhanced logging.
+
+    Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
+             or Response object on non-retryable error/redirect disabled.
+    """
+    logger.debug(f"[_api_req ENTRY] api_description: '{config.api_description}', url: {config.url}")
+
+    # Validate prerequisites
+    if not _validate_api_req_prerequisites(config.session_manager, config.api_description):
+        return None
+
+    # Get retry configuration
+    max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
+
+    logger.debug(
+        f"[_api_req PRE-LOOP] api_description: '{config.api_description}', max_retries: {max_retries}, "
+        f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
+    )
+
+    # Update config with retry parameters
+    config.max_retries = max_retries
+    config.initial_delay = initial_delay
+    config.backoff_factor = backoff_factor
+    config.max_delay = max_delay
+    config.retry_status_codes = retry_status_codes
 
     # Execute request with retry loop
     response = _execute_request_with_retries(config)
 
-    logger.debug(f"[_api_req EXIT] api_description: '{api_description}'")
+    logger.debug(f"[_api_req EXIT] api_description: '{config.api_description}'")
     return response
 
 # End of _api_req
@@ -3242,15 +3259,9 @@ def _validate_post_navigation(
 
 def _perform_navigation_attempt(
     driver: WebDriver,  # type: ignore
-    url: str,
-    selector: str,
-    target_url_base: str,
-    signin_page_url_base: str,
-    unavailability_selectors: Dict[str, Tuple[str, int]],
+    nav_config: NavigationConfig,
     session_manager: SessionManagerType,
     attempt: int,
-    page_timeout: int,
-    element_timeout: int,
 ) -> Tuple[str, Optional[WebDriver]]:  # type: ignore
     """
     Perform a single navigation attempt.
@@ -3269,7 +3280,7 @@ def _perform_navigation_attempt(
             result_driver = driver_check
         else:
             # --- Navigation Execution ---
-            _execute_navigation(driver, url, page_timeout)
+            _execute_navigation(driver, nav_config.url, nav_config.page_timeout)
 
             # --- Post-Navigation Checks ---
             landed_url_base = _get_landed_url_base(driver, attempt)
@@ -3278,8 +3289,8 @@ def _perform_navigation_attempt(
             else:
                 # Validate post-navigation state
                 result_action, result_driver = _validate_post_navigation(
-                    driver, landed_url_base, target_url_base, signin_page_url_base,
-                    selector, element_timeout, unavailability_selectors, session_manager
+                    driver, landed_url_base, nav_config.target_url_base, nav_config.signin_page_url_base,
+                    nav_config.selector, nav_config.element_timeout, nav_config.unavailability_selectors, session_manager
                 )
 
     except UnexpectedAlertPresentException:  # type: ignore
@@ -3346,9 +3357,13 @@ def nav_to_page(
     for attempt in range(1, max_attempts + 1):
         logger.debug(f"Navigation Attempt {attempt}/{max_attempts} to: {url}")
 
+        nav_config = NavigationConfig(
+            url=url, selector=selector, target_url_base=target_url_base,
+            signin_page_url_base=signin_page_url_base, unavailability_selectors=unavailability_selectors,
+            page_timeout=page_timeout, element_timeout=element_timeout
+        )
         action, new_driver = _perform_navigation_attempt(
-            driver, url, selector, target_url_base, signin_page_url_base,
-            unavailability_selectors, session_manager, attempt, page_timeout, element_timeout
+            driver, nav_config, session_manager, attempt
         )
 
         if action == "success":

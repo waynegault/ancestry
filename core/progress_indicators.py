@@ -77,24 +77,21 @@ class ProgressIndicator:
         self,
         description: str,
         total: Optional[int] = None,
-        unit: str = "items",
-        show_memory: bool = True,
-        show_rate: bool = True,
-        update_interval: float = 3.0,
-        show_bar: bool = True,
-        log_start: bool = True,
-        log_finish: bool = True,
-        leave: bool = True,
+        config: Optional['ProgressIndicatorConfig'] = None,
     ):
+        from common_params import ProgressIndicatorConfig
+        if config is None:
+            config = ProgressIndicatorConfig()
+
         self.description = description
-        self.unit = unit
-        self.show_memory = show_memory
-        self.show_rate = show_rate
-        self.update_interval = update_interval
-        self.show_bar = show_bar
-        self.log_start = log_start
-        self.log_finish = log_finish
-        self.leave = leave
+        self.unit = config.unit
+        self.show_memory = config.show_memory
+        self.show_rate = config.show_rate
+        self.update_interval = config.update_interval
+        self.show_bar = config.show_bar
+        self.log_start = config.log_start
+        self.log_finish = config.log_finish
+        self.leave = config.leave
 
         self.stats = ProgressStats(total_items=total)
         self.progress_bar: Optional[tqdm] = None
