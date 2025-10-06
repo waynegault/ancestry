@@ -753,44 +753,39 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
     Optionally runs Action 6 (Gather) first if configured.
     Relies on exec_actn ensuring session is ready beforehand.
     """
+    result = False
+
     if not session_manager or not session_manager.session_ready:
         logger.error("Cannot run core workflow: Session not ready.")
-        return False
+        return result
 
     try:
         # Run Action 6 if configured
         run_action6 = config.include_action6_in_workflow
-        if run_action6:
-            if not _run_action6_gather(session_manager):
-                return False
+        if run_action6 and not _run_action6_gather(session_manager):
+            return result
 
-        # Run Action 7
-        if not _run_action7_inbox(session_manager):
-            return False
+        # Run Action 7, 9, and 8 in sequence
+        if (_run_action7_inbox(session_manager) and
+            _run_action9_process_productive(session_manager) and
+            _run_action8_send_messages(session_manager)):
 
-        # Run Action 9
-        if not _run_action9_process_productive(session_manager):
-            return False
+            # Build success message
+            action_sequence = []
+            if run_action6:
+                action_sequence.append("6")
+            action_sequence.extend(["7", "9", "8"])
+            action_sequence_str = "-".join(action_sequence)
 
-        # Run Action 8
-        if not _run_action8_send_messages(session_manager):
-            return False
-
-        # Build success message
-        action_sequence = []
-        if run_action6:
-            action_sequence.append("6")
-        action_sequence.extend(["7", "9", "8"])
-        action_sequence_str = "-".join(action_sequence)
-
-        logger.info(f"Core Workflow (Actions {action_sequence_str}) finished successfully.")
-        print(f"\n✓ Core Workflow (Actions {action_sequence_str}) completed successfully.")
-        return True
+            logger.info(f"Core Workflow (Actions {action_sequence_str}) finished successfully.")
+            print(f"\n✓ Core Workflow (Actions {action_sequence_str}) completed successfully.")
+            result = True
 
     except Exception as e:
         logger.error(f"Critical error during core workflow: {e}", exc_info=True)
         print(f"CRITICAL ERROR during core workflow: {e}")
-        return False
+
+    return result
 
 
 # End Action 1
