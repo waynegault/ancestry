@@ -52,7 +52,7 @@ class SessionValidator:
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
         logger.debug("SessionValidator initialized")
 
-    def _perform_all_checks(
+    def _perform_all_checks(  # noqa: PLR0913
         self,
         browser_manager,
         api_manager,
@@ -126,7 +126,7 @@ class SessionValidator:
         )
         return False, f"Exception: {exception}"  # Don't abort, retry
 
-    def perform_readiness_checks(
+    def perform_readiness_checks(  # noqa: PLR0913
         self,
         browser_manager,
         api_manager,

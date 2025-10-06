@@ -1,0 +1,14 @@
+[
+  {
+    "code": "PLR0913",
+    "name": "too-many-arguments",
+    "count": 107,
+    "fixable": false
+  },
+  {
+    "code": "PLR0915",
+    "name": "too-many-statements",
+    "count": 1,
+    "fixable": false
+  }
+]

@@ -135,7 +135,7 @@ class APIManager:
             )
             return False
 
-    def make_api_request(
+    def make_api_request(  # noqa: PLR0913
         self,
         url: str,
         method: str = "GET",

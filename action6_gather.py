@@ -466,7 +466,7 @@ def _finalize_progress_bar(progress_bar: Any, state: Dict[str, Any], loop_final_
         pass  # Handle incomplete progress
 
 
-def _process_single_page_iteration(
+def _process_single_page_iteration(  # noqa: PLR0913
     session_manager: SessionManager,
     current_page_num: int,
     start_page: int,
@@ -509,7 +509,7 @@ def _process_single_page_iteration(
     return loop_final_success, False, None, current_page_num + 1
 
 
-def _main_page_processing_loop(
+def _main_page_processing_loop(  # noqa: PLR0913
     session_manager: SessionManager,
     start_page: int,
     last_page_to_process: int,
@@ -977,7 +977,7 @@ def _submit_initial_api_tasks(
     return futures
 
 
-def _process_api_task_result(
+def _process_api_task_result(  # noqa: PLR0913
     task_type: str,
     identifier_uuid: str,
     result: Any,
@@ -1000,7 +1000,7 @@ def _process_api_task_result(
     return critical_combined_details_failures
 
 
-def _handle_api_task_exception(
+def _handle_api_task_exception(  # noqa: PLR0913
     exc: Exception,
     task_type: str,
     identifier_uuid: str,
@@ -1289,7 +1289,7 @@ def _update_page_statuses(
         page_statuses["error"] += 1
 
 
-def _process_and_append_match(
+def _process_and_append_match(  # noqa: PLR0913
     match_list_data: Dict[str, Any],
     session_manager: SessionManager,
     existing_persons_map: Dict[str, Person],
@@ -1904,7 +1904,7 @@ def _handle_batch_critical_error(page_statuses: Dict[str, int], num_matches_on_p
     return final_error_count_for_page
 
 
-def _execute_batch_pipeline(
+def _execute_batch_pipeline(  # noqa: PLR0913
     session: SqlAlchemySession,
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
@@ -2384,7 +2384,7 @@ def _check_dna_fields_changed(
     return False
 
 
-def _check_dna_match_needs_update(
+def _check_dna_match_needs_update(  # noqa: PLR0913
     match: Dict[str, Any],
     existing_dna_match: DnaMatch,
     details_part: Dict[str, Any],
@@ -2506,7 +2506,7 @@ def _build_tree_links(
     return facts_link, view_in_tree_link
 
 
-def _check_family_tree_needs_update(
+def _check_family_tree_needs_update(  # noqa: PLR0913
     existing_family_tree: FamilyTree,
     prefetched_tree_data: Dict[str, Any],
     their_cfpid_final: Optional[str],
@@ -2547,7 +2547,7 @@ def _check_family_tree_needs_update(
     return False
 
 
-def _process_person_data(
+def _process_person_data(  # noqa: PLR0913
     match: Dict[str, Any],
     existing_person: Optional[Person],
     prefetched_combined_details: Optional[Dict[str, Any]],
@@ -2591,7 +2591,7 @@ def _process_person_data(
         return None, False
 
 
-def _process_dna_data(
+def _process_dna_data(  # noqa: PLR0913
     match: Dict[str, Any],
     dna_match_record: Optional[DnaMatch],
     prefetched_combined_details: Optional[Dict[str, Any]],
@@ -2624,7 +2624,7 @@ def _process_dna_data(
         return None
 
 
-def _process_tree_data(
+def _process_tree_data(  # noqa: PLR0913
     family_tree_record: Optional[FamilyTree],
     prefetched_tree_data: Optional[Dict[str, Any]],
     match_uuid: str,
@@ -2695,7 +2695,7 @@ def _compare_person_field(
     return result
 
 
-def _prepare_person_operation_data(
+def _prepare_person_operation_data(  # noqa: PLR0913
     match: Dict[str, Any],
     existing_person: Optional[Person],
     prefetched_data: PrefetchedData,
@@ -2776,7 +2776,7 @@ def _prepare_person_operation_data(
 # End of _prepare_person_operation_data
 
 
-def _prepare_dna_match_operation_data(
+def _prepare_dna_match_operation_data(  # noqa: PLR0913
     match: Dict[str, Any],
     existing_dna_match: Optional[DnaMatch],
     prefetched_combined_details: Optional[Dict[str, Any]],
@@ -2885,7 +2885,7 @@ def _extract_tree_links_from_data(
     return their_cfpid_final, facts_link, view_in_tree_link
 
 
-def _determine_tree_operation(
+def _determine_tree_operation(  # noqa: PLR0913
     match_in_my_tree: bool,
     existing_family_tree: Optional[FamilyTree],
     prefetched_tree_data: Optional[Dict[str, Any]],
@@ -2922,7 +2922,7 @@ def _determine_tree_operation(
     return "none"
 
 
-def _build_tree_dict_from_data(
+def _build_tree_dict_from_data(  # noqa: PLR0913
     match_uuid: str,
     their_cfpid_final: Optional[str],
     facts_link: Optional[str],
@@ -2957,7 +2957,7 @@ def _build_tree_dict_from_data(
     }
 
 
-def _prepare_family_tree_operation_data(
+def _prepare_family_tree_operation_data(  # noqa: PLR0913
     existing_family_tree: Optional[FamilyTree],
     prefetched_tree_data: Optional[Dict[str, Any]],
     match_uuid: str,
@@ -3032,7 +3032,7 @@ def _prepare_family_tree_operation_data(
 # ------------------------------------------------------------------------------
 
 
-def _populate_and_finalize_match_data(
+def _populate_and_finalize_match_data(  # noqa: PLR0913
     person_op_data: Optional[Dict[str, Any]],
     dna_op_data: Optional[Dict[str, Any]],
     tree_op_data: Optional[Dict[str, Any]],
@@ -3078,7 +3078,7 @@ def _populate_and_finalize_match_data(
     return data_to_return, overall_status
 
 
-def _do_match(  # type: ignore
+def _do_match(  # type: ignore  # noqa: PLR0913
     match: Dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
@@ -3802,7 +3802,7 @@ def _save_in_tree_to_cache(
         logger.error(f"Error writing in-tree status to cache: {cache_write_err}")
 
 
-def _fetch_in_tree_from_api(
+def _fetch_in_tree_from_api(  # noqa: PLR0913
     driver: Any,
     session_manager: SessionManager,
     my_uuid: str,
@@ -3871,7 +3871,7 @@ def _fetch_in_tree_from_api(
     return set()
 
 
-def _fetch_in_tree_status(
+def _fetch_in_tree_status(  # noqa: PLR0913
     driver: Any,
     session_manager: SessionManager,
     my_uuid: str,

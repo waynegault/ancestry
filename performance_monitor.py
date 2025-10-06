@@ -342,7 +342,7 @@ class PerformanceMonitor:
                     self._get_optimization_recommendation(metric_name, avg_value),
                 )
 
-    def _create_alert(
+    def _create_alert(  # noqa: PLR0913
         self,
         level: AlertLevel,
         message: str,

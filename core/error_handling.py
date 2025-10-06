@@ -291,7 +291,7 @@ class AppError(Exception):
     - Context information
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,

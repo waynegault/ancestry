@@ -1020,7 +1020,7 @@ class PersonProcessor:
         except Exception as e:
             logger.error(f"Failed to mark message as processed: {e}")
 
-    def _generate_custom_reply(
+    def _generate_custom_reply(  # noqa: PLR0913
         self,
         person: Person,
         context_logs: List[ConversationLog],
@@ -1146,7 +1146,7 @@ class PersonProcessor:
             message_type_id = self.msg_config.ack_msg_type_id or 1  # Provide default
             return message_text, message_type_id
 
-    def _send_message(
+    def _send_message(  # noqa: PLR0913
         self,
         person: Person,
         context_logs: List[ConversationLog],
@@ -1299,7 +1299,7 @@ class PersonProcessor:
             self.db_state.person_updates[person_id_int] = PersonStatusEnum.ARCHIVE
         logger.debug(f"{log_prefix}: Person status staged for ARCHIVE.")
 
-    def _stage_database_updates(
+    def _stage_database_updates(  # noqa: PLR0913
         self,
         person: Person,
         message_text: str,
@@ -1623,7 +1623,7 @@ def _query_candidates(
     return candidates_query.all()
 
 
-def _process_candidates(
+def _process_candidates(  # noqa: PLR0913
     session_manager: SessionManager,
     candidates: List[Person],
     state: ProcessingState,
