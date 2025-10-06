@@ -62,7 +62,6 @@ import hashlib
 import json
 import os
 import statistics
-from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -333,7 +332,7 @@ def _auto_analyze_and_alert() -> None:
     if _already_alerted(signature):
         return
     alert = {
-        "timestamp_utc": datetime.utcnow().isoformat(timespec="seconds"),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "type": "variant_performance_improvement",
         "signature": signature,
         "analysis": analysis,
@@ -363,7 +362,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         "median_quality": statistics.median(scores),
         "p25": statistics.quantiles(scores, n=4)[0] if len(scores) >= 4 else None,
         "p75": statistics.quantiles(scores, n=4)[2] if len(scores) >= 4 else None,
-        "created_utc": datetime.utcnow().isoformat(timespec="seconds"),
+        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     try:
         with Path(QUALITY_BASELINE_FILE).open("w", encoding="utf-8") as fh:
