@@ -3127,7 +3127,7 @@ def _process_all_candidates(  # noqa: PLR0913
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Aligned with ANCESTRY_API_CONFIG
 @graceful_degradation(fallback_value=False)
 @error_context("action8_messaging")
-def send_messages_to_matches(session_manager: SessionManager) -> bool:
+def send_messages_to_matches(session_manager: SessionManager) -> bool:  # noqa: PLR0915
     """
     Main function for Action 8.
     Fetches eligible candidates, determines the appropriate message to send (if any)
