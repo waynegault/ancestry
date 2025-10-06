@@ -131,15 +131,6 @@ class BatchCounters:
     errors: int = 0
 
 
-@dataclass
-class MatchIdentifiers:
-    """Groups match identification parameters."""
-    uuid: str
-    username: str
-    in_my_tree: bool
-    log_ref_short: str
-
-
 # ------------------------------------------------------------------------------
 # Refactored coord Helpers
 # ------------------------------------------------------------------------------

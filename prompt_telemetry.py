@@ -64,7 +64,10 @@ import os
 import statistics
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common_params import ExtractionExperimentEvent
 
 LOGS_DIR = Path(__file__).resolve().parent / "Logs"
 LOGS_DIR.mkdir(exist_ok=True)
