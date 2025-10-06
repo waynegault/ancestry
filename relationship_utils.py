@@ -69,6 +69,7 @@ BS4_AVAILABLE = True
 
 # --- Test framework imports ---
 # Import specific functions from gedcom_utils
+from common_params import GraphContext
 from gedcom_utils import _are_spouses as _are_spouses_orig
 from test_framework import (
     TestSuite,
@@ -272,17 +273,21 @@ def _check_search_limits(start_time: float, processed: int, timeout_sec: float, 
     return True
 
 
-def _expand_to_relatives(current_id: str, path: list[str], depth: int, visited: dict, queue: deque, id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]], is_forward: bool) -> None:
+def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
     """Expand search to parents, children, and siblings."""
+    current_id = graph.current_id
+    if not current_id:
+        return
+
     # Expand to parents
-    for parent_id in id_to_parents.get(current_id, set()):
+    for parent_id in graph.id_to_parents.get(current_id, set()):
         if parent_id not in visited:
             new_path = [*path, parent_id] if is_forward else [parent_id, *path]
             visited[parent_id] = (depth + 1, new_path)
             queue.append((parent_id, depth + 1, new_path))
 
     # Expand to children
-    for child_id in id_to_children.get(current_id, set()):
+    for child_id in graph.id_to_children.get(current_id, set()):
         if child_id not in visited:
             new_path = [*path, child_id] if is_forward else [child_id, *path]
             visited[child_id] = (depth + 1, new_path)
@@ -300,7 +305,7 @@ def _expand_to_relatives(current_id: str, path: list[str], depth: int, visited: 
                 queue.append((sibling_id, depth + 2, new_path))
 
 
-def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]], max_depth: int) -> int:
+def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:
     """Process forward queue and return number of nodes processed."""
     if not queue_fwd:
         return 0
@@ -316,12 +321,13 @@ def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dic
 
     # Stop expanding if we've reached max depth
     if depth < max_depth:
-        _expand_to_relatives(current_id, path, depth, visited_fwd, queue_fwd, id_to_parents, id_to_children, is_forward=True)
+        graph_ctx = GraphContext(id_to_parents=graph.id_to_parents, id_to_children=graph.id_to_children, current_id=current_id)
+        _expand_to_relatives(graph_ctx, path, depth, visited_fwd, queue_fwd, is_forward=True)
 
     return 1
 
 
-def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, id_to_parents: dict[str, set[str]], id_to_children: dict[str, set[str]], max_depth: int) -> int:
+def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:
     """Process backward queue and return number of nodes processed."""
     if not queue_bwd:
         return 0
@@ -337,7 +343,8 @@ def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: di
 
     # Stop expanding if we've reached max depth
     if depth < max_depth:
-        _expand_to_relatives(current_id, path, depth, visited_bwd, queue_bwd, id_to_parents, id_to_children, is_forward=False)
+        graph_ctx = GraphContext(id_to_parents=graph.id_to_parents, id_to_children=graph.id_to_children, current_id=current_id)
+        _expand_to_relatives(graph_ctx, path, depth, visited_bwd, queue_bwd, is_forward=False)
 
     return 1
 
@@ -409,12 +416,13 @@ def fast_bidirectional_bfs(
             break
 
         # Process forward queue
-        processed += _process_forward_queue(queue_fwd, visited_fwd, visited_bwd, all_paths, id_to_parents, id_to_children, max_depth)
+        graph_ctx = GraphContext(id_to_parents=id_to_parents, id_to_children=id_to_children)
+        processed += _process_forward_queue(queue_fwd, visited_fwd, visited_bwd, all_paths, graph_ctx, max_depth)
         if len(all_paths) >= 5:
             break
 
         # Process backward queue
-        processed += _process_backward_queue(queue_bwd, visited_fwd, visited_bwd, all_paths, id_to_parents, id_to_children, max_depth)
+        processed += _process_backward_queue(queue_bwd, visited_fwd, visited_bwd, all_paths, graph_ctx, max_depth)
         if len(all_paths) >= 5:
             break
 
