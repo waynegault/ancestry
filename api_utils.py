@@ -50,11 +50,15 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import re
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 from urllib.parse import quote, urlencode, urljoin
+
+if TYPE_CHECKING:
+    from test_framework import TestSuite
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -90,15 +94,7 @@ from logging_config import setup_logging
 from utils import _api_req, format_name
 
 # --- Test framework imports ---
-try:
-    from test_framework import (
-        TestSuite as TestFrameworkTestSuite,
-    )
-
-    TestSuite = TestFrameworkTestSuite  # type: ignore
-except ImportError:
-    # If test framework not available, import will fail at test time
-    TestSuite = None
+# TestSuite is imported via TYPE_CHECKING for type hints only
 
 # === MODULE LOGGER ===
 # Use centralized log file from .env (LOG_FILE)
