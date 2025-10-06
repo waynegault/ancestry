@@ -62,6 +62,7 @@ from sqlalchemy.orm import (
 )
 
 # === LOCAL IMPORTS ===
+from common_params import MatchIdentifiers
 from config import config_schema
 from core.error_handling import (
     AncestryException,
@@ -841,13 +842,13 @@ def _prepare_person_status(person_data: dict[str, Any], log_ref: str) -> PersonS
         return PersonStatusEnum.ACTIVE
 
 
-def _build_person_args(person_data: dict[str, Any], uuid_upper: Optional[str], profile_id_upper: Optional[str],
-                       username: str, last_logged_in_dt: Optional[datetime], status_enum: PersonStatusEnum) -> dict[str, Any]:
+def _build_person_args(person_data: dict[str, Any], identifiers: MatchIdentifiers,
+                       last_logged_in_dt: Optional[datetime], status_enum: PersonStatusEnum) -> dict[str, Any]:
     """Build arguments dictionary for Person model."""
     return {
-        "uuid": uuid_upper,
-        "profile_id": profile_id_upper,
-        "username": username,
+        "uuid": identifiers.uuid,
+        "profile_id": identifiers.profile_id,
+        "username": identifiers.username,
         "administrator_profile_id": (
             person_data.get("administrator_profile_id", "").upper()
             if person_data.get("administrator_profile_id")
@@ -911,7 +912,8 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
         logger.debug(f"Proceeding with Person creation for {log_ref}.")
         last_logged_in_dt = _prepare_person_datetime(person_data)
         status_enum = _prepare_person_status(person_data, log_ref)
-        new_person_args = _build_person_args(person_data, uuid_upper, profile_id_upper, username, last_logged_in_dt, status_enum)
+        identifiers = MatchIdentifiers(uuid=uuid_upper, username=username, in_my_tree=False, log_ref_short=log_ref, profile_id=profile_id_upper)
+        new_person_args = _build_person_args(person_data, identifiers, last_logged_in_dt, status_enum)
 
         # Step 5: Create and add the new Person
         new_person = Person(**new_person_args)
