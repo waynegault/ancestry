@@ -232,7 +232,7 @@ def _format_score_verification(total_score: float, total_calculated: int) -> lis
     return lines
 
 
-def detailed_scoring_breakdown(  # noqa: PLR0913
+def detailed_scoring_breakdown(
     test_name: str,
     search_criteria: dict[str, Any],
     candidate_data: dict[str, Any],
@@ -816,7 +816,7 @@ def _create_match_data(
     }
 
 
-def _process_individual(  # noqa: PLR0913
+def _process_individual(
     indi_id_norm: str,
     indi_data: dict[str, Any],
     filter_criteria: dict[str, Any],

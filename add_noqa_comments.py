@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def get_violations():
     """Get all PLR0913 violations from ruff."""
     result = subprocess.run(
@@ -21,7 +22,7 @@ def get_violations():
 
 def add_noqa_to_file(file_path: Path, line_numbers: list[int]):
     """Add noqa comments to specific lines in a file."""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, encoding='utf-8') as f:
         lines = f.readlines()
 
     # Sort line numbers in reverse to avoid offset issues

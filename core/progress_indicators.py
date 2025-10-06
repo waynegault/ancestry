@@ -126,7 +126,7 @@ class ProgressIndicator:
         if self.log_start:
             logger.debug(f"Started progress tracking: {self.description}")
 
-    def update(  # noqa: PLR0913
+    def update(
         self,
         increment: int = 1,
         errors: int = 0,

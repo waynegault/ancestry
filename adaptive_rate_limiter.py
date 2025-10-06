@@ -84,7 +84,7 @@ class AdaptiveRateLimiter:
     Optimizes throughput while maintaining stability and avoiding rate limits.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         initial_rps: float = 1.0,  # Increased from 0.5 - start more aggressively
         min_rps: float = 0.2,  # Increased from 0.1
@@ -588,7 +588,7 @@ class MLBasedOptimizer:
         self.last_training_time: float = 0.0
         self.training_interval: float = 3600.0  # Retrain every hour
 
-    def add_training_sample(self,  # noqa: PLR0913
+    def add_training_sample(self,
                           current_rps: float,
                           success_rate: float,
                           avg_response_time: float,
@@ -640,7 +640,7 @@ class MLBasedOptimizer:
 
         return optimal_rps
 
-    def _calculate_similarity(self, sr1: float, rt1: float, rl1: float,  # noqa: PLR0913
+    def _calculate_similarity(self, sr1: float, rt1: float, rl1: float,
                             sr2: float, rt2: float, rl2: float) -> float:
         """Calculate similarity between two sets of conditions."""
         # Normalize differences
