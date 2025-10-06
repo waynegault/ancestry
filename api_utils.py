@@ -81,6 +81,7 @@ except Exception:
     PYDANTIC_AVAILABLE = False
 
 # === LOCAL IMPORTS ===
+from common_params import ApiIdentifiers
 from config import config_schema
 from core.session_manager import SessionManager
 from database import Person
@@ -1777,15 +1778,13 @@ def _validate_and_extract_facts_data(
 
 def call_facts_user_api(
     session_manager: "SessionManager",
-    owner_profile_id: str,
-    api_person_id: str,
-    api_tree_id: str,
+    api_ids: ApiIdentifiers,
     base_url: str,
     timeouts: Optional[list[int]] = None,
 ) -> Optional[dict[str, Any]]:
     # Validate prerequisites
     if not _validate_facts_api_prerequisites(
-        session_manager, owner_profile_id, api_person_id, api_tree_id
+        session_manager, api_ids.owner_profile_id, api_ids.api_person_id, api_ids.api_tree_id
     ):
         return None
 
@@ -1793,9 +1792,9 @@ def call_facts_user_api(
     _apply_rate_limiting(api_description)
 
     formatted_path = API_PATH_PERSON_FACTS_USER.format(
-        owner_profile_id=owner_profile_id.lower(),
-        tree_id=api_tree_id.lower(),
-        person_id=api_person_id.lower(),
+        owner_profile_id=api_ids.owner_profile_id.lower(),
+        tree_id=api_ids.api_tree_id.lower(),
+        person_id=api_ids.api_person_id.lower(),
     )
     facts_api_url = urljoin(base_url.rstrip("/") + "/", formatted_path)
     facts_referer = _get_owner_referer(session_manager, base_url)
