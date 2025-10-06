@@ -110,7 +110,7 @@ def _extract_candidate_data(candidate: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:  # noqa: PLR0913
     """Score name matching (first name or surname)."""
     if search_name and cand_name and search_name in cand_name:
         total_score += score_value
@@ -119,7 +119,7 @@ def _score_name_match(search_name: Optional[str], cand_name: Optional[str], fiel
     return total_score
 
 
-def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:  # noqa: PLR0913
     """Score gender matching."""
     if search_gender and cand_gender and search_gender == cand_gender:
         total_score += score_value
@@ -128,7 +128,7 @@ def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str]
     return total_score
 
 
-def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: int, close_score: int, year_range: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: int, close_score: int, year_range: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:  # noqa: PLR0913
     """Score year matching (birth or death year)."""
     if search_year and cand_year:
         try:
@@ -148,7 +148,7 @@ def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_s
     return total_score
 
 
-def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:
+def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: Dict[str, int], reasons: List[str]) -> int:  # noqa: PLR0913
     """Score place matching (birth or death place)."""
     if search_place and cand_place and search_place in cand_place:
         total_score += score_value

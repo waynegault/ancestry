@@ -1370,7 +1370,7 @@ def _make_suggest_api_request(
     )
 
 
-def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):
+def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):  # noqa: PLR0913
     """Handle timeout exception for suggest API."""
     timeout_error = NetworkTimeoutError(
         f"API request timed out after {timeout}s",
@@ -2150,7 +2150,7 @@ def _validate_message_response(
     return False, None, SEND_ERROR_VALIDATION_FAILED
 
 
-def _process_send_message_response(
+def _process_send_message_response(  # noqa: PLR0913
     api_response: Any,
     is_initial: bool,
     existing_conv_id: Optional[str],
@@ -2746,7 +2746,7 @@ async def async_call_suggest_api(
         return None
 
 
-async def async_batch_person_lookup(
+async def async_batch_person_lookup(  # noqa: PLR0913
     session_manager: "SessionManager",
     person_ids: list[str],
     tree_id: str,
@@ -2816,7 +2816,7 @@ async def async_batch_person_lookup(
     return parsed_results
 
 
-def call_enhanced_api(
+def call_enhanced_api(  # noqa: PLR0913
     session_manager: "SessionManager",
     endpoint: str,
     user_id: str,

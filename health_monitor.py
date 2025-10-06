@@ -271,7 +271,7 @@ class SessionHealthMonitor:
             self._last_metric_alert_level[metric_name] = level
             self._last_metric_alert_time[metric_name] = now
 
-    def _create_alert(self, level: AlertLevel, component: str, message: str,
+    def _create_alert(self, level: AlertLevel, component: str, message: str,  # noqa: PLR0913
                      metric_name: str, metric_value: float, threshold: float):
         """Create a new health alert."""
         alert = HealthAlert(
