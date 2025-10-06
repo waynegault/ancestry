@@ -2309,17 +2309,9 @@ def test_main_patch() -> None:
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
     import builtins
-    import os
-    import time
-    from pathlib import Path
 
     from test_framework import (  # type: ignore[import-not-found]
-        Colors,
-        TestSuite,
-        clean_test_output,
-        format_score_breakdown_table,
-        format_search_criteria,
-        format_test_section_header,
+        suppress_logging,
     )
 
     original_gedcom, suite = _setup_test_environment()
