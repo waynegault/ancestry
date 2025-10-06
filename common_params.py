@@ -214,6 +214,45 @@ class RelationshipCalcContext:
 
 
 @dataclass
+class MessageContext:
+    """
+    Message content and metadata for messaging operations.
+
+    Used in action8_messaging.py for message preparation and sending.
+    """
+    person: Any  # Person object
+    message_text: str
+    message_to_send_key: str
+    template_selection_reason: str
+    log_prefix: str
+
+
+@dataclass
+class ConversationState:
+    """
+    Conversation state tracking for messaging operations.
+
+    Used in action8_messaging.py for conversation management.
+    """
+    existing_conversation_id: Optional[str] = None
+    effective_conv_id: Optional[str] = None
+    latest_out_log: Optional[Any] = None  # ConversationLog object
+    latest_in_log: Optional[Any] = None  # ConversationLog object
+
+
+@dataclass
+class MessageFlags:
+    """
+    Message operation flags and status.
+
+    Used in action8_messaging.py for message sending control.
+    """
+    send_message_flag: bool
+    skip_log_reason: str = ""
+    message_status: str = ""
+
+
+@dataclass
 class ExtractionExperimentEvent:
     """
     Telemetry event data for extraction experiments.
