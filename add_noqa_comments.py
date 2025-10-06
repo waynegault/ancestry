@@ -47,7 +47,7 @@ def main():
     if not violations:
         print("No PLR0913 violations found!")
         return
-    
+
     # Group violations by file
     files_to_fix = {}
     for v in violations:
@@ -56,13 +56,13 @@ def main():
         if file_path not in files_to_fix:
             files_to_fix[file_path] = []
         files_to_fix[file_path].append(line_num)
-    
+
     print(f"Found {len(violations)} violations in {len(files_to_fix)} files")
-    
+
     for file_path, line_numbers in files_to_fix.items():
         print(f"Fixing {file_path.name}: {len(line_numbers)} violations")
         add_noqa_to_file(file_path, line_numbers)
-    
+
     print("Done! Re-running ruff to verify...")
     result = subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--select=PLR0913", "."],

@@ -46,7 +46,6 @@ import time
 import uuid  # For make_ube, make_traceparent, make_tracestate
 from dataclasses import dataclass, field
 from functools import wraps
-from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -180,7 +179,6 @@ except ImportError as import_err:
 
 # --- Test framework imports ---
 from test_framework import (
-    MagicMock,
     TestSuite,
     suppress_logging,
 )
