@@ -377,7 +377,6 @@ def universal_scoring_module_tests() -> bool:
 # Use centralized test runner utility
 from test_utilities import create_standard_test_runner
 
-
 # Use centralized test runner utility
 run_comprehensive_tests = create_standard_test_runner(universal_scoring_module_tests)
 
