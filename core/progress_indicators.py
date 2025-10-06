@@ -262,11 +262,24 @@ def create_progress_indicator(
     **kwargs
 ) -> ProgressIndicator:
     """Factory function to create progress indicators"""
+    from common_params import ProgressIndicatorConfig
+
+    # Create config from parameters
+    config = ProgressIndicatorConfig(
+        unit=unit,
+        show_memory=kwargs.pop('show_memory', True),
+        show_rate=kwargs.pop('show_rate', True),
+        update_interval=kwargs.pop('update_interval', 3.0),
+        show_bar=kwargs.pop('show_bar', True),
+        log_start=kwargs.pop('log_start', True),
+        log_finish=kwargs.pop('log_finish', True),
+        leave=kwargs.pop('leave', True),
+    )
+
     return ProgressIndicator(
         description=description,
         total=total,
-        unit=unit,
-        **kwargs
+        config=config
     )
 
 # Decorator for automatic progress tracking
