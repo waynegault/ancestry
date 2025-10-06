@@ -531,26 +531,29 @@ class UnifiedCredentialManager:
         print("  c) Cancel")
 
         choice = input("Choice (m/o/r/c): ").strip().lower()
-        if choice == "c":
-            return None, ""
+
+        result_creds = None
+        action_desc = ""
+
         if choice == "m":
             # Merge: existing credentials take precedence
-            final_creds = env_credentials.copy()
-            final_creds.update(existing_creds)  # existing wins on conflicts
-            return final_creds, "merged with existing"
-        if choice == "o":
+            result_creds = env_credentials.copy()
+            result_creds.update(existing_creds)  # existing wins on conflicts
+            action_desc = "merged with existing"
+        elif choice == "o":
             # Overwrite: .env credentials take precedence
-            final_creds = existing_creds.copy()
-            final_creds.update(env_credentials)  # .env wins on conflicts
-            return final_creds, "merged (overwriting existing)"
-        if choice == "r":
+            result_creds = existing_creds.copy()
+            result_creds.update(env_credentials)  # .env wins on conflicts
+            action_desc = "merged (overwriting existing)"
+        elif choice == "r":
             # Replace: only use .env credentials
-            if not self._confirm_action("replace ALL existing credentials"):
-                return None, ""
-            return env_credentials, "replaced all existing"
+            if self._confirm_action("replace ALL existing credentials"):
+                result_creds = env_credentials
+                action_desc = "replaced all existing"
+        elif choice != "c":
+            print("❌ Invalid choice.")
 
-        print("❌ Invalid choice.")
-        return None, ""
+        return result_creds, action_desc
 
     def _save_and_summarize_import(self, final_creds: dict[str, str], env_credentials: dict[str, str], action_desc: str) -> None:
         """Save credentials and show summary."""
