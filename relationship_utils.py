@@ -273,6 +273,24 @@ def _check_search_limits(start_time: float, processed: int, timeout_sec: float, 
     return True
 
 
+def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
+    """Add a relative to the search queue if not already visited."""
+    if relative_id not in visited:
+        new_path = [*path, relative_id] if is_forward else [relative_id, *path]
+        visited[relative_id] = (depth, new_path)
+        queue.append((relative_id, depth, new_path))
+
+
+def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
+    """Expand search to siblings through parents."""
+    for parent_id in graph.id_to_parents.get(current_id, set()):
+        for sibling_id in graph.id_to_children.get(parent_id, set()):
+            if sibling_id != current_id and sibling_id not in visited:
+                new_path = [*path, parent_id, sibling_id] if is_forward else [sibling_id, parent_id, *path]
+                visited[sibling_id] = (depth + 2, new_path)
+                queue.append((sibling_id, depth + 2, new_path))
+
+
 def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
     """Expand search to parents, children, and siblings."""
     current_id = graph.current_id
@@ -281,28 +299,14 @@ def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visit
 
     # Expand to parents
     for parent_id in graph.id_to_parents.get(current_id, set()):
-        if parent_id not in visited:
-            new_path = [*path, parent_id] if is_forward else [parent_id, *path]
-            visited[parent_id] = (depth + 1, new_path)
-            queue.append((parent_id, depth + 1, new_path))
+        _add_relative_to_queue(parent_id, path, depth + 1, visited, queue, is_forward)
 
     # Expand to children
     for child_id in graph.id_to_children.get(current_id, set()):
-        if child_id not in visited:
-            new_path = [*path, child_id] if is_forward else [child_id, *path]
-            visited[child_id] = (depth + 1, new_path)
-            queue.append((child_id, depth + 1, new_path))
+        _add_relative_to_queue(child_id, path, depth + 1, visited, queue, is_forward)
 
     # Expand to siblings (through parent)
-    for parent_id in graph.id_to_parents.get(current_id, set()):
-        for sibling_id in graph.id_to_children.get(parent_id, set()):
-            if sibling_id != current_id and sibling_id not in visited:
-                if is_forward:
-                    new_path = [*path, parent_id, sibling_id]
-                else:
-                    new_path = [sibling_id, parent_id, *path]
-                visited[sibling_id] = (depth + 2, new_path)
-                queue.append((sibling_id, depth + 2, new_path))
+    _expand_to_siblings(graph, current_id, path, depth, visited, queue, is_forward)
 
 
 def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:

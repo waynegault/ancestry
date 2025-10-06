@@ -1846,7 +1846,7 @@ def _execute_request_with_retries(
     return response
 
 
-def _api_req(  # noqa: PLR0913
+def _api_req(
     url: str,
     driver: DriverType,
     session_manager: SessionManager,  # type: ignore

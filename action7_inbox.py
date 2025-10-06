@@ -39,12 +39,12 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === LOCAL IMPORTS ===
 from ai_interface import classify_message_intent
-from common_params import ConversationProcessingContext
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from cache_manager import (
     cached_api_call,
 )
+from common_params import ConversationProcessingContext
 from config import config_schema
 from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
 
