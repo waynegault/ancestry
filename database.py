@@ -1073,15 +1073,17 @@ def create_or_update_dna_match(
         'skipped' if the record exists and no changes were needed.
         'error' if validation fails or a database error occurs.
     """
+    result = "error"
+
     # Validate people_id
     people_id, log_ref = _validate_dna_match_people_id(match_data)
     if not people_id:
-        return "error"
+        return result
 
     # Validate and prepare data
     validated_data = _validate_dna_match_data(match_data, people_id, log_ref)
     if not validated_data:
-        return "error"
+        return result
 
     # Check if record exists and update or create
     try:
@@ -1089,27 +1091,26 @@ def create_or_update_dna_match(
 
         if existing_dna_match:
             updated = _update_existing_dna_match(existing_dna_match, validated_data, log_ref)
-            return "updated" if updated else "skipped"
-
-        # Create new record
-        logger.debug(f"Creating new DnaMatch record for {log_ref}.")
-        new_dna_match = DnaMatch(**validated_data)
-        session.add(new_dna_match)
-        logger.debug(f"DnaMatch record added to session for {log_ref}.")
-        return "created"
+            result = "updated" if updated else "skipped"
+        else:
+            # Create new record
+            logger.debug(f"Creating new DnaMatch record for {log_ref}.")
+            new_dna_match = DnaMatch(**validated_data)
+            session.add(new_dna_match)
+            logger.debug(f"DnaMatch record added to session for {log_ref}.")
+            result = "created"
 
     except IntegrityError as ie:
         session.rollback()
         logger.error(f"IntegrityError create/update DNA Match {log_ref}: {ie}.", exc_info=False)
-        return "error"
     except SQLAlchemyError as e:
         logger.error(f"DB error create/update DNA Match {log_ref}: {e}", exc_info=True)
-        return "error"
     except Exception as e:
         logger.error(
             f"Unexpected error create/update DNA Match {log_ref}: {e}", exc_info=True
         )
-        return "error"
+
+    return result
 
 
 # End of create_or_update_dna_match
@@ -1164,11 +1165,13 @@ def create_or_update_family_tree(
         'skipped' if the record exists and no changes were needed.
         'error' if validation fails or a database error occurs.
     """
+    result = "error"
+
     # Validate people_id
     people_id = tree_data.get("people_id")
     if not people_id or not isinstance(people_id, int) or people_id <= 0:
         logger.error("Cannot create/update FamilyTree: Invalid 'people_id'.")
-        return "error"
+        return result
 
     # Prepare log reference and valid arguments
     cfpid_val = tree_data.get("cfpid")
@@ -1179,28 +1182,26 @@ def create_or_update_family_tree(
         existing_tree = session.query(FamilyTree).filter_by(people_id=people_id).first()
 
         if existing_tree:
-            return _update_family_tree_if_changed(existing_tree, valid_tree_args, log_ref)
-
-        # Create new record
-        logger.debug(f"Creating new FamilyTree record for {log_ref}.")
-        new_tree = FamilyTree(**valid_tree_args)
-        session.add(new_tree)
-        logger.debug(f"FamilyTree record added to session for {log_ref}.")
-        return "created"
+            result = _update_family_tree_if_changed(existing_tree, valid_tree_args, log_ref)
+        else:
+            # Create new record
+            logger.debug(f"Creating new FamilyTree record for {log_ref}.")
+            new_tree = FamilyTree(**valid_tree_args)
+            session.add(new_tree)
+            logger.debug(f"FamilyTree record added to session for {log_ref}.")
+            result = "created"
 
     except TypeError as te:
         logger.critical(f"TypeError create/update FamilyTree {log_ref}: {te}. Args: {valid_tree_args}", exc_info=True)
-        return "error"
     except IntegrityError as ie:
         session.rollback()
         logger.error(f"IntegrityError create/update FamilyTree {log_ref}: {ie}", exc_info=False)
-        return "error"
     except SQLAlchemyError as e:
         logger.error(f"SQLAlchemyError create/update FamilyTree {log_ref}: {e}", exc_info=True)
-        return "error"
     except Exception as e:
         logger.critical(f"Unexpected error create_or_update_family_tree {log_ref}: {e}", exc_info=True)
-        return "error"
+
+    return result
 
 
 # End of create_or_update_family_tree
@@ -1383,10 +1384,13 @@ def create_or_update_person(
         - The created or updated Person object (or None on error).
         - A status string: 'created', 'updated', 'skipped', 'error'.
     """
+    result_person = None
+    result_status = "error"
+
     # Extract and validate mandatory identifiers
     uuid_val, username_val, profile_id_val, log_ref = _validate_person_identifiers(person_data)
     if not uuid_val or not username_val:
-        return None, "error"
+        return result_person, result_status
 
     try:
         existing_person = session.query(Person).filter(Person.uuid == uuid_val).first()
@@ -1400,41 +1404,41 @@ def create_or_update_person(
             if person_update_needed:
                 existing_person.updated_at = datetime.now(timezone.utc)
                 session.flush()
-                return existing_person, "updated"
-
-            logger.debug(f"{log_ref}: No updates needed for existing person.")
-            return existing_person, "skipped"
-
-        # Create new person
-        logger.debug(f"{log_ref}: Creating new Person.")
-        new_person_id = create_person(session, person_data)
-        if new_person_id > 0:
-            new_person_obj = session.get(Person, new_person_id)
-            if new_person_obj:
-                return new_person_obj, "created"
-
-            logger.error(f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report.")
-            with contextlib.suppress(Exception):
-                session.rollback()
-            return None, "error"
-
-        logger.error(f"create_person helper failed for {log_ref}.")
-        return None, "error"
+                result_person = existing_person
+                result_status = "updated"
+            else:
+                logger.debug(f"{log_ref}: No updates needed for existing person.")
+                result_person = existing_person
+                result_status = "skipped"
+        else:
+            # Create new person
+            logger.debug(f"{log_ref}: Creating new Person.")
+            new_person_id = create_person(session, person_data)
+            if new_person_id > 0:
+                new_person_obj = session.get(Person, new_person_id)
+                if new_person_obj:
+                    result_person = new_person_obj
+                    result_status = "created"
+                else:
+                    logger.error(f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report.")
+                    with contextlib.suppress(Exception):
+                        session.rollback()
+            else:
+                logger.error(f"create_person helper failed for {log_ref}.")
 
     except IntegrityError as ie:
         session.rollback()
         logger.error(f"IntegrityError processing person {log_ref}: {ie}. Rolling back.", exc_info=False)
-        return None, "error"
     except SQLAlchemyError as e:
         with contextlib.suppress(Exception):
             session.rollback()
         logger.error(f"SQLAlchemyError processing person {log_ref}: {e}", exc_info=True)
-        return None, "error"
     except Exception as e:
         with contextlib.suppress(Exception):
             session.rollback()
         logger.critical(f"Unexpected critical error processing person {log_ref}: {e}", exc_info=True)
-        return None, "error"
+
+    return result_person, result_status
 
 
 # End of create_or_update_person
@@ -2517,41 +2521,39 @@ def test_soft_delete_functionality(session: Session) -> bool:
     test_profile_id = f"TEST-{uuid4()}"
     test_username = f"Test User {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
+    result = False
+
     try:
         # Create and verify test person
-        if not _create_and_verify_test_person(session, test_uuid, test_profile_id, test_username):
-            return False
+        if _create_and_verify_test_person(session, test_uuid, test_profile_id, test_username):
+            # Soft-delete the person
+            logger.info(f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}")
+            if soft_delete_person(session, test_profile_id, test_username):
+                logger.info(f"Soft-deleted test person: ProfileID={test_profile_id}")
 
-        # Soft-delete the person
-        logger.info(f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}")
-        if not soft_delete_person(session, test_profile_id, test_username):
-            logger.error(f"Failed to soft-delete test person: ProfileID={test_profile_id}")
-            return False
-        logger.info(f"Soft-deleted test person: ProfileID={test_profile_id}")
+                # Verify soft-delete state
+                if _verify_soft_delete_state(session, test_profile_id):
+                    # Hard-delete for cleanup
+                    logger.info(f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}")
+                    if hard_delete_person(session, test_profile_id, test_username):
+                        logger.info(f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}")
 
-        # Verify soft-delete state
-        if not _verify_soft_delete_state(session, test_profile_id):
-            return False
-
-        # Hard-delete for cleanup
-        logger.info(f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}")
-        if not hard_delete_person(session, test_profile_id, test_username):
-            logger.error(f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}")
-            return False
-        logger.info(f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}")
-
-        # Verify permanent deletion
-        if get_person_by_profile_id(session, test_profile_id, include_deleted=True):
-            logger.error(f"Test person with ProfileID={test_profile_id} still found after hard-delete.")
-            return False
-        logger.info("Verified test person permanently deleted.")
-
-        logger.info("=== All Soft Delete Tests Passed ===")
-        return True
+                        # Verify permanent deletion
+                        if not get_person_by_profile_id(session, test_profile_id, include_deleted=True):
+                            logger.info("Verified test person permanently deleted.")
+                            logger.info("=== All Soft Delete Tests Passed ===")
+                            result = True
+                        else:
+                            logger.error(f"Test person with ProfileID={test_profile_id} still found after hard-delete.")
+                    else:
+                        logger.error(f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}")
+            else:
+                logger.error(f"Failed to soft-delete test person: ProfileID={test_profile_id}")
 
     except Exception as e:
         logger.error(f"Error during soft delete test: {e}", exc_info=True)
-        return False
+
+    return result
 
 
 # End of test_soft_delete_functionality
