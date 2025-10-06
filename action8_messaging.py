@@ -69,7 +69,10 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from string import Formatter
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common_params import MessageContext, ConversationState, MessageFlags, ProcessingState, BatchCounters, MessagingBatchData
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import (
