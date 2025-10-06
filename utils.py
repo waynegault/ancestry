@@ -66,6 +66,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
+from common_params import RetryContext
 
 # === TYPE ALIASES ===
 # Define type aliases
@@ -1694,14 +1695,8 @@ def _handle_request_exception(
 
 def _handle_response_status(
     response: Any,
-    retries_left: int,
-    max_retries: int,
+    retry_ctx: RetryContext,
     api_description: str,
-    attempt: int,
-    current_delay: float,
-    backoff_factor: float,
-    max_delay: float,
-    retry_status_codes: List[int],
     session_manager: SessionManager,
     force_text_response: bool,
     request_params: Dict[str, Any],
@@ -1712,12 +1707,14 @@ def _handle_response_status(
     """
     status = response.status_code
     reason = response.reason
+    retries_left = retry_ctx.retries_left or 0
+    current_delay = retry_ctx.current_delay
 
     # Handle retryable status codes
-    if status in retry_status_codes:
+    if retry_ctx.retry_status_codes and status in retry_ctx.retry_status_codes:
         should_continue, return_response, retries_left, current_delay = _handle_retryable_status(
-            response, status, reason, retries_left, max_retries, api_description,
-            attempt, current_delay, backoff_factor, max_delay, session_manager
+            response, status, reason, retries_left, retry_ctx.max_attempts, api_description,
+            retry_ctx.attempt, current_delay, retry_ctx.backoff_factor, retry_ctx.max_delay, session_manager
         )
         if not should_continue:
             return (return_response, False, retries_left, current_delay, None)
@@ -1782,9 +1779,17 @@ def _process_request_attempt(
             result_should_continue = should_continue
         else:
             # Handle response status
+            retry_ctx = RetryContext(
+                attempt=config.attempt,
+                max_attempts=config.max_retries,
+                max_delay=config.max_delay,
+                backoff_factor=config.backoff_factor,
+                current_delay=current_delay,
+                retries_left=retries_left,
+                retry_status_codes=config.retry_status_codes
+            )
             return _handle_response_status(
-                response, retries_left, config.max_retries, config.api_description, config.attempt,
-                current_delay, config.backoff_factor, config.max_delay, config.retry_status_codes,
+                response, retry_ctx, config.api_description,
                 config.session_manager, config.force_text_response, request_params
             )
 
