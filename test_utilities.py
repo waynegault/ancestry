@@ -517,44 +517,66 @@ def create_standard_test_runner(module_test_function):
     return run_comprehensive_tests
 
 
-def test_utilities_module_tests() -> bool:
-    """Test the test utilities module itself."""
-    try:
-        # Test basic functions
-        assert test_func() == "test_result"
-        assert test_func_with_param(5) == 10
-        assert sample_function() == "sample_result"
-        assert temp_function() == "temp"
-        assert safe_func() == "safe_result"
-        assert decorated_safe_func() == "decorated_safe_result"
+# ==============================================
+# Module Tests
+# ==============================================
 
-        # Test factory functions
-        custom_func = create_test_function("custom_result")
-        assert custom_func() == "custom_result"
 
-        multiply_func = create_parameterized_test_function("multiply", 3)
-        assert multiply_func(4) == 12
+def _test_basic_functions() -> None:
+    """Test basic utility functions."""
+    assert test_func() == "test_result"
+    assert test_func_with_param(5) == 10
+    assert sample_function() == "sample_result"
+    assert temp_function() == "temp"
+    assert safe_func() == "safe_result"
+    assert decorated_safe_func() == "decorated_safe_result"
 
-        add_func = create_parameterized_test_function("add", 10)
-        assert add_func(5) == 15
 
-        # Test registry
-        retrieved_func = get_test_function("test_func")
-        assert retrieved_func() == "test_result"
+def _test_factory_functions() -> None:
+    """Test factory functions."""
+    custom_func = create_test_function("custom_result")
+    assert custom_func() == "custom_result"
 
-        # Test the new test runner factory
-        def dummy_test():
-            return True
+    multiply_func = create_parameterized_test_function("multiply", 3)
+    assert multiply_func(4) == 12
 
-        test_runner = create_standard_test_runner(dummy_test)
-        assert test_runner()
+    add_func = create_parameterized_test_function("add", 10)
+    assert add_func(5) == 15
 
-        print("✅ Test utilities module tests passed")
+
+def _test_function_registry() -> None:
+    """Test function registry."""
+    retrieved_func = get_test_function("test_func")
+    assert retrieved_func() == "test_result"
+
+
+def _test_runner_factory() -> None:
+    """Test the test runner factory."""
+    def dummy_test():
         return True
 
-    except Exception as e:
-        print(f"❌ Test utilities module tests failed: {e}")
-        return False
+    test_runner = create_standard_test_runner(dummy_test)
+    assert test_runner()
+
+
+def test_utilities_module_tests() -> bool:
+    """Test the test utilities module itself."""
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Test Utilities", "test_utilities.py")
+
+    tests = [
+        ("Basic utility functions", _test_basic_functions, True, "direct", "Test core utility functions"),
+        ("Factory functions", _test_factory_functions, True, "direct", "Test function factories"),
+        ("Function registry", _test_function_registry, True, "direct", "Test function registry"),
+        ("Test runner factory", _test_runner_factory, True, "direct", "Test runner creation"),
+    ]
+
+    with suppress_logging():
+        for test_name, test_func, expected, method, details in tests:
+            suite.run_test(test_name, test_func, expected, method, details)
+
+    return suite.finish_suite()
 
 
 # Use centralized test runner utility (self-referential)
