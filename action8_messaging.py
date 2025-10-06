@@ -69,10 +69,17 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from string import Formatter
-from typing import Any, Literal, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 if TYPE_CHECKING:
-    from common_params import MessageContext, ConversationState, MessageFlags, ProcessingState, BatchCounters, MessagingBatchData
+    from common_params import (
+        BatchCounters,
+        ConversationState,
+        MessageContext,
+        MessageFlags,
+        MessagingBatchData,
+        ProcessingState,
+    )
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import (
@@ -2297,7 +2304,7 @@ def _process_single_person(
 
         # --- Step 5: Send/Simulate Message ---
         existing_conversation_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
-        from common_params import MessageContext, ConversationState, MessageFlags
+        from common_params import ConversationState, MessageContext, MessageFlags
         msg_ctx = MessageContext(
             person=person,
             message_text=message_text,

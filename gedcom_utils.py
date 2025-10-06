@@ -752,6 +752,24 @@ def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple:
     return queue_fwd, queue_bwd, visited_fwd, visited_bwd
 
 
+def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visited_fwd: dict, queue_fwd: deque) -> None:
+    """Add a node to the forward search queue if not already visited."""
+    if node_id not in visited_fwd:
+        new_path = [*path, node_id]
+        visited_fwd[node_id] = (depth, new_path)
+        queue_fwd.append((node_id, depth, new_path))
+
+
+def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_fwd: dict, queue_fwd: deque) -> None:
+    """Expand to siblings in forward direction through parents."""
+    for parent_id in graph.id_to_parents.get(current_id, set()):
+        for sibling_id in graph.id_to_children.get(parent_id, set()):
+            if sibling_id != current_id and sibling_id not in visited_fwd:
+                new_path = [*path, parent_id, sibling_id]
+                visited_fwd[sibling_id] = (depth + 2, new_path)
+                queue_fwd.append((sibling_id, depth + 2, new_path))
+
+
 def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
                         visited_fwd: dict, queue_fwd: deque, max_depth: int):
     """Expand a node in the forward direction during BFS."""
@@ -765,26 +783,32 @@ def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
 
     # Expand to parents (direct relationship)
     for parent_id in graph.id_to_parents.get(current_id, set()):
-        if parent_id not in visited_fwd:
-            new_path = [*path, parent_id]
-            visited_fwd[parent_id] = (depth + 1, new_path)
-            queue_fwd.append((parent_id, depth + 1, new_path))
+        _add_node_to_forward_queue(parent_id, path, depth + 1, visited_fwd, queue_fwd)
 
     # Expand to children (direct relationship)
     for child_id in graph.id_to_children.get(current_id, set()):
-        if child_id not in visited_fwd:
-            new_path = [*path, child_id]
-            visited_fwd[child_id] = (depth + 1, new_path)
-            queue_fwd.append((child_id, depth + 1, new_path))
+        _add_node_to_forward_queue(child_id, path, depth + 1, visited_fwd, queue_fwd)
 
     # Expand to siblings (through parent)
+    _expand_forward_siblings(graph, current_id, path, depth, visited_fwd, queue_fwd)
+
+
+def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visited_bwd: dict, queue_bwd: deque) -> None:
+    """Add a node to the backward search queue if not already visited."""
+    if node_id not in visited_bwd:
+        new_path = [node_id, *path]
+        visited_bwd[node_id] = (depth, new_path)
+        queue_bwd.append((node_id, depth, new_path))
+
+
+def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_bwd: dict, queue_bwd: deque) -> None:
+    """Expand to siblings in backward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
-            if sibling_id != current_id and sibling_id not in visited_fwd:
-                # Include parent in path for proper relationship context
-                new_path = [*path, parent_id, sibling_id]
-                visited_fwd[sibling_id] = (depth + 2, new_path)
-                queue_fwd.append((sibling_id, depth + 2, new_path))
+            if sibling_id != current_id and sibling_id not in visited_bwd:
+                new_path = [sibling_id, parent_id, *path]
+                visited_bwd[sibling_id] = (depth + 2, new_path)
+                queue_bwd.append((sibling_id, depth + 2, new_path))
 
 
 def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],
@@ -800,26 +824,14 @@ def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],
 
     # Expand to parents (direct relationship)
     for parent_id in graph.id_to_parents.get(current_id, set()):
-        if parent_id not in visited_bwd:
-            new_path = [parent_id, *path]
-            visited_bwd[parent_id] = (depth + 1, new_path)
-            queue_bwd.append((parent_id, depth + 1, new_path))
+        _add_node_to_backward_queue(parent_id, path, depth + 1, visited_bwd, queue_bwd)
 
     # Expand to children (direct relationship)
     for child_id in graph.id_to_children.get(current_id, set()):
-        if child_id not in visited_bwd:
-            new_path = [child_id, *path]
-            visited_bwd[child_id] = (depth + 1, new_path)
-            queue_bwd.append((child_id, depth + 1, new_path))
+        _add_node_to_backward_queue(child_id, path, depth + 1, visited_bwd, queue_bwd)
 
     # Expand to siblings (through parent)
-    for parent_id in graph.id_to_parents.get(current_id, set()):
-        for sibling_id in graph.id_to_children.get(parent_id, set()):
-            if sibling_id != current_id and sibling_id not in visited_bwd:
-                # Include parent in path for proper relationship context
-                new_path = [sibling_id, parent_id, *path]
-                visited_bwd[sibling_id] = (depth + 2, new_path)
-                queue_bwd.append((sibling_id, depth + 2, new_path))
+    _expand_backward_siblings(graph, current_id, path, depth, visited_bwd, queue_bwd)
 
 
 def fast_bidirectional_bfs(

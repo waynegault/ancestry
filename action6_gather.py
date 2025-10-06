@@ -28,6 +28,7 @@ import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Tuple
 from urllib.parse import unquote, urlencode, urljoin, urlparse
@@ -36,7 +37,6 @@ from urllib.parse import unquote, urlencode, urljoin, urlparse
 import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
-from dataclasses import dataclass
 from diskcache.core import ENOVAL  # For checking cache misses
 from requests.cookies import RequestsCookieJar
 from requests.exceptions import ConnectionError, RequestException

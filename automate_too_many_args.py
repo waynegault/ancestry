@@ -38,7 +38,7 @@ def get_violations() -> List[Dict[str, Any]]:
     result = subprocess.run(
         ['python', '-m', 'ruff', 'check', '--select=PLR0913', '.', '--output-format=json'],
         capture_output=True,
-        text=True
+        text=True, check=False
     )
     if result.stdout:
         return json.loads(result.stdout)
@@ -48,7 +48,7 @@ def get_violations() -> List[Dict[str, Any]]:
 def parse_function_signature(file_path: str, line_number: int) -> Optional[FunctionInfo]:
     """Parse a function signature to extract parameter information."""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding='utf-8') as f:
             content = f.read()
 
         tree = ast.parse(content)

@@ -64,7 +64,7 @@ import os
 import statistics
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from common_params import ExtractionExperimentEvent
@@ -81,7 +81,7 @@ def _stable_hash(value: str | None) -> str | None:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
-def record_extraction_experiment_event(event_data: 'ExtractionExperimentEvent') -> None:
+def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) -> None:
     """Append a single telemetry event (best effort).
 
     Added (Phase 1 - 2025-08-11): component_coverage → proportion (0-1) of
