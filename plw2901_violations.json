@@ -1,0 +1,70 @@
+[
+  {
+    "cell": null,
+    "code": "PLW2901",
+    "end_location": {
+      "column": 21,
+      "row": 441
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\credentials.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 441
+    },
+    "message": "`for` loop variable `line` overwritten by assignment target",
+    "noqa_row": 441,
+    "url": "https://docs.astral.sh/ruff/rules/redefined-loop-name"
+  },
+  {
+    "cell": null,
+    "code": "PLW2901",
+    "end_location": {
+      "column": 17,
+      "row": 225
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\prompt_telemetry.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 225
+    },
+    "message": "`for` loop variable `line` overwritten by assignment target",
+    "noqa_row": 225,
+    "url": "https://docs.astral.sh/ruff/rules/redefined-loop-name"
+  },
+  {
+    "cell": null,
+    "code": "PLW2901",
+    "end_location": {
+      "column": 21,
+      "row": 258
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\security_manager.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 258
+    },
+    "message": "`for` loop variable `line` overwritten by assignment target",
+    "noqa_row": 258,
+    "url": "https://docs.astral.sh/ruff/rules/redefined-loop-name"
+  },
+  {
+    "cell": null,
+    "code": "PLW2901",
+    "end_location": {
+      "column": 13,
+      "row": 201
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 201
+    },
+    "message": "`for` loop variable `part` overwritten by assignment target",
+    "noqa_row": 201,
+    "url": "https://docs.astral.sh/ruff/rules/redefined-loop-name"
+  }
+]

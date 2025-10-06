@@ -24,7 +24,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -195,7 +195,7 @@ def menu() -> str:
 # End of menu
 
 
-def clear_log_file() -> Tuple[bool, Optional[str]]:
+def clear_log_file() -> tuple[bool, Optional[str]]:
     """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
     cleared = False
     log_file_handler: Optional[logging.FileHandler] = None
@@ -213,7 +213,7 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
             # Step 3: Close the handler (releases resources)
             log_file_handler.close()  # type: ignore[union-attr]
             # Step 4: Clear the log file contents
-            with open(log_file_path, "w", encoding="utf-8"):
+            with Path(log_file_path).open("w", encoding="utf-8"):
                 pass
             cleared = True
     except PermissionError as permission_error:
@@ -1879,7 +1879,7 @@ def _test_reset_db_actn_integration():
         logger.debug("reset_db_actn integration test: All required methods and attributes verified")
 
     except AttributeError as e:
-        raise AssertionError(f"reset_db_actn integration test failed with AttributeError: {e}")
+        raise AssertionError(f"reset_db_actn integration test failed with AttributeError: {e}") from e
     except Exception as e:
         # Other exceptions are acceptable for this test (we're only checking for AttributeError)
         logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")

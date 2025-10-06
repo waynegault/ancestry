@@ -2082,7 +2082,7 @@ class SessionManager:
         Check for JavaScript errors in the browser console.
 
         Returns:
-            List[Dict]: List of JavaScript errors found since last check
+            list[dict]: List of JavaScript errors found since last check
         """
         if not self.driver or not self.driver_live:
             return []
@@ -2623,7 +2623,7 @@ class SessionManager:
 
     # Compatibility properties for legacy code
     @property
-    def browser_needed(self):
+    def browser_needed(self) -> bool:
         """Get/set browser needed flag."""
         return self.browser_manager.browser_needed
 
@@ -2635,7 +2635,7 @@ class SessionManager:
 
 
     @property
-    def _requests_session(self):
+    def _requests_session(self) -> requests.Session:
         """Get the requests session (compatibility property with underscore)."""
         return self.api_manager.requests_session
 

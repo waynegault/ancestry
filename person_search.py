@@ -453,10 +453,8 @@ def _test_bulk_operations():
 def _test_error_handling():
     """Test error handling in search functions."""
     # Test with invalid inputs
-    try:
-        _ = parse_person_name(None)
-    except Exception:
-        pass  # Expected to handle errors
+    with contextlib.suppress(Exception):
+        _ = parse_person_name(None)  # Expected to handle errors
 
 
 def _test_safe_execute_decorator():

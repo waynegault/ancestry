@@ -7,7 +7,7 @@ to reduce parameter counts and improve code maintainability.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -17,8 +17,8 @@ class GraphContext:
 
     Used in gedcom_utils.py and relationship_utils.py for BFS/DFS operations.
     """
-    id_to_parents: Dict[str, List[str]]
-    id_to_children: Dict[str, List[str]]
+    id_to_parents: dict[str, list[str]]
+    id_to_children: dict[str, list[str]]
     current_id: Optional[str] = None
     start_id: Optional[str] = None
     end_id: Optional[str] = None
@@ -37,7 +37,7 @@ class RetryContext:
     backoff_factor: float = 2.0
     current_delay: float = 1.0
     retries_left: Optional[int] = None
-    retry_status_codes: Optional[List[int]] = None
+    retry_status_codes: Optional[list[int]] = None
 
 
 @dataclass
@@ -117,10 +117,10 @@ class ConversationProcessingContext:
 
     Groups lookup maps and batch data collections.
     """
-    existing_persons_map: Dict[str, Any]
-    existing_conv_logs: Dict[tuple, Any]
-    conv_log_upserts_dicts: List[Dict[str, Any]]
-    person_updates: Dict[str, Any]
+    existing_persons_map: dict[str, Any]
+    existing_conv_logs: dict[tuple, Any]
+    conv_log_upserts_dicts: list[dict[str, Any]]
+    person_updates: dict[str, Any]
     comp_conv_id: Optional[str] = None
     comp_ts: Optional[Any] = None
     my_pid_lower: Optional[str] = None
@@ -134,8 +134,8 @@ class MessagingBatchData:
 
     Used in action8_messaging.py for collecting database updates.
     """
-    db_logs_to_add_dicts: List[Dict[str, Any]]
-    person_updates: Dict[str, Any]
+    db_logs_to_add_dicts: list[dict[str, Any]]
+    person_updates: dict[str, Any]
 
 
 @dataclass
@@ -161,7 +161,7 @@ class NavigationConfig:
     selector: str
     target_url_base: str
     signin_page_url_base: str
-    unavailability_selectors: Dict[str, tuple]
+    unavailability_selectors: dict[str, tuple]
     page_timeout: int
     element_timeout: int
 
@@ -190,8 +190,8 @@ class PrefetchedData:
 
     Used in action6_gather.py for _prepare_person_operation_data.
     """
-    combined_details: Optional[Dict[str, Any]] = None
-    tree_data: Optional[Dict[str, Any]] = None
+    combined_details: Optional[dict[str, Any]] = None
+    tree_data: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -263,7 +263,7 @@ class ExtractionExperimentEvent:
     prompt_key: str
     parse_success: bool
     prompt_version: Optional[str] = None
-    extracted_data: Optional[Dict[str, Any]] = None
+    extracted_data: Optional[dict[str, Any]] = None
     suggested_tasks: Optional[Any] = None
     raw_response_text: Optional[str] = None
     user_id: Optional[str] = None
@@ -283,7 +283,7 @@ class SearchCriteria:
     search_name: str
     field_name: Optional[str] = None
     test_name: Optional[str] = None
-    candidate_data: Optional[Dict[str, Any]] = None
+    candidate_data: Optional[dict[str, Any]] = None
     name_flex: Optional[str] = None
 
 
@@ -296,15 +296,15 @@ class RequestConfig:
     """
     url: str
     method: str = "GET"
-    headers: Optional[Dict[str, str]] = None
+    headers: Optional[dict[str, str]] = None
     referer_url: Optional[str] = None
     use_csrf_token: bool = False
     add_default_origin: bool = False
     timeout: Optional[int] = None
     allow_redirects: bool = True
-    data: Optional[Dict[str, Any]] = None
-    json_data: Optional[Dict[str, Any]] = None
-    json: Optional[Dict[str, Any]] = None
+    data: Optional[dict[str, Any]] = None
+    json_data: Optional[dict[str, Any]] = None
+    json: Optional[dict[str, Any]] = None
     force_text_response: bool = False
     cookie_jar: Optional[Any] = None
 

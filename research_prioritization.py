@@ -449,15 +449,14 @@ class IntelligentResearchPrioritizer:
     def _is_prerequisite(self, task1: ResearchPriority, task2: ResearchPriority) -> bool:
         """Determine if task1 is a prerequisite for task2."""
         # Vital records often prerequisite for other research
-        if task1.task_type == "vital_records" and task2.task_type in ["census", "immigration"]:
-            # Check if they involve the same person
-            if any(person in task2.target_people for person in task1.target_people):
-                return True
+        if (task1.task_type == "vital_records" and task2.task_type in ["census", "immigration"] and
+            any(person in task2.target_people for person in task1.target_people)):
+            return True
 
         # Conflict resolution prerequisite for verification tasks
-        if task1.task_type == "conflict_resolution" and task2.task_type == "dna_verification":
-            if any(person in task2.target_people for person in task1.target_people):
-                return True
+        if (task1.task_type == "conflict_resolution" and task2.task_type == "dna_verification" and
+            any(person in task2.target_people for person in task1.target_people)):
+            return True
 
         return False
 

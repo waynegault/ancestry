@@ -1,0 +1,257 @@
+[
+  {
+    "cell": null,
+    "code": "N803",
+    "end_location": {
+      "column": 77,
+      "row": 2660
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action8_messaging.py",
+    "fix": null,
+    "location": {
+      "column": 53,
+      "row": 2660
+    },
+    "message": "Argument name `MAX_BATCH_MEMORY_MB` should be lowercase",
+    "noqa_row": 2660,
+    "url": "https://docs.astral.sh/ruff/rules/invalid-argument-name"
+  },
+  {
+    "cell": null,
+    "code": "N803",
+    "end_location": {
+      "column": 99,
+      "row": 2660
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action8_messaging.py",
+    "fix": null,
+    "location": {
+      "column": 79,
+      "row": 2660
+    },
+    "message": "Argument name `MAX_BATCH_ITEMS` should be lowercase",
+    "noqa_row": 2660,
+    "url": "https://docs.astral.sh/ruff/rules/invalid-argument-name"
+  },
+  {
+    "cell": null,
+    "code": "N815",
+    "end_location": {
+      "column": 16,
+      "row": 228
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\api_utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 228
+    },
+    "message": "Variable `displayName` in class scope should not be mixedCase",
+    "noqa_row": 228,
+    "url": "https://docs.astral.sh/ruff/rules/mixed-case-variable-in-class-scope"
+  },
+  {
+    "cell": null,
+    "code": "N815",
+    "end_location": {
+      "column": 16,
+      "row": 230
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\api_utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 230
+    },
+    "message": "Variable `peopleCount` in class scope should not be mixedCase",
+    "noqa_row": 230,
+    "url": "https://docs.astral.sh/ruff/rules/mixed-case-variable-in-class-scope"
+  },
+  {
+    "cell": null,
+    "code": "N815",
+    "end_location": {
+      "column": 15,
+      "row": 231
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\api_utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 231
+    },
+    "message": "Variable `photoCount` in class scope should not be mixedCase",
+    "noqa_row": 231,
+    "url": "https://docs.astral.sh/ruff/rules/mixed-case-variable-in-class-scope"
+  },
+  {
+    "cell": null,
+    "code": "N815",
+    "end_location": {
+      "column": 19,
+      "row": 268
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\api_utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 268
+    },
+    "message": "Variable `personResearch` in class scope should not be mixedCase",
+    "noqa_row": 268,
+    "url": "https://docs.astral.sh/ruff/rules/mixed-case-variable-in-class-scope"
+  },
+  {
+    "cell": null,
+    "code": "N818",
+    "end_location": {
+      "column": 24,
+      "row": 151
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 7,
+      "row": 151
+    },
+    "message": "Exception name `AncestryException` should be named with an Error suffix",
+    "noqa_row": 151,
+    "url": "https://docs.astral.sh/ruff/rules/error-suffix-on-exception-name"
+  },
+  {
+    "cell": null,
+    "code": "N815",
+    "end_location": {
+      "column": 11,
+      "row": 346
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\database.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 346
+    },
+    "message": "Variable `cM_DNA` in class scope should not be mixedCase",
+    "noqa_row": 346,
+    "url": "https://docs.astral.sh/ruff/rules/mixed-case-variable-in-class-scope"
+  },
+  {
+    "cell": null,
+    "code": "N812",
+    "end_location": {
+      "column": 65,
+      "row": 61
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\selenium_utils.py",
+    "fix": null,
+    "location": {
+      "column": 40,
+      "row": 61
+    },
+    "message": "Lowercase `expected_conditions` imported as non-lowercase `EC`",
+    "noqa_row": 61,
+    "url": "https://docs.astral.sh/ruff/rules/lowercase-imported-as-non-lowercase"
+  },
+  {
+    "cell": null,
+    "code": "N812",
+    "end_location": {
+      "column": 69,
+      "row": 148
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 44,
+      "row": 148
+    },
+    "message": "Lowercase `expected_conditions` imported as non-lowercase `EC`",
+    "noqa_row": 148,
+    "url": "https://docs.astral.sh/ruff/rules/lowercase-imported-as-non-lowercase"
+  },
+  {
+    "cell": null,
+    "code": "N803",
+    "end_location": {
+      "column": 31,
+      "row": 431
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 431
+    },
+    "message": "Argument name `MAX_RETRIES` should be lowercase",
+    "noqa_row": 431,
+    "url": "https://docs.astral.sh/ruff/rules/invalid-argument-name"
+  },
+  {
+    "cell": null,
+    "code": "N803",
+    "end_location": {
+      "column": 36,
+      "row": 432
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 432
+    },
+    "message": "Argument name `BACKOFF_FACTOR` should be lowercase",
+    "noqa_row": 432,
+    "url": "https://docs.astral.sh/ruff/rules/invalid-argument-name"
+  },
+  {
+    "cell": null,
+    "code": "N803",
+    "end_location": {
+      "column": 31,
+      "row": 433
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 433
+    },
+    "message": "Argument name `MAX_DELAY` should be lowercase",
+    "noqa_row": 433,
+    "url": "https://docs.astral.sh/ruff/rules/invalid-argument-name"
+  },
+  {
+    "cell": null,
+    "code": "N802",
+    "end_location": {
+      "column": 17,
+      "row": 2206
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 2206
+    },
+    "message": "Function name `handle_twoFA` should be lowercase",
+    "noqa_row": 2206,
+    "url": "https://docs.astral.sh/ruff/rules/invalid-function-name"
+  },
+  {
+    "cell": null,
+    "code": "N817",
+    "end_location": {
+      "column": 62,
+      "row": 3429
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 42,
+      "row": 3429
+    },
+    "message": "CamelCase `SessionManager` imported as acronym `SM`",
+    "noqa_row": 3429,
+    "url": "https://docs.astral.sh/ruff/rules/camelcase-imported-as-acronym"
+  }
+]

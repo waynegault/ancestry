@@ -1,0 +1,121 @@
+[
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 3205
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\api_utils.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 3202
+    },
+    "message": "Use `contextlib.suppress(json.JSONDecodeError, TypeError)` instead of `try`-`except`-`pass`",
+    "noqa_row": 3202,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 2013
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\database.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2010
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 2010,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 2023
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\database.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2020
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 2020,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 2088
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\database.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2085
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 2085,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 2098
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\database.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2095
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 2095,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 1222
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\performance_monitor.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 1219
+    },
+    "message": "Use `contextlib.suppress(ValueError)` instead of `try`-`except`-`pass`",
+    "noqa_row": 1219,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 459
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\person_search.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 456
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 456,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  }
+]

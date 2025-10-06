@@ -1,0 +1,138 @@
+[
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 97,
+      "row": 178
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\cache_manager.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 176
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 176,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 77,
+      "row": 285
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\cache_manager.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 284
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 284,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 69,
+      "row": 1478
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\credentials.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 1477
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 1477,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 54,
+      "row": 212
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\performance_orchestrator.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 210
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 210,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 68,
+      "row": 1251
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\relationship_utils.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 1250
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 1250,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 85,
+      "row": 454
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\research_prioritization.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 452
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 452,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 85,
+      "row": 459
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\research_prioritization.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 458
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 458,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 55,
+      "row": 2454
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\utils.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2452
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 2452,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  }
+]

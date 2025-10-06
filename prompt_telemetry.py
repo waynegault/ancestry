@@ -221,8 +221,8 @@ def _load_recent_events(window: int = 500) -> list[dict[str, Any]]:
             lines = fh.readlines()
         if window > 0:
             lines = lines[-window:]
-        for line in lines:
-            line = line.strip()
+        for raw_line in lines:
+            line = raw_line.strip()
             if not line:
                 continue
             try:

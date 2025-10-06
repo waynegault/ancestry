@@ -7,10 +7,9 @@ Extracts nested test functions to module level to reduce complexity.
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 
-def find_nested_test_functions(lines: List[str]) -> List[Tuple[int, str, str]]:
+def find_nested_test_functions(lines: list[str]) -> list[tuple[int, str, str]]:
     """Find all nested test functions (4-space indented def test_* or def _test_*)"""
     pattern = re.compile(r'^    def (test_\w+|_test_\w+)\(')
     matches = []
@@ -22,7 +21,7 @@ def find_nested_test_functions(lines: List[str]) -> List[Tuple[int, str, str]]:
     return matches
 
 
-def extract_function_body(lines: List[str], start_line_idx: int) -> List[str]:
+def extract_function_body(lines: list[str], start_line_idx: int) -> list[str]:
     """Extract the complete function body starting from start_line_idx"""
     function_lines = []
 
@@ -46,7 +45,7 @@ def extract_function_body(lines: List[str], start_line_idx: int) -> List[str]:
     return function_lines
 
 
-def create_module_level_function(func_name: str, func_body_lines: List[str]) -> Tuple[str, List[str]]:
+def create_module_level_function(func_name: str, func_body_lines: list[str]) -> tuple[str, list[str]]:
     """Convert nested function to module-level function with _ prefix"""
     module_func_name = f"_{func_name}" if not func_name.startswith('_') else func_name
 
@@ -83,7 +82,7 @@ def main() -> int:
         sys.exit(1)
 
     # Read the file
-    with open(file_path, encoding='utf-8') as f:
+    with file_path.open(encoding='utf-8') as f:
         lines = f.readlines()
 
     # Find nested test functions

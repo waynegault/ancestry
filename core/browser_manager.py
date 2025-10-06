@@ -8,13 +8,13 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
+from pathlib import Path
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+parent_dir = Path(__file__).parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 from standard_imports import setup_module
 
@@ -25,7 +25,6 @@ logger = setup_module(globals(), __name__)
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -379,7 +378,7 @@ def _test_exception_handling():
         result = manager.create_new_tab()
         assert result is None, "create_new_tab should return None for invalid session"
     except Exception as e:
-        raise AssertionError(f"Methods should handle invalid state gracefully: {e}")
+        raise AssertionError(f"Methods should handle invalid state gracefully: {e}") from e
     return True
 
 

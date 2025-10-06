@@ -436,9 +436,9 @@ class UnifiedCredentialManager:
     def _parse_env_file(self, env_file_path: str) -> dict[str, str]:
         """Parse .env file and return credentials dictionary."""
         env_credentials = {}
-        with open(env_file_path, encoding="utf-8") as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
+        with Path(env_file_path).open(encoding="utf-8") as f:
+            for line_num, raw_line in enumerate(f, 1):
+                line = raw_line.strip()
 
                 # Skip empty lines and comments
                 if not line or line.startswith("#"):
@@ -1474,10 +1474,10 @@ def _should_run_tests() -> bool:
 
     # Time-based auto-test detection
     from pathlib import Path
-    if time.time() > 0 and Path(sys.argv[0]).name == "credentials.py":
-        if not sys.stdin.isatty() or os.environ.get("CI") == "true":
-            print("🔐 Auto-detected non-interactive environment, running tests...")
-            return True
+    if (time.time() > 0 and Path(sys.argv[0]).name == "credentials.py" and
+        (not sys.stdin.isatty() or os.environ.get("CI") == "true")):
+        print("🔐 Auto-detected non-interactive environment, running tests...")
+        return True
 
     return False
 

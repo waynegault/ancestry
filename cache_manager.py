@@ -173,12 +173,11 @@ class SessionComponentCache(BaseCacheModule):
             cache_key = get_unified_cache_key("session", component_type, config_hash)
 
             cached_data = cache.get(cache_key, retry=True)
-            if cached_data and isinstance(cached_data, dict):
-                # Validate cache data structure
-                if all(key in cached_data for key in ["component", "timestamp", "config_hash"]):
-                    # Check if cache is still valid
-                    age = time.time() - cached_data["timestamp"]
-                    if age < SESSION_CACHE_CONFIG.component_ttl_seconds:
+            if (cached_data and isinstance(cached_data, dict) and
+                all(key in cached_data for key in ["component", "timestamp", "config_hash"])):
+                # Check if cache is still valid
+                age = time.time() - cached_data["timestamp"]
+                if age < SESSION_CACHE_CONFIG.component_ttl_seconds:
                         logger.debug(f"Cache hit for component: {component_type}")
                         self._stats["cache_hits"] += 1
                         return cached_data["component"]
@@ -281,11 +280,11 @@ class APICacheManager(BaseCacheModule):
             cache_key = get_unified_cache_key("api", service, method, str(hash(str(params))))
             cached_data = cache.get(cache_key, retry=True)
 
-            if cached_data and isinstance(cached_data, dict):
-                if "response" in cached_data and "timestamp" in cached_data:
-                    self._stats["api_cache_hits"] += 1
-                    logger.debug(f"API cache hit: {service}.{method}")
-                    return cached_data["response"]
+            if (cached_data and isinstance(cached_data, dict) and
+                "response" in cached_data and "timestamp" in cached_data):
+                self._stats["api_cache_hits"] += 1
+                logger.debug(f"API cache hit: {service}.{method}")
+                return cached_data["response"]
 
             self._stats["api_cache_misses"] += 1
             return None

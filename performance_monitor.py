@@ -48,6 +48,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import gc
 import json
 import statistics
@@ -1216,10 +1217,8 @@ def _test_error_handling() -> None:
     def error_function() -> None:
         raise ValueError("Test error")
 
-    try:
-        error_function()
-    except ValueError:
-        pass  # Expected
+    with contextlib.suppress(ValueError):
+        error_function()  # Expected
 
     # Function should still be in profiles despite error
     error_profiles = [name for name in monitor.function_profiles if "error_function" in name]

@@ -66,7 +66,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 from core_imports import (
     auto_register_module,
@@ -177,11 +177,8 @@ def get_unified_test_framework() -> Any:
 __all__ = [
     "Any",
     "Callable",
-    "Dict",
-    "List",
     "Optional",
     "Path",
-    "Tuple",
     "Union",
     "auto_register_module",
     "call_function",
