@@ -228,7 +228,7 @@ def get_person_relationship_path(
 
 
 @safe_execute(default_return=[], log_errors=True)
-def unified_person_search(  # noqa: PLR0913
+def unified_person_search(
     search_criteria: dict[str, Any],
     max_results: int = 10,
     include_gedcom: bool = True,

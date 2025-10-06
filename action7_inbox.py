@@ -1207,7 +1207,7 @@ class InboxProcessor:
 
         return False
 
-    def _determine_fetch_need(  # noqa: PLR0913
+    def _determine_fetch_need(
         self,
         api_conv_id: str,
         comp_conv_id: Optional[str],
@@ -1340,7 +1340,7 @@ class InboxProcessor:
 
         return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
 
-    def _create_conversation_log_upsert(  # noqa: PLR0913
+    def _create_conversation_log_upsert(
         self,
         api_conv_id: str,
         direction: MessageDirectionEnum,
@@ -1461,7 +1461,7 @@ class InboxProcessor:
             return safe_column_value(db_log, "latest_timestamp") or min_aware_dt
         return min_aware_dt
 
-    def _process_in_message(  # noqa: PLR0913
+    def _process_in_message(
         self,
         latest_ctx_in: Optional[dict],
         api_conv_id: str,
@@ -1711,7 +1711,7 @@ class InboxProcessor:
 
         return False, None, all_conversations_batch, next_cursor_from_api
 
-    def _handle_batch_processing_exception(  # noqa: PLR0913
+    def _handle_batch_processing_exception(
         self,
         exception: Exception,
         exception_type: str,
@@ -1773,7 +1773,7 @@ class InboxProcessor:
 
         return False, None, all_conversations_batch, next_cursor_from_api
 
-    def _handle_batch_and_commit(  # noqa: PLR0913
+    def _handle_batch_and_commit(
         self,
         session: DbSession,
         state: dict[str, Any],
@@ -1822,7 +1822,7 @@ class InboxProcessor:
 
         return False, None
 
-    def _process_single_batch_iteration(  # noqa: PLR0913
+    def _process_single_batch_iteration(
         self,
         session: DbSession,
         state: dict[str, Any],
@@ -1977,7 +1977,7 @@ class InboxProcessor:
 
     # End of _process_inbox_loop
 
-    def _log_unified_summary(  # noqa: PLR0913
+    def _log_unified_summary(
         self,
         total_api_items: int,
         items_processed: int,

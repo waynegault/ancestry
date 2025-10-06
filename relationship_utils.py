@@ -273,7 +273,7 @@ def _check_search_limits(start_time: float, processed: int, timeout_sec: float, 
     return True
 
 
-def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:  # noqa: PLR0913
+def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
     """Add a relative to the search queue if not already visited."""
     if relative_id not in visited:
         new_path = [*path, relative_id] if is_forward else [relative_id, *path]
@@ -281,7 +281,7 @@ def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visite
         queue.append((relative_id, depth, new_path))
 
 
-def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:  # noqa: PLR0913
+def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
     """Expand search to siblings through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -291,7 +291,7 @@ def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], d
                 queue.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:  # noqa: PLR0913
+def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
     """Expand search to parents, children, and siblings."""
     current_id = graph.current_id
     if not current_id:
@@ -309,7 +309,7 @@ def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visit
     _expand_to_siblings(graph, current_id, path, depth, visited, queue, is_forward)
 
 
-def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:  # noqa: PLR0913
+def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:
     """Process forward queue and return number of nodes processed."""
     if not queue_fwd:
         return 0
@@ -331,7 +331,7 @@ def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dic
     return 1
 
 
-def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:  # noqa: PLR0913
+def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:
     """Process backward queue and return number of nodes processed."""
     if not queue_bwd:
         return 0
@@ -374,7 +374,7 @@ def _select_best_path(all_paths: list[list[str]], id_to_parents: dict[str, set[s
     return best_path
 
 
-def fast_bidirectional_bfs(  # noqa: PLR0913
+def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
     id_to_parents: Optional[dict[str, set[str]]],
@@ -439,7 +439,7 @@ def fast_bidirectional_bfs(  # noqa: PLR0913
     return [start_id, end_id]
 
 
-def explain_relationship_path(  # noqa: PLR0913
+def explain_relationship_path(
     path_ids: list[str],
     reader: Any,
     id_to_parents: dict[str, set[str]],
@@ -784,7 +784,7 @@ def _get_gendered_term(male_term: str, female_term: str, neutral_term: str, sex_
     return neutral_term
 
 
-def _determine_gedcom_relationship(  # noqa: PLR0913
+def _determine_gedcom_relationship(
     prev_id: str,
     current_id: str,
     sex_char: Optional[str],
