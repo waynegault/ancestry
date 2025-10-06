@@ -1107,10 +1107,8 @@ def _test_config_file_integration():
         assert manager is not None
     finally:
         import os
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(temp_path)
-        except Exception:
-            pass
 
 
 def _test_environment_integration():

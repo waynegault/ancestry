@@ -647,7 +647,7 @@ class InboxProcessor:
     ) -> Optional[Person]:
         """Look up person in database by profile ID."""
         try:
-            person = (
+            return (
                 session.query(Person)
                 .filter(
                     func.upper(Person.profile_id) == profile_id.upper(),
@@ -655,7 +655,6 @@ class InboxProcessor:
                 )
                 .first()
             )
-            return person
         except SQLAlchemyError as e:
             logger.error(f"DB error looking up Person {log_ref}: {e}", exc_info=True)
             return None
@@ -925,6 +924,7 @@ class InboxProcessor:
         my_pid_lower = self._validate_session_state()
         if not my_pid_lower:
             return False
+        return None
 
     def _get_database_session_and_comparator(self) -> tuple[Optional[DbSession], Optional[str], Optional[datetime]]:
         """Get database session and create comparator for inbox processing."""
@@ -1202,10 +1202,7 @@ class InboxProcessor:
         # Fetch if no DB logs exist
         db_log_in = existing_conv_logs.get((api_conv_id, MessageDirectionEnum.IN.name))
         db_log_out = existing_conv_logs.get((api_conv_id, MessageDirectionEnum.OUT.name))
-        if not db_log_in and not db_log_out:
-            return True
-
-        return False
+        return bool(not db_log_in and not db_log_out)
 
     def _determine_fetch_need(
         self,
@@ -1333,10 +1330,7 @@ class InboxProcessor:
         ai_result = _classify_with_recovery()
 
         # Extract sentiment from result
-        if isinstance(ai_result, tuple):
-            ai_sentiment_result = ai_result[0] if ai_result else None
-        else:
-            ai_sentiment_result = ai_result
+        ai_sentiment_result = (ai_result[0] if ai_result else None) if isinstance(ai_result, tuple) else ai_result
 
         return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
 

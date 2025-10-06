@@ -379,7 +379,7 @@ def _test_exception_handling():
         result = manager.create_new_tab()
         assert result is None, "create_new_tab should return None for invalid session"
     except Exception as e:
-        assert False, f"Methods should handle invalid state gracefully: {e}"
+        raise AssertionError(f"Methods should handle invalid state gracefully: {e}")
     return True
 
 

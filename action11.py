@@ -244,7 +244,8 @@ def _get_search_criteria() -> Optional[Dict[str, Any]]:
         gender = user_input["gender_input"][0].lower()
 
     # Parse dates
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    def clean_param(p):
+        return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
 
     target_birth_year, target_birth_date_obj = (None, None)
@@ -475,12 +476,11 @@ def _score_gender_match(search_gn: str, cand_gn: str, weights: Dict[str, int]) -
     reasons = []
 
     logger.debug(f"[Simple Scoring] Checking Gender: Search='{search_gn}', Candidate='{cand_gn}'")
-    if cand_gn is not None and search_gn is not None:
-        if cand_gn == search_gn:
-            score = weights["gender_match"]
-            gender_score = weights["gender_match"]
-            reasons.append(f"Gender Match ({cand_gn.upper()}) ({weights['gender_match']}pts)")
-            logger.debug(f"[Simple Scoring] Gender Match! Adding {weights['gender_match']} points.")
+    if cand_gn is not None and search_gn is not None and cand_gn == search_gn:
+        score = weights["gender_match"]
+        gender_score = weights["gender_match"]
+        reasons.append(f"Gender Match ({cand_gn.upper()}) ({weights['gender_match']}pts)")
+        logger.debug(f"[Simple Scoring] Gender Match! Adding {weights['gender_match']} points.")
 
     return score, gender_score, reasons
 
@@ -747,7 +747,8 @@ def _process_and_score_suggestions(
     processed_candidates = []
 
     # Setup
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    def clean_param(p):
+        return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None
 
@@ -2129,9 +2130,8 @@ def _format_tree_ladder_path(
 
         # Convert to unified format and format
         unified_path = convert_api_path_to_unified_format(relationship_data, sn_str)
-        formatted_path = format_relationship_path_unified(unified_path, sn_str, on_str, None)
+        return format_relationship_path_unified(unified_path, sn_str, on_str, None)
 
-        return formatted_path
     except Exception as e:
         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
         # Fall back to raw formatted path
@@ -2485,10 +2485,7 @@ def _attempt_browser_login() -> bool:
         logger.info("User is already logged in. No need to navigate to sign-in page.")
 
         # Refresh the cookies in the requests session
-        if not _refresh_cookies_from_browser():
-            return False
-
-        return True
+        return _refresh_cookies_from_browser()
     # Try to log in
     login_result = log_in(session_manager)
     if login_result != "LOGIN_SUCCEEDED":
@@ -3000,10 +2997,9 @@ def get_ancestry_relationship_path(
     if relationship_data:
         # Parse the string response first using format_api_relationship_path
         # to get a properly formatted relationship path
-        formatted_relationship = format_api_relationship_path(
+        return format_api_relationship_path(
             relationship_data, owner_name, "Target Person"
         )
-        return formatted_relationship
 
     # Step 4: Try discovery API as fallback
     logger.debug(

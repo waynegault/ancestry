@@ -286,6 +286,8 @@ logger = setup_module(globals(), __name__)
 
 
 # Use centralized test runner utility
+import contextlib
+
 from test_utilities import create_standard_test_runner
 
 # ==============================================
@@ -366,10 +368,8 @@ def _test_module_cleanup():
     from test_utilities import temp_function
     register_function("temp_test_function", temp_function)
     assert is_function_available("temp_test_function"), "Temp function should be registered"
-    try:
+    with contextlib.suppress(Exception):
         cleanup_registry()
-    except Exception:
-        pass
 
 
 def _test_performance():

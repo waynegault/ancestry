@@ -556,7 +556,7 @@ def test_directory_creation():
     """Test that log directory is created when needed."""
     import tempfile
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory():
         original_init_state = _LoggingState.initialized
         _LoggingState.initialized = False  # Reset to allow fresh setup
 
@@ -632,7 +632,7 @@ def test_missing_directory():
     """Test creation of missing log directories."""
     import tempfile
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory():
         original_init_state = _LoggingState.initialized
         _LoggingState.initialized = False  # Reset to allow fresh setup
 

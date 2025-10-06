@@ -25,7 +25,6 @@ def find_nested_test_functions(lines: List[str]) -> List[Tuple[int, str, str]]:
 def extract_function_body(lines: List[str], start_line_idx: int) -> List[str]:
     """Extract the complete function body starting from start_line_idx"""
     function_lines = []
-    base_indent = 4  # Nested functions have 4-space indent
 
     # Start from the function definition line
     i = start_line_idx

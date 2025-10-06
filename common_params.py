@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 class GraphContext:
     """
     Graph traversal context for genealogical relationship calculations.
-    
+
     Used in gedcom_utils.py and relationship_utils.py for BFS/DFS operations.
     """
     id_to_parents: Dict[str, List[str]]
@@ -44,7 +44,7 @@ class RetryContext:
 class MatchIdentifiers:
     """
     DNA match identification parameters.
-    
+
     Used in action6_gather.py for processing DNA matches.
     """
     uuid: str
@@ -58,7 +58,7 @@ class MatchIdentifiers:
 class ConversationIdentifiers:
     """
     Conversation/messaging identification parameters.
-    
+
     Used in action7_inbox.py and action8_messaging.py.
     """
     api_conv_id: str
@@ -72,7 +72,7 @@ class ConversationIdentifiers:
 class ApiIdentifiers:
     """
     API-related identification parameters.
-    
+
     Used in api_utils.py and related modules.
     """
     owner_profile_id: str

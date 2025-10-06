@@ -84,7 +84,8 @@ def _get_year_range(date_flex: Optional[Dict[str, Any]]) -> int:
 
 def _extract_search_criteria(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
     """Extract and clean search criteria."""
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    def clean_param(p):
+        return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(search_criteria.get("first_name")),
         "surname": clean_param(search_criteria.get("surname")),
@@ -98,7 +99,8 @@ def _extract_search_criteria(search_criteria: Dict[str, Any]) -> Dict[str, Any]:
 
 def _extract_candidate_data(candidate: Dict[str, Any]) -> Dict[str, Any]:
     """Extract and clean candidate data - handle both camelCase and Title Case field names."""
-    clean_param = lambda p: (p.strip().lower() if p and isinstance(p, str) else None)
+    def clean_param(p):
+        return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),
         "surname": clean_param(candidate.get("surname", candidate.get("lastName", candidate.get("Surname")))),
@@ -426,23 +428,22 @@ def _process_treesui_person(person: Dict[str, Any], search_criteria: Dict[str, A
         )
 
         # Only include if score is above threshold and not duplicate
-        if total_score > 0:
-            if not any(match["id"] == person_id for match in scored_matches):
-                return {
-                    "id": person_id,
-                    "display_id": person_id,
-                    "first_name": first_name,
-                    "surname": surname,
-                    "gender": gender,
-                    "birth_year": birth_year,
-                    "birth_place": birth_place,
-                    "death_year": death_year,
-                    "death_place": death_place,
-                    "total_score": total_score,
-                    "field_scores": field_scores,
-                    "reasons": reasons,
-                    "source": "API",
-                }
+        if total_score > 0 and not any(match["id"] == person_id for match in scored_matches):
+            return {
+                "id": person_id,
+                "display_id": person_id,
+                "first_name": first_name,
+                "surname": surname,
+                "gender": gender,
+                "birth_year": birth_year,
+                "birth_place": birth_place,
+                "death_year": death_year,
+                "death_place": death_place,
+                "total_score": total_score,
+                "field_scores": field_scores,
+                "reasons": reasons,
+                "source": "API",
+            }
         return None
     except Exception as e:
         logger.error(f"Error processing treesui-list result: {e}")
@@ -774,7 +775,7 @@ def _process_parent_relationship(parent: Dict[str, Any]) -> Optional[Dict[str, A
         return None
 
     relationship_type = parent.get("relationshipType", "")
-    parent_info = {
+    return {
         "id": parent_id,
         "name": parent.get("personName", "Unknown"),
         "birth_year": _extract_year_from_relationship(parent, "birthYear"),
@@ -784,7 +785,6 @@ def _process_parent_relationship(parent: Dict[str, Any]) -> Optional[Dict[str, A
         "relationship": relationship_type.lower() if relationship_type else "parent",
     }
 
-    return parent_info
 
 
 def _process_parents(relationships: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
@@ -850,7 +850,7 @@ def _process_child_relationship(child: Dict[str, Any]) -> Optional[Dict[str, Any
     if not child_id:
         return None
 
-    child_info = {
+    return {
         "id": child_id,
         "name": child.get("personName", "Unknown"),
         "birth_year": _extract_year_from_relationship(child, "birthYear"),
@@ -859,7 +859,6 @@ def _process_child_relationship(child: Dict[str, Any]) -> Optional[Dict[str, Any
         "death_place": "Unknown",
     }
 
-    return child_info
 
 
 def _process_children(relationships: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
@@ -877,7 +876,7 @@ def _process_sibling_relationship(sibling: Dict[str, Any]) -> Optional[Dict[str,
     if not sibling_id:
         return None
 
-    sibling_info = {
+    return {
         "id": sibling_id,
         "name": sibling.get("personName", "Unknown"),
         "birth_year": _extract_year_from_relationship(sibling, "birthYear"),
@@ -886,7 +885,6 @@ def _process_sibling_relationship(sibling: Dict[str, Any]) -> Optional[Dict[str,
         "death_place": "Unknown",
     }
 
-    return sibling_info
 
 
 def _process_siblings(relationships: List[Dict[str, Any]], result: Dict[str, Any]) -> None:
@@ -1033,10 +1031,9 @@ def get_api_relationship_path(
 
     try:
         # Format the relationship path directly using the API formatter
-        relationship_path = format_api_relationship_path(
+        return format_api_relationship_path(
             ladder_data, reference_name or "Reference Person", "Individual"
         )
-        return relationship_path
     except Exception as e:
         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
         return f"(Error formatting relationship path: {e!s})"

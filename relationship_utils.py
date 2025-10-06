@@ -86,8 +86,7 @@ def _clean_gedcom_slashes(name: str) -> str:
     """Remove GEDCOM-style slashes from name."""
     cleaned = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", name)  # Middle
     cleaned = re.sub(r"^/([^/]+)/\s*", r"\1 ", cleaned)  # Start
-    cleaned = re.sub(r"\s*/([^/]+)/$", r" \1", cleaned)  # End
-    return cleaned
+    return re.sub(r"\s*/([^/]+)/$", r" \1", cleaned)  # End
 
 def _format_single_word(word: str) -> str:
     """Format a single word in a name."""
@@ -1188,8 +1187,7 @@ def _clean_name_format(name: str) -> str:
     # Try different regex patterns to handle various Name formats
     name_clean = re.sub(r"Name\(['\"]([^'\"]+)['\"]\)", r"\1", name)
     name_clean = re.sub(r"Name\('([^']+)'\)", r"\1", name_clean)
-    name_clean = re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
-    return name_clean
+    return re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
 
 
 def _infer_gender_from_name(name: str) -> Optional[str]:

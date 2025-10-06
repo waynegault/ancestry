@@ -1545,7 +1545,7 @@ def call_suggest_api(
     owner_facts_referer = _get_owner_referer(session_manager, base_url)
 
     timeouts_used = timeouts if timeouts else [20, 30, 60]
-    max_attempts = len(timeouts_used)
+    len(timeouts_used)
     logger.info(f"Attempting {api_description} search: {suggest_url}")
 
     result = _execute_suggest_api_with_retries(

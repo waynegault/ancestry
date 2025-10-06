@@ -932,18 +932,14 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
         return 0
     except SQLAlchemyError as e:
         logger.error(f"DB error create_person {log_ref}: {e}", exc_info=True)
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()
-        except Exception:
-            pass
         return 0
     # Step 8: Handle unexpected errors
     except Exception as e:
         logger.critical(f"Unexpected error create_person {log_ref}: {e}", exc_info=True)
-        try:
+        with contextlib.suppress(Exception):
             session.rollback()
-        except Exception:
-            pass
         return 0
 
 
@@ -1015,9 +1011,7 @@ def _compare_float_values(old_value: Any, new_value: Any) -> bool:
 
     if (old_float is None) != (new_float is None):
         return True
-    if old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01:
-        return True
-    return False
+    return bool(old_float is not None and new_float is not None and abs(old_float - new_float) > 0.01)
 
 
 def _compare_field_values(old_value: Any, new_value: Any) -> bool:
