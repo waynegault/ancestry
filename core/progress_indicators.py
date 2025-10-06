@@ -13,10 +13,13 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING
 
 import psutil
 from tqdm.auto import tqdm
+
+if TYPE_CHECKING:
+    from common_params import ProgressIndicatorConfig
 
 logger = logging.getLogger(__name__)
 

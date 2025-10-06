@@ -1813,7 +1813,7 @@ def call_facts_user_api(
         )
 
     # Validate and extract person research data
-    return _validate_and_extract_facts_data(facts_data_raw, api_person_id, api_description)
+    return _validate_and_extract_facts_data(facts_data_raw, api_ids.api_person_id, api_description)
 
 
 # End of call_facts_user_api
