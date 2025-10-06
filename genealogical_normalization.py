@@ -491,7 +491,6 @@ def normalize_ai_response(ai_resp: Any) -> dict[str, Any]:
 # Use centralized test runner utility
 from test_utilities import create_standard_test_runner
 
-
 # ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
