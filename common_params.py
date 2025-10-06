@@ -111,6 +111,23 @@ class BatchConfig:
 
 
 @dataclass
+class ConversationProcessingContext:
+    """
+    Context for processing conversations in action7_inbox.py.
+
+    Groups lookup maps and batch data collections.
+    """
+    existing_persons_map: Dict[str, Any]
+    existing_conv_logs: Dict[tuple, Any]
+    conv_log_upserts_dicts: List[Dict[str, Any]]
+    person_updates: Dict[str, Any]
+    comp_conv_id: Optional[str] = None
+    comp_ts: Optional[Any] = None
+    my_pid_lower: Optional[str] = None
+    min_aware_dt: Optional[Any] = None
+
+
+@dataclass
 class SearchCriteria:
     """
     Search criteria for person/match searches.

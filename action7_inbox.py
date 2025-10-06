@@ -39,6 +39,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === LOCAL IMPORTS ===
 from ai_interface import classify_message_intent
+from common_params import ConversationProcessingContext
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from cache_manager import (
@@ -1537,15 +1538,8 @@ class InboxProcessor:
         self,
         session: DbSession,
         conversation_info: dict,
-        existing_persons_map: dict[str, Person],
-        existing_conv_logs: dict[tuple[str, str], ConversationLog],
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
-        my_pid_lower: str,
-        min_aware_dt: datetime,
+        ctx: ConversationProcessingContext,
         progress_bar: Optional[tqdm],
-        conv_log_upserts_dicts: list,
-        person_updates: dict,
         ai_classified_count: int,
     ) -> tuple[bool, Optional[str], int, int]:
         """Process single conversation. Returns (should_stop, stop_reason, error_count_delta, ai_count)."""
@@ -1562,8 +1556,8 @@ class InboxProcessor:
 
         # Determine if conversation needs fetching
         needs_fetch, should_stop, fetch_stop_reason = self._determine_fetch_need(
-            api_conv_id, comp_conv_id, comp_ts, api_latest_ts_aware,
-            existing_conv_logs, min_aware_dt,
+            api_conv_id, ctx.comp_conv_id, ctx.comp_ts, api_latest_ts_aware,
+            ctx.existing_conv_logs, ctx.min_aware_dt,
         )
 
         if should_stop:
@@ -1589,7 +1583,7 @@ class InboxProcessor:
         # Lookup or create person
         person, _ = self._lookup_or_create_person(
             session, profile_id_upper, conversation_info.get("username", "Unknown"),
-            api_conv_id, existing_person_arg=existing_persons_map.get(profile_id_upper),
+            api_conv_id, existing_person_arg=ctx.existing_persons_map.get(profile_id_upper),
         )
         if not person or not safe_column_value(person, "id"):
             logger.error(f"Failed person lookup/create for ConvID {api_conv_id}. Skipping item.")
@@ -1598,18 +1592,18 @@ class InboxProcessor:
         people_id = safe_column_value(person, "id")
 
         # Find latest IN and OUT messages
-        latest_ctx_in, latest_ctx_out = self._find_latest_messages(context_messages, my_pid_lower)
+        latest_ctx_in, latest_ctx_out = self._find_latest_messages(context_messages, ctx.my_pid_lower)
 
         # Process IN and OUT messages
         ai_classified_count = self._process_in_message(
-            latest_ctx_in, api_conv_id, people_id, existing_conv_logs,
-            min_aware_dt, context_messages, my_pid_lower,
-            conv_log_upserts_dicts, person_updates, ai_classified_count
+            latest_ctx_in, api_conv_id, people_id, ctx.existing_conv_logs,
+            ctx.min_aware_dt, context_messages, ctx.my_pid_lower,
+            ctx.conv_log_upserts_dicts, ctx.person_updates, ai_classified_count
         )
 
         self._process_out_message(
-            latest_ctx_out, api_conv_id, people_id, existing_conv_logs,
-            min_aware_dt, conv_log_upserts_dicts
+            latest_ctx_out, api_conv_id, people_id, ctx.existing_conv_logs,
+            ctx.min_aware_dt, ctx.conv_log_upserts_dicts
         )
 
         return False, None, error_count_delta, ai_classified_count
@@ -1652,10 +1646,18 @@ class InboxProcessor:
             items_processed_before_stop += 1
 
             # Process single conversation
+            ctx = ConversationProcessingContext(
+                existing_persons_map=existing_persons_map,
+                existing_conv_logs=existing_conv_logs,
+                conv_log_upserts_dicts=conv_log_upserts_dicts,
+                person_updates=person_updates,
+                comp_conv_id=comp_conv_id,
+                comp_ts=comp_ts,
+                my_pid_lower=my_pid_lower,
+                min_aware_dt=min_aware_dt
+            )
             should_stop, conv_stop_reason, error_delta, ai_classified_count = self._process_single_conversation(
-                session, conversation_info, existing_persons_map, existing_conv_logs,
-                comp_conv_id, comp_ts, my_pid_lower, min_aware_dt, progress_bar,
-                conv_log_upserts_dicts, person_updates, ai_classified_count
+                session, conversation_info, ctx, progress_bar, ai_classified_count
             )
 
             error_count_this_loop += error_delta
