@@ -140,6 +140,7 @@ from api_utils import (
     call_facts_user_api,
     call_getladder_api,
 )
+from common_params import ApiIdentifiers
 
 # Import relationship utilities
 from relationship_utils import (
@@ -1800,8 +1801,9 @@ def _handle_details_phase(
         return None
 
     # Call the API
+    api_ids = ApiIdentifiers(owner_profile_id=owner_profile_id, api_person_id=api_person_id, api_tree_id=api_tree_id)
     person_research_data = call_facts_user_api(
-        session_manager_local, owner_profile_id, api_person_id, api_tree_id, base_url
+        session_manager_local, api_ids, base_url
     )
     if person_research_data is None:
         # Log warning and display to user

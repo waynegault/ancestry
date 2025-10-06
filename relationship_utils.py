@@ -294,8 +294,8 @@ def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visit
             queue.append((child_id, depth + 1, new_path))
 
     # Expand to siblings (through parent)
-    for parent_id in id_to_parents.get(current_id, set()):
-        for sibling_id in id_to_children.get(parent_id, set()):
+    for parent_id in graph.id_to_parents.get(current_id, set()):
+        for sibling_id in graph.id_to_children.get(parent_id, set()):
             if sibling_id != current_id and sibling_id not in visited:
                 if is_forward:
                     new_path = [*path, parent_id, sibling_id]
