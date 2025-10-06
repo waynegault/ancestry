@@ -98,7 +98,9 @@ DEFAULT_CONFIG = {
 }
 
 # Global cache for GEDCOM data with enhanced caching
-_CACHED_GEDCOM_DATA = None
+class _GedcomDataCache:
+    """Manages cached GEDCOM data state."""
+    data: Optional[Any] = None
 
 
 def set_cached_gedcom_data(gedcom_data: Any) -> None:
@@ -115,8 +117,7 @@ def set_cached_gedcom_data(gedcom_data: Any) -> None:
     Returns:
         None
     """
-    global _CACHED_GEDCOM_DATA
-    _CACHED_GEDCOM_DATA = gedcom_data
+    _GedcomDataCache.data = gedcom_data
     logger.info(f"Set cached GEDCOM data directly: {gedcom_data is not None}")
 
     # If we have a valid gedcom_data instance, cache its processed data
@@ -133,7 +134,7 @@ def set_cached_gedcom_data(gedcom_data: Any) -> None:
 
 def get_cached_gedcom_data() -> Any:
     """Return the currently cached GEDCOM data."""
-    return _CACHED_GEDCOM_DATA
+    return _GedcomDataCache.data
 
 
 def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
@@ -193,12 +194,10 @@ def get_gedcom_data() -> Optional[GedcomData]:
     Returns:
         GedcomData instance or None if loading fails
     """
-    global _CACHED_GEDCOM_DATA
-
     # Return cached data if already loaded
-    if _CACHED_GEDCOM_DATA is not None:
+    if _GedcomDataCache.data is not None:
         logger.info("Using cached GEDCOM data from memory")
-        return _CACHED_GEDCOM_DATA
+        return _GedcomDataCache.data
 
     # Check if GEDCOM path is configured
     gedcom_path_str = None
@@ -238,15 +237,15 @@ def get_gedcom_data() -> Optional[GedcomData]:
         from gedcom_cache import load_gedcom_with_aggressive_caching
 
         logger.debug("Using aggressive GEDCOM caching system")
-        _CACHED_GEDCOM_DATA = load_gedcom_with_aggressive_caching(str(gedcom_path))
+        _GedcomDataCache.data = load_gedcom_with_aggressive_caching(str(gedcom_path))
     except ImportError:
         logger.debug("Aggressive caching not available, using standard loading")
-        _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
+        _GedcomDataCache.data = load_gedcom_data(gedcom_path)
     except Exception as e:
         logger.warning(f"Error with aggressive caching, falling back to standard: {e}")
-        _CACHED_GEDCOM_DATA = load_gedcom_data(gedcom_path)
+        _GedcomDataCache.data = load_gedcom_data(gedcom_path)
 
-    if _CACHED_GEDCOM_DATA:
+    if _GedcomDataCache.data:
         logger.debug("GEDCOM file loaded successfully and cached for reuse.")
 
         # Log cache statistics if available
@@ -260,7 +259,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     else:
         logger.warning("GEDCOM data loading returned None")
 
-    return _CACHED_GEDCOM_DATA
+    return _GedcomDataCache.data
 
 
 def matches_criterion(key: str, criteria: dict[str, Any], value: Any) -> bool:
@@ -306,9 +305,9 @@ def _load_or_get_gedcom_data(
         return gedcom_data
 
     # Try cached data first
-    if _CACHED_GEDCOM_DATA is not None:
-        logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
-        return _CACHED_GEDCOM_DATA
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from _GedcomDataCache")
+        return _GedcomDataCache.data
 
     # Determine GEDCOM path
     if not gedcom_path:
@@ -544,9 +543,9 @@ def _ensure_gedcom_data(gedcom_data: Optional[GedcomData], gedcom_path: Optional
         return gedcom_data
 
     # Try to use the cached GEDCOM data first
-    if _CACHED_GEDCOM_DATA is not None:
-        logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
-        return _CACHED_GEDCOM_DATA
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from _GedcomDataCache")
+        return _GedcomDataCache.data
 
     # Get path from config if not provided
     if not gedcom_path:
@@ -870,9 +869,9 @@ def _load_or_get_gedcom_data(
         return gedcom_data
 
     # Try to use the cached GEDCOM data first
-    if _CACHED_GEDCOM_DATA is not None:
-        logger.info("Using cached GEDCOM data from _CACHED_GEDCOM_DATA")
-        return _CACHED_GEDCOM_DATA
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from _GedcomDataCache")
+        return _GedcomDataCache.data
 
     # Determine GEDCOM path
     if not gedcom_path:

@@ -27,8 +27,11 @@ logger = setup_module(globals(), __name__)
 import logging
 from typing import Any, Callable, Optional
 
+
 # Global flag to track if logging has been initialized
-_centralized_logging_setup = False
+class _CentralizedLoggingState:
+    """Manages centralized logging setup state."""
+    setup_complete = False
 
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:
@@ -44,16 +47,14 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     Returns:
         Configured logger instance
     """
-    global _centralized_logging_setup
-
     # Try to use centralized logging config first
     try:
         from logging_config import logger as central_logger, setup_logging
 
         # Initialize centralized logging if not already done
-        if not _centralized_logging_setup:
+        if not _CentralizedLoggingState.setup_complete:
             setup_logging()
-            _centralized_logging_setup = True
+            _CentralizedLoggingState.setup_complete = True
 
         # If no specific name requested, return the central logger
         if name is None:
@@ -351,11 +352,10 @@ def _test_optimized_logger_functionality() -> bool:
 def _test_centralized_logging_setup() -> bool:
     """Test centralized logging configuration"""
     try:
-        global _centralized_logging_setup
-        original_setup = _centralized_logging_setup
+        original_setup = _CentralizedLoggingState.setup_complete
 
         # Reset setup flag
-        _centralized_logging_setup = False
+        _CentralizedLoggingState.setup_complete = False
 
         # Get logger should trigger setup
         logger = get_logger("test_centralized")
@@ -364,7 +364,7 @@ def _test_centralized_logging_setup() -> bool:
         assert logger is not None
 
         # Restore original state
-        _centralized_logging_setup = original_setup
+        _CentralizedLoggingState.setup_complete = original_setup
 
         return True
     except Exception:

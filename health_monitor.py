@@ -1327,15 +1327,16 @@ class SessionHealthMonitor:
 
 
 # Global health monitor instance
-_health_monitor = None
+class _HealthMonitorSingleton:
+    """Singleton container for health monitor instance."""
+    instance: Optional[SessionHealthMonitor] = None
 
 
 def get_health_monitor() -> SessionHealthMonitor:
     """Get the global health monitor instance."""
-    global _health_monitor
-    if _health_monitor is None:
-        _health_monitor = SessionHealthMonitor()
-    return _health_monitor
+    if _HealthMonitorSingleton.instance is None:
+        _HealthMonitorSingleton.instance = SessionHealthMonitor()
+    return _HealthMonitorSingleton.instance
 
 
 def initialize_health_monitoring() -> Any:

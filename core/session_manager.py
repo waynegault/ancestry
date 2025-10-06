@@ -177,6 +177,133 @@ class SessionManager:
     - Background connection warming
     """
 
+    def _initialize_session_state(self) -> None:
+        """Initialize basic session state attributes."""
+        self.session_ready: bool = False
+        self.session_start_time: Optional[float] = None
+        self._last_readiness_check: Optional[float] = None
+        self._cached_session_state: dict[str, Any] = {}
+
+        # CSRF token caching
+        self._cached_csrf_token: Optional[str] = None
+        self._csrf_cache_time: float = 0.0
+        self._csrf_cache_duration: float = 300.0
+
+        # Database state tracking
+        self._db_init_attempted: bool = False
+        self._db_ready: bool = False
+
+        # Identifier logging flags
+        self._profile_id_logged: bool = False
+        self._uuid_logged: bool = False
+        self._tree_id_logged: bool = False
+        self._owner_logged: bool = False
+
+        # Session death detection
+        self._consecutive_303_count = 0
+
+    def _initialize_reliable_state(self) -> None:
+        """Initialize reliable processing state."""
+        self._reliable_state = {
+            'restart_interval_pages': int(os.getenv('RESTART_INTERVAL_PAGES', '50')),
+            'max_session_hours': float(os.getenv('MAX_SESSION_HOURS', '24')),
+            'pages_processed': 0,
+            'errors_encountered': 0,
+            'restarts_performed': 0,
+            'current_page': 0,
+            'start_time': time.time(),
+        }
+
+        # Enhanced reliability state
+        self._p2_error_windows = {
+            '1min': {'window_sec': 60, 'events': []},
+            '5min': {'window_sec': 300, 'events': []},
+            '15min': {'window_sec': 900, 'events': []},
+        }
+        self._p2_interventions = []
+        self._p2_last_warning = None
+        self._p2_network_failures = 0
+        self._p2_max_network_failures = int(os.getenv('NETWORK_FAILURE_MAX', '5'))
+        self._p2_network_test_endpoints = [
+            'https://www.ancestry.com',
+            'https://www.google.com',
+            'https://www.cloudflare.com',
+        ]
+        self._p2_last_auth_check = 0.0
+        self._p2_auth_check_interval = int(os.getenv('AUTH_CHECK_INTERVAL_SECONDS', '300'))
+        self._p2_auth_stable_successes = 0
+        self._p2_auth_interval_min = 120
+        self._p2_auth_interval_max = 1800
+
+    def _initialize_health_monitors(self) -> None:
+        """Initialize session and browser health monitoring."""
+        self.session_health_monitor = {
+            'is_alive': threading.Event(),
+            'death_detected': threading.Event(),
+            'last_heartbeat': time.time(),
+            'heartbeat_interval': 30,
+            'death_cascade_halt': threading.Event(),
+            'death_timestamp': None,
+            'parallel_operations': 0,
+            'death_cascade_count': 0,
+            'session_start_time': time.time(),
+            'max_session_age': 2400,
+            'last_proactive_refresh': time.time(),
+            'proactive_refresh_interval': getattr(config_schema, 'proactive_refresh_interval_seconds', 1800),
+            'refresh_in_progress': threading.Event()
+        }
+
+        self.browser_health_monitor = {
+            'browser_start_time': time.time(),
+            'max_browser_age': 1800,
+            'last_browser_refresh': time.time(),
+            'browser_refresh_interval': 1800,
+            'pages_since_refresh': 0,
+            'max_pages_before_refresh': 30,
+            'browser_refresh_in_progress': threading.Event(),
+            'browser_death_count': 0,
+            'last_browser_health_check': time.time()
+        }
+        self.session_health_monitor['is_alive'].set()
+
+    def _initialize_rate_limiting(self) -> None:
+        """Initialize adaptive rate limiting and batch processing."""
+        try:
+            from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor
+
+            api_config = getattr(config_schema, 'api', None)
+            if api_config:
+                initial_rps = getattr(api_config, 'requests_per_second', 0.5)
+                initial_delay = getattr(api_config, 'initial_delay', 2.0)
+            else:
+                initial_rps = 0.5
+                initial_delay = 2.0
+
+            self.adaptive_rate_limiter = AdaptiveRateLimiter(
+                initial_rps=max(0.7, initial_rps),
+                min_rps=0.35,
+                max_rps=3.0,
+                initial_delay=initial_delay,
+                min_delay=0.3,
+                max_delay=8.0,
+                adaptation_window=30,
+                success_threshold=0.92,
+                rate_limit_threshold=0.05
+            )
+
+            logger.debug("Optimized adaptive rate limiting initialized for Action 6 performance")
+
+            batch_size = getattr(config_schema, 'batch_size', 5)
+            self.smart_batch_processor = SmartBatchProcessor(
+                initial_batch_size=min(batch_size, 10),
+                min_batch_size=1,
+                max_batch_size=20
+            )
+        except ImportError as e:
+            logger.warning(f"Adaptive rate limiting not available: {e}")
+            self.adaptive_rate_limiter = None
+            self.smart_batch_processor = None
+
     def __init__(self, db_path: Optional[str] = None):
         """
         Initialize the SessionManager with optimized component creation.
@@ -196,110 +323,23 @@ class SessionManager:
         self.api_manager = self._get_cached_api_manager()
         self.validator = self._get_cached_session_validator()
 
-        # Session state
-        self.session_ready: bool = False
-        self.session_start_time: Optional[float] = None
-
-        # PHASE 5.1: Session state caching for performance
-        self._last_readiness_check: Optional[float] = None
-        self._cached_session_state: dict[str, Any] = {}
-
-        # ⚡ OPTIMIZATION 1: Pre-cached CSRF token for Action 6 performance
-        self._cached_csrf_token: Optional[str] = None
-        self._csrf_cache_time: float = 0.0
-        self._csrf_cache_duration: float = 300.0  # 5-minute cache
-
         # Configuration (cached access)
         self.ancestry_username: str = config_schema.api.username
         self.ancestry_password: str = config_schema.api.password
 
-        # Database state tracking (from old SessionManager)
-        self._db_init_attempted: bool = False
-        self._db_ready: bool = False
+        # Initialize state using helper methods
+        self._initialize_session_state()
+        self._initialize_reliable_state()
+        self._initialize_health_monitors()
 
-        # Identifier logging flags (from old SessionManager)
-        self._profile_id_logged: bool = False
-        self._uuid_logged: bool = False
-        self._tree_id_logged: bool = False
-        self._owner_logged: bool = False
-
-        # Add dynamic rate limiter for AI calls (matches utils.py SessionManager)
+        # Add dynamic rate limiter for AI calls
         try:
             from utils import DynamicRateLimiter
-
             self.dynamic_rate_limiter = DynamicRateLimiter()
         except ImportError:
             self.dynamic_rate_limiter = None
 
-        # Reliable processing state (merged from ReliableSessionManager)
-        self._reliable_state = {
-            'restart_interval_pages': int(os.getenv('RESTART_INTERVAL_PAGES', '50')),
-            'max_session_hours': float(os.getenv('MAX_SESSION_HOURS', '24')),
-            'pages_processed': 0,
-            'errors_encountered': 0,
-            'restarts_performed': 0,
-            'current_page': 0,
-            'start_time': time.time(),
-        }
-
-        # === PHASE 2: Enhanced Reliability State ===
-        # Early warning (multi-window) and intervention history
-        self._p2_error_windows = {
-            '1min': {'window_sec': 60, 'events': []},
-            '5min': {'window_sec': 300, 'events': []},
-            '15min': {'window_sec': 900, 'events': []},
-        }
-        self._p2_interventions = []  # [{timestamp, category, action, page_num}]
-        self._p2_last_warning = None
-        # Network resilience
-        self._p2_network_failures = 0
-        self._p2_max_network_failures = int(os.getenv('NETWORK_FAILURE_MAX', '5'))
-        self._p2_network_test_endpoints = [
-            'https://www.ancestry.com',
-            'https://www.google.com',
-            'https://www.cloudflare.com',
-        ]
-        # Auth monitoring
-        self._p2_last_auth_check = 0.0
-        self._p2_auth_check_interval = int(os.getenv('AUTH_CHECK_INTERVAL_SECONDS', '300'))
-        self._p2_auth_stable_successes = 0
-        self._p2_auth_interval_min = 120
-        self._p2_auth_interval_max = 1800
-
-        # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
-        self.session_health_monitor = {
-            'is_alive': threading.Event(),
-            'death_detected': threading.Event(),
-            'last_heartbeat': time.time(),
-            'heartbeat_interval': 30,  # Check every 30 seconds
-            'death_cascade_halt': threading.Event(),
-            'death_timestamp': None,
-            'parallel_operations': 0,
-            'death_cascade_count': 0,
-            # PROACTIVE SESSION REFRESH ADDITIONS
-            'session_start_time': time.time(),
-            'max_session_age': 2400,  # 40 minutes (before 45min expiry)
-            'last_proactive_refresh': time.time(),
-            'proactive_refresh_interval': getattr(config_schema, 'proactive_refresh_interval_seconds', 1800),  # default 30 min
-            'refresh_in_progress': threading.Event()
-        }
-
-        # OPTION C: BROWSER HEALTH MONITORING ADDITIONS
-        self.browser_health_monitor = {
-            'browser_start_time': time.time(),
-            'max_browser_age': 1800,  # 30 minutes before proactive refresh
-            'last_browser_refresh': time.time(),
-            'browser_refresh_interval': 1800,  # 30 minutes
-            'pages_since_refresh': 0,
-            'max_pages_before_refresh': 30,  # Refresh every 30 pages
-            'browser_refresh_in_progress': threading.Event(),
-            'browser_death_count': 0,
-            'last_browser_health_check': time.time()
-        }
-        self.session_health_monitor['is_alive'].set()  # Initially alive
-
-        # === HEALTH MONITORING INTEGRATION ===
-        # Initialize comprehensive health monitoring
+        # Initialize health monitoring integration
         try:
             from health_monitor import get_health_monitor, integrate_with_session_manager
             self.health_monitor = get_health_monitor()
@@ -309,68 +349,17 @@ class SessionManager:
             logger.warning("Health monitoring module not available")
             self.health_monitor = None
 
-        # Session death detection tracking
-        self._consecutive_303_count = 0
+        # Initialize rate limiting
+        self._initialize_rate_limiting()
 
-        # === PHASE 11.1: ADAPTIVE RATE LIMITING ===
-        try:
-            from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor
-
-            # Initialize adaptive rate limiter with OPTIMIZED settings for Action 6
-            api_config = getattr(config_schema, 'api', None)
-            if api_config:
-                initial_rps = getattr(api_config, 'requests_per_second', 0.5)
-                initial_delay = getattr(api_config, 'initial_delay', 2.0)
-            else:
-                initial_rps = 0.5
-                initial_delay = 2.0
-
-            # OPTIMIZATION: More aggressive adaptive settings based on log analysis
-            # Log analysis showed 96.3% cache hit rate and very stable performance
-            self.adaptive_rate_limiter = AdaptiveRateLimiter(
-                initial_rps=max(0.7, initial_rps),  # SAFE OPTIMIZATION: Start higher to match new config (0.6 → 0.7)
-                min_rps=0.35,  # SAFE OPTIMIZATION: Slightly higher minimum (0.3 → 0.35) to match new baseline
-                max_rps=3.0,  # Keep same maximum - already optimized
-                initial_delay=initial_delay,
-                min_delay=0.3,  # Keep same - already optimized
-                max_delay=8.0,  # Keep same - already optimized
-                adaptation_window=30,  # Keep same - already optimized
-                success_threshold=0.92,  # Keep same - already optimized
-                rate_limit_threshold=0.05  # Keep same - already optimized
-            )
-
-            logger.debug("Optimized adaptive rate limiting initialized for Action 6 performance")
-
-            # Initialize smart batch processor
-            batch_size = getattr(config_schema, 'batch_size', 5)
-            self.smart_batch_processor = SmartBatchProcessor(
-                initial_batch_size=min(batch_size, 10),
-                min_batch_size=1,
-                max_batch_size=20
-            )
-
-        except ImportError as e:
-            logger.warning(f"Adaptive rate limiting not available: {e}")
-            self.adaptive_rate_limiter = None
-            self.smart_batch_processor = None
-
-        # === ENHANCED SESSION CAPABILITIES ===
-        # JavaScript error monitoring
+        # Enhanced session capabilities
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
 
-        # CSRF token caching for performance optimization
-        self._cached_csrf_token: Optional[str] = None
-        self._csrf_cache_time: float = 0
-        self._csrf_cache_duration: float = 300  # 5 minutes
-
-        # === THREAD SAFETY MOVED TO BROWSER MANAGER ===
-        # Thread safety now handled by unified master lock in BrowserManager
+        # Thread safety delegated to BrowserManager
         logger.debug("Thread safety delegated to BrowserManager master lock")
 
-        # Initialize enhanced requests session with advanced configuration
+        # Initialize enhanced requests session and CloudScraper
         self._initialize_enhanced_requests_session()
-
-        # Initialize CloudScraper for anti-bot protection
         self._initialize_cloudscraper()
 
         # PHASE 5.1: Only initialize database if not already cached and ready
@@ -1196,27 +1185,29 @@ class SessionManager:
         if health_check_result == "healthy_skip_refresh":
             logger.debug("🔍 Browser health pre-check: Browser is very healthy, skipping refresh")
             return False
+
         # If "healthy_allow_refresh", continue with normal time/page-based checks
+        result = False
 
         # Check if browser is approaching max age
         browser_age = current_time - self.browser_health_monitor['browser_start_time']
         if browser_age >= self.browser_health_monitor['max_browser_age']:
             logger.debug(f"🔄 Browser age ({browser_age:.0f}s) approaching limit - proactive browser refresh needed")
-            return True
+            result = True
+        else:
+            # Check if enough time has passed since last browser refresh
+            time_since_refresh = current_time - self.browser_health_monitor['last_browser_refresh']
+            if time_since_refresh >= self.browser_health_monitor['browser_refresh_interval']:
+                logger.debug(f"🔄 Time since last browser refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
+                result = True
+            else:
+                # Check if too many pages processed since last refresh
+                pages_processed = self.browser_health_monitor['pages_since_refresh']
+                if pages_processed >= self.browser_health_monitor['max_pages_before_refresh']:
+                    logger.debug(f"🔄 Pages since last refresh ({pages_processed}) - proactive browser refresh needed")
+                    result = True
 
-        # Check if enough time has passed since last browser refresh
-        time_since_refresh = current_time - self.browser_health_monitor['last_browser_refresh']
-        if time_since_refresh >= self.browser_health_monitor['browser_refresh_interval']:
-            logger.debug(f"🔄 Time since last browser refresh ({time_since_refresh:.0f}s) - proactive refresh needed")
-            return True
-
-        # Check if too many pages processed since last refresh
-        pages_processed = self.browser_health_monitor['pages_since_refresh']
-        if pages_processed >= self.browser_health_monitor['max_pages_before_refresh']:
-            logger.debug(f"🔄 Pages since last refresh ({pages_processed}) - proactive browser refresh needed")
-            return True
-
-        return False
+        return result
 
     def _check_browser_basic_health(self) -> Optional[str]:
         """
@@ -1631,30 +1622,19 @@ class SessionManager:
         """Comprehensive verification that new browser maintains session continuity."""
         try:
             logger.debug("🔍 Verifying session continuity...")
+            result = True
 
             # Test 1: Basic browser functionality
             if not new_browser_manager.is_session_valid():
                 logger.warning("❌ New browser session invalid")
-                return False
-
+                result = False
             # Test 2: Navigation capability
-            if not self._test_browser_navigation(new_browser_manager):
-                return False
+            elif not self._test_browser_navigation(new_browser_manager) or not self._test_cookie_access(new_browser_manager) or not self._test_javascript_execution(new_browser_manager) or not self._test_authentication_state(new_browser_manager):
+                result = False
+            else:
+                logger.debug("✅ Session continuity verification passed")
 
-            # Test 3: Cookie access
-            if not self._test_cookie_access(new_browser_manager):
-                return False
-
-            # Test 4: JavaScript execution
-            if not self._test_javascript_execution(new_browser_manager):
-                return False
-
-            # Test 5: Authentication state verification
-            if not self._test_authentication_state(new_browser_manager):
-                return False
-
-            logger.debug("✅ Session continuity verification passed")
-            return True
+            return result
 
         except Exception as e:
             logger.error(f"❌ Session continuity verification failed: {e}")
@@ -2772,43 +2752,50 @@ class SessionManager:
         """
         logger.info(f"📊 Starting page processing: {start_page} to {end_page}")
         start_ts = time.time()
+        result = False
+
         try:
             # Ensure session ready before starting
             if not self.ensure_session_ready("Reliable Processing Start", skip_csrf=True):
                 logger.error("❌ Session not ready for processing start")
-                return False
+            else:
+                success = True
+                for page_num in range(start_page, end_page + 1):
+                    self._reliable_state['current_page'] = page_num
 
-            for page_num in range(start_page, end_page + 1):
-                self._reliable_state['current_page'] = page_num
+                    # Check session duration and page interval
+                    if not self._check_session_duration_and_refresh(page_num):
+                        success = False
+                        break
+                    if not self._check_page_interval_and_refresh(page_num):
+                        success = False
+                        break
 
-                # Check session duration and page interval
-                if not self._check_session_duration_and_refresh(page_num):
-                    return False
-                if not self._check_page_interval_and_refresh(page_num):
-                    return False
+                    # Perform health and auth checks
+                    if not self._perform_health_and_auth_checks(page_num):
+                        success = False
+                        break
 
-                # Perform health and auth checks
-                if not self._perform_health_and_auth_checks(page_num):
-                    return False
+                    # Process the page
+                    try:
+                        page_result = self._process_single_page(page_num)
+                        self._reliable_state['pages_processed'] += 1
+                        logger.debug(f"✅ Page {page_num} processed: {page_result}")
+                    except Exception as e:
+                        if not self._handle_page_processing_error(e, page_num):
+                            success = False
+                            break
 
-                # Process the page
-                try:
-                    result = self._process_single_page(page_num)
-                    self._reliable_state['pages_processed'] += 1
-                    logger.debug(f"✅ Page {page_num} processed: {result}")
-                except Exception as e:
-                    if not self._handle_page_processing_error(e, page_num):
-                        return False
-
-            return True
+                result = success
         except Exception as e:
             # Record as unknown error for early warning
             self._p2_record_error('unknown', e)
             logger.error(f"❌ Unexpected error in page processing: {e}")
-            return False
         finally:
             duration = time.time() - start_ts
             logger.info(f"📊 Page processing finished in {duration:.1f}s")
+
+        return result
 
     def _process_single_page(self, page_num: int) -> dict[str, Any]:
         """Default single-page processing; should be overridden by caller/demo.
@@ -3311,6 +3298,34 @@ def _test_error_handling() -> bool:
     return True
 
 
+def _check_attribute_exists(obj, attr_name: str, description: str) -> bool:
+    """Check if an attribute exists on an object and print result."""
+    if hasattr(obj, attr_name):
+        print(f"   ✅ {description}")
+        return True
+    print(f"   ❌ {description} missing")
+    return False
+
+
+def _check_method_returns_bool(obj, method_name: str, description: str) -> bool:
+    """Check if a method exists and returns a boolean."""
+    if not hasattr(obj, method_name):
+        print(f"   ❌ {description} missing")
+        return False
+
+    print(f"   ✅ {description} exists")
+    try:
+        result = getattr(obj, method_name)()
+        if isinstance(result, bool):
+            print(f"   ✅ {description} returns boolean")
+            return True
+        print(f"   ❌ {description} doesn't return boolean")
+        return False
+    except Exception as method_error:
+        print(f"   ⚠️  {description} error: {method_error}")
+        return False
+
+
 def _test_regression_prevention_csrf_optimization() -> bool:
     """
     🛡️ REGRESSION TEST: CSRF token caching optimization.
@@ -3326,39 +3341,11 @@ def _test_regression_prevention_csrf_optimization() -> bool:
         session_manager = SessionManager()
 
         # Test 1: Verify CSRF caching attributes exist
-        if hasattr(session_manager, '_cached_csrf_token'):
-            print("   ✅ _cached_csrf_token attribute exists")
-            results.append(True)
-        else:
-            print("   ❌ _cached_csrf_token attribute missing")
-            results.append(False)
+        results.append(_check_attribute_exists(session_manager, '_cached_csrf_token', '_cached_csrf_token attribute'))
+        results.append(_check_attribute_exists(session_manager, '_csrf_cache_time', '_csrf_cache_time attribute'))
 
-        if hasattr(session_manager, '_csrf_cache_time'):
-            print("   ✅ _csrf_cache_time attribute exists")
-            results.append(True)
-        else:
-            print("   ❌ _csrf_cache_time attribute missing")
-            results.append(False)
-
-        # Test 2: Verify CSRF validation method exists
-        if hasattr(session_manager, '_is_csrf_token_valid'):
-            print("   ✅ _is_csrf_token_valid method exists")
-
-            # Test that it returns a boolean
-            try:
-                is_valid = session_manager._is_csrf_token_valid()
-                if isinstance(is_valid, bool):
-                    print("   ✅ _is_csrf_token_valid returns boolean")
-                    results.append(True)
-                else:
-                    print("   ❌ _is_csrf_token_valid doesn't return boolean")
-                    results.append(False)
-            except Exception as method_error:
-                print(f"   ⚠️  _is_csrf_token_valid method error: {method_error}")
-                results.append(False)
-        else:
-            print("   ❌ _is_csrf_token_valid method missing")
-            results.append(False)
+        # Test 2: Verify CSRF validation method exists and returns boolean
+        results.append(_check_method_returns_bool(session_manager, '_is_csrf_token_valid', '_is_csrf_token_valid method'))
 
         # Test 3: Verify pre-cache method exists
         if hasattr(session_manager, '_precache_csrf_token'):

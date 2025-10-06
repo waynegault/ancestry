@@ -11,30 +11,31 @@ from __future__ import annotations
 
 import threading
 
-_cancel_event = threading.Event()
-_cancel_scope: str | None = None
+
+class _CancellationState:
+    """Manages cancellation state for cooperative shutdown."""
+    event = threading.Event()
+    scope: str | None = None
 
 
 def request_cancel(scope: str | None = None) -> None:
     """Signal that current long-running operation should cancel ASAP."""
-    global _cancel_scope
-    _cancel_scope = scope
-    _cancel_event.set()
+    _CancellationState.scope = scope
+    _CancellationState.event.set()
 
 
 def clear_cancel() -> None:
     """Clear any prior cancellation request before starting a new operation."""
-    global _cancel_scope
-    _cancel_scope = None
-    _cancel_event.clear()
+    _CancellationState.scope = None
+    _CancellationState.event.clear()
 
 
 def is_cancel_requested() -> bool:
     """Return True if a cancellation has been requested."""
-    return _cancel_event.is_set()
+    return _CancellationState.event.is_set()
 
 
 def cancel_scope() -> str | None:
     """Optional string describing who requested cancel (for diagnostics)."""
-    return _cancel_scope
+    return _CancellationState.scope
 

@@ -259,7 +259,9 @@ class AIResponse(BaseModel):
 
 
 # Global variable to cache the GEDCOM data
-_CACHED_GEDCOM_DATA = None
+class _GedcomDataCache:
+    """Manages cached GEDCOM data state."""
+    data: Optional[Any] = None
 
 
 def get_gedcom_data() -> Optional[Any]:
@@ -272,11 +274,9 @@ def get_gedcom_data() -> Optional[Any]:
     Returns:
         GedcomData instance or None if loading fails
     """
-    global _CACHED_GEDCOM_DATA
-
     # Return cached data if already loaded
-    if _CACHED_GEDCOM_DATA is not None:
-        return _CACHED_GEDCOM_DATA
+    if _GedcomDataCache.data is not None:
+        return _GedcomDataCache.data
 
     # Check if GEDCOM path is configured
     gedcom_path = config_schema.database.gedcom_file_path
@@ -296,17 +296,17 @@ def get_gedcom_data() -> Optional[Any]:
         logger.debug(f"Loading GEDCOM file {gedcom_path.name} (first time)...")
         from gedcom_cache import load_gedcom_with_aggressive_caching as load_gedcom_data
 
-        _CACHED_GEDCOM_DATA = load_gedcom_data(str(gedcom_path))
-        if _CACHED_GEDCOM_DATA:
+        _GedcomDataCache.data = load_gedcom_data(str(gedcom_path))
+        if _GedcomDataCache.data:
             logger.debug("GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
             logger.debug(
-                f"  Index size: {len(getattr(_CACHED_GEDCOM_DATA, 'indi_index', {}))}"
+                f"  Index size: {len(getattr(_GedcomDataCache.data, 'indi_index', {}))}"
             )
             logger.debug(
-                f"  Pre-processed cache size: {len(getattr(_CACHED_GEDCOM_DATA, 'processed_data_cache', {}))}"
+                f"  Pre-processed cache size: {len(getattr(_GedcomDataCache.data, 'processed_data_cache', {}))}"
             )
-        return _CACHED_GEDCOM_DATA
+        return _GedcomDataCache.data
     except Exception as e:
         logger.error(f"Error loading GEDCOM file: {e}", exc_info=True)
         return None
@@ -692,7 +692,7 @@ class PersonProcessor:
         db_state: DatabaseState,
         msg_config: MessageConfig,
         ms_state: MSGraphState,
-    ):
+    ) -> None:
         self.session_manager = session_manager
         self.db_state = db_state
         self.msg_config = msg_config
@@ -1352,7 +1352,7 @@ class PersonProcessor:
 class BatchCommitManager:
     """Manages batch commits to the database."""
 
-    def __init__(self, db_state: DatabaseState):
+    def __init__(self, db_state: DatabaseState) -> None:
         self.db_state = db_state
 
     def should_commit(self) -> bool:
@@ -1983,7 +1983,7 @@ def _get_message_context(
 
         # Step 2: Sort the fetched logs by timestamp ascending (oldest first) for AI context
         # Convert SQLAlchemy Column objects to Python datetime objects for sorting
-        def get_sort_key(log):
+        def get_sort_key(log: Any) -> datetime:
             # Extract timestamp value from SQLAlchemy Column if needed
             ts = log.latest_timestamp
             # If it's already a datetime or can be used as one, use it
@@ -2197,7 +2197,7 @@ def _test_core_functionality() -> None:
     """Test all core AI processing and data extraction functions"""
     # Test safe_column_value function with a simple object
     class TestObj:
-        def __init__(self):
+        def __init__(self) -> None:
             self.test_attr = "test_value_12345"
 
     test_obj = TestObj()
@@ -2259,7 +2259,7 @@ def _test_performance() -> None:
 
     # Test safe_column_value performance
     class TestObj:
-        def __init__(self):
+        def __init__(self) -> None:
             self.attr = "value"
 
     obj = TestObj()

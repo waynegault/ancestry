@@ -7,9 +7,10 @@ Extracts nested test functions to module level to reduce complexity.
 import re
 import sys
 from pathlib import Path
+from typing import List, Tuple
 
 
-def find_nested_test_functions(lines):
+def find_nested_test_functions(lines: List[str]) -> List[Tuple[int, str, str]]:
     """Find all nested test functions (4-space indented def test_* or def _test_*)"""
     pattern = re.compile(r'^    def (test_\w+|_test_\w+)\(')
     matches = []
@@ -21,7 +22,7 @@ def find_nested_test_functions(lines):
     return matches
 
 
-def extract_function_body(lines, start_line_idx):
+def extract_function_body(lines: List[str], start_line_idx: int) -> List[str]:
     """Extract the complete function body starting from start_line_idx"""
     function_lines = []
     base_indent = 4  # Nested functions have 4-space indent
@@ -46,7 +47,7 @@ def extract_function_body(lines, start_line_idx):
     return function_lines
 
 
-def create_module_level_function(func_name, func_body_lines):
+def create_module_level_function(func_name: str, func_body_lines: List[str]) -> Tuple[str, List[str]]:
     """Convert nested function to module-level function with _ prefix"""
     module_func_name = f"_{func_name}" if not func_name.startswith('_') else func_name
 
@@ -68,7 +69,7 @@ def create_module_level_function(func_name, func_body_lines):
     return module_func_name, module_lines
 
 
-def main():
+def main() -> int:
     if len(sys.argv) < 2:
         print("Usage: python refactor_test_functions.py <file_path>")
         print("\nThis script will:")

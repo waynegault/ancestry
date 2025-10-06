@@ -234,8 +234,12 @@ def clear_log_file() -> Tuple[bool, Optional[str]]:
 # End of clear_log_file
 
 
-# Global flag to track if caching has been initialized
-_caching_initialized = False
+# State management for caching initialization
+class _CachingState:
+    """Manages caching initialization state."""
+    initialized = False
+
+_caching_state = _CachingState()
 
 
 def initialize_aggressive_caching() -> None:
@@ -253,14 +257,12 @@ def initialize_aggressive_caching() -> None:
 
 def ensure_caching_initialized() -> None:
     """Initialize aggressive caching systems if not already done."""
-    global _caching_initialized
-
-    if not _caching_initialized:
+    if not _caching_state.initialized:
         logger.debug("Initializing caching systems on-demand...")
         cache_init_success = initialize_aggressive_caching()
         if cache_init_success:
             logger.debug("Caching systems initialized successfully")
-            _caching_initialized = True
+            _caching_state.initialized = True
         else:
             logger.warning(
                 "Some caching systems failed to initialize, continuing with reduced performance"
@@ -476,6 +478,43 @@ def exec_actn(
 
 
 # Action 0 (all_but_first_actn)
+def _delete_table_records(sess, table_class, filter_condition, table_name: str, person_id_to_keep: int) -> int:
+    """Delete records from a table based on filter condition."""
+    logger.debug(f"Deleting from {table_name} where people_id != {person_id_to_keep}...")
+    result = sess.query(table_class).filter(filter_condition).delete(synchronize_session=False)
+    count = result if result is not None else 0
+    logger.info(f"Deleted {count} {table_name} records.")
+    return count
+
+
+def _perform_deletions(sess, person_id_to_keep: int) -> dict:
+    """Perform all deletion operations and return counts."""
+    deleted_counts = {
+        "conversation_log": _delete_table_records(
+            sess, ConversationLog, ConversationLog.people_id != person_id_to_keep,
+            "conversation_log", person_id_to_keep
+        ),
+        "dna_match": _delete_table_records(
+            sess, DnaMatch, DnaMatch.people_id != person_id_to_keep,
+            "dna_match", person_id_to_keep
+        ),
+        "family_tree": _delete_table_records(
+            sess, FamilyTree, FamilyTree.people_id != person_id_to_keep,
+            "family_tree", person_id_to_keep
+        ),
+        "people": _delete_table_records(
+            sess, Person, Person.id != person_id_to_keep,
+            "people", person_id_to_keep
+        ),
+    }
+
+    total_deleted = sum(deleted_counts.values())
+    if total_deleted == 0:
+        logger.info(f"No records found to delete besides Person ID {person_id_to_keep}.")
+
+    return deleted_counts
+
+
 def all_but_first_actn(session_manager: SessionManager, *_):
     """
     V1.2: Modified to delete records from people, conversation_log,
@@ -536,68 +575,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             )
 
             # --- Perform Deletions ---
-            deleted_counts = {
-                "conversation_log": 0,
-                "dna_match": 0,
-                "family_tree": 0,
-                "people": 0,
-            }
-
-            # 2. Delete from conversation_log
-            logger.debug(
-                f"Deleting from conversation_log where people_id != {person_id_to_keep}..."
-            )
-            result_conv = (
-                sess.query(ConversationLog)
-                .filter(ConversationLog.people_id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["conversation_log"] = (
-                result_conv if result_conv is not None else 0
-            )
-            logger.info(
-                f"Deleted {deleted_counts['conversation_log']} conversation_log records."
-            )
-
-            # 3. Delete from dna_match
-            logger.debug(
-                f"Deleting from dna_match where people_id != {person_id_to_keep}..."
-            )
-            result_dna = (
-                sess.query(DnaMatch)
-                .filter(DnaMatch.people_id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["dna_match"] = result_dna if result_dna is not None else 0
-            logger.info(f"Deleted {deleted_counts['dna_match']} dna_match records.")
-
-            # 4. Delete from family_tree
-            logger.debug(
-                f"Deleting from family_tree where people_id != {person_id_to_keep}..."
-            )
-            result_ft = (
-                sess.query(FamilyTree)
-                .filter(FamilyTree.people_id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["family_tree"] = result_ft if result_ft is not None else 0
-            logger.info(f"Deleted {deleted_counts['family_tree']} family_tree records.")
-
-            # 5. Delete from people
-            logger.debug(f"Deleting from people where id != {person_id_to_keep}...")
-            result_people = (
-                sess.query(Person)
-                .filter(Person.id != person_id_to_keep)
-                .delete(synchronize_session=False)
-            )
-            deleted_counts["people"] = result_people if result_people is not None else 0
-            logger.info(f"Deleted {deleted_counts['people']} people records.")
-
-            total_deleted = sum(deleted_counts.values())
-            if total_deleted == 0:
-                logger.info(
-                    f"No records found to delete besides Person ID {person_id_to_keep}."
-                )
+            _perform_deletions(sess, person_id_to_keep)
 
         success = True  # Mark success if transaction completes
 
@@ -1529,7 +1507,6 @@ def _show_cache_statistics() -> None:
 
 def _toggle_log_level() -> None:
     """Toggle console log level between DEBUG and INFO."""
-    global logger
     os.system("cls" if os.name == "nt" else "clear")
     if logger and logger.handlers:
         console_handler = None
@@ -1549,7 +1526,7 @@ def _toggle_log_level() -> None:
             )
             new_level_name = logging.getLevelName(new_level)
             # Re-call setup_logging to potentially update filters etc. too
-            logger = setup_logging(log_level=new_level_name)
+            setup_logging(log_level=new_level_name)
             logger.info(f"Console log level toggled to: {new_level_name}")
         else:
             logger.warning(
@@ -1576,7 +1553,6 @@ def _handle_database_actions(choice: str, session_manager: Any) -> bool:
 
 def _handle_action6_with_start_page(choice: str, session_manager: Any, config: Any) -> bool:
     """Handle Action 6 (DNA match gathering) with optional start page."""
-    global logger
     parts = choice.split()
     start_val = 1
     if len(parts) > 1:
@@ -1594,34 +1570,37 @@ def _handle_action6_with_start_page(choice: str, session_manager: Any, config: A
 
 def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> bool:
     """Handle browser-required actions."""
+    result = False
+
     if choice == "1":
         ensure_caching_initialized()
         exec_actn(run_core_workflow_action, session_manager, choice, close_sess_after=True)
-        return True
-    if choice == "5":
+        result = True
+    elif choice == "5":
         exec_actn(check_login_actn, session_manager, choice)
-        return True
-    if choice.startswith("6"):
-        return _handle_action6_with_start_page(choice, session_manager, config)
-    if choice == "7":
+        result = True
+    elif choice.startswith("6"):
+        result = _handle_action6_with_start_page(choice, session_manager, config)
+    elif choice == "7":
         exec_actn(srch_inbox_actn, session_manager, choice)
-        return True
-    if choice == "8":
+        result = True
+    elif choice == "8":
         exec_actn(send_messages_action, session_manager, choice)
-        return True
-    if choice == "9":
+        result = True
+    elif choice == "9":
         ensure_caching_initialized()
         exec_actn(process_productive_messages_action, session_manager, choice)
-        return True
-    if choice == "10":
+        result = True
+    elif choice == "10":
         ensure_caching_initialized()
         exec_actn(run_action10, session_manager, choice)
-        return True
-    if choice == "11":
+        result = True
+    elif choice == "11":
         ensure_caching_initialized()
         exec_actn(run_action11_wrapper, session_manager, choice)
-        return True
-    return False
+        result = True
+
+    return result
 
 
 def _handle_test_options(choice: str) -> bool:
@@ -1689,8 +1668,8 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
 
 
 def main() -> None:
-    global logger, session_manager  # Ensure global logger can be modified
-    session_manager = None  # Initialize session_manager
+    # Initialize session_manager as local variable
+    session_manager = None
 
     # Ensure terminal window has focus on Windows
     _set_windows_console_focus()
@@ -1698,7 +1677,9 @@ def main() -> None:
     try:
         print("")
         # --- Logging Setup ---
-        logger = setup_logging()
+        # Logger already set up by setup_module at module level
+        # Just call setup_logging to ensure proper configuration
+        setup_logging()
 
         # --- Configuration Validation ---
         # Validate action configuration to prevent Action 6-style failures

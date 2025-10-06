@@ -783,6 +783,42 @@ def _test_multiple_instances() -> None:
         manager2.delete_credentials()
 
 
+def _test_performance() -> None:
+    """Test encryption/decryption performance with larger datasets."""
+    import time
+
+    manager = SecurityManager("TestPerfApp_12345")
+
+    # Create larger credential set
+    large_credentials_12345 = {
+        f"KEY_{i}_12345": f"value_{i}_{'x'*50}_12345" for i in range(100)
+    }
+
+    try:
+        # Test encryption performance
+        start_time = time.time()
+        result = manager.encrypt_credentials(large_credentials_12345)
+        encrypt_time = time.time() - start_time
+        assert result is True, "Encryption should succeed"
+        assert (
+            encrypt_time < 2.0
+        ), f"Encryption took too long: {encrypt_time:.2f}s"
+
+        # Test decryption performance
+        start_time = time.time()
+        decrypted = manager.decrypt_credentials()
+        decrypt_time = time.time() - start_time
+        assert (
+            decrypted == large_credentials_12345
+        ), "Decrypted data should match original"
+        assert (
+            decrypt_time < 2.0
+        ), f"Decryption took too long: {decrypt_time:.2f}s"
+
+    finally:
+        manager.delete_credentials()
+
+
 def _test_full_workflow() -> None:
     """Test integration - full workflow."""
     manager = SecurityManager("TestWorkflowApp_12345")
@@ -905,34 +941,19 @@ def security_manager_module_tests() -> bool:
         )
         suite.start_suite()
 
-    # Assign module-level test functions (removing duplicate nested definitions)
-    test_security_manager_instantiation = _test_security_manager_instantiation
-    test_master_key_operations = _test_master_key_operations
-    test_credential_encryption_decryption = _test_credential_encryption_decryption
-    test_individual_credential_retrieval = _test_individual_credential_retrieval
-    test_credential_validation = _test_credential_validation
-    test_error_handling = _test_error_handling
-    test_file_security = _test_file_security
-    test_credential_deletion = _test_credential_deletion
-    test_multiple_instances = _test_multiple_instances
-    test_full_workflow = _test_full_workflow
-
-    # All duplicate nested test function definitions removed
-    # Tests are now called from module-level functions assigned above
-
     # Run tests organized by standard categories
     with suppress_logging():
         # Initialization Tests
         suite.run_test(
             "SecurityManager instantiation and setup",
-            test_security_manager_instantiation,
+            _test_security_manager_instantiation,
             "SecurityManager instances are created with proper initialization and configuration",
             "Test SecurityManager instantiation with test application name and verify initial state",
             "SecurityManager creates properly with correct app name and default configuration",
         )
         suite.run_test(
             "Master key generation and operations",
-            test_master_key_operations,
+            _test_master_key_operations,
             "Master encryption keys are generated and retrieved securely with proper format",
             "Test master key generation, consistency, and Fernet instance creation",
             "Master key operations work correctly with consistent key retrieval and Fernet setup",
@@ -941,21 +962,21 @@ def security_manager_module_tests() -> bool:
         # Core Functionality Tests
         suite.run_test(
             "Credential encryption and decryption operations",
-            test_credential_encryption_decryption,
+            _test_credential_encryption_decryption,
             "Credentials are encrypted and decrypted with data integrity and security",
             "Test credential encryption/decryption with various data types and special characters",
             "Encryption and decryption maintain data integrity with proper security measures",
         )
         suite.run_test(
             "Individual credential retrieval and access",
-            test_individual_credential_retrieval,
+            _test_individual_credential_retrieval,
             "Specific credentials are retrieved from encrypted storage with proper access control",
             "Test retrieval of individual credentials and handling of missing credential requests",
             "Individual credential retrieval works correctly with proper access control and error handling",
         )
         suite.run_test(
             "Credential validation and verification",
-            test_credential_validation,
+            _test_credential_validation,
             "Required credentials are validated for presence and content requirements",
             "Test credential validation with valid and invalid credential sets",
             "Credential validation properly identifies valid credentials and rejects incomplete data",
@@ -964,14 +985,14 @@ def security_manager_module_tests() -> bool:
         # Edge Cases Tests
         suite.run_test(
             "Error handling and edge cases",
-            test_error_handling,
+            _test_error_handling,
             "Missing files and invalid data are handled gracefully without system failures",
             "Test error handling with missing credential files and invalid access attempts",
             "Error handling manages missing files and invalid data gracefully with appropriate responses",
         )
         suite.run_test(
             "File security and permissions management",
-            test_file_security,
+            _test_file_security,
             "Appropriate file permissions are set for encrypted credential storage files",
             "Test file permission settings and security measures for credential files",
             "File permissions provide adequate security for encrypted credential storage",
@@ -980,58 +1001,23 @@ def security_manager_module_tests() -> bool:
         # Integration Tests
         suite.run_test(
             "Multiple SecurityManager instances coordination",
-            test_multiple_instances,
+            _test_multiple_instances,
             "Multiple SecurityManager instances handle shared credentials with proper coordination",
             "Test multiple manager instances with same app name and verify shared credential access",
             "Multiple instances coordinate properly with shared master keys and credential files",
         )
         suite.run_test(
             "Complete credential workflow integration",
-            test_full_workflow,
+            _test_full_workflow,
             "Complete credential storage and retrieval workflow functions correctly end-to-end",
             "Test full workflow from encryption through validation to individual credential retrieval",
             "Full workflow integrates all components for complete credential management lifecycle",
         )
 
         # Performance Tests
-        def test_performance():
-            """Test encryption/decryption performance with larger datasets."""
-            import time
-
-            manager = SecurityManager("TestPerfApp_12345")
-
-            # Create larger credential set
-            large_credentials_12345 = {
-                f"KEY_{i}_12345": f"value_{i}_{'x'*50}_12345" for i in range(100)
-            }
-
-            try:
-                # Test encryption performance
-                start_time = time.time()
-                result = manager.encrypt_credentials(large_credentials_12345)
-                encrypt_time = time.time() - start_time
-                assert result is True, "Encryption should succeed"
-                assert (
-                    encrypt_time < 2.0
-                ), f"Encryption took too long: {encrypt_time:.2f}s"
-
-                # Test decryption performance
-                start_time = time.time()
-                decrypted = manager.decrypt_credentials()
-                decrypt_time = time.time() - start_time
-                assert (
-                    decrypted == large_credentials_12345
-                ), "Decrypted data should match original"
-                assert (
-                    decrypt_time < 2.0
-                ), f"Decryption took too long: {decrypt_time:.2f}s"
-
-            finally:
-                manager.delete_credentials()
-
         suite.run_test(
             "Encryption and decryption performance with large datasets",
-            test_performance,
+            _test_performance,
             "Large credential sets are encrypted and decrypted efficiently within time limits",
             "Test performance with 100 credentials containing extended data and measure timing",
             "Performance operations complete within acceptable time thresholds for large datasets",
@@ -1040,7 +1026,7 @@ def security_manager_module_tests() -> bool:
         # Error Handling Tests
         suite.run_test(
             "Credential deletion and cleanup operations",
-            test_credential_deletion,
+            _test_credential_deletion,
             "Credential files are securely deleted and cleanup operations function correctly",
             "Test credential file deletion and verify proper cleanup with missing file handling",
             "Credential deletion provides secure cleanup with proper handling of missing files",

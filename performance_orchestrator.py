@@ -492,19 +492,20 @@ class PerformanceOptimizer:
 # GLOBAL PERFORMANCE OPTIMIZER
 # ==============================================
 
-_global_optimizer: Optional[PerformanceOptimizer] = None
-_optimizer_lock = threading.Lock()
+class _OptimizerSingleton:
+    """Thread-safe singleton container for performance optimizer instance."""
+    instance: Optional[PerformanceOptimizer] = None
+    lock = threading.Lock()
+
 
 def get_global_optimizer() -> PerformanceOptimizer:
     """Get or create the global performance optimizer."""
-    global _global_optimizer
+    if _OptimizerSingleton.instance is None:
+        with _OptimizerSingleton.lock:
+            if _OptimizerSingleton.instance is None:
+                _OptimizerSingleton.instance = PerformanceOptimizer()
 
-    if _global_optimizer is None:
-        with _optimizer_lock:
-            if _global_optimizer is None:
-                _global_optimizer = PerformanceOptimizer()
-
-    return _global_optimizer
+    return _OptimizerSingleton.instance
 
 def optimize_performance() -> list[OptimizationResult]:
     """Run comprehensive performance optimization."""

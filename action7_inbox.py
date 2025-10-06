@@ -1869,20 +1869,25 @@ class InboxProcessor:
         if should_stop:
             return True, stop_reason
 
-        # Prepare for next batch
+        # Prepare for next batch - combine the last two checks
         state["next_cursor"] = next_cursor_from_api
+
+        # Check for end of inbox or cancellation
+        result_should_stop = False
+        result_stop_reason = None
+
         if not next_cursor_from_api:
             if progress_bar is not None:
                 progress_bar.total = state["items_processed_before_stop"]
                 progress_bar.refresh()
-            return True, "End of Inbox Reached (No Next Cursor)"
-
-        # Check for cancellation
-        if self._check_cancellation_requested():
+            result_should_stop = True
+            result_stop_reason = "End of Inbox Reached (No Next Cursor)"
+        elif self._check_cancellation_requested():
             logger.warning("Cancellation requested by timeout wrapper. Stopping inbox processing loop.")
-            return True, "Timeout Cancellation"
+            result_should_stop = True
+            result_stop_reason = "Timeout Cancellation"
 
-        return False, None
+        return result_should_stop, result_stop_reason
 
     def _handle_loop_exception(
         self,

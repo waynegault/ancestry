@@ -879,6 +879,27 @@ def _get_test_framework():
         return _FallbackTestSuite, _fallback_assert_valid_function, _fallback_create_mock_data, _FallbackSuppressLogging
 
 
+def _get_credential_manager_tests() -> list[tuple[str, callable, str]]:
+    """Build the list of credential manager tests with descriptions."""
+    return [
+        ("Basic Initialization", _test_initialization, "4 initialization checks: default app name=AncestryAutomation, custom app name=TestApp, security_manager=None, cache=None."),
+        ("Environment Variable Loading", _test_environment_loading, "3 environment variables loaded: ANCESTRY_USERNAME, ANCESTRY_PASSWORD, DEEPSEEK_API_KEY with correct values."),
+        ("Credential Validation", _test_credential_validation, "4 validation scenarios: valid credentials→True, missing username→False, missing password→False, empty values→False."),
+        ("Credential Access", _test_credential_access, "Individual credentials are retrieved with proper access control and error handling"),
+        ("Ancestry Credentials Helper", _test_ancestry_credentials, "Ancestry-specific credentials are retrieved through dedicated helper functions"),
+        ("API Key Retrieval", _test_api_key_retrieval, "API keys for various providers are retrieved with case-insensitive matching"),
+        ("Cache Management", _test_cache_management, "Credential cache is managed with proper clearing and state control"),
+        ("Credential Status Reporting", _test_credential_status, "System status is reported with comprehensive credential information"),
+        ("Export Functionality", _test_export_functionality, "Credentials are exported for backup with configurable sensitivity levels"),
+        ("Security Manager Integration", _test_security_manager_integration, "SecurityManager integration provides encrypted storage capabilities"),
+        ("Error Handling", _test_error_handling, "Missing credentials and invalid data are handled gracefully without system failures"),
+        ("Integration Testing", _test_integration, "Complete workflow integration functions correctly across all components"),
+        ("Performance Testing", _test_performance, "Credential operations complete efficiently within acceptable time thresholds"),
+        ("Function Structure", _test_function_structure, "All expected methods and properties exist with proper callable structure"),
+        ("Import Dependencies", _test_import_dependencies, "All required imports and dependencies are available and properly configured"),
+    ]
+
+
 def credential_manager_module_tests() -> bool:
     """Run comprehensive tests for the CredentialManager class."""
     import traceback
@@ -913,129 +934,8 @@ def credential_manager_module_tests() -> bool:
             print(traceback.format_exc())
             return False
 
-    # Test 1: Basic Initialization
-    test_initialization = _test_initialization
-
-    # Test 2: Environment Variable Loading
-    test_environment_loading = _test_environment_loading
-
-    # Test 3: Credential Validation
-    test_credential_validation = _test_credential_validation
-
-    # Test 4: Credential Getting and Checking
-    test_credential_access = _test_credential_access
-
-    # Test 5: Ancestry Credentials Helper
-    test_ancestry_credentials = _test_ancestry_credentials
-
-    # Test 6: API Key Retrieval
-    test_api_key_retrieval = _test_api_key_retrieval
-
-    # Test 7: Cache Management
-    test_cache_management = _test_cache_management
-
-    # Test 8: Credential Status Reporting
-    test_credential_status = _test_credential_status
-
-    # Test 9: Export Functionality
-    test_export_functionality = _test_export_functionality
-
-    # Test 10: Security Manager Integration
-    test_security_manager_integration = _test_security_manager_integration
-
-    # Test 11: Error Handling
-    test_error_handling = _test_error_handling
-
-    # Test 12: Integration Testing
-    test_integration = _test_integration
-
-    # Test 13: Performance Testing
-    test_performance = _test_performance
-
-    # Test 14: Method Existence and Structure
-    test_function_structure = _test_function_structure
-
-    # Test 15: Import Dependencies and Type Definitions
-    test_import_dependencies = _test_import_dependencies
-
-    # Define all tests with descriptions
-    tests = [
-        (
-            "Basic Initialization",
-            test_initialization,
-            "4 initialization checks: default app name=AncestryAutomation, custom app name=TestApp, security_manager=None, cache=None.",
-        ),
-        (
-            "Environment Variable Loading",
-            test_environment_loading,
-            "3 environment variables loaded: ANCESTRY_USERNAME, ANCESTRY_PASSWORD, DEEPSEEK_API_KEY with correct values.",
-        ),
-        (
-            "Credential Validation",
-            test_credential_validation,
-            "4 validation scenarios: valid credentials→True, missing username→False, missing password→False, empty values→False.",
-        ),
-        (
-            "Credential Access",
-            test_credential_access,
-            "Individual credentials are retrieved with proper access control and error handling",
-        ),
-        (
-            "Ancestry Credentials Helper",
-            test_ancestry_credentials,
-            "Ancestry-specific credentials are retrieved through dedicated helper functions",
-        ),
-        (
-            "API Key Retrieval",
-            test_api_key_retrieval,
-            "API keys for various providers are retrieved with case-insensitive matching",
-        ),
-        (
-            "Cache Management",
-            test_cache_management,
-            "Credential cache is managed with proper clearing and state control",
-        ),
-        (
-            "Credential Status Reporting",
-            test_credential_status,
-            "System status is reported with comprehensive credential information",
-        ),
-        (
-            "Export Functionality",
-            test_export_functionality,
-            "Credentials are exported for backup with configurable sensitivity levels",
-        ),
-        (
-            "Security Manager Integration",
-            test_security_manager_integration,
-            "SecurityManager integration provides encrypted storage capabilities",
-        ),
-        (
-            "Error Handling",
-            test_error_handling,
-            "Missing credentials and invalid data are handled gracefully without system failures",
-        ),
-        (
-            "Integration Testing",
-            test_integration,
-            "Complete workflow integration functions correctly across all components",
-        ),
-        (
-            "Performance Testing",
-            test_performance,
-            "Credential operations complete efficiently within acceptable time thresholds",
-        ),
-        (
-            "Function Structure",
-            test_function_structure,
-            "All expected methods and properties exist with proper callable structure",
-        ),
-        (
-            "Import Dependencies",
-            test_import_dependencies,
-            "All required imports and dependencies are available and properly configured",
-        ),
-    ]
+    # Get all tests
+    tests = _get_credential_manager_tests()
 
     # Run each test
     for test_name, test_func, description in tests:
