@@ -1592,6 +1592,8 @@ def _process_api_response(
     status = response.status_code
     reason = response.reason
 
+    result = response  # Default: return response object for non-successful responses
+
     # Handle successful responses (2xx)
     if response.ok:
         logger.debug(f"{api_description}: Successful response ({status} {reason}).")
@@ -1599,49 +1601,43 @@ def _process_api_response(
         # Force text response if requested
         if force_text_response:
             logger.debug(f"{api_description}: Force text response requested.")
-            return response.text
-
-        # Process based on content type
-        content_type = response.headers.get("content-type", "").lower()
-        logger.debug(f"{api_description}: Content-Type: '{content_type}'")
-
-        if "application/json" in content_type:
-            try:
-                # Handle empty response body for JSON
-                json_result = response.json() if response.content else None
-                logger.debug(f"{api_description}: Successfully parsed JSON response.")
-                return json_result
-            except JSONDecodeError as json_err:  # type: ignore
-                logger.error(
-                    f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
-                )
-                try:
-                    logger.debug(
-                        f"   << Response Text (JSON Error): {response.text[:500]}..."
-                    )
-                except Exception:
-                    pass
-                # End of try/except
-                # Return None because caller expected JSON but didn't get it
-                return None
-            # End of try/except
-        elif api_description == "CSRF Token API" and "text/plain" in content_type:
-            csrf_text = response.text.strip()
-            logger.debug(
-                f"{api_description}: Received text/plain as expected for CSRF."
-            )
-            return csrf_text if csrf_text else None
+            result = response.text
         else:
-            logger.debug(
-                f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning raw TEXT."
-            )
-            return response.text
-        # End of if/elif/else content_type
-    # End of if response.ok
+            # Process based on content type
+            content_type = response.headers.get("content-type", "").lower()
+            logger.debug(f"{api_description}: Content-Type: '{content_type}'")
 
-    # For non-successful responses, return the response object itself
-    # This allows the caller to handle specific error cases
-    return response
+            if "application/json" in content_type:
+                try:
+                    # Handle empty response body for JSON
+                    json_result = response.json() if response.content else None
+                    logger.debug(f"{api_description}: Successfully parsed JSON response.")
+                    result = json_result
+                except JSONDecodeError as json_err:  # type: ignore
+                    logger.error(
+                        f"{api_description}: OK ({status}), but JSON decode FAILED: {json_err}"
+                    )
+                    try:
+                        logger.debug(
+                            f"   << Response Text (JSON Error): {response.text[:500]}..."
+                        )
+                    except Exception:
+                        pass
+                    # Return None because caller expected JSON but didn't get it
+                    result = None
+            elif api_description == "CSRF Token API" and "text/plain" in content_type:
+                csrf_text = response.text.strip()
+                logger.debug(
+                    f"{api_description}: Received text/plain as expected for CSRF."
+                )
+                result = csrf_text if csrf_text else None
+            else:
+                logger.debug(
+                    f"{api_description}: OK ({status}), Content-Type '{content_type}'. Returning raw TEXT."
+                )
+                result = response.text
+
+    return result
 
 # End of _process_api_response
 
@@ -1767,6 +1763,10 @@ def _process_request_attempt(
     Process a single request attempt.
     Returns (response, should_continue, retries_left, current_delay, last_exception).
     """
+    result_response = None
+    result_should_continue = True
+    result_exception = None
+
     try:
         # Prepare and execute the request
         request_params = _prepare_api_request(
@@ -1800,33 +1800,30 @@ def _process_request_attempt(
             should_continue, retries_left, current_delay = _handle_failed_request_response(
                 retries_left, max_retries, api_description, current_delay, backoff_factor, attempt, max_delay
             )
-            if not should_continue:
-                return (None, False, retries_left, current_delay, None)
-            return (None, True, retries_left, current_delay, None)
-
-        # Handle response status
-        return _handle_response_status(
-            response, retries_left, max_retries, api_description, attempt,
-            current_delay, backoff_factor, max_delay, retry_status_codes,
-            session_manager, force_text_response, request_params
-        )
+            result_should_continue = should_continue
+        else:
+            # Handle response status
+            return _handle_response_status(
+                response, retries_left, max_retries, api_description, attempt,
+                current_delay, backoff_factor, max_delay, retry_status_codes,
+                session_manager, force_text_response, request_params
+            )
 
     except RequestException as e:  # type: ignore
         should_continue, retries_left, current_delay = _handle_request_exception(
             e, attempt, max_retries, retries_left, api_description, current_delay, backoff_factor, max_delay
         )
-        if not should_continue:
-            return (None, False, retries_left, current_delay, e)
-        return (None, True, retries_left, current_delay, e)
+        result_should_continue = should_continue
+        result_exception = e
 
     except Exception as e:
         logger.critical(
             f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
             exc_info=True,
         )
-        return (None, False, retries_left, current_delay, None)
+        result_should_continue = False
 
-    return (None, True, retries_left, current_delay, None)
+    return (result_response, result_should_continue, retries_left, current_delay, result_exception)
 
 
 def _execute_request_with_retries(
@@ -2152,6 +2149,8 @@ def _wait_for_2fa_header(_driver: WebDriver, element_wait: WebDriverWait, sessio
 
 def _click_sms_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:  # type: ignore
     """Try clicking the SMS 'Send Code' button."""
+    result = False
+
     try:
         logger.debug(f"Waiting for 2FA 'Send Code' (SMS) button: '{TWO_FA_SMS_SELECTOR}'")
         sms_button_clickable = short_wait.until(
@@ -2162,25 +2161,21 @@ def _click_sms_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:  # 
             try:
                 driver.execute_script("arguments[0].click();", sms_button_clickable)
                 logger.debug("'Send Code' button clicked.")
-                return _wait_for_code_input_field(driver)
+                result = _wait_for_code_input_field(driver)
             except WebDriverException as click_err:  # type: ignore
                 logger.error(f"Error clicking 'Send Code' button via JS: {click_err}")
-                return False
         else:
             logger.error("'Send Code' button found but reported as not clickable by Selenium.")
-            return False
     except TimeoutException:  # type: ignore
         logger.error("Timeout finding or waiting for clickability of the 2FA 'Send Code' button.")
-        return False
     except ElementNotInteractableException:  # type: ignore
         logger.error("'Send Code' button not interactable (potentially obscured).")
-        return False
     except WebDriverException as e:  # type: ignore
         logger.error(f"WebDriverException interacting with 2FA 'Send Code' button: {e}", exc_info=False)
-        return False
     except Exception as e:
         logger.error(f"Unexpected error clicking 2FA 'Send Code' button: {e}", exc_info=True)
-        return False
+
+    return result
 
 
 def _wait_for_code_input_field(driver: WebDriver) -> bool:  # type: ignore
@@ -2463,28 +2458,23 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
     short_wait = WebDriverWait(driver, 5)
     time.sleep(random.uniform(0.5, 1.0))
 
+    result = False
+
     try:
         logger.debug("Entering Credentials and Signing In...")
 
         # Enter username
-        if not _enter_username(driver, element_wait):
-            return False
-
-        # Click Next button (two-step login)
-        if not _click_next_button(driver, short_wait):
-            return False
-
-        # Enter password
-        password_ok, password_input = _enter_password(driver, element_wait)
-        if not password_ok:
-            return False
-
-        # Click sign in button
-        return _click_sign_in_button(driver, short_wait, password_input)
+        if _enter_username(driver, element_wait):
+            # Click Next button (two-step login)
+            if _click_next_button(driver, short_wait):
+                # Enter password
+                password_ok, password_input = _enter_password(driver, element_wait)
+                if password_ok:
+                    # Click sign in button
+                    result = _click_sign_in_button(driver, short_wait, password_input)
 
     except (TimeoutException, NoSuchElementException) as e:  # type: ignore
         logger.error(f"Timeout or Element not found finding username/password field: {e}")
-        return False
     except ValueError as ve:
         logger.critical(f"Configuration Error: {ve}")
         raise ve
@@ -2492,10 +2482,10 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
         logger.error(f"WebDriver error entering credentials: {e}")
         if not is_browser_open(driver):
             logger.error("Session invalid during credential entry.")
-        return False
     except Exception as e:
         logger.error(f"Unexpected error entering credentials: {e}", exc_info=True)
-        return False
+
+    return result
 
 # End of enter_creds
 
@@ -3449,35 +3439,19 @@ def main() -> None:
 def utils_module_tests() -> bool:
     """Module-specific tests for utils.py functionality."""
     try:
-        # Test core utility functions
-        assert "SessionManager" in globals(), "SessionManager class not found"
-        assert "format_name" in globals(), "format_name function not found"
-        assert "DynamicRateLimiter" in globals(), "DynamicRateLimiter class not found"
-
         # Test format_name functionality
-        format_name_func = globals()["format_name"]
-        assert (
-            format_name_func("john doe") == "John Doe"
-        ), "format_name basic test failed"
-        assert (
-            format_name_func(None) == "Valued Relative"
-        ), "format_name None test failed"
-
-        # Test SessionManager instantiation
-        session_manager_class = globals()["SessionManager"]
-        # Don't start actual browser, just test instantiation
-        sm = session_manager_class()
-        assert hasattr(
-            sm, "driver_live"
-        ), "SessionManager missing driver_live attribute"
-        assert hasattr(
-            sm, "session_ready"
-        ), "SessionManager missing session_ready attribute"
+        assert format_name("john doe") == "John Doe", "format_name basic test failed"
+        assert format_name(None) == "Valued Relative", "format_name None test failed"
 
         # Test DynamicRateLimiter
-        rate_limiter_class = globals()["DynamicRateLimiter"]
-        limiter = rate_limiter_class(initial_delay=0.001)
+        limiter = DynamicRateLimiter(initial_delay=0.001)
         limiter.wait()  # Should not hang
+
+        # Test SessionManager - import it properly at runtime
+        from core.session_manager import SessionManager as SM
+        sm = SM()
+        assert hasattr(sm, "driver_live"), "SessionManager missing driver_live attribute"
+        assert hasattr(sm, "session_ready"), "SessionManager missing session_ready attribute"
 
         return True
     except Exception as e:
