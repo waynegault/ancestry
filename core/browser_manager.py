@@ -61,6 +61,7 @@ class BrowserManager:
         self.driver_live: bool = False
         self.browser_needed: bool = False
         self.session_start_time: Optional[float] = None
+        self.cookies_loaded: bool = False  # Track if cookies were successfully loaded
 
         logger.debug("BrowserManager initialized")
 
@@ -93,18 +94,21 @@ class BrowserManager:
             logger.debug("WebDriver initialization successful.")
 
             # Navigate to base URL to stabilize
-            logger.debug(
-                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
-            )
-
-            if not nav_to_page(self.driver, config_schema.api.base_url):
-                logger.error(
-                    f"Failed to navigate to base URL: {config_schema.api.base_url}"
-                )
+            target_url = config_schema.api.base_url
+            logger.info(f"Navigating to: {target_url}")
+            
+            nav_result = nav_to_page(self.driver, target_url)
+           
+            if not nav_result:
+                logger.error(f"Failed to navigate to base URL: {target_url}")
+                print(f"✗ Navigation to {target_url} failed. Check log for details.")
                 self.close_browser()
                 return False
-
+            
+            logger.info(f"Successfully navigated to: {target_url}")
+     
             # Try to load saved cookies after navigating to base URL
+            logger.info("Attempting to load saved cookies...")
             try:
                 from utils import _load_login_cookies
                 # Create a minimal session manager-like object for cookie loading
@@ -114,9 +118,17 @@ class BrowserManager:
 
                 cookie_loader = CookieLoader(self.driver)
                 if _load_login_cookies(cookie_loader):
-                    logger.debug("Saved login cookies loaded successfully")
+                    
+                    # Refresh the page to apply the loaded cookies
+                    logger.debug("Refreshing page to apply loaded cookies...")
+                    self.driver.refresh()
+                    time.sleep(2)  # Wait for page to reload with cookies
+                    logger.info("Page refreshed with loaded cookies")
+                    self.cookies_loaded = True  # Mark that cookies were successfully loaded
                 else:
-                    logger.debug("No saved cookies to load or loading failed")
+                    logger.info("No saved cookies to load or loading failed")
+                    self.cookies_loaded = False  # No cookies loaded
+
             except Exception as e:
                 logger.warning(f"Error loading saved cookies: {e}")
 
@@ -149,6 +161,7 @@ class BrowserManager:
         self.driver_live = False
         self.browser_needed = False
         self.session_start_time = None
+        self.cookies_loaded = False
 
         logger.debug("Browser session closed")
 

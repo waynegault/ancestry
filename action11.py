@@ -1251,12 +1251,10 @@ def _handle_treesui_api_response(response: requests.Response) -> Optional[list[d
                 return data
             logger.error(f"API call OK but response not JSON list. Type: {type(data)}")
             logger.debug(f"API Response Text: {response.text[:500]}")
-            print("Error: API returned unexpected data format.")
             return None
         except json.JSONDecodeError as json_err:
             logger.error(f"Failed to parse JSON response (200 OK): {json_err}")
             logger.debug(f"API Response Text: {response.text[:1000]}")
-            print("Error: Could not understand data from Ancestry.")
             return None
     elif response.status_code in [401, 403]:
         logger.error(
@@ -1267,7 +1265,6 @@ def _handle_treesui_api_response(response: requests.Response) -> Optional[list[d
     else:
         logger.error(f"API call failed with status code: {response.status_code}")
         logger.debug(f"API Response Text: {response.text[:500]}")
-        print(f"Error: Ancestry API returned error ({response.status_code}).")
         return None
 
 
@@ -1315,15 +1312,12 @@ def _call_direct_treesui_list_api(
 
     except requests.exceptions.Timeout:
         logger.error(f"API call timed out after {api_timeout}s")
-        print("(Error: Timed out searching Ancestry API)")
         return None
     except requests.exceptions.RequestException as req_err:
         logger.error(f"API call network/request issue: {req_err}", exc_info=True)
-        print(f"(Error connecting to Ancestry API: {req_err})")
         return None
     except Exception as e:
         logger.error(f"Unexpected error during API call: {e}", exc_info=True)
-        print(f"(Unexpected error searching: {e})")
         return None
 
 
@@ -1754,7 +1748,6 @@ def _handle_selection_phase(
     if not selection:
         # Log error and display to user
         logger.error("Failed to select top candidate.")
-        print("\nFailed to select top candidate.")
         return None
     # Field-by-field comparison display has been removed as requested
     return selection
@@ -1788,17 +1781,14 @@ def _handle_details_phase(
         else:
             # Log error and display to user
             logger.error("Owner profile ID missing.")
-            print("\nCannot fetch details: User ID missing.")
             return None
     if not api_person_id or not api_tree_id:
         # Log error and display to user
         logger.error("Cannot fetch details: Missing PersonId/TreeId.")
-        print("\nError: Missing IDs for detail fetch.")
         return None
     if not callable(call_facts_user_api):
         # Log error and display to user
         logger.error("Cannot fetch details: Function missing.")
-        print("\nError: Details fetching utility unavailable.")
         return None
 
     # Call the API
@@ -1809,7 +1799,6 @@ def _handle_details_phase(
     if person_research_data is None:
         # Log warning and display to user
         logger.warning("Failed to retrieve detailed info.")
-        print("\nWarning: Could not retrieve detailed info.")
         return None
     return person_research_data
 
@@ -2434,7 +2423,6 @@ def _refresh_cookies_from_browser() -> bool:
         return True
     except Exception as cookie_err:
         logger.error(f"Failed to refresh cookies from browser: {cookie_err}")
-        print(f"\nERROR: Failed to refresh cookies: {cookie_err}")
         return False
 
 
@@ -2490,7 +2478,6 @@ def _attempt_browser_login() -> bool:
     login_result = log_in(session_manager)
     if login_result != "LOGIN_SUCCEEDED":
         logger.error(f"Failed to log in: {login_result}")
-        print(f"\nERROR: Failed to log in: {login_result}")
         return False
 
     return True
@@ -2506,7 +2493,6 @@ def _initialize_session_with_login() -> bool:
         # Try to start the browser session
         if not session_manager.start_browser(action_name="API Report Browser Init"):
             logger.error("Failed to start browser session.")
-            print("\nERROR: Failed to start browser session.")
             return False
 
         # Attempt login
@@ -2516,7 +2502,6 @@ def _initialize_session_with_login() -> bool:
         # Check if we now have cookies
         if not session_manager._requests_session.cookies:
             logger.error("Still no cookies available after login attempt.")
-            print("\nERROR: Still no cookies available after login attempt.")
             return False
 
         print("\nSuccessfully initialized session with authentication cookies.")
@@ -2524,7 +2509,6 @@ def _initialize_session_with_login() -> bool:
         return True
     except Exception as e:
         logger.error(f"Error initializing session: {e}")
-        print(f"\nERROR: Error initializing session: {e}")
         return False
 
 
@@ -2753,7 +2737,6 @@ def main() -> None:
             # Log error and display to user with a single message
             error_message = "Action 11 finished with errors"
             logger.error(f"--- {error_message} ---")
-            print(f"\n{error_message} (check logs).")
     except Exception as e:
         # Log critical error and display to user
         logger.critical(

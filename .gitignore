@@ -69,3 +69,4 @@ Data/ancestry.db-shm
 Data/ancestry.db-wal
 Data/ancestry_backup.db
 Data/ancestry.db
+ancestry_cookies.json
