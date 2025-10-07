@@ -67,6 +67,40 @@ except ImportError:
 from code_quality_checker import CodeQualityChecker, QualityMetrics
 
 
+def _check_and_use_venv() -> bool:
+    """Check if running in venv, and if not, try to re-run with venv Python."""
+    # Check if we're in a virtual environment
+    in_venv = hasattr(sys, 'real_prefix') or (
+        hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
+    )
+
+    if in_venv:
+        return True
+
+    # Check if .venv exists
+    venv_python = Path('.venv') / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        # Try Unix-style path
+        venv_python = Path('.venv') / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment and .venv not found")
+            print("   Some tests may fail due to missing dependencies")
+            return False
+
+    # Re-run with venv Python
+    print(f"🔄 Re-running tests with venv Python: {venv_python}")
+    print()
+    result = subprocess.run(
+        [str(venv_python), __file__] + sys.argv[1:],
+        cwd=Path.cwd()
+    )
+    sys.exit(result.returncode)
+
+
+# Check and use venv at module load time (before imports that need dependencies)
+_check_and_use_venv()
+
+
 def _invoke_ruff(args: list[str]) -> subprocess.CompletedProcess:
     """Run Ruff with the provided arguments and return the completed process."""
     command = [sys.executable, "-m", "ruff", *args]
@@ -316,12 +350,18 @@ def run_quality_checks() -> bool:
 
 def _should_skip_system_file(python_file: Path) -> bool:
     """Check if file should be skipped (system files, test runner, etc.)."""
-    return python_file.name in [
-        "run_all_tests.py",
-        "main.py",
-        "__init__.py",
-        "__main__.py",
-    ]
+    # Skip specific system files
+    if python_file.name in ["run_all_tests.py", "main.py", "__main__.py"]:
+        return True
+
+    # Only skip root-level __init__.py, not package __init__.py files
+    # Package __init__.py files (like core/__init__.py) may contain tests
+    if python_file.name == "__init__.py":
+        # Check if this is a root-level __init__.py (no parent directory except project root)
+        # Allow package __init__.py files in subdirectories
+        return python_file.parent == Path(__file__).parent
+
+    return False
 
 
 def _should_skip_cache_or_temp_file(python_file: Path) -> bool:

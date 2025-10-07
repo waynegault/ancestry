@@ -304,7 +304,7 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
         if not result:
             logger.error(f"Failed to ensure database ready for {action_name}")
         return result
-    
+
     if required_state == "driver_ready":
         result = session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
         if not result:
@@ -312,14 +312,14 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
             print(f"\n✗ Failed to start browser for action: {action_name}")
             print("  Please check the log file for detailed error messages.")
         return result
-    
+
     if required_state == "session_ready":
         skip_csrf = (choice == "11")
         result = session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
         if not result:
             logger.error(f"Failed to ensure session ready for {action_name}")
         return result
-    
+
     return True
 
 
@@ -1070,7 +1070,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
     This action starts a browser session and checks login status.
     If not logged in, it attempts to log in using stored credentials.
     Provides clear user feedback about the final login state.
-    
+
     Note: Browser startup is handled by exec_actn based on _determine_required_state
     returning "driver_ready" for this action. This ensures browser is live before
     this function executes.

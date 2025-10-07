@@ -3224,7 +3224,6 @@ def _test_backup_database_function() -> None:
     # Test the function signature
     import inspect
     sig = inspect.signature(backup_database)
-    params = list(sig.parameters.keys())
     print(f"   ✅ Function signature: backup_database{sig}")
 
     # Test that function is decorated with error handling
