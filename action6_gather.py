@@ -928,7 +928,7 @@ def _identify_fetch_candidates(
     if len(fetch_candidates_uuid) == 0:
         logger.warning("No fetch candidates identified - all matches appear up-to-date in database")
     else:
-        logger.info(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")
+        logger.debug(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")
 
     return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
 
@@ -3403,7 +3403,7 @@ def _process_relationship_prob_response(
 
     best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
     top_prob = best_pred.get("distributionProbability", 0.0)
-    top_prob_display = top_prob * 100.0
+    top_prob_display = top_prob  # API returns percentage already (e.g., 99.0 for 99%)
     paths = best_pred.get("pathsToMatch", [])
     labels = [
         p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
