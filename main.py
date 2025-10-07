@@ -300,12 +300,26 @@ def _determine_required_state(action_name: str, requires_browser: bool) -> str:
 def _ensure_required_state(session_manager: SessionManager, required_state: str, action_name: str, choice: str) -> bool:
     """Ensure the required session state is achieved."""
     if required_state == "db_ready":
-        return session_manager.ensure_db_ready()
+        result = session_manager.ensure_db_ready()
+        if not result:
+            logger.error(f"Failed to ensure database ready for {action_name}")
+        return result
+    
     if required_state == "driver_ready":
-        return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+        result = session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+        if not result:
+            logger.error(f"Failed to ensure driver live for {action_name}")
+            print(f"\n✗ Failed to start browser for action: {action_name}")
+            print("  Please check the log file for detailed error messages.")
+        return result
+    
     if required_state == "session_ready":
         skip_csrf = (choice == "11")
-        return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
+        result = session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
+        if not result:
+            logger.error(f"Failed to ensure session ready for {action_name}")
+        return result
+    
     return True
 
 
@@ -605,7 +619,6 @@ def _run_action6_gather(session_manager) -> bool:
     gather_result = coord_action(session_manager, config, start=1)
     if gather_result is False:
         logger.error("Action 6 FAILED.")
-        print("ERROR: Match gathering failed. Check logs for details.")
         return False
     logger.info("Action 6 OK.")
     print("✓ Match gathering completed successfully.")
@@ -626,7 +639,6 @@ def _run_action7_inbox(session_manager) -> bool:
             session_manager,
         ):
             logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
-            print("ERROR: Could not navigate to inbox page. Check network connection.")
             return False
 
         logger.debug("Navigation to inbox page successful.")
@@ -638,7 +650,6 @@ def _run_action7_inbox(session_manager) -> bool:
 
         if search_result is False:
             logger.error("Action 7 FAILED - Inbox search returned failure.")
-            print("ERROR: Inbox search failed. Check logs for details.")
             return False
 
         logger.info("Action 7 OK.")
@@ -647,7 +658,6 @@ def _run_action7_inbox(session_manager) -> bool:
 
     except Exception as inbox_error:
         logger.error(f"Action 7 FAILED with exception: {inbox_error}", exc_info=True)
-        print(f"ERROR during inbox search: {inbox_error}")
         return False
 
 
@@ -664,7 +674,6 @@ def _run_action9_process_productive(session_manager) -> bool:
             session_manager,
         ):
             logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
-            print("ERROR: Could not navigate to base URL. Check network connection.")
             return False
 
         logger.debug("Navigation to base URL successful. Processing productive messages...")
@@ -674,7 +683,6 @@ def _run_action9_process_productive(session_manager) -> bool:
 
         if process_result is False:
             logger.error("Action 9 FAILED - Productive message processing returned failure.")
-            print("ERROR: Productive message processing failed. Check logs for details.")
             return False
 
         logger.info("Action 9 OK.")
@@ -683,7 +691,6 @@ def _run_action9_process_productive(session_manager) -> bool:
 
     except Exception as process_error:
         logger.error(f"Action 9 FAILED with exception: {process_error}", exc_info=True)
-        print(f"ERROR during productive message processing: {process_error}")
         return False
 
 
@@ -700,7 +707,6 @@ def _run_action8_send_messages(session_manager) -> bool:
             session_manager,
         ):
             logger.error("Action 8 nav FAILED - Could not navigate to base URL.")
-            print("ERROR: Could not navigate to base URL. Check network connection.")
             return False
 
         logger.debug("Navigation to base URL successful. Sending messages...")
@@ -710,7 +716,6 @@ def _run_action8_send_messages(session_manager) -> bool:
 
         if send_result is False:
             logger.error("Action 8 FAILED - Message sending returned failure.")
-            print("ERROR: Message sending failed. Check logs for details.")
             return False
 
         logger.info("Action 8 OK.")
@@ -719,7 +724,6 @@ def _run_action8_send_messages(session_manager) -> bool:
 
     except Exception as message_error:
         logger.error(f"Action 8 FAILED with exception: {message_error}", exc_info=True)
-        print(f"ERROR during message sending: {message_error}")
         return False
 
 
@@ -760,7 +764,6 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
 
     except Exception as e:
         logger.error(f"Critical error during core workflow: {e}", exc_info=True)
-        print(f"CRITICAL ERROR during core workflow: {e}")
 
     return result
 
@@ -1039,8 +1042,9 @@ def _verify_login_success(session_manager: SessionManager) -> bool:
 
 def _attempt_login(session_manager: SessionManager) -> bool:
     """Attempt to log in with stored credentials."""
-    print("\n✗ You are NOT currently logged in to Ancestry.")
+    print("\n✗ You are NOT currently logged in to Ancestry.\n\n")
     print("  Attempting to log in with stored credentials...")
+    logger.debug("Skipping redundant API verification - already confirmed not logged in")
 
     try:
         login_result = log_in(session_manager)
@@ -1055,7 +1059,6 @@ def _attempt_login(session_manager: SessionManager) -> bool:
 
     except Exception as login_e:
         logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
-        print(f"✗ Login failed with error: {login_e}")
         print("  You can update credentials using the 'sec' option in the main menu.")
         return False
 
@@ -1063,19 +1066,24 @@ def _attempt_login(session_manager: SessionManager) -> bool:
 # Action 5 (check_login_actn)
 def check_login_actn(session_manager: SessionManager, *_) -> bool:
     """
-    REVISED V12: Checks login status and attempts login if needed.
+    REVISED V13: Checks login status and attempts login if needed.
     This action starts a browser session and checks login status.
     If not logged in, it attempts to log in using stored credentials.
     Provides clear user feedback about the final login state.
+    
+    Note: Browser startup is handled by exec_actn based on _determine_required_state
+    returning "driver_ready" for this action. This ensures browser is live before
+    this function executes.
     """
-    # Phase 1 (Driver Start) is handled by exec_actn if needed.
-    # We only need to check if driver is live before proceeding.
+    # Driver should already be live (started by exec_actn's _ensure_required_state)
+    # But add defensive check with better error message
     if not session_manager.driver_live:
-        logger.error("Driver not live. Cannot check login status.")
-        print("ERROR: Browser not started. Cannot check login status.")
-        print(
-            "       Select any browser-required action (1, 6-9) to start the browser."
-        )
+        logger.error("Driver not live after setup. This indicates browser startup failed.")
+        print("  Please check:")
+        print("  1. ChromeDriver is properly installed")
+        print("  2. Chrome browser is installed and up-to-date")
+        print("  3. No firewall blocking browser startup")
+        print("  4. Check the log file for detailed error messages")
         return False
 
     print("\nChecking login status...")
@@ -1098,7 +1106,6 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
     except Exception as e:
         logger.error(f"Exception during login status check: {e}", exc_info=True)
-        print(f"\n! Error checking login status: {e}")
         print("  This may indicate a browser or network issue.")
         return False
 
@@ -1123,7 +1130,6 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Any] =
     # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
         logger.error("Cannot gather matches: Session not ready.")
-        print("ERROR: Session not ready. Cannot gather matches.")
         return False
 
     print(f"Gathering DNA Matches from page {start}...")
@@ -1132,14 +1138,12 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Any] =
         result = coord(session_manager, config, start=start)
         if result is False:
             logger.error("Match gathering reported failure.")
-            print("ERROR: Match gathering failed. Check logs for details.")
             return False
         logger.info("Gathering matches OK.")
         print("✓ Match gathering completed successfully.")
         return True
     except Exception as e:
         logger.error(f"Error during coord_action: {e}", exc_info=True)
-        print(f"ERROR: Exception during match gathering: {e}")
         return False
 
 
@@ -1410,7 +1414,6 @@ def _run_main_tests() -> None:
             print("\n⚠️ Some main.py tests failed. Check output above.")
     except Exception as e:
         logger.error(f"Error running main.py tests: {e}")
-        print(f"Error running main.py tests: {e}")
     print("\nReturning to main menu...")
     input("Press Enter to continue...")
 
@@ -1436,7 +1439,6 @@ def _run_all_tests() -> None:
         print("Error: run_all_tests.py not found in current directory.")
     except Exception as e:
         logger.error(f"Error running all tests: {e}")
-        print(f"Error running all tests: {e}")
     print("\nReturning to main menu...")
     input("Press Enter to continue...")
 
@@ -1489,7 +1491,6 @@ def _run_credential_manager() -> None:
             )
     except Exception as e:
         logger.error(f"Error running credential manager: {e}")
-        print(f"Error running credential manager: {e}")
     print("\nReturning to main menu...")
     input("Press Enter to continue...")
 
@@ -1501,7 +1502,6 @@ def _show_cache_statistics() -> None:
         print("Cache statistics feature currently unavailable.")
     except Exception as e:
         logger.error(f"Error displaying cache statistics: {e}")
-        print("Error displaying cache statistics. Check logs for details.")
 
 
 def _toggle_log_level() -> None:
@@ -1576,7 +1576,7 @@ def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> b
         exec_actn(run_core_workflow_action, session_manager, choice, close_sess_after=True)
         result = True
     elif choice == "5":
-        exec_actn(check_login_actn, session_manager, choice)
+        exec_actn(check_login_actn, session_manager, choice, close_sess_after=True)
         result = True
     elif choice.startswith("6"):
         result = _handle_action6_with_start_page(choice, session_manager, config)

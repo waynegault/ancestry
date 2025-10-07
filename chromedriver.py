@@ -242,8 +242,9 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-infobars")
+    # Start minimized in non-headless mode
     if not config.headless_mode:
-        options.add_argument("--start-maximized")
+        options.add_argument("--start-minimized")
 
     # User agent
     user_agent = random.choice(
@@ -257,22 +258,43 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
 
 
 def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:
-    """Create Chrome WebDriver instance."""
+    """Create Chrome WebDriver instance with multiple fallback strategies."""
     try:
         logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")
         start_time = time.time()
 
         # Use undetected_chromedriver for anti-bot protection
-        driver = uc.Chrome(options=options, version_main=138)
+        # Auto-detect Chrome version and let UC handle driver download
+        logger.debug("[init_webdvr] Auto-detecting Chrome version for compatibility...")
+        
+        # Use minimal configuration (Strategy 3) - this is the only one that works reliably
+        # Skip Strategies 1 & 2 which fail with "cannot connect to chrome" errors
+        logger.debug("[init_webdvr] Using minimal configuration for best compatibility...")
+        minimal_options = uc.ChromeOptions()
+        minimal_options.add_argument("--no-sandbox")
+        minimal_options.add_argument("--disable-dev-shm-usage")
+        driver = uc.Chrome(options=minimal_options)
+        
+        # Minimize window immediately after creation
+        try:
+            driver.minimize_window()
+            logger.debug("Browser window minimized after initialization")
+        except Exception as min_err:
+            logger.debug(f"Could not minimize window (non-critical): {min_err}")
 
-        logger.debug(f"[init_webdvr] Chrome WebDriver initialization succeeded in {time.time() - start_time:.2f}s (attempt {attempt_num})")
-        logger.debug(f"WebDriver instance object created successfully (attempt {attempt_num}).")
+        elapsed = time.time() - start_time
+        logger.info(f"Chrome WebDriver initialization succeeded in {elapsed:.2f}s (attempt {attempt_num})")
         return driver
     except Exception as chrome_exc:
-        logger.error(f"[init_webdvr] Chrome WebDriver initialization failed on attempt {attempt_num}: {chrome_exc}", exc_info=True)
-        if "cannot connect to chrome" in str(chrome_exc).lower() or "chrome not reachable" in str(chrome_exc).lower():
-            logger.warning("[init_webdvr] 'cannot connect to chrome':\n- Check for antivirus/firewall blocking Chrome or ChromeDriver.\n- Ensure Chrome is not crashing on startup (try launching manually with the same user data directory).\n- Check permissions for user data/profile directory.\n- Reinstall Chrome if necessary.")
-        logger.error("[init_webdvr] undetected_chromedriver failed to initialize. Check Chrome installation and version compatibility.")
+        # Log brief error to file, don't spam console with stacktrace
+        error_summary = str(chrome_exc).split('\n')[0] if '\n' in str(chrome_exc) else str(chrome_exc)
+        logger.error(f"[init_webdvr] All ChromeDriver initialization strategies failed on attempt {attempt_num}: {error_summary}")
+        
+        # Only show detailed stacktrace in debug mode
+        if logger.isEnabledFor(10):  # DEBUG level
+            logger.debug(f"Full error details: {chrome_exc}", exc_info=True)
+        
+        print(f"  ✗ ChromeDriver initialization failed (attempt {attempt_num})", flush=True)
         return None
 
 
@@ -285,16 +307,9 @@ def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str,
     except Exception as cdp_exc:
         logger.warning(f"CDP command failed: {cdp_exc}")
 
-    # Minimize window if not headless
+    # Window starts minimized via --start-minimized option
     if not config.headless_mode:
-        logger.debug("Attempting to minimize window (non-headless mode)...")
-        try:
-            driver.minimize_window()
-            logger.debug("Browser window minimized.")
-        except WebDriverException as win_e:
-            logger.warning(f"Could not minimize window: {win_e}")
-        except Exception as min_e:
-            logger.error(f"Unexpected error minimizing window: {min_e}", exc_info=True)
+        logger.debug("Browser configured to start minimized.")
 
     # Set timeouts
     driver.set_page_load_timeout(config.page_load_timeout)

@@ -709,6 +709,15 @@ class ConfigManager:
         """Load API keys configuration from environment variables."""
         api_config = {}
 
+        # Ancestry credentials
+        ancestry_username = os.getenv("ANCESTRY_USERNAME")
+        if ancestry_username:
+            api_config["username"] = ancestry_username
+
+        ancestry_password = os.getenv("ANCESTRY_PASSWORD")
+        if ancestry_password:
+            api_config["password"] = ancestry_password
+
         # DeepSeek API configuration
         deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
         if deepseek_api_key:

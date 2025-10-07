@@ -216,7 +216,11 @@ class APIManager:
                 return response
 
         except RequestException as e:
-            logger.error(f"{api_description} request failed: {e}")
+            # Use debug for expected errors (like 401 during login check)
+            if "401" in str(e) or "unauthorized" in str(e).lower():
+                logger.debug(f"{api_description} request failed (not authenticated): {e}")
+            else:
+                logger.error(f"{api_description} request failed: {e}")
             return None
         except Exception as e:
             logger.error(
@@ -289,9 +293,9 @@ class APIManager:
                     logger.debug(f"My profile ID: {profile_id}")
                     self._profile_id_logged = True
                 return profile_id
-            logger.error("Profile ID not found in response")
+            logger.debug("Profile ID not found in response (likely not logged in)")
         else:
-            logger.error("Failed to retrieve profile ID")
+            logger.debug("Failed to retrieve profile ID (likely not logged in)")
 
         return None
 
@@ -317,9 +321,9 @@ class APIManager:
                     logger.info(f"My UUID: {uuid_value}")
                     self._uuid_logged = True
                 return uuid_value
-            logger.error("UUID not found in response")
+            logger.debug("UUID not found in response (likely not logged in)")
         else:
-            logger.error("Failed to retrieve UUID")
+            logger.debug("Failed to retrieve UUID (likely not logged in)")
 
         return None
 
@@ -392,8 +396,8 @@ class APIManager:
             logger.debug("API login verification successful (UUID fallback method)")
             return True
 
-        # Both primary and fallback checks failed
-        logger.warning("API login verification failed (both profile ID and UUID methods failed)")
+        # Both primary and fallback checks failed (expected when not logged in)
+        logger.debug("API login verification failed - user not logged in")
         return False
 
     def reset_logged_flags(self) -> None:
