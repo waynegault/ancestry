@@ -1324,7 +1324,7 @@ class InboxProcessor:
             )
 
         @with_api_recovery(max_attempts=3, base_delay=2.0)
-        def _classify_with_recovery(context=formatted_context) -> Optional[str]:
+        def _classify_with_recovery(context: str = formatted_context) -> Optional[str]:
             return classify_message_intent(context, self.session_manager)
 
         ai_result = _classify_with_recovery()
@@ -1980,7 +1980,7 @@ class InboxProcessor:
         status_updates: int,
         stop_reason: Optional[str],
         max_inbox_limit: int,
-    ):
+    ) -> None:
         """Logs a unified summary of the inbox search process."""
         # Step 1: Print header (green summary block)
         print(" ")

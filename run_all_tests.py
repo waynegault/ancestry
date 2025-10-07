@@ -92,7 +92,7 @@ def _check_and_use_venv() -> bool:
     print()
     result = subprocess.run(
         [str(venv_python), __file__] + sys.argv[1:],
-        cwd=Path.cwd()
+        cwd=Path.cwd(), check=False
     )
     sys.exit(result.returncode)
 

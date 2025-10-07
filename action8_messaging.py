@@ -69,7 +69,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from string import Formatter
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
 if TYPE_CHECKING:
     from common_params import (
@@ -623,7 +623,7 @@ def determine_next_message_type(
 # Improved Variable Handling Functions
 # ------------------------------------------------------------------------------
 
-def get_safe_relationship_text(family_tree, predicted_rel: str) -> str:
+def get_safe_relationship_text(family_tree: Optional[FamilyTree], predicted_rel: str) -> str:
     """
     Get a natural-sounding relationship description with proper fallbacks.
 
@@ -645,7 +645,7 @@ def get_safe_relationship_text(family_tree, predicted_rel: str) -> str:
     return "a family connection"
 
 
-def get_safe_relationship_path(family_tree) -> str:
+def get_safe_relationship_path(family_tree: Optional[FamilyTree]) -> str:
     """
     Get a natural-sounding relationship path with proper fallbacks.
 
@@ -681,7 +681,7 @@ def _is_distant_relationship(actual_rel: str) -> bool:
     return any(distant in actual_rel.lower() for distant in distant_markers)
 
 
-def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool) -> int:
+def _calculate_family_tree_confidence(family_tree: Optional[FamilyTree], is_distant_relationship: bool) -> int:
     """Calculate confidence score from family tree data."""
     confidence_score = 0
 
@@ -697,7 +697,7 @@ def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool
     return confidence_score
 
 
-def _calculate_dna_match_confidence(dna_match, is_distant_relationship: bool) -> int:
+def _calculate_dna_match_confidence(dna_match: Optional[DnaMatch], is_distant_relationship: bool) -> int:
     """Calculate confidence score from DNA match data."""
     if dna_match and not is_distant_relationship:
         predicted_rel = safe_column_value(dna_match, "predicted_relationship", None)
@@ -742,7 +742,7 @@ def _get_template_by_confidence_score(base_template_key: str, confidence_score: 
     return base_template_key
 
 
-def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:
+def select_template_by_confidence(base_template_key: str, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch]) -> str:
     """
     Select template variant based on relationship confidence.
 
@@ -793,7 +793,7 @@ def select_template_variant_ab_testing(person_id: int, base_template_key: str) -
     return base_template_key
 
 
-def track_template_selection(template_key: str, person_id: int, selection_reason: str):
+def track_template_selection(template_key: str, person_id: int, selection_reason: str) -> None:
     """
     CONSOLIDATED LOGGING: Track template selection for effectiveness analysis.
 
@@ -816,7 +816,7 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # Response Rate Tracking and Analysis
 # ------------------------------------------------------------------------------
 
-def _get_session_manager(session_manager) -> Any:
+def _get_session_manager(session_manager: Optional[SessionManager]) -> Any:
     """Get or create session manager."""
     if not session_manager:
         from core.session_manager import SessionManager
@@ -824,7 +824,7 @@ def _get_session_manager(session_manager) -> Any:
     return session_manager
 
 
-def _get_template_selections(session, cutoff_date) -> list:
+def _get_template_selections(session: Any, cutoff_date: datetime) -> list:
     """Get template selections from database."""
     return session.query(ConversationLog).filter(
         ConversationLog.script_message_status.like("TEMPLATE_SELECTED:%"),
@@ -850,7 +850,7 @@ def _initialize_template_stats() -> dict[str, Any]:
     }
 
 
-def _find_response_for_template(session, person_id: int, sent_time: datetime):
+def _find_response_for_template(session: Any, person_id: int, sent_time: datetime) -> Optional[ConversationLog]:
     """Find response for a specific template sent to a person."""
     return session.query(ConversationLog).filter(
         ConversationLog.person_id == person_id,
@@ -875,7 +875,7 @@ def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None
             stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 
 
-def _process_template_selections(session, template_selections, template_stats: dict[str, dict[str, Any]]) -> None:
+def _process_template_selections(session: Any, template_selections: list, template_stats: dict[str, dict[str, Any]]) -> None:
     """Process template selections and calculate statistics."""
     for selection in template_selections:
         template_name = _extract_template_name(selection.script_message_status)
@@ -900,7 +900,7 @@ def _process_template_selections(session, template_selections, template_stats: d
             _update_response_time_average(template_stats, template_name, response_hours)
 
 
-def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> dict[str, Any]:
+def analyze_template_effectiveness(session_manager: Optional[SessionManager] = None, days_back: int = 30) -> dict[str, Any]:
     """
     Analyze template effectiveness by measuring response rates.
 
@@ -940,7 +940,7 @@ def analyze_template_effectiveness(session_manager=None, days_back: int = 30) ->
         return {"error": str(e)}
 
 
-def print_template_effectiveness_report(days_back: int = 30):
+def print_template_effectiveness_report(days_back: int = 30) -> None:
     """
     Print a formatted report of template effectiveness.
 
@@ -1687,7 +1687,7 @@ class ProactiveApiManager:
                 logger.critical(f"🚨 Too many consecutive API failures ({self.consecutive_failures}). Consider halting operations.")
 
 
-def _with_operation_timeout(operation_func: callable, timeout_seconds: int, operation_name: str):
+def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, operation_name: str) -> Any:
     """
     Execute operation with proper timeout handling (cross-platform).
 
@@ -2468,7 +2468,7 @@ def _setup_progress_bar(total_candidates: int) -> dict:
     }
 
 
-def _handle_critical_db_error(progress_bar, total_candidates: int, processed_in_loop: int,
+def _handle_critical_db_error(progress_bar: Any, total_candidates: int, processed_in_loop: int,
                                sent_count: int, acked_count: int, skipped_count: int, error_count: int) -> int:
     """Handle critical database error by updating progress bar and calculating remaining skips."""
     remaining_to_skip = total_candidates - processed_in_loop + 1
@@ -2516,7 +2516,7 @@ def _check_halt_signal(session_manager: SessionManager, processed_in_loop: int, 
 
 
 def _check_message_send_limit(max_messages_to_send_this_run: int, sent_count: int, acked_count: int,
-                               progress_bar, skipped_count: int, error_count: int) -> bool:
+                               progress_bar: Any, skipped_count: int, error_count: int) -> bool:
     """Check if message sending limit has been reached. Returns True if should skip."""
     current_sent_total = sent_count + acked_count
     if max_messages_to_send_this_run > 0 and current_sent_total >= max_messages_to_send_this_run:
@@ -2540,7 +2540,7 @@ def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_c
                    f"(Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count})")
 
 
-def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
+def _convert_log_object_to_dict(new_log_object: Optional[ConversationLog]) -> Optional[dict[str, Any]]:
     """Convert SQLAlchemy ConversationLog object to dictionary for batch commit."""
     try:
         log_dict = {
@@ -2573,7 +2573,7 @@ def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
         return None
 
 
-def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:
+def _prepare_log_dict(new_log_object: Optional[ConversationLog]) -> tuple[Optional[dict], str]:
     """Convert log object to dict and update status if conversion fails."""
     if not new_log_object:
         return None, "unchanged"
@@ -2590,7 +2590,7 @@ def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_ad
     return sent_count + 1
 
 def _handle_acked_status(
-    acked_count: int, log_dict: Optional[dict], person_update_tuple,
+    acked_count: int, log_dict: Optional[dict], person_update_tuple: Optional[tuple],
     db_logs_to_add_dicts: list, person_updates: dict
 ) -> int:
     """Handle acknowledged status updates."""
@@ -2605,8 +2605,8 @@ def _handle_error_or_skip_status(
     counters: 'BatchCounters',
     log_dict: Optional[dict],
     batch_data: 'MessagingBatchData',
-    error_categorizer,
-    person,
+    error_categorizer: Any,
+    person: Person,
     overall_success: bool
 ) -> tuple[int, int, bool]:
     """Handle error or skipped status updates."""
@@ -2632,12 +2632,12 @@ def _handle_error_or_skip_status(
 
 def _update_counters_and_collect_data(
     status: str,
-    new_log_object,
-    person_update_tuple,
+    new_log_object: Optional[ConversationLog],
+    person_update_tuple: Optional[tuple],
     counters: 'BatchCounters',
     batch_data: 'MessagingBatchData',
-    error_categorizer,
-    person,
+    error_categorizer: Any,
+    person: Person,
     overall_success: bool
 ) -> tuple[int, int, int, int, bool]:
     """Update counters and collect database updates based on processing status."""
@@ -2676,7 +2676,7 @@ def _calculate_batch_memory(db_logs_to_add_dicts: list, person_updates: dict) ->
     return current_batch_size, memory_usage_mb
 
 
-def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates: dict,
+def _perform_batch_commit(db_session: Any, db_logs_to_add_dicts: list, person_updates: dict,
                           batch_num: int, session_manager: SessionManager) -> tuple[bool, int]:
     """Perform batch commit and return success status and updated batch number."""
     batch_num += 1
@@ -2846,7 +2846,7 @@ def _log_final_summary(
     state: 'ProcessingState',
     counters: 'BatchCounters',
     overall_success: bool,
-    error_categorizer
+    error_categorizer: Any
 ) -> None:
     """Log final summary of message sending action."""
     print(" ")

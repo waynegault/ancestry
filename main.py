@@ -24,7 +24,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
@@ -323,7 +323,7 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     return True
 
 
-def _prepare_action_arguments(action_func, session_manager: SessionManager, args: tuple) -> tuple:
+def _prepare_action_arguments(action_func: Callable, session_manager: SessionManager, args: tuple) -> tuple:
     """Prepare arguments for action function call."""
     func_sig = inspect.signature(action_func)
     pass_session_manager = "session_manager" in func_sig.parameters
@@ -352,14 +352,14 @@ def _prepare_action_arguments(action_func, session_manager: SessionManager, args
     return final_args, {}
 
 
-def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict):
+def _execute_action_function(action_func: Callable, prepared_args: tuple, kwargs: dict) -> Any:
     """Execute the action function with prepared arguments."""
     if kwargs:
         return action_func(*prepared_args, **kwargs)
     return action_func(*prepared_args)
 
 
-def _should_close_session(action_result, action_exception, close_sess_after: bool, action_name: str) -> bool:
+def _should_close_session(action_result: Any, action_exception: Optional[Exception], close_sess_after: bool, action_name: str) -> bool:
     """Determine if session should be closed."""
     if action_result is False or action_exception is not None:
         logger.warning(f"Action '{action_name}' failed or raised exception. Closing session.")
@@ -370,7 +370,7 @@ def _should_close_session(action_result, action_exception, close_sess_after: boo
     return False
 
 
-def _log_performance_metrics(start_time: float, process, mem_before: float, choice: str, action_name: str):
+def _log_performance_metrics(start_time: float, process: psutil.Process, mem_before: float, choice: str, action_name: str) -> None:
     """Log performance metrics for the action."""
     duration = time.time() - start_time
     hours, remainder = divmod(duration, 3600)
@@ -391,7 +391,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
     logger.info("------------------------------------------\n")
 
 
-def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str):
+def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
     """Perform session cleanup based on action result."""
     if should_close and isinstance(session_manager, SessionManager):
         if session_manager.browser_needed and session_manager.driver_live:
@@ -407,7 +407,7 @@ def _perform_session_cleanup(session_manager: SessionManager, should_close: bool
 
 
 def exec_actn(
-    action_func,
+    action_func: Callable,
     session_manager: SessionManager,
     choice: str,
     close_sess_after: bool = False,
@@ -491,7 +491,7 @@ def exec_actn(
 
 
 # Action 0 (all_but_first_actn)
-def _delete_table_records(sess, table_class, filter_condition, table_name: str, person_id_to_keep: int) -> int:
+def _delete_table_records(sess: Any, table_class: Any, filter_condition: Any, table_name: str, person_id_to_keep: int) -> int:
     """Delete records from a table based on filter condition."""
     logger.debug(f"Deleting from {table_name} where people_id != {person_id_to_keep}...")
     result = sess.query(table_class).filter(filter_condition).delete(synchronize_session=False)
@@ -500,7 +500,7 @@ def _delete_table_records(sess, table_class, filter_condition, table_name: str, 
     return count
 
 
-def _perform_deletions(sess, person_id_to_keep: int) -> dict:
+def _perform_deletions(sess: Any, person_id_to_keep: int) -> dict:
     """Perform all deletion operations and return counts."""
     deleted_counts = {
         "conversation_log": _delete_table_records(
@@ -528,7 +528,7 @@ def _perform_deletions(sess, person_id_to_keep: int) -> dict:
     return deleted_counts
 
 
-def all_but_first_actn(session_manager: SessionManager, *_):
+def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
     """
     V1.2: Modified to delete records from people, conversation_log,
           dna_match, and family_tree, except for the person with a
@@ -612,7 +612,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 
 # Helper functions for run_core_workflow_action
 
-def _run_action6_gather(session_manager) -> bool:
+def _run_action6_gather(session_manager: SessionManager) -> bool:
     """Run Action 6: Gather Matches."""
     logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
     print("Starting DNA match gathering from page 1...")
@@ -625,7 +625,7 @@ def _run_action6_gather(session_manager) -> bool:
     return True
 
 
-def _run_action7_inbox(session_manager) -> bool:
+def _run_action7_inbox(session_manager: SessionManager) -> bool:
     """Run Action 7: Search Inbox."""
     logger.info("--- Running Action 7: Search Inbox ---")
     inbox_url = urljoin(config.api.base_url, "/messaging/")
@@ -661,7 +661,7 @@ def _run_action7_inbox(session_manager) -> bool:
         return False
 
 
-def _run_action9_process_productive(session_manager) -> bool:
+def _run_action9_process_productive(session_manager: SessionManager) -> bool:
     """Run Action 9: Process Productive Messages."""
     logger.info("--- Running Action 9: Process Productive Messages ---")
     logger.debug("Navigating to Base URL for Action 9...")
@@ -694,7 +694,7 @@ def _run_action9_process_productive(session_manager) -> bool:
         return False
 
 
-def _run_action8_send_messages(session_manager) -> bool:
+def _run_action8_send_messages(session_manager: SessionManager) -> bool:
     """Run Action 8: Send Messages."""
     logger.info("--- Running Action 8: Send Messages ---")
     logger.debug("Navigating to Base URL for Action 8...")
@@ -856,7 +856,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
         return False
 
 
-def reset_db_actn(session_manager: SessionManager, *_):
+def reset_db_actn(session_manager: SessionManager, *_) -> bool:
     """
     Action to COMPLETELY reset the database by deleting the file. Browserless.
     - Closes main pool.
@@ -959,7 +959,7 @@ def backup_db_actn(*_: Any) -> bool:
 
 
 # Action 4 (restore_db_actn)
-def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manager back
+def restore_db_actn(session_manager: SessionManager, *_) -> bool:  # Added session_manager back
     """
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.

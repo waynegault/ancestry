@@ -301,7 +301,7 @@ def _get_db_session_with_retry(session_manager: SessionManager, current_page_num
     return None
 
 
-def _handle_db_session_failure(current_page_num: int, state: dict[str, Any], progress_bar, loop_final_success: bool) -> tuple[bool, bool]:
+def _handle_db_session_failure(current_page_num: int, state: dict[str, Any], progress_bar: Optional[tqdm], loop_final_success: bool) -> tuple[bool, bool]:
     """Handle database session failure and check if should abort."""
     state["db_connection_errors"] += 1
     logger.error(f"Could not get DB session for page {current_page_num} after retries. Skipping page.")
@@ -320,7 +320,7 @@ def _handle_db_session_failure(current_page_num: int, state: dict[str, Any], pro
     return loop_final_success, False  # should_break
 
 
-def _fetch_page_matches(session_manager: SessionManager, current_page_num: int, db_session_for_page: SqlAlchemySession, state: dict[str, Any], progress_bar) -> Optional[list[dict[str, Any]]]:
+def _fetch_page_matches(session_manager: SessionManager, current_page_num: int, db_session_for_page: SqlAlchemySession, state: dict[str, Any], progress_bar: Optional[tqdm]) -> Optional[list[dict[str, Any]]]:
     """Fetch matches for a page with error handling."""
     try:
         if not session_manager.is_sess_valid():
@@ -351,7 +351,7 @@ def _fetch_page_matches(session_manager: SessionManager, current_page_num: int, 
             session_manager.return_session(db_session_for_page)
 
 
-def _check_session_validity(session_manager: SessionManager, current_page_num: int, state: dict[str, Any], progress_bar) -> bool:
+def _check_session_validity(session_manager: SessionManager, current_page_num: int, state: dict[str, Any], progress_bar: Optional[tqdm]) -> bool:
     """Check if session is valid, handle abort if not."""
     if not session_manager.is_sess_valid():
         logger.critical(f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run.")
@@ -363,7 +363,7 @@ def _check_session_validity(session_manager: SessionManager, current_page_num: i
     return True
 
 
-def _update_state_after_batch(state: dict[str, Any], counters: BatchCounters, progress_bar):
+def _update_state_after_batch(state: dict[str, Any], counters: BatchCounters, progress_bar: Optional[tqdm]) -> None:
     """Update state counters and progress bar after processing a batch."""
     state["total_new"] += counters.new
     state["total_updated"] += counters.updated
@@ -1029,7 +1029,7 @@ def _handle_api_task_exception(
 def _check_critical_failure_threshold(
     critical_combined_details_failures: int,
     futures: dict[Any, tuple[str, str]]
-):
+) -> bool:
     """Check if critical failure threshold exceeded and cancel remaining futures."""
     if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
         for f_cancel in futures:
@@ -4791,7 +4791,7 @@ def _fetch_batch_relationship_prob(
 
 def _log_page_summary(
     page: int, page_new: int, page_updated: int, page_skipped: int, page_errors: int
-):
+) -> None:
     """Logs a summary of processed matches for a single page."""
     logger.debug(f"---- Page {page} Batch Summary ----")
     logger.debug(f"  New Person/Data: {page_new}")
@@ -4810,7 +4810,7 @@ def _log_coord_summary(
     total_updated: int,
     total_skipped: int,
     total_errors: int,
-):
+) -> None:
     """Logs the final summary of the entire coord (match gathering) execution."""
     logger.info("---- Gather Matches Final Summary ----")
     logger.info(f"  Total Pages Processed: {total_pages_processed}")

@@ -1990,7 +1990,7 @@ def test_analyze_top_match_fraser() -> None:
         return True  # Don't fail the test suite
 
 
-def _get_test_person_config():
+def _get_test_person_config() -> dict[str, Any]:
     """Get test person configuration from environment variables."""
     import os
 

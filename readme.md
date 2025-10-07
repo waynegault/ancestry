@@ -1,6 +1,6 @@
 # Ancestry Research Automation Platform
 
-**An intelligent automation system for genealogical research on Ancestry.com**
+## An intelligent automation system for genealogical research on Ancestry.com
 
 Transform your genealogical research workflow with AI-powered automation that collects DNA match data, analyzes conversations, sends personalized messages, and generates actionable research tasks.
 
@@ -75,6 +75,7 @@ python main.py
 When you run `python main.py`, you'll see these options:
 
 #### Core Workflow
+
 - **Option 1**: Run Full Workflow - Executes inbox analysis, task generation, and messaging in sequence
 - **Option 6**: Gather Matches - Collects DNA match data from Ancestry.com
 - **Option 7**: Search Inbox - AI-powered conversation analysis and classification
@@ -82,16 +83,19 @@ When you run `python main.py`, you'll see these options:
 - **Option 9**: Process Productive Messages - Generates Microsoft To-Do tasks from conversations
 
 #### Analysis Tools
+
 - **Option 10**: GEDCOM Report - Analyzes local GEDCOM files for research opportunities
 - **Option 11**: API Report - Searches Ancestry.com API for specific individuals and relationships
 
 #### Database Management
+
 - **Option 2**: Reset Database - Clears all data (use with caution)
 - **Option 3**: Backup Database - Creates a backup of your data
 - **Option 4**: Restore Database - Restores from a previous backup
 - **Option 5**: Check Login Status - Verifies your Ancestry.com session
 
 #### Utilities
+
 - **sec**: Credential Manager - Setup, view, or update your credentials
 - **s**: Show Cache Statistics - View performance metrics
 - **t**: Toggle Log Level - Switch between INFO and DEBUG logging
@@ -143,7 +147,9 @@ LOG_LEVEL=INFO
 ## 🔍 Understanding the Actions
 
 ### Action 6: Gather DNA Matches
+
 Collects comprehensive DNA match data from Ancestry.com including:
+
 - Shared DNA (centiMorgans)
 - Predicted relationships
 - Tree information
@@ -153,7 +159,9 @@ Collects comprehensive DNA match data from Ancestry.com including:
 **When to use**: Run daily or weekly to keep match data current.
 
 ### Action 7: Search Inbox
+
 AI-powered inbox processing that:
+
 - Classifies messages as PRODUCTIVE, DESIST, or OTHER
 - Extracts genealogical information (names, dates, places, relationships)
 - Tracks conversation history
@@ -162,7 +170,9 @@ AI-powered inbox processing that:
 **When to use**: After gathering matches or when you have new messages.
 
 ### Action 8: Send Messages
+
 Intelligent messaging system that:
+
 - Selects appropriate message templates
 - Personalizes content with match-specific data
 - Avoids duplicate messages
@@ -172,7 +182,9 @@ Intelligent messaging system that:
 **When to use**: After processing inbox to respond to productive conversations.
 
 ### Action 9: Process Productive Messages
+
 Task generation engine that:
+
 - Analyzes productive conversations
 - Extracts specific research needs
 - Creates prioritized Microsoft To-Do tasks
@@ -182,7 +194,9 @@ Task generation engine that:
 **When to use**: After inbox analysis to convert conversations into actionable tasks.
 
 ### Action 10: GEDCOM Report
+
 Local file analysis that:
+
 - Parses GEDCOM genealogy files
 - Finds individuals matching search criteria
 - Calculates relationship paths
@@ -192,7 +206,9 @@ Local file analysis that:
 **When to use**: To analyze your local family tree file for research opportunities.
 
 ### Action 11: API Report
+
 Live Ancestry.com search that:
+
 - Searches for specific individuals
 - Retrieves family relationships
 - Calculates relationship paths to you
@@ -206,6 +222,7 @@ Live Ancestry.com search that:
 ## 📊 What Gets Created
 
 ### Database
+
 - **Location**: `Data/ancestry.db` (SQLite database)
 - **Tables**:
   - `people` - DNA match profiles
@@ -215,6 +232,7 @@ Live Ancestry.com search that:
   - `message_templates` - Message templates
 
 ### Logs
+
 - **Location**: `Logs/` directory
 - **Files**:
   - `app.log` - Main application log
@@ -222,6 +240,7 @@ Live Ancestry.com search that:
   - `prompt_experiment_alerts.jsonl` - Quality alerts
 
 ### Cache
+
 - **Location**: `Cache/` directory
 - **Purpose**: Stores temporary data for performance optimization
 
@@ -251,23 +270,28 @@ Typical results from users:
 
 ### Common Issues
 
-**"Session not ready" error**
+### "Session not ready" error
+
 - Run Option 5 to check login status
 - Re-run credentials.py to update login information
 
-**Tests hanging or failing**
+#### Tests hanging or failing
+
 - Set `SKIP_LIVE_API_TESTS=true` in environment
 - Check that Chrome/Chromium is installed
 
-**429 API errors (rate limiting)**
+#### 429 API errors (rate limiting)
+
 - Reduce `RATE_LIMIT_RPS` in .env
 - Increase `MAX_PAGES` processing time
 
-**No tasks created**
+### No tasks created
+
 - Verify Microsoft To-Do credentials are configured
 - Check that messages are classified as PRODUCTIVE
 
-**Low quality scores**
+#### Low quality scores
+
 - Run `python prompt_telemetry.py --check-regression`
 - Review AI prompt configuration in `ai_prompts.json`
 
@@ -275,14 +299,14 @@ Typical results from users:
 
 ## 📚 Additional Resources
 
-- **Repository**: https://github.com/waynegault/ancestry
+- **Repository**: <https://github.com/waynegault/ancestry>
 - **License**: MIT License
 - **Python Version**: 3.9+ (3.11+ recommended)
 - **Test Coverage**: Historically near 100% (run `python run_all_tests.py` to confirm after changes)
 
 ---
 
-# APPENDIX: Technical Details for Developers
+##  APPENDIX: Technical Details for Developers
 
 ## Architecture Overview
 
@@ -299,24 +323,28 @@ Typical results from users:
 ### Core Components
 
 #### Session Management (`core/session_manager.py`)
+
 - Centralized browser and API session coordination
 - Automatic session refresh and recovery
 - CSRF token management
 - Cookie synchronization between Selenium and requests
 
 #### Database (`database.py`)
+
 - SQLAlchemy ORM models
 - Bulk insert/update operations
 - Soft delete support
 - Comprehensive indexing for performance
 
 #### Browser Automation (`core/browser_manager.py`)
+
 - Selenium WebDriver management
 - Automatic ChromeDriver updates
 - Error recovery and retry logic
 - Resource cleanup
 
 #### API Management (`core/api_manager.py`)
+
 - RESTful API client for Ancestry.com
 - Rate limiting and backoff
 - Response caching
@@ -327,7 +355,9 @@ Typical results from users:
 ## Database Schema
 
 ### Person Table
+
 Primary table for DNA matches:
+
 - `id` - Primary key
 - `uuid` - Ancestry DNA test ID
 - `profile_id` - Ancestry user profile ID
@@ -339,7 +369,9 @@ Primary table for DNA matches:
 - `created_at`, `updated_at`, `deleted_at` - Timestamps
 
 ### DnaMatch Table
+
 DNA-specific details (one-to-one with Person):
+
 - `people_id` - Foreign key to Person
 - `cM_DNA` - Shared centimorgans
 - `predicted_relationship` - Ancestry's prediction
@@ -348,7 +380,9 @@ DNA-specific details (one-to-one with Person):
 - `from_my_fathers_side`, `from_my_mothers_side` - Parental side flags
 
 ### FamilyTree Table
+
 Tree position data (one-to-one with Person):
+
 - `people_id` - Foreign key to Person
 - `cfpid` - Ancestry internal person ID
 - `person_name_in_tree` - Name in tree
@@ -356,7 +390,9 @@ Tree position data (one-to-one with Person):
 - `relationship_path` - Path to common ancestor
 
 ### ConversationLog Table
+
 Message history:
+
 - `people_id` - Foreign key to Person
 - `conversation_id` - Thread identifier
 - `direction` - IN or OUT
@@ -367,7 +403,9 @@ Message history:
 - `custom_reply_sent_at` - Custom reply timestamp
 
 ### MessageTemplate Table
+
 Message templates:
+
 - `template_key` - Unique identifier
 - `subject_line` - Email subject
 - `message_content` - Template with placeholders
@@ -381,7 +419,9 @@ Message templates:
 ## AI Integration
 
 ### Prompt System (`ai_prompts.json`)
+
 Structured prompts for different tasks:
+
 - Message classification
 - Entity extraction
 - Task generation
@@ -389,13 +429,16 @@ Structured prompts for different tasks:
 - DNA analysis
 
 ### AI Interface (`ai_interface.py`)
+
 - Provider abstraction (OpenAI, Google, etc.)
 - Variant labeling for A/B testing
 - Response normalization
 - Error handling and retries
 
 ### Quality Scoring (`extraction_quality.py`)
+
 Computes quality scores (0-100) based on:
+
 - Entity richness (names, dates, places, relationships) - up to 70 points
 - Task specificity (verbs, years, record terms) - up to 30 points
 - Penalties for missing critical data
@@ -406,7 +449,9 @@ Computes quality scores (0-100) based on:
 ## Message Personalization
 
 ### Template System (`message_personalization.py`)
+
 20+ dynamic placeholder functions:
+
 - `{first_name}` - Match's first name
 - `{relationship}` - Predicted relationship
 - `{shared_cm}` - Shared DNA amount
@@ -416,7 +461,9 @@ Computes quality scores (0-100) based on:
 - And many more...
 
 ### Fallback Chain
+
 Ensures messages always send even with sparse data:
+
 1. Try primary placeholder value
 2. Try alternative data source
 3. Use generic fallback text
@@ -426,7 +473,9 @@ Ensures messages always send even with sparse data:
 ## Task Generation
 
 ### Template Categories (`genealogical_task_templates.py`)
+
 8 specialized categories:
+
 1. Vital records (birth, marriage, death)
 2. Census records
 3. Immigration/naturalization
@@ -437,7 +486,9 @@ Ensures messages always send even with sparse data:
 8. Collaboration
 
 ### Task Quality Scoring
+
 Evaluates task specificity:
+
 - Action verbs (find, verify, search)
 - Specific years or date ranges
 - Record type mentions
@@ -450,18 +501,21 @@ Evaluates task specificity:
 ## Performance Optimization
 
 ### Adaptive Rate Limiting (`adaptive_rate_limiter.py`)
+
 - Monitors success and 429 error rates
 - Adjusts RPS dynamically (0.1 - 2.0)
 - Intelligent backoff on errors
 - Per-session metrics tracking
 
 ### Caching Strategy
+
 - **GEDCOM Cache**: Parsed file data
 - **API Cache**: Search results and person data
 - **Session Cache**: Authentication tokens
 - **Performance Cache**: Metrics and statistics
 
 ### Smart Batching
+
 - Optimizes batch size for target cycle time
 - Balances throughput vs. latency
 - Adapts to system performance
@@ -471,6 +525,7 @@ Evaluates task specificity:
 ## Error Handling
 
 ### Error Categories (`core/error_handling.py`)
+
 1. **Network Errors**: Timeouts, connection failures
 2. **Authentication Errors**: Session expiration, login failures
 3. **Rate Limiting**: 429 responses, throttling
@@ -481,6 +536,7 @@ Evaluates task specificity:
 8. **System Errors**: Memory, disk, resource exhaustion
 
 ### Recovery Strategies
+
 - **Retry with Backoff**: Exponential backoff for transient errors
 - **Circuit Breaker**: Prevents cascade failures
 - **Graceful Degradation**: Fallback to reduced functionality
@@ -492,12 +548,14 @@ Evaluates task specificity:
 ## Testing Strategy
 
 ### Test Organization
+
 - Tests embedded in same file as code (project convention)
 - Standardized `run_comprehensive_tests()` function
 - Strict failure requirements (no fake passes)
 - Respects log level configuration
 
 ### Test Categories
+
 1. **Unit Tests**: Individual function validation
 2. **Integration Tests**: Multi-component workflows
 3. **Performance Tests**: Speed and resource usage
@@ -505,6 +563,7 @@ Evaluates task specificity:
 5. **Quality Tests**: Extraction and scoring validation
 
 ### Test Runner (`run_all_tests.py`)
+
 - Discovers all test modules
 - Optional parallel execution
 - Performance metrics
@@ -516,7 +575,9 @@ Evaluates task specificity:
 ## Code Quality
 
 ### Linting (Ruff)
+
 Enforced rules:
+
 - E722: No bare except
 - F821: Undefined name
 - F811: Redefined name
@@ -525,11 +586,13 @@ Enforced rules:
 - F401: Unused imports
 
 Auto-fixes:
+
 - Trailing whitespace
 - Import formatting
 - Line endings
 
 ### Quality Gates
+
 - `quality_regression_gate.py` - Prevents quality degradation
 - Baseline comparison for extraction quality
 - Median score tracking
@@ -540,7 +603,9 @@ Auto-fixes:
 ## Configuration Management
 
 ### Config Schema (`config/config_schema.py`)
+
 Centralized configuration with validation:
+
 - Environment settings
 - API limits and timeouts
 - Performance tuning
@@ -548,7 +613,9 @@ Centralized configuration with validation:
 - Credential paths
 
 ### Environment Variables (.env)
+
 All configuration externalized:
+
 - No hardcoded defaults in code
 - Type validation
 - Required vs. optional settings
@@ -559,12 +626,14 @@ All configuration externalized:
 ## Security Model
 
 ### Credential Storage (`config/credential_manager.py`)
+
 - Fernet encryption for passwords
 - System keyring for master key
 - Minimal scope storage
 - Local-only persistence
 
 ### Session Security
+
 - CSRF token validation
 - Secure cookie handling
 - Session timeout management
@@ -574,7 +643,7 @@ All configuration externalized:
 
 ## Project Structure
 
-```
+```{Python}
 ancestry/
 ├── action6_gather.py          # DNA match collection
 ├── action7_inbox.py            # Inbox processing
@@ -647,6 +716,7 @@ See `requirements.txt` for complete list.
 ## API Endpoints Used
 
 Ancestry.com endpoints:
+
 - `/discoveryui-matchesservice/api/samples/{testGuid}/matches/list` - DNA match list
 - `/discoveryui-matchesservice/api/samples/{testGuid}/matches/{matchTestGuid}` - Match details
 - `/api/search/suggest` - Person search suggestions
@@ -659,6 +729,7 @@ Ancestry.com endpoints:
 ## Performance Benchmarks
 
 Typical performance (on modern hardware):
+
 - **Action 6** (Gather Matches): ~2-5 minutes for 100 matches
 - **Action 7** (Inbox): ~1-3 minutes for 50 messages
 - **Action 8** (Messaging): ~30-60 seconds for 10 messages
@@ -673,6 +744,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 ## Development Workflow
 
 ### Contribution Checklist
+
 1. Add/update tests (maintain green suite)
 2. Run quality gate (if baseline exists)
 3. Update documentation if public surface changes
@@ -680,6 +752,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 5. Follow DRY/KISS/YAGNI principles
 
 ### Git Workflow
+
 1. Create feature branch
 2. Make changes with tests
 3. Run `python run_all_tests.py`
@@ -706,6 +779,7 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 ## 🔧 Code Quality & Refactoring Status
 
 ### Current Quality Metrics (Latest: 2025-10-04)
+
 - **Average Quality Score**: 78.8-86.2/100
 - **Type Hint Coverage**: 97.9-99.3%
 - **Test Pass Rate**: Latest recorded suite (Oct 2025) passed across 62 modules (re-run to verify)
@@ -713,7 +787,9 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 - **Files Analyzed**: 71
 
 ### Previous Refactoring Achievements (Sessions 1-2)
+
 **Completed**: October 2025
+
 - ✅ **16 major refactorings** completed
 - ✅ **~700 complexity points reduced**
 - ✅ **Type hint coverage improved** from 92-95% to 99.3%
@@ -722,11 +798,13 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 - ✅ **run_all_tests.py**: Reduced from complexity 98 to <10 (90% reduction)
 
 ### Current Refactoring Initiative (Session 3)
+
 **Status**: Active - 24 tasks identified
 **Goal**: Address remaining complexity hotspots and architectural issues
 **Detailed Analysis**: Earlier refactoring reports (now archived) capture root-cause analysis and can be re-generated via fresh audits
 
-#### Top Priority Areas:
+#### Top Priority Areas
+
 1. **CRITICAL** (3 functions requiring immediate attention):
    - `utils.py: main()` (576 lines, complexity 36, quality score 0.0/100)
    - `api_utils.py: call_facts_user_api()` (complexity 27)
@@ -751,7 +829,8 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
    - main.py: 13% missing
    - gedcom_utils.py: 5.7% missing
 
-#### Refactoring Principles:
+#### Refactoring Principles
+
 - ✅ DRY (Don't Repeat Yourself) - Eliminate all code duplication
 - ✅ KISS (Keep It Simple, Stupid) - Prefer simple solutions
 - ✅ YAGNI (You Aren't Gonna Need It) - Only build what's needed
@@ -770,4 +849,3 @@ Test suite: ~30 seconds (with SKIP_LIVE_API_TESTS=true)
 **Status**: Production Ready - Requires passing automated test suite prior to deployment
 
 **🎉 The Ancestry Research Automation Platform is ready for genealogical research!**
-

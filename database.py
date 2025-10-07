@@ -28,6 +28,7 @@ import shutil
 import sqlite3
 import sys
 import time
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
@@ -653,7 +654,7 @@ def _create_views(_target: Any, connection: Connection, **_kw: Any) -> None:
 # ----------------------------------------------------------------------
 @contextlib.contextmanager
 @error_context("Database Transaction")
-def db_transn(session: Session):
+def db_transn(session: Session) -> Generator[Session, None, None]:
     """
     Provides a transactional scope around a series of database operations
     using a SQLAlchemy session. Handles commit on success and rollback on error.
@@ -2172,7 +2173,7 @@ def _handle_deletion_error(e: Exception, db_path: Path, attempt: int) -> Excepti
 
 def delete_database(
     _session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
-):
+) -> None:
     """
     Deletes the physical database file with retry logic.
 
