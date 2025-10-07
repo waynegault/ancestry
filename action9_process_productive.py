@@ -701,7 +701,7 @@ class PersonProcessor:
             else ""
         )
 
-    def process_person(self, person: Person, progress_bar=None) -> tuple[bool, str]:
+    def process_person(self, person: Person, progress_bar: Optional[tqdm] = None) -> tuple[bool, str]:
         """
         Process a single person and return (success, status_message).
 
@@ -816,7 +816,7 @@ class PersonProcessor:
         return None
 
     def _process_with_ai(
-        self, person: Person, context_logs: list[ConversationLog], progress_bar=None
+        self, person: Person, context_logs: list[ConversationLog], progress_bar: Optional[tqdm] = None
     ) -> Optional[tuple[dict[str, Any], list[str]]]:
         """Process message content with AI and return extracted data and tasks."""
         if progress_bar:
@@ -917,8 +917,8 @@ class PersonProcessor:
         person: Person,
         suggested_tasks: list[str],
         log_prefix: str,
-        progress_bar=None,
-    ):
+        progress_bar: Optional[tqdm] = None,
+    ) -> None:
         """Create MS Graph tasks if configured and available."""
         if progress_bar:
             progress_bar.set_description(
@@ -963,7 +963,7 @@ class PersonProcessor:
         context_logs: list[ConversationLog],
         extracted_data: dict[str, Any],
         log_prefix: str,
-        progress_bar=None,
+        progress_bar: Optional[tqdm] = None,
     ) -> bool:
         """Handle generating and sending the appropriate response message."""
 
@@ -1008,7 +1008,7 @@ class PersonProcessor:
             progress_bar,
         )
 
-    def _mark_message_processed(self, message: ConversationLog):
+    def _mark_message_processed(self, message: ConversationLog) -> None:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
@@ -1025,7 +1025,7 @@ class PersonProcessor:
         extracted_data: dict[str, Any],
         latest_message: ConversationLog,
         log_prefix: str,
-        progress_bar=None,
+        progress_bar: Optional[tqdm] = None,
     ) -> Optional[str]:
         """Generate a custom genealogical reply if appropriate."""
 
@@ -1153,7 +1153,7 @@ class PersonProcessor:
         custom_reply: Optional[str],
         latest_message: ConversationLog,
         log_prefix: str,
-        progress_bar=None,
+        progress_bar: Optional[tqdm] = None,
     ) -> bool:
         """Send the message and handle database updates."""
 
@@ -1701,7 +1701,7 @@ def _process_candidates(
     return state.overall_success
 
 
-def _final_commit(db_state: DatabaseState, state: ProcessingState):
+def _final_commit(db_state: DatabaseState, state: ProcessingState) -> None:
     """Perform final commit of any remaining data."""
 
     if not state.critical_db_error_occurred and (
@@ -1729,7 +1729,7 @@ def _final_commit(db_state: DatabaseState, state: ProcessingState):
             )
 
 
-def _log_summary(state: ProcessingState):
+def _log_summary(state: ProcessingState) -> None:
     """Log the processing summary."""
 
     logger.info("------ Action 9: Process Productive Summary -------")

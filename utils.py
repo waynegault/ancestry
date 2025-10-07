@@ -509,7 +509,7 @@ def retry(
     max_retries: Optional[int] = None,
     backoff_factor: Optional[float] = None,
     max_delay: Optional[float] = None,
-):
+) -> Callable:
     """Decorator factory to retry a function with exponential backoff and jitter."""
 
     def decorator(func: Callable) -> Callable:
@@ -654,7 +654,7 @@ def retry_api(
         TimeoutError,
     ),
     retry_on_status_codes: Optional[list[int]] = None,
-):
+) -> Callable:
     """Decorator factory for retrying API calls with exponential backoff, logging, etc."""
 
     def decorator(func: Callable) -> Callable:
@@ -2240,7 +2240,7 @@ def _debug_log_page_buttons(driver: WebDriver) -> None:
         logger.debug(f"[DEBUG] Error listing buttons: {debug_err}")
 
 
-def _perform_sms_button_click(driver: WebDriver, sms_button) -> bool:
+def _perform_sms_button_click(driver: WebDriver, sms_button: Any) -> bool:
     """Attempt to click the SMS button with fallback strategies."""
     try:
         driver.execute_script("arguments[0].click();", sms_button)
@@ -2393,7 +2393,7 @@ def handle_two_fa(session_manager: SessionManager) -> bool:  # type: ignore
 
 # Helper functions for enter_creds
 
-def _clear_input_field(driver: WebDriver, input_element, field_name: str) -> bool:
+def _clear_input_field(driver: WebDriver, input_element: Any, field_name: str) -> bool:
     """Clear an input field robustly."""
     try:
         input_element.click()
@@ -2494,7 +2494,7 @@ def _debug_log_signin_page_buttons(driver: WebDriver) -> None:
         logger.debug(f"[DEBUG] Error listing buttons: {debug_err}")
 
 
-def _perform_next_button_click(driver: WebDriver, next_button) -> bool:
+def _perform_next_button_click(driver: WebDriver, next_button: Any) -> bool:
     """Attempt to click the Next button with fallback strategies."""
     try:
         driver.execute_script("arguments[0].click();", next_button)
@@ -2565,7 +2565,7 @@ def _enter_password(driver: WebDriver, element_wait: WebDriverWait) -> tuple[boo
     return True, password_input
 
 
-def _try_standard_click(sign_in_button) -> bool:
+def _try_standard_click(sign_in_button: Any) -> bool:
     """Try standard click on sign in button."""
     try:
         logger.debug("Attempting standard click on sign in button...")
@@ -2580,7 +2580,7 @@ def _try_standard_click(sign_in_button) -> bool:
         return False
 
 
-def _try_javascript_click(driver: WebDriver, sign_in_button) -> bool:
+def _try_javascript_click(driver: WebDriver, sign_in_button: Any) -> bool:
     """Try JavaScript click on sign in button."""
     try:
         logger.debug("Attempting JavaScript click on sign in button...")
@@ -2592,7 +2592,7 @@ def _try_javascript_click(driver: WebDriver, sign_in_button) -> bool:
         return False
 
 
-def _try_return_key_fallback(password_input) -> bool:
+def _try_return_key_fallback(password_input: Any) -> bool:
     """Try sending RETURN key to password field as fallback."""
     try:
         logger.warning("Attempting fallback: Sending RETURN key to password field.")
@@ -2604,7 +2604,7 @@ def _try_return_key_fallback(password_input) -> bool:
         return False
 
 
-def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input) -> bool:  # noqa: ARG001
+def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input: Any) -> bool:  # noqa: ARG001
     """Click the sign in button or use fallback methods."""
     # Try to locate sign in button
     try:
@@ -2696,7 +2696,7 @@ def _find_consent_banner(driver: WebDriver) -> Optional[Any]:
         raise
 
 
-def _click_accept_button_standard(driver: WebDriver, accept_button) -> bool:
+def _click_accept_button_standard(driver: WebDriver, accept_button: Any) -> bool:
     """Try standard click on accept button."""
     try:
         accept_button.click()
@@ -2718,7 +2718,7 @@ def _click_accept_button_standard(driver: WebDriver, accept_button) -> bool:
         return False
 
 
-def _click_accept_button_js(driver: WebDriver, accept_button) -> bool:
+def _click_accept_button_js(driver: WebDriver, accept_button: Any) -> bool:
     """Try JavaScript click on accept button."""
     try:
         logger.debug("Attempting JS click on accept button...")

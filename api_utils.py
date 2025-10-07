@@ -786,7 +786,7 @@ def _build_date_string_from_parsed_data(parsed_date_data: dict) -> Optional[str]
     return temp_date_str
 
 
-def _try_parse_date_object(date_str: str, parser, event_type: str) -> Optional[datetime]:
+def _try_parse_date_object(date_str: str, parser: Callable[[str], datetime], event_type: str) -> Optional[datetime]:
     """Try to parse a date string into a datetime object."""
     try:
         return parser(date_str)
@@ -796,7 +796,7 @@ def _try_parse_date_object(date_str: str, parser, event_type: str) -> Optional[d
 
 
 def _extract_from_person_facts(
-    facts_data: dict, facts_user_key: str, event_type: str, parser
+    facts_data: dict, facts_user_key: str, event_type: str, parser: Callable[[str], datetime]
 ) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
     """Extract event data from PersonFacts list."""
     person_facts_list = facts_data.get("PersonFacts", [])
@@ -1169,7 +1169,7 @@ def parse_ancestry_person_details(
 # Import it from there instead of defining it here
 
 
-def print_group(label: str, items: list[dict]):
+def print_group(label: str, items: list[dict]) -> None:
     print(f"\n{label}:")
     if items:
         formatter = format_name
@@ -1258,7 +1258,7 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 @circuit_breaker(failure_threshold=5, recovery_timeout=60)
 # Helper functions for call_suggest_api
 
-def _validate_suggest_api_inputs(session_manager: "SessionManager", owner_tree_id: str):
+def _validate_suggest_api_inputs(session_manager: "SessionManager", owner_tree_id: str) -> None:
     """Validate inputs for suggest API call."""
     if not callable(_api_req):
         logger.critical("Suggest API call failed: _api_req function unavailable (Import Failed?).")
@@ -1275,7 +1275,7 @@ def _validate_suggest_api_inputs(session_manager: "SessionManager", owner_tree_i
         raise AncestryException("owner_tree_id is required for suggest API - Provide a valid tree ID")
 
 
-def _apply_rate_limiting(api_description: str):
+def _apply_rate_limiting(api_description: str) -> None:
     """Apply rate limiting if available."""
     if api_rate_limiter and PYDANTIC_AVAILABLE:
         if not api_rate_limiter.can_make_request():
@@ -1367,7 +1367,7 @@ def _make_suggest_api_request(
     )
 
 
-def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):
+def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception) -> None:
     """Handle timeout exception for suggest API."""
     timeout_error = NetworkTimeoutError(
         f"API request timed out after {timeout}s",
@@ -1385,7 +1385,7 @@ def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, sugge
         raise timeout_error from timeout_err
 
 
-def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str):
+def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str) -> None:
     """Handle rate limit (429) exception for suggest API."""
     import time
     rate_limit_delay = 5.0 * (2 ** (attempt - 1))

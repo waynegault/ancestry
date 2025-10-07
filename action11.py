@@ -946,7 +946,7 @@ def _print_results_table(table_data: list[list[str]], headers: list[str]) -> Non
 
 
 # Display search results (Uses 'gender_match' key)
-def _display_search_results(candidates: list[dict], max_to_display: int):
+def _display_search_results(candidates: list[dict], max_to_display: int) -> None:
     """Displays the scored search results. Uses 'gender_match' score key."""
     if not candidates:
         print("\nNo candidates to display.")
@@ -2542,7 +2542,7 @@ def _handle_supplementary_info_phase(
     person_research_data: Optional[dict],
     selected_candidate_processed: dict,
     session_manager_local: SessionManager,
-):
+) -> None:
     """
     Simplified to only calculate and display the relationship path.
     Family details functionality removed to keep Action 11 focused and reliable.
@@ -3038,7 +3038,7 @@ def run_action11(session_manager_param: Optional[Any] = None, *_: Any) -> bool:
     return handle_api_report()
 
 
-def load_test_person_from_env():
+def load_test_person_from_env() -> dict[str, Any]:
     """Load Fraser Gault test person data from environment variables."""
     load_dotenv()
 
