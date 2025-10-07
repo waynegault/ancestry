@@ -920,15 +920,20 @@ def _identify_fetch_candidates(
     if invalid_uuid_count > 0:
         logger.error(f"{invalid_uuid_count} matches skipped during identification due to missing UUID.")
 
-    logger.debug(
-        f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, "
-        f"{skipped_count_this_batch} skipped (no change detected from list view)."
-    )
-
-    if len(fetch_candidates_uuid) == 0:
-        logger.warning("No fetch candidates identified - all matches appear up-to-date in database")
+    # Log identification results with appropriate detail
+    if len(fetch_candidates_uuid) == 0 and skipped_count_this_batch > 0:
+        logger.info(f"✓ All {skipped_count_this_batch} matches are up-to-date - no API fetches needed")
+    elif len(fetch_candidates_uuid) > 0:
+        logger.info(
+            f"📥 Fetch queue: {len(fetch_candidates_uuid)} matches need updates, "
+            f"{skipped_count_this_batch} already current"
+        )
+        logger.debug(f"  Sample UUIDs to fetch: {list(fetch_candidates_uuid)[:5]}...")
     else:
-        logger.debug(f"Fetch candidates: {list(fetch_candidates_uuid)[:5]}...")
+        logger.debug(
+            f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, "
+            f"{skipped_count_this_batch} skipped (no change detected from list view)."
+        )
 
     return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
 
@@ -1154,7 +1159,7 @@ def _perform_api_prefetches(
     temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
 
     if not fetch_candidates_uuid:
-        logger.warning("_perform_api_prefetches: No fetch candidates provided for API pre-fetch - returning empty results")
+        logger.debug("⏭️  No API prefetches needed - all matches current in database")
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
     fetch_start_time = time.time()
@@ -1162,7 +1167,7 @@ def _perform_api_prefetches(
     my_tree_id = session_manager.my_tree_id
     critical_combined_details_failures = 0
 
-    logger.debug(f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {THREAD_POOL_WORKERS} workers) ---")
+    logger.info(f"🌐 Fetching {num_candidates} matches via API ({THREAD_POOL_WORKERS} parallel workers)...")
 
     # Identify tree members needing badge/ladder fetch
     uuids_for_tree_badge_ladder = _identify_tree_badge_ladder_candidates(matches_to_process_later, fetch_candidates_uuid)
@@ -1205,7 +1210,8 @@ def _perform_api_prefetches(
         temp_ladder_results = _process_ladder_results(ladder_futures, cfpid_to_uuid_map)
 
     fetch_duration = time.time() - fetch_start_time
-    logger.debug(f"--- Finished Parallel API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
+    avg_time = fetch_duration / num_candidates if num_candidates > 0 else 0
+    logger.info(f"✅ API fetch complete: {num_candidates} matches in {fetch_duration:.2f}s (avg: {avg_time:.2f}s/match)")
 
     # Combine badge and ladder results
     batch_tree_data = _combine_badge_and_ladder_results(temp_badge_results, temp_ladder_results)
@@ -4809,12 +4815,29 @@ def _log_page_summary(
     page: int, page_new: int, page_updated: int, page_skipped: int, page_errors: int
 ) -> None:
     """Logs a summary of processed matches for a single page."""
-    logger.debug(f"---- Page {page} Batch Summary ----")
+    total = page_new + page_updated + page_skipped + page_errors
+    
+    # Build a concise, colorful one-line summary
+    parts = []
+    if page_new > 0:
+        parts.append(f"✨ {page_new} new")
+    if page_updated > 0:
+        parts.append(f"🔄 {page_updated} updated")
+    if page_skipped > 0:
+        parts.append(f"✓ {page_skipped} current")
+    if page_errors > 0:
+        parts.append(f"⚠️  {page_errors} errors")
+    
+    summary = " | ".join(parts) if parts else "No matches processed"
+    logger.info(f"Page {page}: {summary} (total: {total})")
+    
+    # Detailed breakdown at debug level
+    logger.debug(f"---- Page {page} Detailed Breakdown ----")
     logger.debug(f"  New Person/Data: {page_new}")
     logger.debug(f"  Updated Person/Data: {page_updated}")
     logger.debug(f"  Skipped (No Change): {page_skipped}")
-    logger.debug(f"  Errors during Prep/DB: {page_errors}")  # Clarified error source
-    logger.debug("---------------------------\n")
+    logger.debug(f"  Errors during Prep/DB: {page_errors}")
+    logger.debug("---------------------------------------\n")
 
 
 # End of _log_page_summary
@@ -4828,13 +4851,35 @@ def _log_coord_summary(
     total_errors: int,
 ) -> None:
     """Logs the final summary of the entire coord (match gathering) execution."""
-    logger.info("---- Gather Matches Final Summary ----")
-    logger.info(f"  Total Pages Processed: {total_pages_processed}")
-    logger.info(f"  Total New Added:     {total_new}")
-    logger.info(f"  Total Updated:       {total_updated}")
-    logger.info(f"  Total Skipped:       {total_skipped}")
-    logger.info(f"  Total Errors:        {total_errors}")
-    logger.info("------------------------------------\n")
+    total_matches = total_new + total_updated + total_skipped + total_errors
+    
+    logger.info("=" * 50)
+    logger.info("  📊 MATCH GATHERING SUMMARY")
+    logger.info("=" * 50)
+    logger.info(f"  Pages Processed:  {total_pages_processed}")
+    logger.info(f"  Total Matches:    {total_matches}")
+    logger.info("-" * 50)
+    
+    # Color-coded results
+    if total_new > 0:
+        logger.info(f"  ✨ New Added:      {total_new:>5}")
+    if total_updated > 0:
+        logger.info(f"  🔄 Updated:        {total_updated:>5}")
+    if total_skipped > 0:
+        logger.info(f"  ✓  Already Current: {total_skipped:>5}")
+    if total_errors > 0:
+        logger.info(f"  ⚠️  Errors:         {total_errors:>5}")
+    
+    logger.info("=" * 50)
+    
+    # Efficiency note
+    if total_skipped > 0 and total_new == 0 and total_updated == 0:
+        logger.info("  💡 All matches were current - no API calls needed!")
+    elif total_skipped > total_new + total_updated:
+        pct = (total_skipped / total_matches * 100) if total_matches > 0 else 0
+        logger.info(f"  💡 {pct:.1f}% of matches skipped - duplicate detection working!")
+    
+    logger.info("\n")
 
 
 # End of _log_coord_summary
