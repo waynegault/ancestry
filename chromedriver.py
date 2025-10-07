@@ -257,7 +257,7 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     return options
 
 
-def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:
+def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:  # noqa: ARG001
     """Create Chrome WebDriver instance with multiple fallback strategies."""
     try:
         logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")
@@ -266,7 +266,7 @@ def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Option
         # Use undetected_chromedriver for anti-bot protection
         # Auto-detect Chrome version and let UC handle driver download
         logger.debug("[init_webdvr] Auto-detecting Chrome version for compatibility...")
-        
+
         # Use minimal configuration (Strategy 3) - this is the only one that works reliably
         # Skip Strategies 1 & 2 which fail with "cannot connect to chrome" errors
         logger.debug("[init_webdvr] Using minimal configuration for best compatibility...")
@@ -274,7 +274,7 @@ def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Option
         minimal_options.add_argument("--no-sandbox")
         minimal_options.add_argument("--disable-dev-shm-usage")
         driver = uc.Chrome(options=minimal_options)
-        
+
         # Minimize window immediately after creation
         try:
             driver.minimize_window()
@@ -289,11 +289,11 @@ def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Option
         # Log brief error to file, don't spam console with stacktrace
         error_summary = str(chrome_exc).split('\n')[0] if '\n' in str(chrome_exc) else str(chrome_exc)
         logger.error(f"[init_webdvr] All ChromeDriver initialization strategies failed on attempt {attempt_num}: {error_summary}")
-        
+
         # Only show detailed stacktrace in debug mode
         if logger.isEnabledFor(10):  # DEBUG level
             logger.debug(f"Full error details: {chrome_exc}", exc_info=True)
-        
+
         print(f"  ✗ ChromeDriver initialization failed (attempt {attempt_num})", flush=True)
         return None
 

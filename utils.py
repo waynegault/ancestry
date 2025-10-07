@@ -230,22 +230,22 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         if not session_manager.driver:
             logger.debug("Cannot save cookies: No driver available")
             return False
-            
+
         cookies = session_manager.driver.get_cookies()
         if not cookies:
             logger.debug("No cookies to save")
             return False
-        
+
         # Save to ancestry_cookies.json in root directory
         cookies_file = _get_cookie_file_path()
-        
+
         import json
-        with open(cookies_file, "w", encoding="utf-8") as f:
+        with cookies_file.open("w", encoding="utf-8") as f:
             json.dump(cookies, f, indent=2)
-        
+
         logger.info(f"💾 Saved {len(cookies)} cookies to {cookies_file}")
         return True
-        
+
     except Exception as e:
         logger.warning(f"Failed to save cookies: {e}")
         return False
@@ -257,21 +257,21 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
         if not session_manager.driver:
             logger.debug("Cannot load cookies: No driver available")
             return False
-        
+
         cookies_file = _get_cookie_file_path()
-        
+
         if not cookies_file.exists():
             logger.debug(f"No saved cookies file found at: {cookies_file}")
             return False
-        
+
         import json
-        with open(cookies_file, "r", encoding="utf-8") as f:
+        with cookies_file.open(encoding="utf-8") as f:
             cookies = json.load(f)
-        
+
         if not cookies:
             logger.debug("No cookies in saved file")
             return False
-        
+
         # Add each cookie to the driver
         loaded_count = 0
         for cookie in cookies:
@@ -281,16 +281,16 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
                     import time as time_module
                     if cookie["expiry"] < time_module.time():
                         del cookie["expiry"]
-                
+
                 session_manager.driver.add_cookie(cookie)
                 loaded_count += 1
             except Exception as cookie_err:
                 logger.debug(f"Failed to add cookie {cookie.get('name', 'unknown')}: {cookie_err}")
                 continue
-        
+
         logger.info(f"🍪 Loaded {loaded_count}/{len(cookies)} cookies from {cookies_file}")
         return loaded_count > 0
-        
+
     except Exception as e:
         logger.warning(f"Failed to load cookies: {e}")
         return False
@@ -2191,91 +2191,92 @@ def _wait_for_2fa_header(_driver: WebDriver, element_wait: WebDriverWait, sessio
         return False
 
 
-def _click_sms_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:  # type: ignore
-    """Try clicking the SMS 'Send Code' button."""
-    result = False
-    
-    print("  📱 Looking for SMS/Text message option...", flush=True)
-    logger.debug(f"Looking for 2FA SMS button with selector: '{TWO_FA_SMS_SELECTOR}'")
-
-    # Use 5-second timeout per selector (faster feedback)
-    selector_wait = WebDriverWait(driver, 5)
-
-    # Try multiple selectors for the SMS button (ordered by most likely to succeed first)
+def _find_sms_button_with_selectors(driver: WebDriver, selector_wait: WebDriverWait) -> Optional[Any]:  # noqa: ARG001
+    """Try multiple selectors to find the SMS button."""
     sms_selectors = [
-        "button[data-method='sms']",  # Most reliable: data-method attribute
-        TWO_FA_SMS_SELECTOR,  # Original: button.ancCardBtn.methodBtn[data-method='sms']
-        "//button[contains(., 'Text message')]",  # Button with text anywhere inside
-        "//div[contains(text(), 'Text message')]",  # The containing div
-        "//button[contains(text(), 'Text message')]",  # XPath by exact text
+        "button[data-method='sms']",
+        TWO_FA_SMS_SELECTOR,
+        "//button[contains(., 'Text message')]",
+        "//div[contains(text(), 'Text message')]",
+        "//button[contains(text(), 'Text message')]",
     ]
 
-    sms_button = None
     for idx, selector in enumerate(sms_selectors):
         try:
             logger.debug(f"[DEBUG] Trying selector {idx+1}/{len(sms_selectors)}: {selector}")
             if selector.startswith("//"):
-                # XPath selector
                 sms_button = selector_wait.until(
                     EC.element_to_be_clickable((By.XPATH, selector))
                 )
             else:
-                # CSS selector
                 sms_button = selector_wait.until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
             logger.debug(f"✓ Found SMS button with selector: {selector}")
-            break
+            return sms_button
         except (TimeoutException, NoSuchElementException) as e:
             logger.debug(f"SMS button not found with selector {idx+1}: {selector} - {type(e).__name__}")
-            continue
         except Exception as e:
             logger.debug(f"Error trying selector {idx+1} ({selector}): {e}")
-            continue
 
-    if not sms_button:
-        logger.warning("Could not find SMS button with any selector.")
-        
-        # Debug: List all buttons on the page to help diagnose
-        try:
-            all_buttons = driver.find_elements(By.TAG_NAME, "button")
-            logger.debug(f"[DEBUG] Found {len(all_buttons)} buttons on page")
-            for i, btn in enumerate(all_buttons[:10]):  # Show first 10 buttons
-                try:
-                    btn_text = btn.text.strip()
-                    btn_classes = btn.get_attribute("class")
-                    btn_data_method = btn.get_attribute("data-method")
-                    if btn_text or btn_data_method:
-                        logger.debug(f"  Button {i}: text='{btn_text}', class='{btn_classes}', data-method='{btn_data_method}'")
-                except:
-                    pass
-        except Exception as debug_err:
-            logger.debug(f"[DEBUG] Error listing buttons: {debug_err}")
-        
-        print("  ⚠️  SMS button not found. Please click 'Text message' manually.", flush=True)
-        return False
+    return None
 
-    # Try to click the button
+
+def _debug_log_page_buttons(driver: WebDriver) -> None:
+    """Log all buttons on the page for debugging."""
+    try:
+        all_buttons = driver.find_elements(By.TAG_NAME, "button")
+        logger.debug(f"[DEBUG] Found {len(all_buttons)} buttons on page")
+        for i, btn in enumerate(all_buttons[:10]):
+            try:
+                btn_text = btn.text.strip()
+                btn_classes = btn.get_attribute("class")
+                btn_data_method = btn.get_attribute("data-method")
+                if btn_text or btn_data_method:
+                    logger.debug(f"  Button {i}: text='{btn_text}', class='{btn_classes}', data-method='{btn_data_method}'")
+            except Exception:
+                pass
+    except Exception as debug_err:
+        logger.debug(f"[DEBUG] Error listing buttons: {debug_err}")
+
+
+def _perform_sms_button_click(driver: WebDriver, sms_button) -> bool:
+    """Attempt to click the SMS button with fallback strategies."""
     try:
         driver.execute_script("arguments[0].click();", sms_button)
         logger.debug("SMS button clicked via JavaScript.")
         print("  ✓ SMS verification code requested. Check your phone!", flush=True)
-        time.sleep(3)  # Wait for backend to process SMS request before checking for input field
-        result = _wait_for_code_input_field(driver)
+        time.sleep(3)
+        return _wait_for_code_input_field(driver)
     except WebDriverException as click_err:
         logger.error(f"Error clicking SMS button via JS: {click_err}")
-        # Try standard click as fallback
         try:
             sms_button.click()
             logger.debug("SMS button clicked via standard click.")
             print("  ✓ SMS verification code requested. Check your phone!", flush=True)
-            time.sleep(3)  # Wait for backend to process SMS request before checking for input field
-            result = _wait_for_code_input_field(driver)
+            time.sleep(3)
+            return _wait_for_code_input_field(driver)
         except Exception as std_err:
             logger.error(f"Standard click also failed: {std_err}")
             print("  ✗ Failed to click SMS button. Please click 'Text message' manually.", flush=True)
+            return False
 
-    return result
+
+def _click_sms_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:  # type: ignore  # noqa: ARG001
+    """Try clicking the SMS 'Send Code' button."""
+    print("  📱 Looking for SMS/Text message option...", flush=True)
+    logger.debug(f"Looking for 2FA SMS button with selector: '{TWO_FA_SMS_SELECTOR}'")
+
+    selector_wait = WebDriverWait(driver, 5)
+    sms_button = _find_sms_button_with_selectors(driver, selector_wait)
+
+    if not sms_button:
+        logger.warning("Could not find SMS button with any selector.")
+        _debug_log_page_buttons(driver)
+        print("  ⚠️  SMS button not found. Please click 'Text message' manually.", flush=True)
+        return False
+
+    return _perform_sms_button_click(driver, sms_button)
 
 
 def _wait_for_code_input_field(driver: WebDriver) -> bool:  # type: ignore
@@ -2433,20 +2434,16 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
     return True
 
 
-def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
-    """Click the Next button in two-step login flow."""
-    logger.debug("Looking for Next/Continue button after username...")
-    
-    # Try multiple selectors for the Next button
+def _find_next_button_with_selectors(driver: WebDriver, short_wait: WebDriverWait) -> Optional[Any]:  # noqa: ARG001
+    """Try multiple selectors to find the Next button."""
     next_selectors = [
-        SIGN_IN_BUTTON_SELECTOR,  # Original: #signInBtn
-        "button[type='submit']",  # Submit button
-        "button.ancBtn",  # Ancestry button class
-        "//button[contains(text(), 'Next')]",  # XPath by text
-        "//button[contains(text(), 'Continue')]",  # Alternative text
+        SIGN_IN_BUTTON_SELECTOR,
+        "button[type='submit']",
+        "button.ancBtn",
+        "//button[contains(text(), 'Next')]",
+        "//button[contains(text(), 'Continue')]",
     ]
-    
-    next_button = None
+
     for idx, selector in enumerate(next_selectors):
         try:
             logger.debug(f"[DEBUG] Trying Next button selector {idx+1}/{len(next_selectors)}: {selector}")
@@ -2459,67 +2456,80 @@ def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
             logger.debug(f"✓ Found Next button with selector: {selector}")
-            break
+            return next_button
         except (TimeoutException, NoSuchElementException):
             logger.debug(f"Next button not found with selector {idx+1}: {selector}")
-            continue
         except Exception as e:
             logger.debug(f"Error trying selector {idx+1}: {e}")
-            continue
-    
+
+    return None
+
+
+def _debug_log_page_state_after_next_click(driver: WebDriver) -> None:
+    """Log page state after Next button click for debugging."""
+    try:
+        current_url = driver.current_url
+        page_title = driver.title
+        logger.debug(f"[DEBUG] After Next click - URL: {current_url}")
+        logger.debug(f"[DEBUG] After Next click - Title: {page_title}")
+    except Exception as debug_err:
+        logger.debug(f"[DEBUG] Error checking page after Next: {debug_err}")
+
+
+def _debug_log_signin_page_buttons(driver: WebDriver) -> None:
+    """Log all buttons on signin page for debugging."""
+    try:
+        all_buttons = driver.find_elements(By.TAG_NAME, "button")
+        logger.debug(f"[DEBUG] Found {len(all_buttons)} buttons on signin page")
+        for i, btn in enumerate(all_buttons[:5]):
+            try:
+                btn_text = btn.text.strip()
+                btn_id = btn.get_attribute("id")
+                btn_class = btn.get_attribute("class")
+                if btn_text or btn_id:
+                    logger.debug(f"  Button {i}: text='{btn_text}', id='{btn_id}', class='{btn_class}'")
+            except Exception:
+                pass
+    except Exception as debug_err:
+        logger.debug(f"[DEBUG] Error listing buttons: {debug_err}")
+
+
+def _perform_next_button_click(driver: WebDriver, next_button) -> bool:
+    """Attempt to click the Next button with fallback strategies."""
+    try:
+        driver.execute_script("arguments[0].click();", next_button)
+        logger.debug("Next button clicked via JavaScript.")
+        logger.info("Next button clicked, waiting for password field to appear...")
+        time.sleep(random.uniform(2.0, 3.0))
+        _debug_log_page_state_after_next_click(driver)
+        return True
+    except WebDriverException as js_err:  # type: ignore
+        logger.warning(f"JS click failed: {js_err}, trying standard click...")
+        try:
+            next_button.click()
+            logger.debug("Next button clicked successfully (standard click).")
+            time.sleep(random.uniform(2.0, 3.0))
+            return True
+        except (ElementClickInterceptedException, ElementNotInteractableException) as e:  # type: ignore
+            logger.error(f"Both click methods failed: {e}")
+            return True  # Continue anyway - password field might be visible
+
+
+def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
+    """Click the Next button in two-step login flow."""
+    logger.debug("Looking for Next/Continue button after username...")
+
+    next_button = _find_next_button_with_selectors(driver, short_wait)
+
     if not next_button:
-        # Will be handled by the TimeoutException below
         raise TimeoutException("Next button not found with any selector")
-    
+
     try:
         logger.debug("Next button found, attempting to click...")
-
-        try:
-            driver.execute_script("arguments[0].click();", next_button)
-            logger.debug("Next button clicked via JavaScript.")
-            logger.info("Next button clicked, waiting for password field to appear...")
-            time.sleep(random.uniform(2.0, 3.0))
-            
-            # Debug: Check what page we're on after clicking Next
-            try:
-                current_url = driver.current_url
-                page_title = driver.title
-                logger.debug(f"[DEBUG] After Next click - URL: {current_url}")
-                logger.debug(f"[DEBUG] After Next click - Title: {page_title}")
-            except Exception as debug_err:
-                logger.debug(f"[DEBUG] Error checking page after Next: {debug_err}")
-            
-            return True
-        except WebDriverException as js_err:  # type: ignore
-            logger.warning(f"JS click failed: {js_err}, trying standard click...")
-            try:
-                next_button.click()
-                logger.debug("Next button clicked successfully (standard click).")
-                time.sleep(random.uniform(2.0, 3.0))
-                return True
-            except (ElementClickInterceptedException, ElementNotInteractableException) as e:  # type: ignore
-                logger.error(f"Both click methods failed: {e}")
-                # Still return True to continue - password field might already be visible
-                return True
+        return _perform_next_button_click(driver, next_button)
     except TimeoutException:  # type: ignore
         logger.debug(f"Next button not found with selector '{SIGN_IN_BUTTON_SELECTOR}', assuming single-step login (password field already visible).")
-        
-        # Debug: Check what buttons ARE on the page
-        try:
-            all_buttons = driver.find_elements(By.TAG_NAME, "button")
-            logger.debug(f"[DEBUG] Found {len(all_buttons)} buttons on signin page")
-            for i, btn in enumerate(all_buttons[:5]):
-                try:
-                    btn_text = btn.text.strip()
-                    btn_id = btn.get_attribute("id")
-                    btn_class = btn.get_attribute("class")
-                    if btn_text or btn_id:
-                        logger.debug(f"  Button {i}: text='{btn_text}', id='{btn_id}', class='{btn_class}'")
-                except:
-                    pass
-        except Exception as debug_err:
-            logger.debug(f"[DEBUG] Error listing buttons: {debug_err}")
-        
+        _debug_log_signin_page_buttons(driver)
         return True
     except WebDriverException as e:  # type: ignore
         logger.warning(f"Error finding Next button: {e}. Continuing anyway.")
@@ -2594,7 +2604,7 @@ def _try_return_key_fallback(password_input) -> bool:
         return False
 
 
-def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input) -> bool:
+def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input) -> bool:  # noqa: ARG001
     """Click the sign in button or use fallback methods."""
     # Try to locate sign in button
     try:
@@ -2829,80 +2839,74 @@ def _check_for_login_errors(driver: Any) -> Optional[str]:
         logger.warning(f"Error checking for specific login error message: {alert_err}")
         return "LOGIN_FAILED_CREDS_ENTRY"
 
-def _detect_2fa_page(driver: Any, session_manager: SessionManager) -> tuple[bool, Optional[str]]:
-    """Detect if 2FA page is present."""
-    try:
-        # Increase timeout to 15 seconds to allow 2FA page to load
-        logger.info(f"Checking for two-step verification page (waiting up to 15 seconds)...")
-        
-        # Try multiple selectors for 2FA page detection
-        twofa_selectors = [
-            ("css", TWO_STEP_VERIFICATION_HEADER_SELECTOR),  # body.mfaPage h2.conTitle
-            ("css", "body.mfaPage"),  # Just the body class
-            ("xpath", "//h1[contains(text(), 'Two-step verification')]"),  # XPath h1
-            ("xpath", "//h2[contains(text(), 'Two-step verification')]"),  # XPath h2
-            ("xpath", "//h1[contains(text(), 'two-step')]"),  # Case-insensitive h1
-            ("xpath", "//h2[contains(text(), 'two-step')]"),  # Case-insensitive h2
-            ("css", "button[data-method='sms']"),  # SMS button on 2FA page
-            ("css", "button[data-method='email']"),  # Email button on 2FA page
-        ]
-        
-        twofa_found = False
-        for idx, (selector_type, selector) in enumerate(twofa_selectors):
-            try:
-                logger.debug(f"[DEBUG] Trying 2FA selector {idx+1}/{len(twofa_selectors)}: ({selector_type}) {selector}")
-                if selector_type == "xpath":
-                    # XPath selector
-                    WebDriverWait(driver, 2).until(  # Reduced from 3s to 2s
-                        EC.visibility_of_element_located((By.XPATH, selector))
-                    )
-                else:
-                    # CSS selector
-                    WebDriverWait(driver, 2).until(  # Reduced from 3s to 2s for consistency
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                logger.debug(f"✓ Found 2FA page with selector: ({selector_type}) {selector}")
-                twofa_found = True
-                break
-            except TimeoutException:
-                logger.debug(f"2FA page not found with selector {idx+1}: ({selector_type}) {selector}")
-                continue
-            except Exception as e:
-                logger.debug(f"Error trying selector {idx+1} (({selector_type}) {selector}): {e}")
-                continue
-        
-        if twofa_found:
-            logger.info("Two-step verification page detected.")
-            print("\n🔐 Two-factor authentication required...")
-            return True, None
-            
-    except Exception as outer_err:
-        logger.debug(f"Unexpected error in 2FA detection: {outer_err}")
-    
-    # If we reach here, 2FA page was not detected
-    logger.debug(f"Two-step verification page not detected with any selector.")
-    
-    # Debug: Check what elements ARE present on the page
+def _try_2fa_selectors(driver: Any) -> bool:
+    """Try multiple selectors to detect 2FA page."""
+    twofa_selectors = [
+        ("css", TWO_STEP_VERIFICATION_HEADER_SELECTOR),
+        ("css", "body.mfaPage"),
+        ("xpath", "//h1[contains(text(), 'Two-step verification')]"),
+        ("xpath", "//h2[contains(text(), 'Two-step verification')]"),
+        ("xpath", "//h1[contains(text(), 'two-step')]"),
+        ("xpath", "//h2[contains(text(), 'two-step')]"),
+        ("css", "button[data-method='sms']"),
+        ("css", "button[data-method='email']"),
+    ]
+
+    for idx, (selector_type, selector) in enumerate(twofa_selectors):
+        try:
+            logger.debug(f"[DEBUG] Trying 2FA selector {idx+1}/{len(twofa_selectors)}: ({selector_type}) {selector}")
+            by_type = By.XPATH if selector_type == "xpath" else By.CSS_SELECTOR
+            WebDriverWait(driver, 2).until(
+                EC.visibility_of_element_located((by_type, selector))
+            )
+            logger.debug(f"✓ Found 2FA page with selector: ({selector_type}) {selector}")
+            return True
+        except TimeoutException:
+            logger.debug(f"2FA page not found with selector {idx+1}: ({selector_type}) {selector}")
+        except Exception as e:
+            logger.debug(f"Error trying selector {idx+1} (({selector_type}) {selector}): {e}")
+
+    return False
+
+
+def _debug_log_page_headers(driver: Any) -> None:
+    """Log page header elements for debugging."""
     try:
         body_classes = driver.find_element(By.TAG_NAME, "body").get_attribute("class")
         logger.debug(f"[DEBUG] Body classes: {body_classes}")
-        
-        # Check if there's an h1 or h2 with verification text
+
         h1_elements = driver.find_elements(By.TAG_NAME, "h1")
         h2_elements = driver.find_elements(By.TAG_NAME, "h2")
         logger.debug(f"[DEBUG] Found {len(h1_elements)} h1 elements, {len(h2_elements)} h2 elements")
-        
+
         for h1 in h1_elements[:3]:
             if h1.is_displayed():
                 logger.debug(f"[DEBUG] h1 text: '{h1.text}'")
-        
+
         for h2 in h2_elements[:3]:
             if h2.is_displayed():
                 logger.debug(f"[DEBUG] h2 text: '{h2.text}'")
     except Exception as debug_err:
         logger.debug(f"[DEBUG] Error checking page elements: {debug_err}")
-    
-    print(f"  ℹ️  No 2FA prompt detected", flush=True)
+
+
+def _detect_2fa_page(driver: Any, session_manager: SessionManager) -> tuple[bool, Optional[str]]:  # noqa: ARG001
+    """Detect if 2FA page is present."""
+    try:
+        logger.info("Checking for two-step verification page (waiting up to 15 seconds)...")
+        twofa_found = _try_2fa_selectors(driver)
+
+        if twofa_found:
+            logger.info("Two-step verification page detected.")
+            print("\n🔐 Two-factor authentication required...")
+            return True, None
+
+    except Exception as outer_err:
+        logger.debug(f"Unexpected error in 2FA detection: {outer_err}")
+
+    logger.debug("Two-step verification page not detected with any selector.")
+    _debug_log_page_headers(driver)
+    print("  (i) No 2FA prompt detected", flush=True)
     return False, None
 
 def _handle_2fa_flow(session_manager: SessionManager) -> str:
@@ -2952,6 +2956,41 @@ def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_ur
     return "LOGIN_FAILED_STATUS_CHECK_ERROR"
 
 # Login Main Function
+def _debug_log_page_errors(driver: Any) -> None:
+    """Log any visible error messages on the page."""
+    try:
+        error_elements = driver.find_elements(By.CSS_SELECTOR, ".alert, .error, [role='alert']")
+        if error_elements:
+            for elem in error_elements[:3]:
+                if elem.is_displayed():
+                    error_text = elem.text.strip()
+                    if error_text:
+                        logger.warning(f"[DEBUG] Visible error on page: {error_text}")
+    except Exception as e:
+        logger.debug(f"[DEBUG] Error checking for error messages: {e}")
+
+
+def _debug_log_post_credentials_state(driver: Any) -> None:
+    """Log page state after credential submission."""
+    try:
+        current_url = driver.current_url
+        page_title = driver.title
+        logger.info(f"[DEBUG] After credentials - URL: {current_url}")
+        logger.info(f"[DEBUG] After credentials - Page title: {page_title}")
+        _debug_log_page_errors(driver)
+    except Exception as e:
+        logger.debug(f"[DEBUG] Error capturing page state: {e}")
+
+
+def _handle_credentials_entry(driver: Any) -> Optional[str]:
+    """Handle credential entry and check for errors. Returns error status if failed."""
+    if not enter_creds(driver):
+        logger.error("Failed during credential entry or submission.")
+        error_result = _check_for_login_errors(driver)
+        return error_result if error_result else "LOGIN_FAILED_CREDS_ENTRY"
+    return None
+
+
 def _execute_login_flow(
     driver: Any,
     session_manager: SessionManager,
@@ -2968,35 +3007,14 @@ def _execute_login_flow(
         logger.warning("Failed to handle consent banner, login might be impacted.")
 
     # Enter credentials
-    if not enter_creds(driver):
-        logger.error("Failed during credential entry or submission.")
-        error_result = _check_for_login_errors(driver)
-        return error_result if error_result else "LOGIN_FAILED_CREDS_ENTRY"
+    creds_error = _handle_credentials_entry(driver)
+    if creds_error:
+        return creds_error
 
-    # Wait for page change
+    # Wait for page change and log state
     logger.debug("Credentials submitted. Waiting for potential page change...")
     time.sleep(random.uniform(3.0, 5.0))
-
-    # Debug: Capture page state after credential submission
-    try:
-        current_url = driver.current_url
-        page_title = driver.title
-        logger.info(f"[DEBUG] After credentials - URL: {current_url}")
-        logger.info(f"[DEBUG] After credentials - Page title: {page_title}")
-        
-        # Check if there are any visible error messages
-        try:
-            error_elements = driver.find_elements(By.CSS_SELECTOR, ".alert, .error, [role='alert']")
-            if error_elements:
-                for elem in error_elements[:3]:  # Show first 3 errors
-                    if elem.is_displayed():
-                        error_text = elem.text.strip()
-                        if error_text:
-                            logger.warning(f"[DEBUG] Visible error on page: {error_text}")
-        except Exception as e:
-            logger.debug(f"[DEBUG] Error checking for error messages: {e}")
-    except Exception as e:
-        logger.debug(f"[DEBUG] Error capturing page state: {e}")
+    _debug_log_post_credentials_state(driver)
 
     # Check for 2FA
     two_fa_present, early_result = _detect_2fa_page(driver, session_manager)
@@ -3243,10 +3261,10 @@ def _check_browser_session(
 def _execute_navigation(driver: WebDriver, url: str, page_timeout: int) -> None:  # type: ignore
     """Execute navigation and wait for page ready state."""
     logger.debug(f"🌐 Navigating to URL: {url}")
-    
+
     driver.get(url)
-    logger.debug(f"driver.get() completed, waiting for page ready state...")
-    
+    logger.debug("driver.get() completed, waiting for page ready state...")
+
     WebDriverWait(driver, page_timeout).until(  # type: ignore
         lambda d: d.execute_script("return document.readyState") in ["complete", "interactive"]
     )

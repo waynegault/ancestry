@@ -227,7 +227,14 @@ def core_package_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+try:
+    from test_utilities import create_standard_test_runner
+except ImportError:
+    # If running from subdirectory, add parent to path
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_package_module_tests)
 
@@ -248,13 +255,7 @@ if __name__ == "__main__":
         # Fallback for testing environment
         sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
-    if "--test" in sys.argv:
-        print("🏗️ Running Core Package comprehensive test suite...")
-        success = run_comprehensive_tests()
-        sys.exit(0 if success else 1)
-    else:
-        print("Core Package - Modular Session Management Architecture")
-        print(f"Version: {__version__}")
-        print(
-            "Note: This is a package init file. Use 'python -m core' or import as a package."
-        )
+    # Run tests by default (consistent with other test modules)
+    print("🏗️ Running Core Package comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

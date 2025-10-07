@@ -96,17 +96,17 @@ class BrowserManager:
             # Navigate to base URL to stabilize
             target_url = config_schema.api.base_url
             logger.info(f"Navigating to: {target_url}")
-            
+
             nav_result = nav_to_page(self.driver, target_url)
-           
+
             if not nav_result:
                 logger.error(f"Failed to navigate to base URL: {target_url}")
                 print(f"✗ Navigation to {target_url} failed. Check log for details.")
                 self.close_browser()
                 return False
-            
+
             logger.info(f"Successfully navigated to: {target_url}")
-     
+
             # Try to load saved cookies after navigating to base URL
             logger.info("Attempting to load saved cookies...")
             try:
@@ -118,7 +118,7 @@ class BrowserManager:
 
                 cookie_loader = CookieLoader(self.driver)
                 if _load_login_cookies(cookie_loader):
-                    
+
                     # Refresh the page to apply the loaded cookies
                     logger.debug("Refreshing page to apply loaded cookies...")
                     self.driver.refresh()

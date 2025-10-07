@@ -135,6 +135,43 @@ class APIManager:
             )
             return False
 
+    def _prepare_api_headers(
+        self, headers: Optional[dict[str, str]], use_csrf_token: bool, api_description: str
+    ) -> dict[str, str]:
+        """Prepare headers for API request."""
+        request_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        if headers:
+            request_headers.update(headers)
+
+        # Add CSRF token if requested and available
+        if use_csrf_token and self.csrf_token:
+            request_headers["x-csrf-token"] = self.csrf_token
+            logger.debug(f"Added CSRF token to {api_description} request")
+        elif use_csrf_token and not self.csrf_token:
+            logger.warning(
+                f"CSRF token requested but not available for {api_description}"
+            )
+
+        return request_headers
+
+    def _parse_api_response(self, response, api_description: str) -> ApiResponseType:
+        """Parse API response into appropriate format."""
+        try:
+            json_response = response.json()
+            logger.debug(f"{api_description} request successful (JSON response)")
+            return json_response
+        except ValueError:
+            if response.text:
+                logger.debug(f"{api_description} request successful (text response)")
+                return response.text
+            logger.debug(f"{api_description} request successful (response object)")
+            return response
+
     def make_api_request(
         self,
         url: str,
@@ -164,23 +201,7 @@ class APIManager:
         """
         try:
             # Prepare headers
-            request_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-            }
-
-            if headers:
-                request_headers.update(headers)
-
-            # Add CSRF token if requested and available
-            if use_csrf_token and self.csrf_token:
-                request_headers["x-csrf-token"] = self.csrf_token  # CRITICAL FIX: Use lowercase header
-                logger.debug(f"Added CSRF token to {api_description} request")
-            elif use_csrf_token and not self.csrf_token:
-                logger.warning(
-                    f"CSRF token requested but not available for {api_description}"
-                )
+            request_headers = self._prepare_api_headers(headers, use_csrf_token, api_description)
 
             # Make the request
             logger.debug(f"Making {method} request to {url} ({api_description})")
@@ -198,22 +219,8 @@ class APIManager:
             # Check response status
             response.raise_for_status()
 
-            # Try to parse JSON response
-            try:
-                json_response = response.json()
-                logger.debug(f"{api_description} request successful (JSON response)")
-                return json_response
-            except ValueError:
-                # Not JSON, return text or response object
-                if response.text:
-                    logger.debug(
-                        f"{api_description} request successful (text response)"
-                    )
-                    return response.text
-                logger.debug(
-                    f"{api_description} request successful (response object)"
-                )
-                return response
+            # Parse response
+            return self._parse_api_response(response, api_description)
 
         except RequestException as e:
             # Use debug for expected errors (like 401 during login check)
