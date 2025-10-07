@@ -772,6 +772,40 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
 
 
 # Action 2 (reset_db_actn)
+def _truncate_all_tables_direct(session: Any, db_manager: Any) -> bool:
+    """Truncate all tables in the database using a direct session."""
+    try:
+        with db_transn(session) as sess:
+            # Delete all records from tables in reverse order of dependencies
+            # Use a try-except for each table in case it doesn't exist
+            from sqlalchemy.exc import OperationalError
+            
+            tables_to_truncate = [
+                (ConversationLog, "conversation_log"),
+                (DnaMatch, "dna_match"),
+                (FamilyTree, "family_tree"),
+                (Person, "people")
+            ]
+            
+            for table_class, table_name in tables_to_truncate:
+                try:
+                    deleted_count = sess.query(table_class).delete(synchronize_session=False)
+                    logger.debug(f"Truncated {table_name}: {deleted_count} rows deleted")
+                except OperationalError as op_err:
+                    if "no such table" in str(op_err):
+                        logger.debug(f"Table {table_name} does not exist, skipping truncation")
+                    else:
+                        raise
+            # Keep MessageType table intact
+        db_manager.return_session(session)
+        logger.debug("All tables truncated successfully.")
+        return True
+    except Exception as e:
+        logger.error(f"Error truncating tables: {e}", exc_info=True)
+        db_manager.return_session(session)
+        return False
+
+
 def _truncate_all_tables(temp_manager: SessionManager) -> bool:
     """Truncate all tables in the database."""
     logger.debug("Truncating all tables...")
@@ -783,10 +817,25 @@ def _truncate_all_tables(temp_manager: SessionManager) -> bool:
     try:
         with db_transn(truncate_session) as sess:
             # Delete all records from tables in reverse order of dependencies
-            sess.query(ConversationLog).delete(synchronize_session=False)
-            sess.query(DnaMatch).delete(synchronize_session=False)
-            sess.query(FamilyTree).delete(synchronize_session=False)
-            sess.query(Person).delete(synchronize_session=False)
+            # Use a try-except for each table in case it doesn't exist
+            from sqlalchemy.exc import OperationalError
+            
+            tables_to_truncate = [
+                (ConversationLog, "conversation_log"),
+                (DnaMatch, "dna_match"),
+                (FamilyTree, "family_tree"),
+                (Person, "people")
+            ]
+            
+            for table_class, table_name in tables_to_truncate:
+                try:
+                    deleted_count = sess.query(table_class).delete(synchronize_session=False)
+                    logger.debug(f"Truncated {table_name}: {deleted_count} rows deleted")
+                except OperationalError as op_err:
+                    if "no such table" in str(op_err):
+                        logger.debug(f"Table {table_name} does not exist, skipping truncation")
+                    else:
+                        raise
             # Keep MessageType table intact
         temp_manager.return_session(truncate_session)
         logger.debug("All tables truncated successfully.")
@@ -794,6 +843,24 @@ def _truncate_all_tables(temp_manager: SessionManager) -> bool:
     except Exception as e:
         logger.error(f"Error truncating tables: {e}", exc_info=True)
         temp_manager.return_session(truncate_session)
+        return False
+
+
+def _reinitialize_database_schema_direct(db_manager: Any) -> bool:
+    """Re-initialize database schema using DatabaseManager directly."""
+    logger.debug("Re-initializing database schema...")
+    try:
+        # Re-initialize engine and session if needed
+        db_manager._initialize_engine_and_session()
+        if not db_manager.engine or not db_manager.Session:
+            raise SQLAlchemyError("Failed to initialize DB engine/session for recreation!")
+
+        # This will recreate the tables
+        Base.metadata.create_all(db_manager.engine)
+        logger.debug("Database schema recreated successfully.")
+        return True
+    except Exception as e:
+        logger.error(f"Error reinitializing database schema: {e}", exc_info=True)
         return False
 
 
@@ -841,7 +908,26 @@ def _seed_message_templates(recreation_session: Any) -> bool:
                 logger.debug(f"Found {existing_count} existing message templates. Skipping seeding.")
             else:
                 # Only add message templates if none exist
-                templates_to_add = [MessageTemplate(template_name=name) for name in messages_data]
+                # Note: MessageTemplate requires template_key, message_content, template_category, and tree_status
+                templates_to_add = []
+                for template_key, template_content in messages_data.items():
+                    # Parse template key: "In_Tree-Initial" -> category="In_Tree", tree_status="in_tree"
+                    parts = template_key.split('-')
+                    tree_status_prefix = parts[0] if parts else "Universal"
+                    
+                    # Determine tree_status from the prefix (In_Tree -> in_tree, Out_Tree -> out_tree)
+                    tree_status = tree_status_prefix.lower().replace('_', '_') if tree_status_prefix else "universal"
+                    
+                    # Category is the message type (e.g., "Initial", "Follow-up", etc.)
+                    category = parts[1] if len(parts) > 1 else "initial"
+                    
+                    templates_to_add.append(MessageTemplate(
+                        template_key=template_key,
+                        message_content=template_content if isinstance(template_content, str) else str(template_content),
+                        template_category=category,
+                        tree_status=tree_status
+                    ))
+                
                 if templates_to_add:
                     sess.add_all(templates_to_add)
                     logger.debug(f"Added {len(templates_to_add)} message templates.")
@@ -889,20 +975,32 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
 
         logger.debug(f"Attempting to delete database file: {db_path}...")
         try:
-            # Streamlined database reset using single temporary SessionManager
-            logger.debug("Creating temporary session manager for database reset...")
-            temp_manager = SessionManager()
+            # Use DatabaseManager directly for database-only operations (no browser/rate limiting needed)
+            logger.debug("Creating temporary database manager for database reset...")
+            from core.database_manager import DatabaseManager
+            temp_db_manager = DatabaseManager(db_path)
+            
+            # Ensure database is ready
+            if not temp_db_manager.ensure_ready():
+                logger.error("Failed to ensure temporary database manager ready")
+                return False
 
             # Step 1: Truncate all tables
-            if not _truncate_all_tables(temp_manager):
+            logger.debug("Truncating all tables...")
+            truncate_session = temp_db_manager.get_session()
+            if not truncate_session:
+                logger.critical("Failed to get session for truncating tables. Reset aborted.")
+                return False
+            
+            if not _truncate_all_tables_direct(truncate_session, temp_db_manager):
                 return False
 
             # Step 2: Re-initialize database schema
-            if not _reinitialize_database_schema(temp_manager):
+            if not _reinitialize_database_schema_direct(temp_db_manager):
                 return False
 
             # Step 3: Seed MessageType Table
-            recreation_session = temp_manager.get_db_conn()
+            recreation_session = temp_db_manager.get_session()
             if not recreation_session:
                 raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
 
@@ -917,13 +1015,13 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
             )
             reset_successful = False
         finally:
-            # Clean up the temporary manager and its session/engine
-            logger.debug("Cleaning up temporary resource manager for reset...")
-            if temp_manager:
+            # Clean up the temporary database manager and its engine
+            logger.debug("Cleaning up temporary database manager for reset...")
+            if 'temp_db_manager' in locals() and temp_db_manager:
                 if recreation_session:
-                    temp_manager.return_session(recreation_session)
-                temp_manager.cls_db_conn(keep_db=False)  # Dispose temp engine
-            logger.debug("Temporary resource manager cleanup finished.")
+                    temp_db_manager.return_session(recreation_session)
+                temp_db_manager.close_connections()  # Dispose temp engine
+            logger.debug("Temporary database manager cleanup finished.")
 
     except Exception as e:
         logger.error(f"Outer error during DB reset action: {e}", exc_info=True)

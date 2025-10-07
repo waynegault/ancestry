@@ -958,19 +958,20 @@ def _submit_initial_api_tasks(
     fetch_candidates_uuid: set[str],
     uuids_for_tree_badge_ladder: set[str]
 ) -> dict[Any, tuple[str, str]]:
-    """Submit initial API tasks (combined_details, relationship_prob, badge_details)."""
+    """Submit initial API tasks (combined_details, relationship_prob, badge_details).
+    
+    Note: Rate limiting is now handled INSIDE each fetch function to ensure proper
+    throttling even when running in parallel threads.
+    """
     futures: dict[Any, tuple[str, str]] = {}
 
     for uuid_val in fetch_candidates_uuid:
-        _ = session_manager.dynamic_rate_limiter.wait()
         futures[executor.submit(_fetch_combined_details, session_manager, uuid_val)] = ("combined_details", uuid_val)
 
-        _ = session_manager.dynamic_rate_limiter.wait()
         max_labels = 2
         futures[executor.submit(_fetch_batch_relationship_prob, session_manager, uuid_val, max_labels)] = ("relationship_prob", uuid_val)
 
     for uuid_val in uuids_for_tree_badge_ladder:
-        _ = session_manager.dynamic_rate_limiter.wait()
         futures[executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)] = ("badge_details", uuid_val)
 
     return futures
@@ -1060,13 +1061,16 @@ def _submit_ladder_tasks(
     cfpid_to_uuid_map: dict[str, str],
     my_tree_id: Optional[str]
 ) -> dict[Any, tuple[str, str]]:
-    """Submit ladder API tasks for CFPIDs."""
+    """Submit ladder API tasks for CFPIDs.
+    
+    Note: Rate limiting is now handled INSIDE each fetch function to ensure proper
+    throttling even when running in parallel threads.
+    """
     ladder_futures = {}
     if my_tree_id and cfpid_to_uuid_map:
         cfpid_list = list(cfpid_to_uuid_map.keys())
         logger.debug(f"Submitting Ladder tasks for {len(cfpid_list)} CFPIDs...")
         for cfpid_item in cfpid_list:
-            _ = session_manager.dynamic_rate_limiter.wait()
             ladder_futures[executor.submit(_fetch_batch_ladder, session_manager, cfpid_item, my_tree_id)] = ("ladder", cfpid_item)
     return ladder_futures
 
@@ -4434,6 +4438,9 @@ def _fetch_combined_details(
         Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
         longest_shared_segment, last_logged_in_dt, contactable, etc.
     """
+    # Apply rate limiting BEFORE making API calls
+    session_manager.dynamic_rate_limiter.wait()
+    
     logger.debug(f"_fetch_combined_details: Starting for match_uuid={match_uuid}")
 
     my_uuid = session_manager.my_uuid
@@ -4533,6 +4540,9 @@ def _fetch_batch_badge_details(
         A dictionary containing badge details (their_cfpid, their_firstname, etc.)
         if successful, otherwise None.
     """
+    # Apply rate limiting BEFORE making API calls
+    session_manager.dynamic_rate_limiter.wait()
+    
     my_uuid = session_manager.my_uuid
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_badge_details: Missing my_uuid or match_uuid.")
@@ -4601,6 +4611,9 @@ def _fetch_batch_ladder(
         A dictionary containing 'actual_relationship' and 'relationship_path' strings
         if successful, otherwise None.
     """
+    # Apply rate limiting BEFORE making API calls
+    session_manager.dynamic_rate_limiter.wait()
+    
     if not cfpid or not tree_id:
         logger.warning("_fetch_batch_ladder: Missing cfpid or tree_id.")
         return None
@@ -4692,6 +4705,9 @@ def _fetch_batch_relationship_prob(
         A formatted string like "1st cousin [95.5%]" or "Distant relationship?",
         or None if the fetch fails.
     """
+    # Apply rate limiting BEFORE making API calls
+    session_manager.dynamic_rate_limiter.wait()
+    
     # Validate session components
     try:
         _validate_relationship_prob_session(session_manager, match_uuid)
