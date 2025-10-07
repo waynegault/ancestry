@@ -349,8 +349,9 @@ class SessionManager:
             logger.warning("Health monitoring module not available")
             self.health_monitor = None
 
-        # Initialize rate limiting
-        self._initialize_rate_limiting()
+        # Initialize rate limiting components to None (will be initialized when browser is needed)
+        self.adaptive_rate_limiter = None
+        self.smart_batch_processor = None
 
         # Enhanced session capabilities
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
@@ -491,6 +492,11 @@ class SessionManager:
         Returns:
             bool: True if browser started successfully, False otherwise
         """
+        # Initialize rate limiting when browser is first started (not for database-only actions)
+        if self.adaptive_rate_limiter is None:
+            logger.debug("Initializing rate limiting for browser-based action...")
+            self._initialize_rate_limiting()
+        
         # Reset logged flags when starting browser
         self._reset_logged_flags()
         return self.browser_manager.start_browser(action_name)
