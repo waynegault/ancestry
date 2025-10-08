@@ -38,14 +38,17 @@ high-quality genealogical automation through systematic validation, comprehensiv
 quality assessment, and professional testing for production-ready research workflows.
 
 Usage:
-    python run_all_tests.py           # Run all tests with detailed reporting
-    python run_all_tests.py --fast    # Run with parallel execution optimization
-    python run_all_tests.py --benchmark # Run with detailed performance benchmarking
+    python run_all_tests.py                # Run all tests with detailed reporting
+    python run_all_tests.py --fast         # Run with parallel execution optimization
+    python run_all_tests.py --benchmark    # Run with detailed performance benchmarking
+    python run_all_tests.py --analyze-logs # Analyze application logs for performance metrics
+    python run_all_tests.py --fast --analyze-logs  # Run tests and then analyze logs
 """
 
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -247,7 +250,7 @@ def run_linter() -> bool:
     """Run Ruff and enforce blocking rules before tests.
 
     Steps:
-    1) Apply safe auto-fixes for whitespace/import formatting
+    1) Apply ALL safe auto-fixes automatically
     2) Enforce blocking rule set; fail the run if violations remain
     3) Print non-blocking repository statistics
     """
@@ -257,15 +260,13 @@ def run_linter() -> bool:
             print("🧹 LINTER: Ruff not available, skipping linting checks...")
             return True
 
-        # Step 1: safe auto-fixes
-        print("🧹 LINTER: Applying safe auto-fixes (W291/W292/W293/E401)...")
-        _invoke_ruff([
-            "check",
-            "--fix",
-            "--select",
-            "W291,W292,W293,E401",
-            ".",
-        ])
+        # Step 1: Auto-fix ALL fixable issues
+        print("🧹 LINTER: Auto-fixing all fixable linting issues...")
+        fix_result = _invoke_ruff(["check", "--fix", "."])
+        if fix_result.returncode == 0:
+            print("   ✅ All fixable issues resolved")
+        else:
+            print("   ⚠️  Some issues auto-fixed, checking for critical errors...")
 
         # Step 2: blocking rule set (only critical errors)
         print("🧹 LINTER: Enforcing critical blocking rules (E722,F821,F811,F823)...")
@@ -972,83 +973,84 @@ def _create_error_metrics(module_name: str, error_message: str) -> TestExecution
     )
 
 
-def run_module_tests(
-    module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
-) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
-    """Run tests for a specific module with optional performance monitoring."""
-    # Initialize performance monitoring
-    monitor = PerformanceMonitor() if enable_monitoring and PSUTIL_AVAILABLE else None
-    metrics = None
+def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.CompletedProcess, float, str]:
+    """Run the test subprocess and return result, duration, and timestamp."""
+    start_time = time.time()
+    start_datetime = datetime.now().isoformat()
 
-    # Show description
-    desc = _generate_module_description(module_name, description)
-    print(f"   📝 {desc}")
+    cmd, env = _build_test_command(module_name, coverage)
+    result = subprocess.run(
+        cmd, check=False, capture_output=True, text=True, cwd=Path.cwd(), env=env
+    )
 
-    try:
-        start_time = time.time()
-        start_datetime = datetime.now().isoformat()
+    duration = time.time() - start_time
+    return result, duration, start_datetime
 
-        # Start performance monitoring if enabled
-        if monitor:
-            monitor.start_monitoring()
 
-        # Build and run test command
-        cmd, env = _build_test_command(module_name, coverage)
-        result = subprocess.run(
-            cmd,
-            check=False, capture_output=True,
-            text=True,
-            cwd=Path.cwd(),
-            env=env
-        )
+def _analyze_test_output(result: subprocess.CompletedProcess) -> tuple[bool, str, int]:
+    """Analyze test output and return success status, test count string, and numeric count."""
+    # Collect all output lines
+    all_output_lines = []
+    if result.stdout:
+        all_output_lines.extend(result.stdout.split("\n"))
+    if result.stderr:
+        all_output_lines.extend(result.stderr.split("\n"))
 
-        duration = time.time() - start_time
-        end_datetime = datetime.now().isoformat()
+    # Determine success and extract test count
+    success = result.returncode == 0
+    success = _check_for_failures_in_output(success, result.stdout)
+    test_count = _extract_test_count_from_output(all_output_lines)
+    numeric_test_count = _extract_numeric_test_count(test_count)
 
-        # Stop monitoring and collect metrics
-        perf_metrics = monitor.stop_monitoring() if monitor else {}
+    return success, test_count, numeric_test_count
 
-        # Run quality analysis on the module
-        quality_metrics = _run_quality_analysis(module_name)
 
-        # Check for success based on return code AND output content
-        success = result.returncode == 0
+def _print_test_result(success: bool, duration: float, test_count: str, quality_metrics, result: subprocess.CompletedProcess) -> None:
+    """Print test result summary with quality info and failure details."""
+    status = "✅ PASSED" if success else "❌ FAILED"
+    quality_info = _format_quality_info(quality_metrics)
+    print(f"   {status} | Duration: {duration:.2f}s | {test_count}{quality_info}")
 
-        # Extract test counts from output using helper function
-        all_output_lines = []
-        if result.stdout:
-            all_output_lines.extend(result.stdout.split("\n"))
-        if result.stderr:
-            all_output_lines.extend(result.stderr.split("\n"))
+    _print_quality_violations(quality_metrics)
 
-        test_count = _extract_test_count_from_output(all_output_lines)
-
-        # Check for failures in output
-        success = _check_for_failures_in_output(success, result.stdout)
-
-        # Failure indicators for detailed output
+    if not success:
         failure_indicators = [
             "❌ FAILED", "Status: FAILED", "AssertionError:", "Exception occurred:",
             "Test failed:", "❌ Failed: ", "CRITICAL ERROR", "FATAL ERROR",
         ]
+        _print_failure_details(result, failure_indicators)
 
-        status = "✅ PASSED" if success else "❌ FAILED"
 
-        # Format and print summary
-        quality_info = _format_quality_info(quality_metrics)
-        print(f"   {status} | Duration: {duration:.2f}s | {test_count}{quality_info}")
+def run_module_tests(
+    module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
+) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
+    """Run tests for a specific module with optional performance monitoring."""
+    # Print description
+    desc = _generate_module_description(module_name, description)
+    print(f"   📝 {desc}")
 
-        # Print quality violations
-        _print_quality_violations(quality_metrics)
+    try:
+        # Start performance monitoring
+        monitor = PerformanceMonitor() if enable_monitoring and PSUTIL_AVAILABLE else None
+        if monitor:
+            monitor.start_monitoring()
 
-        # Extract numeric test count for summary
-        numeric_test_count = _extract_numeric_test_count(test_count)
+        # Run the test subprocess
+        result, duration, start_datetime = _run_test_subprocess(module_name, coverage)
+        end_datetime = datetime.now().isoformat()
 
-        # Print failure details if test failed
-        if not success:
-            _print_failure_details(result, failure_indicators)
+        # Collect performance and quality metrics
+        perf_metrics = monitor.stop_monitoring() if monitor else {}
+        quality_metrics = _run_quality_analysis(module_name)
 
-        # Create performance metrics if monitoring was enabled
+        # Analyze output
+        success, test_count, numeric_test_count = _analyze_test_output(result)
+
+        # Print results
+        _print_test_result(success, duration, test_count, quality_metrics, result)
+
+        # Create metrics object if monitoring enabled
+        metrics = None
         if enable_monitoring:
             test_result = {
                 "duration": duration,
@@ -1467,10 +1469,162 @@ def _print_final_results(
         print("   Check individual test outputs above for details.\n")
 
 
+def analyze_application_logs(log_path: str = "Logs/app.log") -> dict:
+    """
+    Analyze application logs for performance metrics and errors.
+    Integrated from monitor_performance.py for log analysis.
+    
+    Args:
+        log_path: Path to the log file to analyze
+        
+    Returns:
+        dict: Analysis results including timing stats, error counts, and warnings
+    """
+    log_file = Path(log_path)
+
+    if not log_file.exists():
+        return {"error": f"Log file not found: {log_path}"}
+
+    results = {
+        "timing": [],
+        "errors": {
+            "429": 0,
+            "ERROR": 0,
+            "CRITICAL": 0,
+            "Exception": 0,
+        },
+        "warnings": 0,
+        "pages_processed": 0,
+        "cache_hits": 0,
+        "api_fetches": 0,
+    }
+
+    with open(log_file, encoding='utf-8') as f:
+        content = f.read()
+
+    # Extract API fetch timing data
+    api_pattern = r"API fetch complete: (\d+) matches in ([\d.]+)s \(avg: ([\d.]+)s/match\)"
+    for match in re.finditer(api_pattern, content):
+        matches_count = int(match.group(1))
+        total_time = float(match.group(2))
+        avg_time = float(match.group(3))
+        results["timing"].append({
+            "matches": matches_count,
+            "total_seconds": total_time,
+            "avg_per_match": avg_time
+        })
+        results["api_fetches"] += 1
+
+    # Count errors
+    results["errors"]["429"] = len(re.findall(r"429", content))
+    results["errors"]["ERROR"] = len(re.findall(r"\bERROR\b", content))
+    results["errors"]["CRITICAL"] = len(re.findall(r"\bCRITICAL\b", content))
+    results["errors"]["Exception"] = len(re.findall(r"Exception", content))
+
+    # Count warnings
+    results["warnings"] = len(re.findall(r"\bWAR\b", content))
+
+    # Count pages processed
+    page_pattern = r"Page (\d+):"
+    page_numbers = [int(m.group(1)) for m in re.finditer(page_pattern, content)]
+    results["pages_processed"] = len(page_numbers)
+    results["highest_page"] = max(page_numbers) if page_numbers else 0
+
+    # Count cache hits
+    cache_pattern = r"✓ All \d+ matches are up-to-date"
+    results["cache_hits"] = len(re.findall(cache_pattern, content))
+
+    return results
+
+
+def format_log_analysis(results: dict) -> str:
+    """Format log analysis results as a readable report."""
+    if "error" in results:
+        return f"❌ {results['error']}"
+
+    report = []
+    report.append("=" * 70)
+    report.append("📊 APPLICATION LOG PERFORMANCE ANALYSIS")
+    report.append("=" * 70)
+
+    # Error Summary
+    report.append("\n🚨 ERROR SUMMARY:")
+    total_errors = sum(results["errors"].values())
+    if total_errors == 0:
+        report.append("  ✅ NO ERRORS DETECTED")
+    else:
+        for error_type, count in results["errors"].items():
+            if count > 0:
+                report.append(f"  ❌ {error_type}: {count}")
+
+    # Warnings
+    report.append(f"\n⚠️  WARNINGS: {results['warnings']}")
+
+    # Processing Stats
+    report.append("\n📈 PROCESSING STATISTICS:")
+    report.append(f"  Pages Processed: {results['pages_processed']}")
+    report.append(f"  Highest Page: {results['highest_page']}")
+    report.append(f"  Cache Hits (pages skipped): {results['cache_hits']}")
+    report.append(f"  API Fetches (pages with new data): {results['api_fetches']}")
+
+    # Timing Analysis
+    if results["timing"]:
+        report.append("\n⏱️  TIMING ANALYSIS:")
+
+        avg_times = [t["avg_per_match"] for t in results["timing"]]
+        total_times = [t["total_seconds"] for t in results["timing"]]
+
+        min_time = min(avg_times)
+        max_time = max(avg_times)
+        mean_time = sum(avg_times) / len(avg_times)
+
+        report.append(f"  Pages Analyzed: {len(results['timing'])}")
+        report.append(f"  Average per match: {mean_time:.2f}s")
+        report.append(f"  Fastest: {min_time:.2f}s")
+        report.append(f"  Slowest: {max_time:.2f}s")
+        report.append(f"  Variance: {max_time - min_time:.2f}s")
+        report.append(f"  Total API time: {sum(total_times):.1f}s")
+
+        # Calculate throughput
+        total_matches = sum(t["matches"] for t in results["timing"])
+        total_seconds = sum(total_times)
+        if total_seconds > 0:
+            matches_per_hour = (total_matches / total_seconds) * 3600
+            report.append(f"  Throughput: {matches_per_hour:.0f} matches/hour")
+
+            # Estimate completion time for 802 pages
+            pages_remaining = 802 - results['highest_page']
+            if pages_remaining > 0:
+                avg_page_time = sum(total_times) / len(total_times)
+                est_seconds = pages_remaining * avg_page_time
+                est_hours = est_seconds / 3600
+                report.append(f"  Estimated time remaining: {est_hours:.1f} hours ({pages_remaining} pages)")
+
+    report.append("\n" + "=" * 70)
+    report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report.append("=" * 70)
+
+    return "\n".join(report)
+
+
+def print_log_analysis(log_path: str = "Logs/app.log") -> None:
+    """Analyze and print application log performance metrics."""
+    results = analyze_application_logs(log_path)
+    print("\n" + format_log_analysis(results))
+
+
 def main() -> bool:
     """Comprehensive test runner with performance monitoring and optimization."""
     # Setup environment and parse arguments
     enable_fast_mode, enable_benchmark, enable_monitoring = _setup_test_environment()
+
+    # Check for log analysis flag
+    analyze_logs = "--analyze-logs" in sys.argv
+
+    # If only log analysis requested, do that and exit
+    if analyze_logs and len(sys.argv) == 2:  # Only --analyze-logs flag
+        print_log_analysis()
+        return True
 
     # Print header
     _print_test_header(enable_fast_mode, enable_benchmark)
@@ -1522,6 +1676,10 @@ def main() -> bool:
         _print_performance_metrics(perf_config)
 
     _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
+
+    # Print log analysis if requested
+    if analyze_logs:
+        print_log_analysis()
 
     return failed_count == 0
 

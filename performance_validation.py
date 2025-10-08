@@ -110,8 +110,7 @@ def test_rate_limiter_caching() -> bool:
     session_manager._rate_limit_cache_cleanup_time = time.time()
     session_manager.dynamic_rate_limiter = Mock()
     session_manager.dynamic_rate_limiter.wait.return_value = 1.0
-    session_manager.adaptive_rate_limiter = Mock()
-    session_manager.adaptive_rate_limiter.wait.return_value = 0.8
+    # NOTE: Removed adaptive_rate_limiter mock - consolidated to DynamicRateLimiter only
 
     # Import the optimized function
     try:
@@ -318,14 +317,13 @@ def test_rate_limiter_optimization_logic() -> bool:
         session_manager._rate_limit_cache_cleanup_time = time.time()
         session_manager.dynamic_rate_limiter = Mock()
         session_manager.dynamic_rate_limiter.wait.return_value = 1.0
-        session_manager.adaptive_rate_limiter = Mock()
-        session_manager.adaptive_rate_limiter.wait.return_value = 0.8
+        # NOTE: Removed adaptive_rate_limiter mock - consolidated to DynamicRateLimiter only
 
         # Verify cache structure
         assert isinstance(session_manager._rate_limit_cache, dict)
         assert isinstance(session_manager._rate_limit_cache_cleanup_time, float)
         assert session_manager.dynamic_rate_limiter.wait.return_value == 1.0
-        assert session_manager.adaptive_rate_limiter.wait.return_value == 0.8
+        # NOTE: Only testing DynamicRateLimiter now
         return True
     except Exception as e:
         logger.error(f"Rate limiter optimization test failed: {e}")
@@ -465,12 +463,11 @@ def test_mock_configuration_validation() -> bool:
 
         # Test rate limiter mocks
         session_manager.dynamic_rate_limiter = Mock()
-        session_manager.adaptive_rate_limiter = Mock()
         session_manager.dynamic_rate_limiter.wait.return_value = 1.0
-        session_manager.adaptive_rate_limiter.wait.return_value = 0.8
+        # NOTE: Removed adaptive_rate_limiter mock - consolidated to DynamicRateLimiter only
 
         assert session_manager.dynamic_rate_limiter.wait() == 1.0
-        assert session_manager.adaptive_rate_limiter.wait() == 0.8
+        # NOTE: Only testing DynamicRateLimiter now
 
         return True
     except Exception as e:

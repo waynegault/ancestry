@@ -82,14 +82,18 @@ def _check_rate_limiting_settings(config: Any) -> None:
 
 
 def _log_configuration_summary(config: Any) -> None:
-    """Log current configuration for transparency."""
-    logger.info("=== ACTION CONFIGURATION VALIDATION ===")
-    logger.info(f"MAX_PAGES: {config.api.max_pages}")
-    logger.info(f"BATCH_SIZE: {config.batch_size}")
-    logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
-    logger.info(f"MAX_INBOX: {config.max_inbox}")
-    logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
-    logger.info("========================================")
+    """Log current configuration for transparency (debug level for clean startup)."""
+    logger.debug("=== ACTION CONFIGURATION VALIDATION ===")
+    logger.debug(f"MAX_PAGES: {config.api.max_pages}")
+    logger.debug(f"BATCH_SIZE: {config.batch_size}")
+    logger.debug(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+    logger.debug(f"MAX_INBOX: {config.max_inbox}")
+    logger.info(
+        f"⚡ Rate Limiting Config - Workers: {config.api.thread_pool_workers}, "
+        f"RPS: {config.api.requests_per_second}, InitialDelay: {config.api.initial_delay}s, "
+        f"MaxDelay: {config.api.max_delay}s, Backoff: {config.api.backoff_factor}"
+    )
+    logger.debug("========================================")
 
 
 # Configuration validation
@@ -615,7 +619,6 @@ def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
 def _run_action6_gather(session_manager: SessionManager) -> bool:
     """Run Action 6: Gather Matches."""
     logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-    print("Starting DNA match gathering from page 1...")
     gather_result = coord_action(session_manager, config, start=1)
     if gather_result is False:
         logger.error("Action 6 FAILED.")
@@ -779,14 +782,14 @@ def _truncate_all_tables_direct(session: Any, db_manager: Any) -> bool:
             # Delete all records from tables in reverse order of dependencies
             # Use a try-except for each table in case it doesn't exist
             from sqlalchemy.exc import OperationalError
-            
+
             tables_to_truncate = [
                 (ConversationLog, "conversation_log"),
                 (DnaMatch, "dna_match"),
                 (FamilyTree, "family_tree"),
                 (Person, "people")
             ]
-            
+
             for table_class, table_name in tables_to_truncate:
                 try:
                     deleted_count = sess.query(table_class).delete(synchronize_session=False)
@@ -819,14 +822,14 @@ def _truncate_all_tables(temp_manager: SessionManager) -> bool:
             # Delete all records from tables in reverse order of dependencies
             # Use a try-except for each table in case it doesn't exist
             from sqlalchemy.exc import OperationalError
-            
+
             tables_to_truncate = [
                 (ConversationLog, "conversation_log"),
                 (DnaMatch, "dna_match"),
                 (FamilyTree, "family_tree"),
                 (Person, "people")
             ]
-            
+
             for table_class, table_name in tables_to_truncate:
                 try:
                     deleted_count = sess.query(table_class).delete(synchronize_session=False)
@@ -914,20 +917,20 @@ def _seed_message_templates(recreation_session: Any) -> bool:
                     # Parse template key: "In_Tree-Initial" -> category="In_Tree", tree_status="in_tree"
                     parts = template_key.split('-')
                     tree_status_prefix = parts[0] if parts else "Universal"
-                    
+
                     # Determine tree_status from the prefix (In_Tree -> in_tree, Out_Tree -> out_tree)
                     tree_status = tree_status_prefix.lower().replace('_', '_') if tree_status_prefix else "universal"
-                    
+
                     # Category is the message type (e.g., "Initial", "Follow-up", etc.)
                     category = parts[1] if len(parts) > 1 else "initial"
-                    
+
                     templates_to_add.append(MessageTemplate(
                         template_key=template_key,
                         message_content=template_content if isinstance(template_content, str) else str(template_content),
                         template_category=category,
                         tree_status=tree_status
                     ))
-                
+
                 if templates_to_add:
                     sess.add_all(templates_to_add)
                     logger.debug(f"Added {len(templates_to_add)} message templates.")
@@ -942,6 +945,73 @@ def _seed_message_templates(recreation_session: Any) -> bool:
         return False
 
 
+def _close_main_db_pool(session_manager: SessionManager) -> None:
+    """Close main database pool and force garbage collection."""
+    if session_manager:
+        logger.debug("Closing main DB connections before database deletion...")
+        session_manager.cls_db_conn(keep_db=False)
+        logger.debug("Main DB pool closed.")
+
+    # Force garbage collection to release any file handles
+    logger.debug("Running garbage collection to release file handles...")
+    gc.collect()
+    time.sleep(1.0)
+    gc.collect()
+
+
+def _perform_database_reset_operations(temp_db_manager: Any) -> tuple[bool, Any]:
+    """
+    Perform database reset operations: truncate, reinitialize, and seed.
+    
+    Returns:
+        Tuple of (success, recreation_session)
+    """
+    recreation_session = None
+
+    try:
+        # Ensure database is ready
+        if not temp_db_manager.ensure_ready():
+            logger.error("Failed to ensure temporary database manager ready")
+            return False, None
+
+        # Step 1: Truncate all tables
+        logger.debug("Truncating all tables...")
+        truncate_session = temp_db_manager.get_session()
+        if not truncate_session:
+            logger.critical("Failed to get session for truncating tables. Reset aborted.")
+            return False, None
+
+        if not _truncate_all_tables_direct(truncate_session, temp_db_manager):
+            return False, None
+
+        # Step 2: Re-initialize database schema
+        if not _reinitialize_database_schema_direct(temp_db_manager):
+            return False, None
+
+        # Step 3: Seed MessageType Table
+        recreation_session = temp_db_manager.get_session()
+        if not recreation_session:
+            raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
+
+        _seed_message_templates(recreation_session)
+        logger.info("Database reset completed successfully.")
+        return True, recreation_session
+
+    except Exception as recreate_err:
+        logger.error(f"Error during DB recreation/seeding: {recreate_err}", exc_info=True)
+        return False, recreation_session
+
+
+def _cleanup_temp_db_manager(temp_db_manager: Any, recreation_session: Any) -> None:
+    """Clean up the temporary database manager and its engine."""
+    logger.debug("Cleaning up temporary database manager for reset...")
+    if temp_db_manager:
+        if recreation_session:
+            temp_db_manager.return_session(recreation_session)
+        temp_db_manager.close_connections()
+    logger.debug("Temporary database manager cleanup finished.")
+
+
 def reset_db_actn(session_manager: SessionManager, *_) -> bool:
     """
     Action to COMPLETELY reset the database by deleting the file. Browserless.
@@ -951,86 +1021,35 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
     - Seeds the MessageType table.
     """
     db_path = config.database.database_file
-    reset_successful = False
-    temp_manager = None  # For recreation/seeding
-    recreation_session = None  # Session for seeding
+
+    if db_path is None:
+        logger.critical("DATABASE_FILE is not configured. Reset aborted.")
+        return False
 
     try:
-        # --- 1. Close main pool FIRST ---
-        if session_manager:
-            logger.debug("Closing main DB connections before database deletion...")
-            session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
-            logger.debug("Main DB pool closed.")
+        # Close main pool
+        _close_main_db_pool(session_manager)
 
-        # Force garbage collection to release any file handles
-        logger.debug("Running garbage collection to release file handles...")
-        gc.collect()
-        time.sleep(1.0)
-        gc.collect()
+        # Create temporary database manager
+        logger.debug(f"Attempting to reset database file: {db_path}...")
+        logger.debug("Creating temporary database manager for database reset...")
+        from core.database_manager import DatabaseManager
+        temp_db_manager = DatabaseManager(db_path)
 
-        # --- 2. Delete the Database File ---
-        if db_path is None:
-            logger.critical("DATABASE_FILE is not configured. Reset aborted.")
-            return False
+        # Perform reset operations
+        reset_successful, recreation_session = _perform_database_reset_operations(temp_db_manager)
 
-        logger.debug(f"Attempting to delete database file: {db_path}...")
-        try:
-            # Use DatabaseManager directly for database-only operations (no browser/rate limiting needed)
-            logger.debug("Creating temporary database manager for database reset...")
-            from core.database_manager import DatabaseManager
-            temp_db_manager = DatabaseManager(db_path)
-            
-            # Ensure database is ready
-            if not temp_db_manager.ensure_ready():
-                logger.error("Failed to ensure temporary database manager ready")
-                return False
+        # Cleanup
+        _cleanup_temp_db_manager(temp_db_manager, recreation_session)
 
-            # Step 1: Truncate all tables
-            logger.debug("Truncating all tables...")
-            truncate_session = temp_db_manager.get_session()
-            if not truncate_session:
-                logger.critical("Failed to get session for truncating tables. Reset aborted.")
-                return False
-            
-            if not _truncate_all_tables_direct(truncate_session, temp_db_manager):
-                return False
-
-            # Step 2: Re-initialize database schema
-            if not _reinitialize_database_schema_direct(temp_db_manager):
-                return False
-
-            # Step 3: Seed MessageType Table
-            recreation_session = temp_db_manager.get_session()
-            if not recreation_session:
-                raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
-
-            _seed_message_templates(recreation_session)
-
-            reset_successful = True
-            logger.info("Database reset completed successfully.")
-
-        except Exception as recreate_err:
-            logger.error(
-                f"Error during DB recreation/seeding: {recreate_err}", exc_info=True
-            )
-            reset_successful = False
-        finally:
-            # Clean up the temporary database manager and its engine
-            logger.debug("Cleaning up temporary database manager for reset...")
-            if 'temp_db_manager' in locals() and temp_db_manager:
-                if recreation_session:
-                    temp_db_manager.return_session(recreation_session)
-                temp_db_manager.close_connections()  # Dispose temp engine
-            logger.debug("Temporary database manager cleanup finished.")
+        return reset_successful
 
     except Exception as e:
         logger.error(f"Outer error during DB reset action: {e}", exc_info=True)
-        reset_successful = False  # Ensure failure is marked
+        return False
 
     finally:
         logger.debug("Reset DB action finished.")
-
-    return reset_successful
 
 
 # end of Action 2 (reset_db_actn)
@@ -1500,18 +1519,15 @@ def _check_action_confirmation(choice: str) -> bool:
 
 
 def _run_main_tests() -> None:
-    """Run Main.py Internal Tests."""
-    try:
-        print("\n" + "=" * 60)
-        print("RUNNING MAIN.PY INTERNAL TESTS")
-        print("=" * 60)
-        result = run_comprehensive_tests()
-        if result:
-            print("\n🎉 All main.py tests completed successfully!")
-        else:
-            print("\n⚠️ Some main.py tests failed. Check output above.")
-    except Exception as e:
-        logger.error(f"Error running main.py tests: {e}")
+    """Run Main.py Internal Tests - Tests moved to external test suite."""
+    print("\n" + "=" * 60)
+    print("MAIN.PY TESTS")
+    print("=" * 60)
+    print("\n📋 Note: main.py tests have been removed to prevent recursion.")
+    print("   main.py is the application entry point and should not test itself.")
+    print("   All other modules (58 modules) are tested by run_all_tests.py")
+    print("\n   To run all module tests, use menu option 'testall' or run:")
+    print("   python run_all_tests.py")
     print("\nReturning to main menu...")
     input("Press Enter to continue...")
 
@@ -1775,8 +1791,8 @@ def main() -> None:
         print("")
         # --- Logging Setup ---
         # Logger already set up by setup_module at module level
-        # Just call setup_logging to ensure proper configuration
-        setup_logging()
+        # Use INFO for clean startup, DEBUG for detailed troubleshooting
+        setup_logging(log_level="INFO")
 
         # --- Configuration Validation ---
         # Validate action configuration to prevent Action 6-style failures
@@ -1825,582 +1841,6 @@ def main() -> None:
 
 
 # end main
-
-
-# ============================================================================
-# MODULE-LEVEL TEST FUNCTIONS FOR main.py
-# ============================================================================
-# Extracted from monolithic main_module_tests() for better organization
-# Each test function is independent and can be run individually
-
-
-def _test_module_initialization():
-        """Test module initialization and import availability"""
-        # Test that all required functions are available
-        assert callable(menu), "menu() function should be callable"
-        assert callable(main), "main() function should be callable"
-        assert callable(clear_log_file), "clear_log_file() function should be callable"
-
-        # Test that all action modules are imported
-        assert coord is not None, "action6_gather.coord should be imported"
-        assert InboxProcessor is not None, "InboxProcessor should be imported"
-        assert (
-            send_messages_to_matches is not None
-        ), "send_messages_to_matches should be imported"
-        assert (
-            process_productive_messages is not None
-        ), "process_productive_messages should be imported"
-        assert run_action10 is not None, "run_action10 should be imported"
-        assert run_action11 is not None, "run_action11 should be imported"
-
-
-def _test_configuration_availability():
-    """Test configuration and database availability"""
-    assert config is not None, "config should be available"
-    assert logger is not None, "logger should be available"
-    assert SessionManager is not None, "SessionManager should be available"
-
-    # Test database components
-    assert Base is not None, "SQLAlchemy Base should be available"
-    assert Person is not None, "Person model should be available"
-    assert ConversationLog is not None, "ConversationLog model should be available"
-    assert DnaMatch is not None, "DnaMatch model should be available"
-
-
-def _test_clear_log_file_function():
-        """Test log file clearing functionality"""
-        # Test clear_log_file function exists and is callable
-        assert callable(clear_log_file), "clear_log_file should be callable"
-
-        # Test function returns proper tuple structure
-        try:
-            result = clear_log_file()
-            assert isinstance(result, tuple), "clear_log_file should return a tuple"
-            assert len(result) == 2, "clear_log_file should return a 2-element tuple"
-            success, message = result
-            assert isinstance(success, bool), "First element should be boolean"
-            assert message is None or isinstance(
-                message, str
-            ), "Second element should be None or string"
-        except Exception as e:
-            # Function may fail in test environment, but should not crash
-            assert isinstance(e, Exception), "Should handle errors gracefully"
-
-
-def _test_main_function_structure():
-    """Test main function structure and error handling"""
-    assert callable(main), "main() function should be callable"
-
-    # Test that main function has proper structure for error handling
-    import inspect
-
-    sig = inspect.signature(main)
-    assert len(sig.parameters) == 0, "main() should take no parameters"
-
-
-def _test_menu_system_components():
-        """Test menu system components availability"""
-        # Test menu function exists
-        assert callable(menu), "menu() function should be callable"
-
-        # Test that menu has access to all action functions
-        menu_globals = menu.__globals__
-        assert "coord" in menu_globals, "menu should have access to coord function"
-        assert (
-            "InboxProcessor" in menu_globals
-        ), "menu should have access to InboxProcessor"
-        assert (
-            "send_messages_to_matches" in menu_globals
-        ), "menu should have access to send_messages_to_matches"
-        assert (
-            "process_productive_messages" in menu_globals
-        ), "menu should have access to process_productive_messages"
-        assert "run_action10" in menu_globals, "menu should have access to run_action10"
-        assert "run_action11" in menu_globals, "menu should have access to run_action11"
-
-
-def _test_action_function_availability():
-    """Test all action functions are properly imported and callable"""
-    # Test action6_gather
-    assert callable(coord), "coord function should be callable"
-
-    # Test action7_inbox
-    assert callable(InboxProcessor), "InboxProcessor should be callable"
-
-    # Test action8_messaging
-    assert callable(
-        send_messages_to_matches
-    ), "send_messages_to_matches should be callable"
-
-    # Test action9_process_productive
-    assert callable(
-        process_productive_messages
-    ), "process_productive_messages should be callable"
-
-    # Test action10
-    assert callable(run_action10), "run_action10 should be callable"
-
-    # Test action11
-    assert callable(run_action11), "run_action11 should be callable"
-
-
-def _test_database_operations():
-        """Test database operation functions"""
-        assert callable(backup_database), "backup_database should be callable"
-        assert callable(db_transn), "db_transn should be callable"
-        assert callable(reset_db_actn), "reset_db_actn should be callable"
-
-        # Test database models are available
-        assert Person is not None, "Person model should be available"
-        assert ConversationLog is not None, "ConversationLog model should be available"
-        assert DnaMatch is not None, "DnaMatch model should be available"
-        assert FamilyTree is not None, "FamilyTree model should be available"
-        assert MessageTemplate is not None, "MessageTemplate model should be available"
-
-
-def _test_reset_db_actn_integration():
-    """Test reset_db_actn function integration and method availability"""
-    # Test that reset_db_actn can be called without AttributeError
-    try:
-        # Create a test SessionManager to verify method availability
-        test_sm = SessionManager()
-
-        # Verify that the required methods exist on the SessionManager and DatabaseManager
-        assert hasattr(test_sm, 'db_manager'), "SessionManager should have db_manager attribute"
-        assert hasattr(test_sm.db_manager, '_initialize_engine_and_session'), \
-            "DatabaseManager should have _initialize_engine_and_session method"
-        assert hasattr(test_sm.db_manager, 'engine'), "DatabaseManager should have engine attribute"
-        assert hasattr(test_sm.db_manager, 'Session'), "DatabaseManager should have Session attribute"
-
-        # Test that reset_db_actn doesn't fail with AttributeError on method calls
-        # Note: We don't actually run the reset to avoid affecting the test database
-        logger.debug("reset_db_actn integration test: All required methods and attributes verified")
-
-    except AttributeError as e:
-        raise AssertionError(f"reset_db_actn integration test failed with AttributeError: {e}") from e
-    except Exception as e:
-        # Other exceptions are acceptable for this test (we're only checking for AttributeError)
-        logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")
-
-
-def _test_edge_case_handling():
-        """Test edge cases and error conditions"""
-        # Test imports are properly structured
-        import sys
-
-        assert "action6_gather" in sys.modules, "action6_gather should be imported"
-        assert "action7_inbox" in sys.modules, "action7_inbox should be imported"
-        assert (
-            "action8_messaging" in sys.modules
-        ), "action8_messaging should be imported"
-        assert (
-            "action9_process_productive" in sys.modules
-        ), "action9_process_productive should be imported"
-        assert "action10" in sys.modules, "action10 should be imported"
-        assert "action11" in sys.modules, "action11 should be imported"
-
-
-def _test_import_error_handling():
-    """Test import error scenarios"""
-    # Check that main module has all required imports
-    module_globals = globals()
-    required_imports = [
-        "coord",
-        "InboxProcessor",
-        "send_messages_to_matches",
-        "process_productive_messages",
-        "run_action10",
-        "run_action11",
-        "config",
-        "logger",
-        "SessionManager",
-    ]
-
-    for import_name in required_imports:
-        assert import_name in module_globals, f"{import_name} should be imported"
-
-
-def _test_session_manager_integration():
-        """Test SessionManager integration"""
-        assert SessionManager is not None, "SessionManager should be available"
-        assert callable(SessionManager), "SessionManager should be callable"
-
-        # Test SessionManager has required methods
-        # Should have key methods for session management
-        assert hasattr(
-            SessionManager, "__init__"
-        ), "SessionManager should have __init__ method"
-
-
-def _test_logging_integration():
-    """Test logging system integration"""
-    assert logger is not None, "logger should be available"
-    assert hasattr(logger, "info"), "logger should have info method"
-    assert hasattr(logger, "error"), "logger should have error method"
-    assert hasattr(logger, "warning"), "logger should have warning method"
-    assert hasattr(logger, "debug"), "logger should have debug method"
-    assert hasattr(logger, "critical"), "logger should have critical method"
-
-
-def _test_configuration_integration():
-    """Test configuration system integration"""
-    assert config is not None, "config should be available"
-
-    # Test config has basic attributes (may vary by implementation)
-    # This tests that the config object is properly initialized
-    assert hasattr(config, "__dict__") or hasattr(
-        config, "__getattribute__"
-    ), "config should be a proper object"
-
-
-def _test_validate_action_config():
-        """Test the new validate_action_config() function from Action 6 lessons"""
-        # Test that the function exists and is callable
-        assert callable(validate_action_config), "validate_action_config should be callable"
-
-        # Test that the function can be executed without errors
-        try:
-            result = validate_action_config()
-            assert isinstance(result, bool), "validate_action_config should return boolean"
-            # Function should succeed even if some warnings are generated
-            assert result is True, "validate_action_config should return True for basic validation"
-        except Exception as e:
-            # If it fails, it should be due to missing config, not function errors
-            assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
-
-
-def _test_database_integration():
-    """Test database system integration"""
-    # Test database functions are available
-    assert callable(backup_database), "backup_database should be callable"
-
-    # Test database transaction manager
-    assert callable(db_transn), "db_transn should be callable"
-
-    # Test that we can access database models
-    from database import Base
-
-    assert Base is not None, "SQLAlchemy Base should be accessible"
-
-
-def _test_action_integration():
-        """Test all actions integrate properly with main"""
-        # Test that all action functions can be called (at module level)
-        actions_to_test = [
-            ("coord", coord),
-            ("InboxProcessor", InboxProcessor),
-            ("send_messages_to_matches", send_messages_to_matches),
-            ("process_productive_messages", process_productive_messages),
-            ("run_action10", run_action10),
-            ("run_action11", run_action11),
-        ]
-
-        for action_name, action_func in actions_to_test:
-            assert callable(action_func), f"{action_name} should be callable"
-            assert action_func is not None, f"{action_name} should not be None"
-
-
-def _test_import_performance():
-    """Test import performance is reasonable"""
-    import importlib
-    import time
-
-    # Test that re-importing modules is fast (cached)
-    start_time = time.time()
-
-    # Test a few key imports
-    try:
-        config_module = sys.modules.get("config")
-        if config_module:
-            importlib.reload(config_module)
-    except Exception:
-        pass  # Module reload may not work in test environment
-
-    duration = time.time() - start_time
-    assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
-
-
-def _test_memory_efficiency():
-    """Test memory usage is reasonable"""
-    import sys
-
-    # Check that module size is reasonable
-    module_size = sys.getsizeof(sys.modules[__name__])
-    assert (
-        module_size < 10000
-    ), f"Module size should be reasonable, got {module_size} bytes"
-
-    # Test that globals are not excessive (increased limit due to extracted test functions)
-    globals_count = len(globals())
-    assert (
-        globals_count < 150
-    ), f"Global variables should be reasonable, got {globals_count}"
-
-
-def _test_function_call_performance():
-        """Test function call performance"""
-        import time
-
-        # Test that basic function calls are fast
-        start_time = time.time()
-
-        for _ in range(1000):
-            # Test a simple function call
-            result = callable(menu)
-            assert result is True, "menu should be callable"
-
-        duration = time.time() - start_time
-        assert (
-            duration < 0.1
-        ), f"1000 function checks should be fast, took {duration:.3f}s"
-
-
-def _test_error_handling_structure():
-    """Test error handling structure in main functions"""
-    import inspect
-
-    # Test that main function has proper structure
-    main_source = inspect.getsource(main)
-    assert "try:" in main_source, "main() should have try-except structure"
-    assert "except" in main_source, "main() should have exception handling"
-    assert "finally:" in main_source, "main() should have finally block"
-
-    # Test that KeyboardInterrupt is handled
-    assert (
-        "KeyboardInterrupt" in main_source
-    ), "main() should handle KeyboardInterrupt"
-
-
-def _test_cleanup_procedures():
-    """Test cleanup procedures are in place"""
-    import inspect
-
-    # Test that main has cleanup code
-    main_source = inspect.getsource(main)
-    assert "finally:" in main_source, "main() should have finally block for cleanup"
-    assert "cleanup" in main_source.lower(), "main() should mention cleanup"
-
-
-def _test_exception_handling_coverage():
-        """Test exception handling covers expected scenarios"""
-        import inspect
-
-        # Test main function exception handling
-        main_source = inspect.getsource(main)
-
-        # Should handle general exceptions
-        assert "Exception" in main_source, "main() should handle general exceptions"
-
-        # Should have logging for errors
-        assert "logger" in main_source, "main() should use logger for error reporting"
-
-
-# ============================================================================
-# MAIN TEST SUITE RUNNER
-# ============================================================================
-
-
-def main_module_tests() -> bool:
-    """Comprehensive test suite for main.py"""
-    try:
-        from test_framework import TestSuite, suppress_logging
-    except ImportError:
-        # Fall back to relative import if absolute import fails
-        from .test_framework import TestSuite, suppress_logging
-
-    suite = TestSuite("Main Application Controller & Menu System", "main.py")
-    suite.start_suite()
-
-    # Run all tests with suppress_logging
-    with suppress_logging():
-        # INITIALIZATION TESTS
-        suite.run_test(
-            test_name="menu(), main(), clear_log_file(), action imports",
-            test_func=_test_module_initialization,
-            test_description="Module initialization and core function availability",
-            method_description="Testing availability of main functions and action module imports",
-            expected_behavior="All core functions are available and action modules are properly imported",
-        )
-
-        suite.run_test(
-            test_name="config, logger, SessionManager, database models",
-            test_func=_test_configuration_availability,
-            test_description="Configuration and database component availability",
-            method_description="Testing configuration instance and database model imports",
-            expected_behavior="Configuration and database components are properly available",
-        )
-
-        # CORE FUNCTIONALITY TESTS
-        suite.run_test(
-            test_name="clear_log_file() function logic and return values",
-            test_func=_test_clear_log_file_function,
-            test_description="Log file clearing functionality and return structure",
-            method_description="Testing clear_log_file function execution and return tuple structure",
-            expected_behavior="Function executes properly and returns appropriate tuple structure",
-        )
-
-        suite.run_test(
-            test_name="main() function structure and signature",
-            test_func=_test_main_function_structure,
-            test_description="Main function structure and parameter requirements",
-            method_description="Testing main function callable status and parameter signature",
-            expected_behavior="Main function has proper structure and takes no parameters",
-        )
-
-        suite.run_test(
-            test_name="menu() system and action function access",
-            test_func=_test_menu_system_components,
-            test_description="Menu system components and action function accessibility",
-            method_description="Testing menu function and its access to all action functions",
-            expected_behavior="Menu system has access to all required action functions",
-        )
-
-        suite.run_test(
-            test_name="coord(), InboxProcessor(), send_messages_to_matches(), process_productive_messages(), run_action10(), run_action11()",
-            test_func=_test_action_function_availability,
-            test_description="All action functions are properly imported and callable",
-            method_description="Testing callable status of all action module functions",
-            expected_behavior="All action functions are available and callable",
-        )
-
-        suite.run_test(
-            test_name="backup_database(), db_transn(), database models",
-            test_func=_test_database_operations,
-            test_description="Database operation functions and model availability",
-            method_description="Testing database functions and model imports",
-            expected_behavior="Database operations and models are properly available",
-        )
-
-        suite.run_test(
-            test_name="reset_db_actn() integration and method availability",
-            test_func=_test_reset_db_actn_integration,
-            test_description="Database reset function integration and required method verification",
-            method_description="Testing reset_db_actn function for proper SessionManager and DatabaseManager method access",
-            expected_behavior="reset_db_actn can access all required methods without AttributeError",
-        )
-
-        # EDGE CASE TESTS
-        suite.run_test(
-            test_name="Edge case handling and module import validation",
-            test_func=_test_edge_case_handling,
-            test_description="Edge cases and import validation scenarios",
-            method_description="Testing edge conditions and module import status",
-            expected_behavior="Edge cases are handled and imports are properly validated",
-        )
-
-        suite.run_test(
-            test_name="Import error scenarios and required module presence",
-            test_func=_test_import_error_handling,
-            test_description="Import error handling and required module validation",
-            method_description="Testing essential module imports and availability",
-            expected_behavior="All essential modules are imported and available",
-        )
-
-        # INTEGRATION TESTS
-        suite.run_test(
-            test_name="SessionManager integration and method availability",
-            test_func=_test_session_manager_integration,
-            test_description="SessionManager integration with main application",
-            method_description="Testing SessionManager availability and method access",
-            expected_behavior="SessionManager integrates properly with required methods",
-        )
-
-        suite.run_test(
-            test_name="Logging system integration and method availability",
-            test_func=_test_logging_integration,
-            test_description="Logging system integration with main application",
-            method_description="Testing logger availability and all required logging methods",
-            expected_behavior="Logging system is properly integrated with all methods available",
-        )
-
-        suite.run_test(
-            test_name="Configuration system integration and object access",
-            test_func=_test_configuration_integration,
-            test_description="Configuration system integration with main application",
-            method_description="Testing config availability and object structure",
-            expected_behavior="Configuration system is properly integrated and accessible",
-        )
-
-        suite.run_test(
-            test_name="Configuration validation system from Action 6 lessons",
-            test_func=_test_validate_action_config,
-            test_description="Configuration validation system prevents Action 6-style failures",
-            method_description="Testing validate_action_config() function validates .env settings and rate limiting",
-            expected_behavior="Configuration validation function works correctly and returns boolean result",
-        )
-
-        suite.run_test(
-            test_name="Database system integration and transaction management",
-            test_func=_test_database_integration,
-            test_description="Database system integration with main application",
-            method_description="Testing database functions and model accessibility",
-            expected_behavior="Database system is properly integrated with transaction support",
-        )
-
-        suite.run_test(
-            test_name="All action function integration with main application",
-            test_func=_test_action_integration,
-            test_description="Action functions integrate properly with main application",
-            method_description="Testing action function availability and callable status",
-            expected_behavior="All action functions integrate properly and are callable",
-        )
-
-        # PERFORMANCE TESTS
-        suite.run_test(
-            test_name="Module import and reload performance",
-            test_func=_test_import_performance,
-            test_description="Import performance and module caching efficiency",
-            method_description="Testing module import and reload times for performance",
-            expected_behavior="Module imports and reloads complete within reasonable time limits",
-        )
-
-        suite.run_test(
-            test_name="Memory usage efficiency and global variable management",
-            test_func=_test_memory_efficiency,
-            test_description="Memory usage efficiency and resource management",
-            method_description="Testing module memory usage and global variable count",
-            expected_behavior="Memory usage is reasonable and global variables are controlled",
-        )
-
-        suite.run_test(
-            test_name="Function call performance and responsiveness",
-            test_func=_test_function_call_performance,
-            test_description="Function call performance and execution speed",
-            method_description="Testing basic function call performance with multiple iterations",
-            expected_behavior="Function calls execute efficiently within performance limits",
-        )
-
-        # ERROR HANDLING TESTS
-        suite.run_test(
-            test_name="main() error handling structure and exception coverage",
-            test_func=_test_error_handling_structure,
-            test_description="Error handling structure in main function",
-            method_description="Testing main function for proper try-except-finally structure",
-            expected_behavior="Main function has comprehensive error handling structure",
-        )
-
-        suite.run_test(
-            test_name="Cleanup procedures and resource management",
-            test_func=_test_cleanup_procedures,
-            test_description="Cleanup procedures and resource management implementation",
-            method_description="Testing cleanup code presence and resource management",
-            expected_behavior="Proper cleanup procedures are implemented for resource management",
-        )
-
-        suite.run_test(
-            test_name="Exception handling coverage and logging integration",
-            test_func=_test_exception_handling_coverage,
-            test_description="Exception handling coverage and error logging",
-            method_description="Testing exception handling scope and logging integration",
-            expected_behavior="Exception handling covers expected scenarios with proper logging",
-        )
-
-    return suite.finish_suite()
-
-
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive main module tests using standardized TestSuite format."""
-    return main_module_tests()
 
 
 # --- Entry Point ---

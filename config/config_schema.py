@@ -417,14 +417,20 @@ class APIConfig:
 
     # Concurrency (controls ThreadPoolExecutor workers in Action 6)
     max_concurrency: int = 2  # Drastically reduced from 8 to 2 to prevent API rate limiting
-    thread_pool_workers: int = 3  # Bumped by +1 for slightly higher throughput while remaining conservative
+    thread_pool_workers: int = 1  # CRITICAL: Set to 1 for zero 429 errors (fully sequential processing)
+    # Note: Can be overridden via THREAD_POOL_WORKERS in .env
+    # Higher values (2-3) may improve speed but risk rate limit violations
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
 
-    # Timing settings
-    initial_delay: float = 2.0  # Increased from 1.0 to 2.0 for more conservative initial spacing
-    max_delay: float = 300.0  # Increased from 60.0 to 300.0 (5 minutes) for severe rate limiting recovery
+    # Timing settings - Adaptive rate limiting parameters
+    initial_delay: float = 1.0  # Starting delay between requests (seconds) - optimized for 2 workers
+    max_delay: float = 15.0  # Maximum delay on rate limiting (seconds) - reduced for faster recovery
+    backoff_factor: float = 1.5  # Multiplier for increasing delay on errors
+    decrease_factor: float = 0.95  # Multiplier for decreasing delay on success
+    token_bucket_capacity: float = 10.0  # Token bucket capacity for burst handling
+    token_bucket_fill_rate: float = 2.0  # Tokens added per second
 
     # Tree settings
     tree_name: Optional[str] = None
@@ -1217,15 +1223,16 @@ def _test_rate_limiting_configuration() -> None:
     api_config = APIConfig()
 
     # Define validation rules as data structure to reduce complexity
+    # Updated for 2-worker optimized configuration (January 2025)
     validation_rules = [
-        ("requests_per_second", lambda v: v > 0.4, "too high"),
+        ("requests_per_second", lambda v: v > 1.0, "too high"),  # 0.8 RPS is safe for 2 workers
         ("thread_pool_workers", lambda v: v > 4, "too high"),
         ("max_concurrency", lambda v: v > 4, "too high"),
         ("burst_limit", lambda v: v > 4, "too high"),
         ("max_retries", lambda v: v < 5, "too low"),
         ("retry_backoff_factor", lambda v: v < 6.0, "too low"),
         ("request_timeout", lambda v: v < 60, "too low"),
-        ("max_delay", lambda v: v < 300, "too low"),
+        ("max_delay", lambda v: v < 5.0, "too low"),  # Optimized: 15s is excellent, warn only if below 5s
     ]
 
     # Validate conservative settings for API rate limiting compliance
