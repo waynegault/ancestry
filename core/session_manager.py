@@ -2681,7 +2681,7 @@ class SessionManager:
         stats.update(
             {
                 "session_ready": self.session_ready,
-                "session_age": self.session_age_seconds,
+                "session_age": self.session_age_seconds(),
                 "last_readiness_check_age": (
                     time.time() - self._last_readiness_check
                     if self._last_readiness_check
