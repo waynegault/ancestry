@@ -1381,13 +1381,15 @@ class MonitoringThresholds:
     error_rate_warning: float = 5.0  # 5% error rate triggers warning
     error_rate_critical: float = 10.0  # 10% error rate triggers critical alert
 
-    # API performance thresholds (seconds)
-    api_time_warning: float = 2.0  # API call > 2s triggers warning
-    api_time_critical: float = 5.0  # API call > 5s triggers critical alert
+    # API performance thresholds (seconds) - Adjusted for DNA API reality (Oct 8, 2025)
+    # Real-world performance: 4-7s per match is normal, <4s is excellent
+    api_time_warning: float = 8.0  # API call > 8s triggers warning (was 2.0)
+    api_time_critical: float = 12.0  # API call > 12s triggers critical alert (was 5.0)
 
-    # Page processing thresholds (seconds)
-    page_time_warning: float = 10.0  # Page > 10s triggers warning
-    page_time_critical: float = 30.0  # Page > 30s triggers critical alert
+    # Page processing thresholds (seconds) - Adjusted for 20 matches/page reality
+    # Real-world: 80-120s normal (4-6s per match × 20), 150s+ is slow
+    page_time_warning: float = 150.0  # Page > 150s triggers warning (was 10.0)
+    page_time_critical: float = 200.0  # Page > 200s triggers critical alert (was 30.0)
 
     # Cache performance thresholds (percentage)
     cache_hit_rate_warning: float = 5.0  # < 5% hit rate triggers warning
