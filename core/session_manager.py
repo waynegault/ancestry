@@ -202,6 +202,9 @@ class SessionManager:
         # Session death detection
         self._consecutive_303_count = 0
 
+        # Session recovery control (Priority 1.2)
+        self._auto_recovery_enabled: bool = True  # Default: enabled for backward compatibility
+
     def _initialize_reliable_state(self) -> None:
         """Initialize reliable processing state."""
         self._reliable_state = {
@@ -266,8 +269,12 @@ class SessionManager:
         }
         self.session_health_monitor['is_alive'].set()
 
-    # NOTE: Removed _initialize_rate_limiting() - AdaptiveRateLimiter was unused
-    # Only DynamicRateLimiter (initialized in __init__) is used in production
+    # NOTE: Rate limiting cleanup (October 2025):
+    # - Removed _initialize_rate_limiting() method (unused)
+    # - Removed adaptive_rate_limiter attribute (unused)
+    # - Removed smart_batch_processor attribute (unused)
+    # - DynamicRateLimiter (initialized in __init__) is the only rate limiter in production
+    # - All tests updated to validate DynamicRateLimiter only
 
     def __init__(self, db_path: Optional[str] = None):
         """
@@ -327,10 +334,6 @@ class SessionManager:
         except ImportError:
             logger.warning("Health monitoring module not available")
             self.health_monitor = None
-
-        # Initialize rate limiting components to None (will be initialized when browser is needed)
-        self.adaptive_rate_limiter = None
-        self.smart_batch_processor = None
 
         # Enhanced session capabilities
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
@@ -471,10 +474,7 @@ class SessionManager:
         Returns:
             bool: True if browser started successfully, False otherwise
         """
-        # Initialize rate limiting when browser is first started (not for database-only actions)
-        if self.adaptive_rate_limiter is None:
-            logger.debug("Initializing rate limiting for browser-based action...")
-            self._initialize_rate_limiting()
+        # NOTE: AdaptiveRateLimiter removed - DynamicRateLimiter (initialized in __init__) is used instead
 
         # Reset logged flags when starting browser
         self._reset_logged_flags()
@@ -676,9 +676,17 @@ class SessionManager:
         """
         Determine if session recovery should be attempted.
 
+        Priority 1.2: Auto-recovery can be disabled for batch operations
+        where fail-fast is preferred.
+
         Returns:
             bool: True if recovery should be attempted
         """
+        # Check if auto-recovery is disabled
+        if not self._auto_recovery_enabled:
+            logger.debug("⏭️  Auto-recovery disabled - skipping recovery attempt")
+            return False
+
         # Only attempt recovery if session was previously working
         # and we're in a long-running operation
         return bool(self.session_ready and
@@ -711,6 +719,30 @@ class SessionManager:
             logger.error(f"Session recovery failed: {e}", exc_info=True)
 
         return False
+
+    def set_auto_recovery(self, enabled: bool) -> None:
+        """
+        Enable or disable automatic session recovery (Priority 1.2).
+
+        When disabled, session failures will not attempt recovery, allowing
+        fail-fast behavior for batch operations with circuit breakers.
+
+        Args:
+            enabled: True to enable auto-recovery, False to disable
+        """
+        previous = self._auto_recovery_enabled
+        self._auto_recovery_enabled = enabled
+        status = "enabled" if enabled else "disabled"
+        logger.info(f"🔧 Auto-recovery {status} (was: {'enabled' if previous else 'disabled'})")
+
+    def get_auto_recovery_status(self) -> bool:
+        """
+        Get current auto-recovery status.
+
+        Returns:
+            bool: True if auto-recovery is enabled, False otherwise
+        """
+        return self._auto_recovery_enabled
 
     # UNIVERSAL SESSION HEALTH MONITORING METHODS
     def check_session_health(self) -> bool:

@@ -962,7 +962,7 @@ def _close_main_db_pool(session_manager: SessionManager) -> None:
 def _perform_database_reset_operations(temp_db_manager: Any) -> tuple[bool, Any]:
     """
     Perform database reset operations: truncate, reinitialize, and seed.
-    
+
     Returns:
         Tuple of (success, recreation_session)
     """

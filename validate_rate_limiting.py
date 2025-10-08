@@ -73,13 +73,11 @@ def validate_rate_limiting_config():
     print("\n🛡️ Safety Checks:")
     print("-" * 60)
 
-    checks_passed = True
 
     # Check 1: RPS per worker should be <= 0.5 for safety
     if per_worker_rps > 0.5:
         print("⚠️  Warning: Per-worker RPS > 0.5 may risk rate limiting")
         warnings.append(f"High per-worker RPS: {per_worker_rps:.2f}")
-        checks_passed = False
     else:
         print(f"✅ Per-worker RPS ({per_worker_rps:.2f}) is safe (≤ 0.5)")
 
@@ -101,7 +99,6 @@ def validate_rate_limiting_config():
     if config_schema.api.token_bucket_capacity <= 0:
         print("❌ Error: Token bucket capacity must be positive")
         errors.append("Invalid token bucket capacity")
-        checks_passed = False
     else:
         print(f"✅ Token bucket capacity ({config_schema.api.token_bucket_capacity}) is configured")
 
