@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: PTH123
 
 """
 Comprehensive Test Orchestration & Quality Assurance Engine
@@ -1473,10 +1474,10 @@ def analyze_application_logs(log_path: str = "Logs/app.log") -> dict:
     """
     Analyze application logs for performance metrics and errors.
     Integrated from monitor_performance.py for log analysis.
-    
+
     Args:
         log_path: Path to the log file to analyze
-        
+
     Returns:
         dict: Analysis results including timing stats, error counts, and warnings
     """
