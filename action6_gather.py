@@ -106,7 +106,13 @@ CRITICAL_API_FAILURE_THRESHOLD: int = (
 
 # Configurable settings from config_schema
 DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
-THREAD_POOL_WORKERS: int = 5  # Concurrent API workers
+
+# CRITICAL RATE LIMIT FIX: Thread pool workers now configured via .env THREAD_POOL_WORKERS
+# Loaded from config_schema.api.thread_pool_workers
+# Recommended: 1 for ultra-conservative (fully sequential, zero 429 errors)
+# At 0.4 RPS rate, 1 worker = fully sequential processing = guaranteed no rate limit violations
+# Multiple API types (Match Details, Badge Details, etc.) share the rate limiter
+# If experiencing 429 errors, set THREAD_POOL_WORKERS=1 in .env file
 
 
 # --- Custom Exceptions ---
@@ -627,7 +633,7 @@ def _calculate_processing_range(total_pages_api: int, start_page: int) -> tuple[
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 3 to 10 for better tolerance
-@timeout_protection(timeout=300)
+@timeout_protection(timeout=600)  # Increased from 300s to 600s for rate-limited processing (~6s per match)
 @error_context("DNA match gathering coordination")
 def coord(  # type: ignore
     session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
@@ -1167,12 +1173,15 @@ def _perform_api_prefetches(
     my_tree_id = session_manager.my_tree_id
     critical_combined_details_failures = 0
 
-    logger.info(f"🌐 Fetching {num_candidates} matches via API ({THREAD_POOL_WORKERS} parallel workers)...")
+    # Get thread pool workers from config (can be overridden via THREAD_POOL_WORKERS in .env)
+    thread_pool_workers = config_schema.api.thread_pool_workers
+
+    logger.info(f"🌐 Fetching {num_candidates} matches via API ({thread_pool_workers} parallel workers)...")
 
     # Identify tree members needing badge/ladder fetch
     uuids_for_tree_badge_ladder = _identify_tree_badge_ladder_candidates(matches_to_process_later, fetch_candidates_uuid)
 
-    with ThreadPoolExecutor(max_workers=THREAD_POOL_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=thread_pool_workers) as executor:
         # Submit initial API tasks
         futures = _submit_initial_api_tasks(executor, session_manager, fetch_candidates_uuid, uuids_for_tree_badge_ladder)
 
@@ -1688,6 +1697,45 @@ def _bulk_upsert_dna_matches(
         logger.debug("No existing DnaMatch records to update.")
 
 
+def _add_person_update_ids(all_person_ids_map: dict[str, int], person_updates: list[dict[str, Any]]) -> None:
+    """Add IDs from person updates to the map."""
+    for p_update_data in person_updates:
+        if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
+            all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+
+
+def _collect_uuids_from_bulk_data(prepared_bulk_data: list[dict[str, Any]]) -> set[str]:
+    """Collect all UUIDs from prepared bulk data (person, dna_match, family_tree sections)."""
+    processed_uuids: set[str] = set()
+
+    for item in prepared_bulk_data:
+        # Get UUID from person section
+        if item.get("person") and item["person"].get("uuid"):
+            processed_uuids.add(item["person"]["uuid"])
+        # Get UUID from dna_match section (when person=None but DNA data exists)
+        if item.get("dna_match") and item["dna_match"].get("uuid"):
+            processed_uuids.add(item["dna_match"]["uuid"])
+        # Get UUID from family_tree section (when person=None but tree data exists)
+        if item.get("family_tree") and item["family_tree"].get("uuid"):
+            processed_uuids.add(item["family_tree"]["uuid"])
+
+    return processed_uuids
+
+
+def _add_existing_person_ids(
+    all_person_ids_map: dict[str, int],
+    processed_uuids: set[str],
+    existing_persons_map: dict[str, Person]
+) -> None:
+    """Add IDs from existing persons map for collected UUIDs."""
+    for uuid_processed in processed_uuids:
+        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
+            person = existing_persons_map[uuid_processed]
+            person_id_val = getattr(person, "id", None)
+            if person_id_val is not None:
+                all_person_ids_map[uuid_processed] = person_id_val
+
+
 def _create_master_person_id_map(
     created_person_map: dict[str, int],
     person_updates: list[dict[str, Any]],
@@ -1698,25 +1746,87 @@ def _create_master_person_id_map(
     all_person_ids_map: dict[str, int] = created_person_map.copy()
 
     # Add IDs from person updates
-    for p_update_data in person_updates:
-        if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
-            all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+    _add_person_update_ids(all_person_ids_map, person_updates)
 
-    # Add IDs from existing persons map
-    processed_uuids = {
-        p["person"]["uuid"]
-        for p in prepared_bulk_data
-        if p.get("person") and p["person"].get("uuid")
-    }
+    # Collect all UUIDs from prepared data
+    processed_uuids = _collect_uuids_from_bulk_data(prepared_bulk_data)
 
-    for uuid_processed in processed_uuids:
-        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
-            person = existing_persons_map[uuid_processed]
-            person_id_val = getattr(person, "id", None)
-            if person_id_val is not None:
-                all_person_ids_map[uuid_processed] = person_id_val
+    # Add IDs from existing persons
+    _add_existing_person_ids(all_person_ids_map, processed_uuids, existing_persons_map)
 
     return all_person_ids_map
+
+
+def _prepare_insert_data(person_creates_filtered: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prepare person data for bulk insertion."""
+    # Remove internal keys and convert enums
+    insert_data = [
+        {k: v for k, v in p.items() if not k.startswith("_")}
+        for p in person_creates_filtered
+    ]
+
+    # Convert status Enum to its value for bulk insertion
+    for item_data in insert_data:
+        if "status" in item_data and isinstance(item_data["status"], PersonStatusEnum):
+            item_data["status"] = item_data["status"].value
+
+    return insert_data
+
+
+def _filter_existing_persons(
+    session: SqlAlchemySession,
+    insert_data: list[dict[str, Any]],
+    created_person_map: dict[str, int]
+) -> list[dict[str, Any]]:
+    """Filter out persons that already exist and update the ID map."""
+    insert_uuids = [p_data["uuid"] for p_data in insert_data if p_data.get("uuid")]
+    if not insert_uuids:
+        return insert_data
+
+    existing_persons_in_db = session.query(Person.id, Person.uuid).filter(
+        Person.uuid.in_(insert_uuids)
+    ).all()
+    existing_uuid_set = {str(uuid) for pid, uuid in existing_persons_in_db}
+
+    if existing_uuid_set:
+        logger.warning(f"Filtering out {len(existing_uuid_set)} UUIDs that already exist in database")
+        # Map existing Person IDs before filtering
+        for person_id, person_uuid in existing_persons_in_db:
+            created_person_map[person_uuid] = person_id
+        logger.info(f"Mapped {len(created_person_map)} existing Person IDs for downstream operations")
+
+        insert_data = [p for p in insert_data if p.get("uuid") not in existing_uuid_set]
+        logger.info(f"Proceeding with {len(insert_data)} truly new Person records after filtering")
+
+    return insert_data
+
+
+def _query_inserted_person_ids(
+    session: SqlAlchemySession,
+    insert_data: list[dict[str, Any]]
+) -> dict[str, int]:
+    """Query and return IDs of newly inserted persons."""
+    inserted_uuids = [p_data["uuid"] for p_data in insert_data if p_data.get("uuid")]
+
+    if not inserted_uuids:
+        logger.warning("No UUIDs available in insert_data to query back IDs.")
+        return {}
+
+    logger.debug(f"Querying IDs for {len(inserted_uuids)} inserted UUIDs...")
+    newly_inserted_persons = (
+        session.query(Person.id, Person.uuid)
+        .filter(Person.uuid.in_(inserted_uuids))
+        .all()
+    )
+    created_map = {p_uuid: p_id for p_id, p_uuid in newly_inserted_persons}
+    logger.debug(f"Mapped {len(created_map)} new Person IDs.")
+
+    if len(created_map) != len(inserted_uuids):
+        logger.error(
+            f"CRITICAL: ID map count mismatch! Expected {len(inserted_uuids)}, got {len(created_map)}. Some IDs might be missing."
+        )
+
+    return created_map
 
 
 def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: list[dict[str, Any]]) -> dict[str, int]:
@@ -1729,19 +1839,16 @@ def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: li
 
     logger.debug(f"Preparing {len(person_creates_filtered)} Person records for bulk insert...")
 
-    # Prepare list of dictionaries for bulk_insert_mappings
-    insert_data = [
-        {k: v for k, v in p.items() if not k.startswith("_")}
-        for p in person_creates_filtered
-    ]
-
-    # Convert status Enum to its value for bulk insertion
-    for item_data in insert_data:
-        if "status" in item_data and isinstance(item_data["status"], PersonStatusEnum):
-            item_data["status"] = item_data["status"].value
-
-    # Validate no duplicates
+    # Prepare data
+    insert_data = _prepare_insert_data(person_creates_filtered)
     _validate_no_duplicate_profile_ids(insert_data)
+
+    # Filter existing persons
+    insert_data = _filter_existing_persons(session, insert_data, created_person_map)
+
+    if not insert_data:
+        logger.info("All Person records already exist in database - nothing to insert, but IDs mapped")
+        return created_person_map
 
     # Perform bulk insert
     logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
@@ -1751,24 +1858,10 @@ def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: li
     # Get newly created IDs
     session.flush()
     logger.debug("Session flushed to assign Person IDs.")
-    inserted_uuids = [p_data["uuid"] for p_data in insert_data if p_data.get("uuid")]
 
-    if inserted_uuids:
-        logger.debug(f"Querying IDs for {len(inserted_uuids)} inserted UUIDs...")
-        newly_inserted_persons = (
-            session.query(Person.id, Person.uuid)
-            .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
-            .all()
-        )
-        created_person_map = {p_uuid: p_id for p_id, p_uuid in newly_inserted_persons}
-        logger.debug(f"Mapped {len(created_person_map)} new Person IDs.")
-
-        if len(created_person_map) != len(inserted_uuids):
-            logger.error(
-                f"CRITICAL: ID map count mismatch! Expected {len(inserted_uuids)}, got {len(created_person_map)}. Some IDs might be missing."
-            )
-    else:
-        logger.warning("No UUIDs available in insert_data to query back IDs.")
+    # Query and map new IDs
+    new_ids = _query_inserted_person_ids(session, insert_data)
+    created_person_map.update(new_ids)
 
     return created_person_map
 
@@ -4446,7 +4539,7 @@ def _fetch_combined_details(
     """
     # Apply rate limiting BEFORE making API calls
     session_manager.dynamic_rate_limiter.wait()
-    
+
     logger.debug(f"_fetch_combined_details: Starting for match_uuid={match_uuid}")
 
     my_uuid = session_manager.my_uuid
@@ -4548,7 +4641,7 @@ def _fetch_batch_badge_details(
     """
     # Apply rate limiting BEFORE making API calls
     session_manager.dynamic_rate_limiter.wait()
-    
+
     my_uuid = session_manager.my_uuid
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_badge_details: Missing my_uuid or match_uuid.")
@@ -4619,7 +4712,7 @@ def _fetch_batch_ladder(
     """
     # Apply rate limiting BEFORE making API calls
     session_manager.dynamic_rate_limiter.wait()
-    
+
     if not cfpid or not tree_id:
         logger.warning("_fetch_batch_ladder: Missing cfpid or tree_id.")
         return None
@@ -4713,7 +4806,7 @@ def _fetch_batch_relationship_prob(
     """
     # Apply rate limiting BEFORE making API calls
     session_manager.dynamic_rate_limiter.wait()
-    
+
     # Validate session components
     try:
         _validate_relationship_prob_session(session_manager, match_uuid)
@@ -4816,7 +4909,7 @@ def _log_page_summary(
 ) -> None:
     """Logs a summary of processed matches for a single page."""
     total = page_new + page_updated + page_skipped + page_errors
-    
+
     # Build a concise, colorful one-line summary
     parts = []
     if page_new > 0:
@@ -4827,10 +4920,10 @@ def _log_page_summary(
         parts.append(f"✓ {page_skipped} current")
     if page_errors > 0:
         parts.append(f"⚠️  {page_errors} errors")
-    
+
     summary = " | ".join(parts) if parts else "No matches processed"
     logger.info(f"Page {page}: {summary} (total: {total})")
-    
+
     # Detailed breakdown at debug level
     logger.debug(f"---- Page {page} Detailed Breakdown ----")
     logger.debug(f"  New Person/Data: {page_new}")
@@ -4852,14 +4945,14 @@ def _log_coord_summary(
 ) -> None:
     """Logs the final summary of the entire coord (match gathering) execution."""
     total_matches = total_new + total_updated + total_skipped + total_errors
-    
+
     logger.info("=" * 50)
     logger.info("  📊 MATCH GATHERING SUMMARY")
     logger.info("=" * 50)
     logger.info(f"  Pages Processed:  {total_pages_processed}")
     logger.info(f"  Total Matches:    {total_matches}")
     logger.info("-" * 50)
-    
+
     # Color-coded results
     if total_new > 0:
         logger.info(f"  ✨ New Added:      {total_new:>5}")
@@ -4869,16 +4962,16 @@ def _log_coord_summary(
         logger.info(f"  ✓  Already Current: {total_skipped:>5}")
     if total_errors > 0:
         logger.info(f"  ⚠️  Errors:         {total_errors:>5}")
-    
+
     logger.info("=" * 50)
-    
+
     # Efficiency note
     if total_skipped > 0 and total_new == 0 and total_updated == 0:
         logger.info("  💡 All matches were current - no API calls needed!")
     elif total_skipped > total_new + total_updated:
         pct = (total_skipped / total_matches * 100) if total_matches > 0 else 0
         logger.info(f"  💡 {pct:.1f}% of matches skipped - duplicate detection working!")
-    
+
     logger.info("\n")
 
 

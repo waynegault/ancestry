@@ -830,6 +830,17 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid {env_var} value: {value}")
 
+    def _set_float_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+        """Set a float configuration value from environment variable."""
+        value = os.getenv(env_var)
+        if value:
+            try:
+                if section not in config:
+                    config[section] = {}
+                config[section][key] = float(value)
+            except ValueError:
+                logger.warning(f"Invalid {env_var} value: {value}")
+
     def _load_additional_api_config_from_env(self, config: dict[str, Any]) -> None:
         """Load additional API configuration from environment variables."""
         if "api" not in config:
@@ -846,6 +857,13 @@ class ConfigManager:
         self._set_int_config(config, "api", "max_pages", "MAX_PAGES")
         self._set_int_config(config, "api", "max_concurrency", "MAX_CONCURRENCY")
         self._set_int_config(config, "api", "thread_pool_workers", "THREAD_POOL_WORKERS")
+
+        # Float configurations - Rate limiting
+        self._set_float_config(config, "api", "requests_per_second", "REQUESTS_PER_SECOND")
+        self._set_float_config(config, "api", "initial_delay", "INITIAL_DELAY")
+        self._set_float_config(config, "api", "max_delay", "MAX_DELAY")
+        self._set_float_config(config, "api", "backoff_factor", "BACKOFF_FACTOR")
+        self._set_float_config(config, "api", "decrease_factor", "DECREASE_FACTOR")
 
     def _load_processing_limits_from_env(self, config: dict[str, Any]) -> None:
         """Load processing limit configuration from environment variables."""
@@ -1150,6 +1168,43 @@ def _test_config_error_handling():
         pass  # Expected for some error cases
 
 
+def _test_requests_per_second_loading():
+    """Test REQUESTS_PER_SECOND environment variable loading."""
+    import os
+
+    # Test 1: Default value (no env var set)
+    if "REQUESTS_PER_SECOND" in os.environ:
+        original_value = os.environ["REQUESTS_PER_SECOND"]
+        del os.environ["REQUESTS_PER_SECOND"]
+    else:
+        original_value = None
+
+    manager = ConfigManager()
+    config = manager.load_config()
+    default_rps = config.api.requests_per_second
+    assert default_rps == 0.4, f"Expected default 0.4, got {default_rps}"
+
+    # Test 2: Custom value from environment
+    os.environ["REQUESTS_PER_SECOND"] = "0.3"
+    manager = ConfigManager()
+    config = manager.load_config()
+    custom_rps = config.api.requests_per_second
+    assert custom_rps == 0.3, f"Expected 0.3 from env, got {custom_rps}"
+
+    # Test 3: Invalid value should use default
+    os.environ["REQUESTS_PER_SECOND"] = "invalid"
+    manager = ConfigManager()
+    config = manager.load_config()
+    invalid_rps = config.api.requests_per_second
+    assert invalid_rps == 0.4, f"Expected fallback to 0.4, got {invalid_rps}"
+
+    # Cleanup: restore original value
+    if original_value is not None:
+        os.environ["REQUESTS_PER_SECOND"] = original_value
+    elif "REQUESTS_PER_SECOND" in os.environ:
+        del os.environ["REQUESTS_PER_SECOND"]
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -1179,6 +1234,7 @@ def config_manager_module_tests() -> bool:
     test_environment_integration = _test_environment_integration
     test_config_access_performance = _test_config_access_performance
     test_config_error_handling = _test_config_error_handling
+    test_requests_per_second_loading = _test_requests_per_second_loading
 
     # INITIALIZATION TESTS
     suite.run_test(
@@ -1259,6 +1315,14 @@ def config_manager_module_tests() -> bool:
         "Configuration errors are handled gracefully",
         "Test configuration error handling",
         "Verify system handles errors without crashing"
+    )
+
+    suite.run_test(
+        "REQUESTS_PER_SECOND Loading",
+        test_requests_per_second_loading,
+        "REQUESTS_PER_SECOND loads from environment correctly",
+        "Test REQUESTS_PER_SECOND environment variable loading",
+        "Verify default 0.4, custom values, and invalid value handling"
     )
 
     return suite.finish_suite()

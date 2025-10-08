@@ -266,43 +266,8 @@ class SessionManager:
         }
         self.session_health_monitor['is_alive'].set()
 
-    def _initialize_rate_limiting(self) -> None:
-        """Initialize adaptive rate limiting and batch processing."""
-        try:
-            from adaptive_rate_limiter import AdaptiveRateLimiter, SmartBatchProcessor
-
-            api_config = getattr(config_schema, 'api', None)
-            if api_config:
-                initial_rps = getattr(api_config, 'requests_per_second', 0.5)
-                initial_delay = getattr(api_config, 'initial_delay', 2.0)
-            else:
-                initial_rps = 0.5
-                initial_delay = 2.0
-
-            self.adaptive_rate_limiter = AdaptiveRateLimiter(
-                initial_rps=max(0.7, initial_rps),
-                min_rps=0.35,
-                max_rps=3.0,
-                initial_delay=initial_delay,
-                min_delay=0.3,
-                max_delay=8.0,
-                adaptation_window=30,
-                success_threshold=0.92,
-                rate_limit_threshold=0.05
-            )
-
-            logger.debug("Optimized adaptive rate limiting initialized for Action 6 performance")
-
-            batch_size = getattr(config_schema, 'batch_size', 5)
-            self.smart_batch_processor = SmartBatchProcessor(
-                initial_batch_size=min(batch_size, 10),
-                min_batch_size=1,
-                max_batch_size=20
-            )
-        except ImportError as e:
-            logger.warning(f"Adaptive rate limiting not available: {e}")
-            self.adaptive_rate_limiter = None
-            self.smart_batch_processor = None
+    # NOTE: Removed _initialize_rate_limiting() - AdaptiveRateLimiter was unused
+    # Only DynamicRateLimiter (initialized in __init__) is used in production
 
     def __init__(self, db_path: Optional[str] = None):
         """
@@ -332,10 +297,24 @@ class SessionManager:
         self._initialize_reliable_state()
         self._initialize_health_monitors()
 
-        # Add dynamic rate limiter for AI calls
+        # Add dynamic rate limiter for AI calls with config-based parameters
         try:
             from utils import DynamicRateLimiter
-            self.dynamic_rate_limiter = DynamicRateLimiter()
+            # Use configuration values for adaptive rate limiting
+            self.dynamic_rate_limiter = DynamicRateLimiter(
+                initial_delay=getattr(config_schema.api, 'initial_delay', 1.0),
+                max_delay=getattr(config_schema.api, 'max_delay', 15.0),
+                backoff_factor=getattr(config_schema.api, 'backoff_factor', 1.5),
+                decrease_factor=getattr(config_schema.api, 'decrease_factor', 0.95),
+                token_capacity=getattr(config_schema.api, 'token_bucket_capacity', 10.0),
+                token_fill_rate=getattr(config_schema.api, 'token_bucket_fill_rate', 2.0),
+            )
+            logger.info(
+                f"🚀 DynamicRateLimiter initialized with optimized settings: "
+                f"InitialDelay={config_schema.api.initial_delay}s, "
+                f"MaxDelay={config_schema.api.max_delay}s, "
+                f"Workers={config_schema.api.thread_pool_workers}"
+            )
         except ImportError:
             self.dynamic_rate_limiter = None
 
@@ -496,7 +475,7 @@ class SessionManager:
         if self.adaptive_rate_limiter is None:
             logger.debug("Initializing rate limiting for browser-based action...")
             self._initialize_rate_limiting()
-        
+
         # Reset logged flags when starting browser
         self._reset_logged_flags()
         return self.browser_manager.start_browser(action_name)

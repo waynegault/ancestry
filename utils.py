@@ -42,6 +42,7 @@ import logging
 import random  # For make_newrelic, retry_api, DynamicRateLimiter
 import re
 import sys
+import threading  # For thread-safe rate limiting
 import time
 import uuid  # For make_ube, make_traceparent, make_tracestate
 from dataclasses import dataclass, field
@@ -885,8 +886,12 @@ class DynamicRateLimiter:
         # End of if
         self.tokens = float(self.capacity)
         self.last_refill_time = time.monotonic()
+
+        # Thread safety for parallel API calls
+        self._lock = threading.Lock()
+
         logger.debug(
-            f"RateLimiter Init: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.MAX_DELAY:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
+            f"✓ Thread-safe DynamicRateLimiter initialized: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.MAX_DELAY:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
         )
 
     # End of __init__
@@ -901,90 +906,101 @@ class DynamicRateLimiter:
     # End of _refill_tokens
 
     def wait(self) -> float:
-        self._refill_tokens()
-        # requested_at = time.monotonic() # Less critical now
-        sleep_duration = 0.0
+        """
+        Wait for rate limiting with thread-safe token bucket implementation.
+        Ensures only one thread at a time can check/update rate limiting state.
+        """
+        with self._lock:  # Critical section - serialize access from multiple threads
+            self._refill_tokens()
+            # requested_at = time.monotonic() # Less critical now
+            sleep_duration = 0.0
 
-        if self.tokens >= 1.0:
-            self.tokens -= 1.0
-            # Apply base delay even if token is available
-            jitter_factor = random.uniform(0.8, 1.2)
-            base_sleep = self.current_delay
-            sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
-            sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-            logger.debug(
-                f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
-            )
-        else:
-            # Token bucket empty, wait for a token to generate
-            wait_needed = (1.0 - self.tokens) / self.fill_rate
-            jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
-            sleep_duration = wait_needed + jitter_amount
-            sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
-            sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-            logger.debug(
-                f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
-            )
-        # End of if/else
+            if self.tokens >= 1.0:
+                self.tokens -= 1.0
+                # Apply base delay even if token is available
+                jitter_factor = random.uniform(0.8, 1.2)
+                base_sleep = self.current_delay
+                sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
+                sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
+                logger.debug(
+                    f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
+                )
+            else:
+                # Token bucket empty, wait for a token to generate
+                wait_needed = (1.0 - self.tokens) / self.fill_rate
+                jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
+                sleep_duration = wait_needed + jitter_amount
+                sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
+                sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
+                logger.debug(
+                    f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
+                )
+            # End of if/else
 
-        # Perform the sleep
-        if sleep_duration > 0:
-            time.sleep(sleep_duration)
-        # End of if
+            # Perform the sleep
+            if sleep_duration > 0:
+                time.sleep(sleep_duration)
+            # End of if
 
-        # Refill again *after* sleeping
-        self._refill_tokens()
+            # Refill again *after* sleeping
+            self._refill_tokens()
 
-        return sleep_duration
+            return sleep_duration
 
     # End of wait
 
     def reset_delay(self) -> None:
-        if self.current_delay != self.initial_delay:
-            logger.info(
-                f"Rate limiter base delay reset from {self.current_delay:.2f}s to initial: {self.initial_delay:.2f}s"
-            )
-            self.current_delay = self.initial_delay
-        # End of if
-        self.last_throttled = False
+        """Thread-safe reset of delay to initial value."""
+        with self._lock:
+            if self.current_delay != self.initial_delay:
+                logger.info(
+                    f"Rate limiter base delay reset from {self.current_delay:.2f}s to initial: {self.initial_delay:.2f}s"
+                )
+                self.current_delay = self.initial_delay
+            # End of if
+            self.last_throttled = False
 
     # End of reset_delay
 
     def decrease_delay(self) -> None:
-        if not self.last_throttled and self.current_delay > self.initial_delay:
-            previous_delay = self.current_delay
-            self.current_delay = max(
-                self.current_delay * self.decrease_factor, self.initial_delay
-            )
-            if (
-                abs(previous_delay - self.current_delay) > 0.01
-            ):  # Log only significant changes
-                logger.debug(
-                    f"Decreased base delay component to {self.current_delay:.2f}s"
+        """Thread-safe decrease of delay on successful operations."""
+        with self._lock:
+            if not self.last_throttled and self.current_delay > self.initial_delay:
+                previous_delay = self.current_delay
+                self.current_delay = max(
+                    self.current_delay * self.decrease_factor, self.initial_delay
                 )
+                if (
+                    abs(previous_delay - self.current_delay) > 0.01
+                ):  # Log only significant changes
+                    logger.debug(
+                        f"Decreased base delay component to {self.current_delay:.2f}s"
+                    )
+                # End of if
             # End of if
-        # End of if
-        self.last_throttled = False  # Reset flag after successful operation
+            self.last_throttled = False  # Reset flag after successful operation
 
     # End of decrease_delay
 
     def increase_delay(self) -> None:
-        previous_delay = self.current_delay
-        self.current_delay = min(
-            self.current_delay * self.backoff_factor, self.MAX_DELAY
-        )
-        if (
-            abs(previous_delay - self.current_delay) > 0.01
-        ):  # Log only significant changes
-            logger.info(
-                f"Rate limit feedback received. Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s"
+        """Thread-safe increase of delay on rate limit feedback."""
+        with self._lock:
+            previous_delay = self.current_delay
+            self.current_delay = min(
+                self.current_delay * self.backoff_factor, self.MAX_DELAY
             )
-        else:
-            logger.debug(
-                f"Rate limit feedback received, but delay already at max ({self.MAX_DELAY:.2f}s) or increase too small."
-            )
-        # End of if/else
-        self.last_throttled = True
+            if (
+                abs(previous_delay - self.current_delay) > 0.01
+            ):  # Log only significant changes
+                logger.info(
+                    f"Rate limit feedback received. Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s"
+                )
+            else:
+                logger.debug(
+                    f"Rate limit feedback received, but delay already at max ({self.MAX_DELAY:.2f}s) or increase too small."
+                )
+            # End of if/else
+            self.last_throttled = True
 
     # End of increase_delay
 

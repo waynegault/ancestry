@@ -1425,7 +1425,6 @@ if __name__ == "__main__":
     print("🧪 Running Performance Monitor Comprehensive Tests...")
     success = performance_monitor_module_tests()
     sys.exit(0 if success else 1)
-run_comprehensive_tests = create_standard_test_runner(performance_monitor_module_tests)
 
 
 def _run_basic_tests() -> bool:
