@@ -316,7 +316,7 @@ class SessionManager:
                 token_capacity=getattr(config_schema.api, 'token_bucket_capacity', 10.0),
                 token_fill_rate=getattr(config_schema.api, 'token_bucket_fill_rate', 2.0),
             )
-            logger.info(
+            logger.debug(
                 f"🚀 DynamicRateLimiter initialized with optimized settings: "
                 f"InitialDelay={config_schema.api.initial_delay}s, "
                 f"MaxDelay={config_schema.api.max_delay}s, "
