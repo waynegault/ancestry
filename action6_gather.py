@@ -869,6 +869,88 @@ def _get_session_health_status(session_manager: SessionManager) -> dict[str, Any
         return {'status': 'error', 'needs_refresh': False}
 
 
+def _check_browser_restart_needed(session_manager: SessionManager, current_page: int) -> bool:
+    """
+    Check if browser restart is needed to prevent memory leaks and crashes.
+    
+    Periodically restarts the browser to maintain stability during long-running operations.
+    This prevents Chrome from accumulating memory and eventually crashing.
+    
+    Args:
+        session_manager: Active SessionManager instance
+        current_page: Current page number for logging context
+        
+    Returns:
+        bool: True if restart successful (or not needed), False if restart failed
+        
+    Design:
+        - Restart interval: Every 50 pages (configurable via BROWSER_RESTART_INTERVAL_PAGES)
+        - Default interval: ~1000 matches (~30-40 minutes at 4.5s/match)
+        - Saves and restores cookies
+        - Re-validates session after restart
+    """
+    try:
+        # Get restart interval from environment (default: 50 pages)
+        restart_interval = int(os.getenv('BROWSER_RESTART_INTERVAL_PAGES', '50'))
+        
+        # Check if restart is needed (at the interval, but not on first page)
+        if current_page == 1 or current_page % restart_interval != 0:
+            return True  # Not time to restart yet
+            
+        logger.info(f"🔄 Page {current_page}: Periodic browser restart triggered (every {restart_interval} pages)")
+        
+        # Save cookies before restart
+        logger.debug(f"Saving cookies before browser restart...")
+        if hasattr(session_manager, '_save_cookies'):
+            session_manager._save_cookies()
+        
+        # Perform browser restart
+        logger.info(f"♻️ Restarting Chrome browser to prevent memory buildup...")
+        
+        try:
+            # Close current browser
+            if session_manager.driver:
+                session_manager.driver.quit()
+                logger.debug("Previous browser instance closed")
+                
+            # Wait briefly for cleanup
+            time.sleep(2)
+            
+            # Restart browser through session_manager
+            if hasattr(session_manager, 'start_browser'):
+                session_manager.start_browser()
+                logger.info(f"✅ Browser restarted successfully at page {current_page}")
+            else:
+                logger.error("SessionManager does not have start_browser method")
+                return False
+                
+            # Validate new session
+            if not session_manager.is_sess_valid():
+                logger.error("❌ Browser restart failed - session invalid after restart")
+                return False
+                
+            # Navigate back to match list
+            my_uuid = session_manager.my_uuid
+            target_url = urljoin(
+                config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
+            )
+            
+            logger.debug(f"Navigating to match list after restart: {target_url}")
+            session_manager.driver.get(target_url)
+            time.sleep(3)  # Wait for page load
+            
+            logger.info(f"✅ Page {current_page}: Browser restart complete - ready to continue")
+            return True
+            
+        except Exception as restart_err:
+            logger.error(f"Error during browser restart: {restart_err}", exc_info=True)
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error checking browser restart on page {current_page}: {e}", exc_info=True)
+        return True  # Don't fail the batch on restart check errors
+
+
 # End of session health monitoring
 
 
@@ -2033,7 +2115,13 @@ def _process_single_page_iteration(
     total_pages: int = 0
 ) -> tuple[bool, bool, Optional[list[dict[str, Any]]], int]:
     """Process a single page iteration in the main loop."""
-    # Priority 1.4: Pre-emptive session health check
+    # Priority 1.4a: Check if browser restart needed (memory management)
+    if not _check_browser_restart_needed(session_manager, current_page_num):
+        logger.error(f"❌ Page {current_page_num}: Browser restart failed - aborting batch")
+        _mark_remaining_as_errors(state, progress_bar, current_page_num)
+        return False, True, matches_on_page_for_batch, current_page_num
+    
+    # Priority 1.4b: Pre-emptive session health check
     if not _check_session_health_proactive(session_manager, current_page_num):
         logger.error(f"❌ Page {current_page_num}: Session health check failed - aborting batch")
         _mark_remaining_as_errors(state, progress_bar, current_page_num)
