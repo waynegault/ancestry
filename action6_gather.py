@@ -1155,6 +1155,14 @@ class PerformanceMetrics:
         if not success:
             self.api_errors += 1
 
+    def record_cache_hit(self) -> None:
+        """Record a cache hit."""
+        self.cache_hits += 1
+
+    def record_cache_miss(self) -> None:
+        """Record a cache miss."""
+        self.cache_misses += 1
+
     def record_error(self, error_type: str) -> None:
         """Track error by type for pattern analysis."""
         self.error_types[error_type] = self.error_types.get(error_type, 0) + 1
@@ -1720,6 +1728,9 @@ class APICallCache:
         with self._lock:
             if cache_key not in self._cache:
                 self._stats['misses'] += 1
+                # Also record in global metrics
+                metrics = _get_metrics()
+                metrics.record_cache_miss()
                 return None
 
             # Check TTL
@@ -1730,9 +1741,15 @@ class APICallCache:
                 del self._timestamps[cache_key]
                 self._stats['evictions'] += 1
                 self._stats['misses'] += 1
+                # Record in global metrics
+                metrics = _get_metrics()
+                metrics.record_cache_miss()
                 return None
 
             self._stats['hits'] += 1
+            # Record in global metrics
+            metrics = _get_metrics()
+            metrics.record_cache_hit()
             return self._cache[cache_key]
 
     def set(self, cache_key: str, result: Any) -> None:
@@ -1827,14 +1844,8 @@ def _deduplicate_api_requests(
         else:
             cache_hits += 1
             logger.debug(f"Cache hit for UUID {uuid} - skipping API call")
-            # Priority 3.1: Track cache performance
-            metrics = _get_metrics()
-            metrics.cache_hits += 1
 
     if cache_hits > 0:
-        # Priority 3.1: Also track cache misses
-        metrics = _get_metrics()
-        metrics.cache_misses += len(deduplicated)
         logger.info(f"🎯 API Call Deduplication: {cache_hits} cached, {len(deduplicated)} need fetch")
 
     return deduplicated, matches_to_process_later, cache_hits
@@ -5338,6 +5349,8 @@ def _fetch_match_details_api(
 
     logger.debug(f"_fetch_match_details_api: About to call _api_req for Match Details API, UUID {match_uuid}")
 
+    # Track API call timing
+    api_start_time = time.time()
     details_response = _api_req(
         url=details_url,
         driver=session_manager.driver,
@@ -5347,6 +5360,12 @@ def _fetch_match_details_api(
         use_csrf_token=False,
         api_description="Match Details API (Batch)",
     )
+    api_duration = time.time() - api_start_time
+
+    # Record API call metrics
+    metrics = _get_metrics()
+    success = details_response is not None and isinstance(details_response, dict)
+    metrics.record_api_call(api_duration, success=success)
 
     logger.debug(f"_fetch_match_details_api: _api_req returned, type={type(details_response)}, UUID {match_uuid}")
 
@@ -5419,6 +5438,8 @@ def _fetch_profile_details_api(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     }
 
+    # Track API call timing
+    api_start_time = time.time()
     profile_response = _api_req(
         url=profile_url,
         driver=session_manager.driver,
@@ -5428,6 +5449,12 @@ def _fetch_profile_details_api(
         use_csrf_token=False,
         api_description="Profile Details API (Batch)",
     )
+    api_duration = time.time() - api_start_time
+
+    # Record API call metrics
+    metrics = _get_metrics()
+    success = profile_response is not None and isinstance(profile_response, dict)
+    metrics.record_api_call(api_duration, success=success)
 
     if profile_response and isinstance(profile_response, dict):
         logger.debug(f"Successfully fetched /profiles/details for {tester_profile_id}.")
@@ -6287,6 +6314,8 @@ def _fetch_batch_badge_details(
     logger.debug(f"Fetching /badgedetails API for UUID {match_uuid}...")
 
     try:
+        # Track API call timing
+        api_start_time = time.time()
         badge_response = _api_req(
             url=badge_url,
             driver=session_manager.driver,
@@ -6296,6 +6325,12 @@ def _fetch_batch_badge_details(
             api_description="Badge Details API (Batch)",
             referer_url=badge_referer,
         )
+        api_duration = time.time() - api_start_time
+
+        # Record API call metrics
+        metrics = _get_metrics()
+        success = badge_response is not None
+        metrics.record_api_call(api_duration, success=success)
 
         return _process_badge_response(badge_response, match_uuid)
 

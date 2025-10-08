@@ -88,7 +88,7 @@ def _log_configuration_summary(config: Any) -> None:
     logger.debug(f"BATCH_SIZE: {config.batch_size}")
     logger.debug(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
     logger.debug(f"MAX_INBOX: {config.max_inbox}")
-    logger.info(
+    logger.debug(
         f"⚡ Rate Limiting Config - Workers: {config.api.thread_pool_workers}, "
         f"RPS: {config.api.requests_per_second}, InitialDelay: {config.api.initial_delay}s, "
         f"MaxDelay: {config.api.max_delay}s, Backoff: {config.api.backoff_factor}"
