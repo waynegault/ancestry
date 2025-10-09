@@ -1833,7 +1833,7 @@ def main() -> None:
     finally:
         # Restore normal sleep behavior
         restore_system_sleep(sleep_state)
-        
+
         # Final cleanup: Always close the session manager if it exists
         logger.info("Performing final cleanup...")
 
