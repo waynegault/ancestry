@@ -2667,7 +2667,6 @@ class SessionManager:
 
         return db_ready and browser_ready and api_ready
 
-    @property
     def session_age_seconds(self) -> Optional[float]:
         """Get the age of the current session in seconds."""
         if self.session_start_time:

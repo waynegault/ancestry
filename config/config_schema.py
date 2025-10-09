@@ -417,9 +417,10 @@ class APIConfig:
 
     # Concurrency (controls ThreadPoolExecutor workers in Action 6)
     max_concurrency: int = 2  # Drastically reduced from 8 to 2 to prevent API rate limiting
-    thread_pool_workers: int = 1  # CRITICAL: Set to 1 for zero 429 errors (fully sequential processing)
+    # Based on working version c3b5535 (Aug 12, 2025) - 3 workers proven reliable
+    thread_pool_workers: int = 3  # OPTIMIZED: 3 workers at 0.4 RPS = 0.13 RPS per worker (safe)
     # Note: Can be overridden via THREAD_POOL_WORKERS in .env
-    # Higher values (2-3) may improve speed but risk rate limit violations
+    # Value of 3 proven reliable for sustained batch processing in working version
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit

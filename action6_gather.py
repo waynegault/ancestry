@@ -108,19 +108,22 @@ from utils import (
 
 # --- Constants ---
 MATCHES_PER_PAGE: int = 20  # Default matches per page (adjust based on API response)
-CRITICAL_API_FAILURE_THRESHOLD: int = (
-    50  # Threshold for _fetch_combined_details failures (increased to 50 for better tolerance of transient issues)
-)
+# CRITICAL: Reduced from 50 back to 6 based on working version c3b5535 (Aug 12, 2025)
+# Higher threshold (50) was causing cascade failures - system kept retrying dead sessions
+# Lower threshold (6) fails fast when session dies, preventing wasted retry attempts
+CRITICAL_API_FAILURE_THRESHOLD: int = 6  # Threshold for _fetch_combined_details failures - fail fast on session death
 
 # Configurable settings from config_schema
 DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
 
 # CRITICAL RATE LIMIT FIX: Thread pool workers now configured via .env THREAD_POOL_WORKERS
 # Loaded from config_schema.api.thread_pool_workers
-# Recommended: 1 for ultra-conservative (fully sequential, zero 429 errors)
-# At 0.4 RPS rate, 1 worker = fully sequential processing = guaranteed no rate limit violations
-# Multiple API types (Match Details, Badge Details, etc.) share the rate limiter
-# If experiencing 429 errors, set THREAD_POOL_WORKERS=1 in .env file
+# Based on working version c3b5535 (Aug 12, 2025):
+#   - THREAD_POOL_WORKERS=3 proven reliable for sustained batch processing
+#   - CRITICAL_API_FAILURE_THRESHOLD=6 (conservative - fail fast on session issues)
+#   - REQUESTS_PER_SECOND=0.4 (battle-tested for zero 429 errors)
+# Recommended: 3 workers at 0.4 RPS = 0.13 RPS per worker (safe for parallel processing)
+# If experiencing 429 errors, reduce to THREAD_POOL_WORKERS=1 in .env file
 
 
 # --- Custom Exceptions ---
@@ -892,30 +895,30 @@ def _check_browser_restart_needed(session_manager: SessionManager, current_page:
     try:
         # Get restart interval from environment (default: 50 pages)
         restart_interval = int(os.getenv('BROWSER_RESTART_INTERVAL_PAGES', '50'))
-        
+
         # Check if restart is needed (at the interval, but not on first page)
         if current_page == 1 or current_page % restart_interval != 0:
             return True  # Not time to restart yet
-            
+
         logger.info(f"🔄 Page {current_page}: Periodic browser restart triggered (every {restart_interval} pages)")
-        
+
         # Save cookies before restart
-        logger.debug(f"Saving cookies before browser restart...")
+        logger.debug("Saving cookies before browser restart...")
         if hasattr(session_manager, '_save_cookies'):
             session_manager._save_cookies()
-        
+
         # Perform browser restart
-        logger.info(f"♻️ Restarting Chrome browser to prevent memory buildup...")
-        
+        logger.info("♻️ Restarting Chrome browser to prevent memory buildup...")
+
         try:
             # Close current browser
             if session_manager.driver:
                 session_manager.driver.quit()
                 logger.debug("Previous browser instance closed")
-                
+
             # Wait briefly for cleanup
             time.sleep(2)
-            
+
             # Restart browser through session_manager
             if hasattr(session_manager, 'start_browser'):
                 session_manager.start_browser()
@@ -923,29 +926,29 @@ def _check_browser_restart_needed(session_manager: SessionManager, current_page:
             else:
                 logger.error("SessionManager does not have start_browser method")
                 return False
-                
+
             # Validate new session
             if not session_manager.is_sess_valid():
                 logger.error("❌ Browser restart failed - session invalid after restart")
                 return False
-                
+
             # Navigate back to match list
             my_uuid = session_manager.my_uuid
             target_url = urljoin(
                 config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}"
             )
-            
+
             logger.debug(f"Navigating to match list after restart: {target_url}")
             session_manager.driver.get(target_url)
             time.sleep(3)  # Wait for page load
-            
+
             logger.info(f"✅ Page {current_page}: Browser restart complete - ready to continue")
             return True
-            
+
         except Exception as restart_err:
             logger.error(f"Error during browser restart: {restart_err}", exc_info=True)
             return False
-            
+
     except Exception as e:
         logger.error(f"Error checking browser restart on page {current_page}: {e}", exc_info=True)
         return True  # Don't fail the batch on restart check errors
@@ -1105,14 +1108,14 @@ def _clear_checkpoint() -> bool:
 
 def _should_resume_from_checkpoint(
     checkpoint: Optional[dict[str, Any]],
-    requested_start_page: int
+    requested_start_page: Optional[int]
 ) -> tuple[bool, int]:
     """
     Determine if we should resume from checkpoint.
 
     Args:
         checkpoint: Loaded checkpoint data (or None)
-        requested_start_page: Page number requested by user
+        requested_start_page: Page number requested by user (None = auto-resume)
 
     Returns:
         tuple: (should_resume, start_page)
@@ -1120,23 +1123,25 @@ def _should_resume_from_checkpoint(
                - start_page: Page number to start from
 
     Design:
-        - User-specified start page takes precedence
-        - Only resume if checkpoint exists and user didn't specify start
-        - Resume from next page after checkpoint (checkpoint page is complete)
+        - User-specified start page ALWAYS takes precedence over checkpoint
+        - None means "auto-resume from checkpoint if available"
+        - Explicit page numbers (including 1) override checkpoint
     """
+    # No checkpoint available - use requested page or default to 1
     if checkpoint is None:
+        return False, requested_start_page if requested_start_page is not None else 1
+
+    # User explicitly specified a start page - honor it and ignore checkpoint
+    if requested_start_page is not None:
+        logger.info(f"🎯 User specified start page {requested_start_page}, ignoring checkpoint")
+        logger.info(f"   (Checkpoint was at page {checkpoint['current_page']}, but user override takes precedence)")
         return False, requested_start_page
 
-    # If user specified a start page other than 1, honor it
-    if requested_start_page != 1:
-        logger.info(f"User specified start page {requested_start_page}, ignoring checkpoint")
-        return False, requested_start_page
-
-    # Resume from checkpoint
+    # User wants to auto-resume - use checkpoint
     checkpoint_page = checkpoint['current_page']
     resume_page = checkpoint_page + 1  # Resume from next page (checkpoint page is complete)
 
-    logger.info(f"🔄 Resuming from checkpoint: starting at page {resume_page}")
+    logger.info(f"🔄 Auto-resuming from checkpoint: starting at page {resume_page}")
     logger.info(f"   Previous progress: {checkpoint['counters']['total_pages_processed']} pages, "
                f"{checkpoint['counters']['total_new']} new, "
                f"{checkpoint['counters']['total_updated']} updated")
@@ -2120,7 +2125,7 @@ def _process_single_page_iteration(
         logger.error(f"❌ Page {current_page_num}: Browser restart failed - aborting batch")
         _mark_remaining_as_errors(state, progress_bar, current_page_num)
         return False, True, matches_on_page_for_batch, current_page_num
-    
+
     # Priority 1.4b: Pre-emptive session health check
     if not _check_session_health_proactive(session_manager, current_page_num):
         logger.error(f"❌ Page {current_page_num}: Session health check failed - aborting batch")
@@ -2330,11 +2335,16 @@ def _execute_main_gathering(
 
 
 def coord(  # type: ignore
-    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
+    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: Optional[int] = None
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
     Handles pagination, fetches match data, compares with database, and processes.
+    
+    Args:
+        session_manager: Active SessionManager instance
+        _config_schema_arg: Configuration schema
+        start: Start page number (None = auto-resume from checkpoint, explicit number = start from that page)
     """
     # Step 1: Validate Session State
     _validate_session_state(session_manager)
@@ -2346,7 +2356,7 @@ def coord(  # type: ignore
 
     # Step 2: Initialize state and resources
     state = _initialize_gather_state()
-    requested_start_page = _validate_start_page(start)
+    requested_start_page = _validate_start_page(start) if start is not None else None
 
     # Priority 2.3: Clear API call cache
     _clear_api_cache()
@@ -7697,8 +7707,8 @@ def _test_real_time_monitoring() -> None:
     monitor.clear_alerts()
     _reset_metrics()
     metrics = _get_metrics()
-    # Simulate slow API calls
-    metrics.api_call_times = [6.0, 7.0, 5.5, 6.5, 8.0]  # All above critical threshold (5s)
+    # Simulate slow API calls (use higher values to exceed critical threshold of 12.0s)
+    metrics.api_call_times = [13.0, 14.0, 12.5, 15.0, 13.5]  # All above critical threshold (12s)
     metrics.api_calls_made = 5
 
     # Force check by resetting last check time
@@ -7708,15 +7718,14 @@ def _test_real_time_monitoring() -> None:
     perf_alerts = [a for a in alerts if a['category'] == 'api_performance']
     assert len(perf_alerts) > 0, "Should generate alerts for slow API calls"
     print(f"      Alert generated: {perf_alerts[0]['message']}")
-    print("   ✅ API performance alerting validated")
-
-    # Test page processing alerts
+    print("   ✅ API performance alerting validated")    # Test page processing alerts
     print("   • Testing page processing alerts...")
     monitor.clear_alerts()
     _reset_metrics()
     metrics = _get_metrics()
-    # Simulate slow page processing
-    metrics.page_times = [35.0, 32.0, 40.0]  # All above critical threshold (30s)
+    # Simulate slow page processing (adjusted for realistic thresholds: critical=200s)
+    # Real-world: 20 matches/page at 4-6s each = 80-120s normal, 200s+ is critical
+    metrics.page_times = [210.0, 205.0, 215.0]  # All above critical threshold (200s)
     metrics.api_calls_made = 10
 
     monitor._last_check_time = 0
@@ -7751,12 +7760,12 @@ def _test_real_time_monitoring() -> None:
     monitor.clear_alerts()
     _reset_metrics()
     metrics = _get_metrics()
-    # Generate mix of alerts
+    # Generate mix of alerts (adjusted for realistic thresholds)
     metrics.api_calls_made = 100
-    metrics.api_errors = 15  # Critical
-    metrics.api_call_times = [6.0, 7.0]  # Critical
+    metrics.api_errors = 15  # Critical (15% > 10% threshold)
+    metrics.api_call_times = [13.0, 14.0, 12.5]  # Critical (avg 13.17s > 12s threshold)
     metrics.cache_hits = 2
-    metrics.cache_misses = 100  # Info
+    metrics.cache_misses = 100  # Info (2% hit rate < 5% threshold)
 
     monitor._last_check_time = 0
     monitor.check_metrics(metrics, current_page=50, total_pages=100)
@@ -7766,8 +7775,8 @@ def _test_real_time_monitoring() -> None:
     info_only = monitor.get_alerts(level='INFO')
 
     assert len(all_alerts) >= 3, "Should have multiple alerts"
-    assert len(critical_only) >= 2, "Should have multiple critical alerts"
-    assert len(info_only) >= 1, "Should have info alerts"
+    assert len(critical_only) >= 2, "Should have multiple critical alerts (error_rate + api_performance)"
+    assert len(info_only) >= 1, "Should have info alerts (cache_performance)"
     print(f"      Filtered alerts: {len(all_alerts)} total, {len(critical_only)} critical, {len(info_only)} info")
     print("   ✅ Alert filtering validated")
 

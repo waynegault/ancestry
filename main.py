@@ -1667,16 +1667,20 @@ def _handle_database_actions(choice: str, session_manager: Any) -> bool:
 def _handle_action6_with_start_page(choice: str, session_manager: Any, config: Any) -> bool:
     """Handle Action 6 (DNA match gathering) with optional start page."""
     parts = choice.split()
-    start_val = 1
+    # Use None to indicate "auto-resume from checkpoint if available"
+    # Only use explicit page number when user provides it
+    start_val = None
     if len(parts) > 1:
         try:
             start_arg = int(parts[1])
             start_val = start_arg if start_arg > 0 else 1
+            print(f"Starting DNA match gathering from page {start_val}...")
         except ValueError:
-            logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
-            print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
+            logger.warning(f"Invalid start page '{parts[1]}'. Using auto-resume.")
+            print(f"Invalid start page '{parts[1]}'. Will auto-resume from checkpoint if available.")
+    else:
+        print("Starting DNA match gathering (will auto-resume from checkpoint if available)...")
 
-    print(f"Starting DNA match gathering from page {start_val}...")
     exec_actn(coord_action, session_manager, "6", False, config, start_val)
     return True
 
