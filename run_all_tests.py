@@ -61,11 +61,12 @@ from typing import Any, Optional
 
 try:
     import psutil
-
-    PSUTIL_AVAILABLE = True
+    _psutil_available = True
 except ImportError:
     psutil = None  # type: ignore[assignment]
-    PSUTIL_AVAILABLE = False
+    _psutil_available = False
+
+PSUTIL_AVAILABLE = _psutil_available
 
 # Import code quality checker
 from code_quality_checker import CodeQualityChecker, QualityMetrics
@@ -191,7 +192,7 @@ class PerformanceMonitor:
     """Monitor system performance during test execution."""
 
     def __init__(self) -> None:
-        self.process = psutil.Process() if PSUTIL_AVAILABLE else None
+        self.process = psutil.Process() if PSUTIL_AVAILABLE and psutil else None
         self.monitoring = False
         self.metrics = []
         self.monitor_thread = None
@@ -1079,7 +1080,7 @@ def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_
     total_test_count = 0
 
     # Determine optimal number of workers (don't exceed CPU count)
-    cpu_count = (psutil.cpu_count() if PSUTIL_AVAILABLE else os.cpu_count()) or 1
+    cpu_count = (psutil.cpu_count() if PSUTIL_AVAILABLE and psutil else os.cpu_count()) or 1
     max_workers = min(len(modules_with_descriptions), cpu_count)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

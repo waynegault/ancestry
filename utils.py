@@ -3742,9 +3742,9 @@ def prevent_system_sleep() -> Optional[Any]:
         ```
     """
     import platform
-    
+
     system = platform.system()
-    
+
     if system == "Windows":
         try:
             import ctypes
@@ -3752,7 +3752,7 @@ def prevent_system_sleep() -> Optional[Any]:
             ES_CONTINUOUS = 0x80000000
             ES_SYSTEM_REQUIRED = 0x00000001
             ES_DISPLAY_REQUIRED = 0x00000002
-            
+
             # Prevent system sleep and display sleep
             ctypes.windll.kernel32.SetThreadExecutionState(
                 ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
@@ -3762,7 +3762,7 @@ def prevent_system_sleep() -> Optional[Any]:
         except Exception as e:
             logger.warning(f"Could not prevent sleep on Windows: {e}")
             return None
-            
+
     elif system == "Darwin":  # macOS
         try:
             import subprocess
@@ -3773,11 +3773,11 @@ def prevent_system_sleep() -> Optional[Any]:
         except Exception as e:
             logger.warning(f"Could not prevent sleep on macOS: {e}")
             return None
-            
+
     elif system == "Linux":
         logger.info("💤 Sleep prevention not implemented for Linux - please disable sleep manually")
         return None
-        
+
     else:
         logger.warning(f"💤 Unknown platform {system} - cannot prevent sleep")
         return None
@@ -3801,9 +3801,9 @@ def restore_system_sleep(previous_state: Any) -> None:
         ```
     """
     import platform
-    
+
     system = platform.system()
-    
+
     if system == "Windows":
         try:
             if previous_state:
@@ -3814,7 +3814,7 @@ def restore_system_sleep(previous_state: Any) -> None:
                 logger.info("💤 Sleep prevention disabled - normal power management restored")
         except Exception as e:
             logger.warning(f"Could not restore sleep settings on Windows: {e}")
-            
+
     elif system == "Darwin" and previous_state:  # macOS
         try:
             previous_state.terminate()
@@ -4139,22 +4139,22 @@ if __name__ == "__main__":
     def test_sleep_prevention():
         """Test cross-platform sleep prevention utilities."""
         import platform
-        
+
         print("🔍 Testing sleep prevention utilities:")
-        
+
         # Test that functions exist and are callable
         assert callable(prevent_system_sleep), "prevent_system_sleep should be callable"
         assert callable(restore_system_sleep), "restore_system_sleep should be callable"
         print("   ✅ Functions are callable")
-        
+
         # Test platform detection
         system = platform.system()
         print(f"   ℹ️  Detected platform: {system}")
-        
+
         # Test enable/disable cycle
         print("   🧪 Testing enable...")
         sleep_state = prevent_system_sleep()
-        
+
         if system == "Linux":
             # Linux returns None (manual disable required)
             assert sleep_state is None, "Linux should return None"
@@ -4163,7 +4163,7 @@ if __name__ == "__main__":
             # Windows/macOS should return a state object
             assert sleep_state is not None, f"{system} should return a state object"
             print(f"   ✅ {system} returned state: {type(sleep_state).__name__}")
-        
+
         # Test restore (should not raise exceptions)
         print("   🧪 Testing restore...")
         try:
@@ -4171,7 +4171,7 @@ if __name__ == "__main__":
             print("   ✅ Restore completed without errors")
         except Exception as e:
             raise AssertionError(f"Restore failed: {e}")
-        
+
         # Test with None state (should handle gracefully)
         print("   🧪 Testing restore with None state...")
         try:
