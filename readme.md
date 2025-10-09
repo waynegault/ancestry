@@ -880,6 +880,116 @@ Evaluates task specificity (0-100):
 
 ## Performance Optimization
 
+### Action 6 Performance (Updated October 9, 2025)
+
+**Processing Model:**
+- Action 6 processes matches **PER PAGE** (20 matches per page)
+- No `BATCH_SIZE` configuration needed
+- Each page is fetched, processed, and saved atomically
+- Progress bar shows individual match count (0/16,040)
+- Speed metric shows matches per minute (not pages)
+
+**Performance Configuration:**
+```env
+THREAD_POOL_WORKERS=3      # Parallel API fetching (3 recommended)
+REQUESTS_PER_SECOND=1.2    # Target API request rate (updated from 0.4)
+```
+
+**Performance Comparison:**
+
+| RPS Setting | Time per Match | Total Time (16K matches) | Notes |
+|-------------|---------------|-------------------------|--------|
+| 0.4 RPS | 6.0s | 26.7 hours | Too conservative |
+| 1.2 RPS | 2.5-3.0s | 12-15 hours | ✅ **Recommended** |
+| 1.6 RPS | 2.0-2.5s | 10-12 hours | Aggressive, monitor for 429s |
+
+**Scaling Formula:**
+```
+Total RPS = THREAD_POOL_WORKERS × Per-Worker RPS
+Example: 3 workers @ 1.2 RPS total = 0.4 RPS per worker
+```
+
+**Monitoring:**
+```powershell
+# Watch for 429 rate limit errors
+Get-Content "Logs\app.log" -Wait | Select-String "429"
+
+# Check performance metrics
+Get-Content "Logs\app.log" -Wait | Select-String "Speed="
+```
+
+**If You See 429 Errors:**
+1. Stop immediately (Ctrl+C)
+2. Reduce `REQUESTS_PER_SECOND` by 50% (e.g., 1.2 → 0.6)
+3. Wait 5 minutes for rate limit to reset
+4. Restart (will auto-resume from database)
+
+### Sleep Prevention
+
+**System Sleep Prevention** (`utils.py`):
+- Prevents laptop sleep during long-running operations
+- Activated when `main.py` starts (protects all actions)
+- Cross-platform: Windows, macOS, Linux
+
+**Windows:**
+```python
+# Uses SetThreadExecutionState API
+ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+```
+
+**macOS:**
+```bash
+# Uses caffeinate subprocess
+caffeinate -d  # Prevents display sleep
+```
+
+**Linux:**
+```
+# Manual disable required
+# Displays warning message
+```
+
+**Usage:**
+```python
+from utils import prevent_system_sleep, restore_system_sleep
+
+sleep_state = prevent_system_sleep()
+try:
+    # Long-running operation
+    process_data()
+finally:
+    restore_system_sleep(sleep_state)
+```
+
+**Logging:**
+```
+💤 Sleep prevention enabled (Windows) - system will stay awake
+💤 Sleep prevention disabled - normal power management restored
+```
+
+### Auto-Resume from Database
+
+**Smart Resume Logic:**
+1. User specifies page number → Start from that page (highest priority)
+2. No page specified → Check database for last saved record
+3. Calculate last complete page: `count ÷ 20`
+4. Resume from next page (e.g., 2,340 records = page 117, resume at 118)
+5. No database records → Start from page 1 (default)
+
+**Example:**
+```python
+# User starts Action 6 without page number
+# Database has 2,340 records
+# Last complete page: 2,340 ÷ 20 = 117
+# Resumes from page 118 automatically
+```
+
+**Benefits:**
+- No checkpoint files needed
+- Database is source of truth
+- Survives crashes/power loss
+- Works after database reset
+
 ### Caching Strategy
 
 1. **GEDCOM Cache** (`gedcom_cache.py`):
@@ -902,21 +1012,6 @@ Evaluates task specificity (0-100):
    - Metrics and statistics
    - Rate limiter state
    - Dashboard data
-
-### Smart Batching
-
-Action 6 uses adaptive batching:
-
-- Optimizes batch size for target cycle time
-- Balances throughput vs. latency
-- Adapts to system performance
-- Default: 20 matches per batch
-
-**Configuration**:
-```env
-BATCH_SIZE=5  # For testing/debugging
-BATCH_SIZE=20  # For production (recommended)
-```
 
 ---
 

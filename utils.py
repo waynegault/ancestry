@@ -3719,6 +3719,114 @@ def _check_for_unavailability(
 
 # End of _check_for_unavailability
 
+
+# ------------------------------------------------------------------------------
+# SLEEP PREVENTION - Keep system awake during long-running operations
+# ------------------------------------------------------------------------------
+def prevent_system_sleep() -> Optional[Any]:
+    """
+    Prevent system sleep during long-running operations.
+    Cross-platform: Windows, macOS, Linux.
+    
+    Returns:
+        Previous state that should be restored when done, or None if not applicable
+        
+    Example:
+        ```python
+        sleep_state = prevent_system_sleep()
+        try:
+            # Long-running operation
+            process_data()
+        finally:
+            restore_system_sleep(sleep_state)
+        ```
+    """
+    import platform
+    
+    system = platform.system()
+    
+    if system == "Windows":
+        try:
+            import ctypes
+            # Windows constants
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            ES_DISPLAY_REQUIRED = 0x00000002
+            
+            # Prevent system sleep and display sleep
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+            )
+            logger.info("💤 Sleep prevention enabled (Windows) - system will stay awake")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not prevent sleep on Windows: {e}")
+            return None
+            
+    elif system == "Darwin":  # macOS
+        try:
+            import subprocess
+            # Use caffeinate to prevent sleep
+            process = subprocess.Popen(['caffeinate', '-d'])
+            logger.info("💤 Sleep prevention enabled (macOS) - caffeinate running")
+            return process
+        except Exception as e:
+            logger.warning(f"Could not prevent sleep on macOS: {e}")
+            return None
+            
+    elif system == "Linux":
+        logger.info("💤 Sleep prevention not implemented for Linux - please disable sleep manually")
+        return None
+        
+    else:
+        logger.warning(f"💤 Unknown platform {system} - cannot prevent sleep")
+        return None
+
+
+def restore_system_sleep(previous_state: Any) -> None:
+    """
+    Restore normal sleep behavior.
+    
+    Args:
+        previous_state: The state returned by prevent_system_sleep()
+        
+    Example:
+        ```python
+        sleep_state = prevent_system_sleep()
+        try:
+            # Long-running operation
+            process_data()
+        finally:
+            restore_system_sleep(sleep_state)
+        ```
+    """
+    import platform
+    
+    system = platform.system()
+    
+    if system == "Windows":
+        try:
+            if previous_state:
+                import ctypes
+                ES_CONTINUOUS = 0x80000000
+                # Reset to normal
+                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+                logger.info("💤 Sleep prevention disabled - normal power management restored")
+        except Exception as e:
+            logger.warning(f"Could not restore sleep settings on Windows: {e}")
+            
+    elif system == "Darwin" and previous_state:  # macOS
+        try:
+            previous_state.terminate()
+            logger.info("💤 Sleep prevention disabled (macOS) - caffeinate terminated")
+        except Exception as e:
+            logger.warning(f"Could not restore sleep settings on macOS: {e}")
+    # Linux and other platforms don't need cleanup
+
+
+# End of sleep prevention utilities
+
+
 def main() -> None:
     """
     Standalone test suite for utils.py - Refactored to use modular test framework.
@@ -4028,6 +4136,50 @@ if __name__ == "__main__":
             elapsed < 1.0
         ), f"Performance test should complete quickly, took {elapsed:.3f}s"
 
+    def test_sleep_prevention():
+        """Test cross-platform sleep prevention utilities."""
+        import platform
+        
+        print("🔍 Testing sleep prevention utilities:")
+        
+        # Test that functions exist and are callable
+        assert callable(prevent_system_sleep), "prevent_system_sleep should be callable"
+        assert callable(restore_system_sleep), "restore_system_sleep should be callable"
+        print("   ✅ Functions are callable")
+        
+        # Test platform detection
+        system = platform.system()
+        print(f"   ℹ️  Detected platform: {system}")
+        
+        # Test enable/disable cycle
+        print("   🧪 Testing enable...")
+        sleep_state = prevent_system_sleep()
+        
+        if system == "Linux":
+            # Linux returns None (manual disable required)
+            assert sleep_state is None, "Linux should return None"
+            print("   ✅ Linux correctly returned None (manual disable required)")
+        elif system in ("Windows", "Darwin"):
+            # Windows/macOS should return a state object
+            assert sleep_state is not None, f"{system} should return a state object"
+            print(f"   ✅ {system} returned state: {type(sleep_state).__name__}")
+        
+        # Test restore (should not raise exceptions)
+        print("   🧪 Testing restore...")
+        try:
+            restore_system_sleep(sleep_state)
+            print("   ✅ Restore completed without errors")
+        except Exception as e:
+            raise AssertionError(f"Restore failed: {e}")
+        
+        # Test with None state (should handle gracefully)
+        print("   🧪 Testing restore with None state...")
+        try:
+            restore_system_sleep(None)
+            print("   ✅ Restore with None handled gracefully")
+        except Exception as e:
+            raise AssertionError(f"Restore with None failed: {e}")
+
     def test_check_for_unavailability():
         """Test unavailability detection logic (Priority 2)."""
         from unittest.mock import MagicMock, patch
@@ -4156,112 +4308,16 @@ if __name__ == "__main__":
             "Utility functions complete processing within reasonable time limits",
         )
 
+        suite.run_test(
+            "Sleep prevention utilities",
+            test_sleep_prevention,
+            "Test cross-platform sleep prevention and restoration functions",
+            "Sleep prevention keeps system awake during long-running operations",
+            "Sleep prevention utilities work correctly on Windows, macOS, and Linux",
+        )
+
     # Generate summary report
     suite.finish_suite()
-
-
-# ------------------------------------------------------------------------------
-# SLEEP PREVENTION - Keep system awake during long-running operations
-# ------------------------------------------------------------------------------
-def prevent_system_sleep() -> Optional[Any]:
-    """
-    Prevent system sleep during long-running operations.
-    Cross-platform: Windows, macOS, Linux.
-    
-    Returns:
-        Previous state that should be restored when done, or None if not applicable
-        
-    Example:
-        ```python
-        sleep_state = prevent_system_sleep()
-        try:
-            # Long-running operation
-            process_data()
-        finally:
-            restore_system_sleep(sleep_state)
-        ```
-    """
-    import platform
-    
-    system = platform.system()
-    
-    if system == "Windows":
-        try:
-            import ctypes
-            # Windows constants
-            ES_CONTINUOUS = 0x80000000
-            ES_SYSTEM_REQUIRED = 0x00000001
-            ES_DISPLAY_REQUIRED = 0x00000002
-            
-            # Prevent system sleep and display sleep
-            ctypes.windll.kernel32.SetThreadExecutionState(
-                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
-            )
-            logger.info("💤 Sleep prevention enabled (Windows) - system will stay awake")
-            return True
-        except Exception as e:
-            logger.warning(f"Could not prevent sleep on Windows: {e}")
-            return None
-            
-    elif system == "Darwin":  # macOS
-        try:
-            import subprocess
-            # Use caffeinate to prevent sleep
-            process = subprocess.Popen(['caffeinate', '-d'])
-            logger.info("💤 Sleep prevention enabled (macOS) - caffeinate running")
-            return process
-        except Exception as e:
-            logger.warning(f"Could not prevent sleep on macOS: {e}")
-            return None
-            
-    elif system == "Linux":
-        logger.info("💤 Sleep prevention not implemented for Linux - please disable sleep manually")
-        return None
-        
-    else:
-        logger.warning(f"💤 Unknown platform {system} - cannot prevent sleep")
-        return None
-
-
-def restore_system_sleep(previous_state: Any) -> None:
-    """
-    Restore normal sleep behavior.
-    
-    Args:
-        previous_state: The state returned by prevent_system_sleep()
-        
-    Example:
-        ```python
-        sleep_state = prevent_system_sleep()
-        try:
-            # Long-running operation
-            process_data()
-        finally:
-            restore_system_sleep(sleep_state)
-        ```
-    """
-    import platform
-    
-    system = platform.system()
-    
-    if system == "Windows":
-        try:
-            if previous_state:
-                import ctypes
-                ES_CONTINUOUS = 0x80000000
-                # Reset to normal
-                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
-                logger.info("💤 Sleep prevention disabled - normal power management restored")
-        except Exception as e:
-            logger.warning(f"Could not restore sleep settings on Windows: {e}")
-            
-    elif system == "Darwin" and previous_state:  # macOS
-        try:
-            previous_state.terminate()
-            logger.info("💤 Sleep prevention disabled (macOS) - caffeinate terminated")
-        except Exception as e:
-            logger.warning(f"Could not restore sleep settings on macOS: {e}")
-    # Linux and other platforms don't need cleanup
 
 
 # End of utils.py
