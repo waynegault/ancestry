@@ -868,15 +868,22 @@ class DynamicRateLimiter:
         self.current_delay = self.initial_delay
         self.last_throttled = False
         # Token Bucket parameters
+        # CRITICAL FIX: Restore working version behavior (c3b5535)
+        # Token bucket capacity and fill_rate MUST use config values
+        # fill_rate = requests_per_second (controls actual rate limiting)
+        api = getattr(cfg, 'api', None)
         self.capacity = float(
             token_capacity
             if token_capacity is not None
-            else getattr(cfg, "TOKEN_BUCKET_CAPACITY", 10.0)
+            else (getattr(api, "token_bucket_capacity", 10.0) if api else 10.0)
         )
+        # CRITICAL: fill_rate MUST use requests_per_second for proper rate limiting!
+        # Working version (c3b5535) used: getattr(api, "requests_per_second", 0.7)
+        # Current .env has REQUESTS_PER_SECOND=0.4 (battle-tested value)
         self.fill_rate = float(
             token_fill_rate
             if token_fill_rate is not None
-            else getattr(cfg, "TOKEN_BUCKET_FILL_RATE", 2.0)
+            else (getattr(api, "requests_per_second", 0.4) if api else 0.4)
         )
         if self.fill_rate <= 0:
             logger.warning(
