@@ -4159,4 +4159,109 @@ if __name__ == "__main__":
     # Generate summary report
     suite.finish_suite()
 
+
+# ------------------------------------------------------------------------------
+# SLEEP PREVENTION - Keep system awake during long-running operations
+# ------------------------------------------------------------------------------
+def prevent_system_sleep() -> Optional[Any]:
+    """
+    Prevent system sleep during long-running operations.
+    Cross-platform: Windows, macOS, Linux.
+    
+    Returns:
+        Previous state that should be restored when done, or None if not applicable
+        
+    Example:
+        ```python
+        sleep_state = prevent_system_sleep()
+        try:
+            # Long-running operation
+            process_data()
+        finally:
+            restore_system_sleep(sleep_state)
+        ```
+    """
+    import platform
+    
+    system = platform.system()
+    
+    if system == "Windows":
+        try:
+            import ctypes
+            # Windows constants
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            ES_DISPLAY_REQUIRED = 0x00000002
+            
+            # Prevent system sleep and display sleep
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+            )
+            logger.info("💤 Sleep prevention enabled (Windows) - system will stay awake")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not prevent sleep on Windows: {e}")
+            return None
+            
+    elif system == "Darwin":  # macOS
+        try:
+            import subprocess
+            # Use caffeinate to prevent sleep
+            process = subprocess.Popen(['caffeinate', '-d'])
+            logger.info("💤 Sleep prevention enabled (macOS) - caffeinate running")
+            return process
+        except Exception as e:
+            logger.warning(f"Could not prevent sleep on macOS: {e}")
+            return None
+            
+    elif system == "Linux":
+        logger.info("💤 Sleep prevention not implemented for Linux - please disable sleep manually")
+        return None
+        
+    else:
+        logger.warning(f"💤 Unknown platform {system} - cannot prevent sleep")
+        return None
+
+
+def restore_system_sleep(previous_state: Any) -> None:
+    """
+    Restore normal sleep behavior.
+    
+    Args:
+        previous_state: The state returned by prevent_system_sleep()
+        
+    Example:
+        ```python
+        sleep_state = prevent_system_sleep()
+        try:
+            # Long-running operation
+            process_data()
+        finally:
+            restore_system_sleep(sleep_state)
+        ```
+    """
+    import platform
+    
+    system = platform.system()
+    
+    if system == "Windows":
+        try:
+            if previous_state:
+                import ctypes
+                ES_CONTINUOUS = 0x80000000
+                # Reset to normal
+                ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+                logger.info("💤 Sleep prevention disabled - normal power management restored")
+        except Exception as e:
+            logger.warning(f"Could not restore sleep settings on Windows: {e}")
+            
+    elif system == "Darwin" and previous_state:  # macOS
+        try:
+            previous_state.terminate()
+            logger.info("💤 Sleep prevention disabled (macOS) - caffeinate terminated")
+        except Exception as e:
+            logger.warning(f"Could not restore sleep settings on macOS: {e}")
+    # Linux and other platforms don't need cleanup
+
+
 # End of utils.py
