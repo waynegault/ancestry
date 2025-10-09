@@ -1791,6 +1791,10 @@ def main() -> None:
     # Ensure terminal window has focus on Windows
     _set_windows_console_focus()
 
+    # Prevent system sleep during entire session
+    from utils import prevent_system_sleep, restore_system_sleep
+    sleep_state = prevent_system_sleep()
+
     try:
         print("")
         # --- Logging Setup ---
@@ -1827,6 +1831,9 @@ def main() -> None:
     except Exception as e:
         logger.critical(f"Critical error in main: {e}", exc_info=True)
     finally:
+        # Restore normal sleep behavior
+        restore_system_sleep(sleep_state)
+        
         # Final cleanup: Always close the session manager if it exists
         logger.info("Performing final cleanup...")
 
