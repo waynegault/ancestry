@@ -1034,7 +1034,7 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
         logger.debug(f"Attempting to reset database file: {db_path}...")
         logger.debug("Creating temporary database manager for database reset...")
         from core.database_manager import DatabaseManager
-        temp_db_manager = DatabaseManager(db_path)
+        temp_db_manager = DatabaseManager(str(db_path))
 
         # Perform reset operations
         reset_successful, recreation_session = _perform_database_reset_operations(temp_db_manager)
