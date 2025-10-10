@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: reportConstantRedefinition=false
 
 """
 Unified Credential Management & Enterprise Security Engine

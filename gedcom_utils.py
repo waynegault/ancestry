@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: reportConstantRedefinition=false
 
 """
 GEDCOM Processing & Genealogical Data Intelligence Engine

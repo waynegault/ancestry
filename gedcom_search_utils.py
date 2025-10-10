@@ -860,11 +860,11 @@ def get_gedcom_family_details(
     return result
 
 
-def _load_or_get_gedcom_data(
+def _load_or_get_gedcom_data_optional(
     gedcom_data: Optional[GedcomData],
     gedcom_path: Optional[str]
 ) -> Optional[GedcomData]:
-    """Load or retrieve GEDCOM data from cache or file."""
+    """Load or retrieve GEDCOM data from cache or file (optional variant that returns None on missing file)."""
     if gedcom_data:
         return gedcom_data
 
@@ -942,7 +942,7 @@ def get_gedcom_relationship_path(
         Formatted relationship path string
     """
     # Load or get GEDCOM data
-    gedcom_data = _load_or_get_gedcom_data(gedcom_data, gedcom_path)
+    gedcom_data = _load_or_get_gedcom_data_optional(gedcom_data, gedcom_path)
     if not gedcom_data:
         return "(Failed to load GEDCOM data)"
 

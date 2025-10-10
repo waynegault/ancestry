@@ -548,7 +548,7 @@ class GedcomIntelligenceAnalyzer:
 
         # Return top 5 surnames
         sorted_surnames = sorted(surname_counts.items(), key=lambda x: x[1], reverse=True)
-        return [surname for surname, count in sorted_surnames[:5]]
+        return [surname for surname, _count in sorted_surnames[:5]]
 
     def _find_geographic_patterns(self, _gedcom_data: Any) -> list[str]:
         """Find geographic patterns in the family tree."""

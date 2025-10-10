@@ -1,3 +1,4 @@
+# pyright: reportConstantRedefinition=false
 """
 Gedcom Ai Integration & Advanced System Intelligence Engine
 
@@ -514,7 +515,7 @@ class GedcomAIIntegrator:
 
         # Return top task types
         sorted_types = sorted(task_types.items(), key=lambda x: x[1], reverse=True)
-        return [task_type for task_type, count in sorted_types[:3]]
+        return [task_type for task_type, _count in sorted_types[:3]]
 
     def _assess_data_quality(self, gedcom_analysis: dict[str, Any]) -> str:
         """Assess overall data quality."""
