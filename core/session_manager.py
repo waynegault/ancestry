@@ -610,6 +610,11 @@ class SessionManager:
         self.session_ready = ready_checks_ok and identifiers_ok and owner_ok
         self._last_readiness_check = time.time()
 
+        # Initialize session_start_time if not already set (for session age tracking)
+        if self.session_ready and self.session_start_time is None:
+            self.session_start_time = time.time()
+            logger.debug("Session start time initialized for health monitoring")
+
         check_time = time.time() - start_time
         logger.debug(f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}")
         return self.session_ready
@@ -2350,10 +2355,13 @@ class SessionManager:
     @retry_on_failure(max_attempts=3)
     def get_my_uuid(self) -> Optional[str]:
         """
-        Retrieve user's UUID (testId).
+        Retrieve user's own DNA test UUID from .env configuration.
+        
+        Ancestry API doesn't provide a reliable endpoint to distinguish user's test
+        from administered tests, so MY_UUID must be configured in .env file.
 
         Returns:
-            str: UUID if successful, None otherwise
+            str: DNA test UUID if configured, None otherwise
         """
         if not self.is_sess_valid():
             # Reduce log spam during shutdown - only log once per minute
@@ -2362,36 +2370,26 @@ class SessionManager:
                 self._last_uuid_error_time = time.time()
             return None
 
-        from urllib.parse import urljoin
-        url = urljoin(config_schema.api.base_url, "api/uhome/secure/rest/header/dna")
-        logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
-
         try:
-            from utils import _api_req
-
-            response_data = _api_req(
-                url=url,
-                driver=self.driver,
-                session_manager=self,
-                method="GET",
-                use_csrf_token=False,
-                api_description="Get UUID API",
-            )
-
-            if response_data and isinstance(response_data, dict):
-                if "testId" in response_data:
-                    my_uuid_val = str(response_data["testId"]).upper()
-                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
-                    # Store in API manager
-                    self.api_manager.my_uuid = my_uuid_val
-                    if not self._uuid_logged:
-                        logger.debug(f"My uuid: {my_uuid_val}")
-                        self._uuid_logged = True
-                    return my_uuid_val
-                logger.error("Could not retrieve UUID ('testId' missing in response).")
+            # Get user's DNA test UUID from environment config
+            my_uuid_val = os.getenv("MY_UUID")
+            if not my_uuid_val:
+                logger.error("MY_UUID not found in .env - please add your DNA test UUID")
+                logger.error("Find it in your Ancestry DNA dashboard URL or test kit details")
                 return None
-            logger.error("Failed to get header/dna data via _api_req.")
-            return None
+
+            # Normalize to uppercase
+            my_uuid_val = my_uuid_val.upper()
+
+            # Store in API manager
+            self.api_manager.my_uuid = my_uuid_val
+
+            # Log once
+            if not self._uuid_logged:
+                logger.info(f"My DNA test UUID (from .env): {my_uuid_val}")
+                self._uuid_logged = True
+
+            return my_uuid_val
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
