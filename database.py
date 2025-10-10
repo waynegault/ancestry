@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: reportArgumentType=false, reportAttributeAccessIssue=false
 
 """
 database.py - SQLAlchemy Models, Database Utilities, and Schema Management
