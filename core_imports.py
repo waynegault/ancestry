@@ -404,16 +404,16 @@ def core_imports_module_tests() -> bool:
     suite = TestSuite("Core Imports", "core_imports.py")
 
     tests = [
-        ("Function registration and retrieval", _test_function_registration, True, "direct", "Test function registry"),
-        ("Auto-registration", _test_auto_registration, True, "direct", "Test module auto-registration"),
-        ("Performance caching", _test_performance_caching, True, "direct", "Test lookup caching"),
-        ("Import standardization", _test_import_standardization, True, "direct", "Test import standardization"),
-        ("Context manager", _test_context_manager, True, "direct", "Test import context manager"),
+        ("Function registration and retrieval", _test_function_registration, "Test function registry", "direct", "Test function registry"),
+        ("Auto-registration", _test_auto_registration, "Test module auto-registration", "direct", "Test module auto-registration"),
+        ("Performance caching", _test_performance_caching, "Test lookup caching", "direct", "Test lookup caching"),
+        ("Import standardization", _test_import_standardization, "Test import standardization", "direct", "Test import standardization"),
+        ("Context manager", _test_context_manager, "Test import context manager", "direct", "Test import context manager"),
     ]
 
     with suppress_logging():
-        for test_name, test_func, expected, method, details in tests:
-            suite.run_test(test_name, test_func, expected, method, details)
+        for test_name, test_func, expected_behavior, test_description, method_description in tests:
+            suite.run_test(test_name, test_func, expected_behavior, test_description, method_description)
 
     return suite.finish_suite()
 

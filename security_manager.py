@@ -129,17 +129,6 @@ from typing import Optional
 
 import keyring
 
-try:  # pragma: no cover - optional dependency handling
-    import keyrings.alt.file
-
-    current_backend = keyring.get_keyring()
-    # Backends advertise priority <= 0 when they shouldn't be used
-    if getattr(current_backend, "priority", 0) <= 0:
-        keyring.set_keyring(keyrings.alt.file.PlaintextKeyring())
-        logger.info("Configured fallback keyring backend (keyrings.alt.file.PlaintextKeyring)")
-except Exception as keyring_setup_error:  # pragma: no cover - diagnostics only
-    logger.debug("Keyring fallback configuration skipped: %s", keyring_setup_error)
-
 # === THIRD-PARTY IMPORTS ===
 from cryptography.fernet import Fernet
 

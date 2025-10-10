@@ -26,7 +26,7 @@ python -m action6_gather
 (Select-String -Path Logs\app.log -Pattern "429 error").Count
 
 # Verify rate limiter initialization
-Select-String -Path Logs\app.log -Pattern "Thread-safe DynamicRateLimiter" | Select-Object -Last 1
+Select-String -Path Logs\app.log -Pattern "Thread-safe RateLimiter" | Select-Object -Last 1
 
 # Watch real-time API activity
 Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
@@ -69,11 +69,11 @@ ruff check .
 
 ### Rate Limiting (CRITICAL - Zero Tolerance)
 ```python
-# utils.py DynamicRateLimiter - Thread-safe token bucket algorithm
+# utils.py RateLimiter - Thread-safe token bucket algorithm
 THREAD_POOL_WORKERS=1  # NEVER change without extensive validation
 REQUESTS_PER_SECOND=0.4  # Empirically validated (429 errors = 72-second penalties)
 ```
-- **DynamicRateLimiter** is instantiated ONCE by SessionManager, shared across all API calls
+- **RateLimiter** is instantiated ONCE by SessionManager, shared across all API calls
 - Recent fix (Oct 2025): Added `threading.Lock()` for thread safety - validated zero 429 errors
 - Changing worker count or RPS without 50+ page validation WILL break production
 - Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should return 0
@@ -238,7 +238,7 @@ python -m action6_gather             # Single module tests
 (Select-String -Path Logs\app.log -Pattern "429 error").Count
 
 # Verify initialization
-Select-String -Path Logs\app.log -Pattern "Thread-safe DynamicRateLimiter" | Select-Object -Last 1
+Select-String -Path Logs\app.log -Pattern "Thread-safe RateLimiter" | Select-Object -Last 1
 
 # Watch real-time
 Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
@@ -455,14 +455,14 @@ _check_session_health_proactive(session_manager, current_page)
 
 ### Rate Limiting with Token Bucket Algorithm
 ```python
-# utils.py DynamicRateLimiter (lines 835-1019)
-class DynamicRateLimiter:
+# utils.py RateLimiter (lines 835-1019)
+class RateLimiter:
     def __init__(self):
         self.capacity = 10.0          # Burst capacity (tokens)
         self.fill_rate = 2.0          # Tokens per second
         self.tokens = self.capacity   # Current available tokens
         self._lock = threading.Lock() # Thread safety
-    
+
     def wait(self):
         """Thread-safe token bucket algorithm"""
         with self._lock:
@@ -597,7 +597,7 @@ finally:
 action6-11.py           # 11 action modules (gather, inbox, messaging, etc.)
 main.py                 # Entry point with menu, exec_actn() pattern
 database.py             # SQLAlchemy ORM models
-utils.py                # DynamicRateLimiter, nav helpers, login flows
+utils.py                # RateLimiter, nav helpers, login flows
 core/
   session_manager.py    # Central orchestrator (THE critical component)
   browser_manager.py    # WebDriver lifecycle

@@ -202,9 +202,6 @@ class SessionManager:
         # Session death detection
         self._consecutive_303_count = 0
 
-        # Session recovery control (Priority 1.2)
-        self._auto_recovery_enabled: bool = True  # Default: enabled for backward compatibility
-
     def _initialize_reliable_state(self) -> None:
         """Initialize reliable processing state."""
         self._reliable_state = {
@@ -269,12 +266,12 @@ class SessionManager:
         }
         self.session_health_monitor['is_alive'].set()
 
-    # NOTE: Rate limiting cleanup (October 2025):
-    # - Removed _initialize_rate_limiting() method (unused)
-    # - Removed adaptive_rate_limiter attribute (unused)
-    # - Removed smart_batch_processor attribute (unused)
-    # - DynamicRateLimiter (initialized in __init__) is the only rate limiter in production
-    # - All tests updated to validate DynamicRateLimiter only
+    def _initialize_rate_limiting(self) -> None:
+        """Initialize rate limiting - consolidated to RateLimiter only."""
+
+        # All rate limiting is now handled by RateLimiter in utils.py
+        # which is initialized in __init__ method
+        pass
 
     def __init__(self, db_path: Optional[str] = None):
         """
@@ -304,26 +301,12 @@ class SessionManager:
         self._initialize_reliable_state()
         self._initialize_health_monitors()
 
-        # Add dynamic rate limiter for AI calls with config-based parameters
+        # Initialize rate limiter (single rate limiter for all API calls)
         try:
-            from utils import DynamicRateLimiter
-            # Use configuration values for adaptive rate limiting
-            self.dynamic_rate_limiter = DynamicRateLimiter(
-                initial_delay=getattr(config_schema.api, 'initial_delay', 1.0),
-                max_delay=getattr(config_schema.api, 'max_delay', 15.0),
-                backoff_factor=getattr(config_schema.api, 'backoff_factor', 1.5),
-                decrease_factor=getattr(config_schema.api, 'decrease_factor', 0.95),
-                token_capacity=getattr(config_schema.api, 'token_bucket_capacity', 10.0),
-                token_fill_rate=getattr(config_schema.api, 'token_bucket_fill_rate', 2.0),
-            )
-            logger.debug(
-                f"🚀 DynamicRateLimiter initialized with optimized settings: "
-                f"InitialDelay={config_schema.api.initial_delay}s, "
-                f"MaxDelay={config_schema.api.max_delay}s, "
-                f"Workers={config_schema.api.thread_pool_workers}"
-            )
+            from utils import RateLimiter
+            self.rate_limiter = RateLimiter()
         except ImportError:
-            self.dynamic_rate_limiter = None
+            self.rate_limiter = None
 
         # Initialize health monitoring integration
         try:
@@ -334,6 +317,9 @@ class SessionManager:
         except ImportError:
             logger.warning("Health monitoring module not available")
             self.health_monitor = None
+
+        # Initialize rate limiting
+        self._initialize_rate_limiting()
 
         # Enhanced session capabilities
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
@@ -366,7 +352,7 @@ class SessionManager:
     def _get_cached_browser_manager(self) -> "BrowserManager":
         """Get cached BrowserManager instance"""
         logger.debug("Creating/retrieving BrowserManager from cache")
-        return BrowserManager(session_manager=self)
+        return BrowserManager()
 
     @cached_api_manager()
     def _get_cached_api_manager(self) -> "APIManager":
@@ -474,8 +460,6 @@ class SessionManager:
         Returns:
             bool: True if browser started successfully, False otherwise
         """
-        # NOTE: AdaptiveRateLimiter removed - DynamicRateLimiter (initialized in __init__) is used instead
-
         # Reset logged flags when starting browser
         self._reset_logged_flags()
         return self.browser_manager.start_browser(action_name)
@@ -610,11 +594,6 @@ class SessionManager:
         self.session_ready = ready_checks_ok and identifiers_ok and owner_ok
         self._last_readiness_check = time.time()
 
-        # Initialize session_start_time if not already set (for session age tracking)
-        if self.session_ready and self.session_start_time is None:
-            self.session_start_time = time.time()
-            logger.debug("Session start time initialized for health monitoring")
-
         check_time = time.time() - start_time
         logger.debug(f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}")
         return self.session_ready
@@ -681,17 +660,9 @@ class SessionManager:
         """
         Determine if session recovery should be attempted.
 
-        Priority 1.2: Auto-recovery can be disabled for batch operations
-        where fail-fast is preferred.
-
         Returns:
             bool: True if recovery should be attempted
         """
-        # Check if auto-recovery is disabled
-        if not self._auto_recovery_enabled:
-            logger.debug("⏭️  Auto-recovery disabled - skipping recovery attempt")
-            return False
-
         # Only attempt recovery if session was previously working
         # and we're in a long-running operation
         return bool(self.session_ready and
@@ -724,30 +695,6 @@ class SessionManager:
             logger.error(f"Session recovery failed: {e}", exc_info=True)
 
         return False
-
-    def set_auto_recovery(self, enabled: bool) -> None:
-        """
-        Enable or disable automatic session recovery (Priority 1.2).
-
-        When disabled, session failures will not attempt recovery, allowing
-        fail-fast behavior for batch operations with circuit breakers.
-
-        Args:
-            enabled: True to enable auto-recovery, False to disable
-        """
-        previous = self._auto_recovery_enabled
-        self._auto_recovery_enabled = enabled
-        status = "enabled" if enabled else "disabled"
-        logger.info(f"🔧 Auto-recovery {status} (was: {'enabled' if previous else 'disabled'})")
-
-    def get_auto_recovery_status(self) -> bool:
-        """
-        Get current auto-recovery status.
-
-        Returns:
-            bool: True if auto-recovery is enabled, False otherwise
-        """
-        return self._auto_recovery_enabled
 
     # UNIVERSAL SESSION HEALTH MONITORING METHODS
     def check_session_health(self) -> bool:
@@ -938,9 +885,9 @@ class SessionManager:
 
         # Close browser if it exists
         try:
-            if self.browser_manager.driver:
-                self.browser_manager.driver.quit()
-                self.browser_manager.driver = None
+            if self.driver:
+                self.driver.quit()
+                # Note: driver is a read-only property, browser_manager handles cleanup
         except Exception as e:
             logger.debug(f"Error closing driver during emergency shutdown: {e}")
 
@@ -998,9 +945,8 @@ class SessionManager:
             if "'SessionManager' object has no attribute 'clear'" in str(exc):
                 logger.debug("Attempting alternative session cleanup...")
                 try:
-                    # Reset session readiness flags
+                    # Reset session readiness flags (driver_live is read-only property)
                     self.session_ready = False
-                    self.browser_manager.driver_live = False
                     return True
                 except Exception as alt_exc:
                     logger.error(f"Alternative cleanup also failed: {alt_exc}")
@@ -1067,14 +1013,12 @@ class SessionManager:
                 self.clear_session_caches()
                 logger.info("   ✅ Session caches cleared successfully")
             else:
-                # Alternative cache clearing
+                # Alternative cache clearing (driver_live is read-only property)
                 self.session_ready = False
-                self.browser_manager.driver_live = False
                 logger.info("   ✅ Session flags reset (alternative method)")
         except Exception as cache_exc:
             logger.warning(f"   ⚠️ Cache clearing failed: {cache_exc}, continuing with alternative method")
             self.session_ready = False
-            self.browser_manager.driver_live = False
 
     def _attempt_session_refresh(self, max_attempts: int = 3) -> bool:
         """Attempt session refresh with multiple retries."""
@@ -1351,12 +1295,13 @@ class SessionManager:
         """Perform browser warm-up sequence after refresh."""
         try:
             from utils import nav_to_page
-            if self.browser_manager.driver:
-                nav_to_page(self.browser_manager.driver, config_schema.api.base_url, session_manager=self)
+            driver = self.browser_manager.driver
+            if driver:  # Check driver is not None before using
+                nav_to_page(driver, config_schema.api.base_url)
                 # Prefer built-in CSRF retrieval/precache to avoid attribute errors
                 _ = self.get_csrf()
                 _ = self.get_my_tree_id()
-                nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees", session_manager=self)
+                nav_to_page(driver, f"{config_schema.api.base_url}family-tree/trees")
         except Exception as warm_exc:
             logger.debug(f"Warm-up sequence encountered a non-fatal issue: {warm_exc}")
 
@@ -1485,7 +1430,7 @@ class SessionManager:
 
         # Step 3: Create new browser manager instance
         from core.browser_manager import BrowserManager
-        new_browser_manager = BrowserManager(session_manager=self)
+        new_browser_manager = BrowserManager()
 
         try:
             # Step 4: Initialize new browser
@@ -1678,8 +1623,9 @@ class SessionManager:
 
             # Test critical operation that was originally failing
             try:
-                if self.browser_manager.driver:
-                    cookies = self.browser_manager.driver.get_cookies()
+                driver = self.browser_manager.driver
+                if driver:  # Check driver is not None
+                    cookies = driver.get_cookies()
                     if not isinstance(cookies, list):
                         logger.error("❌ Cookie access failed after replacement")
                         return False
@@ -2107,7 +2053,7 @@ class SessionManager:
         Check for JavaScript errors in the browser console.
 
         Returns:
-            list[dict]: List of JavaScript errors found since last check
+            List[Dict]: List of JavaScript errors found since last check
         """
         if not self.driver or not self.driver_live:
             return []
@@ -2358,13 +2304,10 @@ class SessionManager:
     @retry_on_failure(max_attempts=3)
     def get_my_uuid(self) -> Optional[str]:
         """
-        Retrieve user's own DNA test UUID from .env configuration.
-        
-        Ancestry API doesn't provide a reliable endpoint to distinguish user's test
-        from administered tests, so MY_UUID must be configured in .env file.
+        Retrieve user's UUID (testId).
 
         Returns:
-            str: DNA test UUID if configured, None otherwise
+            str: UUID if successful, None otherwise
         """
         if not self.is_sess_valid():
             # Reduce log spam during shutdown - only log once per minute
@@ -2373,26 +2316,36 @@ class SessionManager:
                 self._last_uuid_error_time = time.time()
             return None
 
+        from urllib.parse import urljoin
+        url = urljoin(config_schema.api.base_url, "api/uhome/secure/rest/header/dna")
+        logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
+
         try:
-            # Get user's DNA test UUID from environment config
-            my_uuid_val = os.getenv("MY_UUID")
-            if not my_uuid_val:
-                logger.error("MY_UUID not found in .env - please add your DNA test UUID")
-                logger.error("Find it in your Ancestry DNA dashboard URL or test kit details")
+            from utils import _api_req
+
+            response_data = _api_req(
+                url=url,
+                driver=self.driver,
+                session_manager=self,
+                method="GET",
+                use_csrf_token=False,
+                api_description="Get UUID API",
+            )
+
+            if response_data and isinstance(response_data, dict):
+                if "testId" in response_data:
+                    my_uuid_val = str(response_data["testId"]).upper()
+                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
+                    # Store in API manager
+                    self.api_manager.my_uuid = my_uuid_val
+                    if not self._uuid_logged:
+                        logger.debug(f"My uuid: {my_uuid_val}")
+                        self._uuid_logged = True
+                    return my_uuid_val
+                logger.error("Could not retrieve UUID ('testId' missing in response).")
                 return None
-
-            # Normalize to uppercase
-            my_uuid_val = my_uuid_val.upper()
-
-            # Store in API manager
-            self.api_manager.my_uuid = my_uuid_val
-
-            # Log once
-            if not self._uuid_logged:
-                logger.info(f"My DNA test UUID (from .env): {my_uuid_val}")
-                self._uuid_logged = True
-
-            return my_uuid_val
+            logger.error("Failed to get header/dna data via _api_req.")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
@@ -2456,12 +2409,8 @@ class SessionManager:
             logger.error(f"get_tree_owner: Failed to import api_utils: {e}")
             raise ImportError(f"api_utils module failed to import: {e}") from e
 
-        if not tree_id:
-            logger.warning("Cannot get tree owner: tree_id is missing.")
-            return None
-
-        if not isinstance(tree_id, str):
-            logger.warning(f"Invalid tree_id type provided: {type(tree_id)}. Expected string.")
+        if not tree_id or not isinstance(tree_id, str):
+            logger.warning(f"Invalid tree_id: {tree_id}. Expected non-empty string.")
             return None
 
         if not self.is_sess_valid():
@@ -2641,7 +2590,7 @@ class SessionManager:
 
     # Compatibility properties for legacy code
     @property
-    def browser_needed(self) -> bool:
+    def browser_needed(self):
         """Get/set browser needed flag."""
         return self.browser_manager.browser_needed
 
@@ -2653,7 +2602,7 @@ class SessionManager:
 
 
     @property
-    def _requests_session(self) -> requests.Session:
+    def _requests_session(self):
         """Get the requests session (compatibility property with underscore)."""
         return self.api_manager.requests_session
 
@@ -2668,6 +2617,7 @@ class SessionManager:
 
         return db_ready and browser_ready and api_ready
 
+    @property
     def session_age_seconds(self) -> Optional[float]:
         """Get the age of the current session in seconds."""
         if self.session_start_time:
@@ -2681,7 +2631,7 @@ class SessionManager:
         stats.update(
             {
                 "session_ready": self.session_ready,
-                "session_age": self.session_age_seconds(),
+                "session_age": self.session_age_seconds,
                 "last_readiness_check_age": (
                     time.time() - self._last_readiness_check
                     if self._last_readiness_check
@@ -2814,7 +2764,7 @@ class SessionManager:
 
         return result
 
-    def _process_single_page(self, page_num: int) -> dict[str, Any]:
+    def _process_single_page(self, _page_num: int) -> dict[str, Any]:
         """Default single-page processing; should be overridden by caller/demo.
         We keep this stub to match ReliableSessionManager integration patterns.
         """
@@ -2988,46 +2938,6 @@ class SessionManager:
             self._p2_auth_stable_successes = 0
             self._p2_auth_check_interval = max(self._p2_auth_interval_min, int(os.getenv('AUTH_CHECK_INTERVAL_SECONDS', '300')))
             return False
-
-
-
-
-        # Provide minimal safe defaults if local health snapshots are not set
-        overall_ok = True
-        memory_info: dict = {}
-        processes_info: list = []
-
-
-
-        return {
-            'session_state': {
-                'current_page': self._reliable_state['current_page'],
-                'pages_processed': self._reliable_state['pages_processed'],
-                'error_count': self._reliable_state['errors_encountered'],
-                'restart_count': self._reliable_state['restarts_performed'],
-                'session_duration_hours': (time.time() - self._reliable_state['start_time'])/3600.0
-            },
-            'system_health': {
-                'overall': 'healthy' if overall_ok else 'warning',
-                'memory': memory_info,
-                'processes': processes_info,
-            },
-            'error_summary': {
-                'error_count': self._reliable_state['errors_encountered'],
-                'rates_per_min': self._p2_error_rates(),
-                'recent_interventions': self._p2_interventions[-10:],
-            },
-            'early_warning': {
-                'status': 'active' if any(v > 0 for v in self._p2_error_rates().values()) else 'monitoring',
-                'last_warning': self._p2_last_warning,
-            },
-            'network_resilience': {
-                'network_failures': self._p2_network_failures,
-                'max_network_failures': self._p2_max_network_failures,
-                'endpoints': self._p2_network_test_endpoints,
-            },
-            'phase2_features': {'merged': True}
-        }
 
     def cleanup(self) -> None:
         """Cleanup resources to match ReliableSessionManager.cleanup()."""

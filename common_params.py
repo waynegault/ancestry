@@ -6,8 +6,9 @@ This module provides dataclasses for grouping commonly-used function parameters
 to reduce parameter counts and improve code maintainability.
 """
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 
 @dataclass
@@ -16,9 +17,10 @@ class GraphContext:
     Graph traversal context for genealogical relationship calculations.
 
     Used in gedcom_utils.py and relationship_utils.py for BFS/DFS operations.
+    Accepts both dict[str, list[str]] and dict[str, set[str]] for flexibility.
     """
-    id_to_parents: dict[str, list[str]]
-    id_to_children: dict[str, list[str]]
+    id_to_parents: Mapping[str, Collection[str]]
+    id_to_children: Mapping[str, Collection[str]]
     current_id: Optional[str] = None
     start_id: Optional[str] = None
     end_id: Optional[str] = None
@@ -37,7 +39,7 @@ class RetryContext:
     backoff_factor: float = 2.0
     current_delay: float = 1.0
     retries_left: Optional[int] = None
-    retry_status_codes: Optional[list[int]] = None
+    retry_status_codes: Optional[Union[list[int], set[int]]] = None
 
 
 @dataclass
@@ -47,7 +49,7 @@ class MatchIdentifiers:
 
     Used in action6_gather.py for processing DNA matches.
     """
-    uuid: str
+    uuid: Optional[str]
     username: str
     in_my_tree: bool
     log_ref_short: str

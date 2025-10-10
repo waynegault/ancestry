@@ -363,13 +363,13 @@ def universal_scoring_module_tests() -> bool:
     suite = TestSuite("Universal Scoring", "universal_scoring.py")
 
     tests = [
-        ("Universal scoring functionality", _test_universal_scoring, True, "direct", "Test scoring algorithm"),
-        ("Search criteria validation", _test_criteria_validation, True, "direct", "Test criteria normalization"),
+        ("Universal scoring functionality", _test_universal_scoring, "Test scoring algorithm", "direct", "Test scoring algorithm"),
+        ("Search criteria validation", _test_criteria_validation, "Test criteria normalization", "direct", "Test criteria normalization"),
     ]
 
     with suppress_logging():
-        for test_name, test_func, expected, method, details in tests:
-            suite.run_test(test_name, test_func, expected, method, details)
+        for test_name, test_func, expected_behavior, test_description, method_description in tests:
+            suite.run_test(test_name, test_func, expected_behavior, test_description, method_description)
 
     return suite.finish_suite()
 

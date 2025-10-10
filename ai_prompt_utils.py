@@ -29,10 +29,10 @@ from typing import Any, Optional
 # Imports removed - not used in this module
 
 # Path to the AI prompts JSON file
-PROMPTS_FILE = Path(__file__).parent / "ai_prompts.json"
+PROMPTS_FILE = Path(__file__).resolve().parent / "ai_prompts.json"
 
 # Path to the improved prompts directory
-IMPROVED_PROMPTS_DIR = Path(__file__).parent / "improved_prompts"
+IMPROVED_PROMPTS_DIR = Path(__file__).resolve().parent / "improved_prompts"
 
 
 def load_prompts() -> dict[str, Any]:

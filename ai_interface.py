@@ -122,7 +122,7 @@ except ImportError:
     USE_JSON_PROMPTS = False
     # Provide minimal fallback stubs so later references are defined
     from typing import Optional as _Optional
-    def get_prompt(prompt_key: str) -> _Optional[str]:  # type: ignore
+    def get_prompt(prompt_key: str) -> _Optional[str]:  # type: ignore[misc,unused-function]
         return None
     def load_prompts() -> dict[str, Any]:  # type: ignore
         return {"prompts": {}}
@@ -230,8 +230,8 @@ Your response should be ONLY the message text, with no additional formatting, ex
 def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None:
     """Apply rate limiting before AI API call."""
     try:
-        if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
-            drl = getattr(session_manager, "dynamic_rate_limiter", None)
+        if session_manager and hasattr(session_manager, "rate_limiter"):
+            drl = getattr(session_manager, "rate_limiter", None)
             if drl is not None and hasattr(drl, "wait"):
                 wait_time = drl.wait()
                 if isinstance(wait_time, (int, float)) and wait_time > 0.1:
@@ -394,9 +394,9 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
 
 def _handle_rate_limit_error(session_manager: SessionManager) -> None:
     """Handle rate limit error by increasing delay."""
-    if session_manager and hasattr(session_manager, "dynamic_rate_limiter"):
+    if session_manager and hasattr(session_manager, "rate_limiter"):
         try:
-            drl = getattr(session_manager, "dynamic_rate_limiter", None)
+            drl = getattr(session_manager, "rate_limiter", None)
             if drl is not None and hasattr(drl, "increase_delay"):
                 drl.increase_delay()
         except Exception:
@@ -659,9 +659,6 @@ def _transform_flat_to_nested(parsed_json: dict[str, Any]) -> dict[str, Any]:
 def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: dict[str, Any]) -> dict[str, Any]:
     """Attempt to salvage flat structure by transforming to expected nested structure."""
     salvaged = default_empty_result.copy()
-
-    if not isinstance(parsed_json, dict):
-        return salvaged
 
     # Check for nested structure first
     if _check_nested_structure(parsed_json, salvaged):

@@ -199,7 +199,7 @@ class GedcomAIIntegrator:
         """
         try:
             if not GEDCOM_AI_AVAILABLE:
-                return self._fallback_research_tasks(person_data, extracted_genealogical_data)
+                return self._fallback_research_tasks(person_data)
 
             enhanced_tasks = []
 
@@ -237,7 +237,7 @@ class GedcomAIIntegrator:
 
         except Exception as e:
             logger.error(f"Error generating enhanced research tasks: {e}")
-            return self._fallback_research_tasks(person_data, extracted_genealogical_data)
+            return self._fallback_research_tasks(person_data)
 
     def get_gedcom_insights_for_person(
         self,
@@ -269,8 +269,8 @@ class GedcomAIIntegrator:
                 "relevant_gaps": self._find_person_relevant_gaps(person_identifier, analysis),
                 "relevant_conflicts": self._find_person_relevant_conflicts(person_identifier, analysis),
                 "research_opportunities": self._find_person_research_opportunities(person_identifier, analysis),
-                "family_context": self._get_person_family_context(person_identifier, gedcom_data),
-                "ai_recommendations": self._get_person_ai_recommendations(person_identifier, analysis)
+                "family_context": self._get_person_family_context(),
+                "ai_recommendations": self._get_person_ai_recommendations(person_identifier)
             }
 
 
@@ -421,7 +421,7 @@ class GedcomAIIntegrator:
 
         return tasks
 
-    def _fallback_research_tasks(self, person_data: dict[str, Any], _extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def _fallback_research_tasks(self, person_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Generate fallback research tasks when GEDCOM AI is not available."""
         return [
             {
@@ -449,12 +449,12 @@ class GedcomAIIntegrator:
         opportunities = analysis.get("research_opportunities", [])
         return [opp for opp in opportunities if person_identifier in opp.get("target_people", [])]
 
-    def _get_person_family_context(self, _person_identifier: str, _gedcom_data: Any) -> dict[str, Any]:
+    def _get_person_family_context(self) -> dict[str, Any]:
         """Get family context for a specific person."""
         # This would extract family relationships and context
         return {"family_context": "Analysis not yet implemented"}
 
-    def _get_person_ai_recommendations(self, person_identifier: str, _analysis: dict[str, Any]) -> list[str]:
+    def _get_person_ai_recommendations(self, person_identifier: str) -> list[str]:
         """Get AI recommendations for a specific person."""
         return [
             f"Focus on high-priority research for {person_identifier}",
@@ -515,7 +515,7 @@ class GedcomAIIntegrator:
 
         # Return top task types
         sorted_types = sorted(task_types.items(), key=lambda x: x[1], reverse=True)
-        return [task_type for task_type, _count in sorted_types[:3]]
+        return [task_type for task_type, _ in sorted_types[:3]]
 
     def _assess_data_quality(self, gedcom_analysis: dict[str, Any]) -> str:
         """Assess overall data quality."""

@@ -1266,8 +1266,6 @@ def _calculate_relationship_path(
             logger.info(
                 f"(Error: Could not determine relationship path for {display_name})"
             )
-    else:  # type: ignore[unreachable]
-        logger.warning("Cannot calculate relationship path: Invalid IDs")
 
 
 def analyze_top_match(
@@ -1756,9 +1754,9 @@ def test_get_validated_year_input_patch() -> None:
     try:
         for input_val, expected, description in test_inputs:
             try:
-                def mock_input(_prompt: str, val: str = input_val) -> str:  # _prompt unused
+                def mock_input(val: str = input_val) -> str:
                     return val
-                builtins.input = mock_input
+                builtins.input = mock_input  # type: ignore[assignment]
                 actual = get_validated_year_input("Enter year: ")
                 passed = actual == expected
                 status = "✅" if passed else "❌"
@@ -2307,11 +2305,7 @@ def test_main_patch() -> None:
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
-    import builtins
-
-    from test_framework import (  # type: ignore[import-not-found]
-        suppress_logging,
-    )
+    import builtins  # type: ignore[unused-function] - Used in nested test functions
 
     original_gedcom, suite = _setup_test_environment()
 

@@ -93,13 +93,13 @@ def memory_utils_module_tests() -> bool:
     suite = TestSuite("Memory Utilities", "memory_utils.py")
 
     tests = [
-        ("ObjectPool functionality", _test_object_pool, True, "direct", "Test object pooling"),
-        ("fast_json_loads functionality", _test_fast_json_loads, True, "direct", "Test JSON parsing"),
+        ("ObjectPool functionality", _test_object_pool, "Test object pooling", "Test object pooling"),
+        ("fast_json_loads functionality", _test_fast_json_loads, "Test JSON parsing", "Test JSON parsing"),
     ]
 
     with suppress_logging():
-        for test_name, test_func, expected, method, details in tests:
-            suite.run_test(test_name, test_func, expected, method, details)
+        for test_name, test_func, expected_behavior, test_description in tests:
+            suite.run_test(test_name, test_func, expected_behavior, test_description)
 
     return suite.finish_suite()
 

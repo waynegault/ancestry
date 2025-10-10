@@ -39,7 +39,7 @@ Technical Implementation:
 Performance Monitoring Dashboard for Ancestry Project
 
 This module provides comprehensive performance monitoring and reporting
-for the adaptive rate limiting and configuration optimization systems.
+for the  rate limiting and configuration optimization systems.
 
 Author: Ancestry Automation System
 Created: August 6, 2025

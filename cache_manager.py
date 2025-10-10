@@ -178,9 +178,9 @@ class SessionComponentCache(BaseCacheModule):
                 # Check if cache is still valid
                 age = time.time() - cached_data["timestamp"]
                 if age < SESSION_CACHE_CONFIG.component_ttl_seconds:
-                        logger.debug(f"Cache hit for component: {component_type}")
-                        self._stats["cache_hits"] += 1
-                        return cached_data["component"]
+                    logger.debug(f"Cache hit for component: {component_type}")
+                    self._stats["cache_hits"] += 1
+                    return cached_data["component"]
 
             self._stats["cache_misses"] += 1
             return None
@@ -505,14 +505,19 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[F], F]:
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Split endpoint into service and method (e.g., "ancestry.search" -> "ancestry", "search")
+            parts = endpoint.split(".", 1)
+            service = parts[0] if len(parts) > 0 else "unknown"
+            method = parts[1] if len(parts) > 1 else endpoint
+
             # Try to get cached result
-            cached_result = _unified_cache_manager.api_cache.get_cached_api_response(endpoint, kwargs)
+            cached_result = _unified_cache_manager.api_cache.get_cached_api_response(service, method, kwargs)
             if cached_result is not None:
                 return cached_result
 
             # Call function and cache result
             result = func(*args, **kwargs)
-            _unified_cache_manager.api_cache.cache_api_response(endpoint, kwargs, result, ttl)
+            _unified_cache_manager.api_cache.cache_api_response(service, method, kwargs, result, ttl)
             return result
         return wrapper
     return decorator

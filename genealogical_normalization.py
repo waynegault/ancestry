@@ -298,7 +298,7 @@ def _validate_location(location: str) -> str:
     return loc
 
 
-def _ensure_extracted_data_container(resp: dict[str, Any]) -> dict[str, Any]:
+def _ensure_extracted_data_container(resp: Any) -> dict[str, Any]:
     if not isinstance(resp, dict):
         resp = {}
     extracted = resp.get("extracted_data")
@@ -322,7 +322,7 @@ def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
     - mentioned_locations -> locations[{place}]
     - mentioned_dates -> vital_records[{date}]
     """
-    for legacy_key, (struct_key, _value_field) in LEGACY_TO_STRUCTURED_MAP.items():
+    for legacy_key, (struct_key, _value_field) in LEGACY_TO_STRUCTURED_MAP.items():  # type: ignore
         legacy_vals = extracted.get(legacy_key)
         if not legacy_vals:
             continue
@@ -357,7 +357,7 @@ def _ensure_structured_keys(extracted: dict[str, Any]) -> None:
             extracted[key] = []
 
 
-def _normalize_vital_records(vital_records: list[Any]) -> None:
+def _normalize_vital_records(vital_records: Any) -> None:
     """Validate and normalize vital records."""
     if not isinstance(vital_records, list):
         return
@@ -383,7 +383,7 @@ def _normalize_vital_records(vital_records: list[Any]) -> None:
                 record["event_type"] = event_type
 
 
-def _normalize_relationships(relationships: list[Any]) -> None:
+def _normalize_relationships(relationships: Any) -> None:
     """Validate and normalize relationships."""
     if not isinstance(relationships, list):
         return
@@ -407,7 +407,7 @@ def _normalize_relationships(relationships: list[Any]) -> None:
                     relationship[person_key] = ""
 
 
-def _normalize_locations(locations: list[Any]) -> None:
+def _normalize_locations(locations: Any) -> None:
     """Validate and normalize locations."""
     if not isinstance(locations, list):
         return
@@ -425,7 +425,7 @@ def _normalize_locations(locations: list[Any]) -> None:
             location["time_period"] = _validate_and_normalize_date(str(location["time_period"]))
 
 
-def _normalize_structured_names(structured_names: list[Any]) -> None:
+def _normalize_structured_names(structured_names: Any) -> None:
     """Validate and normalize structured names."""
     if not isinstance(structured_names, list):
         return
@@ -448,7 +448,7 @@ def _normalize_structured_names(structured_names: list[Any]) -> None:
             name_entry["nicknames"] = []
 
 
-def normalize_extracted_data(extracted: dict[str, Any]) -> dict[str, Any]:
+def normalize_extracted_data(extracted: Any) -> dict[str, Any]:
     """
     Enhanced Phase 12.1: Normalize extracted_data dict with genealogical validation.
     Ensures keys exist, promotes legacy fields, and validates genealogical data.

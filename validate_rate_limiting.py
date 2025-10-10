@@ -6,7 +6,7 @@ Tests that all new parameters are loaded correctly.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).resolve().parent)
@@ -16,7 +16,7 @@ if parent_dir not in sys.path:
 from config import config_schema
 
 
-def _get_expected_values() -> Dict[str, Any]:
+def _get_expected_values() -> dict[str, Any]:
     """Get expected configuration values."""
     return {
         'thread_pool_workers': 2,
@@ -30,7 +30,7 @@ def _get_expected_values() -> Dict[str, Any]:
     }
 
 
-def _validate_config_values(expected: Dict[str, Any]) -> tuple[list[str], list[str]]:
+def _validate_config_values(expected: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Validate configuration values and return errors and warnings."""
     errors = []
     warnings = []

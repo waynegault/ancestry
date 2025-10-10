@@ -390,7 +390,7 @@ def create_mock_data() -> dict[str, Any]:
         "sample_uuid": "TEST-UUID-1234-5678-ABCD",
         "sample_dna_data": {
             "uuid": "TEST-UUID-1234-5678-ABCD",
-            "cM_DNA": 85,
+            "cm_dna": 85,
             "shared_segments": 4,
             "username": "Test User",
         },
@@ -576,7 +576,7 @@ def _test_mock_data(test_data: Any) -> None:
     assert isinstance(data, dict)
     assert "mock_session_manager" in data
     assert "sample_dna_data" in data
-    assert data["sample_dna_data"]["cM_DNA"] == 85
+    assert data["sample_dna_data"]["cm_dna"] == 85
     assert isinstance(data["mock_session_manager"], MagicMock)
     return True
 
@@ -674,7 +674,7 @@ if __name__ == "__main__":
         def test_mock_data() -> None:
             data = create_mock_data()
             assert "mock_session_manager" in data
-            assert data["sample_dna_data"]["cM_DNA"] == 85
+            assert data["sample_dna_data"]["cm_dna"] == 85
 
         suite.run_test(
             "Color constants", test_colors, "Should define standard ANSI color codes"

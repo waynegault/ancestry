@@ -148,17 +148,12 @@ class CircuitBreakerOpenError(Exception):
 
 # === LEGACY EXCEPTION CLASSES FOR BACKWARD COMPATIBILITY ===
 
-class AncestryException(Exception):  # noqa: N818 - Legacy base exception name
+class AncestryError(Exception):
     """Base exception class for all Ancestry project errors."""
     pass
 
 
-class AncestryError(AncestryException):
-    """Alias for backward compatibility."""
-    pass
-
-
-class RetryableError(AncestryException):
+class RetryableError(AncestryError):
     """Exception that indicates the operation can be retried."""
 
     def __init__(self, message: str = "Operation can be retried", **kwargs: Any) -> None:
@@ -170,7 +165,7 @@ class RetryableError(AncestryException):
         self.recovery_hint = kwargs.get('recovery_hint')
 
 
-class FatalError(AncestryException):
+class FatalError(AncestryError):
     """Exception that indicates the operation should not be retried."""
 
     def __init__(self, message: str = "Fatal error occurred", **kwargs: Any) -> None:
@@ -756,14 +751,16 @@ class ErrorContext:
         logger.debug(f"Starting operation: {self.operation_name}")
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> bool:
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], _exc_tb: Optional[Any]) -> bool:
         duration = time.time() - self.start_time if self.start_time else 0
 
-        if exc_type is not None:
+        if exc_type is not None and exc_val is not None:
             # Error occurred
             context = {"operation": self.operation_name, "duration": duration}
 
-            app_error = handle_error(exc_val, context, self.category)
+            # Convert BaseException to Exception for handle_error
+            error_to_handle = exc_val if isinstance(exc_val, Exception) else Exception(str(exc_val))
+            app_error = handle_error(error_to_handle, context, self.category)
             logger.error(
                 f"Operation failed: {self.operation_name} ({duration:.2f}s) - {app_error.message}"
             )
@@ -789,7 +786,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
 
     # Default handler for unknown types
     class DefaultHandler(ErrorHandler):
-        def can_handle(self, _error: Exception) -> bool:
+        def can_handle(self, error: Exception) -> bool:  # type: ignore[unused-function] - Required by base class interface
             return True  # Catch-all for unknown errors
 
         def handle(
@@ -999,7 +996,10 @@ def retry_on_failure(
                         delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
                         time.sleep(delay)
 
-            raise last_exception
+            if last_exception is not None:
+                raise last_exception
+            # This should never happen, but satisfy type checker
+            raise RuntimeError("Retry loop completed without success or exception")
         return wrapper
     return decorator
 
@@ -1036,8 +1036,8 @@ def timeout_protection(timeout: int = 30) -> Callable:
             # Use different timeout mechanisms based on platform
             if platform.system() == "Windows":
                 # Windows doesn't support SIGALRM, use threading approach
-                result = [None]
-                exception = [None]
+                result: list[Any] = [None]
+                exception: list[Optional[Exception]] = [None]
 
                 def target() -> None:
                     try:
@@ -1065,15 +1065,15 @@ def timeout_protection(timeout: int = 30) -> Callable:
                 raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
 
             # Set the signal handler and a timeout alarm
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(timeout)
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)  # type: ignore[attr-defined] - SIGALRM not on Windows
+            signal.alarm(timeout)  # type: ignore[attr-defined] - alarm not on Windows
 
             try:
                 result = func(*args, **kwargs)
-                signal.alarm(0)  # Disable the alarm
+                signal.alarm(0)  # type: ignore[attr-defined] - Disable the alarm
                 return result
             finally:
-                signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+                signal.signal(signal.SIGALRM, old_handler)  # type: ignore[attr-defined] - Restore old handler
         return wrapper
     return decorator
 
@@ -1304,7 +1304,8 @@ def test_circuit_breaker() -> None:
     """Test circuit breaker pattern for fault tolerance."""
     if "CircuitBreaker" in globals():
         try:
-            cb = CircuitBreaker(failure_threshold=3, timeout=1)
+            config = CircuitBreakerConfig(failure_threshold=3, timeout=1)
+            cb = CircuitBreaker(name="test", config=config)
             assert cb is not None, "CircuitBreaker should be instantiable"
 
             # Test initial state
@@ -1315,15 +1316,15 @@ def test_circuit_breaker() -> None:
             # Test failure recording
             if hasattr(cb, 'record_failure'):
                 for _ in range(2):  # Record some failures but not enough to open
-                    cb.record_failure()
+                    cb.record_failure()  # type: ignore
 
                 # Test that circuit breaker tracks failures
                 if hasattr(cb, 'failure_count'):
-                    assert cb.failure_count >= 0, "CircuitBreaker should track failure count"
+                    assert cb.failure_count >= 0, "CircuitBreaker should track failure count"  # type: ignore
 
             # Test success recording
             if hasattr(cb, 'record_success'):
-                cb.record_success()
+                cb.record_success()  # type: ignore
 
         except Exception:
             pass  # Circuit breaker might require specific setup

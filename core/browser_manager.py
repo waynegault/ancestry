@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path for standard_imports
-parent_dir = Path(__file__).parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
+parent_dir = str(Path(__file__).resolve().parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 from standard_imports import setup_module
 
@@ -27,7 +27,7 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import (
@@ -43,10 +43,6 @@ from chromedriver import init_webdvr
 from config.config_manager import ConfigManager
 from utils import nav_to_page
 
-# === TYPE CHECKING IMPORTS (avoid circular imports at runtime) ===
-if TYPE_CHECKING:
-    from core.session_manager import SessionManager
-
 # === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
@@ -59,18 +55,12 @@ DriverType = Optional[WebDriver]
 class BrowserManager:
     """Manages browser/WebDriver operations and state."""
 
-    def __init__(self, session_manager: Optional["SessionManager"] = None) -> None:
-        """Initialize the BrowserManager.
-
-        Args:
-            session_manager: Optional reference to parent SessionManager for recovery operations
-        """
+    def __init__(self) -> None:
+        """Initialize the BrowserManager."""
         self.driver: DriverType = None
         self.driver_live: bool = False
         self.browser_needed: bool = False
         self.session_start_time: Optional[float] = None
-        self.cookies_loaded: bool = False  # Track if cookies were successfully loaded
-        self.session_manager = session_manager  # Store reference for navigation recovery
 
         logger.debug("BrowserManager initialized")
 
@@ -103,44 +93,30 @@ class BrowserManager:
             logger.debug("WebDriver initialization successful.")
 
             # Navigate to base URL to stabilize
-            target_url = config_schema.api.base_url
-            logger.info(f"Navigating to: {target_url}")
+            logger.debug(
+                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
+            )
 
-            nav_result = nav_to_page(self.driver, target_url, session_manager=self.session_manager)
-
-            if not nav_result:
-                logger.error(f"Failed to navigate to base URL: {target_url}")
-                print(f"✗ Navigation to {target_url} failed. Check log for details.")
+            if not nav_to_page(self.driver, config_schema.api.base_url):
+                logger.error(
+                    f"Failed to navigate to base URL: {config_schema.api.base_url}"
+                )
                 self.close_browser()
                 return False
 
-            logger.info(f"Successfully navigated to: {target_url}")
-
             # Try to load saved cookies after navigating to base URL
-            logger.info("Attempting to load saved cookies...")
             try:
                 from utils import _load_login_cookies
-                # Always use CookieLoader for consistent duck-typing
+                # Create a minimal session manager-like object for cookie loading
                 class CookieLoader:
                     def __init__(self, driver: Any) -> None:
                         self.driver = driver
 
-                # Use the current browser driver directly - no need to access through session_manager
-                # since we're already in the BrowserManager that's being initialized
                 cookie_loader = CookieLoader(self.driver)
-                cookies_loaded = _load_login_cookies(cookie_loader)  # type: ignore[arg-type]
-
-                if cookies_loaded:
-                    # Refresh the page to apply the loaded cookies
-                    logger.debug("Refreshing page to apply loaded cookies...")
-                    self.driver.refresh()
-                    time.sleep(2)  # Wait for page to reload with cookies
-                    logger.info("Page refreshed with loaded cookies")
-                    self.cookies_loaded = True  # Mark that cookies were successfully loaded
+                if _load_login_cookies(cookie_loader):  # type: ignore[arg-type] - CookieLoader has compatible .driver attribute
+                    logger.debug("Saved login cookies loaded successfully")
                 else:
-                    logger.info("No saved cookies to load or loading failed")
-                    self.cookies_loaded = False  # No cookies loaded
-
+                    logger.debug("No saved cookies to load or loading failed")
             except Exception as e:
                 logger.warning(f"Error loading saved cookies: {e}")
 
@@ -173,7 +149,6 @@ class BrowserManager:
         self.driver_live = False
         self.browser_needed = False
         self.session_start_time = None
-        self.cookies_loaded = False
 
         logger.debug("Browser session closed")
 
@@ -243,7 +218,6 @@ class BrowserManager:
         try:
             start_time = time.time()
             required_lower = {name.lower() for name in cookie_names}
-            missing_lower = required_lower  # Initialize to avoid unbound error
 
             while time.time() - start_time < timeout:
                 if not self.driver:  # Additional safety check
