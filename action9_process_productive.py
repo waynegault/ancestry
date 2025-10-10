@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportImportCycles=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false
 
 """
 Action 9: Productive DNA Match Processing
@@ -21,7 +21,7 @@ import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -35,8 +35,6 @@ import ms_graph_utils
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 # from core.system_cache import cached_database_query  # Module doesn't exist yet
-from ai_interface import extract_genealogical_entities
-
 # === LOCAL IMPORTS ===
 from config import config_schema
 from core.error_handling import (  # type: ignore[import-not-found]
@@ -835,7 +833,9 @@ class PersonProcessor:
             context_logs, self.my_pid_lower
         )
 
-        # Call AI
+        # Call AI (import here to avoid circular dependency with ai_interface)
+        from ai_interface import extract_genealogical_entities
+        
         logger.debug(f"Calling AI for {person.username}...")
         ai_response = extract_genealogical_entities(
             formatted_context, self.session_manager

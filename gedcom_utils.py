@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false, reportImportCycles=false
+# pyright: reportConstantRedefinition=false
 
 """
 GEDCOM Processing & Genealogical Data Intelligence Engine
@@ -855,12 +855,12 @@ def fast_bidirectional_bfs(
 
     start_id = graph.start_id
     end_id = graph.end_id
-    
+
     # Early return if IDs are None
     if not start_id or not end_id:
         logger.warning("[FastBiBFS] Start or end ID is None")
         return []
-    
+
     id_to_parents = graph.id_to_parents
     id_to_children = graph.id_to_children
 
@@ -2300,7 +2300,7 @@ class GedcomData:
         """
         id1_norm = _normalize_id(id1)
         id2_norm = _normalize_id(id2)
-        
+
         # Check for None after normalization
         if not id1_norm or not id2_norm:
             return "(Invalid individual IDs)"

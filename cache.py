@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false, reportImportCycles=false
+# pyright: reportConstantRedefinition=false
 
 """
 High-Performance Disk Caching & Intelligent Data Management Engine
