@@ -93,9 +93,8 @@ LOG_DIRECTORY = Path(os.getenv("LOG_DIR", "Logs"))
 if not LOG_DIRECTORY.is_absolute():
     LOG_DIRECTORY = (Path(__file__).parent.resolve() / LOG_DIRECTORY).resolve()
 
-import logging
-
 # Suppress INFO and lower logs during startup
+# Note: logging import moved to top of file to avoid duplicate import warning
 logging.basicConfig(level=logging.WARNING)
 
 # Suppress external library loggers early to prevent startup noise

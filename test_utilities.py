@@ -567,14 +567,14 @@ def test_utilities_module_tests() -> bool:
 
     tests = [
         ("Basic utility functions", _test_basic_functions, True, "direct", "Test core utility functions"),
-        ("Factory functions", _test_factory_functions, True, "direct", "Test function factories"),
-        ("Function registry", _test_function_registry, True, "direct", "Test function registry"),
-        ("Test runner factory", _test_runner_factory, True, "direct", "Test runner creation"),
+        ("Factory functions", _test_factory_functions, "Test function factories", "direct", "Test function factories"),
+        ("Function registry", _test_function_registry, "Test function registry", "direct", "Test function registry"),
+        ("Test runner factory", _test_runner_factory, "Test runner creation", "direct", "Test runner creation"),
     ]
 
     with suppress_logging():
-        for test_name, test_func, expected, method, details in tests:
-            suite.run_test(test_name, test_func, expected, method, details)
+        for test_name, test_func, expected_behavior, test_description, method_description in tests:
+            suite.run_test(test_name, test_func, expected_behavior, test_description, method_description)
 
     return suite.finish_suite()
 

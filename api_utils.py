@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportConstantRedefinition=false, reportImportCycles=false
-# NOTE: Three import cycles with SessionManager (direct, via utils.py, via gedcom_utils.py→utils.py).
-# SessionManager coordinates all API operations creating bidirectional dependency. Proper fix requires
-# dependency injection or SessionManager interface extraction. Cycles don't affect runtime.
 
 """
 API Intelligence & Request Orchestration Engine
 
 Advanced API management platform providing sophisticated request orchestration,
 intelligent response processing, and comprehensive authentication management
-with adaptive rate limiting, intelligent caching, and performance optimization
+with dynamic rate limiting, intelligent caching, and performance optimization
 for reliable genealogical API interactions and data synchronization workflows.
 
 API Management:
 • Unified API request handling with intelligent routing and endpoint management
 • Advanced response processing with validation, transformation, and error handling
 • Sophisticated authentication management with credential rotation and session persistence
-• Intelligent rate limiting with adaptive throttling and circuit breaker patterns
+• Intelligent rate limiting with dynamic throttling and circuit breaker patterns
 • Comprehensive error handling with retry logic, exponential backoff, and graceful degradation
 • Real-time API health monitoring with performance tracking and alerting
 
@@ -59,7 +55,7 @@ import sys
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import quote, urlencode, urljoin
 
 if TYPE_CHECKING:
@@ -69,7 +65,7 @@ if TYPE_CHECKING:
 import requests
 
 from core.error_handling import (
-    AncestryException,
+    AncestryError,
     APIRateLimitError,
     NetworkTimeoutError,
     RetryableError,
@@ -83,11 +79,14 @@ from core.error_handling import (
 # BeautifulSoup import removed - not used in this module
 BS4_AVAILABLE = False
 
+_pydantic_available = False
 try:
     from importlib.util import find_spec as _find_spec
-    PYDANTIC_AVAILABLE = _find_spec("pydantic") is not None
+    _pydantic_available = _find_spec("pydantic") is not None
 except Exception:
-    PYDANTIC_AVAILABLE = False
+    pass
+
+PYDANTIC_AVAILABLE = _pydantic_available
 
 # === LOCAL IMPORTS ===
 from common_params import ApiIdentifiers
@@ -229,10 +228,10 @@ class TreeOwnerResponse:
     """Dataclass model for validating Tree Owner API responses."""
 
     owner: Optional[dict[str, Any]] = None
-    displayName: Optional[str] = None  # noqa: N815 - API field name
+    display_name: Optional[str] = None
     id: Optional[str] = None  # Add missing 'id' field
-    peopleCount: Optional[int] = None  # noqa: N815 - API field name
-    photoCount: Optional[int] = None  # noqa: N815 - API field name
+    people_count: Optional[int] = None
+    photo_count: Optional[int] = None
     membership: Optional[dict[str, Any]] = None  # Add missing 'membership' field
 
     @classmethod
@@ -241,8 +240,6 @@ class TreeOwnerResponse:
         - Maps legacy 'treeMembersCount' to 'peopleCount' if present.
         - Ignores unknown fields to avoid constructor errors.
         """
-        if not isinstance(data, dict):  # type: ignore[unreachable]
-            data = {}
         normalized = dict(data)
         # Alias mapping: treeMembersCount -> peopleCount (if peopleCount missing)
         if "peopleCount" not in normalized and "treeMembersCount" in normalized:
@@ -269,11 +266,11 @@ class PersonFactsResponse:
     """Dataclass model for validating Person Facts API responses."""
 
     data: Optional[dict[str, Any]] = None
-    personResearch: Optional[dict[str, Any]] = None  # noqa: N815 - API field name
-    PersonFacts: Optional[list[dict[str, Any]]] = None
-    PersonFullName: Optional[str] = None
-    FirstName: Optional[str] = None
-    LastName: Optional[str] = None
+    person_research: Optional[dict[str, Any]] = None
+    person_facts: Optional[list[dict[str, Any]]] = None
+    person_full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'PersonFactsResponse':
@@ -427,7 +424,7 @@ class ApiRateLimiter:
 
 
 # Global rate limiter instance
-api_rate_limiter = ApiRateLimiter()
+rate_limiter = ApiRateLimiter()
 
 
 # --- Helper Functions for parse_ancestry_person_details ---
@@ -529,7 +526,7 @@ def _extract_name_from_api_details(
 
     Args:
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[dict]): Data from Facts API or detailed person information
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
 
     Returns:
         str: The formatted person's name, or "Unknown" if no name could be extracted
@@ -655,7 +652,7 @@ def _extract_gender_from_api_details(
 
     Args:
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[dict]): Data from Facts API or detailed person information
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
 
     Returns:
         Optional[str]: "M" for male, "F" for female, or None if gender cannot be determined
@@ -733,7 +730,7 @@ def _extract_living_status_from_api_details(
 
     Args:
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[dict]): Data from Facts API or detailed person information
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
 
     Returns:
         Optional[bool]: True if person is living, False if deceased, None if unknown
@@ -790,7 +787,7 @@ def _build_date_string_from_parsed_data(parsed_date_data: dict) -> Optional[str]
     return temp_date_str
 
 
-def _try_parse_date_object(date_str: str, parser: Callable[[str], datetime], event_type: str) -> Optional[datetime]:
+def _try_parse_date_object(date_str: str, parser, event_type: str) -> Optional[datetime]:
     """Try to parse a date string into a datetime object."""
     try:
         return parser(date_str)
@@ -800,7 +797,7 @@ def _try_parse_date_object(date_str: str, parser: Callable[[str], datetime], eve
 
 
 def _extract_from_person_facts(
-    facts_data: dict, facts_user_key: str, event_type: str, parser: Callable[[str], datetime]
+    facts_data: dict, facts_user_key: str, event_type: str, parser
 ) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
     """Extract event data from PersonFacts list."""
     person_facts_list = facts_data.get("PersonFacts", [])
@@ -999,10 +996,10 @@ def _extract_event_from_api_details(
     Args:
         event_type (str): Type of event to extract ("Birth", "Death", etc.)
         person_card (Dict): Data from Suggest API or similar person card responses
-        facts_data (Optional[dict]): Data from Facts API or detailed person information
+        facts_data (Optional[Dict]): Data from Facts API or detailed person information
 
     Returns:
-        tuple[Optional[str], Optional[str], Optional[datetime]]: A tuple containing:
+        Tuple[Optional[str], Optional[str], Optional[datetime]]: A tuple containing:
             - date_str: Raw date string from API
             - place_str: Place name string from API
             - date_obj: Parsed datetime object (if date parsing successful)
@@ -1173,7 +1170,7 @@ def parse_ancestry_person_details(
 # Import it from there instead of defining it here
 
 
-def print_group(label: str, items: list[dict]) -> None:
+def print_group(label: str, items: list[dict]):
     print(f"\n{label}:")
     if items:
         formatter = format_name
@@ -1262,32 +1259,27 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 @circuit_breaker(failure_threshold=5, recovery_timeout=60)
 # Helper functions for call_suggest_api
 
-def _validate_suggest_api_inputs(session_manager: "SessionManager", owner_tree_id: str) -> None:
+def _validate_suggest_api_inputs(owner_tree_id: str):
     """Validate inputs for suggest API call."""
     if not callable(_api_req):
         logger.critical("Suggest API call failed: _api_req function unavailable (Import Failed?).")
-        raise AncestryException(
+        raise AncestryError(
             "_api_req function not available from utils - Check module imports and dependencies"
         )
 
-    if not isinstance(session_manager, SessionManager) and not hasattr(session_manager, "is_sess_valid"):  # type: ignore[unreachable]
-        raise AncestryException(
-            "Invalid SessionManager passed to suggest API - Provide a valid SessionManager instance"
-        )
-
     if not owner_tree_id:
-        raise AncestryException("owner_tree_id is required for suggest API - Provide a valid tree ID")
+        raise AncestryError("owner_tree_id is required for suggest API - Provide a valid tree ID")
 
 
-def _apply_rate_limiting(api_description: str) -> None:
+def _apply_rate_limiting(api_description: str):
     """Apply rate limiting if available."""
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
+    if rate_limiter and PYDANTIC_AVAILABLE:
+        if not rate_limiter.can_make_request():
+            wait_time = rate_limiter.wait_time_until_available()
             logger.warning(f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s")
             import time
             time.sleep(wait_time)
-        api_rate_limiter.record_request()
+        rate_limiter.record_request()
 
 
 def _build_suggest_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> str:
@@ -1371,7 +1363,7 @@ def _make_suggest_api_request(
     )
 
 
-def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception) -> None:
+def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):
     """Handle timeout exception for suggest API."""
     timeout_error = NetworkTimeoutError(
         f"API request timed out after {timeout}s",
@@ -1389,7 +1381,7 @@ def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, sugge
         raise timeout_error from timeout_err
 
 
-def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str) -> None:
+def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str):
     """Handle rate limit (429) exception for suggest API."""
     import time
     rate_limit_delay = 5.0 * (2 ** (attempt - 1))
@@ -1415,7 +1407,6 @@ def _try_direct_suggest_fallback(
     """Try direct requests fallback for suggest API."""
     logger.warning(f"{api_description} failed via _api_req. Attempting direct requests fallback.")
     direct_response_obj = None
-    direct_timeout = 30  # Initialize with default value for exception handlers
 
     try:
         cookies = {}
@@ -1452,7 +1443,7 @@ def _try_direct_suggest_fallback(
             logger.debug(f"Direct Response content: {direct_response_obj.text[:500]}")
 
     except requests.exceptions.Timeout:
-        logger.error(f"Direct request fallback timed out after {direct_timeout} seconds")
+        logger.error("Direct request fallback timed out")
     except json.JSONDecodeError as json_err:
         logger.error(f"Direct request fallback failed to decode JSON: {json_err}")
         if direct_response_obj:
@@ -1529,13 +1520,12 @@ def _execute_suggest_api_with_retries(
 def call_suggest_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    _owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
 ) -> Optional[list[dict[str, Any]]]:
     # Validate inputs
-    _validate_suggest_api_inputs(session_manager, owner_tree_id)
+    _validate_suggest_api_inputs(owner_tree_id)
 
     api_description = "Suggest API"
 
@@ -1569,7 +1559,6 @@ def call_suggest_api(
 
 
 def _validate_facts_api_prerequisites(
-    session_manager: "SessionManager",
     owner_profile_id: str,
     api_person_id: str,
     api_tree_id: str,
@@ -1581,10 +1570,6 @@ def _validate_facts_api_prerequisites(
         )
         raise ImportError("_api_req function not available from utils")
 
-    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error("Facts API call failed: Invalid SessionManager passed.")
-        return False
-
     if not all([owner_profile_id, api_person_id, api_tree_id]):
         logger.error(
             "Facts API call failed: owner_profile_id, api_person_id, and api_tree_id are required."
@@ -1592,19 +1577,6 @@ def _validate_facts_api_prerequisites(
         return False
 
     return True
-
-
-def _apply_rate_limiting_v2(api_description: str) -> None:
-    """Apply rate limiting if available (duplicate - should be consolidated)."""
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(
-                f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s"
-            )
-            import time
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
 
 
 def _try_direct_facts_request(
@@ -1785,8 +1757,12 @@ def call_facts_user_api(
     timeouts: Optional[list[int]] = None,
 ) -> Optional[dict[str, Any]]:
     # Validate prerequisites
+    if not api_ids.owner_profile_id or not api_ids.api_person_id or not api_ids.api_tree_id:
+        logger.error("Facts API call failed: Missing required API identifiers")
+        return None
+
     if not _validate_facts_api_prerequisites(
-        session_manager, api_ids.owner_profile_id, api_ids.api_person_id, api_ids.api_tree_id
+        api_ids.owner_profile_id, api_ids.api_person_id, api_ids.api_tree_id
     ):
         return None
 
@@ -1834,14 +1810,12 @@ def _process_getladder_response(relationship_data: Any, api_description: str) ->
     # Validate response with Pydantic if available and try to parse as JSON
     if PYDANTIC_AVAILABLE:
         try:
-            # json is already imported at module level (line 53)
+            import json
             parsed_data = json.loads(relationship_data)
             GetLadderResponse(**parsed_data)
             logger.debug("GetLadder API response validation successful")
-        except json.JSONDecodeError:
-            logger.debug("GetLadder API returned non-JSON string response")
         except Exception as validation_err:
-            logger.warning(f"GetLadder API response validation warning: {validation_err}")
+            logger.debug(f"GetLadder API returned non-JSON string response or validation warning: {validation_err}")
 
     logger.debug(f"{api_description} call successful, received string response.")
     return relationship_data
@@ -1857,9 +1831,6 @@ def call_getladder_api(
     if not callable(_api_req):
         logger.critical("GetLadder API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
-    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error("GetLadder API call failed: Invalid SessionManager passed.")
-        return None
     if not all([owner_tree_id, target_person_id]):
         logger.error("GetLadder API call failed: owner_tree_id and target_person_id are required.")
         return None
@@ -1955,9 +1926,6 @@ def call_discovery_relationship_api(
     if not callable(_api_req):
         logger.critical("Discovery Relationship API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
-    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error("Discovery Relationship API call failed: Invalid SessionManager passed.")
-        return None
     if not all([owner_profile_id, selected_person_global_id]):
         logger.error("Discovery Relationship API call failed: owner_profile_id and selected_person_global_id are required.")
         return None
@@ -2034,7 +2002,6 @@ def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[
 def call_treesui_list_api(
     session_manager: "SessionManager",
     owner_tree_id: str,
-    _owner_profile_id: Optional[str],
     base_url: str,
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
@@ -2042,9 +2009,6 @@ def call_treesui_list_api(
     if not callable(_api_req):
         logger.critical("TreesUI List API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
-    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error("TreesUI List API call failed: Invalid SessionManager passed.")
-        return None
     if not owner_tree_id:
         logger.error("TreesUI List API call failed: owner_tree_id is required.")
         return None
@@ -2289,8 +2253,13 @@ def call_send_message_api(
         logger.error(f"{log_prefix}: Logic Error - Unexpected APP_MODE '{app_mode}' reached send logic.")
         return SEND_ERROR_INTERNAL_MODE, None
 
-    MY_PROFILE_ID_LOWER = session_manager.my_profile_id.lower()
-    MY_PROFILE_ID_UPPER = session_manager.my_profile_id.upper()
+    my_profile_id = session_manager.my_profile_id
+    if not my_profile_id:
+        logger.error(f"{log_prefix}: my_profile_id is None, cannot send message")
+        return SEND_ERROR_INTERNAL_MODE, None
+
+    MY_PROFILE_ID_LOWER = my_profile_id.lower()
+    MY_PROFILE_ID_UPPER = my_profile_id.upper()
     recipient_profile_id_upper = getattr(person, "profile_id", "").upper()
 
     api_request_data = _prepare_send_message_request(
@@ -2397,17 +2366,6 @@ def _validate_profile_request(session_manager: "SessionManager", profile_id: str
         logger.error(f"call_profile_details_api: Session invalid for Profile ID {profile_id}.")
         return False
     return True
-
-
-def _apply_rate_limiting_v3(api_description: str) -> None:
-    """Apply rate limiting if available (duplicate - should be consolidated)."""
-    if api_rate_limiter and PYDANTIC_AVAILABLE:
-        if not api_rate_limiter.can_make_request():
-            wait_time = api_rate_limiter.wait_time_until_available()
-            logger.warning(f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s")
-            import time
-            time.sleep(wait_time)
-        api_rate_limiter.record_request()
 
 
 def call_profile_details_api(
@@ -2617,9 +2575,6 @@ def _validate_tree_owner_request(session_manager: "SessionManager", tree_id: str
     if not tree_id:
         logger.warning("Cannot get tree owner: tree_id is missing.")
         return False
-    if not isinstance(tree_id, str):  # type: ignore[unreachable]
-        logger.warning(f"Invalid tree_id type provided: {type(tree_id)}. Expected string.")
-        return False
     if not session_manager.is_sess_valid():
         logger.error("call_tree_owner_api: Session invalid.")
         return False
@@ -2673,149 +2628,8 @@ def call_tree_owner_api(
 
 
 # === ASYNC API FUNCTIONS (Phase 7.4.1) ===
-
-async def async_call_suggest_api(
-    session_manager: "SessionManager",
-    owner_tree_id: str,
-    _owner_profile_id: Optional[str],
-    base_url: str,
-    search_criteria: dict[str, Any],
-    timeout: Optional[int] = None,
-) -> Optional[list[PersonSuggestResponse]]:
-    """
-    Async version of call_suggest_api for concurrent person suggestions.
-
-    Args:
-        session_manager: SessionManager for authentication
-        owner_tree_id: Tree ID for the search
-        owner_profile_id: Profile ID (kept for compatibility)
-        base_url: Base URL for the API
-        search_criteria: Search parameters
-        timeout: Optional timeout in seconds
-
-    Returns:
-        List of PersonSuggestResponse objects or None on failure
-
-    Example:
-        >>> suggestions = await async_call_suggest_api(
-        ...     session_manager, tree_id, profile_id, base_url,
-        ...     {"name": "John Smith", "birth_year": 1900}
-        ... )
-    """
-    from utils import async_api_request
-
-    # Build request URL and data (same logic as sync version)
-    suggest_url = urljoin(base_url, "suggest")
-
-    # Prepare request data
-    request_data = {
-        "treeId": owner_tree_id,
-        **search_criteria
-    }
-
-    try:
-        logger.debug(f"Async Suggest API call for tree {owner_tree_id}")
-
-        response_data = await async_api_request(
-            url=suggest_url,
-            method="POST",
-            session_manager=session_manager,
-            json_data=request_data,
-            timeout=timeout or 180,
-            api_description="Ancestry Suggest API (Async)"
-        )
-
-        if not response_data:
-            logger.warning("Async Suggest API returned no data")
-            return None
-
-        # Parse response into PersonSuggestResponse objects
-        suggestions = []
-        if isinstance(response_data, list):
-            for item in response_data:
-                if isinstance(item, dict):
-                    suggestions.append(PersonSuggestResponse.from_dict(item))
-        elif isinstance(response_data, dict) and "suggestions" in response_data:
-            for item in response_data["suggestions"]:
-                if isinstance(item, dict):
-                    suggestions.append(PersonSuggestResponse.from_dict(item))
-
-        logger.info(f"Async Suggest API returned {len(suggestions)} suggestions")
-        return suggestions
-
-    except Exception as e:
-        logger.error(f"Async Suggest API error: {e}")
-        return None
-
-
-async def async_batch_person_lookup(
-    session_manager: "SessionManager",
-    person_ids: list[str],
-    tree_id: str,
-    base_url: str,
-    max_concurrent: int = 5,
-    progress_callback: Optional[Callable[[int, int], None]] = None
-) -> dict[str, Optional[PersonFactsResponse]]:
-    """
-    Perform concurrent person fact lookups for multiple persons.
-
-    Args:
-        session_manager: SessionManager for authentication
-        person_ids: List of person IDs to look up
-        tree_id: Tree ID for all lookups
-        base_url: Base URL for the API
-        max_concurrent: Maximum concurrent requests
-        progress_callback: Optional progress callback
-
-    Returns:
-        Dictionary mapping person IDs to PersonFactsResponse objects
-
-    Example:
-        >>> results = await async_batch_person_lookup(
-        ...     session_manager, ["person1", "person2"], tree_id, base_url
-        ... )
-        >>> for person_id, facts in results.items():
-        ...     if facts:
-        ...         print(f"Got facts for {person_id}")
-    """
-    from utils import async_batch_api_requests
-
-    # Prepare batch requests
-    requests = []
-    for person_id in person_ids:
-        facts_url = urljoin(base_url, f"trees/{tree_id}/persons/{person_id}/facts")
-        requests.append({
-            "url": facts_url,
-            "method": "GET",
-            "api_description": f"Facts for {person_id}"
-        })
-
-    logger.info(f"Starting async batch person lookup for {len(person_ids)} persons")
-
-    # Execute batch requests
-    results = await async_batch_api_requests(
-        requests=requests,
-        session_manager=session_manager,
-        max_concurrent=max_concurrent,
-        progress_callback=progress_callback
-    )
-
-    # Parse results into PersonFactsResponse objects
-    parsed_results = {}
-    for person_id, response_data in zip(person_ids, results):
-        if response_data:
-            try:
-                parsed_results[person_id] = PersonFactsResponse.from_dict(response_data)
-            except Exception as e:
-                logger.warning(f"Failed to parse facts for {person_id}: {e}")
-                parsed_results[person_id] = None
-        else:
-            parsed_results[person_id] = None
-
-    successful_count = sum(1 for v in parsed_results.values() if v is not None)
-    logger.info(f"Async batch person lookup completed: {successful_count}/{len(person_ids)} successful")
-
-    return parsed_results
+# NOTE: Async API functions removed - not implemented and unused
+# If async functionality is needed in the future, implement using aiohttp
 
 
 def call_enhanced_api(
@@ -2973,7 +2787,6 @@ def call_relationship_ladder_api(
 def get_relationship_path_data(
     session_manager: "SessionManager",
     person_id: str,
-    _reference_person_id: Optional[str] = None
 ) -> Optional[dict[str, Any]]:
     """
     Get comprehensive relationship path data for a person using the enhanced API.
@@ -3206,7 +3019,7 @@ def _run_edge_case_tests(suite: "TestSuite") -> None:
 
         for invalid_json in invalid_json_strings:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
-                json.loads(invalid_json)  # Expected behavior for invalid JSON
+                json.loads(invalid_json)  # Expected to fail for invalid JSON
 
     def test_empty_data_handling():
         """Test handling of empty or missing data."""
@@ -3328,7 +3141,6 @@ def _run_performance_tests(suite: "TestSuite") -> None:
 
         large_data = {"items": [{"id": i, "name": f"Person {i}"} for i in range(1000)]}
         json_string = json.dumps(large_data)
-        parsed = None  # Initialize to ensure it's bound for assertion
 
         start_time = time.time()
         for _ in range(10):
@@ -3339,7 +3151,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         assert (
             parsing_time < 1.0
         ), f"JSON parsing took {parsing_time:.3f}s, should be < 1.0s"
-        assert isinstance(parsed, dict), "Parsed result should be dictionary"
+        assert isinstance(parsed, dict), "Parsed result should be dictionary"  # type: ignore[possibly-unbound]
 
     def test_url_encoding_performance():
         """Test URL encoding performance with multiple strings."""

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false
 
 """
 API Search Utilities - Ancestry API Search and Retrieval
@@ -39,6 +38,7 @@ from api_utils import (
     call_suggest_api,
     call_treesui_list_api,
 )
+from common_params import ApiIdentifiers
 from config import config_schema
 from relationship_utils import format_api_relationship_path
 from utils import SessionManager
@@ -85,7 +85,7 @@ def _get_year_range(date_flex: Optional[dict[str, Any]]) -> int:
 
 def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean search criteria."""
-    def clean_param(p: Optional[str]) -> Optional[str]:
+    def clean_param(p):
         return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(search_criteria.get("first_name")),
@@ -100,7 +100,7 @@ def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
 
 def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean candidate data - handle both camelCase and Title Case field names."""
-    def clean_param(p: Optional[str]) -> Optional[str]:
+    def clean_param(p):
         return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),
@@ -113,25 +113,27 @@ def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
+def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: Union[int, float], total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score name matching (first name or surname)."""
     if search_name and cand_name and search_name in cand_name:
-        total_score += score_value
-        field_scores[field_name] = score_value
+        score_int = int(score_value)
+        total_score += score_int
+        field_scores[field_name] = score_int
         reasons.append(f"{field_name.replace('_', ' ').title()} '{search_name}' found in '{cand_name}'")
     return total_score
 
 
-def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
+def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: Union[int, float], total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score gender matching."""
     if search_gender and cand_gender and search_gender == cand_gender:
-        total_score += score_value
-        field_scores["gender"] = score_value
+        score_int = int(score_value)
+        total_score += score_int
+        field_scores["gender"] = score_int
         reasons.append(f"Gender '{search_gender}' matched")
     return total_score
 
 
-def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: int, close_score: int, year_range: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
+def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: Union[int, float], close_score: Union[int, float], year_range: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score year matching (birth or death year)."""
     if search_year and cand_year:
         try:
@@ -139,48 +141,51 @@ def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_s
             cand_year_int = int(cand_year)
 
             if search_year_int == cand_year_int:
-                total_score += exact_score
-                field_scores[field_name] = exact_score
+                exact_int = int(exact_score)
+                total_score += exact_int
+                field_scores[field_name] = exact_int
                 reasons.append(f"{field_name.replace('_', ' ').title()} {search_year} matched exactly")
             elif abs(search_year_int - cand_year_int) <= year_range:
-                total_score += close_score
-                field_scores[field_name] = close_score
+                close_int = int(close_score)
+                total_score += close_int
+                field_scores[field_name] = close_int
                 reasons.append(f"{field_name.replace('_', ' ').title()} {search_year} close to {cand_year}")
         except (ValueError, TypeError) as e:
             logger.debug(f"{field_name} comparison failed - search: {search_year} ({type(search_year)}), candidate: {cand_year} ({type(cand_year)}), error: {e}")
     return total_score
 
 
-def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
+def _score_place_match(search_place: Optional[str], cand_place: Optional[str], field_name: str, score_value: Union[int, float], total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
     """Score place matching (birth or death place)."""
     if search_place and cand_place and search_place in cand_place:
-        total_score += score_value
-        field_scores[field_name] = score_value
+        score_int = int(score_value)
+        total_score += score_int
+        field_scores[field_name] = score_int
         reasons.append(f"{field_name.replace('_', ' ').title()} '{search_place}' found in '{cand_place}'")
     return total_score
 
 
-def _apply_bonus_scores(field_scores: dict[str, int], weights: dict[str, Union[int, float]], total_score: Union[int, float], reasons: list[str]) -> Union[int, float]:
+def _apply_bonus_scores(field_scores: dict[str, int], weights: dict[str, Union[int, float]], total_score: int, reasons: list[str]) -> int:
     """Apply bonus scores for multiple matching fields."""
     # Bonus for both names matching
     if "first_name" in field_scores and "surname" in field_scores:
-        bonus = weights.get("bonus_both_names_contain", 25)
+        bonus = int(weights.get("bonus_both_names_contain", 25))
         total_score += bonus
-        field_scores["name_bonus"] = int(bonus) if isinstance(bonus, (int, float)) else bonus
+        field_scores["name_bonus"] = bonus
         reasons.append("Both first name and surname matched")
 
     # Bonus for both birth date and place matching
     if "birth_year" in field_scores and "birth_place" in field_scores:
-        bonus = weights.get("bonus_birth_date_and_place", 15)
+        bonus = int(weights.get("bonus_birth_date_and_place", 15))
         total_score += bonus
-        field_scores["birth_bonus"] = int(bonus) if isinstance(bonus, (int, float)) else bonus
+        field_scores["birth_bonus"] = bonus
         reasons.append("Both birth year and place matched")
 
     # Bonus for both death date and place matching
     if "death_year" in field_scores and "death_place" in field_scores:
-        bonus = weights.get("bonus_death_date_and_place", 15)
+        bonus = int(weights.get("bonus_death_date_and_place", 15))
         total_score += bonus
-        field_scores["death_bonus"] = int(bonus) if isinstance(bonus, (int, float)) else bonus
+        field_scores["death_bonus"] = bonus
         reasons.append("Both death year and place matched")
 
     return total_score
@@ -260,17 +265,13 @@ def _build_search_query(search_criteria: dict[str, Any]) -> str:
     return search_query.strip()
 
 
-def _get_tree_and_profile_ids(session_manager: SessionManager) -> tuple[Optional[str], Optional[str]]:
-    """Get tree ID and profile ID from session manager or config."""
+def _get_tree_id(session_manager: SessionManager) -> Optional[str]:
+    """Get tree ID from session manager or config."""
     tree_id = session_manager.my_tree_id
     if not tree_id:
         tree_id = getattr(config_schema.test, "test_tree_id", "")
 
-    owner_profile_id = session_manager.my_profile_id
-    if not owner_profile_id:
-        owner_profile_id = getattr(config_schema.test, "test_profile_id", "")
-
-    return tree_id, owner_profile_id
+    return tree_id
 
 
 def _parse_hyphenated_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
@@ -323,7 +324,7 @@ def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
     return None, None
 
 
-def _process_suggest_result(suggestion: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, int], date_flex: dict[str, int]) -> Optional[dict[str, Any]]:
+def _process_suggest_result(suggestion: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, Union[int, float]], date_flex: dict[str, Union[int, float]]) -> Optional[dict[str, Any]]:
     """Process a single suggestion result and return match record if score > 0."""
     try:
         person_id = suggestion.get("id")
@@ -382,7 +383,7 @@ def _process_suggest_result(suggestion: dict[str, Any], search_criteria: dict[st
         return None
 
 
-def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, int], date_flex: dict[str, int], scored_matches: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, Union[int, float]], date_flex: dict[str, Union[int, float]], scored_matches: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     """Process a single treesui-list person and return match record if score > 0 and not duplicate."""
     try:
         person_id = person.get("id")
@@ -465,7 +466,7 @@ def _validate_session(session_manager: SessionManager) -> bool:
         return False
 
 
-def _call_suggest_api_for_search(session_manager: SessionManager, search_criteria: dict[str, Any], tree_id: str, owner_profile_id: str) -> list[dict[str, Any]]:
+def _call_suggest_api_for_search(session_manager: SessionManager, search_criteria: dict[str, Any], tree_id: str) -> list[dict[str, Any]]:
     """Call suggest API and return results."""
     base_url = config_schema.api.base_url
 
@@ -478,7 +479,6 @@ def _call_suggest_api_for_search(session_manager: SessionManager, search_criteri
     suggest_results = call_suggest_api(
         session_manager=session_manager,
         owner_tree_id=tree_id,
-        _owner_profile_id=owner_profile_id,
         base_url=base_url,
         search_criteria=api_search_criteria,
     )
@@ -525,7 +525,7 @@ def _build_treesui_search_params(search_criteria: dict[str, Any]) -> dict[str, A
     return search_params
 
 
-def _call_treesui_api_for_search(session_manager: SessionManager, search_params: dict[str, Any], tree_id: str, owner_profile_id: str) -> Optional[dict[str, Any]]:
+def _call_treesui_api_for_search(session_manager: SessionManager, search_params: dict[str, Any], tree_id: str) -> Optional[dict[str, Any]]:
     """Call treesui-list API and return results."""
     if not search_params:
         return None
@@ -536,7 +536,6 @@ def _call_treesui_api_for_search(session_manager: SessionManager, search_params:
     return call_treesui_list_api(
         session_manager=session_manager,
         owner_tree_id=tree_id,
-        _owner_profile_id=owner_profile_id,
         base_url=base_url,
         search_criteria=search_params,
     )
@@ -590,14 +589,14 @@ def search_api_for_criteria(
 
     logger.info(f"Searching API with query: {search_query}")
 
-    # Get tree ID and profile ID
-    tree_id, owner_profile_id = _get_tree_and_profile_ids(session_manager)
+    # Get tree ID
+    tree_id = _get_tree_id(session_manager)
     if not tree_id:
         logger.error("No tree ID available for API search")
         return []
 
     # Call suggest API and process results
-    suggest_results = _call_suggest_api_for_search(session_manager, search_criteria, tree_id, owner_profile_id)
+    suggest_results = _call_suggest_api_for_search(session_manager, search_criteria, tree_id)
     max_suggestions = config_schema.max_suggestions_to_score
     scored_matches = _process_suggest_results(suggest_results, search_criteria, max_suggestions)
 
@@ -605,7 +604,7 @@ def search_api_for_criteria(
     if len(scored_matches) < max_results:
         try:
             search_params = _build_treesui_search_params(search_criteria)
-            treesui_results = _call_treesui_api_for_search(session_manager, search_params, tree_id, owner_profile_id)
+            treesui_results = _call_treesui_api_for_search(session_manager, search_params, tree_id)
             scored_matches = _process_treesui_results(treesui_results, search_criteria, scored_matches)
         except Exception as e:
             logger.error(f"Error calling treesui-list API: {e}")
@@ -665,11 +664,15 @@ def _get_facts_data_from_api(
     logger.info(f"Getting facts for person {person_id} in tree {tree_id}")
     base_url = config_schema.api.base_url
 
-    facts_data = call_facts_user_api(
-        session_manager=session_manager,
+    api_ids = ApiIdentifiers(
         owner_profile_id=owner_profile_id,
         api_person_id=person_id,
         api_tree_id=tree_id,
+    )
+
+    facts_data = call_facts_user_api(
+        session_manager=session_manager,
+        api_ids=api_ids,
         base_url=base_url,
     )
 
@@ -1107,7 +1110,7 @@ def _test_edge_cases() -> None:
     assert result == 1800, "Should extract first year from range"
 
     # Test scoring with empty data
-    score, field_scores, _reasons = _run_simple_suggestion_scoring({}, {})
+    score, field_scores, _ = _run_simple_suggestion_scoring({}, {})
     assert score == 0, "Should return zero score for empty inputs"
     assert len(field_scores) == 0, "Should return empty field scores"
 

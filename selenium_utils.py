@@ -58,7 +58,7 @@ from typing import Any, Optional
 # === THIRD-PARTY IMPORTS ===
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions as EC  # noqa: N812 - Standard Selenium convention
+from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
 # Local imports
@@ -178,7 +178,7 @@ def wait_for_element(
         return None
 
     wait = WebDriverWait(driver, timeout)
-    return wait.until(EC.presence_of_element_located((by, selector)))
+    return wait.until(expected_conditions.presence_of_element_located((by, selector)))
 
 
 @safe_execute(default_return=False, log_errors=False)

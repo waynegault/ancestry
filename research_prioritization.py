@@ -75,6 +75,7 @@ class ResearchPriority:
     research_steps: list[str] = field(default_factory=list)
     estimated_effort: str = "medium"  # 'low', 'medium', 'high'
     success_probability: float = 0.5  # 0.0 to 1.0
+    dependency_bonus: float = 0.0  # Bonus score for prerequisite dependencies
 
 
 @dataclass
@@ -120,7 +121,6 @@ class IntelligentResearchPrioritizer:
         self,
         gedcom_analysis: dict[str, Any],
         dna_crossref_analysis: dict[str, Any],
-        _existing_tasks: Optional[list[dict[str, Any]]] = None
     ) -> dict[str, Any]:
         """
         Generate intelligent research prioritization based on multiple data sources.
@@ -128,7 +128,6 @@ class IntelligentResearchPrioritizer:
         Args:
             gedcom_analysis: Results from GEDCOM intelligence analysis
             dna_crossref_analysis: Results from DNA-GEDCOM cross-reference
-            existing_tasks: Optional existing research tasks to incorporate
 
         Returns:
             Dictionary containing prioritized research plan
@@ -189,11 +188,11 @@ class IntelligentResearchPrioritizer:
                     line_id=f"line_{surname.lower()}",
                     line_name=f"{surname} Family Line",
                     surname=surname,
-                    generations_back=self._estimate_generations_back(surname, gedcom_analysis),
-                    completeness_percentage=self._calculate_line_completeness(surname, gedcom_analysis),
-                    missing_generations=self._identify_missing_generations(surname, gedcom_analysis),
-                    research_bottlenecks=self._identify_research_bottlenecks(surname, gedcom_analysis),
-                    priority_research_targets=self._identify_priority_targets(surname, gedcom_analysis)
+                    generations_back=self._estimate_generations_back(),
+                    completeness_percentage=self._calculate_line_completeness(),
+                    missing_generations=self._identify_missing_generations(),
+                    research_bottlenecks=self._identify_research_bottlenecks(surname),
+                    priority_research_targets=self._identify_priority_targets(surname)
                 )
 
                 self.family_line_status.append(line_status)
@@ -236,12 +235,12 @@ class IntelligentResearchPrioritizer:
                     cluster = LocationResearchCluster(
                         cluster_id=f"cluster_{location.replace(' ', '_').lower()}",
                         location=location,
-                        time_period=self._estimate_time_period_for_location(location, items),
+                        time_period=self._estimate_time_period_for_location(),
                         people_count=len(items),
                         target_people=[item.get("person_name", "") for item in items if isinstance(item, dict)],
                         available_records=self._identify_available_records_for_location(location),
                         research_efficiency_score=self._calculate_cluster_efficiency(location, items),
-                        cluster_research_plan=self._generate_cluster_research_plan(location, items)
+                        cluster_research_plan=self._generate_cluster_research_plan(location)
                     )
 
                     self.location_clusters.append(cluster)
@@ -449,18 +448,12 @@ class IntelligentResearchPrioritizer:
     def _is_prerequisite(self, task1: ResearchPriority, task2: ResearchPriority) -> bool:
         """Determine if task1 is a prerequisite for task2."""
         # Vital records often prerequisite for other research
-        return (
-            (
-                task1.task_type == "vital_records"
-                and task2.task_type in ["census", "immigration"]
-                and any(person in task2.target_people for person in task1.target_people)
-            )
-            or (
-                task1.task_type == "conflict_resolution"
-                and task2.task_type == "dna_verification"
-                and any(person in task2.target_people for person in task1.target_people)
-            )
-        )
+        if (task1.task_type == "vital_records" and task2.task_type in ["census", "immigration"] and
+            any(person in task2.target_people for person in task1.target_people)):
+            return True
+
+        # Conflict resolution prerequisite for verification tasks
+        return bool(task1.task_type == "conflict_resolution" and task2.task_type == "dna_verification" and any(person in task2.target_people for person in task1.target_people))
 
     def _extract_location_from_context(self, context: dict[str, Any]) -> str:
         """Extract location information from research context."""
@@ -471,22 +464,22 @@ class IntelligentResearchPrioritizer:
         return ""
 
     # Helper methods for calculations and analysis
-    def _estimate_generations_back(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> int:
+    def _estimate_generations_back(self) -> int:
         """Estimate how many generations back this surname line goes."""
         # Placeholder implementation
         return 4
 
-    def _calculate_line_completeness(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> float:
+    def _calculate_line_completeness(self) -> float:
         """Calculate completeness percentage for a family line."""
         # Placeholder implementation
         return 65.0
 
-    def _identify_missing_generations(self, _surname: str, _gedcom_analysis: dict[str, Any]) -> list[int]:
+    def _identify_missing_generations(self) -> list[int]:
         """Identify which generations are missing for this line."""
         # Placeholder implementation
         return [3, 4]
 
-    def _identify_research_bottlenecks(self, surname: str, _gedcom_analysis: dict[str, Any]) -> list[str]:
+    def _identify_research_bottlenecks(self, surname: str) -> list[str]:
         """Identify research bottlenecks for this family line."""
         return [
             f"Missing parents for {surname} ancestors",
@@ -494,7 +487,7 @@ class IntelligentResearchPrioritizer:
             f"Birth records unavailable for early {surname} generations"
         ]
 
-    def _identify_priority_targets(self, surname: str, _gedcom_analysis: dict[str, Any]) -> list[str]:
+    def _identify_priority_targets(self, surname: str) -> list[str]:
         """Identify priority research targets for this family line."""
         return [
             f"Research {surname} family immigration",
@@ -527,11 +520,11 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _estimate_time_period_for_location(self, _location: str, _items: list[dict[str, Any]]) -> str:
+    def _estimate_time_period_for_location(self) -> str:
         """Estimate time period for location cluster."""
         return "1800-1900"  # Placeholder
 
-    def _identify_available_records_for_location(self, _location: str) -> list[str]:
+    def _identify_available_records_for_location(self, location: str) -> list[str]:
         """Identify available record types for a location."""
         record_types = {
             "Scotland": ["Birth certificates", "Death certificates", "Census records", "Parish registers"],
@@ -551,7 +544,7 @@ class IntelligentResearchPrioritizer:
 
         return min(1.0, base_score + location_bonus)
 
-    def _generate_cluster_research_plan(self, location: str, _items: list[dict[str, Any]]) -> list[str]:
+    def _generate_cluster_research_plan(self, location: str) -> list[str]:
         """Generate research plan for a location cluster."""
         return [
             f"Research {location} records for multiple family members",

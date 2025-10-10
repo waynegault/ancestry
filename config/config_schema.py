@@ -601,7 +601,7 @@ class ConfigSchema:
     include_action6_in_workflow: bool = True
 
     # Timing/interval settings
-    proactive_refresh_interval_seconds: int = 2700  # 45 minutes between proactive refresh checks
+    proactive_refresh_interval_seconds: int = 1320  # 22 minutes between proactive refresh checks
     # Timeout for Action 6 coord (seconds) — extend to avoid mid-run timeout/auto-retry
     action6_coord_timeout_seconds: int = 14400  # 4 hours
 

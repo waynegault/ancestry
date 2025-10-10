@@ -258,7 +258,7 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     return options
 
 
-def _create_chrome_driver(options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:  # noqa: ARG001
+def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:
     """Create Chrome WebDriver instance with multiple fallback strategies."""
     try:
         logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")

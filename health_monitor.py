@@ -1817,20 +1817,20 @@ def health_monitor_tests() -> bool:
         ("Performance Tracking", _test_performance_tracking, True, "direct", "Test performance tracking"),
         ("Dashboard Generation", _test_dashboard_generation, True, "direct", "Test dashboard generation"),
         ("Integration Helpers", _test_integration_helpers, True, "direct", "Test integration helpers"),
-        ("Global Instance", _test_global_instance, True, "direct", "Test global instance"),
-        ("Memory Pressure Monitoring", _test_memory_pressure_monitoring, True, "direct", "Test memory monitoring"),
-        ("Resource Constraint Handling", _test_resource_constraint_handling, True, "direct", "Test resource constraints"),
-        ("Long Session Resource Management", _test_long_session_resource_management, True, "direct", "Test long session management"),
-        ("Session Checkpoint Creation", _test_session_checkpoint_creation, True, "direct", "Test checkpoint creation"),
-        ("Session State Persistence", _test_session_state_persistence, True, "direct", "Test state persistence"),
-        ("Checkpoint Management", _test_checkpoint_management, True, "direct", "Test checkpoint management"),
-        ("Auto Checkpoint Functionality", _test_auto_checkpoint_functionality, True, "direct", "Test auto checkpoint"),
+        ("Global Instance", _test_global_instance, "Test global instance", "direct", "Test global instance"),
+        ("Memory Pressure Monitoring", _test_memory_pressure_monitoring, "Test memory monitoring", "direct", "Test memory monitoring"),
+        ("Resource Constraint Handling", _test_resource_constraint_handling, "Test resource constraints", "direct", "Test resource constraints"),
+        ("Long Session Resource Management", _test_long_session_resource_management, "Test long session management", "direct", "Test long session management"),
+        ("Session Checkpoint Creation", _test_session_checkpoint_creation, "Test checkpoint creation", "direct", "Test checkpoint creation"),
+        ("Session State Persistence", _test_session_state_persistence, "Test state persistence", "direct", "Test state persistence"),
+        ("Checkpoint Management", _test_checkpoint_management, "Test checkpoint management", "direct", "Test checkpoint management"),
+        ("Auto Checkpoint Functionality", _test_auto_checkpoint_functionality, "Test auto checkpoint", "direct", "Test auto checkpoint"),
     ]
 
     # Run all tests from the list
     with suppress_logging():
-        for test_name, test_func, expected, method, details in tests:
-            test_suite.run_test(test_name, test_func, expected, method, details)
+        for test_name, test_func, expected_behavior, test_description, method_description in tests:
+            test_suite.run_test(test_name, test_func, expected_behavior, test_description, method_description)
 
     return test_suite.finish_suite()
 

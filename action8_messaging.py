@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportConstantRedefinition=false
 
 """
 Intelligent Messaging Automation & Personalization Engine
@@ -54,14 +53,16 @@ from core.error_handling import (
 )
 
 # === PHASE 9.1: MESSAGE PERSONALIZATION ===
+_msg_pers_available = False
 try:
     from message_personalization import MessagePersonalizer
-    MESSAGE_PERSONALIZATION_AVAILABLE = True
+    _msg_pers_available = True
     # Message personalization system loaded successfully (removed verbose debug)
 except ImportError as e:
     logger.warning(f"Message personalization not available: {e}")
-    MESSAGE_PERSONALIZATION_AVAILABLE = False
     MessagePersonalizer = None
+
+MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
@@ -394,14 +395,16 @@ if MESSAGE_TEMPLATES:
 import contextlib
 from typing import Any as _Any  # alias to avoid conflicts in type annotations
 
-MESSAGE_PERSONALIZER: Optional[_Any] = None
+_message_personalizer: Optional[_Any] = None
 if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     try:
-        MESSAGE_PERSONALIZER = MessagePersonalizer()
+        _message_personalizer = MessagePersonalizer()
         # Message personalizer initialized successfully (removed verbose debug)
     except Exception as e:
         logger.warning(f"Failed to initialize message personalizer: {e}")
-        MESSAGE_PERSONALIZER = None
+        _message_personalizer = None
+
+MESSAGE_PERSONALIZER = _message_personalizer
 
 
 # ------------------------------------------------------------------------------
@@ -430,9 +433,6 @@ def _log_personalization_sanity_for_template(
         def has_list(d: dict[str, Any], key: str) -> bool:
             v = d.get(key)
             return isinstance(v, list) and len(v) > 0
-
-        def nonempty_str(s: Optional[str]) -> bool:
-            return isinstance(s, str) and bool(s.strip())
 
         checks = {
             # Genealogical context fields
@@ -572,7 +572,7 @@ def determine_next_message_type(
     # Step 2: Extract the last message type (or None if no previous message)
     last_message_type = None
     if last_message_details:
-        last_message_type, _last_sent_at_utc, _last_message_status = last_message_details
+        last_message_type, _, _ = last_message_details
         # Last message details (removed verbose debug logging)
 
     # Step 3: Look up the next message type in the transition table
@@ -624,7 +624,7 @@ def determine_next_message_type(
 # Improved Variable Handling Functions
 # ------------------------------------------------------------------------------
 
-def get_safe_relationship_text(family_tree: Optional[FamilyTree], predicted_rel: str) -> str:
+def get_safe_relationship_text(family_tree, predicted_rel: str) -> str:
     """
     Get a natural-sounding relationship description with proper fallbacks.
 
@@ -646,7 +646,7 @@ def get_safe_relationship_text(family_tree: Optional[FamilyTree], predicted_rel:
     return "a family connection"
 
 
-def get_safe_relationship_path(family_tree: Optional[FamilyTree]) -> str:
+def get_safe_relationship_path(family_tree) -> str:
     """
     Get a natural-sounding relationship path with proper fallbacks.
 
@@ -682,7 +682,7 @@ def _is_distant_relationship(actual_rel: str) -> bool:
     return any(distant in actual_rel.lower() for distant in distant_markers)
 
 
-def _calculate_family_tree_confidence(family_tree: Optional[FamilyTree], is_distant_relationship: bool) -> int:
+def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool) -> int:
     """Calculate confidence score from family tree data."""
     confidence_score = 0
 
@@ -698,7 +698,7 @@ def _calculate_family_tree_confidence(family_tree: Optional[FamilyTree], is_dist
     return confidence_score
 
 
-def _calculate_dna_match_confidence(dna_match: Optional[DnaMatch], is_distant_relationship: bool) -> int:
+def _calculate_dna_match_confidence(dna_match, is_distant_relationship: bool) -> int:
     """Calculate confidence score from DNA match data."""
     if dna_match and not is_distant_relationship:
         predicted_rel = safe_column_value(dna_match, "predicted_relationship", None)
@@ -743,7 +743,7 @@ def _get_template_by_confidence_score(base_template_key: str, confidence_score: 
     return base_template_key
 
 
-def select_template_by_confidence(base_template_key: str, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch]) -> str:
+def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:
     """
     Select template variant based on relationship confidence.
 
@@ -794,7 +794,7 @@ def select_template_variant_ab_testing(person_id: int, base_template_key: str) -
     return base_template_key
 
 
-def track_template_selection(template_key: str, person_id: int, selection_reason: str) -> None:
+def track_template_selection(template_key: str, person_id: int, selection_reason: str):
     """
     CONSOLIDATED LOGGING: Track template selection for effectiveness analysis.
 
@@ -817,7 +817,7 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # Response Rate Tracking and Analysis
 # ------------------------------------------------------------------------------
 
-def _get_session_manager(session_manager: Optional[SessionManager]) -> Any:
+def _get_session_manager(session_manager) -> Any:
     """Get or create session manager."""
     if not session_manager:
         from core.session_manager import SessionManager
@@ -825,7 +825,7 @@ def _get_session_manager(session_manager: Optional[SessionManager]) -> Any:
     return session_manager
 
 
-def _get_template_selections(session: Any, cutoff_date: datetime) -> list:
+def _get_template_selections(session, cutoff_date) -> list:
     """Get template selections from database."""
     return session.query(ConversationLog).filter(
         ConversationLog.script_message_status.like("TEMPLATE_SELECTED:%"),
@@ -851,7 +851,7 @@ def _initialize_template_stats() -> dict[str, Any]:
     }
 
 
-def _find_response_for_template(session: Any, person_id: int, sent_time: datetime) -> Optional[ConversationLog]:
+def _find_response_for_template(session, person_id: int, sent_time: datetime):
     """Find response for a specific template sent to a person."""
     return session.query(ConversationLog).filter(
         ConversationLog.person_id == person_id,
@@ -876,7 +876,7 @@ def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None
             stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 
 
-def _process_template_selections(session: Any, template_selections: list, template_stats: dict[str, dict[str, Any]]) -> None:
+def _process_template_selections(session, template_selections, template_stats: dict[str, dict[str, Any]]) -> None:
     """Process template selections and calculate statistics."""
     for selection in template_selections:
         template_name = _extract_template_name(selection.script_message_status)
@@ -901,7 +901,7 @@ def _process_template_selections(session: Any, template_selections: list, templa
             _update_response_time_average(template_stats, template_name, response_hours)
 
 
-def analyze_template_effectiveness(session_manager: Optional[SessionManager] = None, days_back: int = 30) -> dict[str, Any]:
+def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> dict[str, Any]:
     """
     Analyze template effectiveness by measuring response rates.
 
@@ -941,7 +941,7 @@ def analyze_template_effectiveness(session_manager: Optional[SessionManager] = N
         return {"error": str(e)}
 
 
-def print_template_effectiveness_report(days_back: int = 30) -> None:
+def print_template_effectiveness_report(days_back: int = 30):
     """
     Print a formatted report of template effectiveness.
 
@@ -1016,28 +1016,28 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
     try:
         # Initialize performance tracking attributes if they don't exist
         if not hasattr(session_manager, '_response_times'):
-            session_manager._response_times = []
+            session_manager._response_times = []  # type: ignore[attr-defined]
         if not hasattr(session_manager, '_recent_slow_calls'):
-            session_manager._recent_slow_calls = 0
+            session_manager._recent_slow_calls = 0  # type: ignore[attr-defined]
         if not hasattr(session_manager, '_avg_response_time'):
-            session_manager._avg_response_time = 0.0
+            session_manager._avg_response_time = 0.0  # type: ignore[attr-defined]
 
         # Track response time (keep last 50 measurements)
-        session_manager._response_times.append(duration)
-        if len(session_manager._response_times) > 50:
-            session_manager._response_times.pop(0)
+        session_manager._response_times.append(duration)  # type: ignore[attr-defined]
+        if len(session_manager._response_times) > 50:  # type: ignore[attr-defined]
+            session_manager._response_times.pop(0)  # type: ignore[attr-defined]
 
         # Update average response time
-        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)
+        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)  # type: ignore[attr-defined]
 
         # Track consecutive slow calls - OPTIMIZATION: Adjusted threshold like Action 6
         if duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - align with Action 6 thresholds
-            session_manager._recent_slow_calls += 1
+            session_manager._recent_slow_calls += 1  # type: ignore[attr-defined]
         else:
-            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
+            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)  # type: ignore[attr-defined]
 
         # Cap slow call counter to prevent endless accumulation
-        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
+        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)  # type: ignore[attr-defined]
 
     except Exception as e:
         logger.debug(f"Failed to update messaging performance tracking: {e}")
@@ -1402,7 +1402,7 @@ class ErrorCategorizer:
         self.error_counts['technical_errors'] += 1
         return 'error', 'unknown_status'
 
-    def add_monitoring_hook(self, hook_function: callable) -> None:
+    def add_monitoring_hook(self, hook_function: Callable) -> None:
         """Add a monitoring hook function."""
         self.monitoring_hooks.append(hook_function)
 
@@ -1519,7 +1519,7 @@ class ResourceManager:
         self.operation_count += 1
 
         # Check memory and cleanup if needed
-        _memory_mb, should_cleanup = self.check_memory_usage()
+        _, should_cleanup = self.check_memory_usage()
 
         if should_cleanup:
             self.cleanup_resources()
@@ -1588,7 +1588,7 @@ class ProactiveApiManager:
         try:
             # Use session manager's recovery mechanism
             if hasattr(self.session_manager, 'attempt_recovery'):
-                recovery_success = self.session_manager.attempt_recovery('auth_recovery')
+                recovery_success = self.session_manager.attempt_recovery('auth_recovery')  # type: ignore[attr-defined]
                 if recovery_success:
                     logger.info("✅ Re-authentication successful")
                     self.consecutive_failures = 0
@@ -1688,7 +1688,7 @@ class ProactiveApiManager:
                 logger.critical(f"🚨 Too many consecutive API failures ({self.consecutive_failures}). Consider halting operations.")
 
 
-def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, operation_name: str) -> Any:
+def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, operation_name: str):
     """
     Execute operation with proper timeout handling (cross-platform).
 
@@ -1702,8 +1702,8 @@ def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, oper
     """
     import threading
 
-    result = [None]
-    exception = [None]
+    result: list[Any] = [None]
+    exception: list[Optional[Exception]] = [None]
     completed = [False]
 
     def target() -> None:
@@ -1731,7 +1731,7 @@ def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, oper
 
 def _safe_api_call_with_validation(
     session_manager: SessionManager,
-    api_function: callable,
+    api_function: Callable,
     operation_name: str,
     *args,
     **kwargs
@@ -1792,8 +1792,8 @@ def _safe_api_call_with_validation(
 
 # === SINGLE PERSON PROCESSING HELPER FUNCTIONS ===
 
-def _check_halt_signal_simple(session_manager: SessionManager) -> None:
-    """Check for halt signal and raise exception if detected (simple variant without counters)."""
+def _check_halt_signal(session_manager: SessionManager) -> None:
+    """Check for halt signal and raise exception if detected."""
     if session_manager.should_halt_operations():
         cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
         logger.warning(f"🚨 HALT SIGNAL: Skipping person processing due to session death cascade (#{cascade_count})")
@@ -1817,7 +1817,7 @@ def _check_person_eligibility(person: Person, log_prefix: str) -> None:
         raise StopIteration("skipped (status)")
 
 
-def _handle_desist_status(_person: Person, log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]) -> tuple[Optional[str], str]:
+def _handle_desist_status(log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]) -> tuple[Optional[str], str]:
     """Handle DESIST status and return message key and reason if ACK needed."""
     logger.debug(f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed.")
 
@@ -2037,7 +2037,7 @@ def _format_message_text(message_to_send_key: str, person: Person, format_data: 
                         log_prefix,
                     )
 
-                message_text, _functions_used = MESSAGE_PERSONALIZER.create_personalized_message(
+                message_text, _ = MESSAGE_PERSONALIZER.create_personalized_message(
                     enhanced_template_key,
                     person_data,
                     extracted_data,
@@ -2168,10 +2168,9 @@ def _prepare_conversation_log_entry(
     )
 
 
-def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[Literal["sent", "acked", "skipped", "error"], Optional[tuple[int, PersonStatusEnum]]]:
+def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[str, Optional[tuple[int, PersonStatusEnum]]]:
     """Determine final status string and person update based on message outcome."""
     person_update = None
-    status_string: Literal["sent", "acked", "skipped", "error"]
 
     if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
         if message_to_send_key == "User_Requested_Desist":
@@ -2198,7 +2197,7 @@ def _handle_person_status(
     person_status = safe_column_value(person, "status", None)
 
     if person_status == PersonStatusEnum.DESIST:
-        message_to_send_key, send_reason = _handle_desist_status(person, log_prefix, latest_out_log, message_type_map)
+        message_to_send_key, send_reason = _handle_desist_status(log_prefix, latest_out_log, message_type_map)
         return message_to_send_key, send_reason, "Unknown", None, None
 
     if person_status == PersonStatusEnum.ACTIVE:
@@ -2249,12 +2248,11 @@ def _process_single_person(
         - status_string (str): "sent", "acked", "skipped", or "error".
     """
     # --- Step 0: Session Validation and Initialization ---
-    _check_halt_signal_simple(session_manager)
+    _check_halt_signal(session_manager)
 
     # --- Step 1: Initialization and Logging ---
-    log_prefix, person_id, _username, _status_name = _initialize_person_processing(person)
+    log_prefix, person_id, _, _ = _initialize_person_processing(person)
     message_to_send_key: Optional[str] = None  # Key from MESSAGE_TEMPLATES
-    send_reason = "Unknown"  # Reason for sending/skipping
     template_selection_reason = "Unknown"  # CONSOLIDATED: Track template selection reason
     status_string: Literal["sent", "acked", "skipped", "error"] = (
         "error"  # Default outcome
@@ -2289,10 +2287,9 @@ def _process_single_person(
         _check_person_eligibility(person, log_prefix)
 
         # --- Step 2: Determine Action based on Status (DESIST vs ACTIVE) ---
-        message_to_send_key, send_reason, template_selection_reason, dna_match, family_tree = _handle_person_status(
+        message_to_send_key, _, template_selection_reason, dna_match, family_tree = _handle_person_status(
             person, log_prefix, latest_in_log, latest_out_log, latest_out_template_key, message_type_map
         )
-        logger.debug(f"{log_prefix}: Messaging decision reason - {send_reason}")
 
         # --- Step 3: Format the Selected Message ---
         if not message_to_send_key or message_to_send_key not in MESSAGE_TEMPLATES:
@@ -2336,7 +2333,7 @@ def _process_single_person(
             new_log_entry = _prepare_conversation_log_entry(
                 msg_ctx, conv_state, msg_flags, message_type_map
             )
-            status_string, person_update = _determine_final_status(
+            status_string, person_update = _determine_final_status(  # type: ignore[assignment]
                 message_to_send_key, message_status, send_message_flag, person_id, log_prefix
             )
         else:
@@ -2470,7 +2467,7 @@ def _setup_progress_bar(total_candidates: int) -> dict:
     }
 
 
-def _handle_critical_db_error(progress_bar: Any, total_candidates: int, processed_in_loop: int,
+def _handle_critical_db_error(progress_bar, total_candidates: int, processed_in_loop: int,
                                sent_count: int, acked_count: int, skipped_count: int, error_count: int) -> int:
     """Handle critical database error by updating progress bar and calculating remaining skips."""
     remaining_to_skip = total_candidates - processed_in_loop + 1
@@ -2505,20 +2502,8 @@ def _check_and_handle_browser_health(
     return False, 0
 
 
-def _check_halt_signal(session_manager: SessionManager, processed_in_loop: int, total_candidates: int) -> bool:
-    """Check for halt signal and log if detected. Returns True if should halt."""
-    if session_manager.should_halt_operations():
-        cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
-        logger.critical(
-            f"🚨 HALT SIGNAL DETECTED: Stopping person processing at {processed_in_loop}/{total_candidates}. "
-            f"Cascade count: {cascade_count}. Emergency termination triggered."
-        )
-        return True
-    return False
-
-
 def _check_message_send_limit(max_messages_to_send_this_run: int, sent_count: int, acked_count: int,
-                               progress_bar: Any, skipped_count: int, error_count: int) -> bool:
+                               progress_bar, skipped_count: int, error_count: int) -> bool:
     """Check if message sending limit has been reached. Returns True if should skip."""
     current_sent_total = sent_count + acked_count
     if max_messages_to_send_this_run > 0 and current_sent_total >= max_messages_to_send_this_run:
@@ -2542,7 +2527,7 @@ def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_c
                    f"(Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count})")
 
 
-def _convert_log_object_to_dict(new_log_object: Optional[ConversationLog]) -> Optional[dict[str, Any]]:
+def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
     """Convert SQLAlchemy ConversationLog object to dictionary for batch commit."""
     try:
         log_dict = {
@@ -2575,7 +2560,7 @@ def _convert_log_object_to_dict(new_log_object: Optional[ConversationLog]) -> Op
         return None
 
 
-def _prepare_log_dict(new_log_object: Optional[ConversationLog]) -> tuple[Optional[dict], str]:
+def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:
     """Convert log object to dict and update status if conversion fails."""
     if not new_log_object:
         return None, "unchanged"
@@ -2592,7 +2577,7 @@ def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_ad
     return sent_count + 1
 
 def _handle_acked_status(
-    acked_count: int, log_dict: Optional[dict], person_update_tuple: Optional[tuple],
+    acked_count: int, log_dict: Optional[dict], person_update_tuple,
     db_logs_to_add_dicts: list, person_updates: dict
 ) -> int:
     """Handle acknowledged status updates."""
@@ -2607,8 +2592,8 @@ def _handle_error_or_skip_status(
     counters: 'BatchCounters',
     log_dict: Optional[dict],
     batch_data: 'MessagingBatchData',
-    error_categorizer: Any,
-    person: Person,
+    error_categorizer,
+    person,
     overall_success: bool
 ) -> tuple[int, int, bool]:
     """Handle error or skipped status updates."""
@@ -2634,12 +2619,12 @@ def _handle_error_or_skip_status(
 
 def _update_counters_and_collect_data(
     status: str,
-    new_log_object: Optional[ConversationLog],
-    person_update_tuple: Optional[tuple],
+    new_log_object,
+    person_update_tuple,
     counters: 'BatchCounters',
     batch_data: 'MessagingBatchData',
-    error_categorizer: Any,
-    person: Person,
+    error_categorizer,
+    person,
     overall_success: bool
 ) -> tuple[int, int, int, int, bool]:
     """Update counters and collect database updates based on processing status."""
@@ -2678,7 +2663,7 @@ def _calculate_batch_memory(db_logs_to_add_dicts: list, person_updates: dict) ->
     return current_batch_size, memory_usage_mb
 
 
-def _perform_batch_commit(db_session: Any, db_logs_to_add_dicts: list, person_updates: dict,
+def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates: dict,
                           batch_num: int, session_manager: SessionManager) -> tuple[bool, int]:
     """Perform batch commit and return success status and updated batch number."""
     batch_num += 1
@@ -2764,7 +2749,6 @@ def _process_single_candidate_iteration(
     db_session: Session,
     session_manager: SessionManager,
     message_type_map: dict,
-    _resource_manager: Any,
     error_categorizer: Any,
     batch_config: BatchConfig,
     counters: BatchCounters,
@@ -2785,7 +2769,9 @@ def _process_single_candidate_iteration(
         return _create_result_dict(counters, state)
 
     # Check halt signal
-    if _check_halt_signal(session_manager, state.processed_in_loop, 0):
+    try:
+        _check_halt_signal(session_manager)
+    except MaxApiFailuresExceededError:
         return _create_result_dict(counters, state, should_continue=False)
 
     # Log periodic progress
@@ -2848,7 +2834,7 @@ def _log_final_summary(
     state: 'ProcessingState',
     counters: 'BatchCounters',
     overall_success: bool,
-    error_categorizer: Any
+    error_categorizer
 ) -> None:
     """Log final summary of message sending action."""
     print(" ")
@@ -2879,7 +2865,7 @@ def _log_final_summary(
     logger.info("-----------------------------------------\n")
 
 
-def _handle_action8_exception(exception: Exception) -> bool:
+def _handle_action8_exception(exception: BaseException) -> bool:
     """Handle exceptions in Action 8 and return overall_success status."""
     if isinstance(exception, MaxApiFailuresExceededError):
         logger.critical(
@@ -3088,7 +3074,7 @@ def _process_all_candidates(
             # Process single candidate iteration
             iteration_result = _process_single_candidate_iteration(
                 person, db_session, session_manager, message_type_map,
-                resource_manager, error_categorizer,
+                error_categorizer,
                 batch_config, counters, batch_data, state
             )
 
@@ -3443,7 +3429,7 @@ def _test_performance_tracking() -> None:
 
         # Test performance tracking doesn't crash
         try:
-            _update_messaging_performance(mock_session, 1.5)
+            _update_messaging_performance(mock_session, 1.5)  # type: ignore[arg-type]
             tracking_works = True
         except Exception:
             tracking_works = False
@@ -3626,7 +3612,7 @@ def _test_real_api_manager_integration_minimal() -> None:
         @property
         def my_profile_id(self) -> str:
             return self._my_profile_id
-    api = ProactiveApiManager(MockSessionManager())
+    api = ProactiveApiManager(MockSessionManager())  # type: ignore[arg-type]
     delay = api.calculate_delay()
     assert isinstance(delay, (int, float)) and delay >= 0
     assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True

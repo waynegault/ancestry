@@ -191,8 +191,8 @@ class InboxProcessor:
         """Initializes the InboxProcessor."""
         # Step 1: Store SessionManager and Rate Limiter
         self.session_manager = session_manager
-        self.dynamic_rate_limiter = (
-            session_manager.dynamic_rate_limiter
+        self.rate_limiter = (
+            session_manager.rate_limiter
         )  # Use manager's limiter
 
         # Step 2: Load Configuration Settings
@@ -352,10 +352,6 @@ class InboxProcessor:
 
     def _validate_conversation_data(self, conv_data: dict[str, Any]) -> Optional[tuple[str, dict]]:
         """Validate conversation data and extract basic info."""
-        if not isinstance(conv_data, dict):
-            logger.warning(f"Invalid conversation data type: {type(conv_data)}")
-            return None
-
         conversation_id = str(conv_data.get("id", "")).strip()
         last_message_data = conv_data.get("last_message", {})
 
@@ -391,10 +387,6 @@ class InboxProcessor:
         self, members: list, my_profile_id: str, conversation_id: str
     ) -> Optional[tuple[str, str]]:
         """Find the other participant in the conversation."""
-        if not isinstance(members, list):
-            logger.warning(f"Members not a list for ConvID {conversation_id}: {type(members)}")
-            return None
-
         if len(members) < 2:
             logger.warning(f"Insufficient members ({len(members)}) for ConvID {conversation_id}")
             return None
@@ -568,7 +560,7 @@ class InboxProcessor:
 
         try:
             # Apply rate limiting
-            limiter = cast(Any, getattr(self, "dynamic_rate_limiter", None))
+            limiter = cast(Any, getattr(self, "rate_limiter", None))
             limiter.wait() if limiter is not None else 0.0
 
             # Make API call
@@ -1396,7 +1388,6 @@ class InboxProcessor:
         conv_log_upserts_dicts: list[dict],
         person_updates: dict[int, PersonStatusEnum],
         exception_type: str,
-        _error: Exception,
     ) -> tuple[int, int]:
         """Handle exception and attempt final save."""
         logger.warning(f"Attempting final save due to {exception_type}...")

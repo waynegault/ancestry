@@ -401,6 +401,9 @@ def fast_bidirectional_bfs(
     if not _validate_bfs_inputs(start_id, end_id, id_to_parents, id_to_children):
         return []
 
+    # After validation, we know these are not None
+    assert id_to_parents is not None and id_to_children is not None, "Validation should have caught None values"
+
     # Try direct relationship first
     direct_path = _find_direct_relationship(start_id, end_id, id_to_parents, id_to_children)
     if direct_path:
@@ -469,8 +472,6 @@ def explain_relationship_path(
     """
     if not path_ids or len(path_ids) < 2:
         return "(No relationship path explanation available)"
-    if id_to_parents is None or id_to_children is None or indi_index is None:  # type: ignore[unreachable]
-        return "(Error: Data maps or index unavailable)"
 
     # Convert the GEDCOM path to the unified format
     unified_path = convert_gedcom_path_to_unified_format(
@@ -1178,9 +1179,6 @@ def _format_years_display(birth_year: Optional[str], death_year: Optional[str]) 
 
 def _clean_name_format(name: str) -> str:
     """Remove Name('...') wrapper if present."""
-    if not isinstance(name, str):
-        return str(name)
-
     if "Name(" not in name:
         return name
 
@@ -1188,44 +1186,6 @@ def _clean_name_format(name: str) -> str:
     name_clean = re.sub(r"Name\(['\"]([^'\"]+)['\"]\)", r"\1", name)
     name_clean = re.sub(r"Name\('([^']+)'\)", r"\1", name_clean)
     return re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
-
-
-def _infer_gender_from_name(name: str) -> Optional[str]:
-    """Infer gender from common name patterns."""
-    name_lower = name.lower()
-
-    # Common male names or titles
-    male_indicators = ["gordon", "james", "thomas", "alexander", "henry", "william", "mr.", "sir"]
-    if any(male_name in name_lower for male_name in male_indicators):
-        return "M"
-
-    # Common female names or titles
-    female_indicators = ["catherine", "margaret", "mary", "jane", "elizabeth", "mrs.", "lady"]
-    if any(female_name in name_lower for female_name in female_indicators):
-        return "F"
-
-    return None
-
-
-def _determine_gender_for_person(person_data: dict, name: str) -> Optional[str]:
-    """Determine gender from person data or infer from name."""
-    gender_val = person_data.get("gender", "")
-    gender = gender_val.upper() if isinstance(gender_val, str) else None
-
-    # If gender not explicitly set, try to infer from name
-    if not gender:
-        gender = _infer_gender_from_name(name)
-
-    # Special case for Gordon Milne
-    if isinstance(name, str) and "gordon milne" in name.lower():
-        gender = "M"
-        logger.debug("Forcing gender to M for Gordon Milne")
-
-        # Special case for Gordon Milne (1920-1994)
-        if "1920" in str(person_data.get("birth_year", "")):
-            logger.debug("Forcing gender to M for Gordon Milne (1920-1994)")
-
-    return gender
 
 
 def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> Optional[str]:

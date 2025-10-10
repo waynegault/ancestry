@@ -39,12 +39,12 @@ import base64  # For make_ube
 import binascii  # For make_ube
 import json
 import logging
-import random  # For make_newrelic, retry_api, DynamicRateLimiter
+import random  # For retry_api, RateLimiter
 import re
 import sys
 import threading  # For thread-safe rate limiting
 import time
-import uuid  # For make_ube, make_traceparent, make_tracestate
+import uuid  # For make_ube
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path  # For cookie persistence
@@ -110,7 +110,7 @@ class ApiRequestConfig:
     initial_delay: float = 1.0
     backoff_factor: float = 2.0
     max_delay: float = 60.0
-    retry_status_codes: list[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
+    retry_status_codes: Union[list[int], set[int]] = field(default_factory=lambda: [429, 500, 502, 503, 504])
 
     # Metadata
     api_description: str = "API Call"
@@ -147,7 +147,7 @@ try:
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.remote.webdriver import WebDriver
-    from selenium.webdriver.support import expected_conditions as EC  # noqa: N812 - Standard Selenium convention
+    from selenium.webdriver.support import expected_conditions
     from selenium.webdriver.support.wait import WebDriverWait
 
     # --- Local application imports ---
@@ -193,11 +193,6 @@ def parse_cookie(cookie_string: str) -> dict[str, str]:
     Handles empty keys and values.
     """
     cookies: dict[str, str] = {}
-    if not isinstance(cookie_string, str):
-        logger.warning("parse_cookie received non-string input, returning empty dict.")
-        return cookies
-    # End of if
-
     parts = cookie_string.split(";")
     for raw_part in parts:
         part = raw_part.strip()
@@ -252,7 +247,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:
+def _load_login_cookies(session_manager: SessionManager) -> bool:  # type: ignore[unused-function] - Used in core/browser_manager.py
     """Load saved login cookies from file."""
     try:
         if not session_manager.driver:
@@ -600,7 +595,6 @@ def _should_retry_status_code(response: Any, retry_codes: set[int]) -> tuple[boo
 
 
 def _handle_status_code_retry(
-    _response: Any,
     status_code: int,
     retries: int,
     max_retries: int,
@@ -682,12 +676,13 @@ def retry_api(
                     should_retry, status_code = _should_retry_status_code(response, config["retry_codes"])
 
                     if should_retry:
+                        assert status_code is not None, "status_code must be set when should_retry is True"
                         retries -= 1
                         last_exception = requests.exceptions.HTTPError(f"{status_code} Error", response=response)  # type: ignore
 
                         # Handle status code retry
                         should_continue, delay = _handle_status_code_retry(
-                            response, status_code, retries, config["max_retries"],
+                            status_code, retries, config["max_retries"],
                             attempt, delay, config["backoff_factor"], config["max_delay"], func.__name__
                         )
                         if not should_continue:
@@ -832,7 +827,7 @@ def time_wait(wait_description: str) -> Callable:
 # ------------------------------
 # Rate Limiting (Remains in utils.py)
 # ------------------------------
-class DynamicRateLimiter:
+class RateLimiter:
     """
     Implements a token bucket rate limiter with dynamic delay adjustments based on feedback.
     """
@@ -897,52 +892,52 @@ class DynamicRateLimiter:
         # Thread safety for parallel API calls
         self._lock = threading.Lock()
 
-        # Load adaptive settings if they exist
-        self._load_adaptive_settings()
+        # Load rate limiting settings if they exist
+        self._load_rate_limiting_settings()
 
         logger.debug(
-            f"✓ Thread-safe DynamicRateLimiter initialized: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.max_delay:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
+            f"✓ Thread-safe RateLimiter initialized: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.max_delay:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
         )
 
     # End of __init__
 
-    def _load_adaptive_settings(self) -> None:
+    def _load_rate_limiting_settings(self) -> None:
         """
-        Load adaptive rate limiting settings from .env file if they exist.
+        Load rate limiting settings from .env file if they exist.
         This allows the rate limiter to start with optimized settings from previous runs.
         """
         try:
             # Import here to avoid circular imports
             from config import config_schema
 
-            # Load adaptive settings from config if available
-            adaptive_initial_delay = getattr(config_schema, 'ADAPTIVE_INITIAL_DELAY', None)
-            adaptive_max_delay = getattr(config_schema, 'ADAPTIVE_MAX_DELAY', None)
-            adaptive_backoff_factor = getattr(config_schema, 'ADAPTIVE_BACKOFF_FACTOR', None)
-            adaptive_decrease_factor = getattr(config_schema, 'ADAPTIVE_DECREASE_FACTOR', None)
+            # Load rate limiting settings from config if available
+            rate_limiting_initial_delay = getattr(config_schema, 'RATE_LIMITING_INITIAL_DELAY', None)
+            rate_limiting_max_delay = getattr(config_schema, 'RATE_LIMITING_MAX_DELAY', None)
+            rate_limiting_backoff_factor = getattr(config_schema, 'RATE_LIMITING_BACKOFF_FACTOR', None)
+            rate_limiting_decrease_factor = getattr(config_schema, 'RATE_LIMITING_DECREASE_FACTOR', None)
 
-            # Apply adaptive settings if they exist and are valid
-            if adaptive_initial_delay is not None and adaptive_initial_delay > 0:
-                self.initial_delay = float(adaptive_initial_delay)
-                logger.info(f"Loaded adaptive initial_delay: {self.initial_delay:.2f}s")
+            # Apply rate limiting settings if they exist and are valid
+            if rate_limiting_initial_delay is not None and rate_limiting_initial_delay > 0:
+                self.initial_delay = float(rate_limiting_initial_delay)
+                logger.info(f"Loaded rate_limiting initial_delay: {self.initial_delay:.2f}s")
 
-            if adaptive_max_delay is not None and adaptive_max_delay > 0:
-                self.max_delay = float(adaptive_max_delay)
-                logger.info(f"Loaded adaptive max_delay: {self.max_delay:.1f}s")
+            if rate_limiting_max_delay is not None and rate_limiting_max_delay > 0:
+                self.max_delay = float(rate_limiting_max_delay)
+                logger.info(f"Loaded rate_limiting max_delay: {self.max_delay:.1f}s")
 
-            if adaptive_backoff_factor is not None and adaptive_backoff_factor > 0:
-                self.backoff_factor = float(adaptive_backoff_factor)
-                logger.info(f"Loaded adaptive backoff_factor: {self.backoff_factor:.2f}")
+            if rate_limiting_backoff_factor is not None and rate_limiting_backoff_factor > 0:
+                self.backoff_factor = float(rate_limiting_backoff_factor)
+                logger.info(f"Loaded rate_limiting backoff_factor: {self.backoff_factor:.2f}")
 
-            if adaptive_decrease_factor is not None and adaptive_decrease_factor > 0:
-                self.decrease_factor = float(adaptive_decrease_factor)
-                logger.info(f"Loaded adaptive decrease_factor: {self.decrease_factor:.3f}")
+            if rate_limiting_decrease_factor is not None and rate_limiting_decrease_factor > 0:
+                self.decrease_factor = float(rate_limiting_decrease_factor)
+                logger.info(f"Loaded rate_limiting decrease_factor: {self.decrease_factor:.3f}")
 
         except Exception as e:
-            logger.debug(f"Could not load adaptive settings (expected on first run): {e}")
-            # This is expected on first run when no adaptive settings exist yet
+            logger.debug(f"Could not load rate_limiting settings (expected on first run): {e}")
+            # This is expected on first run when no rate_limiting settings exist yet
 
-    # End of _load_adaptive_settings
+    # End of _load_rate_limiting_settings
 
     def _refill_tokens(self) -> None:
         now = time.monotonic()
@@ -1059,7 +1054,7 @@ class DynamicRateLimiter:
 
     # End of is_throttled
 
-# End of DynamicRateLimiter class
+# End of RateLimiter class
 
 # ------------------------------
 # Session Management (MOVED TO core.session_manager)
@@ -1136,6 +1131,8 @@ def _prepare_base_headers(
 
 def _get_user_agent_from_browser(driver: DriverType, api_description: str) -> Optional[str]:
     """Get User-Agent from browser using JavaScript."""
+    if not driver:
+        return None
     try:
         ua = driver.execute_script("return navigator.userAgent;")
         if ua and isinstance(ua, str):
@@ -1224,8 +1221,8 @@ def _prepare_api_headers(
     if add_default_origin:
         _add_origin_header(final_headers, base_headers, api_description)
 
-    # Skip dynamic header generation to prevent recursion
-    logger.debug(f"[{api_description}] Skipping dynamic header generation to prevent recursion.")
+    # Skip runtime header generation to prevent recursion
+    logger.debug(f"[{api_description}] Skipping runtime header generation to prevent recursion.")
 
     # Add CSRF token if requested
     if use_csrf_token:
@@ -1262,12 +1259,12 @@ def _sync_cookies_for_request(
     Returns:
         True if cookies were synced successfully, False otherwise
     """
-    # Check driver validity for dynamic headers/cookies (avoid is_sess_valid() to prevent recursion)
+    # Check driver validity for runtime headers/cookies (avoid is_sess_valid() to prevent recursion)
     driver_is_valid = driver and session_manager.driver
     if not driver_is_valid:
         if attempt == 1:  # Only log on first attempt
             logger.warning(
-                f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). Dynamic headers might be incomplete/stale."
+                f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). Runtime headers might be incomplete/stale."
             )
         # End of if
         return False
@@ -1308,7 +1305,7 @@ def _apply_rate_limiting(
     Returns:
         The wait time applied
     """
-    wait_time = session_manager.dynamic_rate_limiter.wait()
+    wait_time = session_manager.rate_limiter.wait()  # type: ignore[union-attr]
     if wait_time > 0.1:  # Log only significant waits
         logger.debug(
             f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
@@ -1318,76 +1315,7 @@ def _apply_rate_limiting(
 
 # End of _apply_rate_limiting
 
-def _log_request_details(
-    api_description: str,
-    attempt: int,
-    http_method: str,
-    url: str,
-    headers: dict[str, str],
-    data: Optional[dict] = None,
-    json_data: Optional[dict] = None,
-) -> None:
-    """
-    Logs the details of the API request.
-
-    Args:
-        api_description: Description of the API being called
-        attempt: The current attempt number
-        http_method: The HTTP method being used
-        url: The URL being requested
-        headers: The headers being sent
-        data: Optional form data
-        json_data: Optional JSON data
-    """
-    # Mask sensitive headers for logging
-    log_hdrs_debug = {}
-    sensitive_keys_debug = {
-        "authorization",
-        "cookie",
-        "x-csrf-token",
-        "ancestry-context-ube",
-        "newrelic",
-        "traceparent",
-        "tracestate",
-    }
-    for k, v_val in headers.items():
-        # Ensure value is string for processing
-        str_v = str(v_val)
-        if k.lower() in sensitive_keys_debug and str_v and len(str_v) > 20:
-            log_hdrs_debug[k] = str_v[:10] + "..." + str_v[-5:]
-        else:
-            log_hdrs_debug[k] = str_v
-        # End of if/else
-    # End of for
-
-    logger.debug(
-        f"[_api_req Attempt {attempt} '{api_description}'] >> Sending Request:"
-    )
-    logger.debug(f"   >> Method: {http_method}")
-    logger.debug(f"   >> URL: {url}")
-    logger.debug(f"   >> Headers: {log_hdrs_debug}")
-
-    # Log body carefully (limit size, mask sensitive data if needed)
-    log_body = ""
-    if json_data:
-        try:
-            log_body = json.dumps(json_data)
-            if len(log_body) > 500:
-                log_body = log_body[:500] + "..."
-            # Add masking here if json_data contains sensitive fields
-        except TypeError:
-            log_body = "[Unloggable JSON Data]"
-        # End of try/except
-        logger.debug(f"   >> JSON Body: {log_body}")
-    elif data:
-        log_body = str(data)
-        if len(log_body) > 500:
-            log_body = log_body[:500] + "..."
-        # Add masking here if data contains sensitive fields
-        logger.debug(f"   >> Form Data: {log_body}")
-    # End of if/elif
-
-# End of _log_request_details
+# _log_request_details removed - unused function (70 lines)
 
 def _prepare_api_request(
     config: ApiRequestConfig,
@@ -1490,9 +1418,8 @@ def _execute_api_request(
 
     try:
         # Execute the request
-        response = req_session.request(**request_params)
+        return req_session.request(**request_params)
 
-        return response
 
     except RequestException as e:  # type: ignore
         logger.warning(
@@ -1608,20 +1535,22 @@ def _handle_retryable_status(
         logger.error(
             f"{api_description}: Failed after {retry_ctx.max_attempts} attempts (Final Status {status}). Returning Response object."
         )
-        with contextlib.suppress(Exception):
-            logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
+        if response and hasattr(response, 'text'):
+            with contextlib.suppress(Exception):
+                logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
         return False, response, retries_left, current_delay
 
     sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
     if status == 429:  # Too Many Requests
-        session_manager.dynamic_rate_limiter.increase_delay()
+        session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
 
     logger.warning(
         f"{api_description}: Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). Retrying in {sleep_time:.2f}s..."
     )
-    with contextlib.suppress(Exception):
-        logger.debug(f"   << Response Text (Retry): {response.text[:500]}...")
+    if response and hasattr(response, 'text'):
+        with contextlib.suppress(Exception):
+            logger.debug(f"   << Response Text (Retry): {response.text[:500]}...")
 
     time.sleep(sleep_time)
     new_delay = current_delay * retry_ctx.backoff_factor
@@ -1645,7 +1574,8 @@ def _handle_redirect_response(
             logger.warning(
                 f"{api_description}: Unexpected final status {status} {reason} (Redirects Enabled). Returning Response object."
             )
-        logger.debug(f"   << Redirect Location: {response.headers.get('Location')}")
+        if response and hasattr(response, 'headers'):
+            logger.debug(f"   << Redirect Location: {response.headers.get('Location')}")
         return response
     return None
 
@@ -1681,8 +1611,9 @@ def _handle_error_status(
     else:
         logger.error(f"{api_description}: Non-retryable error: {status} {reason}.")
 
-    with contextlib.suppress(Exception):
-        logger.debug(f"   << Error Response Text: {response.text[:500]}...")
+    if response and hasattr(response, 'text'):
+        with contextlib.suppress(Exception):
+            logger.debug(f"   << Error Response Text: {response.text[:500]}...")
 
     return response
 
@@ -1834,7 +1765,7 @@ def _handle_response_status(
     # Process successful response
     if response.ok:
         logger.debug(f"{api_description}: Successful response ({status} {reason}).")
-        session_manager.dynamic_rate_limiter.decrease_delay()
+        session_manager.rate_limiter.decrease_delay()  # type: ignore[union-attr]
         processed_response = _process_api_response(
             response=response,
             api_description=api_description,
@@ -1936,11 +1867,11 @@ def _execute_request_with_retries(
 
     # Should only be reached if loop completes without success
     if response is None:
-        logger.error(f"{api_description}: Exited retry loop. Last Exception: {last_exception}.")
+        logger.error(f"{config.api_description}: Exited retry loop. Last Exception: {last_exception}.")
         return None
 
     # Return the last response (this should be a non-retryable error response)
-    logger.debug(f"[_api_req '{api_description}'] Returning last Response object (Status: {response.status_code}).")
+    logger.debug(f"[_api_req '{config.api_description}'] Returning last Response object (Status: {response.status_code}).")
     return response
 
 
@@ -1964,7 +1895,7 @@ def _api_req(
 ) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
     """
     Makes an HTTP request using the shared requests.Session from SessionManager.
-    Handles dynamic header generation, cookie synchronization, rate limiting,
+    Handles runtime header generation, cookie synchronization, rate limiting,
     retries, and basic response processing. Includes enhanced logging.
 
     NOTE: This function maintains backward compatibility with 16 parameters.
@@ -1999,7 +1930,7 @@ def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsRe
     """
     Internal implementation of _api_req using ApiRequestConfig.
     Makes an HTTP request using the shared requests.Session from SessionManager.
-    Handles dynamic header generation, cookie synchronization, rate limiting,
+    Handles runtime header generation, cookie synchronization, rate limiting,
     retries, and basic response processing. Includes enhanced logging.
 
     Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
@@ -2020,9 +1951,8 @@ def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsRe
     config.retry_status_codes = retry_status_codes
 
     # Execute request with retry loop
-    response = _execute_request_with_retries(config)
+    return _execute_request_with_retries(config)
 
-    return response
 
 # End of _api_req
 
@@ -2042,6 +1972,8 @@ def _validate_driver_session(driver: DriverType) -> bool:
 
 def _get_ancsessionid_cookie(driver: DriverType) -> Optional[str]:
     """Get ANCSESSIONID cookie value from driver."""
+    if not driver:
+        return None
     try:
         # Try fetching specific cookie first
         cookie_obj = driver.get_cookie("ANCSESSIONID")
@@ -2115,77 +2047,9 @@ def make_ube(driver: DriverType) -> Optional[str]:
 
 # End of make_ube
 
-# NewRelic constants (shared across multiple header functions)
-_NEWRELIC_ACCOUNT_ID = "1690570"
-_NEWRELIC_APP_ID = "1588726612"
-_NEWRELIC_LICENSE_KEY = "2611750"
-
-
-def _generate_newrelic_payload() -> str:
-    """Generate NewRelic header payload."""
-    trace_id = uuid.uuid4().hex[:16]
-    span_id = uuid.uuid4().hex[:16]
-
-    newrelic_data = {
-        "v": [0, 1],
-        "d": {
-            "ty": "Browser",
-            "ac": _NEWRELIC_ACCOUNT_ID,
-            "ap": _NEWRELIC_APP_ID,
-            "id": span_id,
-            "tr": trace_id,
-            "ti": int(time.time() * 1000),
-            "tk": _NEWRELIC_LICENSE_KEY,
-        },
-    }
-    json_payload = json.dumps(newrelic_data, separators=(",", ":")).encode("utf-8")
-    return base64.b64encode(json_payload).decode("utf-8")
-
-
-def _generate_traceparent_value() -> str:
-    """Generate W3C Trace Context traceparent header value."""
-    version = "00"
-    trace_id = uuid.uuid4().hex
-    parent_id = uuid.uuid4().hex[:16]
-    flags = "01"
-    return f"{version}-{trace_id}-{parent_id}-{flags}"
-
-
-def _generate_tracestate_value() -> str:
-    """Generate tracestate header with NewRelic state."""
-    span_id = uuid.uuid4().hex[:16]
-    timestamp = int(time.time() * 1000)
-    return f"{_NEWRELIC_LICENSE_KEY}@nr=0-1-{_NEWRELIC_ACCOUNT_ID}-{_NEWRELIC_APP_ID}-{span_id}----{timestamp}"
-
-
-def make_newrelic(_driver: DriverType) -> Optional[str]:
-    """Generate NewRelic header for Ancestry API requests."""
-    try:
-        return _generate_newrelic_payload()
-    except (json.JSONDecodeError, TypeError, binascii.Error) as encode_e:
-        logger.error(f"Error generating NewRelic header: {encode_e}", exc_info=True)
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error generating NewRelic header: {e}", exc_info=True)
-        return None
-
-
-def make_traceparent(_driver: DriverType) -> Optional[str]:
-    """Generate W3C Trace Context traceparent header."""
-    try:
-        return _generate_traceparent_value()
-    except Exception as e:
-        logger.error(f"Error generating traceparent header: {e}", exc_info=True)
-        return None
-
-
-def make_tracestate(_driver: DriverType) -> Optional[str]:
-    """Generate tracestate header with NewRelic state."""
-    try:
-        return _generate_tracestate_value()
-    except Exception as e:
-        logger.error(f"Error generating tracestate header: {e}", exc_info=True)
-        return None
+# NewRelic and tracing header generation functions removed - unused (45 lines)
+# These were for generating NewRelic, traceparent, and tracestate headers
+# Can be restored from git history if needed in the future
 
 # ----------------------------------------------------------------------------
 # Login Functions (Remain in utils.py)
@@ -2194,12 +2058,12 @@ def make_tracestate(_driver: DriverType) -> Optional[str]:
 
 # Helper functions for handle_two_fa
 
-def _wait_for_2fa_header(_driver: WebDriver, element_wait: WebDriverWait, session_manager: SessionManager) -> bool:  # type: ignore
+def _wait_for_2fa_header(element_wait: WebDriverWait, session_manager: SessionManager) -> bool:
     """Wait for 2FA page header to appear."""
     try:
         logger.debug(f"Waiting for 2FA page header using selector: '{TWO_STEP_VERIFICATION_HEADER_SELECTOR}'")
         element_wait.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))  # type: ignore
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))  # type: ignore
         )
         logger.debug("2FA page header detected.")
         return True
@@ -2215,7 +2079,7 @@ def _wait_for_2fa_header(_driver: WebDriver, element_wait: WebDriverWait, sessio
         return False
 
 
-def _find_sms_button_with_selectors(driver: WebDriver, selector_wait: WebDriverWait) -> Optional[Any]:  # noqa: ARG001
+def _find_sms_button_with_selectors(selector_wait: WebDriverWait) -> Optional[Any]:
     """Try multiple selectors to find the SMS button."""
     sms_selectors = [
         "button[data-method='sms']",
@@ -2230,11 +2094,11 @@ def _find_sms_button_with_selectors(driver: WebDriver, selector_wait: WebDriverW
             logger.debug(f"[DEBUG] Trying selector {idx+1}/{len(sms_selectors)}: {selector}")
             if selector.startswith("//"):
                 sms_button = selector_wait.until(
-                    EC.element_to_be_clickable((By.XPATH, selector))
+                    expected_conditions.element_to_be_clickable((By.XPATH, selector))
                 )
             else:
                 sms_button = selector_wait.until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
             logger.debug(f"✓ Found SMS button with selector: {selector}")
             return sms_button
@@ -2286,13 +2150,13 @@ def _perform_sms_button_click(driver: WebDriver, sms_button: Any) -> bool:
             return False
 
 
-def _click_sms_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:  # type: ignore  # noqa: ARG001
+def _click_sms_button(driver: WebDriver) -> bool:  # type: ignore
     """Try clicking the SMS 'Send Code' button."""
     print("  📱 Looking for SMS/Text message option...", flush=True)
     logger.debug(f"Looking for 2FA SMS button with selector: '{TWO_FA_SMS_SELECTOR}'")
 
     selector_wait = WebDriverWait(driver, 5)
-    sms_button = _find_sms_button_with_selectors(driver, selector_wait)
+    sms_button = _find_sms_button_with_selectors(selector_wait)
 
     if not sms_button:
         logger.warning("Could not find SMS button with any selector.")
@@ -2308,7 +2172,7 @@ def _wait_for_code_input_field(driver: WebDriver) -> bool:  # type: ignore
     try:
         logger.debug(f"Waiting for 2FA code input field: '{TWO_FA_CODE_INPUT_SELECTOR}'")
         WebDriverWait(driver, 10).until(  # type: ignore
-            EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_FA_CODE_INPUT_SELECTOR))  # type: ignore
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, TWO_FA_CODE_INPUT_SELECTOR))  # type: ignore
         )
         logger.debug("Code input field appeared after clicking 'Send Code'.")
         return True
@@ -2330,7 +2194,7 @@ def _wait_for_user_2fa_action(driver: WebDriver, code_entry_timeout: int) -> boo
         try:
             # Check if the 2FA header is GONE (indicates page change/submission)
             WebDriverWait(driver, check_interval).until_not(  # type: ignore
-                EC.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))  # type: ignore
+                expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR))  # type: ignore
             )
             logger.info("2FA page elements disappeared, assuming user submitted code.")
             return True
@@ -2372,14 +2236,13 @@ def handle_two_fa(session_manager: SessionManager) -> bool:  # type: ignore
 
     driver = session_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
-    short_wait = WebDriverWait(driver, config_schema.selenium.implicit_wait)
 
     try:
         print("Two-factor authentication required. Please check your email or phone for a verification code.")
         logger.debug("Handling Two-Factor Authentication (2FA)...")
 
         # Wait for 2FA page header
-        if not _wait_for_2fa_header(driver, element_wait, session_manager):
+        if not _wait_for_2fa_header(element_wait, session_manager):
             return False
 
         # Handle cookie consent banner if present
@@ -2388,7 +2251,7 @@ def handle_two_fa(session_manager: SessionManager) -> bool:  # type: ignore
             logger.warning("Failed to handle consent banner on 2FA page, but continuing anyway.")
 
         # Try clicking SMS button (non-critical, continue if fails)
-        _click_sms_button(driver, short_wait)
+        _click_sms_button(driver)
 
         # Wait for user action
         code_entry_timeout = config_schema.selenium.two_fa_code_entry_timeout
@@ -2439,7 +2302,7 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
     """Enter username into the login form."""
     logger.debug(f"Waiting for username input: '{USERNAME_INPUT_SELECTOR}'...")  # type: ignore
     username_input = element_wait.until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
+        expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
     )
     logger.debug("Username input field found.")
 
@@ -2458,7 +2321,7 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
     return True
 
 
-def _find_next_button_with_selectors(driver: WebDriver, short_wait: WebDriverWait) -> Optional[Any]:  # noqa: ARG001
+def _find_next_button_with_selectors(short_wait: WebDriverWait) -> Optional[Any]:
     """Try multiple selectors to find the Next button."""
     next_selectors = [
         SIGN_IN_BUTTON_SELECTOR,
@@ -2473,11 +2336,11 @@ def _find_next_button_with_selectors(driver: WebDriver, short_wait: WebDriverWai
             logger.debug(f"[DEBUG] Trying Next button selector {idx+1}/{len(next_selectors)}: {selector}")
             if selector.startswith("//"):
                 next_button = short_wait.until(
-                    EC.element_to_be_clickable((By.XPATH, selector))
+                    expected_conditions.element_to_be_clickable((By.XPATH, selector))
                 )
             else:
                 next_button = short_wait.until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
             logger.debug(f"✓ Found Next button with selector: {selector}")
             return next_button
@@ -2543,7 +2406,7 @@ def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
     """Click the Next button in two-step login flow."""
     logger.debug("Looking for Next/Continue button after username...")
 
-    next_button = _find_next_button_with_selectors(driver, short_wait)
+    next_button = _find_next_button_with_selectors(short_wait)
 
     if not next_button:
         raise TimeoutException("Next button not found with any selector")
@@ -2565,12 +2428,12 @@ def _enter_password(driver: WebDriver, element_wait: WebDriverWait) -> tuple[boo
     logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")  # type: ignore
     try:
         password_input = element_wait.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
         )
     except TimeoutException:  # type: ignore
         logger.error("Password field did not appear after clicking Next. Retrying with longer wait...")
         password_input = WebDriverWait(driver, 30).until(  # type: ignore
-            EC.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
         )
 
     logger.debug("Password input field found.")
@@ -2628,17 +2491,17 @@ def _try_return_key_fallback(password_input: Any) -> bool:
         return False
 
 
-def _click_sign_in_button(driver: WebDriver, short_wait: WebDriverWait, password_input: Any) -> bool:  # noqa: ARG001
+def _click_sign_in_button(driver: WebDriver, password_input: Any) -> bool:
     """Click the sign in button or use fallback methods."""
     # Try to locate sign in button
     try:
         logger.debug(f"Waiting for sign in button presence: '{SIGN_IN_BUTTON_SELECTOR}'...")  # type: ignore
         WebDriverWait(driver, 3).until(  # Reduced from 5s to 3s for faster fallback
-            EC.presence_of_element_located((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
         )
         logger.debug("Waiting for sign in button clickability...")
         sign_in_button = WebDriverWait(driver, 3).until(  # Use 3s for clickability too
-            EC.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
+            expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, SIGN_IN_BUTTON_SELECTOR))  # type: ignore
         )
         logger.debug("Sign in button located and deemed clickable.")
     except TimeoutException:  # type: ignore
@@ -2682,7 +2545,7 @@ def enter_creds(driver: WebDriver) -> bool:  # type: ignore
             password_ok, password_input = _enter_password(driver, element_wait)
             if password_ok:
                     # Click sign in button
-                    result = _click_sign_in_button(driver, short_wait, password_input)
+                    result = _click_sign_in_button(driver, password_input)
 
     except (TimeoutException, NoSuchElementException) as e:  # type: ignore
         logger.error(f"Timeout or Element not found finding username/password field: {e}")
@@ -2708,7 +2571,7 @@ def _find_consent_banner(driver: WebDriver) -> Optional[Any]:
     try:
         # Reduce wait to 1 second for faster dismissal
         overlay_element = WebDriverWait(driver, 1).until(  # type: ignore
-            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
         )
         logger.debug("Cookie consent overlay DETECTED.")
         return overlay_element
@@ -2727,7 +2590,7 @@ def _click_accept_button_standard(driver: WebDriver, accept_button: Any) -> bool
         logger.info("Clicked accept button successfully.")
         # Reduce verification wait to 1 second for faster dismissal
         WebDriverWait(driver, 1).until_not(  # type: ignore
-            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
         )
         logger.debug("Consent overlay gone after clicking accept button.")
         return True
@@ -2750,7 +2613,7 @@ def _click_accept_button_js(driver: WebDriver, accept_button: Any) -> bool:
         logger.info("Clicked accept button via JS successfully.")
         # Reduce verification wait to 1 second for faster dismissal
         WebDriverWait(driver, 1).until_not(  # type: ignore
-            EC.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, COOKIE_BANNER_SELECTOR))  # type: ignore
         )
         logger.debug("Consent overlay gone after JS clicking accept button.")
         return True
@@ -2768,7 +2631,7 @@ def _handle_consent_button(driver: WebDriver) -> bool:
     try:
         # Reduce wait to 1 second for faster dismissal
         accept_button = WebDriverWait(driver, 1).until(  # type: ignore
-            EC.element_to_be_clickable((By.CSS_SELECTOR, CONSENT_ACCEPT_BUTTON_SELECTOR))  # type: ignore
+            expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, CONSENT_ACCEPT_BUTTON_SELECTOR))  # type: ignore
         )
         logger.info("Found specific clickable accept button.")
 
@@ -2792,10 +2655,6 @@ def _handle_consent_button(driver: WebDriver) -> bool:
 
 def consent(driver: WebDriver) -> bool:  # type: ignore
     """Handles the cookie consent banner if present. Fast dismissal with no retries."""
-    if not driver:
-        logger.error("consent: WebDriver instance is None.")
-        return False
-
     # Find consent banner
     try:
         overlay_element = _find_consent_banner(driver)
@@ -2841,14 +2700,14 @@ def _check_for_login_errors(driver: Any) -> Optional[str]:
     """Check for specific or generic login error messages."""
     try:
         WebDriverWait(driver, 1).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR))
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, FAILED_LOGIN_SELECTOR))
         )
         logger.error("Login failed: Specific 'Invalid Credentials' alert detected.")
         return "LOGIN_FAILED_BAD_CREDS"
     except TimeoutException:
         try:
             alert_element = WebDriverWait(driver, 0.5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.alert[role='alert']"))
+                expected_conditions.presence_of_element_located((By.CSS_SELECTOR, "div.alert[role='alert']"))
             )
             alert_text = alert_element.text if alert_element and alert_element.text else "Unknown error"
             logger.error(f"Login failed: Generic alert found: '{alert_text}'.")
@@ -2881,7 +2740,7 @@ def _try_2fa_selectors(driver: Any) -> bool:
             logger.debug(f"[DEBUG] Trying 2FA selector {idx+1}/{len(twofa_selectors)}: ({selector_type}) {selector}")
             by_type = By.XPATH if selector_type == "xpath" else By.CSS_SELECTOR
             WebDriverWait(driver, 2).until(
-                EC.visibility_of_element_located((by_type, selector))
+                expected_conditions.visibility_of_element_located((by_type, selector))
             )
             logger.debug(f"✓ Found 2FA page with selector: ({selector_type}) {selector}")
             return True
@@ -2914,7 +2773,7 @@ def _debug_log_page_headers(driver: Any) -> None:
         logger.debug(f"[DEBUG] Error checking page elements: {debug_err}")
 
 
-def _detect_2fa_page(driver: Any, session_manager: SessionManager) -> tuple[bool, Optional[str]]:  # noqa: ARG001
+def _detect_2fa_page(driver: Any) -> tuple[bool, Optional[str]]:
     """Detect if 2FA page is present."""
     try:
         logger.info("Checking for two-step verification page (waiting up to 15 seconds)...")
@@ -3041,7 +2900,7 @@ def _execute_login_flow(
     _debug_log_post_credentials_state(driver)
 
     # Check for 2FA
-    two_fa_present, early_result = _detect_2fa_page(driver, session_manager)
+    two_fa_present, early_result = _detect_2fa_page(driver)
     if early_result:
         return early_result
 
@@ -3226,12 +3085,9 @@ def login_status(session_manager: SessionManager, disable_ui_fallback: bool = Fa
 # Navigation Functions (Remains in utils.py)
 # ------------------------------------------------------------------------------------
 
-def _validate_nav_inputs(driver: WebDriver, url: str) -> bool:  # type: ignore
+def _validate_nav_inputs(url: str) -> bool:
     """Validate navigation inputs."""
-    if not driver:
-        logger.error("Navigation failed: WebDriver instance is None.")
-        return False
-    if not url or not isinstance(url, str):
+    if not url:
         logger.error(f"Navigation failed: Target URL '{url}' is invalid.")
         return False
     return True
@@ -3321,7 +3177,7 @@ def _check_for_mfa_page(driver: WebDriver) -> bool:  # type: ignore
     """Check if currently on MFA page."""
     try:
         WebDriverWait(driver, 1).until(  # type: ignore
-            EC.visibility_of_element_located(  # type: ignore
+            expected_conditions.visibility_of_element_located(  # type: ignore
                 (By.CSS_SELECTOR, TWO_STEP_VERIFICATION_HEADER_SELECTOR)  # type: ignore
             )
         )
@@ -3343,7 +3199,7 @@ def _check_for_login_page(driver: WebDriver, target_url_base: str, signin_page_u
         return False
     try:
         WebDriverWait(driver, 1).until(  # type: ignore
-            EC.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, USERNAME_INPUT_SELECTOR))  # type: ignore
         )
         return True
     except (TimeoutException, NoSuchElementException):  # type: ignore
@@ -3358,11 +3214,7 @@ def _check_for_login_page(driver: WebDriver, target_url_base: str, signin_page_u
 
 
 def _handle_login_redirect(session_manager: SessionManager) -> str:
-    """Handle unexpected login page redirect. Returns 'retry', 'fail', or 'no_manager'."""
-    if not session_manager:
-        logger.error("Landed on login page, no SessionManager provided for re-login attempt.")
-        return "no_manager"
-
+    """Handle unexpected login page redirect. Returns 'retry' or 'fail'."""
     logger.warning("Landed on Login page unexpectedly. Checking login status first...")
     login_stat = login_status(session_manager, disable_ui_fallback=True)
     if login_stat is True:
@@ -3403,7 +3255,6 @@ def _handle_url_mismatch(
     driver: WebDriver,  # type: ignore
     landed_url_base: str,
     target_url_base: str,
-    signin_page_url_base: str,
     unavailability_selectors: dict[str, tuple[str, int]],
 ) -> str:
     """Handle landing on unexpected URL. Returns 'continue', 'fail', or 'success'."""
@@ -3431,7 +3282,7 @@ def _wait_for_element(
     logger.debug(f"On correct URL base. Waiting up to {element_timeout}s for selector: '{wait_selector}'")
     try:
         WebDriverWait(driver, element_timeout).until(  # type: ignore
-            EC.visibility_of_element_located((By.CSS_SELECTOR, wait_selector))  # type: ignore
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, wait_selector))  # type: ignore
         )
         logger.debug(f"Navigation successful and element '{wait_selector}' found.")
         return "success"
@@ -3476,7 +3327,6 @@ def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:  # type: i
 def _handle_webdriver_exception(
     driver: WebDriver,  # type: ignore
     session_manager: SessionManagerType,
-    _attempt: int,
 ) -> tuple[str, Optional[WebDriver]]:  # type: ignore
     """Handle WebDriver exception. Returns (action, driver) where action is 'continue' or 'fail'."""
     if session_manager and not is_browser_open(driver):
@@ -3546,20 +3396,24 @@ def _validate_post_navigation(
         result_action = "fail"
     # Check for Login page
     elif _check_for_login_page(driver, target_url_base, signin_page_url_base):
-        login_action = _handle_login_redirect(session_manager)
-        if login_action == "retry":
-            result_action = "continue"
-        elif login_action in ("fail", "no_manager"):
+        if session_manager:
+            login_action = _handle_login_redirect(session_manager)
+            if login_action == "retry":
+                result_action = "continue"
+            elif login_action in ("fail", "no_manager"):
+                result_action = "fail"
+        else:
+            logger.error("Landed on login page but no SessionManager provided.")
             result_action = "fail"
     else:
         # Check for URL mismatch
-        url_check_result, driver = _check_url_mismatch_and_handle(
+        url_check_result, updated_driver = _check_url_mismatch_and_handle(
             driver, landed_url_base, target_url_base, signin_page_url_base,
             unavailability_selectors, session_manager
         )
         if url_check_result is not None:
             result_action = url_check_result
-            result_driver = driver
+            result_driver = updated_driver if updated_driver else driver
         else:
             # --- Final Check: Element on Page ---
             element_result = _wait_for_element(driver, selector, element_timeout, unavailability_selectors)
@@ -3615,7 +3469,7 @@ def _perform_navigation_attempt(
 
     except WebDriverException as wd_e:  # type: ignore
         logger.error(f"WebDriverException during navigation (Attempt {attempt}): {wd_e}", exc_info=False)
-        wd_action, new_driver = _handle_webdriver_exception(driver, session_manager, attempt)
+        wd_action, new_driver = _handle_webdriver_exception(driver, session_manager)
         result_action = "fail" if wd_action == "fail" else "continue"
         result_driver = new_driver if new_driver else driver
 
@@ -3648,7 +3502,7 @@ def nav_to_page(
         True if navigation succeeded and the selector was found, False otherwise.
     """
     # Validate inputs
-    if not _validate_nav_inputs(driver, url):
+    if not _validate_nav_inputs(url):
         return False
 
     # Parse and normalize URL
@@ -3737,10 +3591,10 @@ def prevent_system_sleep() -> Optional[Any]:
     """
     Prevent system sleep during long-running operations.
     Cross-platform: Windows, macOS, Linux.
-    
+
     Returns:
         Previous state that should be restored when done, or None if not applicable
-        
+
     Example:
         ```python
         sleep_state = prevent_system_sleep()
@@ -3796,10 +3650,10 @@ def prevent_system_sleep() -> Optional[Any]:
 def restore_system_sleep(previous_state: Any) -> None:
     """
     Restore normal sleep behavior.
-    
+
     Args:
         previous_state: The state returned by prevent_system_sleep()
-        
+
     Example:
         ```python
         sleep_state = prevent_system_sleep()
@@ -3863,8 +3717,8 @@ def utils_module_tests() -> bool:
         assert format_name("john doe") == "John Doe", "format_name basic test failed"
         assert format_name(None) == "Valued Relative", "format_name None test failed"
 
-        # Test DynamicRateLimiter
-        limiter = DynamicRateLimiter(initial_delay=0.001)
+        # Test RateLimiter
+        limiter = RateLimiter(initial_delay=0.001)
         limiter.wait()  # Should not hang
 
         # Test SessionManager - import it properly at runtime
@@ -4037,8 +3891,8 @@ if __name__ == "__main__":
         assert result == "success", "Retry decorator should work"
 
     def test_rate_limiter():
-        # Test DynamicRateLimiter instantiation and basic functionality
-        limiter = DynamicRateLimiter(initial_delay=0.001, max_delay=0.01)
+        # Test RateLimiter instantiation and basic functionality
+        limiter = RateLimiter(initial_delay=0.001, max_delay=0.01)
         assert limiter is not None, "Rate limiter should instantiate"
         assert hasattr(limiter, "wait"), "Rate limiter should have wait method"
         assert hasattr(
@@ -4114,8 +3968,8 @@ if __name__ == "__main__":
         # Test that core functions are available
         assert "format_name" in globals(), "format_name should be in globals"
         assert (
-            "DynamicRateLimiter" in globals()
-        ), "DynamicRateLimiter should be in globals"
+            "RateLimiter" in globals()
+        ), "RateLimiter should be in globals"
         assert "SessionManager" in globals(), "SessionManager should be in globals"
 
     def test_performance_validation():
@@ -4148,7 +4002,7 @@ if __name__ == "__main__":
 
         # Test platform detection
         system = platform.system()
-        print(f"   ℹ️  Detected platform: {system}")
+        print(f"   INFO: Detected platform: {system}")
 
         # Test enable/disable cycle
         print("   🧪 Testing enable...")
@@ -4169,7 +4023,7 @@ if __name__ == "__main__":
             restore_system_sleep(sleep_state)
             print("   ✅ Restore completed without errors")
         except Exception as e:
-            raise AssertionError(f"Restore failed: {e}")
+            raise AssertionError(f"Restore failed: {e}") from e
 
         # Test with None state (should handle gracefully)
         print("   🧪 Testing restore with None state...")
@@ -4177,13 +4031,11 @@ if __name__ == "__main__":
             restore_system_sleep(None)
             print("   ✅ Restore with None handled gracefully")
         except Exception as e:
-            raise AssertionError(f"Restore with None failed: {e}")
+            raise AssertionError(f"Restore with None failed: {e}") from e
 
     def test_check_for_unavailability():
         """Test unavailability detection logic (Priority 2)."""
-        from unittest.mock import MagicMock, patch
-
-        from selenium.webdriver.common.by import By
+        from unittest.mock import MagicMock
 
         print("🔍 Testing _check_for_unavailability() error detection:")
 
@@ -4252,11 +4104,11 @@ if __name__ == "__main__":
         )
 
         suite.run_test(
-            "Dynamic rate limiting",
+            "Rate limiting",
             test_rate_limiter,
-            "Test DynamicRateLimiter instantiation and basic rate limiting functionality",
+            "Test RateLimiter instantiation and basic rate limiting functionality",
             "Rate limiting manages API request timing and prevents throttling",
-            "Dynamic rate limiter provides effective request flow control",
+            "Rate limiter provides effective request flow control",
         )
 
         suite.run_test(

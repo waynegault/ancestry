@@ -728,7 +728,7 @@ def format_relative_info(relative: Any) -> str:  # ... implementation ...
 # _reconstruct_path removed - unused 89-line helper function for BFS path reconstruction
 
 
-def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: dict, id_to_children: dict) -> bool:
+def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Any, id_to_children: Any) -> bool:
     """Validate inputs for bidirectional BFS search."""
     if start_id == end_id:
         return True
@@ -843,7 +843,7 @@ def fast_bidirectional_bfs(
     max_depth: int = 25,
     node_limit: int = 150000,
     timeout_sec: int = 45,
-    _log_progress: bool = False,  # Unused but kept for API compatibility
+    _log_progress: bool = False,  # type: ignore[unused-function] - Kept for API compatibility
 ) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
@@ -924,8 +924,8 @@ def _process_forward_queue_item(
     visited_bwd: dict,
     visited_fwd: dict,
     all_paths: list,
-    id_to_parents: dict,
-    id_to_children: dict,
+    id_to_parents: Any,
+    id_to_children: Any,
     max_depth: int
 ) -> int:
     """
@@ -942,7 +942,7 @@ def _process_forward_queue_item(
     # Check if we've reached a node visited by backward search
     if current_id in visited_bwd:
         # Found a meeting point - reconstruct the path
-        _bwd_depth, bwd_path = visited_bwd[current_id]  # depth unused
+        _, bwd_path = visited_bwd[current_id]  # depth unused
         # Combine paths (remove duplicate meeting point)
         combined_path = path + bwd_path[1:]
         all_paths.append(combined_path)
@@ -966,8 +966,8 @@ def _process_backward_queue_item(
     visited_fwd: dict,
     visited_bwd: dict,
     all_paths: list,
-    id_to_parents: dict,
-    id_to_children: dict,
+    id_to_parents: Any,
+    id_to_children: Any,
     max_depth: int
 ) -> int:
     """
@@ -984,7 +984,7 @@ def _process_backward_queue_item(
     # Check if we've reached a node visited by forward search
     if current_id in visited_fwd:
         # Found a meeting point - reconstruct the path
-        _fwd_depth, fwd_path = visited_fwd[current_id]  # depth unused
+        _, fwd_path = visited_fwd[current_id]  # depth unused
         # Combine paths (remove duplicate meeting point)
         combined_path = fwd_path + path[1:]
         all_paths.append(combined_path)
@@ -1020,7 +1020,7 @@ def _check_search_limits(start_time: float, timeout_sec: int, processed: int, no
 
 
 def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
-                     id_to_parents: dict, id_to_children: dict) -> list[str]:
+                     id_to_parents: Any, id_to_children: Any) -> list[str]:
     """Select the best path from a list of found paths based on relationship directness."""
     # If we found paths, select the best one
     if all_paths:
@@ -1243,8 +1243,6 @@ def explain_relationship_path(
     """
     if not path_ids or len(path_ids) < 2:
         return "(No relationship path explanation available)"
-    if id_to_parents is None or id_to_children is None or indi_index is None:  # type: ignore[unreachable]
-        return "(Error: Data maps or index unavailable)"
 
     steps: list[str] = []
     start_person_indi = indi_index.get(path_ids[0])
@@ -1359,7 +1357,7 @@ def _are_cousins(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
-    _id_to_children: dict[str, set[str]],  # Unused but kept for API consistency
+    _id_to_children: dict[str, set[str]],  # type: ignore[unused-function] - Kept for API consistency
 ) -> bool:
     """Check if id1 and id2 are cousins (children of siblings)."""
     # Get parents of id1 and id2
@@ -1738,7 +1736,7 @@ def calculate_match_score(
     search_criteria: dict,
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    _name_flexibility: Optional[dict] = None,  # Unused but kept for API consistency
+    _name_flexibility: Optional[dict] = None,  # type: ignore[unused-function] - Kept for API consistency
     date_flexibility: Optional[dict] = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """
@@ -2138,7 +2136,7 @@ class GedcomData:
         """Get spouse IDs for a target individual."""
         spouse_ids: set[str] = set()
         parent_families = self._find_family_records_where_individual_is_parent(target_id)
-        for fam_record, is_husband, _is_wife in parent_families:
+        for fam_record, is_husband, _ in parent_families:
             other_spouse_tag = TAG_WIFE if is_husband else TAG_HUSBAND
             spouse_ref = fam_record.sub_tag(other_spouse_tag) if fam_record is not None else None
             if spouse_ref and hasattr(spouse_ref, "xref_id"):

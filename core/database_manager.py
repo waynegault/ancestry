@@ -26,14 +26,12 @@ logger = setup_module(globals(), __name__)
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-
-# === STANDARD LIBRARY IMPORTS ===
 import asyncio
 import contextlib
 import sqlite3
-import sys
+
+# Note: sys and Path already imported at top of file
 from collections.abc import AsyncGenerator, Generator
-from pathlib import Path
 from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
@@ -627,12 +625,12 @@ class DatabaseManager:
             self._db_init_attempted = False
             return None
 
-    def return_session(self, session: Session):
+    def return_session(self, session: Optional[Session]):
         """
         Return a session to the pool (close it) with performance tracking.
 
         Args:
-            session: The session to return
+            session: The session to return (can be None)
         """
         if session:
             session_id = id(session)

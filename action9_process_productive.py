@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportImportCycles=false
-# NOTE: Import cycle with ai_interface.py persists through SessionManager chain despite local imports.
-# Proper fix requires extracting SessionManager types to separate module. Cycle doesn't affect runtime.
 
 """
 Action 9: Productive DNA Match Processing
@@ -37,6 +34,8 @@ import ms_graph_utils
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 # from core.system_cache import cached_database_query  # Module doesn't exist yet
+from ai_interface import extract_genealogical_entities
+
 # === LOCAL IMPORTS ===
 from config import config_schema
 from core.error_handling import (  # type: ignore[import-not-found]
@@ -418,7 +417,7 @@ def _process_gedcom_individuals(gedcom_data: Any, filter_criteria: dict[str, Any
     return scored_matches
 
 
-def _search_gedcom_for_names(
+def _search_gedcom_for_names(  # type: ignore[unused-function] - Dead code, can be removed
     names: list[str], gedcom_data: Optional[Any] = None
 ) -> list[dict[str, Any]]:
     """
@@ -566,7 +565,7 @@ def _search_single_name_via_api(
     return top_matches
 
 
-def _search_api_for_names(
+def _search_api_for_names(  # type: ignore[unused-function] - Dead code, can be removed
     session_manager: Optional[SessionManager] = None,
     names: Optional[list[str]] = None,
 ) -> list[dict[str, Any]]:
@@ -589,7 +588,7 @@ def _search_api_for_names(
 
     try:
         # Get configuration
-        _owner_tree_id, _base_url = _get_api_search_config(session_manager)
+        _, _ = _get_api_search_config(session_manager)  # type: ignore[arg-type]
 
         search_results = []
 
@@ -702,7 +701,7 @@ class PersonProcessor:
             else ""
         )
 
-    def process_person(self, person: Person, progress_bar: Optional[tqdm] = None) -> tuple[bool, str]:
+    def process_person(self, person: Person, progress_bar=None) -> tuple[bool, str]:
         """
         Process a single person and return (success, status_message).
 
@@ -713,7 +712,8 @@ class PersonProcessor:
 
         try:
             # Apply rate limiting
-            self.session_manager.dynamic_rate_limiter.wait()
+            if self.session_manager.rate_limiter:
+                self.session_manager.rate_limiter.wait()
 
             # Get message context
             context_logs = self._get_context_logs(person, log_prefix)
@@ -817,7 +817,7 @@ class PersonProcessor:
         return None
 
     def _process_with_ai(
-        self, person: Person, context_logs: list[ConversationLog], progress_bar: Optional[tqdm] = None
+        self, person: Person, context_logs: list[ConversationLog], progress_bar=None
     ) -> Optional[tuple[dict[str, Any], list[str]]]:
         """Process message content with AI and return extracted data and tasks."""
         if progress_bar:
@@ -835,9 +835,7 @@ class PersonProcessor:
             context_logs, self.my_pid_lower
         )
 
-        # Call AI (import here to avoid circular dependency with ai_interface)
-        from ai_interface import extract_genealogical_entities
-
+        # Call AI
         logger.debug(f"Calling AI for {person.username}...")
         ai_response = extract_genealogical_entities(
             formatted_context, self.session_manager
@@ -901,12 +899,16 @@ class PersonProcessor:
             f"Profile: {person.profile_id or 'N/A'}"
         )
 
-        task_ok = ms_graph_utils.create_todo_task(
-            self.ms_state.token,
-            self.ms_state.list_id,
-            task_title,
-            task_body,
-        )
+        if self.ms_state.token and self.ms_state.list_id:
+            task_ok = ms_graph_utils.create_todo_task(
+                self.ms_state.token,
+                self.ms_state.list_id,
+                task_title,
+                task_body,
+            )
+        else:
+            logger.warning("MS Graph token or list_id is None, skipping task creation")
+            task_ok = False
 
         if not task_ok:
             logger.warning(
@@ -920,8 +922,8 @@ class PersonProcessor:
         person: Person,
         suggested_tasks: list[str],
         log_prefix: str,
-        progress_bar: Optional[tqdm] = None,
-    ) -> None:
+        progress_bar=None,
+    ):
         """Create MS Graph tasks if configured and available."""
         if progress_bar:
             progress_bar.set_description(
@@ -966,7 +968,7 @@ class PersonProcessor:
         context_logs: list[ConversationLog],
         extracted_data: dict[str, Any],
         log_prefix: str,
-        progress_bar: Optional[tqdm] = None,
+        progress_bar=None,
     ) -> bool:
         """Handle generating and sending the appropriate response message."""
 
@@ -989,7 +991,6 @@ class PersonProcessor:
         custom_reply = self._generate_custom_reply(
             person,
             context_logs,
-            extracted_data,
             latest_message,
             log_prefix,
             progress_bar,
@@ -1011,11 +1012,11 @@ class PersonProcessor:
             progress_bar,
         )
 
-    def _mark_message_processed(self, message: ConversationLog) -> None:
+    def _mark_message_processed(self, message: ConversationLog):
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
-                message.custom_reply_sent_at = datetime.now(timezone.utc)
+                message.custom_reply_sent_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                 self.db_state.session.add(message)
                 self.db_state.session.flush()
         except Exception as e:
@@ -1025,10 +1026,9 @@ class PersonProcessor:
         self,
         person: Person,
         context_logs: list[ConversationLog],
-        extracted_data: dict[str, Any],
         latest_message: ConversationLog,
         log_prefix: str,
-        progress_bar: Optional[tqdm] = None,
+        progress_bar=None,
     ) -> Optional[str]:
         """Generate a custom genealogical reply if appropriate."""
 
@@ -1038,9 +1038,7 @@ class PersonProcessor:
             )
 
         # Try to identify a person mentioned in the message
-        person_details = _identify_and_get_person_details(
-            self.session_manager, extracted_data, log_prefix
-        )
+        person_details = _identify_and_get_person_details(log_prefix)
 
         if not person_details:
             logger.debug(
@@ -1062,8 +1060,7 @@ class PersonProcessor:
 
         # Format genealogical data
         genealogical_data_str = _format_genealogical_data_for_ai(
-            person_details["details"],
-            person_details["relationship_path"],
+            person_details.get("details", {})
         )
         # Get user's last message
         user_last_message = safe_column_value(
@@ -1156,12 +1153,12 @@ class PersonProcessor:
         custom_reply: Optional[str],
         latest_message: ConversationLog,
         log_prefix: str,
-        progress_bar: Optional[tqdm] = None,
+        progress_bar=None,
     ) -> bool:
         """Send the message and handle database updates."""
 
         # Apply mode/recipient filtering
-        send_flag, skip_reason = self._should_send_message(person, log_prefix)
+        send_flag, skip_reason = self._should_send_message(person)
 
         if progress_bar:
             if custom_reply:
@@ -1205,7 +1202,7 @@ class PersonProcessor:
             log_prefix,
         )
 
-    def _should_send_message(self, person: Person, _log_prefix: str) -> tuple[bool, str]:
+    def _should_send_message(self, person: Person) -> tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
         app_mode = config_schema.app_mode
@@ -1287,7 +1284,7 @@ class PersonProcessor:
         ):
             try:
                 if self.db_state.session:
-                    latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
+                    latest_message.custom_reply_sent_at = datetime.now(timezone.utc)  # type: ignore[assignment]
                     self.db_state.session.add(latest_message)
                     self.db_state.session.flush()
                     logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
@@ -1704,7 +1701,7 @@ def _process_candidates(
     return state.overall_success
 
 
-def _final_commit(db_state: DatabaseState, state: ProcessingState) -> None:
+def _final_commit(db_state: DatabaseState, state: ProcessingState):
     """Perform final commit of any remaining data."""
 
     if not state.critical_db_error_occurred and (
@@ -1732,7 +1729,7 @@ def _final_commit(db_state: DatabaseState, state: ProcessingState) -> None:
             )
 
 
-def _log_summary(state: ProcessingState) -> None:
+def _log_summary(state: ProcessingState):
     """Log the processing summary."""
 
     logger.info("------ Action 9: Process Productive Summary -------")
@@ -2034,7 +2031,7 @@ def _load_templates_for_action9() -> dict[str, str]:
         return {}
 
 
-def _search_ancestry_tree(
+def _search_ancestry_tree(  # type: ignore[unused-function] - Dead code, can be removed
     extracted_data: Union[ExtractedData, list[str]]
 ) -> dict[str, Any]:
     """
@@ -2054,14 +2051,9 @@ def _search_ancestry_tree(
     # Step 1: Get all names from the extracted data
     if isinstance(extracted_data, ExtractedData):
         names = extracted_data.get_all_names()
-    elif isinstance(extracted_data, list):
+    else:
         # Legacy support for list of names
         names = extracted_data
-    else:
-        logger.warning(
-            "Action 9 Tree Search: Invalid extracted_data type. Expected ExtractedData or list."
-        )
-        return {"results": [], "relationship_paths": {}}
 
     if not names:
         logger.debug("Action 9 Tree Search: No names extracted to search.")
@@ -2238,7 +2230,7 @@ def _test_edge_cases() -> None:
     assert isinstance(result, bool), "Should handle empty message"
 
     # Test should_exclude_message with None
-    result = should_exclude_message(None)
+    result = should_exclude_message(None)  # type: ignore[arg-type]
     assert isinstance(result, bool), "Should handle None message"
 
 

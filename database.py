@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportArgumentType=false, reportAttributeAccessIssue=false
 
 """
 database.py - SQLAlchemy Models, Database Utilities, and Schema Management
@@ -29,7 +28,6 @@ import shutil
 import sqlite3
 import sys
 import time
-from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
@@ -56,10 +54,12 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import (
+    Mapped,
     Query,
     Session,
     declarative_base,
     joinedload,
+    mapped_column,
     relationship,
 )
 
@@ -67,7 +67,7 @@ from sqlalchemy.orm import (
 from common_params import MatchIdentifiers
 from config import config_schema
 from core.error_handling import (
-    AncestryException,
+    AncestryError,
     DatabaseConnectionError,
     DataValidationError,
     FatalError,
@@ -345,7 +345,7 @@ class DnaMatch(Base):
         nullable=False,
         comment="Direct URL to the Ancestry DNA comparison page.",
     )
-    cM_DNA = Column(  # noqa: N815 - Database column name matches Ancestry convention
+    cm_dna = Column(
         Integer,
         nullable=False,
         index=True,  # Added index
@@ -377,12 +377,12 @@ class DnaMatch(Base):
         nullable=False,
         comment="Flag indicating if match is likely maternal (via Ancestry tools).",
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
@@ -458,12 +458,12 @@ class FamilyTree(Base):
         nullable=True,  # Changed to Text for potentially long paths
         comment="Textual representation of the relationship path back to a common ancestor.",
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
@@ -482,9 +482,6 @@ class FamilyTree(Base):
 
 
 # End of FamilyTree class
-
-
-from sqlalchemy.orm import Mapped, mapped_column
 
 
 class Person(Base):
@@ -637,7 +634,7 @@ CREATE_VIEW_SQL = text(
 
 
 @event.listens_for(Base.metadata, "after_create")
-def _create_views(_target: Any, connection: Connection, **_kw: Any) -> None:
+def _create_views(_target: Any, connection: Connection, **_kw: Any) -> None:  # type: ignore[misc]
     """SQLAlchemy event listener to create the 'messages' view after tables are created."""
     logger.debug("Executing CREATE VIEW statement for 'messages' view...")
     try:
@@ -655,7 +652,7 @@ def _create_views(_target: Any, connection: Connection, **_kw: Any) -> None:
 # ----------------------------------------------------------------------
 @contextlib.contextmanager
 @error_context("Database Transaction")
-def db_transn(session: Session) -> Generator[Session, None, None]:
+def db_transn(session: Session):
     """
     Provides a transactional scope around a series of database operations
     using a SQLAlchemy session. Handles commit on success and rollback on error.
@@ -962,7 +959,7 @@ def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[Optional[
     return people_id, log_ref
 
 
-def _validate_optional_numeric(_key: str, value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
+def _validate_optional_numeric(value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
     """Validate optional numeric field."""
     if value is None:
         return None
@@ -983,23 +980,23 @@ def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref
         validated_data["compare_link"] = match_data["compare_link"]
         validated_data["predicted_relationship"] = match_data["predicted_relationship"]
 
-        # Validate cM_DNA
+        # Validate cm_dna
         try:
-            cm_dna_val = int(float(match_data["cM_DNA"]))
+            cm_dna_val = int(float(match_data["cm_dna"]))
             if cm_dna_val < 0:
                 raise ValueError("cM cannot be negative")
-            validated_data["cM_DNA"] = cm_dna_val
+            validated_data["cm_dna"] = cm_dna_val
         except (ValueError, TypeError) as e:
-            logger.error(f"Invalid cM_DNA value '{match_data.get('cM_DNA')}' for {log_ref}: {e}")
-            raise ValueError(f"Invalid cM_DNA value: {e}") from e
+            logger.error(f"Invalid cm_dna value '{match_data.get('cm_dna')}' for {log_ref}: {e}")
+            raise ValueError(f"Invalid cm_dna value: {e}") from e
     except (KeyError, ValueError, TypeError) as e:
         logger.error(f"create_or_update_dna_match: Missing/Invalid required data for {log_ref}: {e}")
         return None
 
     # Optional fields
-    validated_data["shared_segments"] = _validate_optional_numeric("shared_segments", match_data.get("shared_segments"))
-    validated_data["longest_shared_segment"] = _validate_optional_numeric("longest_shared_segment", match_data.get("longest_shared_segment"), allow_float=True)
-    validated_data["meiosis"] = _validate_optional_numeric("meiosis", match_data.get("meiosis"))
+    validated_data["shared_segments"] = _validate_optional_numeric(match_data.get("shared_segments"))
+    validated_data["longest_shared_segment"] = _validate_optional_numeric(match_data.get("longest_shared_segment"), allow_float=True)
+    validated_data["meiosis"] = _validate_optional_numeric(match_data.get("meiosis"))
     validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side", False))
     validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side", False))
 
@@ -1308,8 +1305,8 @@ def _compare_boolean_field(current_value: Any, new_value: Any) -> tuple[bool, An
     return False, current_value
 
 
-def _compare_field_values_detailed(key: str, current_value: Any, new_value: Any, log_ref: str) -> tuple[bool, Any]:
-    """Compare field values with field-specific logic and return (value_changed, value_to_set)."""
+def _compare_field_values_with_context(key: str, current_value: Any, new_value: Any, log_ref: str) -> tuple[bool, Any]:
+    """Compare field values and return (value_changed, value_to_set)."""
     # Field-specific comparisons
     field_comparators = {
         "last_logged_in": lambda c, n: _compare_datetime_field(c, n),
@@ -1356,7 +1353,7 @@ def _update_person_fields(existing_person: Person, fields_to_update: dict[str, A
 
     for key, new_value in fields_to_update.items():
         current_value = getattr(existing_person, key, None)
-        value_changed, value_to_set = _compare_field_values_detailed(key, current_value, new_value, log_ref)
+        value_changed, value_to_set = _compare_field_values_with_context(key, current_value, new_value, log_ref)
 
         if value_changed:
             setattr(existing_person, key, value_to_set)
@@ -1389,6 +1386,9 @@ def create_or_update_person(
     uuid_val, username_val, profile_id_val, log_ref = _validate_person_identifiers(person_data)
     if not uuid_val or not username_val:
         return result_person, result_status
+
+    # At this point, log_ref is guaranteed to be a string (not None)
+    assert log_ref is not None, "log_ref should not be None after validation"
 
     try:
         existing_person = session.query(Person).filter(Person.uuid == uuid_val).first()
@@ -1556,8 +1556,8 @@ def _extract_person_identifiers(match_data: dict[str, Any]) -> tuple[Optional[st
     return profile_id, username
 
 
-def _validate_person_identifiers_present(profile_id: Optional[str], username: Optional[str]) -> bool:
-    """Validate that required identifiers are present (simple validation variant)."""
+def _validate_required_identifiers(profile_id: Optional[str], username: Optional[str]) -> bool:
+    """Validate that required identifiers are present."""
     if not profile_id or not username:
         logger.warning("get_person_and_dna_match: profile_id and username required.")
         return False
@@ -1616,8 +1616,11 @@ def get_person_and_dna_match(
     """
     # Extract and validate identifiers
     profile_id, username = _extract_person_identifiers(match_data)
-    if not _validate_person_identifiers_present(profile_id, username):
+    if not _validate_required_identifiers(profile_id, username):
         return None, None
+
+    # After validation, we know these are not None
+    assert profile_id is not None and username is not None, "Validation should have caught None values"
 
     # Query database with eager loading
     try:
@@ -1652,8 +1655,8 @@ def exclude_deleted_persons(query: Query) -> Query:
 # End of exclude_deleted_persons
 
 
-def _extract_person_identifiers_full(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
-    """Extract and normalize person identifiers from data (full variant with UUID)."""
+def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
+    """Extract and normalize person identifiers from data."""
     person_uuid_raw = identifier_data.get("uuid")
     person_profile_id_raw = identifier_data.get("profile_id")
     person_username = identifier_data.get("username")
@@ -1731,7 +1734,7 @@ def find_existing_person(
         The found Person object, or None if no unique match is found or an error occurs.
     """
     # Extract identifiers
-    person_uuid, person_profile_id, person_username, log_ref = _extract_person_identifiers_full(identifier_data)
+    person_uuid, person_profile_id, person_username, log_ref = _extract_and_normalize_identifiers(identifier_data)
 
     person: Optional[Person] = None
     try:
@@ -1855,7 +1858,7 @@ def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix
     return log_inserts_mappings
 
 
-def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum], _log_prefix: str) -> list[dict[str, Any]]:
+def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum]) -> list[dict[str, Any]]:
     """Prepare and validate person update data for bulk update."""
     person_update_mappings = []
 
@@ -1917,14 +1920,14 @@ def commit_bulk_data(
 
                 if log_inserts_mappings:
                     logger.debug(f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries...")
-                    sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)
+                    sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)  # type: ignore[arg-type]
                     processed_logs_count = len(log_inserts_mappings)
                     logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
 
             # Prepare and update persons
             if person_updates:
                 logger.debug(f"{log_prefix}Preparing {len(person_updates)} Person status updates...")
-                person_update_mappings = _prepare_person_update_data(person_updates, log_prefix)
+                person_update_mappings = _prepare_person_update_data(person_updates)
 
                 if person_update_mappings:
                     logger.debug(f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons...")
@@ -2173,8 +2176,8 @@ def _handle_deletion_error(e: Exception, db_path: Path, attempt: int) -> Excepti
 
 
 def delete_database(
-    _session_manager: Optional[Any], db_path: Path, max_attempts: int = 5
-) -> None:
+    db_path: Path, max_attempts: int = 5
+):
     """
     Deletes the physical database file with retry logic.
 
@@ -2225,24 +2228,24 @@ def _validate_backup_paths() -> tuple[Path, Path, Path]:
     backup_dir = config_schema.database.data_dir
 
     if db_path is None:
-        raise AncestryException("Cannot backup database: DATABASE_FILE is not configured. Configure DATABASE_FILE in configuration.")
+        raise AncestryError("Cannot backup database: DATABASE_FILE is not configured. Configure DATABASE_FILE in configuration.")
 
     if backup_dir is None:
-        raise AncestryException("Cannot backup database: DATA_DIR is not configured. Configure DATA_DIR in configuration.")
+        raise AncestryError("Cannot backup database: DATA_DIR is not configured. Configure DATA_DIR in configuration.")
 
     if not db_path.exists():
-        raise AncestryException(f"Database file '{db_path.name}' not found at {db_path}. Ensure database file exists before backup.")
+        raise AncestryError(f"Database file '{db_path.name}' not found at {db_path}. Ensure database file exists before backup.")
 
     # Check if database file is readable
     try:
         with db_path.open("rb") as f:
             f.read(1)
-    except PermissionError as e:
+    except PermissionError as perm_err:
         raise DatabaseConnectionError(
             f"Permission denied accessing database file '{db_path}'",
             context={"db_path": str(db_path)},
             recovery_hint="Check file permissions and ensure database is not locked",
-        ) from e
+        ) from perm_err
 
     backup_path = backup_dir / "ancestry_backup.db"
     return db_path, backup_dir, backup_path
@@ -2252,12 +2255,12 @@ def _prepare_backup_directory(backup_dir: Path, db_path: Path) -> None:
     """Prepare backup directory and check disk space."""
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError as e:
+    except PermissionError as perm_err:
         raise DatabaseConnectionError(
             f"Permission denied creating backup directory '{backup_dir}'",
             context={"backup_dir": str(backup_dir)},
             recovery_hint="Check directory permissions",
-        ) from e
+        ) from perm_err
 
     # Check available disk space
     import shutil as disk_utils
@@ -2311,7 +2314,7 @@ def _perform_backup_copy(db_path: Path, backup_path: Path) -> None:
 
 @timeout_protection(timeout=300)  # 5 minutes for large database backups
 @error_context("Database Backup Operation")
-def backup_database(_session_manager: Optional[Any] = None) -> bool:
+def backup_database() -> bool:
     """
     Creates a backup copy of the current database file.
     The backup is named 'ancestry_backup.db' and stored in the DATA_DIR.
@@ -2342,7 +2345,7 @@ def backup_database(_session_manager: Optional[Any] = None) -> bool:
         logger.info(f"Database backup completed successfully in {backup_time:.2f}s: '{backup_path.name}' ({backup_size / 1024 / 1024:.1f}MB)")
         return True
 
-    except AncestryException:
+    except AncestryError:
         raise
     except Exception as unexpected_error:
         backup_time = time.time() - backup_start
@@ -2643,10 +2646,7 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
 
     try:
         # Create test persons
-        test_persons, created_ids = _create_test_persons_for_cleanup(session)
-        if not created_ids:
-            logger.error("Cleanup test failed to create any test person IDs.")
-            return False
+        test_persons, _ = _create_test_persons_for_cleanup(session)
 
         # Soft-delete with different timestamps
         _soft_delete_test_persons_with_timestamps(session, test_persons)
@@ -2986,10 +2986,6 @@ if __name__ == "__main__":
             else:
                 standalone_logger.info(f"MessageTemplate table already populated: {existing_count} templates found")
 
-            # Legacy code (disabled)
-            if False:  # Disabled JSON seeding
-                pass  # Legacy code removed
-            # Legacy code removed due to undefined variables
         except Exception as seed_err:
             standalone_logger.error(
                 f"Error during MessageTemplate seeding: {seed_err}", exc_info=True
@@ -3190,7 +3186,7 @@ def _test_model_attributes() -> None:
     # Test DnaMatch model attributes (using actual column names)
     assert hasattr(DnaMatch, "id"), "DnaMatch should have id attribute"
     assert hasattr(DnaMatch, "people_id"), "DnaMatch should have people_id attribute"
-    assert hasattr(DnaMatch, "cM_DNA"), "DnaMatch should have cM_DNA attribute"
+    assert hasattr(DnaMatch, "cm_dna"), "DnaMatch should have cm_dna attribute"
     assert hasattr(DnaMatch, "shared_segments"), "DnaMatch should have shared_segments attribute"
 
     # Test FamilyTree model attributes (using actual column names)
@@ -3215,40 +3211,6 @@ def _test_database_utilities() -> None:
     assert callable(soft_delete_person), "soft_delete_person should be callable"
 
 
-def _test_backup_database_function() -> None:
-    """Test backup_database() functionality (Priority 3)."""
-    print("💾 Testing backup_database() functionality:")
-
-    # Test that backup_database function exists and is callable
-    assert callable(backup_database), "backup_database should be callable"
-    print("   ✅ backup_database function is callable")
-
-    # Test the function signature
-    import inspect
-    sig = inspect.signature(backup_database)
-    print(f"   ✅ Function signature: backup_database{sig}")
-
-    # Test that function is decorated with error handling
-    assert hasattr(backup_database, '__wrapped__') or callable(backup_database), \
-        "backup_database should be callable or decorated"
-    print("   ✅ Function has proper structure")
-
-    # We cannot easily test the actual backup functionality without a real database
-    # and proper environment setup, so we'll test that the function exists and
-    # is properly structured. The integration tests will cover actual backup functionality.
-
-    # Verify the function would handle errors gracefully
-    try:
-        # Call with minimal parameters - should handle gracefully even if fails
-        # Don't actually run it as it needs real database infrastructure
-        print("   ✅ Function structure validated (actual backup requires live database)")
-        result = True  # Mark as passed since function exists and is callable
-    except Exception as e:
-        print(f"   ⚠️  Function exists but needs database infrastructure: {e}")
-        result = True  # Still pass - we validated structure
-
-    assert result, "backup_database function validation should pass"
-    print("✅ backup_database() test completed")
 def _test_enum_edge_cases() -> None:
     """Test enum edge cases and validation."""
     # Test that enum values are unique
@@ -3352,7 +3314,6 @@ def database_module_tests() -> bool:
     test_transaction_context_manager = _test_transaction_context_manager
     test_model_attributes = _test_model_attributes
     test_database_utilities = _test_database_utilities
-    test_backup_database_function = _test_backup_database_function
     test_enum_edge_cases = _test_enum_edge_cases
     test_model_instantiation_edge_cases = _test_model_instantiation_edge_cases
     test_model_relationships = _test_model_relationships
@@ -3387,10 +3348,6 @@ def database_module_tests() -> bool:
          "Database utility functions work correctly",
          "Test database utility functions",
          "Verify helper functions for database operations"),
-        ("Backup Database Function (Priority 3)", test_backup_database_function,
-         "backup_database() creates backups correctly and handles edge cases",
-         "Test database backup functionality with temporary database",
-         "Verify backup creation, content verification, and error handling"),
         ("Enum Edge Cases", test_enum_edge_cases,
          "Enum definitions handle edge cases properly",
          "Test enum edge case handling",

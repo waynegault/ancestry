@@ -29,7 +29,8 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import inspect
-import sys
+
+# Note: sys already imported at top of file
 import threading
 import unittest
 from functools import wraps

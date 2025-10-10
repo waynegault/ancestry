@@ -1218,7 +1218,7 @@ def _test_error_handling() -> None:
         raise ValueError("Test error")
 
     with contextlib.suppress(ValueError):
-        error_function()  # Expected
+        error_function()  # Expected to raise ValueError
 
     # Function should still be in profiles despite error
     error_profiles = [name for name in monitor.function_profiles if "error_function" in name]
@@ -1425,25 +1425,9 @@ if __name__ == "__main__":
     print("🧪 Running Performance Monitor Comprehensive Tests...")
     success = performance_monitor_module_tests()
     sys.exit(0 if success else 1)
+run_comprehensive_tests = create_standard_test_runner(performance_monitor_module_tests)
 
-
-def _run_basic_tests() -> bool:
-    """Basic test fallback when TestSuite is not available"""
-    try:
-        # Test basic functionality
-        monitor = PerformanceMonitor()
-        monitor.record_metric("test", 1.0, "test")
-        assert len(monitor.metrics) == 1
-
-        # Test API tracking
-        track_api_performance("test_api", 1.0, "success")
-
-        print("✅ Basic performance monitor tests passed")
-        return True
-    except Exception as e:
-        print(f"❌ Basic tests failed: {e}")
-        return False
-
+# Note: _run_basic_tests is defined earlier in the file (line 1395) as a fallback test runner
 
 # ==============================================
 # Standalone Test Block

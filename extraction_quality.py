@@ -49,7 +49,7 @@ import re
 from typing import Any
 
 
-def summarize_extracted_data(extracted_data: dict[str, Any]) -> dict[str, Any]:
+def summarize_extracted_data(extracted_data: Any) -> dict[str, Any]:
     """
     Returns a small summary dict with counts and basic flags. Safe defaults.
     Expected extracted_data keys (from normalization):
@@ -93,7 +93,7 @@ ACTION_VERBS = {
 _YEAR_RE = re.compile(r"\b(17|18|19|20)\d{2}\b")
 _SPECIFIC_PATTERN_RE = re.compile(r"\b(census|manifest|marriage|birth|death|baptism|immigration|naturalization|military|obituary|probate|newspaper|ship|passenger|DNA|chromosome)\b", re.IGNORECASE)
 
-def _calculate_positive_task_score(text: str, _lower: str, words: set[str]) -> float:
+def _calculate_positive_task_score(text: str, _lower: str, words: set[str]) -> float:  # type: ignore
     """Calculate positive scoring components for a task."""
     score = 0.0
 
@@ -312,7 +312,7 @@ def _enhance_task_quality(
     return score
 
 
-def compute_extraction_quality(extraction: dict[str, Any]) -> int:
+def compute_extraction_quality(extraction: Any) -> int:
     """Compute a heuristic overall quality score (0-100) for an extraction result.
 
     Enhanced Phase 12.1 version with sophisticated genealogical data scoring:
@@ -452,7 +452,7 @@ def _check_empty_tasks(suggested_tasks: list[Any]) -> int:
 
 
 # === Phase 2 (2025-08-11): Anomaly & Consistency Summary (debug / telemetry only) ===
-def compute_anomaly_summary(extraction: dict[str, Any]) -> str:
+def compute_anomaly_summary(extraction: Any) -> str:
     """Return a concise anomaly summary string or "" if no notable issues.
 
     Non-invasive heuristic checks (no exceptions raised):

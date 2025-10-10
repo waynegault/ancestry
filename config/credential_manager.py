@@ -879,7 +879,7 @@ def _get_test_framework():
         return _FallbackTestSuite, _fallback_assert_valid_function, _fallback_create_mock_data, _FallbackSuppressLogging
 
 
-def _get_credential_manager_tests() -> list[tuple[str, callable, str]]:
+def _get_credential_manager_tests() -> list[tuple[str, Callable, str]]:
     """Build the list of credential manager tests with descriptions."""
     return [
         ("Basic Initialization", _test_initialization, "4 initialization checks: default app name=AncestryAutomation, custom app name=TestApp, security_manager=None, cache=None."),

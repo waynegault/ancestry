@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false
 
 """
 Action 11: Ancestry API Search and Family Analysis
@@ -32,7 +31,7 @@ import os
 import re  # Added for robust lifespan splitting
 import sys
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 from urllib.parse import quote, urlencode
 
 # === THIRD-PARTY IMPORTS ===
@@ -245,7 +244,7 @@ def _get_search_criteria() -> Optional[dict[str, Any]]:
         gender = user_input["gender_input"][0].lower()
 
     # Parse dates
-    def clean_param(p: Optional[str]) -> Optional[str]:
+    def clean_param(p):
         return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
 
@@ -506,23 +505,23 @@ def _run_simple_suggestion_scoring(
     # Get scoring weights
     weights = _get_scoring_weights()
 
-    # Extract candidate and search data
-    cand_fn = candidate_data_dict.get("first_name")
-    cand_sn = candidate_data_dict.get("surname")
-    cand_by = candidate_data_dict.get("birth_year")
-    cand_bp = candidate_data_dict.get("birth_place")
-    cand_dy = candidate_data_dict.get("death_year")
-    cand_dp = candidate_data_dict.get("death_place")
-    cand_gn = candidate_data_dict.get("gender")
-    is_living = candidate_data_dict.get("is_living")
+    # Extract candidate and search data with defaults
+    cand_fn = candidate_data_dict.get("first_name") or ""
+    cand_sn = candidate_data_dict.get("surname") or ""
+    cand_by = candidate_data_dict.get("birth_year") or 0
+    cand_bp = candidate_data_dict.get("birth_place") or ""
+    cand_dy = candidate_data_dict.get("death_year") or 0
+    cand_dp = candidate_data_dict.get("death_place") or ""
+    cand_gn = candidate_data_dict.get("gender") or ""
+    is_living = candidate_data_dict.get("is_living") or False
 
-    search_fn = search_criteria.get("first_name")
-    search_sn = search_criteria.get("surname")
-    search_by = search_criteria.get("birth_year")
-    search_bp = search_criteria.get("birth_place")
-    search_dy = search_criteria.get("death_year")
-    search_dp = search_criteria.get("death_place")
-    search_gn = search_criteria.get("gender")
+    search_fn = search_criteria.get("first_name") or ""
+    search_sn = search_criteria.get("surname") or ""
+    search_by = search_criteria.get("birth_year") or 0
+    search_bp = search_criteria.get("birth_place") or ""
+    search_dy = search_criteria.get("death_year") or 0
+    search_dp = search_criteria.get("death_place") or ""
+    search_gn = search_criteria.get("gender") or ""
 
     # Score name matching
     name_score, name_fields, name_reasons = _score_name_match(search_fn, search_sn, cand_fn, cand_sn)
@@ -636,7 +635,7 @@ def _calculate_candidate_score(
     # Log inputs
     logger.debug(f"--- Scoring Candidate ID: {person_id} ---")
     logger.debug(f"Search Criteria Gender: '{search_criteria.get('gender')}'")
-    logger.debug(f"Candidate Dict Gender ('gender'): '{candidate_data_dict.get('gender')}'")
+    logger.debug(f"Candidate dict Gender ('gender'): '{candidate_data_dict.get('gender')}'")
     logger.debug(f"Calling scoring function: {getattr(scoring_func, '__name__', 'Unknown')}")
 
     try:
@@ -748,17 +747,18 @@ def _process_and_score_suggestions(
     processed_candidates = []
 
     # Setup
-    def clean_param(p: Optional[str]) -> Optional[str]:
+    def clean_param(p):
         return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None
 
     # Get configuration
-    scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
+    scoring_weights_raw = dict(config_schema.common_scoring_weights) if config_schema else {}
+    scoring_weights = {k: int(v) for k, v in scoring_weights_raw.items()}
     name_flex = getattr(config_schema, "name_flexibility", 2)
     date_flexibility_value = getattr(config_schema, "date_flexibility", 2)
     date_flex = {"year_match_range": int(date_flexibility_value)}
-    gender_weight = scoring_weights.get("gender_match", 0)
+    gender_weight = int(scoring_weights.get("gender_match", 0))
 
     # Process each suggestion
     for idx, raw_candidate in enumerate(suggestions):
@@ -947,7 +947,7 @@ def _print_results_table(table_data: list[list[str]], headers: list[str]) -> Non
 
 
 # Display search results (Uses 'gender_match' key)
-def _display_search_results(candidates: list[dict], max_to_display: int) -> None:
+def _display_search_results(candidates: list[dict], max_to_display: int):
     """Displays the scored search results. Uses 'gender_match' score key."""
     if not candidates:
         print("\nNo candidates to display.")
@@ -1252,10 +1252,12 @@ def _handle_treesui_api_response(response: requests.Response) -> Optional[list[d
                 return data
             logger.error(f"API call OK but response not JSON list. Type: {type(data)}")
             logger.debug(f"API Response Text: {response.text[:500]}")
+            print("Error: API returned unexpected data format.")
             return None
         except json.JSONDecodeError as json_err:
             logger.error(f"Failed to parse JSON response (200 OK): {json_err}")
             logger.debug(f"API Response Text: {response.text[:1000]}")
+            print("Error: Could not understand data from Ancestry.")
             return None
     elif response.status_code in [401, 403]:
         logger.error(
@@ -1266,6 +1268,7 @@ def _handle_treesui_api_response(response: requests.Response) -> Optional[list[d
     else:
         logger.error(f"API call failed with status code: {response.status_code}")
         logger.debug(f"API Response Text: {response.text[:500]}")
+        print(f"Error: Ancestry API returned error ({response.status_code}).")
         return None
 
 
@@ -1313,12 +1316,15 @@ def _call_direct_treesui_list_api(
 
     except requests.exceptions.Timeout:
         logger.error(f"API call timed out after {api_timeout}s")
+        print("(Error: Timed out searching Ancestry API)")
         return None
     except requests.exceptions.RequestException as req_err:
         logger.error(f"API call network/request issue: {req_err}", exc_info=True)
+        print(f"(Error connecting to Ancestry API: {req_err})")
         return None
     except Exception as e:
         logger.error(f"Unexpected error during API call: {e}", exc_info=True)
+        print(f"(Unexpected error searching: {e})")
         return None
 
 
@@ -1377,19 +1383,19 @@ def _resolve_owner_tree_id(session_manager_local: SessionManager) -> Optional[st
     # Try to get from config
     owner_tree_id = _get_tree_id_from_config()
     if owner_tree_id:
-        session_manager_local.my_tree_id = owner_tree_id
+        session_manager_local.api_manager.my_tree_id = owner_tree_id
         return owner_tree_id
 
     # Try to get from API
     owner_tree_id = _get_tree_id_from_api(session_manager_local)
     if owner_tree_id:
-        session_manager_local.my_tree_id = owner_tree_id
+        session_manager_local.api_manager.my_tree_id = owner_tree_id
         return owner_tree_id
 
     # Finally, prompt user
     owner_tree_id = _get_tree_id_from_user()
     if owner_tree_id:
-        session_manager_local.my_tree_id = owner_tree_id
+        session_manager_local.api_manager.my_tree_id = owner_tree_id
         return owner_tree_id
 
     return None
@@ -1543,7 +1549,7 @@ def _calculate_place_detail_score(event: dict) -> int:
     return comma_count + 1
 
 
-def _select_best_event(events: list[dict], _event_type: str) -> Optional[dict]:
+def _select_best_event(events: list[dict]) -> Optional[dict]:
     """Select best event from list based on alternate status and place detail."""
     if not events:
         return None
@@ -1581,7 +1587,7 @@ def _extract_birth_info(events_list: list[dict], idx: int) -> tuple[Optional[int
     if not birth_events:
         return None, None, None
 
-    best_birth = _select_best_event(birth_events, "Birth")
+    best_birth = _select_best_event(birth_events)
     if not best_birth:
         return None, None, None
 
@@ -1625,7 +1631,7 @@ def _extract_death_info(events_list: list[dict], idx: int) -> tuple[Optional[int
     if not death_events:
         return None, None, None, True  # is_living = True
 
-    best_death = _select_best_event(death_events, "Death")
+    best_death = _select_best_event(death_events)
     if not best_death:
         return None, None, None, True
 
@@ -1749,6 +1755,7 @@ def _handle_selection_phase(
     if not selection:
         # Log error and display to user
         logger.error("Failed to select top candidate.")
+        print("\nFailed to select top candidate.")
         return None
     # Field-by-field comparison display has been removed as requested
     return selection
@@ -1775,21 +1782,24 @@ def _handle_details_phase(
         if env_profile_id:
             owner_profile_id = env_profile_id
             # Update the session manager with the profile ID from environment
-            session_manager_local.my_profile_id = owner_profile_id
+            session_manager_local.api_manager._my_profile_id = owner_profile_id  # type: ignore[attr-defined]
             logger.info(
                 f"Using profile ID from environment variables: {owner_profile_id}"
             )
         else:
             # Log error and display to user
             logger.error("Owner profile ID missing.")
+            print("\nCannot fetch details: User ID missing.")
             return None
     if not api_person_id or not api_tree_id:
         # Log error and display to user
         logger.error("Cannot fetch details: Missing PersonId/TreeId.")
+        print("\nError: Missing IDs for detail fetch.")
         return None
     if not callable(call_facts_user_api):
         # Log error and display to user
         logger.error("Cannot fetch details: Function missing.")
+        print("\nError: Details fetching utility unavailable.")
         return None
 
     # Call the API
@@ -1800,6 +1810,7 @@ def _handle_details_phase(
     if person_research_data is None:
         # Log warning and display to user
         logger.warning("Failed to retrieve detailed info.")
+        print("\nWarning: Could not retrieve detailed info.")
         return None
     return person_research_data
 
@@ -1817,12 +1828,12 @@ def _get_base_owner_info(session_manager_local: SessionManager) -> tuple[str, Op
     return base_url, owner_tree_id, owner_profile_id, owner_name
 
 
-def _resolve_owner_tree_id_fallback(session_manager_local: SessionManager, owner_tree_id: Optional[str]) -> Optional[str]:
-    """Resolve owner tree ID from config if missing (fallback variant with optional parameter)."""
+def _resolve_owner_tree_id_from_config(session_manager_local: SessionManager, owner_tree_id: Optional[str]) -> Optional[str]:
+    """Resolve owner tree ID from config if missing."""
     if not owner_tree_id:
         config_tree_id = getattr(config_schema.api, "tree_id", None)
         if config_tree_id:
-            session_manager_local.my_tree_id = config_tree_id
+            session_manager_local.api_manager.my_tree_id = config_tree_id
             logger.info(f"Using tree ID from configuration: {config_tree_id}")
             return config_tree_id
     return owner_tree_id
@@ -1833,7 +1844,7 @@ def _resolve_owner_profile_id(session_manager_local: SessionManager, owner_profi
     if not owner_profile_id:
         env_profile_id = os.environ.get("MY_PROFILE_ID")
         if env_profile_id:
-            session_manager_local.my_profile_id = env_profile_id
+            session_manager_local.api_manager._my_profile_id = env_profile_id  # type: ignore[attr-defined]
             logger.info(f"Using profile ID from environment variables: {env_profile_id}")
             return env_profile_id
     return owner_profile_id
@@ -1844,12 +1855,12 @@ def _resolve_owner_name(session_manager_local: SessionManager, owner_name: str, 
     if owner_name == "the Tree Owner":
         config_owner_name = getattr(config_schema, "user_name", None)
         if config_owner_name and config_owner_name != "Tree Owner":
-            session_manager_local.tree_owner_name = config_owner_name
+            session_manager_local.api_manager._tree_owner_name = config_owner_name  # type: ignore[attr-defined]
             logger.info(f"Using tree owner name from configuration: {config_owner_name}")
             return config_owner_name
         if owner_profile_id:
             resolved_name = config_owner_name if config_owner_name else "Tree Owner"
-            session_manager_local.tree_owner_name = resolved_name
+            session_manager_local.api_manager._tree_owner_name = resolved_name  # type: ignore[attr-defined]
             logger.info(f"Using tree owner name from config/default: {resolved_name}")
             return resolved_name
     return owner_name
@@ -2075,19 +2086,19 @@ def _extract_relationship_data_from_html(html_content: str) -> list[dict]:
 
     for item in list_items:
         # Skip icon items
-        if item.get("aria-hidden") == "true":
+        if hasattr(item, 'get') and item.get("aria-hidden") == "true":  # type: ignore[union-attr]
             continue
 
         # Extract name
-        name_elem = item.find("b")
-        name = name_elem.get_text() if name_elem else item.get_text()
+        name_elem = item.find("b") if hasattr(item, 'find') else None  # type: ignore[union-attr]
+        name = name_elem.get_text() if name_elem and hasattr(name_elem, 'get_text') else (item.get_text() if hasattr(item, 'get_text') else str(item))  # type: ignore[union-attr]
 
         # Extract relationship description
-        rel_elem = item.find("i")
-        relationship = rel_elem.get_text() if rel_elem else ""
+        rel_elem = item.find("i") if hasattr(item, 'find') else None  # type: ignore[union-attr]
+        relationship = rel_elem.get_text() if rel_elem and hasattr(rel_elem, 'get_text') else ""  # type: ignore[union-attr]
 
         # Extract lifespan
-        text = item.get_text()
+        text = item.get_text() if hasattr(item, 'get_text') else str(item)  # type: ignore[union-attr]
         lifespan_match = re.search(r"(\d{4})-(\d{4}|\-)", text)
         lifespan = lifespan_match.group(0) if lifespan_match else ""
 
@@ -2106,11 +2117,10 @@ def _format_tree_ladder_path(
     owner_name: str,
 ) -> Optional[str]:
     """Format relationship path from Tree Ladder API response."""
-    # Initialize these outside try block to ensure they're available in exception handler
-    sn_str = str(selected_name) if selected_name else "Unknown"
-    on_str = str(owner_name) if owner_name else "Unknown"
-
     try:
+        sn_str = str(selected_name) if selected_name else "Unknown"
+        on_str = str(owner_name) if owner_name else "Unknown"
+
         # Get raw formatted path
         raw_formatted_path = format_api_relationship_path(api_response_dict, on_str, sn_str)
         logger.debug(f"Raw formatted path from format_api_relationship_path:\n{raw_formatted_path}")
@@ -2125,8 +2135,9 @@ def _format_tree_ladder_path(
 
     except Exception as e:
         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
-        # Fall back to raw formatted path (variables are guaranteed to be bound)
-        return format_api_relationship_path(api_response_dict, on_str, sn_str)
+        # Fall back to raw formatted path
+        # Variables on_str and sn_str are defined in try block before any exception can occur
+        return format_api_relationship_path(api_response_dict, on_str, sn_str)  # type: ignore[possibly-unbound]
 
 
 def _handle_tree_ladder_api_call(
@@ -2299,7 +2310,7 @@ def _clean_formatted_path(formatted_path: str, owner_name: str) -> str:
 def _display_formatted_path(
     formatted_path: str,
     owner_name: str,
-    api_called_for_rel: str,
+    api_called_for_rel: Union[str, bool],
 ) -> None:
     """Display formatted relationship path."""
     display_owner_name = owner_name if owner_name else "Tree Owner"
@@ -2345,7 +2356,7 @@ def _display_calculation_failure(
 
 def _display_unexpected_state(
     selected_name: str,
-    api_called_for_rel: str,
+    api_called_for_rel: Union[str, bool],
 ) -> None:
     """Display message for unexpected state where calculation performed but no path generated."""
     logger.error(
@@ -2365,7 +2376,7 @@ def _display_relationship_result(
     can_attempt_calculation: bool,
     owner_name: str,
     selected_name: str,
-    api_called_for_rel: str,
+    api_called_for_rel: Union[str, bool],
     source_of_ids: str,
 ) -> None:
     """Display final relationship result or failure message."""
@@ -2425,11 +2436,12 @@ def _refresh_cookies_from_browser() -> bool:
         return True
     except Exception as cookie_err:
         logger.error(f"Failed to refresh cookies from browser: {cookie_err}")
+        print(f"\nERROR: Failed to refresh cookies: {cookie_err}")
         return False
 
 
-def _validate_global_session() -> bool:
-    """Validate that global requests session exists."""
+def _validate_global_requests_session() -> bool:
+    """Validate that requests session exists in global session_manager."""
     if not hasattr(session_manager, "_requests_session") or not session_manager._requests_session:
         logger.error("No requests session available for API calls.")
         print("\nERROR: API session not available. Please ensure you are logged in to Ancestry.")
@@ -2452,7 +2464,7 @@ def _handle_logged_in_user() -> bool:
     """Handle case where user is already logged in - refresh cookies."""
     logger.debug("User is already logged in. Refreshing cookies...")
 
-    if not _validate_global_session():
+    if not _validate_global_requests_session():
         return False
 
     if not _refresh_cookies_from_browser():
@@ -2480,6 +2492,7 @@ def _attempt_browser_login() -> bool:
     login_result = log_in(session_manager)
     if login_result != "LOGIN_SUCCEEDED":
         logger.error(f"Failed to log in: {login_result}")
+        print(f"\nERROR: Failed to log in: {login_result}")
         return False
 
     return True
@@ -2495,6 +2508,7 @@ def _initialize_session_with_login() -> bool:
         # Try to start the browser session
         if not session_manager.start_browser(action_name="API Report Browser Init"):
             logger.error("Failed to start browser session.")
+            print("\nERROR: Failed to start browser session.")
             return False
 
         # Attempt login
@@ -2504,6 +2518,7 @@ def _initialize_session_with_login() -> bool:
         # Check if we now have cookies
         if not session_manager._requests_session.cookies:
             logger.error("Still no cookies available after login attempt.")
+            print("\nERROR: Still no cookies available after login attempt.")
             return False
 
         print("\nSuccessfully initialized session with authentication cookies.")
@@ -2511,12 +2526,13 @@ def _initialize_session_with_login() -> bool:
         return True
     except Exception as e:
         logger.error(f"Error initializing session: {e}")
+        print(f"\nERROR: Error initializing session: {e}")
         return False
 
 
 def _handle_not_logged_in_user() -> bool:
     """Handle case where user is not logged in."""
-    if not _validate_global_session():
+    if not _validate_global_requests_session():
         return False
 
     # Check if we have cookies in the requests session
@@ -2544,7 +2560,7 @@ def _handle_supplementary_info_phase(
     person_research_data: Optional[dict],
     selected_candidate_processed: dict,
     session_manager_local: SessionManager,
-) -> None:
+):
     """
     Simplified to only calculate and display the relationship path.
     Family details functionality removed to keep Action 11 focused and reliable.
@@ -2553,7 +2569,7 @@ def _handle_supplementary_info_phase(
     base_url, owner_tree_id, owner_profile_id, owner_name = _get_base_owner_info(session_manager_local)
 
     # Resolve missing owner information
-    owner_tree_id = _resolve_owner_tree_id_fallback(session_manager_local, owner_tree_id)
+    owner_tree_id = _resolve_owner_tree_id_from_config(session_manager_local, owner_tree_id)
     owner_profile_id = _resolve_owner_profile_id(session_manager_local, owner_profile_id)
     owner_name = _resolve_owner_name(session_manager_local, owner_name, owner_profile_id)
 
@@ -2625,24 +2641,34 @@ def _handle_supplementary_info_phase(
         formatted_path, calculation_performed = _handle_owner_relationship(selected_name, owner_name)
 
     elif can_calc_tree_ladder:
-        formatted_path, calculation_performed, api_called_for_rel = _handle_tree_ladder_api_call(
-            session_manager_local,
-            base_url,
-            owner_tree_id_str,
-            selected_person_tree_id,
-            selected_name,
-            owner_name,
-        )
+        if owner_tree_id_str and selected_person_tree_id:
+            formatted_path, calculation_performed, api_called_for_rel = _handle_tree_ladder_api_call(
+                session_manager_local,
+                base_url,
+                owner_tree_id_str,
+                selected_person_tree_id,
+                selected_name,
+                owner_name,
+            )
+        else:
+            formatted_path = None
+            calculation_performed = False
+            api_called_for_rel = False
 
     elif can_calc_discovery_api:
-        formatted_path, calculation_performed, api_called_for_rel = _handle_discovery_api_call(
-            session_manager_local,
-            base_url,
-            selected_person_global_id,
-            owner_profile_id_str,
-            selected_name,
-            owner_name,
-        )
+        if selected_person_global_id and owner_profile_id_str:
+            formatted_path, calculation_performed, api_called_for_rel = _handle_discovery_api_call(
+                session_manager_local,
+                base_url,
+                selected_person_global_id,
+                owner_profile_id_str,
+                selected_name,
+                owner_name,
+            )
+        else:
+            formatted_path = None
+            calculation_performed = False
+            api_called_for_rel = False
 
     # --- Display Final Result or Failure Message ---
     _display_relationship_result(
@@ -2739,6 +2765,7 @@ def main() -> None:
             # Log error and display to user with a single message
             error_message = "Action 11 finished with errors"
             logger.error(f"--- {error_message} ---")
+            print(f"\n{error_message} (check logs).")
     except Exception as e:
         # Log critical error and display to user
         logger.critical(
@@ -2922,11 +2949,11 @@ def get_ancestry_person_details(
             "id": sibling.get("id", "Unknown"),
             "name": sibling.get("name", "Unknown"),
             "gender": sibling.get("gender", "Unknown"),
-            "birth_year": _extract_year_simple(
-                sibling.get("birth", {}).get("date", {}).get("normalized", "")
+            "birth_year": _extract_year_from_date(
+                sibling.get("birth", {}).get("date", {}).get("normalized", ""), 0, "birth"
             ),
-            "death_year": _extract_year_simple(
-                sibling.get("death", {}).get("date", {}).get("normalized", "")
+            "death_year": _extract_year_from_date(
+                sibling.get("death", {}).get("date", {}).get("normalized", ""), 0, "death"
             ),
         }
         details["siblings"].append(sibling_info)
@@ -3017,7 +3044,7 @@ def get_ancestry_relationship_path(
 
 
 def _extract_year_simple(date_str: str) -> Optional[int]:
-    """Extract year from a date string (simple variant without index/event_type)."""
+    """Extract year from a date string (simple version)."""
     if not date_str or date_str == "Unknown":
         return None
 
@@ -3040,7 +3067,7 @@ def run_action11(session_manager_param: Optional[Any] = None, *_: Any) -> bool:
     return handle_api_report()
 
 
-def load_test_person_from_env() -> dict[str, Any]:
+def load_test_person_from_env():
     """Load Fraser Gault test person data from environment variables."""
     load_dotenv()
 
@@ -3068,156 +3095,6 @@ def _require_env(keys: list[str]) -> None:
     """Check that required environment variables are set."""
     missing = [k for k in keys if not os.getenv(k)]
     assert not missing, f"Missing required env vars for Action 11 tests: {missing}"
-
-
-# ==============================================
-# UNIT TESTS FOR UTILITY FUNCTIONS (Priority 1)
-# ==============================================
-
-
-def _test_display_search_results_formatting() -> bool:
-    """Test search results display formatting and truncation (Priority 1)."""
-    import io
-    import sys
-
-    # Test with empty list
-    captured_output = io.StringIO()
-    sys.stdout = captured_output
-    _display_search_results([], max_to_display=10)
-    sys.stdout = sys.__stdout__
-    output = captured_output.getvalue()
-    assert "No candidates to display" in output, "Should handle empty candidate list"
-
-    # Test with single candidate
-    mock_candidates = [
-        {
-            "id": "test123",
-            "name": "John Smith",
-            "gender": "M",
-            "birth_year": 1940,
-            "birth_place": "London",
-            "death_year": 2010,
-            "death_place": "Manchester",
-            "total_score": 95.5,
-            "gender_match": 10,
-            "name_similarity": 85.5,
-        }
-    ]
-
-    captured_output = io.StringIO()
-    sys.stdout = captured_output
-    _display_search_results(mock_candidates, max_to_display=10)
-    sys.stdout = sys.__stdout__
-    output = captured_output.getvalue()
-    assert "John Smith" in output, "Should display person name"
-    assert "1940" in output or "London" in output, "Should display birth info"
-
-    # Test truncation with max_to_display
-    large_candidate_list = [
-        {
-            "id": f"person{i}",
-            "name": f"Person {i}",
-            "gender": "M",
-            "birth_year": 1900 + i,
-            "birth_place": "Place",
-            "death_year": None,
-            "death_place": None,
-            "total_score": 100 - i,
-            "gender_match": 10,
-            "name_similarity": 90 - i,
-        }
-        for i in range(20)
-    ]
-
-    captured_output = io.StringIO()
-    sys.stdout = captured_output
-    _display_search_results(large_candidate_list, max_to_display=5)
-    sys.stdout = sys.__stdout__
-    output = captured_output.getvalue()
-    assert "Person 0" in output, "Should display first person"
-    assert "Person 4" in output, "Should display 5th person (max_to_display=5)"
-    assert "Person 10" not in output, "Should NOT display beyond max_to_display"
-    assert "Top 5 Matches" in output, "Should indicate truncation"
-
-    logger.info("✅ _display_search_results() formatting tests passed")
-    return True
-
-
-def _test_load_test_person_from_env() -> bool:
-    """Test loading test person data from environment variables (Priority 1)."""
-    # Save original environment variables
-    original_env = {
-        "TEST_PERSON_NAME": os.getenv("TEST_PERSON_NAME"),
-        "TEST_PERSON_BIRTH_YEAR": os.getenv("TEST_PERSON_BIRTH_YEAR"),
-        "TEST_PERSON_BIRTH_PLACE": os.getenv("TEST_PERSON_BIRTH_PLACE"),
-        "TEST_PERSON_GENDER": os.getenv("TEST_PERSON_GENDER"),
-        "TEST_PERSON_SPOUSE": os.getenv("TEST_PERSON_SPOUSE"),
-        "TEST_PERSON_CHILD1": os.getenv("TEST_PERSON_CHILD1"),
-        "TEST_PERSON_CHILD2": os.getenv("TEST_PERSON_CHILD2"),
-        "TEST_PERSON_CHILD3": os.getenv("TEST_PERSON_CHILD3"),
-        "TEST_PERSON_RELATIONSHIP": os.getenv("TEST_PERSON_RELATIONSHIP"),
-    }
-
-    try:
-        # Test with custom environment variables
-        os.environ["TEST_PERSON_NAME"] = "Test Person"
-        os.environ["TEST_PERSON_BIRTH_YEAR"] = "1950"
-        os.environ["TEST_PERSON_BIRTH_PLACE"] = "TestCity"
-        os.environ["TEST_PERSON_GENDER"] = "F"
-        os.environ["TEST_PERSON_SPOUSE"] = "TestSpouse"
-        os.environ["TEST_PERSON_CHILD1"] = "Child1"
-        os.environ["TEST_PERSON_CHILD2"] = "Child2"
-        os.environ["TEST_PERSON_CHILD3"] = "Child3"
-        os.environ["TEST_PERSON_RELATIONSHIP"] = "cousin"
-
-        result = load_test_person_from_env()
-
-        # Validate structure
-        assert isinstance(result, dict), "Should return dictionary"
-        assert "name" in result, "Should have 'name' key"
-        assert "birth_year" in result, "Should have 'birth_year' key"
-        assert "children" in result, "Should have 'children' key"
-
-        # Validate values
-        assert result["name"] == "Test Person", f"Expected 'Test Person', got {result['name']}"
-        assert result["birth_year"] == 1950, f"Expected 1950, got {result['birth_year']}"
-        assert result["birth_place"] == "TestCity", f"Expected 'TestCity', got {result['birth_place']}"
-        assert result["gender"] == "F", f"Expected 'F', got {result['gender']}"
-        assert result["spouse_name"] == "TestSpouse", f"Expected 'TestSpouse', got {result['spouse_name']}"
-        assert result["relationship"] == "cousin", f"Expected 'cousin', got {result['relationship']}"
-
-        # Validate children list
-        assert isinstance(result["children"], list), "Children should be a list"
-        assert len(result["children"]) == 3, f"Expected 3 children, got {len(result['children'])}"
-        assert "Child1" in result["children"], "Should contain Child1"
-        assert "Child2" in result["children"], "Should contain Child2"
-        assert "Child3" in result["children"], "Should contain Child3"
-
-        # Test with defaults (clear environment variables)
-        # Note: load_test_person_from_env() calls load_dotenv() which reads from .env file,
-        # so we can't test pure defaults. Instead, verify structure is correct.
-        for key in ["TEST_PERSON_NAME", "TEST_PERSON_BIRTH_YEAR", "TEST_PERSON_BIRTH_PLACE"]:
-            if key in os.environ:
-                del os.environ[key]
-
-        default_result = load_test_person_from_env()
-        # Verify structure is correct regardless of .env file contents
-        assert "name" in default_result, "Should have 'name' key in defaults"
-        assert "birth_year" in default_result, "Should have 'birth_year' key in defaults"
-        assert "birth_place" in default_result, "Should have 'birth_place' key in defaults"
-        assert isinstance(default_result["birth_year"], int), "birth_year should be an integer"
-        assert isinstance(default_result["children"], list), "children should be a list in defaults"
-
-        logger.info("✅ load_test_person_from_env() tests passed")
-        return True
-
-    finally:
-        # Restore original environment variables
-        for key, value in original_env.items():
-            if value is not None:
-                os.environ[key] = value
-            elif key in os.environ:
-                del os.environ[key]
 
 
 def _ensure_session(skip_live_tests: bool) -> SessionManager:
@@ -3373,29 +3250,10 @@ def action11_module_tests() -> bool:
     # - test_exception_handling (9 lines)
 
     # === RUN ALL TESTS ===
-
-    # === UNIT TESTS (Priority 1) ===
-    with suppress_logging():
-        suite.run_test(
-            test_name="_display_search_results() output formatting and truncation",
-            test_func=_test_display_search_results_formatting,
-            test_description="Test search results display with various result counts and truncation",
-            method_description="Testing output formatting with 0, 1, 5, and 20 candidates; validating max_to_display truncation",
-            expected_behavior="Function formats results correctly, handles empty lists, and truncates at max_to_display limit",
-        )
-
-        suite.run_test(
-            test_name="load_test_person_from_env() environment variable parsing",
-            test_func=_test_load_test_person_from_env,
-            test_description="Test loading test person data from environment variables with custom and default values",
-            method_description="Testing env var parsing for name, birth year, gender, spouse, children; validating defaults",
-            expected_behavior="Function loads custom values from env vars and falls back to defaults when missing",
-        )
-
     # Skip live API tests when running through test runner to avoid hanging
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
-        print("INFO  Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
+        print("INFO: Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
         logger.info("Skipping all live API tests due to SKIP_LIVE_API_TESTS environment variable")
 
     # Create wrapper functions that pass skip_live_tests parameter

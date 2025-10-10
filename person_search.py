@@ -54,7 +54,7 @@ logger = setup_module(globals(), __name__)
 # Make error handling imports visible for tests that assert presence
 
 from core.error_handling import (
-    AncestryException,
+    AncestryError,
     circuit_breaker,
     error_context,
     graceful_degradation,
@@ -69,7 +69,7 @@ _ensure_error_handling_symbols = (
     timeout_protection,
     graceful_degradation,
     error_context,
-    AncestryException,
+    AncestryError,
 )
 assert _ensure_error_handling_symbols is not None  # make linter consider usage
 
