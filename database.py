@@ -1307,8 +1307,8 @@ def _compare_boolean_field(current_value: Any, new_value: Any) -> tuple[bool, An
     return False, current_value
 
 
-def _compare_field_values(key: str, current_value: Any, new_value: Any, log_ref: str) -> tuple[bool, Any]:
-    """Compare field values and return (value_changed, value_to_set)."""
+def _compare_field_values_detailed(key: str, current_value: Any, new_value: Any, log_ref: str) -> tuple[bool, Any]:
+    """Compare field values with field-specific logic and return (value_changed, value_to_set)."""
     # Field-specific comparisons
     field_comparators = {
         "last_logged_in": lambda c, n: _compare_datetime_field(c, n),
@@ -1355,7 +1355,7 @@ def _update_person_fields(existing_person: Person, fields_to_update: dict[str, A
 
     for key, new_value in fields_to_update.items():
         current_value = getattr(existing_person, key, None)
-        value_changed, value_to_set = _compare_field_values(key, current_value, new_value, log_ref)
+        value_changed, value_to_set = _compare_field_values_detailed(key, current_value, new_value, log_ref)
 
         if value_changed:
             setattr(existing_person, key, value_to_set)
@@ -1555,8 +1555,8 @@ def _extract_person_identifiers(match_data: dict[str, Any]) -> tuple[Optional[st
     return profile_id, username
 
 
-def _validate_person_identifiers(profile_id: Optional[str], username: Optional[str]) -> bool:
-    """Validate that required identifiers are present."""
+def _validate_person_identifiers_present(profile_id: Optional[str], username: Optional[str]) -> bool:
+    """Validate that required identifiers are present (simple validation variant)."""
     if not profile_id or not username:
         logger.warning("get_person_and_dna_match: profile_id and username required.")
         return False
@@ -1615,7 +1615,7 @@ def get_person_and_dna_match(
     """
     # Extract and validate identifiers
     profile_id, username = _extract_person_identifiers(match_data)
-    if not _validate_person_identifiers(profile_id, username):
+    if not _validate_person_identifiers_present(profile_id, username):
         return None, None
 
     # Query database with eager loading
@@ -1651,8 +1651,8 @@ def exclude_deleted_persons(query: Query) -> Query:
 # End of exclude_deleted_persons
 
 
-def _extract_person_identifiers(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
-    """Extract and normalize person identifiers from data."""
+def _extract_person_identifiers_full(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
+    """Extract and normalize person identifiers from data (full variant with UUID)."""
     person_uuid_raw = identifier_data.get("uuid")
     person_profile_id_raw = identifier_data.get("profile_id")
     person_username = identifier_data.get("username")
@@ -1730,7 +1730,7 @@ def find_existing_person(
         The found Person object, or None if no unique match is found or an error occurs.
     """
     # Extract identifiers
-    person_uuid, person_profile_id, person_username, log_ref = _extract_person_identifiers(identifier_data)
+    person_uuid, person_profile_id, person_username, log_ref = _extract_person_identifiers_full(identifier_data)
 
     person: Optional[Person] = None
     try:

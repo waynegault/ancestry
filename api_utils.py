@@ -1412,6 +1412,7 @@ def _try_direct_suggest_fallback(
     """Try direct requests fallback for suggest API."""
     logger.warning(f"{api_description} failed via _api_req. Attempting direct requests fallback.")
     direct_response_obj = None
+    direct_timeout = 30  # Initialize with default value for exception handlers
 
     try:
         cookies = {}
@@ -1830,7 +1831,7 @@ def _process_getladder_response(relationship_data: Any, api_description: str) ->
     # Validate response with Pydantic if available and try to parse as JSON
     if PYDANTIC_AVAILABLE:
         try:
-            import json
+            # json is already imported at module level (line 53)
             parsed_data = json.loads(relationship_data)
             GetLadderResponse(**parsed_data)
             logger.debug("GetLadder API response validation successful")
@@ -3324,6 +3325,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
 
         large_data = {"items": [{"id": i, "name": f"Person {i}"} for i in range(1000)]}
         json_string = json.dumps(large_data)
+        parsed = None  # Initialize to ensure it's bound for assertion
 
         start_time = time.time()
         for _ in range(10):
