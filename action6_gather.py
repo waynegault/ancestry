@@ -733,13 +733,19 @@ def _refresh_session_auth(session_manager: SessionManager) -> bool:
                 # Quick validation - just check if driver is responsive
                 _ = driver.current_url
                 logger.info("✅ Session validation successful after cookie sync")
-                return True
             except Exception as e:
                 logger.warning(f"⚠️  Driver not responsive after cookie sync: {e}")
                 return False
         else:
             logger.warning("⚠️  No driver available for validation")
             return False
+
+        # Additional session validation using SessionManager method
+        if not session_manager.is_sess_valid():
+            logger.warning("⚠️  Session validation failed after cookie sync")
+            return False
+
+        return True
 
     except Exception as e:
         logger.error(f"Error refreshing session auth: {e}", exc_info=True)
@@ -821,7 +827,7 @@ def _check_session_health_proactive(session_manager: SessionManager, current_pag
                 session_manager.session_health_monitor['session_start_time'] = time.time()
 
                 return True
-            
+
             # CRITICAL FIX: If cookie sync fails, DON'T abort - just warn and continue
             # The actual API calls will fail with proper error handling if session is truly dead
             logger.warning(f"⚠️ Page {current_page}: Cookie sync failed, but continuing (API calls will validate session)")
@@ -5253,12 +5259,12 @@ def _validate_relationship_prob_session(
             "_fetch_batch_relationship_prob: SessionManager scraper not initialized."
         )
         raise ConnectionError("SessionManager scraper not initialized.")
-    
+
     # CRITICAL FIX: More robust session validation with specific error messages
     if not driver:
         logger.error(f"_fetch_batch_relationship_prob: WebDriver is None for UUID {match_uuid}")
         raise ConnectionError(f"WebDriver is None (UUID: {match_uuid})")
-    
+
     try:
         # Test if driver is actually responsive (catches disconnected sessions)
         _ = driver.current_url
@@ -6340,7 +6346,7 @@ def _validate_combined_details_session(
     if not driver:
         logger.error(f"_fetch_combined_details: WebDriver is None for UUID {match_uuid}")
         raise ConnectionError(f"WebDriver is None for combined details fetch (UUID: {match_uuid})")
-    
+
     try:
         # Test if driver is actually responsive (catches disconnected sessions)
         _ = driver.current_url
@@ -6374,7 +6380,7 @@ def _fetch_and_merge_profile_details(
     if not driver:
         logger.error(f"_fetch_combined_details: WebDriver is None before profile fetch for {tester_profile_id_for_api}")
         raise ConnectionError(f"WebDriver is None before profile fetch (Profile: {tester_profile_id_for_api})")
-    
+
     try:
         # Test if driver is actually responsive
         _ = driver.current_url

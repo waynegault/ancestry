@@ -338,7 +338,7 @@ def _prepare_action_arguments(action_func: Callable, session_manager: SessionMan
         # Extract start value, preserving None for checkpoint auto-resume
         start_val = None
         config_arg = None
-        
+
         for arg in args:
             if isinstance(arg, int):
                 start_val = arg
@@ -346,12 +346,12 @@ def _prepare_action_arguments(action_func: Callable, session_manager: SessionMan
                 # First non-integer, non-None arg is config_schema
                 if config_arg is None:
                     config_arg = arg
-        
+
         # If no start_val found in args, use default of 1 (not None)
         # This maintains backward compatibility when no args are passed
         if start_val is None and None not in args:
             start_val = 1
-        
+
         kwargs_for_action = {"start": start_val}
 
         coord_args = []

@@ -124,9 +124,10 @@ class BrowserManager:
                 class CookieLoader:
                     def __init__(self, driver: Any) -> None:
                         self.driver = driver
-                
-                driver_to_use = self.session_manager.driver if self.session_manager and self.session_manager.driver else self.driver
-                cookie_loader = CookieLoader(driver_to_use)
+
+                # Use the current browser driver directly - no need to access through session_manager
+                # since we're already in the BrowserManager that's being initialized
+                cookie_loader = CookieLoader(self.driver)
                 cookies_loaded = _load_login_cookies(cookie_loader)  # type: ignore[arg-type]
 
                 if cookies_loaded:
