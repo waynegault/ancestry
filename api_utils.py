@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportConstantRedefinition=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportConstantRedefinition=false, reportImportCycles=false
+# NOTE: Three import cycles with SessionManager (direct, via utils.py, via gedcom_utils.py→utils.py).
+# SessionManager coordinates all API operations creating bidirectional dependency. Proper fix requires
+# dependency injection or SessionManager interface extraction. Cycles don't affect runtime.
 
 """
 API Intelligence & Request Orchestration Engine
