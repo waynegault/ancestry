@@ -1590,8 +1590,8 @@ def _validate_facts_api_prerequisites(
     return True
 
 
-def _apply_rate_limiting(api_description: str) -> None:
-    """Apply rate limiting if available."""
+def _apply_rate_limiting_v2(api_description: str) -> None:
+    """Apply rate limiting if available (duplicate - should be consolidated)."""
     if api_rate_limiter and PYDANTIC_AVAILABLE:
         if not api_rate_limiter.can_make_request():
             wait_time = api_rate_limiter.wait_time_until_available()
@@ -2395,8 +2395,8 @@ def _validate_profile_request(session_manager: "SessionManager", profile_id: str
     return True
 
 
-def _apply_rate_limiting(api_description: str) -> None:
-    """Apply rate limiting if available."""
+def _apply_rate_limiting_v3(api_description: str) -> None:
+    """Apply rate limiting if available (duplicate - should be consolidated)."""
     if api_rate_limiter and PYDANTIC_AVAILABLE:
         if not api_rate_limiter.can_make_request():
             wait_time = api_rate_limiter.wait_time_until_available()
