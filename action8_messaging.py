@@ -1792,8 +1792,8 @@ def _safe_api_call_with_validation(
 
 # === SINGLE PERSON PROCESSING HELPER FUNCTIONS ===
 
-def _check_halt_signal(session_manager: SessionManager) -> None:
-    """Check for halt signal and raise exception if detected."""
+def _check_halt_signal_simple(session_manager: SessionManager) -> None:
+    """Check for halt signal and raise exception if detected (simple variant without counters)."""
     if session_manager.should_halt_operations():
         cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
         logger.warning(f"🚨 HALT SIGNAL: Skipping person processing due to session death cascade (#{cascade_count})")
@@ -2248,7 +2248,7 @@ def _process_single_person(
         - status_string (str): "sent", "acked", "skipped", or "error".
     """
     # --- Step 0: Session Validation and Initialization ---
-    _check_halt_signal(session_manager)
+    _check_halt_signal_simple(session_manager)
 
     # --- Step 1: Initialization and Logging ---
     log_prefix, person_id, _username, _status_name = _initialize_person_processing(person)

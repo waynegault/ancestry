@@ -1817,8 +1817,8 @@ def _get_base_owner_info(session_manager_local: SessionManager) -> tuple[str, Op
     return base_url, owner_tree_id, owner_profile_id, owner_name
 
 
-def _resolve_owner_tree_id(session_manager_local: SessionManager, owner_tree_id: Optional[str]) -> Optional[str]:
-    """Resolve owner tree ID from config if missing."""
+def _resolve_owner_tree_id_fallback(session_manager_local: SessionManager, owner_tree_id: Optional[str]) -> Optional[str]:
+    """Resolve owner tree ID from config if missing (fallback variant with optional parameter)."""
     if not owner_tree_id:
         config_tree_id = getattr(config_schema.api, "tree_id", None)
         if config_tree_id:
@@ -2106,10 +2106,11 @@ def _format_tree_ladder_path(
     owner_name: str,
 ) -> Optional[str]:
     """Format relationship path from Tree Ladder API response."""
+    # Initialize these outside try block to ensure they're available in exception handler
+    sn_str = str(selected_name) if selected_name else "Unknown"
+    on_str = str(owner_name) if owner_name else "Unknown"
+    
     try:
-        sn_str = str(selected_name) if selected_name else "Unknown"
-        on_str = str(owner_name) if owner_name else "Unknown"
-
         # Get raw formatted path
         raw_formatted_path = format_api_relationship_path(api_response_dict, on_str, sn_str)
         logger.debug(f"Raw formatted path from format_api_relationship_path:\n{raw_formatted_path}")
@@ -2124,7 +2125,7 @@ def _format_tree_ladder_path(
 
     except Exception as e:
         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
-        # Fall back to raw formatted path
+        # Fall back to raw formatted path (variables are guaranteed to be bound)
         return format_api_relationship_path(api_response_dict, on_str, sn_str)
 
 
@@ -2427,8 +2428,8 @@ def _refresh_cookies_from_browser() -> bool:
         return False
 
 
-def _validate_requests_session() -> bool:
-    """Validate that requests session exists."""
+def _validate_global_session() -> bool:
+    """Validate that global requests session exists."""
     if not hasattr(session_manager, "_requests_session") or not session_manager._requests_session:
         logger.error("No requests session available for API calls.")
         print("\nERROR: API session not available. Please ensure you are logged in to Ancestry.")
@@ -2451,7 +2452,7 @@ def _handle_logged_in_user() -> bool:
     """Handle case where user is already logged in - refresh cookies."""
     logger.debug("User is already logged in. Refreshing cookies...")
 
-    if not _validate_requests_session():
+    if not _validate_global_session():
         return False
 
     if not _refresh_cookies_from_browser():
@@ -2515,7 +2516,7 @@ def _initialize_session_with_login() -> bool:
 
 def _handle_not_logged_in_user() -> bool:
     """Handle case where user is not logged in."""
-    if not _validate_requests_session():
+    if not _validate_global_session():
         return False
 
     # Check if we have cookies in the requests session
@@ -2552,7 +2553,7 @@ def _handle_supplementary_info_phase(
     base_url, owner_tree_id, owner_profile_id, owner_name = _get_base_owner_info(session_manager_local)
 
     # Resolve missing owner information
-    owner_tree_id = _resolve_owner_tree_id(session_manager_local, owner_tree_id)
+    owner_tree_id = _resolve_owner_tree_id_fallback(session_manager_local, owner_tree_id)
     owner_profile_id = _resolve_owner_profile_id(session_manager_local, owner_profile_id)
     owner_name = _resolve_owner_name(session_manager_local, owner_name, owner_profile_id)
 
@@ -2855,13 +2856,13 @@ def get_ancestry_person_details(
     birth_facts = person_info.get("birth", {})
     details["birth_date"] = birth_facts.get("date", {}).get("normalized", "Unknown")
     details["birth_place"] = birth_facts.get("place", {}).get("normalized", "Unknown")
-    details["birth_year"] = _extract_year_from_date(details["birth_date"])
+    details["birth_year"] = _extract_year_simple(details["birth_date"])
 
     # Extract death information
     death_facts = person_info.get("death", {})
     details["death_date"] = death_facts.get("date", {}).get("normalized", "Unknown")
     details["death_place"] = death_facts.get("place", {}).get("normalized", "Unknown")
-    details["death_year"] = _extract_year_from_date(details["death_date"])
+    details["death_year"] = _extract_year_simple(details["death_date"])
 
     # Extract family information
     family = person_research_data.get("family", {})
@@ -2873,10 +2874,10 @@ def get_ancestry_person_details(
             "id": parent.get("id", "Unknown"),
             "name": parent.get("name", "Unknown"),
             "gender": parent.get("gender", "Unknown"),
-            "birth_year": _extract_year_from_date(
+            "birth_year": _extract_year_simple(
                 parent.get("birth", {}).get("date", {}).get("normalized", "")
             ),
-            "death_year": _extract_year_from_date(
+            "death_year": _extract_year_simple(
                 parent.get("death", {}).get("date", {}).get("normalized", "")
             ),
         }
@@ -2889,10 +2890,10 @@ def get_ancestry_person_details(
             "id": spouse.get("id", "Unknown"),
             "name": spouse.get("name", "Unknown"),
             "gender": spouse.get("gender", "Unknown"),
-            "birth_year": _extract_year_from_date(
+            "birth_year": _extract_year_simple(
                 spouse.get("birth", {}).get("date", {}).get("normalized", "")
             ),
-            "death_year": _extract_year_from_date(
+            "death_year": _extract_year_simple(
                 spouse.get("death", {}).get("date", {}).get("normalized", "")
             ),
         }
@@ -2905,10 +2906,10 @@ def get_ancestry_person_details(
             "id": child.get("id", "Unknown"),
             "name": child.get("name", "Unknown"),
             "gender": child.get("gender", "Unknown"),
-            "birth_year": _extract_year_from_date(
+            "birth_year": _extract_year_simple(
                 child.get("birth", {}).get("date", {}).get("normalized", "")
             ),
-            "death_year": _extract_year_from_date(
+            "death_year": _extract_year_simple(
                 child.get("death", {}).get("date", {}).get("normalized", "")
             ),
         }
@@ -2921,10 +2922,10 @@ def get_ancestry_person_details(
             "id": sibling.get("id", "Unknown"),
             "name": sibling.get("name", "Unknown"),
             "gender": sibling.get("gender", "Unknown"),
-            "birth_year": _extract_year_from_date(
+            "birth_year": _extract_year_simple(
                 sibling.get("birth", {}).get("date", {}).get("normalized", "")
             ),
-            "death_year": _extract_year_from_date(
+            "death_year": _extract_year_simple(
                 sibling.get("death", {}).get("date", {}).get("normalized", "")
             ),
         }
@@ -3015,8 +3016,8 @@ def get_ancestry_relationship_path(
     return f"(No relationship path found between {target_person_id} and tree owner)"
 
 
-def _extract_year_from_date(date_str: str) -> Optional[int]:
-    """Extract year from a date string."""
+def _extract_year_simple(date_str: str) -> Optional[int]:
+    """Extract year from a date string (simple variant without index/event_type)."""
     if not date_str or date_str == "Unknown":
         return None
 
