@@ -805,7 +805,7 @@ def _check_session_health_proactive(session_manager: SessionManager, current_pag
         # Log session age periodically
         if current_page % (check_interval * 2) == 0:  # Every 10 pages
             minutes_remaining = (max_session_age - session_age) / 60
-            logger.info(f"🔍 Page {current_page}: Session age {session_age:.0f}s ({session_age/60:.1f}m), "
+            logger.debug(f"🔍 Page {current_page}: Session age {session_age:.0f}s ({session_age/60:.1f}m), "
                        f"{minutes_remaining:.1f}m until expiry")
 
         # Check if refresh needed
@@ -815,10 +815,10 @@ def _check_session_health_proactive(session_manager: SessionManager, current_pag
 
             # CRITICAL FIX: Only sync cookies - don't navigate/refresh browser
             # This prevents disconnecting the WebDriver during active API operations
-            logger.info(f"🔄 Page {current_page}: Syncing cookies to extend session (no browser navigation)...")
+            logger.debug(f"🔄 Page {current_page}: Syncing cookies to extend session (no browser navigation)...")
 
             if _refresh_session_auth(session_manager):
-                logger.info(f"✅ Page {current_page}: Cookie sync successful")
+                logger.debug(f"✅ Page {current_page}: Cookie sync successful")
 
                 # Update last proactive refresh timestamp
                 session_manager.session_health_monitor['last_proactive_refresh'] = time.time()

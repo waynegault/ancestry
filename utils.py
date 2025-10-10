@@ -950,6 +950,8 @@ class DynamicRateLimiter:
         tokens_to_add = elapsed * self.fill_rate
         self.tokens = min(self.capacity, self.tokens + tokens_to_add)
         self.last_refill_time = now
+        if tokens_to_add > 0:
+            logger.debug(f"Token bucket refilled: +{tokens_to_add:.2f} tokens (elapsed: {elapsed:.2f}s, now: {self.tokens:.2f}/{self.capacity:.1f})")
 
     # End of _refill_tokens
 
@@ -1451,17 +1453,6 @@ def _prepare_api_request(
     # Use json parameter if provided, otherwise use json_data
     effective_json_data = config.json if config.json is not None else config.json_data
 
-    # Log request details
-    _log_request_details(
-        api_description=config.api_description,
-        attempt=config.attempt,
-        http_method=http_method,
-        url=config.url,
-        headers=final_headers,
-        data=config.data,
-        json_data=effective_json_data,
-    )
-
     # Return all prepared request parameters
     return {
         "method": http_method,
@@ -1498,26 +1489,8 @@ def _execute_api_request(
     req_session = session_manager._requests_session
 
     try:
-        # Log that we're making the request
-        logger.debug(
-            f"[_api_req Attempt {attempt} '{api_description}'] >>> Calling requests.request..."
-        )
-
         # Execute the request
         response = req_session.request(**request_params)
-
-        # Log that the request returned
-        logger.debug(
-            f"[_api_req Attempt {attempt} '{api_description}'] <<< requests.request returned."
-        )
-
-        # Log response details
-        status = response.status_code
-        reason = response.reason
-        logger.debug(
-            f"[_api_req Attempt {attempt} '{api_description}'] << Response Status: {status} {reason}"
-        )
-        logger.debug(f"   << Response Headers: {response.headers}")
 
         return response
 
@@ -1946,11 +1919,6 @@ def _execute_request_with_retries(
 
     while retries_left > 0:
         attempt = config.max_retries - retries_left + 1
-        logger.debug(
-            f"[_api_req LOOP ENTRY] api_description: '{config.api_description}', attempt: {attempt}/{config.max_retries}, retries_left: {retries_left}"
-        )
-
-        # Update attempt in config
         config.attempt = attempt
 
         result, should_continue, retries_left, current_delay, exception = _process_request_attempt(
@@ -2037,19 +2005,12 @@ def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsRe
     Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
              or Response object on non-retryable error/redirect disabled.
     """
-    logger.debug(f"[_api_req ENTRY] api_description: '{config.api_description}', url: {config.url}")
-
     # Validate prerequisites
     if not _validate_api_req_prerequisites(config.session_manager, config.api_description):
         return None
 
     # Get retry configuration
     max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
-
-    logger.debug(
-        f"[_api_req PRE-LOOP] api_description: '{config.api_description}', max_retries: {max_retries}, "
-        f"initial_delay: {initial_delay}, backoff_factor: {backoff_factor}"
-    )
 
     # Update config with retry parameters
     config.max_retries = max_retries
@@ -2061,7 +2022,6 @@ def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsRe
     # Execute request with retry loop
     response = _execute_request_with_retries(config)
 
-    logger.debug(f"[_api_req EXIT] api_description: '{config.api_description}'")
     return response
 
 # End of _api_req
