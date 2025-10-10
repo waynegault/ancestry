@@ -2168,9 +2168,10 @@ def _prepare_conversation_log_entry(
     )
 
 
-def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[str, Optional[tuple[int, PersonStatusEnum]]]:
+def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[Literal["sent", "acked", "skipped", "error"], Optional[tuple[int, PersonStatusEnum]]]:
     """Determine final status string and person update based on message outcome."""
     person_update = None
+    status_string: Literal["sent", "acked", "skipped", "error"]
 
     if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
         if message_to_send_key == "User_Requested_Desist":
