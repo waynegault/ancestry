@@ -91,6 +91,7 @@ try:
 
     SECURITY_AVAILABLE = True
 except ImportError as e:
+    SecurityManager = None  # type: ignore
     print(f"❌ Security dependencies not available: {e}")
     print("\n" + "=" * 60)
     print("           SECURITY DEPENDENCIES MISSING")
@@ -211,6 +212,7 @@ class UnifiedCredentialManager:
     def __init__(self) -> None:
         if not SECURITY_AVAILABLE:
             raise ImportError("Security dependencies not available")
+        assert SecurityManager is not None, "SecurityManager must be available when SECURITY_AVAILABLE is True"
         self.security_manager = SecurityManager()
 
     @staticmethod
@@ -303,7 +305,7 @@ class UnifiedCredentialManager:
 
         print("-" * 50)
 
-    def _get_existing_credentials_choice(self, existing_creds: dict[str, str]) -> Optional[dict[str, str]]:
+    def _get_existing_credentials_choice(self, existing_creds: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
         """Get user choice for handling existing credentials. Returns credentials dict or None if cancelled."""
         if not existing_creds:
             print("No existing credentials found. Setting up new credentials...")
