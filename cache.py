@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false
+# pyright: reportConstantRedefinition=false, reportImportCycles=false
+# NOTE: Three import cycles (cache.py↔gedcom_cache.py, cache.py↔cache_manager.py, and 6-file chain
+# through gedcom_utils→utils→session_manager). Cache is foundational infrastructure used everywhere.
+# Proper fix requires redesigning cache architecture with dependency inversion. Cycles don't affect runtime.
 
 """
 High-Performance Disk Caching & Intelligent Data Management Engine

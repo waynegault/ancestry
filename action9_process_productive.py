@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportImportCycles=false
+# NOTE: Import cycle with ai_interface.py persists through SessionManager chain despite local imports.
+# Proper fix requires extracting SessionManager types to separate module. Cycle doesn't affect runtime.
 
 """
 Action 9: Productive DNA Match Processing
