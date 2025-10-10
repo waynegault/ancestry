@@ -85,7 +85,7 @@ def _get_year_range(date_flex: Optional[dict[str, Any]]) -> int:
 
 def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean search criteria."""
-    def clean_param(p):
+    def clean_param(p: Any) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(search_criteria.get("first_name")),
@@ -100,7 +100,7 @@ def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
 
 def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean candidate data - handle both camelCase and Title Case field names."""
-    def clean_param(p):
+    def clean_param(p: Any) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     return {
         "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),

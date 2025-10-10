@@ -1622,25 +1622,31 @@ class SessionManager:
                 return False
 
             # Test critical operation that was originally failing
-            try:
-                driver = self.browser_manager.driver
-                if driver:  # Check driver is not None
-                    cookies = driver.get_cookies()
-                    if not isinstance(cookies, list):
-                        logger.error("❌ Cookie access failed after replacement")
-                        return False
-                else:
-                    logger.error("❌ Driver is None after replacement")
-                    return False
-            except Exception as cookie_exc:
-                logger.error(f"❌ Post-replacement cookie test failed: {cookie_exc}")
-                return False
-
-            logger.debug("✅ Replacement success verification passed")
-            return True
+            success = self._test_post_replacement_cookies()
+            if success:
+                logger.debug("✅ Replacement success verification passed")
+            return success
 
         except Exception as e:
             logger.error(f"❌ Replacement success verification failed: {e}")
+            return False
+
+    def _test_post_replacement_cookies(self) -> bool:
+        """Test cookie access after browser replacement."""
+        try:
+            driver = self.browser_manager.driver
+            if not driver:
+                logger.error("❌ Driver is None after replacement")
+                return False
+
+            cookies = driver.get_cookies()
+            if not isinstance(cookies, list):
+                logger.error("❌ Cookie access failed after replacement")
+                return False
+
+            return True
+        except Exception as cookie_exc:
+            logger.error(f"❌ Post-replacement cookie test failed: {cookie_exc}")
             return False
 
     def check_automatic_intervention(self) -> bool:
