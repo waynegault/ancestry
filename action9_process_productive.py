@@ -2049,11 +2049,8 @@ def _search_ancestry_tree(  # type: ignore[unused-function] - Dead code, can be 
         Dictionary containing search results and relationship paths
     """
     # Step 1: Get all names from the extracted data
-    if isinstance(extracted_data, ExtractedData):
-        names = extracted_data.get_all_names()
-    else:
-        # Legacy support for list of names
-        names = extracted_data
+    # Use ternary operator for cleaner code (legacy support for list of names)
+    names = extracted_data.get_all_names() if isinstance(extracted_data, ExtractedData) else extracted_data
 
     if not names:
         logger.debug("Action 9 Tree Search: No names extracted to search.")

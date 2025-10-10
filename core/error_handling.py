@@ -786,7 +786,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
 
     # Default handler for unknown types
     class DefaultHandler(ErrorHandler):
-        def can_handle(self, error: Exception) -> bool:  # type: ignore[unused-function] - Required by base class interface
+        def can_handle(self, error: Exception) -> bool:  # noqa: ARG002 - Required by base class interface
             return True  # Catch-all for unknown errors
 
         def handle(

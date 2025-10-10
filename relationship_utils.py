@@ -373,6 +373,36 @@ def _select_best_path(all_paths: list[list[str]], id_to_parents: dict[str, set[s
     return best_path
 
 
+def _run_bfs_search_loop(
+    queue_fwd: deque,
+    queue_bwd: deque,
+    visited_fwd: dict,
+    visited_bwd: dict,
+    graph_ctx: GraphContext,
+    max_depth: int,
+    timeout_sec: float,
+    node_limit: int,
+    start_time: float
+) -> list[list[str]]:
+    """Run the main BFS search loop and return all found paths."""
+    all_paths: list[list[str]] = []
+    processed = 0
+
+    while queue_fwd and queue_bwd and len(all_paths) < 5:
+        if not _check_search_limits(start_time, processed, timeout_sec, node_limit):
+            break
+
+        # Process forward queue
+        processed += _process_forward_queue(queue_fwd, visited_fwd, visited_bwd, all_paths, graph_ctx, max_depth)
+        if len(all_paths) >= 5:
+            break
+
+        # Process backward queue
+        processed += _process_backward_queue(queue_bwd, visited_fwd, visited_bwd, all_paths, graph_ctx, max_depth)
+
+    return all_paths
+
+
 def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
@@ -412,25 +442,14 @@ def fast_bidirectional_bfs(
 
     # Initialize BFS
     queue_fwd, queue_bwd, visited_fwd, visited_bwd = _initialize_bfs_queues(start_id, end_id)
-    all_paths = []
-    processed = 0
     logger.debug(f"[FastBiBFS] Starting BFS: {start_id} <-> {end_id}")
 
-    # Main search loop
-    while queue_fwd and queue_bwd and len(all_paths) < 5:
-        if not _check_search_limits(start_time, processed, timeout_sec, node_limit):
-            break
-
-        # Process forward queue
-        graph_ctx = GraphContext(id_to_parents=id_to_parents, id_to_children=id_to_children)
-        processed += _process_forward_queue(queue_fwd, visited_fwd, visited_bwd, all_paths, graph_ctx, max_depth)
-        if len(all_paths) >= 5:
-            break
-
-        # Process backward queue
-        processed += _process_backward_queue(queue_bwd, visited_fwd, visited_bwd, all_paths, graph_ctx, max_depth)
-        if len(all_paths) >= 5:
-            break
+    # Run main search loop
+    graph_ctx = GraphContext(id_to_parents=id_to_parents, id_to_children=id_to_children)
+    all_paths = _run_bfs_search_loop(
+        queue_fwd, queue_bwd, visited_fwd, visited_bwd,
+        graph_ctx, max_depth, timeout_sec, node_limit, start_time
+    )
 
     # Select best path if found
     if all_paths:

@@ -244,7 +244,7 @@ def _get_search_criteria() -> Optional[dict[str, Any]]:
         gender = user_input["gender_input"][0].lower()
 
     # Parse dates
-    def clean_param(p):
+    def clean_param(p: Any) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
 
@@ -485,6 +485,43 @@ def _score_gender_match(search_gn: str, cand_gn: str, weights: dict[str, int]) -
     return score, gender_score, reasons
 
 
+def _extract_candidate_fields(candidate_data_dict: dict[str, Any]) -> dict[str, Any]:
+    """Extract candidate fields from candidate data dictionary."""
+    return {
+        "first_name": candidate_data_dict.get("first_name") or "",
+        "surname": candidate_data_dict.get("surname") or "",
+        "birth_year": candidate_data_dict.get("birth_year") or 0,
+        "birth_place": candidate_data_dict.get("birth_place") or "",
+        "death_year": candidate_data_dict.get("death_year") or 0,
+        "death_place": candidate_data_dict.get("death_place") or "",
+        "gender": candidate_data_dict.get("gender") or "",
+        "is_living": candidate_data_dict.get("is_living") or False,
+    }
+
+
+def _extract_search_fields(search_criteria: dict[str, Any]) -> dict[str, Any]:
+    """Extract search fields from search criteria dictionary."""
+    return {
+        "first_name": search_criteria.get("first_name") or "",
+        "surname": search_criteria.get("surname") or "",
+        "birth_year": search_criteria.get("birth_year") or 0,
+        "birth_place": search_criteria.get("birth_place") or "",
+        "death_year": search_criteria.get("death_year") or 0,
+        "death_place": search_criteria.get("death_place") or "",
+        "gender": search_criteria.get("gender") or "",
+    }
+
+
+def _log_gender_mismatch(cand_gn: Any, search_gn: Any) -> None:
+    """Log gender mismatch information."""
+    if cand_gn is not None and search_gn is not None and cand_gn != search_gn:
+        logger.debug("[Simple Scoring] Gender MISMATCH. No points awarded.")
+    elif search_gn is None:
+        logger.debug("[Simple Scoring] No search gender provided. No points awarded.")
+    elif cand_gn is None:
+        logger.debug("[Simple Scoring] Candidate gender not available. No points awarded.")
+
+
 # Simple scoring fallback (Uses 'gender_match' key)
 def _run_simple_suggestion_scoring(
     search_criteria: dict[str, Any], candidate_data_dict: dict[str, Any]
@@ -505,55 +542,42 @@ def _run_simple_suggestion_scoring(
     # Get scoring weights
     weights = _get_scoring_weights()
 
-    # Extract candidate and search data with defaults
-    cand_fn = candidate_data_dict.get("first_name") or ""
-    cand_sn = candidate_data_dict.get("surname") or ""
-    cand_by = candidate_data_dict.get("birth_year") or 0
-    cand_bp = candidate_data_dict.get("birth_place") or ""
-    cand_dy = candidate_data_dict.get("death_year") or 0
-    cand_dp = candidate_data_dict.get("death_place") or ""
-    cand_gn = candidate_data_dict.get("gender") or ""
-    is_living = candidate_data_dict.get("is_living") or False
-
-    search_fn = search_criteria.get("first_name") or ""
-    search_sn = search_criteria.get("surname") or ""
-    search_by = search_criteria.get("birth_year") or 0
-    search_bp = search_criteria.get("birth_place") or ""
-    search_dy = search_criteria.get("death_year") or 0
-    search_dp = search_criteria.get("death_place") or ""
-    search_gn = search_criteria.get("gender") or ""
+    # Extract candidate and search data
+    cand = _extract_candidate_fields(candidate_data_dict)
+    search = _extract_search_fields(search_criteria)
 
     # Score name matching
-    name_score, name_fields, name_reasons = _score_name_match(search_fn, search_sn, cand_fn, cand_sn)
+    name_score, name_fields, name_reasons = _score_name_match(
+        search["first_name"], search["surname"], cand["first_name"], cand["surname"]
+    )
     total_score += name_score
     field_scores.update(name_fields)
     reasons.extend(name_reasons)
 
     # Score birth information
-    birth_score, birth_fields, birth_reasons = _score_birth_info(search_by, search_bp, cand_by, cand_bp, weights)
+    birth_score, birth_fields, birth_reasons = _score_birth_info(
+        search["birth_year"], search["birth_place"], cand["birth_year"], cand["birth_place"], weights
+    )
     total_score += birth_score
     field_scores.update(birth_fields)
     reasons.extend(birth_reasons)
 
     # Score death information
-    death_score, death_fields, death_reasons = _score_death_info(search_dy, search_dp, cand_dy, cand_dp, is_living, weights)
+    death_score, death_fields, death_reasons = _score_death_info(
+        search["death_year"], search["death_place"], cand["death_year"], cand["death_place"], cand["is_living"], weights
+    )
     total_score += death_score
     field_scores.update(death_fields)
     reasons.extend(death_reasons)
 
     # Score gender matching
-    gender_score, gender_field_score, gender_reasons = _score_gender_match(search_gn, cand_gn, weights)
+    gender_score, gender_field_score, gender_reasons = _score_gender_match(search["gender"], cand["gender"], weights)
     total_score += gender_score
     field_scores["gender_match"] = gender_field_score
     reasons.extend(gender_reasons)
 
     # Handle gender mismatch logging
-    if cand_gn is not None and search_gn is not None and cand_gn != search_gn:
-        logger.debug("[Simple Scoring] Gender MISMATCH. No points awarded.")
-    elif search_gn is None:
-        logger.debug("[Simple Scoring] No search gender provided. No points awarded.")
-    elif cand_gn is None:
-        logger.debug("[Simple Scoring] Candidate gender not available. No points awarded.")
+    _log_gender_mismatch(cand["gender"], search["gender"])
 
     return total_score, field_scores, reasons
 
@@ -747,7 +771,7 @@ def _process_and_score_suggestions(
     processed_candidates = []
 
     # Setup
-    def clean_param(p):
+    def clean_param(p: Any) -> Optional[str]:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     parse_date_func = _parse_date if callable(_parse_date) else None
     scoring_func = calculate_match_score if GEDCOM_SCORING_AVAILABLE else None

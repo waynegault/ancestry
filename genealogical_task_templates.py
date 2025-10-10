@@ -625,14 +625,11 @@ def _test_module_imports():
     # Test class availability
     assert 'GenealogicalTaskGenerator' in globals(), "GenealogicalTaskGenerator class should be available"
 
-    # Test standard imports
-    required_imports = ['json', 'logging', 'datetime']
-    for import_name in required_imports:
-        # Check if import is available either directly or through standard_imports
-        available = (import_name in globals() or
-                    hasattr(__import__('builtins'), import_name) or
-                    import_name in dir(__import__(import_name)))
-        assert available, f"Import {import_name} should be available"
+    # Test standard imports availability through standard_imports
+    # Note: json and datetime were removed as unused per line 47 comment
+    # Only test for imports that are actually used in the module
+    assert 'Any' in globals(), "typing.Any should be available"
+    assert 'Optional' in globals(), "typing.Optional should be available"
 
 
 def _test_task_generator_initialization():
