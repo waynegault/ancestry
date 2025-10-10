@@ -366,7 +366,7 @@ class SessionManager:
     def _get_cached_browser_manager(self) -> "BrowserManager":
         """Get cached BrowserManager instance"""
         logger.debug("Creating/retrieving BrowserManager from cache")
-        return BrowserManager()
+        return BrowserManager(session_manager=self)
 
     @cached_api_manager()
     def _get_cached_api_manager(self) -> "APIManager":
@@ -938,9 +938,9 @@ class SessionManager:
 
         # Close browser if it exists
         try:
-            if self.driver:
-                self.driver.quit()
-                self.driver = None
+            if self.browser_manager.driver:
+                self.browser_manager.driver.quit()
+                self.browser_manager.driver = None
         except Exception as e:
             logger.debug(f"Error closing driver during emergency shutdown: {e}")
 
@@ -1000,7 +1000,7 @@ class SessionManager:
                 try:
                     # Reset session readiness flags
                     self.session_ready = False
-                    self.driver_live = False
+                    self.browser_manager.driver_live = False
                     return True
                 except Exception as alt_exc:
                     logger.error(f"Alternative cleanup also failed: {alt_exc}")
@@ -1069,12 +1069,12 @@ class SessionManager:
             else:
                 # Alternative cache clearing
                 self.session_ready = False
-                self.driver_live = False
+                self.browser_manager.driver_live = False
                 logger.info("   ✅ Session flags reset (alternative method)")
         except Exception as cache_exc:
             logger.warning(f"   ⚠️ Cache clearing failed: {cache_exc}, continuing with alternative method")
             self.session_ready = False
-            self.driver_live = False
+            self.browser_manager.driver_live = False
 
     def _attempt_session_refresh(self, max_attempts: int = 3) -> bool:
         """Attempt session refresh with multiple retries."""
@@ -1351,11 +1351,12 @@ class SessionManager:
         """Perform browser warm-up sequence after refresh."""
         try:
             from utils import nav_to_page
-            nav_to_page(self.browser_manager.driver, config_schema.api.base_url)
-            # Prefer built-in CSRF retrieval/precache to avoid attribute errors
-            _ = self.get_csrf()
-            _ = self.get_my_tree_id()
-            nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees")
+            if self.browser_manager.driver:
+                nav_to_page(self.browser_manager.driver, config_schema.api.base_url, session_manager=self)
+                # Prefer built-in CSRF retrieval/precache to avoid attribute errors
+                _ = self.get_csrf()
+                _ = self.get_my_tree_id()
+                nav_to_page(self.browser_manager.driver, f"{config_schema.api.base_url}family-tree/trees", session_manager=self)
         except Exception as warm_exc:
             logger.debug(f"Warm-up sequence encountered a non-fatal issue: {warm_exc}")
 
@@ -1473,72 +1474,70 @@ class SessionManager:
         """
         logger.debug(f"🔄 Starting TRUE atomic browser replacement for: {action_name}")
 
-        # Use master browser lock to ensure atomic operation
-        with self.browser_manager._master_browser_lock:
-            # Step 1: Backup current browser state for rollback
-            backup_browser_manager = self.browser_manager
-            backup_session_state = self._capture_session_state()
+        # Step 1: Backup current browser state for rollback
+        backup_browser_manager = self.browser_manager
+        backup_session_state = self._capture_session_state()
 
-            # Step 2: Check memory usage before creating new browser
-            if not self._check_memory_availability():
-                logger.warning("❌ Insufficient memory for browser replacement")
+        # Step 2: Check memory usage before creating new browser
+        if not self._check_memory_availability():
+            logger.warning("❌ Insufficient memory for browser replacement")
+            return False
+
+        # Step 3: Create new browser manager instance
+        from core.browser_manager import BrowserManager
+        new_browser_manager = BrowserManager(session_manager=self)
+
+        try:
+            # Step 4: Initialize new browser
+            logger.debug("🔄 Initializing new browser instance...")
+            new_browser_success = new_browser_manager.start_browser(action_name)
+
+            if not new_browser_success:
+                logger.warning("❌ Failed to initialize new browser for atomic replacement")
                 return False
 
-            # Step 3: Create new browser manager instance
-            from core.browser_manager import BrowserManager
-            new_browser_manager = BrowserManager()
+            # Step 5: Comprehensive session continuity verification
+            if not self._verify_session_continuity(new_browser_manager, backup_browser_manager):
+                logger.warning("❌ Session continuity verification failed")
+                new_browser_manager.close_browser()
+                return False
 
+            # Step 6: Atomically replace old browser with new one
+            logger.debug("🔄 Performing atomic browser replacement...")
+
+            # CRITICAL: This is the only point where the browser reference changes
+            # All validation must be complete before this line
+            self.browser_manager = new_browser_manager
+
+            # Step 7: Verify replacement was successful with final validation
+            if not self._verify_replacement_success():
+                logger.error("❌ Post-replacement validation failed - CRITICAL ERROR")
+                # This is a critical failure - we can't rollback safely at this point
+                # Log extensively for debugging
+                logger.error("🚨 BROWSER REPLACEMENT IN INCONSISTENT STATE")
+                return False
+
+            # Step 8: Clean up old browser safely (only after successful replacement)
             try:
-                # Step 4: Initialize new browser
-                logger.debug("🔄 Initializing new browser instance...")
-                new_browser_success = new_browser_manager.start_browser(action_name)
+                backup_browser_manager.close_browser()
+                logger.debug("✅ Old browser closed successfully")
+            except Exception as close_exc:
+                logger.warning(f"⚠️ Error closing old browser (non-critical): {close_exc}")
 
-                if not new_browser_success:
-                    logger.warning("❌ Failed to initialize new browser for atomic replacement")
-                    return False
+            logger.debug(f"✅ TRUE atomic browser replacement completed successfully for: {action_name}")
+            return True
 
-                # Step 5: Comprehensive session continuity verification
-                if not self._verify_session_continuity(new_browser_manager, backup_browser_manager):
-                    logger.warning("❌ Session continuity verification failed")
-                    new_browser_manager.close_browser()
-                    return False
+        except Exception as exc:
+            logger.error(f"❌ Atomic browser replacement failed: {exc}")
+            # ROLLBACK: Restore original browser state
+            logger.warning("🔄 Rolling back to original browser state...")
+            self.browser_manager = backup_browser_manager
+            self._restore_session_state(backup_session_state)
 
-                # Step 6: Atomically replace old browser with new one
-                logger.debug("🔄 Performing atomic browser replacement...")
-
-                # CRITICAL: This is the only point where the browser reference changes
-                # All validation must be complete before this line
-                self.browser_manager = new_browser_manager
-
-                # Step 7: Verify replacement was successful with final validation
-                if not self._verify_replacement_success():
-                    logger.error("❌ Post-replacement validation failed - CRITICAL ERROR")
-                    # This is a critical failure - we can't rollback safely at this point
-                    # Log extensively for debugging
-                    logger.error("🚨 BROWSER REPLACEMENT IN INCONSISTENT STATE")
-                    return False
-
-                # Step 8: Clean up old browser safely (only after successful replacement)
-                try:
-                    backup_browser_manager.close_browser()
-                    logger.debug("✅ Old browser closed successfully")
-                except Exception as close_exc:
-                    logger.warning(f"⚠️ Error closing old browser (non-critical): {close_exc}")
-
-                logger.debug(f"✅ TRUE atomic browser replacement completed successfully for: {action_name}")
-                return True
-
-            except Exception as exc:
-                logger.error(f"❌ Atomic browser replacement failed: {exc}")
-                # ROLLBACK: Restore original browser state
-                logger.warning("🔄 Rolling back to original browser state...")
-                self.browser_manager = backup_browser_manager
-                self._restore_session_state(backup_session_state)
-
-                # Clean up new browser if something went wrong
-                with contextlib.suppress(Exception):
-                    new_browser_manager.close_browser()
-                return False
+            # Clean up new browser if something went wrong
+            with contextlib.suppress(Exception):
+                new_browser_manager.close_browser()
+            return False
 
     def _capture_session_state(self) -> dict:
         """Capture current session state for rollback purposes."""
@@ -1679,9 +1678,13 @@ class SessionManager:
 
             # Test critical operation that was originally failing
             try:
-                cookies = self.browser_manager.driver.get_cookies()
-                if not isinstance(cookies, list):
-                    logger.error("❌ Cookie access failed after replacement")
+                if self.browser_manager.driver:
+                    cookies = self.browser_manager.driver.get_cookies()
+                    if not isinstance(cookies, list):
+                        logger.error("❌ Cookie access failed after replacement")
+                        return False
+                else:
+                    logger.error("❌ Driver is None after replacement")
                     return False
             except Exception as cookie_exc:
                 logger.error(f"❌ Post-replacement cookie test failed: {cookie_exc}")
