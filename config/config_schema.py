@@ -359,7 +359,7 @@ class SeleniumConfig:
     # Retry settings
     chrome_max_retries: int = 3
     chrome_retry_delay: int = 5  # Timeouts
-    page_load_timeout: int = 30
+    page_load_timeout: int = 45  # Increased from 30s to 45s for slower international domains (ancestry.co.uk)
     implicit_wait: int = 10
     explicit_wait: int = 20
     api_timeout: int = 30  # Add API timeout for requests

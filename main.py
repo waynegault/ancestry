@@ -335,17 +335,31 @@ def _prepare_action_arguments(action_func: Callable, session_manager: SessionMan
 
     # Handle keyword args specifically for coord function
     if action_name in ["coord", "coord_action"] and "start" in func_sig.parameters:
-        start_val = 1
-        int_args = [a for a in args if isinstance(a, int)]
-        if int_args:
-            start_val = int_args[-1]
+        # Extract start value, preserving None for checkpoint auto-resume
+        start_val = None
+        config_arg = None
+        
+        for arg in args:
+            if isinstance(arg, int):
+                start_val = arg
+            elif arg is not None and not isinstance(arg, int):
+                # First non-integer, non-None arg is config_schema
+                if config_arg is None:
+                    config_arg = arg
+        
+        # If no start_val found in args, use default of 1 (not None)
+        # This maintains backward compatibility when no args are passed
+        if start_val is None and None not in args:
+            start_val = 1
+        
         kwargs_for_action = {"start": start_val}
 
         coord_args = []
         if pass_session_manager:
             coord_args.append(session_manager)
         if action_name == "coord_action" and "config_schema" in func_sig.parameters:
-            coord_args.append(config)
+            # Use the config_schema passed in args, or fall back to global config
+            coord_args.append(config_arg if config_arg is not None else config)
 
         return coord_args, kwargs_for_action
     # General case
@@ -1252,7 +1266,7 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Any] =
     print(f"Gathering DNA Matches from page {start}...")
     try:
         # Call the imported function from action6
-        result = coord(session_manager, config, start=start)
+        result = coord(session_manager, config_schema, start=start)
         if result is False:
             logger.error("Match gathering reported failure.")
             return False
