@@ -799,6 +799,8 @@ def _get_spouses_and_children(gedcom_data: GedcomData, individual_id_norm: str) 
     # Process each family where this individual is a spouse
     for fam_link in indi_record.sub_tags("FAMS"):
         fam_id = fam_link.value
+        if not fam_id or not isinstance(fam_id, str):
+            continue
         fam_record = _get_family_record(gedcom_data, fam_id)
 
         if fam_record:
@@ -840,11 +842,12 @@ def get_gedcom_family_details(
     # Step 4: Get family relationships
     try:
         # Get parents
-        parent_ids = (
-            gedcom_data.id_to_parents.get(individual_id_norm, [])
+        parent_ids_raw = (
+            gedcom_data.id_to_parents.get(individual_id_norm, set())
             if hasattr(gedcom_data, "id_to_parents")
-            else []
+            else set()
         )
+        parent_ids = list(parent_ids_raw) if isinstance(parent_ids_raw, set) else parent_ids_raw
         result["parents"] = _get_parents(gedcom_data, individual_id_norm)
 
         # Get siblings
@@ -948,6 +951,8 @@ def get_gedcom_relationship_path(
 
     # Normalize individual ID
     individual_id_norm = _normalize_id(individual_id)
+    if not individual_id_norm:
+        return "(Invalid individual ID)"
 
     # Get reference ID
     if not reference_id:
@@ -956,6 +961,8 @@ def get_gedcom_relationship_path(
         return "(Reference person ID not available)"
 
     reference_id_norm = _normalize_id(reference_id)
+    if not reference_id_norm:
+        return "(Invalid reference ID)"
 
     # Get individual name
     individual_name = _get_individual_name(individual_id_norm, gedcom_data)
