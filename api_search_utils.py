@@ -160,27 +160,27 @@ def _score_place_match(search_place: Optional[str], cand_place: Optional[str], f
     return total_score
 
 
-def _apply_bonus_scores(field_scores: dict[str, int], weights: dict[str, Union[int, float]], total_score: int, reasons: list[str]) -> int:
+def _apply_bonus_scores(field_scores: dict[str, int], weights: dict[str, Union[int, float]], total_score: Union[int, float], reasons: list[str]) -> Union[int, float]:
     """Apply bonus scores for multiple matching fields."""
     # Bonus for both names matching
     if "first_name" in field_scores and "surname" in field_scores:
         bonus = weights.get("bonus_both_names_contain", 25)
         total_score += bonus
-        field_scores["name_bonus"] = bonus
+        field_scores["name_bonus"] = int(bonus) if isinstance(bonus, (int, float)) else bonus
         reasons.append("Both first name and surname matched")
 
     # Bonus for both birth date and place matching
     if "birth_year" in field_scores and "birth_place" in field_scores:
         bonus = weights.get("bonus_birth_date_and_place", 15)
         total_score += bonus
-        field_scores["birth_bonus"] = bonus
+        field_scores["birth_bonus"] = int(bonus) if isinstance(bonus, (int, float)) else bonus
         reasons.append("Both birth year and place matched")
 
     # Bonus for both death date and place matching
     if "death_year" in field_scores and "death_place" in field_scores:
         bonus = weights.get("bonus_death_date_and_place", 15)
         total_score += bonus
-        field_scores["death_bonus"] = bonus
+        field_scores["death_bonus"] = int(bonus) if isinstance(bonus, (int, float)) else bonus
         reasons.append("Both death year and place matched")
 
     return total_score
