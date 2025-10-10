@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # pyright: reportConstantRedefinition=false, reportImportCycles=false
 # NOTE: Import cycle with relationship_utils.py. Both modules need each other's relationship calculation
-# functions. Already uses local import (line ~883) but type checker detects cycle at parse time. 
+# functions. Already uses local import (line ~883) but type checker detects cycle at parse time.
 # Proper fix requires extracting shared types/interfaces to common module. Cycle doesn't affect runtime.
 
 """
