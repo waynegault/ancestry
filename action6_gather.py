@@ -2,6 +2,7 @@
 
 # action6_gather.py
 # ruff: noqa: PLW0603, PTH123, RUF001, PLR0911
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
 
 """
 action6_gather.py - Gather DNA Matches from Ancestry
@@ -34,7 +35,7 @@ import re
 import sys
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -715,12 +716,21 @@ def _refresh_session_auth(session_manager: SessionManager) -> bool:
         if hasattr(session_manager, 'refresh_browser_cookies'):
             session_manager.refresh_browser_cookies()
         else:
-            # Fallback: manually refresh cookies
-            logger.debug("Using manual cookie refresh")
+            # Fallback: manually refresh cookies by navigating to DNA matches page
+            # This ensures CSRF tokens are refreshed along with auth cookies
+            logger.debug("Using manual cookie refresh via DNA matches page")
             if session_manager.driver:
-                # Navigate to a lightweight page to refresh cookies
-                session_manager.driver.get("https://www.ancestry.com/account/settings")
-                time.sleep(2)  # Brief wait for cookies to update
+                my_uuid = session_manager.get_my_uuid()
+                if my_uuid:
+                    matches_url = f"https://www.ancestry.co.uk/discoveryui-matches/list/{my_uuid}"
+                    logger.debug(f"Navigating to DNA matches page to refresh CSRF tokens: {matches_url}")
+                    session_manager.driver.get(matches_url)
+                    time.sleep(3)  # Wait for page load and CSRF tokens to be set
+                else:
+                    # Fallback to home page if UUID not available
+                    logger.warning("UUID not available, using homepage for cookie refresh")
+                    session_manager.driver.get("https://www.ancestry.co.uk/")
+                    time.sleep(2)
 
         logger.debug("Syncing cookies to API session...")
         # Sync cookies to API session
@@ -772,11 +782,19 @@ def _check_session_health_proactive(session_manager: SessionManager, current_pag
         if current_page % check_interval != 0:
             return True  # Not time to check yet
 
-        # Get session age
+        # Get session age - try multiple sources
         session_age = session_manager.session_age_seconds()
+
+        # Fallback: check session_health_monitor if session_start_time not set
         if session_age is None:
-            logger.warning(f"⚠️ Page {current_page}: Cannot determine session age")
-            return True  # Unknown age, continue operation
+            health_monitor_start = session_manager.session_health_monitor.get('session_start_time')
+            if health_monitor_start:
+                session_age = time.time() - health_monitor_start
+
+        # If still None, session just started - skip check this time
+        if session_age is None:
+            logger.debug(f"Page {current_page}: Session age unknown (session recently initialized), skipping health check")
+            return True  # Skip check for newly initialized sessions
 
         # Get thresholds from session_health_monitor
         max_session_age = session_manager.session_health_monitor.get('max_session_age', 2400)  # 40 min
@@ -2123,13 +2141,13 @@ def _process_single_page_iteration(
     # Priority 1.4a: Check if browser restart needed (memory management)
     if not _check_browser_restart_needed(session_manager, current_page_num):
         logger.error(f"❌ Page {current_page_num}: Browser restart failed - aborting batch")
-        _mark_remaining_as_errors(state, progress_bar, current_page_num)
+        _mark_remaining_as_errors(state, progress_bar)
         return False, True, matches_on_page_for_batch, current_page_num
 
     # Priority 1.4b: Pre-emptive session health check
     if not _check_session_health_proactive(session_manager, current_page_num):
         logger.error(f"❌ Page {current_page_num}: Session health check failed - aborting batch")
-        _mark_remaining_as_errors(state, progress_bar, current_page_num)
+        _mark_remaining_as_errors(state, progress_bar)
         return False, True, matches_on_page_for_batch, current_page_num
 
     # Check session validity
@@ -2282,7 +2300,7 @@ def _calculate_processing_range(total_pages_api: int, start_page: int) -> tuple[
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 3 to 10 for better tolerance
-@timeout_protection(timeout=600)  # Increased from 300s to 600s for rate-limited processing (~6s per match)
+@timeout_protection(timeout=86400)  # 24 hours for full 802-page run (was 600s = 10 min, too short)
 @error_context("DNA match gathering coordination")
 def _execute_main_gathering(
     session_manager: SessionManager,
@@ -2479,9 +2497,9 @@ def _lookup_existing_persons(
             # Filter by the list of uppercase UUIDs and exclude soft-deleted records
             .filter(Person.uuid.in_(uuids_upper), Person.deleted_at.is_(None)).all()  # type: ignore
         )
-        # Step 4: Populate the result map (key by UUID)
+        # Step 4: Populate the result map (key by UUID - uppercase for case-insensitive lookup)
         existing_persons_map: dict[str, Person] = {
-            str(person.uuid): person
+            str(person.uuid).upper(): person
             for person in existing_persons
             if person.uuid is not None
         }
@@ -2752,7 +2770,7 @@ def _handle_api_task_exception(
 def _check_critical_failure_threshold(
     critical_combined_details_failures: int,
     futures: dict[Any, tuple[str, str]]
-) -> bool:
+) -> None:
     """Check if critical failure threshold exceeded and cancel remaining futures."""
     if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
         for f_cancel in futures:
@@ -2918,6 +2936,10 @@ def _perform_api_prefetches(
                     batch_combined_details, temp_badge_results, batch_relationship_prob_data,
                     critical_combined_details_failures
                 )
+            except CancelledError:
+                # Task was cancelled due to critical failure threshold - skip silently
+                logger.debug(f"Task '{task_type}' for {identifier_uuid} was cancelled (critical failures exceeded)")
+                continue
             except ConnectionError as conn_err:
                 critical_combined_details_failures = _handle_api_task_exception(
                     conn_err, task_type, identifier_uuid,
@@ -3260,7 +3282,7 @@ def _get_existing_dna_matches_map(session: SqlAlchemySession, all_person_ids_map
         .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
         .all()
     )
-    existing_dna_matches_map = dict(existing_matches)
+    existing_dna_matches_map = dict(existing_matches)  # type: ignore[arg-type]
     logger.debug(f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch.")
 
     return existing_dna_matches_map
@@ -3333,12 +3355,29 @@ def _bulk_insert_family_trees(
         else:
             logger.warning(f"Skipping FamilyTree create op (UUID {person_uuid}): Person ID not found.")
 
+    if not tree_insert_data:
+        logger.debug("No valid FamilyTree records to insert.")
+        return
+
+    # Filter out existing family trees by cfpid to prevent UNIQUE constraint violations
+    cfpids_to_insert = [t["cfpid"] for t in tree_insert_data if t.get("cfpid")]
+    if cfpids_to_insert:
+        existing_cfpids = session.query(FamilyTree.cfpid).filter(
+            FamilyTree.cfpid.in_(cfpids_to_insert)  # type: ignore
+        ).all()
+        existing_cfpid_set = {str(cfpid[0]) for cfpid in existing_cfpids}
+
+        if existing_cfpid_set:
+            logger.warning(f"Filtering out {len(existing_cfpid_set)} FamilyTree records that already exist (by cfpid)")
+            tree_insert_data = [t for t in tree_insert_data if t.get("cfpid") not in existing_cfpid_set]
+            logger.info(f"Proceeding with {len(tree_insert_data)} truly new FamilyTree records after filtering")
+
     if tree_insert_data:
         logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
         session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
         logger.debug("Bulk insert FamilyTrees called.")
     else:
-        logger.debug("No valid FamilyTree records to insert.")
+        logger.debug("All FamilyTree records already exist in database - nothing to insert.")
 
 
 def _bulk_update_family_trees(session: SqlAlchemySession, tree_updates: list[dict[str, Any]]) -> None:
@@ -3451,11 +3490,12 @@ def _add_existing_person_ids(
 ) -> None:
     """Add IDs from existing persons map for collected UUIDs."""
     for uuid_processed in processed_uuids:
-        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
-            person = existing_persons_map[uuid_processed]
+        uuid_upper = uuid_processed.upper()
+        if uuid_upper not in all_person_ids_map and existing_persons_map.get(uuid_upper):
+            person = existing_persons_map[uuid_upper]
             person_id_val = getattr(person, "id", None)
             if person_id_val is not None:
-                all_person_ids_map[uuid_processed] = person_id_val
+                all_person_ids_map[uuid_upper] = person_id_val
 
 
 def _create_master_person_id_map(
@@ -3495,6 +3535,55 @@ def _prepare_insert_data(person_creates_filtered: list[dict[str, Any]]) -> list[
     return insert_data
 
 
+def _resolve_duplicate_profile_ids(
+    session: SqlAlchemySession,
+    insert_data: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """
+    Handle duplicate profile_id conflicts by moving conflicting profile_ids to administrator_profile_id.
+    
+    If a person has multiple DNA tests (same profile_id, different UUIDs):
+    - First test keeps profile_id (they're the tester)
+    - Additional tests: profile_id → NULL, administrator_profile_id = profile_id (they manage it)
+    """
+    # Get all profile_ids that will be inserted (non-NULL only)
+    profile_ids_to_insert = [p["profile_id"] for p in insert_data if p.get("profile_id")]
+    if not profile_ids_to_insert:
+        return insert_data
+
+    # Query existing profile_ids in database
+    existing_profile_ids = session.query(Person.profile_id).filter(
+        Person.profile_id.in_(profile_ids_to_insert),
+        Person.deleted_at.is_(None)
+    ).all()
+    existing_profile_id_set = {str(pid[0]).upper() for pid in existing_profile_ids if pid[0]}
+
+    if not existing_profile_id_set:
+        return insert_data
+
+    # Resolve conflicts: move duplicate profile_ids to administrator_profile_id
+    conflicts_resolved = 0
+    for person_data in insert_data:
+        person_profile_id = person_data.get("profile_id")
+        if person_profile_id and person_profile_id.upper() in existing_profile_id_set:
+            # This profile_id already exists - person has multiple DNA tests
+            # Move to administrator_profile_id instead
+            if not person_data.get("administrator_profile_id"):
+                person_data["administrator_profile_id"] = person_profile_id
+                person_data["administrator_username"] = person_data.get("username")
+            person_data["profile_id"] = None
+            conflicts_resolved += 1
+            logger.debug(
+                f"Resolved duplicate profile_id conflict for {person_data.get('username')} "
+                f"(UUID: {person_data.get('uuid')}): moved profile_id to administrator_profile_id"
+            )
+
+    if conflicts_resolved > 0:
+        logger.info(f"Resolved {conflicts_resolved} duplicate profile_id conflicts (multiple DNA tests for same person)")
+
+    return insert_data
+
+
 def _filter_existing_persons(
     session: SqlAlchemySession,
     insert_data: list[dict[str, Any]],
@@ -3508,13 +3597,14 @@ def _filter_existing_persons(
     existing_persons_in_db = session.query(Person.id, Person.uuid).filter(
         Person.uuid.in_(insert_uuids)
     ).all()
-    existing_uuid_set = {str(uuid) for pid, uuid in existing_persons_in_db}
+    # Store UUIDs in uppercase for case-insensitive comparison
+    existing_uuid_set = {str(uuid).upper() for uuid in (person_uuid for _, person_uuid in existing_persons_in_db)}
 
     if existing_uuid_set:
         logger.warning(f"Filtering out {len(existing_uuid_set)} UUIDs that already exist in database")
-        # Map existing Person IDs before filtering
+        # Map existing Person IDs before filtering (using uppercase keys)
         for person_id, person_uuid in existing_persons_in_db:
-            created_person_map[person_uuid] = person_id
+            created_person_map[str(person_uuid).upper()] = person_id
         logger.info(f"Mapped {len(created_person_map)} existing Person IDs for downstream operations")
 
         insert_data = [p for p in insert_data if p.get("uuid") not in existing_uuid_set]
@@ -3540,7 +3630,8 @@ def _query_inserted_person_ids(
         .filter(Person.uuid.in_(inserted_uuids))
         .all()
     )
-    created_map = {p_uuid: p_id for p_id, p_uuid in newly_inserted_persons}
+    # Use uppercase keys for case-insensitive lookup
+    created_map = {str(p_uuid).upper(): p_id for p_id, p_uuid in newly_inserted_persons}
     logger.debug(f"Mapped {len(created_map)} new Person IDs.")
 
     if len(created_map) != len(inserted_uuids):
@@ -3564,6 +3655,9 @@ def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: li
     # Prepare data
     insert_data = _prepare_insert_data(person_creates_filtered)
     _validate_no_duplicate_profile_ids(insert_data)
+
+    # Resolve duplicate profile_id conflicts (multiple DNA tests for same person)
+    insert_data = _resolve_duplicate_profile_ids(session, insert_data)
 
     # Filter existing persons
     insert_data = _filter_existing_persons(session, insert_data, created_person_map)
@@ -3648,7 +3742,19 @@ def _execute_bulk_db_operations(
         return True
 
     # Step 9: Handle database errors during bulk operations
-    except (IntegrityError, SQLAlchemyError) as bulk_db_err:
+    except IntegrityError as integrity_err:
+        # Handle UNIQUE constraint violations gracefully
+        error_str = str(integrity_err)
+        if "UNIQUE constraint failed: people.uuid" in error_str or \
+           "UNIQUE constraint failed: people.profile_id" in error_str or \
+           "UNIQUE constraint failed: family_tree.cfpid" in error_str:
+            logger.warning(f"UNIQUE constraint violation during bulk insert - some records already exist: {integrity_err}")
+            # This is expected behavior when records already exist - don't fail the entire batch
+            logger.info("Continuing with database operations despite duplicate records...")
+            return True  # Continue processing - this is not a fatal error
+        logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
+        return False  # Other integrity errors should still fail
+    except SQLAlchemyError as bulk_db_err:
         logger.error(f"Bulk DB operation FAILED: {bulk_db_err}", exc_info=True)
         return False  # Indicate failure (rollback handled by db_transn)
     except Exception as e:
@@ -3914,14 +4020,14 @@ def _resolve_profile_assignment(
     # Both tester and admin IDs present
     if tester_profile_id_upper and admin_profile_id_upper:
         if tester_profile_id_upper == admin_profile_id_upper:
-            # Same ID - check if usernames match
+            # Same ID - always save as profile_id since the person has an account
+            person_profile_id_to_save = tester_profile_id_upper
+            # If usernames differ, also record admin info (someone else manages the kit)
             if (
-                formatted_match_username
-                and formatted_admin_username
-                and formatted_match_username.lower() == formatted_admin_username.lower()
+                formatted_admin_username
+                and formatted_match_username
+                and formatted_match_username.lower() != formatted_admin_username.lower()
             ):
-                person_profile_id_to_save = tester_profile_id_upper
-            else:
                 person_admin_id_to_save = admin_profile_id_upper
                 person_admin_username_to_save = formatted_admin_username
         else:
@@ -4631,6 +4737,10 @@ def _prepare_dna_match_operation_data(
     api_predicted_rel_for_comp = (
         predicted_relationship if predicted_relationship is not None else "N/A"
     )
+    # Also ensure we never try to INSERT a NULL into a NOT NULL column in DB
+    safe_predicted_relationship = (
+        predicted_relationship if predicted_relationship is not None else "N/A"
+    )
 
     # Check if DNA match exists and needs update
     if existing_dna_match is None:
@@ -4645,8 +4755,8 @@ def _prepare_dna_match_operation_data(
             "uuid": match_uuid.upper(),
             "compare_link": match.get("compare_link"),
             "cM_DNA": int(match.get("cM_DNA", 0)),
-            # Store predicted_relationship as is (can be None); DB schema should allow NULL
-            "predicted_relationship": predicted_relationship,
+            # Use safe_predicted_relationship to ensure NOT NULL constraint is satisfied
+            "predicted_relationship": safe_predicted_relationship,
             "_operation": "create",  # This operation hint is for the bulk operation logic
         }
         if prefetched_combined_details:
@@ -4672,14 +4782,12 @@ def _prepare_dna_match_operation_data(
             dna_dict_base["shared_segments"] = match.get("numSharedSegments")
             # Other detail-specific fields (longest_shared_segment, meiosis, sides) will be None if not in dna_dict_base
 
-        # Remove keys with None values *except* for predicted_relationship which we want to store as NULL if it's None
-        # Also keep internal keys like _operation and uuid
+        # Remove keys with None values to let database defaults apply
+        # Keep internal keys like _operation and uuid even if None
         return {
             k: v
             for k, v in dna_dict_base.items()
             if v is not None
-            or k
-            == "predicted_relationship"  # Explicitly keep predicted_relationship even if None
             or k.startswith("_")  # Keep internal keys
             or k == "uuid"  # Keep uuid
         }
