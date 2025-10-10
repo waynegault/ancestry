@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false
+# pyright: reportConstantRedefinition=false, reportImportCycles=false
 
 """
 GEDCOM Processing & Genealogical Data Intelligence Engine
@@ -228,7 +228,7 @@ def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[Gedc
 
 def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
     """Try to get name using indi.name.format() method."""
-    if not hasattr(indi, "name"):
+    if not indi or not hasattr(indi, "name"):
         return None
 
     name_rec = indi.name
@@ -246,7 +246,7 @@ def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Opt
 
 def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
     """Try to get name using indi.sub_tag(TAG_NAME).format() method."""
-    if not hasattr(indi, "sub_tag"):
+    if not indi or not hasattr(indi, "sub_tag"):
         return None
 
     name_tag = indi.sub_tag(TAG_NAME)
@@ -264,7 +264,7 @@ def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> 
 
 def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
     """Try to manually combine GIVN and SURN tags."""
-    if not hasattr(indi, "sub_tag"):
+    if not indi or not hasattr(indi, "sub_tag"):
         return None
 
     name_tag = indi.sub_tag(TAG_NAME)
@@ -290,7 +290,7 @@ def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -
 
 def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
     """Try to get name using indi.sub_tag_value(TAG_NAME) as last resort."""
-    if not hasattr(indi, "sub_tag_value"):
+    if not indi or not hasattr(indi, "sub_tag_value"):
         return None
 
     name_val = indi.sub_tag_value(TAG_NAME)
@@ -582,7 +582,7 @@ def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Opti
 def _extract_event_record(individual: GedcomIndividualType, event_tag: str, indi_id_log: str) -> Optional[Any]:
     """Extract event record from individual."""
     # Add null check before calling sub_tag
-    if not hasattr(individual, "sub_tag"):
+    if not individual or not hasattr(individual, "sub_tag"):
         logger.warning(f"Individual {indi_id_log} has no sub_tag method")
         return None
 
@@ -855,6 +855,12 @@ def fast_bidirectional_bfs(
 
     start_id = graph.start_id
     end_id = graph.end_id
+    
+    # Early return if IDs are None
+    if not start_id or not end_id:
+        logger.warning("[FastBiBFS] Start or end ID is None")
+        return []
+    
     id_to_parents = graph.id_to_parents
     id_to_children = graph.id_to_children
 
@@ -870,8 +876,11 @@ def fast_bidirectional_bfs(
     # Import here to avoid circular dependency
     from relationship_utils import _find_direct_relationship
 
+    # Convert lists to sets for _find_direct_relationship
+    id_to_parents_set = {k: set(v) for k, v in id_to_parents.items()}
+    id_to_children_set = {k: set(v) for k, v in id_to_children.items()}
     direct_path = _find_direct_relationship(
-        start_id, end_id, id_to_parents, id_to_children
+        start_id, end_id, id_to_parents_set, id_to_children_set
     )
     if direct_path:
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
@@ -1145,7 +1154,7 @@ def _check_relationship_type(
     relationship_type: str,
     id_a: str,
     id_b: str,
-    sex_char: str,
+    sex_char: Optional[str],
     name_b: str,
     birth_year_b: str,
     reader: GedcomReaderType,
@@ -1552,10 +1561,11 @@ def _check_year_match(t_year: Any, c_year: Any, year_score_range: int) -> tuple[
         return False, False
 
 
-def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: int) -> dict:
+def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[int, float]) -> dict:
     """Calculate date match flags for birth and death dates."""
-    birth_year_match, birth_year_approx = _check_year_match(t_data["b_year"], c_data["b_year"], year_score_range)
-    death_year_match, death_year_approx = _check_year_match(t_data["d_year"], c_data["d_year"], year_score_range)
+    year_range = int(year_score_range) if isinstance(year_score_range, (int, float)) else 0
+    birth_year_match, birth_year_approx = _check_year_match(t_data["b_year"], c_data["b_year"], year_range)
+    death_year_match, death_year_approx = _check_year_match(t_data["d_year"], c_data["d_year"], year_range)
 
     return {
         "exact_birth_date_match": bool(
@@ -2290,6 +2300,10 @@ class GedcomData:
         """
         id1_norm = _normalize_id(id1)
         id2_norm = _normalize_id(id2)
+        
+        # Check for None after normalization
+        if not id1_norm or not id2_norm:
+            return "(Invalid individual IDs)"
 
         # Validate inputs
         validation_error = self._validate_relationship_path_inputs(id1_norm, id2_norm)
@@ -2304,9 +2318,12 @@ class GedcomData:
             f"Calculating relationship path (FastBiBFS): {id1_norm} <-> {id2_norm}"
         )
         search_start = time.time()
+        # Convert sets to lists for GraphContext
+        id_to_parents_list = {k: list(v) for k, v in self.id_to_parents.items()}
+        id_to_children_list = {k: list(v) for k, v in self.id_to_children.items()}
         graph_ctx = GraphContext(
-            id_to_parents=self.id_to_parents,
-            id_to_children=self.id_to_children,
+            id_to_parents=id_to_parents_list,
+            id_to_children=id_to_children_list,
             start_id=id1_norm,
             end_id=id2_norm
         )
