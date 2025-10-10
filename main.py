@@ -327,47 +327,65 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     return True
 
 
-def _prepare_action_arguments(action_func: Callable, session_manager: SessionManager, args: tuple) -> tuple:
-    """Prepare arguments for action function call."""
+def _extract_start_value_from_args(args: tuple) -> tuple[int | None, Any]:
+    """Extract start value and config argument from args for coord functions."""
+    start_val = None
+    config_arg = None
+
+    for arg in args:
+        if isinstance(arg, int):
+            start_val = arg
+        elif arg is not None and not isinstance(arg, int):
+            # First non-integer, non-None arg is config_schema
+            if config_arg is None:
+                config_arg = arg
+
+    # If no start_val found in args, use default of 1 (not None)
+    # This maintains backward compatibility when no args are passed
+    if start_val is None and None not in args:
+        start_val = 1
+
+    return start_val, config_arg
+
+
+def _prepare_coord_arguments(action_func: Callable, session_manager: SessionManager, args: tuple) -> tuple[tuple, dict]:
+    """Prepare arguments for coord and coord_action functions."""
     func_sig = inspect.signature(action_func)
-    pass_session_manager = "session_manager" in func_sig.parameters
     action_name = action_func.__name__
 
-    # Handle keyword args specifically for coord function
-    if action_name in ["coord", "coord_action"] and "start" in func_sig.parameters:
-        # Extract start value, preserving None for checkpoint auto-resume
-        start_val = None
-        config_arg = None
+    start_val, config_arg = _extract_start_value_from_args(args)
+    kwargs_for_action = {"start": start_val}
 
-        for arg in args:
-            if isinstance(arg, int):
-                start_val = arg
-            elif arg is not None and not isinstance(arg, int):
-                # First non-integer, non-None arg is config_schema
-                if config_arg is None:
-                    config_arg = arg
+    coord_args = []
+    if "session_manager" in func_sig.parameters:
+        coord_args.append(session_manager)
+    if action_name == "coord_action" and "config_schema" in func_sig.parameters:
+        # Use the config_schema passed in args, or fall back to global config
+        coord_args.append(config_arg if config_arg is not None else config)
 
-        # If no start_val found in args, use default of 1 (not None)
-        # This maintains backward compatibility when no args are passed
-        if start_val is None and None not in args:
-            start_val = 1
+    return coord_args, kwargs_for_action
 
-        kwargs_for_action = {"start": start_val}
 
-        coord_args = []
-        if pass_session_manager:
-            coord_args.append(session_manager)
-        if action_name == "coord_action" and "config_schema" in func_sig.parameters:
-            # Use the config_schema passed in args, or fall back to global config
-            coord_args.append(config_arg if config_arg is not None else config)
-
-        return coord_args, kwargs_for_action
-    # General case
+def _prepare_general_arguments(action_func: Callable, session_manager: SessionManager, args: tuple) -> tuple[tuple, dict]:
+    """Prepare arguments for general action functions."""
+    func_sig = inspect.signature(action_func)
     final_args = []
-    if pass_session_manager:
+    if "session_manager" in func_sig.parameters:
         final_args.append(session_manager)
     final_args.extend(args)
     return final_args, {}
+
+
+def _prepare_action_arguments(action_func: Callable, session_manager: SessionManager, args: tuple) -> tuple:
+    """Prepare arguments for action function call."""
+    action_name = action_func.__name__
+
+    # Handle keyword args specifically for coord function
+    if action_name in ["coord", "coord_action"]:
+        return _prepare_coord_arguments(action_func, session_manager, args)
+
+    # General case
+    return _prepare_general_arguments(action_func, session_manager, args)
 
 
 def _execute_action_function(action_func: Callable, prepared_args: tuple, kwargs: dict) -> Any:

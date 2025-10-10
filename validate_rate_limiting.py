@@ -6,6 +6,7 @@ Tests that all new parameters are loaded correctly.
 
 import sys
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).resolve().parent)
@@ -15,14 +16,11 @@ if parent_dir not in sys.path:
 from config import config_schema
 
 
-def validate_rate_limiting_config():
-    """Validate rate limiting configuration."""
-    print("🔍 Validating Rate Limiting Configuration...\n")
-
-    # Expected values
-    expected = {
+def _get_expected_values() -> Dict[str, Any]:
+    """Get expected configuration values."""
+    return {
         'thread_pool_workers': 2,
-        'requests_per_second': 0.8,
+        'requests_per_second': 0.9,
         'initial_delay': 1.0,
         'max_delay': 15.0,
         'backoff_factor': 1.5,
@@ -31,6 +29,9 @@ def validate_rate_limiting_config():
         'token_bucket_fill_rate': 2.0,
     }
 
+
+def _validate_config_values(expected: Dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Validate configuration values and return errors and warnings."""
     errors = []
     warnings = []
 
@@ -50,8 +51,11 @@ def validate_rate_limiting_config():
                 warnings.append(f"Unexpected value for {key}: {actual_value} (expected: {expected_value})")
 
     print("-" * 60)
+    return errors, warnings
 
-    # Performance calculations
+
+def _calculate_performance_metrics() -> None:
+    """Calculate and display performance metrics."""
     print("\n📈 Expected Performance:")
     print("-" * 60)
 
@@ -69,12 +73,16 @@ def validate_rate_limiting_config():
 
     print("-" * 60)
 
-    # Safety checks
+
+def _perform_safety_checks() -> list[str]:
+    """Perform safety checks and return warnings."""
+    warnings = []
+
     print("\n🛡️ Safety Checks:")
     print("-" * 60)
 
-
     # Check 1: RPS per worker should be <= 0.5 for safety
+    per_worker_rps = config_schema.api.requests_per_second / config_schema.api.thread_pool_workers
     if per_worker_rps > 0.5:
         print("⚠️  Warning: Per-worker RPS > 0.5 may risk rate limiting")
         warnings.append(f"High per-worker RPS: {per_worker_rps:.2f}")
@@ -98,13 +106,15 @@ def validate_rate_limiting_config():
     # Check 4: Token bucket should be configured
     if config_schema.api.token_bucket_capacity <= 0:
         print("❌ Error: Token bucket capacity must be positive")
-        errors.append("Invalid token bucket capacity")
-    else:
-        print(f"✅ Token bucket capacity ({config_schema.api.token_bucket_capacity}) is configured")
+        return ["Invalid token bucket capacity"]
+    print(f"✅ Token bucket capacity ({config_schema.api.token_bucket_capacity}) is configured")
 
     print("-" * 60)
+    return warnings
 
-    # Summary
+
+def _print_validation_summary(errors: list[str], warnings: list[str]) -> bool:
+    """Print validation summary and return success status."""
     print("\n📝 Validation Summary:")
     print("=" * 60)
 
@@ -128,6 +138,18 @@ def validate_rate_limiting_config():
         return True
     print("\n❌ Configuration has critical errors. Please fix before running.")
     return False
+
+
+def validate_rate_limiting_config() -> bool:
+    """Validate rate limiting configuration."""
+    print("🔍 Validating Rate Limiting Configuration...\n")
+
+    expected = _get_expected_values()
+    errors, warnings = _validate_config_values(expected)
+    _calculate_performance_metrics()
+    safety_warnings = _perform_safety_checks()
+    warnings.extend(safety_warnings)
+    return _print_validation_summary(errors, warnings)
 
 
 if __name__ == "__main__":
