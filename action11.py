@@ -2109,7 +2109,7 @@ def _format_tree_ladder_path(
     # Initialize these outside try block to ensure they're available in exception handler
     sn_str = str(selected_name) if selected_name else "Unknown"
     on_str = str(owner_name) if owner_name else "Unknown"
-    
+
     try:
         # Get raw formatted path
         raw_formatted_path = format_api_relationship_path(api_response_dict, on_str, sn_str)

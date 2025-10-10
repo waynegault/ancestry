@@ -23,7 +23,7 @@ import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -837,7 +837,7 @@ class PersonProcessor:
 
         # Call AI (import here to avoid circular dependency with ai_interface)
         from ai_interface import extract_genealogical_entities
-        
+
         logger.debug(f"Calling AI for {person.username}...")
         ai_response = extract_genealogical_entities(
             formatted_context, self.session_manager
