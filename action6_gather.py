@@ -2358,19 +2358,15 @@ def _execute_main_gathering(
         return False
 
 
-def coord(  # type: ignore
-    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: Optional[int] = None
-) -> bool:  # Uses config schema
-    """
-    Orchestrates the gathering of DNA matches from Ancestry.
-    Handles pagination, fetches match data, compares with database, and processes.
-    
-    Args:
-        session_manager: Active SessionManager instance
-        _config_schema_arg: Configuration schema
-        start: Start page number (None = auto-resume from checkpoint, explicit number = start from that page)
-    """
-    # Step 1: Validate Session State
+def _initialize_coord_state(session_manager: SessionManager, start: Optional[int] = None) -> tuple[dict[str, Any], Optional[int]]:
+    """Initialize state and validate start page for coord function."""
+    state = _initialize_gather_state()
+    requested_start_page = _validate_start_page(start) if start is not None else None
+    return state, requested_start_page
+
+
+def _setup_coord_environment(session_manager: SessionManager) -> bool:
+    """Setup environment for coord execution - session validation and auto-recovery."""
     _validate_session_state(session_manager)
 
     # Priority 1.2: Disable auto-recovery for fail-fast behavior
@@ -2378,10 +2374,24 @@ def coord(  # type: ignore
     session_manager.set_auto_recovery(False)
     logger.info("🚫 Disabled session auto-recovery for action6 (fail-fast mode)")
 
-    # Step 2: Initialize state and resources
-    state = _initialize_gather_state()
-    requested_start_page = _validate_start_page(start) if start is not None else None
+    return previous_recovery_state
 
+
+def _load_coord_checkpoint() -> tuple[Optional[dict[str, Any]], bool, Optional[int]]:
+    """Load checkpoint and determine resume behavior."""
+    checkpoint = _load_checkpoint()
+    resuming_from_checkpoint, start_page = _should_resume_from_checkpoint(checkpoint, None)
+    return checkpoint, resuming_from_checkpoint, start_page
+
+
+def _restore_checkpoint_if_needed(state: dict[str, Any], checkpoint: Optional[dict[str, Any]], resuming_from_checkpoint: bool) -> None:
+    """Restore state from checkpoint if resuming."""
+    if resuming_from_checkpoint and checkpoint:
+        _restore_state_from_checkpoint(state, checkpoint)
+
+
+def _initialize_coord_monitoring() -> None:
+    """Initialize monitoring and metrics for coord execution."""
     # Priority 2.3: Clear API call cache
     _clear_api_cache()
     logger.info("🔄 API call cache cleared for new run")
@@ -2391,69 +2401,128 @@ def coord(  # type: ignore
     logger.info("📊 Performance metrics tracking enabled")
     _reset_monitor()
 
-    # Priority 2.2: Load checkpoint if available
-    checkpoint = _load_checkpoint()
-    resuming_from_checkpoint, start_page = _should_resume_from_checkpoint(checkpoint, requested_start_page)
 
-    if resuming_from_checkpoint and checkpoint:
-        _restore_state_from_checkpoint(state, checkpoint)
+def _execute_coord_main_gathering(session_manager: SessionManager, start_page: int, state: dict[str, Any]) -> bool:
+    """Execute main gathering logic with error handling."""
+    try:
+        # Execute main gathering with error handling
+        loop_success = _execute_main_gathering(session_manager, start_page, state)
+        state["final_success"] = state["final_success"] and loop_success
+        return True
+    except Exception as e:
+        logger.error(f"Main gathering execution failed: {e}", exc_info=True)
+        state["final_success"] = False
+        return False
+
+
+def _cleanup_coord_execution(
+    session_manager: SessionManager,
+    previous_recovery_state: bool,
+    state: dict[str, Any]
+) -> None:
+    """Cleanup after coord execution - restore settings and log results."""
+    # Priority 1.2: Restore auto-recovery to previous state
+    session_manager.set_auto_recovery(previous_recovery_state)
+    logger.info(f"🔧 Restored session auto-recovery to: {'enabled' if previous_recovery_state else 'disabled'}")
+
+    # Priority 2.2: Clear checkpoint on successful completion
+    if state.get("final_success", False):
+        _clear_checkpoint()
+
+    # Priority 2.3: Log final API cache statistics
+    _clear_api_cache()  # This logs stats before clearing
+
+    # Priority 3.1: Log final performance metrics
+    metrics = _get_metrics()
+    metrics.log_final_summary()
+
+    # Priority 3.1.1: Persist adaptive rate limiting settings
+    if state.get("final_success", False):
+        _persist_adaptive_rate_limiting(session_manager)
+
+    # Priority 3.2: Export metrics to JSON file for historical analysis
+    _export_metrics_to_file(metrics, state.get("final_success", False))
+
+    # Priority 3.3: Log real-time monitoring summary
+    monitor = _get_monitor()
+    alert_summary = monitor.get_alert_summary()
+    if any(alert_summary.values()):
+        logger.info(f"🚨 Alert Summary: {alert_summary['CRITICAL']} critical, "
+                   f"{alert_summary['WARNING']} warnings, {alert_summary['INFO']} info")
+
+        # Log critical alerts for visibility
+        critical_alerts = monitor.get_alerts(level='CRITICAL')
+        if critical_alerts:
+            logger.warning(f"⚠️  {len(critical_alerts)} CRITICAL alerts were triggered during execution:")
+            for alert in critical_alerts[:5]:  # Show first 5 critical alerts
+                logger.warning(f"   • {alert['category']}: {alert['message']}")
+
+    # Step 7: Final Summary Logging (uses updated state from the loop)
+    logger.debug("Entering finally block in coord...")
+    _log_coord_summary(
+        state["total_pages_processed"],
+        state["total_new"],
+        state["total_updated"],
+        state["total_skipped"],
+        state["total_errors"],
+    )
+
+
+def _handle_coord_exceptions() -> None:
+    """Handle exceptions in coord finally block."""
+    # Re-raise KeyboardInterrupt if that was the cause
+    exc_info_tuple = sys.exc_info()
+    if exc_info_tuple[0] is KeyboardInterrupt:
+        logger.info("Re-raising KeyboardInterrupt after cleanup.")
+        if exc_info_tuple[1] is not None:
+            raise exc_info_tuple[1].with_traceback(exc_info_tuple[2])
+    logger.debug("Exiting finally block in coord.")
+
+
+def coord(  # type: ignore
+    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: Optional[int] = None
+) -> bool:  # Uses config schema
+    """
+    Orchestrates the gathering of DNA matches from Ancestry.
+    Handles pagination, fetches match data, compares with database, and processes.
+
+    Args:
+        session_manager: Active SessionManager instance
+        _config_schema_arg: Configuration schema
+        start: Start page number (None = auto-resume from checkpoint, explicit number = start from that page)
+    """
+    # Initialize state and validate start page
+    state, requested_start_page = _initialize_coord_state(session_manager, start)
+
+    # Setup environment - session validation and auto-recovery
+    previous_recovery_state = _setup_coord_environment(session_manager)
+
+    # Initialize monitoring and clear cache
+    _initialize_coord_monitoring()
+
+    # Load checkpoint and determine resume behavior
+    checkpoint, resuming_from_checkpoint, start_page = _load_coord_checkpoint()
+
+    # Override start page if explicitly requested
+    if requested_start_page is not None:
+        start_page = requested_start_page
+        resuming_from_checkpoint = False
+
+    # Restore state from checkpoint if resuming
+    _restore_checkpoint_if_needed(state, checkpoint, resuming_from_checkpoint)
 
     logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
     logger.info(f"🎯 Starting Action 6: DNA Match Gathering from page {start_page}")
 
     try:
-        # Execute main gathering with error handling
-        loop_success = _execute_main_gathering(session_manager, start_page, state)
-        state["final_success"] = state["final_success"] and loop_success
+        # Execute main gathering logic
+        _execute_coord_main_gathering(session_manager, start_page, state)
     finally:
-        # Priority 1.2: Restore auto-recovery to previous state
-        session_manager.set_auto_recovery(previous_recovery_state)
-        logger.info(f"🔧 Restored session auto-recovery to: {'enabled' if previous_recovery_state else 'disabled'}")
+        # Cleanup execution - restore settings and log results
+        _cleanup_coord_execution(session_manager, previous_recovery_state, state)
 
-        # Priority 2.2: Clear checkpoint on successful completion
-        if state.get("final_success", False):
-            _clear_checkpoint()
-
-        # Priority 2.3: Log final API cache statistics
-        _clear_api_cache()  # This logs stats before clearing
-
-        # Priority 3.1: Log final performance metrics
-        metrics = _get_metrics()
-        metrics.log_final_summary()
-
-        # Priority 3.2: Export metrics to JSON file for historical analysis
-        _export_metrics_to_file(metrics, state.get("final_success", False))
-
-        # Priority 3.3: Log real-time monitoring summary
-        monitor = _get_monitor()
-        alert_summary = monitor.get_alert_summary()
-        if any(alert_summary.values()):
-            logger.info(f"🚨 Alert Summary: {alert_summary['CRITICAL']} critical, "
-                       f"{alert_summary['WARNING']} warnings, {alert_summary['INFO']} info")
-
-            # Log critical alerts for visibility
-            critical_alerts = monitor.get_alerts(level='CRITICAL')
-            if critical_alerts:
-                logger.warning(f"⚠️  {len(critical_alerts)} CRITICAL alerts were triggered during execution:")
-                for alert in critical_alerts[:5]:  # Show first 5 critical alerts
-                    logger.warning(f"   • {alert['category']}: {alert['message']}")
-
-        # Step 7: Final Summary Logging (uses updated state from the loop)
-        logger.debug("Entering finally block in coord...")
-        _log_coord_summary(
-            state["total_pages_processed"],
-            state["total_new"],
-            state["total_updated"],
-            state["total_skipped"],
-            state["total_errors"],
-        )
-        # Re-raise KeyboardInterrupt if that was the cause
-        exc_info_tuple = sys.exc_info()
-        if exc_info_tuple[0] is KeyboardInterrupt:
-            logger.info("Re-raising KeyboardInterrupt after cleanup.")
-            if exc_info_tuple[1] is not None:
-                raise exc_info_tuple[1].with_traceback(exc_info_tuple[2])
-        logger.debug("Exiting finally block in coord.")
+        # Handle exceptions
+        _handle_coord_exceptions()
 
     return state["final_success"]
 
@@ -6813,6 +6882,58 @@ def _fetch_batch_relationship_prob(
 # Utility & Helper Functions
 # ------------------------------------------------------------------------------
 
+def _persist_adaptive_rate_limiting(session_manager: SessionManager) -> None:
+    """
+    Persist the final adapted rate limiting settings to .env file so they become
+    the starting point for future runs. This enables the system to learn and
+    maintain optimal rate limiting parameters across sessions.
+
+    Args:
+        session_manager: The active SessionManager instance containing the rate limiter.
+    """
+    try:
+        # Get current rate limiter settings
+        rate_limiter = session_manager.dynamic_rate_limiter
+
+        # Read current .env file
+        env_path = Path(".env")
+        if not env_path.exists():
+            logger.warning("Cannot persist adaptive settings: .env file not found")
+            return
+
+        with open(env_path, encoding='utf-8') as f:
+            env_content = f.read()
+
+        # Update adaptive parameters in .env content
+        import re
+
+        # Update each parameter if it has changed from the adaptive learning
+        updates = {
+            'INITIAL_DELAY': f"{rate_limiter.initial_delay:.2f}",
+            'MAX_DELAY': f"{rate_limiter.max_delay:.2f}",
+            'BACKOFF_FACTOR': f"{rate_limiter.backoff_factor:.2f}",
+            'DECREASE_FACTOR': f"{rate_limiter.decrease_factor:.2f}"
+        }
+
+        for param, new_value in updates.items():
+            # Use regex to find and replace the parameter line
+            pattern = rf'^({param}\s*=\s*)([^\r\n]*)'
+            env_content = re.sub(pattern, rf'\1{new_value}', env_content, flags=re.MULTILINE)
+
+        # Write back to .env file
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.write(env_content)
+
+        logger.info("✅ Adaptive rate limiting settings persisted to .env file")
+        logger.debug(f"   Persisted: INITIAL_DELAY={updates['INITIAL_DELAY']}, "
+                    f"MAX_DELAY={updates['MAX_DELAY']}, "
+                    f"BACKOFF_FACTOR={updates['BACKOFF_FACTOR']}, "
+                    f"DECREASE_FACTOR={updates['DECREASE_FACTOR']}")
+
+    except Exception as e:
+        logger.warning(f"Failed to persist adaptive rate limiting settings: {e}")
+        # Don't raise - this is not critical to the main operation
+
 
 def _log_page_summary(
     page: int, page_new: int, page_updated: int, page_skipped: int, page_errors: int
@@ -7102,38 +7223,139 @@ def _test_circuit_breaker_timing() -> None:
     print("   ✅ Circuit breaker timing works correctly")
 
 
-def _test_worker_configuration() -> None:
-    """Test that worker configuration loads correctly from .env (Priority 2.1)."""
-    print("📋 Testing Worker Configuration from .env:")
-
+def _load_worker_config_values() -> tuple[int, float]:
+    """Load worker configuration values from config schema."""
     thread_pool_workers = config_schema.api.thread_pool_workers
     requests_per_second = config_schema.api.requests_per_second
+    return thread_pool_workers, requests_per_second
 
-    print("   • Configuration loaded:")
-    print(f"      Thread Pool Workers: {thread_pool_workers}")
-    print(f"      Requests Per Second: {requests_per_second}")
 
-    # Validate configuration is reasonable
+def _validate_worker_config(thread_pool_workers: int, requests_per_second: float) -> None:
+    """Validate worker configuration values."""
     assert 1 <= thread_pool_workers <= 4, "Worker count should be between 1-4"
     assert requests_per_second > 0, "RPS should be positive"
 
+
+def _calculate_rate_analysis(thread_pool_workers: int, requests_per_second: float) -> tuple[float, float, float, float]:
+    """Calculate rate limiting analysis."""
     # Calculate per-worker rate
     if thread_pool_workers > 0:
         per_worker_rate = requests_per_second / thread_pool_workers
         interval_per_worker = 1.0 / per_worker_rate if per_worker_rate > 0 else 0
 
-        print("   • Rate Limiting Analysis:")
-        print(f"      Total RPS: {requests_per_second}")
-        print(f"      Workers: {thread_pool_workers}")
-        print(f"      RPS per worker: {per_worker_rate:.2f}")
-        print(f"      Interval between requests (per worker): {interval_per_worker:.2f}s")
+        # Expected throughput calculation
+        matches_per_page = 20  # Typical matches per page
+        seconds_per_page = matches_per_page / requests_per_second
+        pages_per_hour = 3600 / seconds_per_page
+        matches_per_hour = pages_per_hour * matches_per_page
 
-        if thread_pool_workers == 2:
-            print("   ✅ Worker count set to 2 (Priority 2.1 optimization)")
-        elif thread_pool_workers == 1:
-            print("   ℹ️  Worker count is 1 (conservative/safe mode)")
+        return per_worker_rate, interval_per_worker, pages_per_hour, matches_per_hour
+    return 0, 0, 0, 0
+
+
+def _verify_env_file() -> tuple[bool, Optional[str], Optional[str]]:
+    """Verify .env file exists and read key values."""
+    from pathlib import Path
+    env_file = Path(".env")
+    if env_file.exists():
+        # Read and verify key values
+        with open(env_file) as f:
+            env_content = f.read()
+
+        env_values = {}
+        for line in env_content.split('\n'):
+            if '=' in line and not line.strip().startswith('#'):
+                key, value = line.split('=', 1)
+                env_values[key.strip()] = value.strip()
+
+        env_workers = env_values.get('THREAD_POOL_WORKERS')
+        env_rps = env_values.get('REQUESTS_PER_SECOND')
+        return True, env_workers, env_rps
+    return False, None, None
+
+
+def _validate_config_consistency(thread_pool_workers: int, requests_per_second: float, env_workers: Optional[str], env_rps: Optional[str]) -> tuple[bool, bool]:
+    """Validate configuration consistency between code and .env."""
+    config_workers_match = str(thread_pool_workers) == env_workers
+    config_rps_match = str(requests_per_second) == env_rps
+    return config_workers_match, config_rps_match
+
+
+def _check_performance_optimization(thread_pool_workers: int, requests_per_second: float) -> None:
+    """Check performance optimization status."""
+    if thread_pool_workers == 2 and requests_per_second == 0.6:
+        print("      ✅ Optimizations ACTIVE: 2 workers, 0.6 RPS (3x throughput expected)")
+    elif thread_pool_workers == 1 and requests_per_second == 0.4:
+        print("      ℹ️  Conservative settings: 1 worker, 0.4 RPS (baseline)")
+    else:
+        print(f"      ⚠️  Custom settings: {thread_pool_workers} workers, {requests_per_second} RPS")
+
+
+def _test_worker_configuration() -> None:
+    """Test that worker configuration loads correctly from .env (Priority 2.1)."""
+    print("📋 Testing Worker Configuration from .env:")
+
+    # Load configuration values
+    thread_pool_workers, requests_per_second = _load_worker_config_values()
+
+    print("   • Configuration loaded:")
+    print(f"      Thread Pool Workers: {thread_pool_workers}")
+    print(f"      Requests Per Second: {requests_per_second}")
+
+    # Validate configuration
+    _validate_worker_config(thread_pool_workers, requests_per_second)
+
+    # Calculate rate limiting analysis
+    per_worker_rate, interval_per_worker, pages_per_hour, matches_per_hour = _calculate_rate_analysis(
+        thread_pool_workers, requests_per_second
+    )
+
+    print("   • Rate Limiting Analysis:")
+    print(f"      Total RPS: {requests_per_second}")
+    print(f"      Workers: {thread_pool_workers}")
+    print(f"      RPS per worker: {per_worker_rate:.2f}")
+    print(f"      Interval between requests (per worker): {interval_per_worker:.2f}s")
+
+    print(f"      Expected pages per hour: {pages_per_hour:.0f}")
+    print(f"      Expected matches per hour: {matches_per_hour:.0f}")
+
+    if thread_pool_workers == 2:
+        print("   ✅ Worker count set to 2 (Priority 2.1 optimization)")
+    elif thread_pool_workers == 1:
+        print("   ℹ️  Worker count is 1 (conservative/safe mode)")
+    else:
+        print(f"   ℹ️  Worker count is {thread_pool_workers}")
+
+    # Verify .env file
+    print("   • Environment File Verification:")
+    env_exists, env_workers, env_rps = _verify_env_file()
+    if env_exists:
+        print("      ✅ .env file exists")
+        print(f"      THREAD_POOL_WORKERS in .env: {env_workers}")
+        print(f"      REQUESTS_PER_SECOND in .env: {env_rps}")
+    else:
+        print("      ❌ .env file not found")
+
+    # Test that config matches .env
+    print("   • Configuration Validation:")
+    if env_exists:
+        config_workers_match, config_rps_match = _validate_config_consistency(
+            thread_pool_workers, requests_per_second, env_workers, env_rps
+        )
+
+        print(f"      Config THREAD_POOL_WORKERS matches .env: {'✅' if config_workers_match else '❌'}")
+        print(f"      Config REQUESTS_PER_SECOND matches .env: {'✅' if config_rps_match else '❌'}")
+
+        if config_workers_match and config_rps_match:
+            print("      ✅ All configuration values loaded correctly from .env!")
         else:
-            print(f"   ℹ️  Worker count is {thread_pool_workers}")
+            print("      ❌ Configuration mismatch - check .env file and ConfigManager")
+    else:
+        print("      ⚠️  Cannot validate config consistency - .env file not found")
+
+    # Performance optimization check
+    print("   • Performance Optimization Status:")
+    _check_performance_optimization(thread_pool_workers, requests_per_second)
 
     print("   ✅ Configuration loaded and validated successfully")
 
@@ -7424,10 +7646,10 @@ def _test_progress_checkpointing() -> None:
     # Verify integration into coord
     print("   • Checking integration into coord()...")
     coord_source = inspect.getsource(coord)
-    assert "_load_checkpoint" in coord_source, "Should load checkpoint in coord()"
-    assert "_should_resume_from_checkpoint" in coord_source, "Should check resume in coord()"
-    assert "_restore_state_from_checkpoint" in coord_source, "Should restore state in coord()"
-    assert "_clear_checkpoint" in coord_source, "Should clear checkpoint on success in coord()"
+    assert "_load_coord_checkpoint" in coord_source, "Should load checkpoint in coord()"
+    assert "_should_resume_from_checkpoint" not in coord_source, "Should not directly call _should_resume_from_checkpoint in coord() (now in helper)"
+    assert "_restore_checkpoint_if_needed" in coord_source, "Should restore state in coord()"
+    assert "_cleanup_coord_execution" in coord_source, "Should clear checkpoint on success in coord()"
     print("   ✅ Checkpoint integration into coord() verified")
 
     # Verify integration into page processing
@@ -7555,7 +7777,7 @@ def _test_api_call_batching() -> None:
     # Test integration into coord()
     print("   • Checking integration into coord()...")
     coord_source = inspect.getsource(coord)
-    assert "_clear_api_cache" in coord_source, "Should clear cache at start and end"
+    assert "_initialize_coord_monitoring" in coord_source, "Should clear cache at start and end"
     print("   ✅ Cache clearing integrated into coord()")
 
     # Test configuration
@@ -7661,8 +7883,8 @@ def _verify_metrics_integration() -> None:
 
     print("   • Checking integration into coord()...")
     coord_source = inspect.getsource(coord)
-    assert "_reset_metrics" in coord_source, "Should initialize metrics at start"
-    assert "metrics.log_final_summary" in coord_source or "log_final_summary" in coord_source, "Should log final summary"
+    assert "_initialize_coord_monitoring" in coord_source, "Should initialize metrics at start"
+    assert "_cleanup_coord_execution" in coord_source, "Should log final summary in coord()"
     print("   ✅ Metrics integrated into coord()")
 
     print("   • Checking integration into _process_page_batch...")
@@ -7753,11 +7975,11 @@ def _test_metrics_export() -> None:
     # Test integration into coord()
     print("   • Checking integration into coord()...")
     coord_source = inspect.getsource(coord)
-    assert "_export_metrics_to_file" in coord_source, "Should call export function in coord()"
-    assert "metrics.log_final_summary" in coord_source, "Export should be after final summary"
+    assert "_cleanup_coord_execution" in coord_source, "Should call export function in coord()"
+    assert "metrics.log_final_summary" not in coord_source, "Should not directly call metrics.log_final_summary in coord() (now in helper)"
     # Check that export is called with correct parameters
     export_call_pattern = "_export_metrics_to_file(metrics"
-    assert export_call_pattern in coord_source, "Should pass metrics object to export"
+    assert export_call_pattern not in coord_source, "Should not directly call _export_metrics_to_file in coord() (now in helper)"
     print("   ✅ Export function integrated into coord() finally block")
 
     # Test that Path is imported
@@ -7954,9 +8176,9 @@ def _test_real_time_monitoring() -> None:
     print("   • Checking integration into coord()...")
     import inspect
     coord_source = inspect.getsource(coord)
-    assert "_reset_monitor" in coord_source, "Should initialize monitor in coord()"
-    assert "_get_monitor" in coord_source, "Should use monitor in coord()"
-    assert "get_alert_summary" in coord_source, "Should log alert summary in finally block"
+    assert "_initialize_coord_monitoring" in coord_source, "Should initialize monitor in coord()"
+    assert "_cleanup_coord_execution" in coord_source, "Should use monitor in coord()"
+    assert "get_alert_summary" not in coord_source, "Should not directly call get_alert_summary in coord() (now in helper)"
 
     # Check that monitoring is done during page processing by looking at the module source
     with open(__file__, encoding='utf-8') as f:

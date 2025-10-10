@@ -852,7 +852,7 @@ class DynamicRateLimiter:
             if initial_delay is not None
             else getattr(cfg, "INITIAL_DELAY", 0.5)
         )
-        self.MAX_DELAY = (
+        self.max_delay = (
             max_delay if max_delay is not None else getattr(cfg, "MAX_DELAY", 60.0)
         )
         self.backoff_factor = (
@@ -897,11 +897,52 @@ class DynamicRateLimiter:
         # Thread safety for parallel API calls
         self._lock = threading.Lock()
 
+        # Load adaptive settings if they exist
+        self._load_adaptive_settings()
+
         logger.debug(
-            f"✓ Thread-safe DynamicRateLimiter initialized: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.MAX_DELAY:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
+            f"✓ Thread-safe DynamicRateLimiter initialized: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.max_delay:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
         )
 
     # End of __init__
+
+    def _load_adaptive_settings(self) -> None:
+        """
+        Load adaptive rate limiting settings from .env file if they exist.
+        This allows the rate limiter to start with optimized settings from previous runs.
+        """
+        try:
+            # Import here to avoid circular imports
+            from config import config_schema
+
+            # Load adaptive settings from config if available
+            adaptive_initial_delay = getattr(config_schema, 'ADAPTIVE_INITIAL_DELAY', None)
+            adaptive_max_delay = getattr(config_schema, 'ADAPTIVE_MAX_DELAY', None)
+            adaptive_backoff_factor = getattr(config_schema, 'ADAPTIVE_BACKOFF_FACTOR', None)
+            adaptive_decrease_factor = getattr(config_schema, 'ADAPTIVE_DECREASE_FACTOR', None)
+
+            # Apply adaptive settings if they exist and are valid
+            if adaptive_initial_delay is not None and adaptive_initial_delay > 0:
+                self.initial_delay = float(adaptive_initial_delay)
+                logger.info(f"Loaded adaptive initial_delay: {self.initial_delay:.2f}s")
+
+            if adaptive_max_delay is not None and adaptive_max_delay > 0:
+                self.max_delay = float(adaptive_max_delay)
+                logger.info(f"Loaded adaptive max_delay: {self.max_delay:.1f}s")
+
+            if adaptive_backoff_factor is not None and adaptive_backoff_factor > 0:
+                self.backoff_factor = float(adaptive_backoff_factor)
+                logger.info(f"Loaded adaptive backoff_factor: {self.backoff_factor:.2f}")
+
+            if adaptive_decrease_factor is not None and adaptive_decrease_factor > 0:
+                self.decrease_factor = float(adaptive_decrease_factor)
+                logger.info(f"Loaded adaptive decrease_factor: {self.decrease_factor:.3f}")
+
+        except Exception as e:
+            logger.debug(f"Could not load adaptive settings (expected on first run): {e}")
+            # This is expected on first run when no adaptive settings exist yet
+
+    # End of _load_adaptive_settings
 
     def _refill_tokens(self) -> None:
         now = time.monotonic()
@@ -927,7 +968,7 @@ class DynamicRateLimiter:
                 # Apply base delay even if token is available
                 jitter_factor = random.uniform(0.8, 1.2)
                 base_sleep = self.current_delay
-                sleep_duration = min(base_sleep * jitter_factor, self.MAX_DELAY)
+                sleep_duration = min(base_sleep * jitter_factor, self.max_delay)
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
                 logger.debug(
                     f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
@@ -937,7 +978,7 @@ class DynamicRateLimiter:
                 wait_needed = (1.0 - self.tokens) / self.fill_rate
                 jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
                 sleep_duration = wait_needed + jitter_amount
-                sleep_duration = min(sleep_duration, self.MAX_DELAY)  # Cap wait time
+                sleep_duration = min(sleep_duration, self.max_delay)  # Cap wait time
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
                 logger.debug(
                     f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
@@ -994,7 +1035,7 @@ class DynamicRateLimiter:
         with self._lock:
             previous_delay = self.current_delay
             self.current_delay = min(
-                self.current_delay * self.backoff_factor, self.MAX_DELAY
+                self.current_delay * self.backoff_factor, self.max_delay
             )
             if (
                 abs(previous_delay - self.current_delay) > 0.01
@@ -1004,7 +1045,7 @@ class DynamicRateLimiter:
                 )
             else:
                 logger.debug(
-                    f"Rate limit feedback received, but delay already at max ({self.MAX_DELAY:.2f}s) or increase too small."
+                    f"Rate limit feedback received, but delay already at max ({self.max_delay:.2f}s) or increase too small."
                 )
             # End of if/else
             self.last_throttled = True
@@ -1598,7 +1639,7 @@ def _handle_retryable_status(
             logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
         return False, response, retries_left, current_delay
 
-    sleep_time = _calculate_retry_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
+    sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
     if status == 429:  # Too Many Requests
         session_manager.dynamic_rate_limiter.increase_delay()
@@ -2151,7 +2192,7 @@ def _generate_traceparent_value() -> str:
 
 
 def _generate_tracestate_value() -> str:
-    """Generate tracestate header value with NewRelic state."""
+    """Generate tracestate header with NewRelic state."""
     span_id = uuid.uuid4().hex[:16]
     timestamp = int(time.time() * 1000)
     return f"{_NEWRELIC_LICENSE_KEY}@nr=0-1-{_NEWRELIC_ACCOUNT_ID}-{_NEWRELIC_APP_ID}-{span_id}----{timestamp}"
@@ -2551,7 +2592,7 @@ def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
         logger.debug("Next button found, attempting to click...")
         return _perform_next_button_click(driver, next_button)
     except TimeoutException:  # type: ignore
-        logger.debug(f"Next button not found with selector '{SIGN_IN_BUTTON_SELECTOR}', assuming single-step login (password field already visible).")
+        logger.debug("Next button not found with selector '{SIGN_IN_BUTTON_SELECTOR}', assuming single-step login (password field already visible).")
         _debug_log_signin_page_buttons(driver)
         return True
     except WebDriverException as e:  # type: ignore
@@ -3326,9 +3367,13 @@ def _check_for_mfa_page(driver: WebDriver) -> bool:  # type: ignore
         )
         return True
     except (TimeoutException, NoSuchElementException):  # type: ignore
+        # MFA page not detected
         return False
     except WebDriverException as e:  # type: ignore
         logger.warning(f"WebDriverException checking for MFA header: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error checking for MFA page: {e}", exc_info=True)
         return False
 
 
@@ -3342,13 +3387,17 @@ def _check_for_login_page(driver: WebDriver, target_url_base: str, signin_page_u
         )
         return True
     except (TimeoutException, NoSuchElementException):  # type: ignore
+        # Login page not detected
         return False
     except WebDriverException as e:  # type: ignore
         logger.warning(f"WebDriverException checking for Login username input: {e}")
         return False
+    except Exception as e:
+        logger.error(f"Unexpected error checking for Login page: {e}", exc_info=True)
+        return False
 
 
-def _handle_login_redirect(session_manager: SessionManagerType) -> str:
+def _handle_login_redirect(session_manager: SessionManager) -> str:
     """Handle unexpected login page redirect. Returns 'retry', 'fail', or 'no_manager'."""
     if not session_manager:
         logger.error("Landed on login page, no SessionManager provided for re-login attempt.")
@@ -3394,6 +3443,7 @@ def _handle_url_mismatch(
     driver: WebDriver,  # type: ignore
     landed_url_base: str,
     target_url_base: str,
+    signin_page_url_base: str,
     unavailability_selectors: dict[str, tuple[str, int]],
 ) -> str:
     """Handle landing on unexpected URL. Returns 'continue', 'fail', or 'success'."""
@@ -3416,7 +3466,7 @@ def _wait_for_element(
     element_timeout: int,
     unavailability_selectors: dict[str, tuple[str, int]],
 ) -> str:
-    """Wait for target element. Returns 'success', 'continue', or 'fail'."""
+    """Wait for target element. Returns 'success', 'fail', or 'continue'."""
     wait_selector = selector if selector else "body"
     logger.debug(f"On correct URL base. Waiting up to {element_timeout}s for selector: '{wait_selector}'")
     try:
@@ -3870,17 +3920,6 @@ def utils_module_tests() -> bool:
 
 def run_comprehensive_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
-    return utils_module_tests()
-
-# ==============================================
-# Module Registration
-# ==============================================
-
-# Module setup already handled by setup_module() call at top of file
-
-# ==============================================
-# Standalone Test Block
-# ==============================================
 if __name__ == "__main__":
     from test_framework import TestSuite, suppress_logging
 
