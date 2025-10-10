@@ -265,6 +265,9 @@ def _generate_cache_key(cache_key_prefix: str, func: Callable, args: tuple, kwar
 
 def _try_get_cached_value(cache_key: str) -> tuple[bool, Any]:
     """Try to get value from cache. Returns (found, value) tuple."""
+    if cache is None:
+        logger.warning("Cache not initialized - skipping cache read")
+        return False, None
     try:
         cached_value = cache.get(cache_key, default=ENOVAL, retry=True)
         if cached_value is not ENOVAL:
@@ -281,6 +284,9 @@ def _try_get_cached_value(cache_key: str) -> tuple[bool, Any]:
 
 def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> None:
     """Try to cache the result."""
+    if cache is None:
+        logger.warning("Cache not initialized - skipping cache write")
+        return
     try:
         if check_cache_size_before_add():
             cache.set(cache_key, result, expire=expire, retry=True)
@@ -643,6 +649,9 @@ def get_cache_coordination_stats() -> dict[str, Any]:
 
 def _collect_lru_keys_to_remove(entries_to_remove: int) -> list[str]:
     """Collect oldest cache keys to remove based on LRU order."""
+    if cache is None:
+        logger.warning("Cache not initialized - cannot collect keys")
+        return []
     keys_to_remove = []
     for key_count, key in enumerate(cache, start=1):
         keys_to_remove.append(key)
@@ -653,6 +662,9 @@ def _collect_lru_keys_to_remove(entries_to_remove: int) -> list[str]:
 
 def _remove_cache_keys(keys_to_remove: list[str]) -> int:
     """Remove specified cache keys and return count of successfully removed keys."""
+    if cache is None:
+        logger.warning("Cache not initialized - cannot remove keys")
+        return 0
     removed_count = 0
     for key in keys_to_remove:
         try:
@@ -674,6 +686,9 @@ def _perform_manual_lru_eviction(entries_to_remove: int) -> int:
     except Exception as evict_error:
         logger.error(f"Error during manual cache eviction: {evict_error}")
         # Last resort: try using diskcache's built-in cull (size-based)
+        if cache is None:
+            logger.error("Cache not initialized - cannot cull")
+            return 0
         try:
             culled = cache.cull()
             logger.info(f"Fallback: diskcache culled {culled} entries by size")
