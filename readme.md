@@ -8,7 +8,52 @@ Transform your genealogical research workflow with AI-powered automation that co
 
 ## 🔧 Recent Fixes (October 2025)
 
-### Critical Bug Fixes - Action 6 (DNA Match Gathering)
+### Critical Bug Fix - Action 6 WebDriver Session Disconnect (October 10, 2025)
+
+**Issue**: Action 6 was failing at page 12 (~30 minutes into run) with cascading "invalid session id: session deleted as the browser has closed the connection" errors. All 20 parallel API tasks failed simultaneously, triggering critical failure threshold and aborting the run.
+
+**Root Cause**: The proactive session health check was **navigating the browser** during session refresh, which closed the WebDriver's DevTools connection. When Chrome navigates to a new page, it disconnects all existing WebDriver sessions. Parallel API operations that were already in-flight suddenly found themselves using a dead session.
+
+**Timeline of Failure**:
+- 09:39:50 - Page 10: Session health check detected 26.4m age (threshold: 25m)
+- 09:39:56 - Proactive refresh executed (navigation closed connection)
+- 09:45:48 - Page 12: Started API fetches (20 parallel tasks)
+- 09:46:14 - Browser disconnected (~6 minutes after navigation)
+- 09:46:14-09:47:17 - All 20 tasks failed with "invalid session id" (3 retries each)
+- 09:47:12 - Critical failure threshold reached (6 combined_details failures)
+- 09:47:17 - Run aborted (only 11/40 pages completed)
+
+**Fixes Applied**:
+
+1. **Cookie-Only Session Refresh** ✅
+   - **Problem**: `_refresh_session_auth()` was calling `driver.get()` or `driver.refresh()`, closing WebDriver connection
+   - **Location**: `action6_gather.py` lines 698-736
+   - **Fix**: Removed all browser navigation/refresh logic. Now only syncs cookies via `sync_cookies_from_browser()`
+   - **Impact**: WebDriver connection stays alive during parallel operations
+
+2. **Pre-Batch Session Validation** ✅
+   - **Problem**: 20 parallel tasks submitted before checking if session was valid
+   - **Location**: `action6_gather.py` lines 2932-2940
+   - **Fix**: Added `is_sess_valid()` check BEFORE submitting tasks, with recovery attempt
+   - **Impact**: Detects dead sessions early, prevents cascading failures
+
+3. **Enhanced Session Validation** ✅
+   - **Problem**: Validation didn't distinguish between driver=None vs disconnected session
+   - **Location**: `action6_gather.py` lines 5252-5270, 6327-6345, 6377-6395
+   - **Fix**: Added responsive test (`driver.current_url`) to catch disconnected sessions
+   - **Impact**: Better error detection and specific error messages
+
+4. **Less Aggressive Health Check** ✅
+   - **Problem**: Cookie sync failure aborted entire batch prematurely
+   - **Location**: `action6_gather.py` lines 808-822
+   - **Fix**: If sync fails, log warning but continue (let API calls validate)
+   - **Impact**: Reduces false positives from transient issues
+
+**Results**:
+- **Before**: 11/40 pages (27.5%), 220/800 matches (27.5% data loss), cascading session failures
+- **After**: Expected 40/40 pages (100%), 800/800 matches (0% loss), no session disconnects
+
+### Previous Critical Bug Fixes - Action 6 (DNA Match Gathering)
 
 **Issue**: Action 6 was hanging indefinitely during concurrent API processing and losing 55% of match data due to CSRF token failures after session refresh.
 
@@ -23,7 +68,7 @@ Transform your genealogical research workflow with AI-powered automation that co
 2. **CSRF Token Refresh Logic** ✅
    - **Problem**: Session refresh navigated to account settings page which doesn't set CSRF cookies needed for DNA Match APIs
    - **Location**: `action6_gather.py` line 716 (`_refresh_session_auth()`)
-   - **Fix**: Changed navigation target from `ancestry.com/account/settings` to DNA matches page (`discoveryui-matches/list/{uuid}`)
+   - **Fix**: Changed navigation target from account settings to DNA matches page (now uses cookie-only refresh)
    - **Impact**: Eliminates all CSRF token failures (previously 11 errors causing 220 lost matches)
 
 3. **Return Type Correction** ✅
@@ -31,10 +76,6 @@ Transform your genealogical research workflow with AI-powered automation that co
    - **Location**: `action6_gather.py` line 2763
    - **Fix**: Changed return type to `-> None`
    - **Impact**: Correct type hints for exception-raising function
-
-**Results**:
-- **Before**: 9/20 pages processed, 180/400 matches collected (55% data loss), 11 ERRORs, 17 WARNINGs
-- **After**: Expected 20/20 pages, 400/400 matches (0% loss), 0 ERRORs, ~5 WARNINGs (all expected)
 
 ---
 

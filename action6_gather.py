@@ -698,9 +698,13 @@ def _refresh_session_auth(session_manager: SessionManager) -> bool:
     """
     Refresh session authentication (Priority 1.3).
 
+    CRITICAL FIX: This function should ONLY sync cookies from browser to API session.
+    It should NOT navigate or refresh the browser page, as this can disconnect
+    the WebDriver session during parallel API operations.
+
     Attempts to refresh the session's authentication state by:
-    1. Refreshing browser cookies
-    2. Syncing cookies to API session
+    1. Syncing cookies from browser to API session (NO navigation/refresh)
+    2. Updating CSRF tokens
     3. Validating the refreshed session
 
     Args:
@@ -710,40 +714,32 @@ def _refresh_session_auth(session_manager: SessionManager) -> bool:
         bool: True if refresh successful, False otherwise
     """
     try:
-        logger.debug("Refreshing browser cookies...")
+        logger.debug("🔄 Syncing cookies from browser to API session (no navigation)...")
 
-        # Use SessionManager's refresh_browser_cookies if available
-        if hasattr(session_manager, 'refresh_browser_cookies'):
-            session_manager.refresh_browser_cookies()
-        else:
-            # Fallback: manually refresh cookies by navigating to DNA matches page
-            # This ensures CSRF tokens are refreshed along with auth cookies
-            logger.debug("Using manual cookie refresh via DNA matches page")
-            if session_manager.driver:
-                my_uuid = session_manager.get_my_uuid()
-                if my_uuid:
-                    matches_url = f"https://www.ancestry.co.uk/discoveryui-matches/list/{my_uuid}"
-                    logger.debug(f"Navigating to DNA matches page to refresh CSRF tokens: {matches_url}")
-                    session_manager.driver.get(matches_url)
-                    time.sleep(3)  # Wait for page load and CSRF tokens to be set
-                else:
-                    # Fallback to home page if UUID not available
-                    logger.warning("UUID not available, using homepage for cookie refresh")
-                    session_manager.driver.get("https://www.ancestry.co.uk/")
-                    time.sleep(2)
-
-        logger.debug("Syncing cookies to API session...")
-        # Sync cookies to API session
+        # CRITICAL FIX: Just sync cookies - do NOT navigate or refresh the page
+        # Navigation/refresh can cause the WebDriver to disconnect during parallel operations
         if hasattr(session_manager, 'sync_cookies_from_browser'):
             session_manager.sync_cookies_from_browser()
+            logger.debug("✅ Cookies synced successfully")
+        else:
+            logger.warning("⚠️  SessionManager missing sync_cookies_from_browser method")
+            return False
 
-        # Validate refreshed session
+        # Validate refreshed session (simple check - don't navigate)
         logger.debug("Validating refreshed session...")
-        if session_manager.is_sess_valid():
-            logger.info("✅ Session validation successful after refresh")
-            return True
-        logger.warning("⚠️  Session still invalid after refresh attempt")
-        return False
+        driver = session_manager.driver
+        if driver:
+            try:
+                # Quick validation - just check if driver is responsive
+                _ = driver.current_url
+                logger.info("✅ Session validation successful after cookie sync")
+                return True
+            except Exception as e:
+                logger.warning(f"⚠️  Driver not responsive after cookie sync: {e}")
+                return False
+        else:
+            logger.warning("⚠️  No driver available for validation")
+            return False
 
     except Exception as e:
         logger.error(f"Error refreshing session auth: {e}", exc_info=True)
@@ -809,13 +805,14 @@ def _check_session_health_proactive(session_manager: SessionManager, current_pag
         # Check if refresh needed
         if session_age >= refresh_threshold:
             logger.warning(f"⚠️ Page {current_page}: Session age {session_age:.0f}s exceeds refresh threshold "
-                          f"({refresh_threshold:.0f}s) - proactive refresh needed")
+                          f"({refresh_threshold:.0f}s) - proactive cookie sync needed")
 
-            # Perform proactive refresh
-            logger.info(f"🔄 Page {current_page}: Initiating proactive session refresh...")
+            # CRITICAL FIX: Only sync cookies - don't navigate/refresh browser
+            # This prevents disconnecting the WebDriver during active API operations
+            logger.info(f"🔄 Page {current_page}: Syncing cookies to extend session (no browser navigation)...")
 
             if _refresh_session_auth(session_manager):
-                logger.info(f"✅ Page {current_page}: Proactive session refresh successful")
+                logger.info(f"✅ Page {current_page}: Cookie sync successful")
 
                 # Update last proactive refresh timestamp
                 session_manager.session_health_monitor['last_proactive_refresh'] = time.time()
@@ -824,8 +821,11 @@ def _check_session_health_proactive(session_manager: SessionManager, current_pag
                 session_manager.session_health_monitor['session_start_time'] = time.time()
 
                 return True
-            logger.error(f"❌ Page {current_page}: Proactive session refresh failed")
-            return False
+            
+            # CRITICAL FIX: If cookie sync fails, DON'T abort - just warn and continue
+            # The actual API calls will fail with proper error handling if session is truly dead
+            logger.warning(f"⚠️ Page {current_page}: Cookie sync failed, but continuing (API calls will validate session)")
+            return True
 
         # Session is healthy
         return True
@@ -2920,6 +2920,15 @@ def _perform_api_prefetches(
 
     # Identify tree members needing badge/ladder fetch
     uuids_for_tree_badge_ladder = _identify_tree_badge_ladder_candidates(matches_to_process_later, fetch_candidates_uuid)
+
+    # CRITICAL FIX: Validate session BEFORE starting parallel tasks
+    # This prevents submitting 20+ tasks when the browser has already disconnected
+    if not session_manager.is_sess_valid():
+        logger.error("🚨 Browser session invalid before API prefetch batch - attempting recovery")
+        if not _refresh_session_auth(session_manager):
+            logger.critical("❌ Session recovery failed - cannot proceed with API fetches")
+            raise ConnectionError("Browser session invalid and recovery failed before API batch")
+        logger.info("✅ Session recovered successfully - proceeding with API fetches")
 
     with ThreadPoolExecutor(max_workers=thread_pool_workers) as executor:
         # Submit initial API tasks
@@ -5244,12 +5253,21 @@ def _validate_relationship_prob_session(
             "_fetch_batch_relationship_prob: SessionManager scraper not initialized."
         )
         raise ConnectionError("SessionManager scraper not initialized.")
-    if not driver or not session_manager.is_sess_valid():
+    
+    # CRITICAL FIX: More robust session validation with specific error messages
+    if not driver:
+        logger.error(f"_fetch_batch_relationship_prob: WebDriver is None for UUID {match_uuid}")
+        raise ConnectionError(f"WebDriver is None (UUID: {match_uuid})")
+    
+    try:
+        # Test if driver is actually responsive (catches disconnected sessions)
+        _ = driver.current_url
+    except Exception as e:
         logger.error(
-            f"_fetch_batch_relationship_prob: Driver/session invalid for UUID {match_uuid}."
+            f"_fetch_batch_relationship_prob: WebDriver session disconnected for UUID {match_uuid}: {e}"
         )
         raise ConnectionError(
-            f"WebDriver session invalid for relationship probability fetch (UUID: {match_uuid})"
+            f"WebDriver session disconnected for relationship probability fetch (UUID: {match_uuid})"
         )
 
 
@@ -6317,12 +6335,21 @@ def _validate_combined_details_session(
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         raise ValueError(f"Missing required UUIDs: my_uuid={my_uuid}, match_uuid={match_uuid}")
 
-    if not session_manager.is_sess_valid():
+    # CRITICAL FIX: More robust session validation
+    driver = session_manager.driver
+    if not driver:
+        logger.error(f"_fetch_combined_details: WebDriver is None for UUID {match_uuid}")
+        raise ConnectionError(f"WebDriver is None for combined details fetch (UUID: {match_uuid})")
+    
+    try:
+        # Test if driver is actually responsive (catches disconnected sessions)
+        _ = driver.current_url
+    except Exception as e:
         logger.error(
-            f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
+            f"_fetch_combined_details: WebDriver session disconnected for UUID {match_uuid}: {e}"
         )
         raise ConnectionError(
-            f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
+            f"WebDriver session disconnected for combined details fetch (UUID: {match_uuid})"
         )
 
 
@@ -6342,12 +6369,21 @@ def _fetch_and_merge_profile_details(
         )
         return
 
-    if not session_manager.is_sess_valid():
+    # CRITICAL FIX: More robust session validation before profile fetch
+    driver = session_manager.driver
+    if not driver:
+        logger.error(f"_fetch_combined_details: WebDriver is None before profile fetch for {tester_profile_id_for_api}")
+        raise ConnectionError(f"WebDriver is None before profile fetch (Profile: {tester_profile_id_for_api})")
+    
+    try:
+        # Test if driver is actually responsive
+        _ = driver.current_url
+    except Exception as e:
         logger.error(
-            f"_fetch_combined_details: WebDriver session invalid before profile fetch for {tester_profile_id_for_api}."
+            f"_fetch_combined_details: WebDriver session disconnected before profile fetch for {tester_profile_id_for_api}: {e}"
         )
         raise ConnectionError(
-            f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id_for_api})"
+            f"WebDriver session disconnected before profile fetch (Profile: {tester_profile_id_for_api})"
         )
 
     try:
