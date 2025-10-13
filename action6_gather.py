@@ -1689,14 +1689,61 @@ def _create_master_person_id_map(
     return all_person_ids_map
 
 
+def _is_true_profile_owner(item: dict[str, Any], raw_api_data: Optional[dict[str, Any]] = None) -> bool:
+    """
+    Determine if this record is the "true owner" of the profile_id.
+
+    True owner criteria:
+    - tester_profile_id == admin_profile_id (from API)
+    - tester_username == admin_username (from API)
+
+    This indicates SCENARIO A: Member with their own test (self-managed).
+
+    Args:
+        item: The person data dictionary
+        raw_api_data: Optional raw API data with tester/admin info
+
+    Returns:
+        True if this is the authoritative owner of the profile_id
+    """
+    # If we have raw API data, use it for accurate determination
+    if raw_api_data:
+        tester_pid = raw_api_data.get("tester_profile_id")
+        admin_pid = raw_api_data.get("admin_profile_id")
+        tester_username = raw_api_data.get("tester_username", "").lower()
+        admin_username = raw_api_data.get("admin_username", "").lower()
+
+        # True owner: same profile_id AND same username
+        if tester_pid and admin_pid and tester_pid == admin_pid:
+            if tester_username and admin_username and tester_username == admin_username:
+                return True
+
+    # Fallback: Check if administrator_profile_id is NULL or same as profile_id
+    # If administrator_profile_id is NULL, this person manages their own test
+    profile_id = item.get("profile_id")
+    admin_profile_id = item.get("administrator_profile_id")
+
+    if profile_id and not admin_profile_id:
+        # No administrator = self-managed = true owner
+        return True
+
+    if profile_id and admin_profile_id and profile_id == admin_profile_id:
+        # Same ID in both fields - need to check username match
+        # This is ambiguous without API data, so assume NOT true owner
+        return False
+
+    return False
+
+
 def _check_profile_id_collisions_with_db(
     session: SqlAlchemySession, insert_data: list[dict[str, Any]]
-) -> set[str]:
+) -> dict[str, dict[str, Any]]:
     """
     Check if any profile_ids in insert_data already exist in the database.
 
     Returns:
-        Set of profile_ids that already exist in the database
+        Dictionary mapping profile_id to existing Person record info
+        {profile_id: {"uuid": ..., "username": ..., "is_true_owner": ...}}
     """
     # Extract non-NULL profile_ids from insert data
     profile_ids_to_insert = {
@@ -1705,57 +1752,116 @@ def _check_profile_id_collisions_with_db(
     }
 
     if not profile_ids_to_insert:
-        return set()
+        return {}
 
-    # Query database for existing profile_ids
-    existing_profile_ids = session.query(Person.profile_id).filter(
+    # Query database for existing profile_ids with full record info
+    existing_persons = session.query(
+        Person.profile_id,
+        Person.uuid,
+        Person.username,
+        Person.administrator_profile_id
+    ).filter(
         Person.profile_id.in_(profile_ids_to_insert),  # type: ignore
         Person.deleted_at.is_(None)  # type: ignore
     ).all()
 
-    existing_set = {pid[0] for pid in existing_profile_ids if pid[0]}
+    existing_map = {}
+    for pid, uuid, username, admin_pid in existing_persons:
+        if pid:
+            # Determine if existing record is true owner
+            is_owner = (admin_pid is None) or (pid == admin_pid)
+            existing_map[pid] = {
+                "uuid": uuid,
+                "username": username,
+                "administrator_profile_id": admin_pid,
+                "is_true_owner": is_owner
+            }
 
-    if existing_set:
+    if existing_map:
         logger.warning(
-            f"⚠️  Found {len(existing_set)} profile_id(s) that already exist in database: {existing_set}"
+            f"⚠️  Found {len(existing_map)} profile_id(s) that already exist in database"
         )
+        for pid, info in existing_map.items():
+            logger.info(
+                f"  Existing: profile_id={pid}, UUID={info['uuid']}, "
+                f"username='{info['username']}', is_true_owner={info['is_true_owner']}"
+            )
 
-    return existing_set
+    return existing_map
 
 
 def _handle_profile_id_collisions(
-    insert_data: list[dict[str, Any]], existing_profile_ids: set[str]
+    insert_data: list[dict[str, Any]],
+    existing_profile_map: dict[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """
-    Handle profile_id collisions by setting conflicting profile_ids to NULL.
+    Handle profile_id collisions intelligently based on ownership.
 
-    Strategy: If a profile_id already exists in the database, set it to NULL
-    and keep the administrator_profile_id. This preserves the relationship
-    while avoiding UNIQUE constraint violations.
+    Strategy:
+    1. If existing record is the "true owner" (self-managed member):
+       - New record gets profile_id set to NULL
+       - Preserve administrator_profile_id relationship
+
+    2. If new record is the "true owner":
+       - Keep new record's profile_id
+       - Log warning that existing record should be updated
+
+    3. If neither is clearly the true owner:
+       - Set new record's profile_id to NULL (conservative approach)
     """
-    if not existing_profile_ids:
+    if not existing_profile_map:
         return insert_data
 
     modified_count = 0
+    kept_count = 0
+
     for item in insert_data:
         pid = item.get("profile_id")
-        if pid and pid in existing_profile_ids:
+        if pid and pid in existing_profile_map:
             uuid_val = item.get("uuid")
             username_val = item.get("username", "Unknown")
             admin_pid = item.get("administrator_profile_id")
 
-            logger.info(
-                f"🔄 Profile_id collision detected - Setting to NULL: "
-                f"UUID={uuid_val}, profile_id={pid} → NULL, "
-                f"administrator_profile_id={admin_pid}, username='{username_val}'"
-            )
+            existing_info = existing_profile_map[pid]
+            existing_is_owner = existing_info["is_true_owner"]
+            new_is_owner = _is_true_profile_owner(item)
 
-            # Set profile_id to NULL to avoid collision
-            item["profile_id"] = None
-            modified_count += 1
+            # Decision logic
+            if existing_is_owner and not new_is_owner:
+                # Existing record is true owner, new record is not
+                logger.info(
+                    f"🔄 Collision: Existing record is true owner - Setting new to NULL: "
+                    f"UUID={uuid_val}, profile_id={pid} → NULL, "
+                    f"administrator_profile_id={admin_pid}, username='{username_val}'"
+                )
+                item["profile_id"] = None
+                modified_count += 1
 
-    if modified_count > 0:
-        logger.info(f"📊 Modified {modified_count} records to resolve profile_id collisions")
+            elif new_is_owner and not existing_is_owner:
+                # New record is true owner, existing is not
+                logger.warning(
+                    f"⚠️  Collision: NEW record is true owner but profile_id already exists! "
+                    f"UUID={uuid_val}, profile_id={pid}, username='{username_val}'. "
+                    f"Existing UUID={existing_info['uuid']}, username='{existing_info['username']}'. "
+                    f"KEEPING new record's profile_id - existing record may need correction!"
+                )
+                kept_count += 1
+
+            else:
+                # Ambiguous or both are owners (shouldn't happen) - be conservative
+                logger.warning(
+                    f"⚠️  Collision: Ambiguous ownership - Setting new to NULL: "
+                    f"UUID={uuid_val}, profile_id={pid} → NULL, "
+                    f"administrator_profile_id={admin_pid}, username='{username_val}'. "
+                    f"Existing UUID={existing_info['uuid']}, username='{existing_info['username']}'"
+                )
+                item["profile_id"] = None
+                modified_count += 1
+
+    if modified_count > 0 or kept_count > 0:
+        logger.info(
+            f"📊 Collision resolution: {modified_count} set to NULL, {kept_count} kept"
+        )
 
     return insert_data
 
@@ -1782,9 +1888,9 @@ def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: li
             item_data["status"] = item_data["status"].value
 
     # Check for profile_id collisions with database
-    existing_profile_ids = _check_profile_id_collisions_with_db(session, insert_data)
-    if existing_profile_ids:
-        insert_data = _handle_profile_id_collisions(insert_data, existing_profile_ids)
+    existing_profile_map = _check_profile_id_collisions_with_db(session, insert_data)
+    if existing_profile_map:
+        insert_data = _handle_profile_id_collisions(insert_data, existing_profile_map)
 
     # Validate no duplicates within batch
     _validate_no_duplicate_profile_ids(insert_data)

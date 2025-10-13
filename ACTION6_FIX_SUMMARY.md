@@ -21,12 +21,16 @@
 
 #### 2. **Database UNIQUE Constraint Violation**
 - **Error**: `UNIQUE constraint failed: people.profile_id`
-- **Root Cause**: Lookup only checked UUID, not profile_id
+- **Root Cause**: Trying to INSERT a profile_id that already exists in database
 - **Scenario**:
-  - Person A: profile_id="ABC123", uuid="UUID1" (already in DB)
-  - Person B: profile_id="ABC123", uuid="UUID2" (new match on page)
-  - Lookup by UUID doesn't find Person A
-  - Code tries to INSERT Person B with profile_id="ABC123" → UNIQUE constraint error!
+  - Page 1: UUID="UUID1", profile_id="PROF1" → Inserted successfully
+  - Page 2: UUID="UUID2", profile_id="PROF1" → **ERROR!** (PROF1 already exists)
+  - This happens when Ancestry API returns the same profile_id for different DNA tests
+- **Data Model**:
+  - UUID = DNA test kit ID (always unique, always present)
+  - profile_id = Ancestry member account ID (unique when NOT NULL)
+  - One profile_id can only appear ONCE in the `profile_id` column
+  - Same profile_id can appear MANY times in `administrator_profile_id` column
 
 #### 3. **Sequential Processing Made Timeout Worse**
 - Parallel processing: ~8-9 min/page
@@ -55,53 +59,64 @@ def coord(session_manager: SessionManager, start: int = 1) -> bool:
 
 ---
 
-### Fix 2: Query by BOTH UUID and profile_id ✅
+### Fix 2: Detect and Resolve profile_id Collisions ✅
 
-**Before:**
+**Strategy:**
+When a profile_id already exists in the database, set it to NULL and preserve the administrator_profile_id relationship.
+
+**Implementation:**
+
+**Step 1: Check for collisions with database**
 ```python
-def _lookup_existing_persons(
-    session: SqlAlchemySession, uuids_on_page: list[str]
-) -> dict[str, Person]:
-    # Only queried by UUID
-    existing_persons = (
-        session.query(Person)
-        .filter(Person.uuid.in_(uuids_upper), Person.deleted_at.is_(None))
-        .all()
-    )
+def _check_profile_id_collisions_with_db(
+    session: SqlAlchemySession, insert_data: list[dict[str, Any]]
+) -> set[str]:
+    """Check if any profile_ids in insert_data already exist in the database."""
+    profile_ids_to_insert = {
+        item.get("profile_id") for item in insert_data
+        if item.get("profile_id") is not None
+    }
+
+    # Query database for existing profile_ids
+    existing_profile_ids = session.query(Person.profile_id).filter(
+        Person.profile_id.in_(profile_ids_to_insert),
+        Person.deleted_at.is_(None)
+    ).all()
+
+    return {pid[0] for pid in existing_profile_ids if pid[0]}
 ```
 
-**After:**
+**Step 2: Resolve collisions by setting profile_id to NULL**
 ```python
-def _lookup_existing_persons(
-    session: SqlAlchemySession, 
-    uuids_on_page: list[str], 
-    profile_ids_on_page: Optional[list[str]] = None
-) -> dict[str, Person]:
-    # Query by UUID OR profile_id
-    filters = []
-    if uuids_upper:
-        filters.append(Person.uuid.in_(uuids_upper))
-    if profile_ids_upper:
-        filters.append(Person.profile_id.in_(profile_ids_upper))
-    
-    if filters:
-        from sqlalchemy import or_
-        query = query.filter(or_(*filters))
-        existing_persons = query.all()
+def _handle_profile_id_collisions(
+    insert_data: list[dict[str, Any]], existing_profile_ids: set[str]
+) -> list[dict[str, Any]]:
+    """Handle collisions by setting conflicting profile_ids to NULL."""
+    for item in insert_data:
+        pid = item.get("profile_id")
+        if pid and pid in existing_profile_ids:
+            logger.info(
+                f"🔄 Profile_id collision - Setting to NULL: "
+                f"UUID={item.get('uuid')}, profile_id={pid} → NULL, "
+                f"administrator_profile_id={item.get('administrator_profile_id')}"
+            )
+            item["profile_id"] = None
+    return insert_data
 ```
 
-**Call Site Update:**
+**Step 3: Apply before bulk insert**
 ```python
-# Extract both UUIDs and profile_ids from matches
-uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-profile_ids_on_page = [m.get("profile_id") for m in matches_on_page if m.get("profile_id")]
-existing_persons_map = _lookup_existing_persons(session, uuids_on_page, profile_ids_on_page)
+# Check for profile_id collisions with database
+existing_profile_ids = _check_profile_id_collisions_with_db(session, insert_data)
+if existing_profile_ids:
+    insert_data = _handle_profile_id_collisions(insert_data, existing_profile_ids)
 ```
 
-**Impact**: 
-- Finds existing persons even if they have different UUID but same profile_id
-- Treats them as UPDATE instead of INSERT
+**Impact**:
 - Prevents UNIQUE constraint violations
+- Preserves data integrity (UUID and administrator_profile_id maintained)
+- Clear logging of all collision resolutions
+- No data loss - relationship preserved via administrator_profile_id
 
 ---
 
@@ -132,22 +147,34 @@ for item in insert_data:
 
 ---
 
-## Why Sequential Processing Was a Red Herring
+## Data Model Understanding
 
-### Original Hypothesis (WRONG)
-- Thought parallel processing caused 429 API errors
-- Eliminated ThreadPoolExecutor to fix rate limiting
+### UUID vs profile_id
+- **UUID**: DNA test kit ID (always unique, always present in Action 6)
+- **profile_id**: Ancestry member account ID (unique when NOT NULL, can be NULL)
+- **administrator_profile_id**: The profile_id of whoever manages this DNA test
 
-### Reality
-- 429 errors were NOT the problem in this run
-- Database errors and timeout were the real issues
-- Sequential processing made timeout problem WORSE (slower = hits timeout faster)
+### Valid Scenarios
+1. **Member with their own test**:
+   - UUID="UUID1", profile_id="PROF1", administrator_profile_id=NULL
 
-### Decision: Keep Sequential for Now
+2. **Non-member test administered by member**:
+   - UUID="UUID2", profile_id=NULL, administrator_profile_id="PROF1"
+
+3. **Member administering someone else's test (who is also a member)**:
+   - UUID="UUID3", profile_id="PROF2", administrator_profile_id="PROF1"
+
+### Key Rules
+- One profile_id value can only appear ONCE in the `profile_id` column
+- Same profile_id can appear MANY times in `administrator_profile_id` column
+- UUID is the primary lookup key (each UUID = unique DNA test)
+- Multiple UUIDs can share the same administrator_profile_id
+
+### Why Sequential Processing Was Kept
 - Simpler code (easier to debug)
 - Conservative approach (avoids potential 429 issues)
-- Trade-off: Slower but more reliable
-- Can revert to parallel later if needed
+- Trade-off: Slower (10-12 min/page) but more reliable
+- Can revert to parallel later if speed becomes critical
 
 ---
 
@@ -208,15 +235,25 @@ MAX_PAGES=0  # Process all 802 pages
 
 ---
 
-## Commit
+## Commits
 
+### Commit 1: Initial timeout fix (REVERTED)
 ```
 8ba6ae6 - fix(action6): Fix timeout and database UNIQUE constraint errors
+```
 
-- Use config timeout (4 hours) instead of hardcoded 300 seconds
-- Query existing persons by BOTH UUID and profile_id to prevent duplicates
-- Enhanced duplicate logging with profile_id, uuid, and username
-- Prevents UNIQUE constraint violations when same profile_id has different UUID
+### Commit 2: Correct collision handling (CURRENT)
+```
+76b2926 - fix(action6): Correct profile_id collision handling
+
+REVERTED incorrect profile_id lookup - UUID is the only valid lookup key
+ADDED proper collision detection and resolution for duplicate profile_ids
+
+Collision Resolution Strategy:
+- Detect profile_ids that already exist in database
+- Set conflicting profile_ids to NULL
+- Preserve administrator_profile_id relationship
+- Log all modifications with full details
 ```
 
 ---
