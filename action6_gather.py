@@ -479,7 +479,8 @@ def _process_single_page_iteration(
     matches_on_page_for_batch: Optional[list[dict[str, Any]]],
     state: dict[str, Any],
     progress_bar: tqdm,
-    loop_final_success: bool
+    loop_final_success: bool,
+    last_page_to_process: int
 ) -> tuple[bool, bool, Optional[list[dict[str, Any]]], int]:
     """Process a single page iteration in the main loop."""
     # Check session validity
@@ -511,6 +512,13 @@ def _process_single_page_iteration(
 
     # Process batch and update state
     _process_page_batch(session_manager, matches_on_page_for_batch, current_page_num, progress_bar, state)
+
+    # Add delay between pages to avoid hitting API time-window rate limits
+    # Ancestry API has aggressive rate limiting (~250-300 requests per 5-10 minutes)
+    # 30-second delay between pages helps stay under the limit
+    if current_page_num < last_page_to_process:
+        logger.debug(f"Waiting 30 seconds before processing next page (rate limiting)")
+        time.sleep(30)
 
     return loop_final_success, False, None, current_page_num + 1
 
@@ -551,7 +559,8 @@ def _main_page_processing_loop(
                         matches_on_page_for_batch,
                         state,
                         progress_bar,
-                        loop_final_success
+                        loop_final_success,
+                        last_page_to_process
                     )
                 )
                 if should_break:
