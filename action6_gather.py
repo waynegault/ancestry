@@ -642,7 +642,7 @@ def _calculate_processing_range(total_pages_api: Optional[int], start_page: int)
 
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 3 to 10 for better tolerance
-@timeout_protection(timeout=300)
+@timeout_protection(timeout=config_schema.action6_coord_timeout_seconds)  # Use config value (4 hours default)
 @error_context("DNA match gathering coordination")
 def coord(  # type: ignore
     session_manager: SessionManager, start: int = 1
@@ -740,15 +740,20 @@ def coord(  # type: ignore
 
 
 def _lookup_existing_persons(
-    session: SqlAlchemySession, uuids_on_page: list[str]
+    session: SqlAlchemySession, uuids_on_page: list[str], profile_ids_on_page: Optional[list[str]] = None
 ) -> dict[str, Person]:
     """
-    Queries the database for existing Person records based on a list of UUIDs.
+    Queries the database for existing Person records based on UUIDs and/or profile_ids.
     Eager loads related DnaMatch and FamilyTree data for efficiency.
+
+    This prevents UNIQUE constraint violations by finding persons that match either UUID or profile_id.
+    If a person exists with the same profile_id but different UUID, we'll update them instead of
+    trying to insert a duplicate.
 
     Args:
         session: The active SQLAlchemy database session.
         uuids_on_page: A list of UUID strings to look up.
+        profile_ids_on_page: Optional list of profile_id strings to also look up.
 
     Returns:
         A dictionary mapping UUIDs (uppercase) to their corresponding Person objects.
@@ -761,22 +766,39 @@ def _lookup_existing_persons(
     # Step 1: Initialize result map
     existing_persons_map: dict[str, Person] = {}
     # Step 2: Handle empty input list
-    if not uuids_on_page:
+    if not uuids_on_page and not profile_ids_on_page:
         return existing_persons_map
 
     # Step 3: Query the database
     try:
-        logger.debug(f"Querying DB for {len(uuids_on_page)} existing Person records...")
-        # Convert incoming UUIDs to uppercase for consistent matching
-        uuids_upper = {uuid_val.upper() for uuid_val in uuids_on_page}
+        # Convert incoming UUIDs and profile_ids to uppercase for consistent matching
+        uuids_upper = {uuid_val.upper() for uuid_val in uuids_on_page} if uuids_on_page else set()
+        profile_ids_upper = {pid.upper() for pid in profile_ids_on_page if pid} if profile_ids_on_page else set()
 
-        existing_persons = (
-            session.query(Person)
-            # Eager load related tables to avoid N+1 queries later
-            .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            # Filter by the list of uppercase UUIDs and exclude soft-deleted records
-            .filter(Person.uuid.in_(uuids_upper), Person.deleted_at.is_(None)).all()  # type: ignore
+        logger.debug(
+            f"Querying DB for existing Person records by UUID ({len(uuids_upper)}) "
+            f"and profile_id ({len(profile_ids_upper)})..."
         )
+
+        # Build query with OR condition for UUID or profile_id
+        query = session.query(Person).options(
+            joinedload(Person.dna_match), joinedload(Person.family_tree)
+        ).filter(Person.deleted_at.is_(None))  # type: ignore
+
+        # Add filters
+        filters = []
+        if uuids_upper:
+            filters.append(Person.uuid.in_(uuids_upper))  # type: ignore
+        if profile_ids_upper:
+            filters.append(Person.profile_id.in_(profile_ids_upper))  # type: ignore
+
+        if filters:
+            from sqlalchemy import or_
+            query = query.filter(or_(*filters))
+            existing_persons = query.all()
+        else:
+            existing_persons = []
+
         # Step 4: Populate the result map (key by UUID)
         existing_persons_map: dict[str, Person] = {
             str(person.uuid): person
@@ -1395,6 +1417,7 @@ def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> lis
     for p_data in person_creates_raw:
         profile_id = p_data.get("profile_id")
         uuid_for_log = p_data.get("uuid")
+        username_for_log = p_data.get("username", "Unknown")
 
         if profile_id is None:
             person_creates_filtered.append(p_data)
@@ -1402,11 +1425,15 @@ def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> lis
             person_creates_filtered.append(p_data)
             seen_profile_ids.add(profile_id)
         else:
-            logger.warning(f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log}).")
+            # Enhanced logging with profile_id, uuid, and username
+            logger.info(
+                f"⚠️  Duplicate profile_id detected in batch - "
+                f"ProfileID: {profile_id}, UUID: {uuid_for_log}, Username: '{username_for_log}'"
+            )
             skipped_duplicates += 1
 
     if skipped_duplicates > 0:
-        logger.info(f"Skipped {skipped_duplicates} duplicate person creates in this batch.")
+        logger.info(f"📊 Skipped {skipped_duplicates} duplicate person creates in this batch.")
     logger.debug(f"Proceeding with {len(person_creates_filtered)} unique person creates.")
 
     return person_creates_filtered
@@ -1418,10 +1445,20 @@ def _validate_no_duplicate_profile_ids(insert_data: list[dict[str, Any]]) -> Non
         item.get("profile_id") for item in insert_data if item.get("profile_id")
     }
     if len(final_profile_ids) != sum(1 for item in insert_data if item.get("profile_id")):
-        logger.error("CRITICAL: Duplicate non-NULL profile IDs DETECTED post-filter! Aborting bulk insert.")
+        logger.error("🚨 CRITICAL: Duplicate non-NULL profile IDs DETECTED post-filter! Aborting bulk insert.")
         id_counts = Counter(item.get("profile_id") for item in insert_data if item.get("profile_id"))
         duplicates = {pid: count for pid, count in id_counts.items() if count > 1}
-        logger.error(f"Duplicate Profile IDs in filtered list: {duplicates}")
+
+        # Enhanced logging: show profile_id, uuid, and username for each duplicate
+        for item in insert_data:
+            pid = item.get("profile_id")
+            if pid and pid in duplicates:
+                logger.error(
+                    f"  ⚠️  Duplicate entry - ProfileID: {pid}, "
+                    f"UUID: {item.get('uuid')}, Username: '{item.get('username', 'Unknown')}'"
+                )
+
+        logger.error(f"Duplicate Profile IDs summary: {duplicates}")
         dup_exception = ValueError(f"Duplicate profile IDs: {duplicates}")
         raise IntegrityError(
             "Duplicate profile IDs found pre-bulk insert",
@@ -1872,7 +1909,8 @@ def _execute_batch_pipeline(
     """Execute the data processing pipeline for a batch."""
     logger.debug(f"Batch {current_page}: Looking up existing persons...")
     uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-    existing_persons_map = _lookup_existing_persons(session, uuids_on_page)
+    profile_ids_on_page = [m.get("profile_id") for m in matches_on_page if m.get("profile_id")]
+    existing_persons_map = _lookup_existing_persons(session, uuids_on_page, profile_ids_on_page)
 
     logger.debug(f"Batch {current_page}: Identifying candidates...")
     fetch_candidates_uuid, matches_to_process_later, skipped_count = (
