@@ -415,12 +415,11 @@ class APIConfig:
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
-    # Concurrency (controls ThreadPoolExecutor workers in Action 6)
-    max_concurrency: int = 2  # Drastically reduced from 8 to 2 to prevent API rate limiting
-    # Based on working version c3b5535 (Aug 12, 2025) - 3 workers proven reliable
-    thread_pool_workers: int = 3  # OPTIMIZED: 3 workers at 0.4 RPS = 0.13 RPS per worker (safe)
-    # Note: Can be overridden via THREAD_POOL_WORKERS in .env
-    # Value of 3 proven reliable for sustained batch processing in working version
+    # Concurrency - REMOVED: Parallel processing eliminated for API safety
+    # Sequential processing only to prevent 429 rate limiting errors
+    # Previous parallel processing with ThreadPoolExecutor caused burst requests
+    # that triggered Ancestry API rate limits (72-second penalties per 429 error)
+    max_concurrency: int = 1  # Sequential processing only
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
@@ -1224,11 +1223,10 @@ def _test_rate_limiting_configuration() -> None:
     api_config = APIConfig()
 
     # Define validation rules as data structure to reduce complexity
-    # Updated for 2-worker optimized configuration (January 2025)
+    # Updated for sequential processing (October 2025)
     validation_rules = [
-        ("requests_per_second", lambda v: v > 1.0, "too high"),  # 0.8 RPS is safe for 2 workers
-        ("thread_pool_workers", lambda v: v > 4, "too high"),
-        ("max_concurrency", lambda v: v > 4, "too high"),
+        ("requests_per_second", lambda v: v > 1.0, "too high"),  # 0.3 RPS is safe for sequential processing
+        ("max_concurrency", lambda v: v > 1, "too high"),  # Sequential processing only
         ("burst_limit", lambda v: v > 4, "too high"),
         ("max_retries", lambda v: v < 5, "too low"),
         ("retry_backoff_factor", lambda v: v < 6.0, "too low"),

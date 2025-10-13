@@ -70,12 +70,14 @@ ruff check .
 ### Rate Limiting (CRITICAL - Zero Tolerance)
 ```python
 # utils.py RateLimiter - Thread-safe token bucket algorithm
-THREAD_POOL_WORKERS=1  # NEVER change without extensive validation
-REQUESTS_PER_SECOND=0.4  # Empirically validated (429 errors = 72-second penalties)
+# SEQUENTIAL PROCESSING ONLY - No parallel execution
+REQUESTS_PER_SECOND=0.3  # Conservative rate to prevent 429 errors (72-second penalties)
 ```
 - **RateLimiter** is instantiated ONCE by SessionManager, shared across all API calls
+- **Sequential Processing**: All API calls are made one at a time to prevent burst requests
+- Parallel processing (ThreadPoolExecutor) has been ELIMINATED to prevent 429 rate limiting
 - Recent fix (Oct 2025): Added `threading.Lock()` for thread safety - validated zero 429 errors
-- Changing worker count or RPS without 50+ page validation WILL break production
+- Changing RPS without 50+ page validation WILL break production
 - Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should return 0
 
 ### Database Schema (SQLAlchemy ORM)
@@ -133,18 +135,17 @@ if __name__ == "__main__":
 @dataclass
 class APISettings:
     max_pages: int = 1  # Processing limit
-    thread_pool_workers: int = 1  # CRITICAL: Do not change
-    requests_per_second: float = 0.4  # CRITICAL: Empirically validated
+    max_concurrency: int = 1  # Sequential processing only (no parallel execution)
+    requests_per_second: float = 0.3  # CRITICAL: Empirically validated
 ```
 - **ConfigManager** loads from `.env` → validates types → provides `config_schema` global
-- Always use `config.api.thread_pool_workers` not hardcoded values
+- **Sequential Processing Only**: Parallel execution has been eliminated for API safety
 - Changes to critical settings require `validate_rate_limiting.py` validation
 
 ### Environment Variables (`.env`)
 ```env
 # Never change without validation
-THREAD_POOL_WORKERS=1
-REQUESTS_PER_SECOND=0.4
+REQUESTS_PER_SECOND=0.3  # Sequential processing only
 
 # Safe to adjust for testing
 MAX_PAGES=1
@@ -427,8 +428,9 @@ _check_session_health_proactive(session_manager, current_page)
 
 ### 429 Rate Limit Errors
 - **Symptom**: "429 Too Many Requests" with 72-second backoff
-- **Solution**: Verify `THREAD_POOL_WORKERS=1` in `.env`, run `validate_rate_limiting.py`
-- **Never**: Increase workers without 50+ page validation showing zero 429s
+- **Solution**: Verify `REQUESTS_PER_SECOND=0.3` in `.env`, run `validate_rate_limiting.py`
+- **Note**: Sequential processing only - parallel execution has been eliminated
+- **Never**: Increase RPS without 50+ page validation showing zero 429s
 
 ### Session Not Ready Errors
 - **Symptom**: "Cannot perform action: Session not ready"
@@ -633,10 +635,11 @@ run_all_tests.py        # Test orchestrator with parallel execution
 6. **No Hardcoded Credentials**: All secrets in `.env` or encrypted via `credentials.py`
 
 ## Recent Critical Fixes (October 2025)
+- **Sequential Processing**: Eliminated ThreadPoolExecutor parallel processing to prevent 429 errors
 - **Rate Limiter Thread Safety**: Added `threading.Lock()` to DynamicRateLimiter (utils.py line 900)
 - **UUID Case Sensitivity**: Standardized all lookups to uppercase (action6_gather.py)
 - **Session Caching**: Added `session.expire_all()` after bulk inserts (action6_gather.py line 2780)
-- **Configuration Externalization**: Moved THREAD_POOL_WORKERS and REQUESTS_PER_SECOND to `.env`
+- **Configuration Simplification**: Removed THREAD_POOL_WORKERS, reduced REQUESTS_PER_SECOND to 0.3
 - **Checkpoint Logic**: Changed `start: int = 1` → `start: Optional[int] = None` for auto-resume (action6_gather.py line 2337)
 
 ## Questions to Ask When Unclear
