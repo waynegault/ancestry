@@ -740,20 +740,21 @@ def coord(  # type: ignore
 
 
 def _lookup_existing_persons(
-    session: SqlAlchemySession, uuids_on_page: list[str], profile_ids_on_page: Optional[list[str]] = None
+    session: SqlAlchemySession, uuids_on_page: list[str]
 ) -> dict[str, Person]:
     """
-    Queries the database for existing Person records based on UUIDs and/or profile_ids.
+    Queries the database for existing Person records based on UUIDs.
     Eager loads related DnaMatch and FamilyTree data for efficiency.
 
-    This prevents UNIQUE constraint violations by finding persons that match either UUID or profile_id.
-    If a person exists with the same profile_id but different UUID, we'll update them instead of
-    trying to insert a duplicate.
+    UUID is the primary lookup key because:
+    - Each UUID represents a unique DNA test kit
+    - UUID is always present in Action 6 (DNA match processing)
+    - Multiple records can share the same profile_id (as administrator_profile_id)
+    - But each UUID should only appear once in the database
 
     Args:
         session: The active SQLAlchemy database session.
         uuids_on_page: A list of UUID strings to look up.
-        profile_ids_on_page: Optional list of profile_id strings to also look up.
 
     Returns:
         A dictionary mapping UUIDs (uppercase) to their corresponding Person objects.
@@ -766,39 +767,22 @@ def _lookup_existing_persons(
     # Step 1: Initialize result map
     existing_persons_map: dict[str, Person] = {}
     # Step 2: Handle empty input list
-    if not uuids_on_page and not profile_ids_on_page:
+    if not uuids_on_page:
         return existing_persons_map
 
     # Step 3: Query the database
     try:
-        # Convert incoming UUIDs and profile_ids to uppercase for consistent matching
-        uuids_upper = {uuid_val.upper() for uuid_val in uuids_on_page} if uuids_on_page else set()
-        profile_ids_upper = {pid.upper() for pid in profile_ids_on_page if pid} if profile_ids_on_page else set()
+        logger.debug(f"Querying DB for {len(uuids_on_page)} existing Person records by UUID...")
+        # Convert incoming UUIDs to uppercase for consistent matching
+        uuids_upper = {uuid_val.upper() for uuid_val in uuids_on_page}
 
-        logger.debug(
-            f"Querying DB for existing Person records by UUID ({len(uuids_upper)}) "
-            f"and profile_id ({len(profile_ids_upper)})..."
+        existing_persons = (
+            session.query(Person)
+            # Eager load related tables to avoid N+1 queries later
+            .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
+            # Filter by the list of uppercase UUIDs and exclude soft-deleted records
+            .filter(Person.uuid.in_(uuids_upper), Person.deleted_at.is_(None)).all()  # type: ignore
         )
-
-        # Build query with OR condition for UUID or profile_id
-        query = session.query(Person).options(
-            joinedload(Person.dna_match), joinedload(Person.family_tree)
-        ).filter(Person.deleted_at.is_(None))  # type: ignore
-
-        # Add filters
-        filters = []
-        if uuids_upper:
-            filters.append(Person.uuid.in_(uuids_upper))  # type: ignore
-        if profile_ids_upper:
-            filters.append(Person.profile_id.in_(profile_ids_upper))  # type: ignore
-
-        if filters:
-            from sqlalchemy import or_
-            query = query.filter(or_(*filters))
-            existing_persons = query.all()
-        else:
-            existing_persons = []
-
         # Step 4: Populate the result map (key by UUID)
         existing_persons_map: dict[str, Person] = {
             str(person.uuid): person
@@ -1705,6 +1689,77 @@ def _create_master_person_id_map(
     return all_person_ids_map
 
 
+def _check_profile_id_collisions_with_db(
+    session: SqlAlchemySession, insert_data: list[dict[str, Any]]
+) -> set[str]:
+    """
+    Check if any profile_ids in insert_data already exist in the database.
+
+    Returns:
+        Set of profile_ids that already exist in the database
+    """
+    # Extract non-NULL profile_ids from insert data
+    profile_ids_to_insert = {
+        item.get("profile_id") for item in insert_data
+        if item.get("profile_id") is not None
+    }
+
+    if not profile_ids_to_insert:
+        return set()
+
+    # Query database for existing profile_ids
+    existing_profile_ids = session.query(Person.profile_id).filter(
+        Person.profile_id.in_(profile_ids_to_insert),  # type: ignore
+        Person.deleted_at.is_(None)  # type: ignore
+    ).all()
+
+    existing_set = {pid[0] for pid in existing_profile_ids if pid[0]}
+
+    if existing_set:
+        logger.warning(
+            f"⚠️  Found {len(existing_set)} profile_id(s) that already exist in database: {existing_set}"
+        )
+
+    return existing_set
+
+
+def _handle_profile_id_collisions(
+    insert_data: list[dict[str, Any]], existing_profile_ids: set[str]
+) -> list[dict[str, Any]]:
+    """
+    Handle profile_id collisions by setting conflicting profile_ids to NULL.
+
+    Strategy: If a profile_id already exists in the database, set it to NULL
+    and keep the administrator_profile_id. This preserves the relationship
+    while avoiding UNIQUE constraint violations.
+    """
+    if not existing_profile_ids:
+        return insert_data
+
+    modified_count = 0
+    for item in insert_data:
+        pid = item.get("profile_id")
+        if pid and pid in existing_profile_ids:
+            uuid_val = item.get("uuid")
+            username_val = item.get("username", "Unknown")
+            admin_pid = item.get("administrator_profile_id")
+
+            logger.info(
+                f"🔄 Profile_id collision detected - Setting to NULL: "
+                f"UUID={uuid_val}, profile_id={pid} → NULL, "
+                f"administrator_profile_id={admin_pid}, username='{username_val}'"
+            )
+
+            # Set profile_id to NULL to avoid collision
+            item["profile_id"] = None
+            modified_count += 1
+
+    if modified_count > 0:
+        logger.info(f"📊 Modified {modified_count} records to resolve profile_id collisions")
+
+    return insert_data
+
+
 def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: list[dict[str, Any]]) -> dict[str, int]:
     """Bulk insert Person records and return mapping of UUID to new Person ID."""
     created_person_map: dict[str, int] = {}
@@ -1726,7 +1781,12 @@ def _bulk_insert_persons(session: SqlAlchemySession, person_creates_filtered: li
         if "status" in item_data and isinstance(item_data["status"], PersonStatusEnum):
             item_data["status"] = item_data["status"].value
 
-    # Validate no duplicates
+    # Check for profile_id collisions with database
+    existing_profile_ids = _check_profile_id_collisions_with_db(session, insert_data)
+    if existing_profile_ids:
+        insert_data = _handle_profile_id_collisions(insert_data, existing_profile_ids)
+
+    # Validate no duplicates within batch
     _validate_no_duplicate_profile_ids(insert_data)
 
     # Perform bulk insert
@@ -1909,8 +1969,7 @@ def _execute_batch_pipeline(
     """Execute the data processing pipeline for a batch."""
     logger.debug(f"Batch {current_page}: Looking up existing persons...")
     uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-    profile_ids_on_page = [m.get("profile_id") for m in matches_on_page if m.get("profile_id")]
-    existing_persons_map = _lookup_existing_persons(session, uuids_on_page, profile_ids_on_page)
+    existing_persons_map = _lookup_existing_persons(session, uuids_on_page)
 
     logger.debug(f"Batch {current_page}: Identifying candidates...")
     fetch_candidates_uuid, matches_to_process_later, skipped_count = (
