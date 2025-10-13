@@ -59,64 +59,104 @@ def coord(session_manager: SessionManager, start: int = 1) -> bool:
 
 ---
 
-### Fix 2: Detect and Resolve profile_id Collisions ✅
+### Fix 2: Intelligent profile_id Collision Resolution ✅
 
 **Strategy:**
-When a profile_id already exists in the database, set it to NULL and preserve the administrator_profile_id relationship.
+Determine which record is the "true owner" of a profile_id and resolve collisions intelligently.
+
+**True Owner Criteria:**
+- `tester_profile_id == admin_profile_id` AND `tester_username == admin_username` (from API)
+- OR `administrator_profile_id` is NULL (self-managed test)
+- This indicates **SCENARIO A**: Member with their own test
+
+**Collision Resolution Logic:**
+1. **Existing record is true owner** → Set new record's profile_id to NULL
+2. **New record is true owner** → Keep new profile_id, warn about existing record
+3. **Ambiguous ownership** → Set new to NULL (conservative approach)
 
 **Implementation:**
 
-**Step 1: Check for collisions with database**
+**Step 1: Determine true ownership**
+```python
+def _is_true_profile_owner(item: dict[str, Any]) -> bool:
+    """
+    True owner: Member with their own test (self-managed)
+    - administrator_profile_id is NULL, OR
+    - profile_id == administrator_profile_id (from API data)
+    """
+    profile_id = item.get("profile_id")
+    admin_profile_id = item.get("administrator_profile_id")
+
+    if profile_id and not admin_profile_id:
+        return True  # Self-managed = true owner
+
+    return False
+```
+
+**Step 2: Check collisions with ownership info**
 ```python
 def _check_profile_id_collisions_with_db(
     session: SqlAlchemySession, insert_data: list[dict[str, Any]]
-) -> set[str]:
-    """Check if any profile_ids in insert_data already exist in the database."""
-    profile_ids_to_insert = {
-        item.get("profile_id") for item in insert_data
-        if item.get("profile_id") is not None
-    }
+) -> dict[str, dict[str, Any]]:
+    """
+    Returns: {profile_id: {"uuid": ..., "is_true_owner": ...}}
+    """
+    existing_persons = session.query(
+        Person.profile_id, Person.uuid, Person.username,
+        Person.administrator_profile_id
+    ).filter(...)
 
-    # Query database for existing profile_ids
-    existing_profile_ids = session.query(Person.profile_id).filter(
-        Person.profile_id.in_(profile_ids_to_insert),
-        Person.deleted_at.is_(None)
-    ).all()
-
-    return {pid[0] for pid in existing_profile_ids if pid[0]}
+    # Determine ownership for each existing record
+    for pid, uuid, username, admin_pid in existing_persons:
+        is_owner = (admin_pid is None) or (pid == admin_pid)
+        existing_map[pid] = {"uuid": uuid, "is_true_owner": is_owner}
 ```
 
-**Step 2: Resolve collisions by setting profile_id to NULL**
+**Step 3: Intelligent collision resolution**
 ```python
 def _handle_profile_id_collisions(
-    insert_data: list[dict[str, Any]], existing_profile_ids: set[str]
+    insert_data: list[dict[str, Any]],
+    existing_profile_map: dict[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Handle collisions by setting conflicting profile_ids to NULL."""
+    """Resolve based on ownership."""
     for item in insert_data:
-        pid = item.get("profile_id")
-        if pid and pid in existing_profile_ids:
-            logger.info(
-                f"🔄 Profile_id collision - Setting to NULL: "
-                f"UUID={item.get('uuid')}, profile_id={pid} → NULL, "
-                f"administrator_profile_id={item.get('administrator_profile_id')}"
-            )
+        existing_is_owner = existing_profile_map[pid]["is_true_owner"]
+        new_is_owner = _is_true_profile_owner(item)
+
+        if existing_is_owner and not new_is_owner:
+            # Existing wins - set new to NULL
             item["profile_id"] = None
-    return insert_data
+        elif new_is_owner and not existing_is_owner:
+            # New wins - keep profile_id, warn about existing
+            logger.warning("NEW record is true owner - keeping profile_id")
+        else:
+            # Ambiguous - be conservative
+            item["profile_id"] = None
 ```
 
-**Step 3: Apply before bulk insert**
-```python
-# Check for profile_id collisions with database
-existing_profile_ids = _check_profile_id_collisions_with_db(session, insert_data)
-if existing_profile_ids:
-    insert_data = _handle_profile_id_collisions(insert_data, existing_profile_ids)
+**Real Example (EC managed by TANEJ):**
+```json
+API Response:
+{
+  "userId": "026C2692-0006-0000-0000-000000000000",
+  "adminUcdmId": "026C2692-0006-0000-0000-000000000000",
+  "displayName": "E.C.",
+  "adminDisplayName": "TANEJ"
+}
+
+Result:
+- userId == adminUcdmId (both are TANEJ's profile_id)
+- displayName != adminDisplayName (EC vs TANEJ)
+- Therefore: profile_id = NULL, administrator_profile_id = TANEJ's ID
+- EC is NOT a member, TANEJ manages the test
 ```
 
 **Impact**:
 - Prevents UNIQUE constraint violations
-- Preserves data integrity (UUID and administrator_profile_id maintained)
-- Clear logging of all collision resolutions
-- No data loss - relationship preserved via administrator_profile_id
+- Correctly identifies true profile owners
+- Preserves data integrity based on ownership
+- Clear logging with ownership rationale
+- Handles edge cases (new owner vs existing owner)
 
 ---
 
@@ -242,18 +282,30 @@ MAX_PAGES=0  # Process all 802 pages
 8ba6ae6 - fix(action6): Fix timeout and database UNIQUE constraint errors
 ```
 
-### Commit 2: Correct collision handling (CURRENT)
+### Commit 2: Basic collision handling (SUPERSEDED)
 ```
 76b2926 - fix(action6): Correct profile_id collision handling
+```
 
-REVERTED incorrect profile_id lookup - UUID is the only valid lookup key
-ADDED proper collision detection and resolution for duplicate profile_ids
+### Commit 3: Intelligent collision resolution (CURRENT)
+```
+b30c2b1 - feat(action6): Intelligent profile_id collision resolution
 
-Collision Resolution Strategy:
-- Detect profile_ids that already exist in database
-- Set conflicting profile_ids to NULL
-- Preserve administrator_profile_id relationship
-- Log all modifications with full details
+Implement smart collision handling based on ownership determination:
+
+1. True Owner Detection:
+   - Member with own test: tester_profile_id == admin_profile_id AND usernames match
+   - Self-managed: administrator_profile_id is NULL
+
+2. Collision Resolution Strategy:
+   - If existing record is true owner: Set new record profile_id to NULL
+   - If new record is true owner: Keep new profile_id, warn about existing
+   - If ambiguous: Set new to NULL (conservative)
+
+3. Enhanced Logging:
+   - Show ownership status for both existing and new records
+   - Clear decision rationale for each collision
+   - Track modified vs kept counts
 ```
 
 ---

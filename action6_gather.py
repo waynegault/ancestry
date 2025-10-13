@@ -485,6 +485,19 @@ def _process_single_page_iteration(
     last_page_to_process: int
 ) -> tuple[bool, bool, Optional[list[dict[str, Any]]], int]:
     """Process a single page iteration in the main loop."""
+    # Proactive browser refresh every 10 pages to prevent crashes
+    if current_page_num > start_page and (current_page_num - start_page) % 10 == 0:
+        logger.info(f"🔄 Proactive browser refresh at page {current_page_num} (every 10 pages)")
+        try:
+            if hasattr(session_manager, 'perform_enhanced_proactive_refresh'):
+                session_manager.perform_enhanced_proactive_refresh()
+                logger.info("✅ Proactive browser refresh successful")
+            else:
+                logger.warning("⚠️  SessionManager does not have proactive refresh method")
+        except Exception as refresh_err:
+            logger.warning(f"⚠️  Proactive browser refresh failed: {refresh_err}")
+            # Continue anyway - session recovery will handle it if needed
+
     # Check session validity
     if not _check_session_validity(session_manager, current_page_num, state, progress_bar):
         return False, True, matches_on_page_for_batch, current_page_num
