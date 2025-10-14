@@ -1,19 +1,20 @@
-# Ancestry DNA Match Automation
+# Ancestry Genealogical Research Automation
 
-A comprehensive Python automation tool for managing Ancestry.com DNA matches, genealogical research, and family tree building.
+Comprehensive Python automation system for Ancestry.com genealogical research, featuring intelligent messaging, DNA match analysis, and family tree management.
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Quick Start](#quick-start)
 - [Features](#features)
 - [Recent Fixes & Improvements](#recent-fixes--improvements)
-- [Action 6: DNA Match Gathering](#action-6-dna-match-gathering)
-- [Installation](#installation)
+- [Architecture](#architecture)
+- [Actions](#actions)
 - [Configuration](#configuration)
-- [Usage](#usage)
 - [Testing](#testing)
+- [Development Guidelines](#development-guidelines)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
@@ -21,12 +22,51 @@ A comprehensive Python automation tool for managing Ancestry.com DNA matches, ge
 
 ## Overview
 
-This project automates the collection, analysis, and management of DNA matches from Ancestry.com. It provides tools for:
-- Gathering DNA match data via API and web scraping
-- Analyzing genealogical relationships
-- Managing family trees and GEDCOM files
-- Automated messaging to DNA matches
-- Research prioritization and tracking
+This project automates genealogical research workflows on Ancestry.com, including:
+- **Action 6**: Automated DNA match gathering and data collection
+- **Action 7**: Inbox message processing and analysis
+- **Action 8**: Intelligent messaging with AI-powered responses
+- **Action 9**: Productive conversation management
+- **Action 10**: GEDCOM file analysis and scoring
+- **Action 11**: API-based genealogical research and relationship discovery
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Python 3.12+
+- Google Chrome browser
+- Ancestry.com account with DNA test results
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/waynegault/ancestry.git
+cd ancestry
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your Ancestry credentials and API keys
+```
+
+### Running the Application
+
+```bash
+# Run main menu
+python main.py
+
+# Run specific action directly
+python action6_gather.py
+python action11.py
+
+# Run all tests
+python run_all_tests.py
+```
 
 ---
 
@@ -50,6 +90,7 @@ This project automates the collection, analysis, and management of DNA matches f
 - **Error Handling**: Comprehensive retry logic and graceful degradation
 - **Caching**: Multi-layer caching for API responses and computed data
 - **Logging**: Detailed debug logging with configurable levels
+- **AI Integration**: Multi-provider AI support (DeepSeek, Gemini)
 
 ---
 
@@ -157,35 +198,98 @@ MAX_PAGES=0
 
 ---
 
-## Installation
+## Architecture
 
-### Prerequisites
-- Python 3.11 or higher
-- Google Chrome browser
-- Ancestry.com account with DNA test results
+### Core Components
 
-### Setup
+```
+core/
+  session_manager.py    # Central coordinator with single RateLimiter
+  browser_manager.py    # WebDriver lifecycle management
+  api_manager.py        # REST API client
+  database_manager.py   # SQLAlchemy connection pooling
+  error_handling.py     # Exception hierarchy and retry logic
 
-1. **Clone the repository**:
-```bash
-git clone https://github.com/waynegault/ancestry.git
-cd ancestry
+config/
+  config_schema.py      # Type-safe configuration dataclasses
+  config_manager.py     # .env loading and validation
+
+utils.py                # RateLimiter, API helpers, navigation
+database.py             # SQLAlchemy ORM models
+ai_interface.py         # Multi-provider AI abstraction
 ```
 
-2. **Install dependencies**:
+### Rate Limiting (CRITICAL)
+
+**Single Rate Limiter Architecture:**
+- Class: `RateLimiter` in `utils.py`
+- Instance: `session_manager.rate_limiter`
+- Algorithm: Thread-safe token bucket
+- Configuration:
+  - Capacity: 10 tokens
+  - Fill rate: 2 tokens/second
+  - Thread-safe with `threading.Lock()`
+
+**DO NOT modify rate limiting settings without extensive validation!**
+- Changing `REQUESTS_PER_SECOND` can cause 429 errors
+- 429 errors result in 72-second penalties
+- Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should return 0
+
+### Database Schema
+
+SQLite database (`Data/ancestry.db`) with tables:
+- `people`: Person records with genealogical data
+- `messages`: Message history and AI responses
+- `conversations`: Conversation threads
+- `tasks`: Microsoft To-Do integration
+- `dna_matches`: DNA match data
+- `research_logs`: Research activity tracking
+
+---
+
+## Actions
+
+### Action 6: Page Gathering
+Automated data collection from Ancestry pages with sequential processing.
+
 ```bash
-pip install -r requirements.txt
+python action6_gather.py
 ```
 
-3. **Configure environment**:
+### Action 7: Inbox Processing
+Process and analyze inbox messages with AI classification.
+
 ```bash
-cp .env.example .env
-# Edit .env with your settings
+python action7_inbox.py
 ```
 
-4. **Set up credentials**:
-- Add Ancestry.com cookies to `ancestry_cookies.json`
-- Configure API credentials in `.env`
+### Action 8: Intelligent Messaging
+Send AI-powered messages to DNA matches with context awareness.
+
+```bash
+python action8_messaging.py
+```
+
+### Action 9: Productive Conversation Management
+Manage ongoing productive conversations with automated follow-ups.
+
+```bash
+python action9_process_productive.py
+```
+
+### Action 10: GEDCOM Analysis
+Analyze GEDCOM files and score potential matches.
+
+```bash
+python action10.py
+```
+
+### Action 11: API Research
+API-based genealogical research with relationship discovery.
+
+```bash
+python action11.py
+```
 
 ---
 
@@ -193,7 +297,13 @@ cp .env.example .env
 
 ### Environment Variables (.env)
 
+Create a `.env` file with the following required settings:
+
 ```bash
+# Ancestry Credentials
+ANCESTRY_USERNAME=your_username
+ANCESTRY_PASSWORD=your_password
+
 # Database
 DATABASE_FILE=Data/ancestry.db
 
@@ -201,18 +311,36 @@ DATABASE_FILE=Data/ancestry.db
 BASE_URL=https://www.ancestry.co.uk/
 API_TIMEOUT=30
 
-# Rate Limiting
+# Rate Limiting (CRITICAL - Do not change without validation)
 REQUESTS_PER_SECOND=0.3
 BASE_DELAY=1.0
 
-# Action 6 Settings
-MAX_PAGES=5
+# Processing Limits (Conservative defaults)
+MAX_PAGES=1
+MAX_INBOX=5
+MAX_PRODUCTIVE_TO_PROCESS=5
 BATCH_SIZE=5
+
+# Action 6 Settings
 ACTION6_COORD_TIMEOUT_SECONDS=14400  # 4 hours
+
+# Application Mode
+APP_MODE=development  # or 'production'
+DEBUG_MODE=false
 
 # Logging
 LOG_LEVEL=INFO
 LOG_FILE=Logs/app.log
+
+# AI Integration (Optional)
+DEEPSEEK_API_KEY=your_deepseek_key
+GOOGLE_API_KEY=your_google_key
+AI_PROVIDER=deepseek  # or 'gemini' or ''
+
+# Microsoft Graph (Optional - for To-Do integration)
+MS_CLIENT_ID=your_client_id
+MS_CLIENT_SECRET=your_client_secret
+MS_TENANT_ID=your_tenant_id
 ```
 
 ### Configuration Schema
@@ -221,41 +349,24 @@ The project uses Pydantic for configuration validation. See `config/config_schem
 
 ---
 
-## Usage
-
-### Running the Application
-
-```bash
-python main.py
-```
-
-### Main Menu Options
-
-1. **Check Login Status** - Verify Ancestry.com session
-2. **Reset Database** - Clean slate for testing
-3. **Backup Database** - Create backup before major operations
-4. **Action 6: Gather DNA Matches** - Main data collection
-5. **Action 7: Process Inbox** - Handle incoming messages
-6. **Action 8: Send Messages** - Automated outreach
-7. **Action 9: Process Productive Matches** - Analyze high-value matches
-8. **Action 10: GEDCOM Research** - Cross-reference with family tree
-9. **Action 11: API Research** - Genealogical research via API
-10. **Toggle Debug Logging** - Switch between INFO and DEBUG levels
+## Testing
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (57 modules, 457 tests)
 python run_all_tests.py
 
-# Run specific action tests
-python action6_gather.py  # Runs Action 6 tests
-python action11.py        # Runs Action 11 tests
+# Run with parallel execution
+python run_all_tests.py --fast
+
+# Run with log analysis
+python run_all_tests.py --analyze-logs
+
+# Run specific module tests
+python -m action6_gather
+python -m action11
 ```
-
----
-
-## Testing
 
 ### Test Framework
 
@@ -274,62 +385,6 @@ The project uses a custom test framework (`test_framework.py`) that provides:
 - **Database**: CRUD operations, soft delete, cleanup
 - **Session Management**: Browser lifecycle, recovery, validation
 
----
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. Browser Crashes
-**Symptom**: "invalid session id" errors
-**Solution**: Proactive browser refresh is now automatic (every 10 pages)
-
-#### 2. API Failures
-**Symptom**: 303 redirects or JSON decode errors
-**Solution**: Optional APIs now fail gracefully without crashing
-
-#### 3. Database Errors
-**Symptom**: UNIQUE constraint failed on profile_id
-**Solution**: Intelligent collision resolution now handles this automatically
-
-#### 4. Timeout Errors
-**Symptom**: Process stops after 5 minutes
-**Solution**: Config timeout is now 4 hours (configurable)
-
-### Debug Logging
-
-Enable debug logging from the main menu (Option 10) or set in `.env`:
-```bash
-LOG_LEVEL=DEBUG
-```
-
-### Log Files
-
-- **app.log**: Main application log (all modules)
-- Located in `Logs/` directory
-- Rotates automatically when large
-
----
-
-## Contributing
-
-### Development Workflow
-
-1. Create feature branch
-2. Make changes
-3. Run tests: `python run_all_tests.py`
-4. Fix any pylance errors
-5. Commit with descriptive message
-6. Create pull request
-
-### Code Quality
-
-- Follow DRY (Don't Repeat Yourself) principles
-- Use type hints for all functions
-- Add docstrings for public APIs
-- Keep functions under 50 lines when possible
-- Fix all pylance errors before committing
-
 ### Testing Requirements
 
 - All new features must have tests
@@ -339,17 +394,171 @@ LOG_LEVEL=DEBUG
 
 ---
 
-## License
+## Development Guidelines
 
-This project is private and not licensed for public use.
+### Code Quality
+- Follow DRY (Don't Repeat Yourself) principles
+- Use type hints for function signatures
+- Add docstrings to all public functions
+- Keep functions under 50 lines when possible
+
+### Testing
+- Write tests for all new functionality
+- Tests should fail when functionality fails (no fake passes)
+- Use `.env` test data for automated tests
+- Maintain 100% test pass rate
+
+### Rate Limiting
+- Never bypass the rate limiter
+- All API calls must go through `session_manager.rate_limiter`
+- Monitor logs for 429 errors
+- Validate changes with 50+ page runs
+
+### Git Workflow
+- Commit at each phase of implementation
+- Write descriptive commit messages
+- Test before committing
+- Revert if tests fail
 
 ---
 
-## Contact
+## Pylance Configuration
 
-**Author**: Wayne Gault
-**GitHub**: https://github.com/waynegault/ancestry
-**Email**: 39455578+waynegault@users.noreply.github.com
+The project uses **basic** type checking mode with strict exclusions to ensure stable, accurate error reporting.
+
+### Configuration Files
+
+**pyrightconfig.json**: Primary configuration
+- Type checking mode: `basic` (balances error detection with usability)
+- **Includes**: Only `*.py` and `**/*.py` files (explicit Python files only)
+- **Excludes**: `.git/**`, `__pycache__/**`, `.venv/**`, `Cache/**`, `Logs/**`, `Data/**`
+- **Ignore**: `.git` and `**/.git` (prevents analyzing git internals)
+- Silences false positives (unused variables, unreachable code, type inference limitations)
+- Keeps critical errors visible (undefined variables, import errors, etc.)
+
+**.vscode/settings.json**: Workspace settings
+- **CRITICAL**: `.git` is excluded (`"**/.git": true`) to prevent Pylance from analyzing git internals
+- File watching and search exclusions for performance
+- Markdown linting configuration
+
+**Note**: When `pyrightconfig.json` exists, `.vscode/settings.json` Python analysis settings are ignored.
+
+### Reloading Configuration
+
+**You MUST reload VS Code window for changes to take effect:**
+1. Press `Ctrl+Shift+P`
+2. Type "Developer: Reload Window"
+3. Press Enter
+
+**Expected result**: Stable error count showing only real issues (typically 10-20 errors)
+
+### Troubleshooting Pylance
+
+If you see thousands of errors or errors from `.git` files:
+1. Check that `.vscode/settings.json` has `"**/.git": true` (not `false`)
+2. Reload VS Code window (Ctrl+Shift+P → Developer: Reload Window)
+3. If errors persist, restart VS Code completely
+4. Clear Pylance cache: Delete `.vscode/.ropeproject` if it exists and reload
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**429 Rate Limit Errors:**
+- Check `REQUESTS_PER_SECOND=0.3` in `.env`
+- Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"`
+- Reduce processing limits if needed
+
+**Browser Crashes:**
+- **Symptom**: "invalid session id" errors
+- **Solution**: Proactive browser refresh is now automatic (every 10 pages)
+- Update Chrome to latest version
+- Check ChromeDriver compatibility
+
+**API Failures:**
+- **Symptom**: 303 redirects or JSON decode errors
+- **Solution**: Optional APIs now fail gracefully without crashing
+- Check session validity
+- Verify cookies are current
+
+**Database Errors:**
+- **Symptom**: UNIQUE constraint failed on profile_id
+- **Solution**: Intelligent collision resolution now handles this automatically
+- Backup database: `python main.py` → Option 3
+- Check file permissions on `Data/ancestry.db`
+
+**Timeout Errors:**
+- **Symptom**: Process stops after 5 minutes
+- **Solution**: Config timeout is now 4 hours (configurable)
+- Check `ACTION6_COORD_TIMEOUT_SECONDS` in `.env`
+
+**Import Errors:**
+- Verify Python 3.12+ is installed
+- Run `pip install -r requirements.txt`
+- Check virtual environment activation
+
+### Logs
+
+All logs are written to `Logs/app.log`:
+
+```bash
+# View recent errors
+tail -100 Logs/app.log | grep ERROR
+
+# Monitor real-time
+tail -f Logs/app.log
+
+# Check rate limiter initialization
+grep "Thread-safe RateLimiter" Logs/app.log | tail -1
+
+# Check for 429 errors
+Select-String -Path Logs\app.log -Pattern "429 error"
+```
+
+### Debug Logging
+
+Enable debug logging from the main menu (Option 10) or set in `.env`:
+
+```bash
+LOG_LEVEL=DEBUG
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make changes with tests
+4. Run `python run_all_tests.py`
+5. Fix any pylance errors
+6. Commit with descriptive message
+7. Submit pull request
+
+### Code Quality Requirements
+
+- Follow DRY (Don't Repeat Yourself) principles
+- Use type hints for all functions
+- Add docstrings for public APIs
+- Keep functions under 50 lines when possible
+- Fix all pylance errors before committing
+- Maintain 100% test pass rate
+
+---
+
+## License
+
+This project is for personal genealogical research use.
+
+---
+
+## Support
+
+For issues or questions:
+- **GitHub Issues**: <https://github.com/waynegault/ancestry/issues>
+- **Email**: <39455578+waynegault@users.noreply.github.com>
 
 ---
 
@@ -359,6 +568,7 @@ This project is private and not licensed for public use.
 - SQLAlchemy for excellent ORM capabilities
 - Selenium for browser automation
 - Cloudscraper for Cloudflare bypass
+- DeepSeek and Google Gemini for AI capabilities
 
 ---
 
