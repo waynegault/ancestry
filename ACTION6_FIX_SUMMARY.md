@@ -160,7 +160,54 @@ Result:
 
 ---
 
-### Fix 3: Enhanced Duplicate Logging ✅
+### Fix 3: Browser Session Recovery & Proactive Refresh ✅
+
+**Problem:**
+Browser crashes after ~30-40 minutes of runtime with error:
+```
+invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+```
+
+**Root Cause:**
+- Session recovery was being skipped: "⏭️ Skipping session recovery (not in long-running operation)"
+- `_should_attempt_recovery()` required `session_start_time` to be set
+- No proactive browser refresh to prevent crashes
+
+**Solution:**
+
+**Part 1: Enhanced Session Recovery**
+```python
+def _should_attempt_recovery(self) -> bool:
+    """Always attempt recovery if session was previously working."""
+    if not self.session_ready:
+        return False
+
+    # If session_start_time is not set, check if we have a driver
+    if not self.session_start_time:
+        return self.driver is not None
+
+    # For sessions running > 5 minutes, always attempt recovery
+    return time.time() - self.session_start_time > 300
+```
+
+**Part 2: Proactive Browser Refresh**
+```python
+# In _process_single_page_iteration()
+if current_page_num > start_page and (current_page_num - start_page) % 10 == 0:
+    logger.info(f"🔄 Proactive browser refresh at page {current_page_num}")
+    session_manager.perform_enhanced_proactive_refresh()
+```
+
+**Impact:**
+- ✅ Session recovery now works for all long-running operations
+- ✅ Browser refreshes every 10 pages to prevent crashes
+- ✅ Automatic recovery when browser becomes invalid
+- ✅ Graceful degradation if refresh fails
+
+---
+
+### Fix 4: Enhanced Duplicate Logging ✅
 
 **In-Batch Deduplication:**
 ```python
@@ -287,25 +334,31 @@ MAX_PAGES=0  # Process all 802 pages
 76b2926 - fix(action6): Correct profile_id collision handling
 ```
 
-### Commit 3: Intelligent collision resolution (CURRENT)
+### Commit 3: Intelligent collision resolution
 ```
 b30c2b1 - feat(action6): Intelligent profile_id collision resolution
+```
 
-Implement smart collision handling based on ownership determination:
+### Commit 4: Browser session recovery (CURRENT)
+```
+52f154b - feat(action6): Add browser session recovery and proactive refresh
 
-1. True Owner Detection:
-   - Member with own test: tester_profile_id == admin_profile_id AND usernames match
-   - Self-managed: administrator_profile_id is NULL
+Implement comprehensive browser stability improvements:
 
-2. Collision Resolution Strategy:
-   - If existing record is true owner: Set new record profile_id to NULL
-   - If new record is true owner: Keep new profile_id, warn about existing
-   - If ambiguous: Set new to NULL (conservative)
+1. Enhanced Session Recovery:
+   - Fixed _should_attempt_recovery() to work without session_start_time
+   - Always attempt recovery if session was previously working
+   - Critical for long-running operations like Action 6
 
-3. Enhanced Logging:
-   - Show ownership status for both existing and new records
-   - Clear decision rationale for each collision
-   - Track modified vs kept counts
+2. Proactive Browser Refresh:
+   - Refresh browser every 10 pages to prevent crashes
+   - Prevents 30-40 minute browser death issue
+   - Graceful degradation if refresh fails
+
+3. Better Error Handling:
+   - Session recovery now triggers for all long-running operations
+   - Continues processing even if proactive refresh fails
+   - Automatic recovery when browser becomes invalid
 ```
 
 ---

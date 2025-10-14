@@ -3541,11 +3541,12 @@ def _process_relationship_prob_response(
     try:
         data = response_rel.json()
     except json.JSONDecodeError as json_err:
-        logger.error(
-            f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}"
+        logger.warning(
+            f"{api_description}: OK ({response_rel.status_code}), but JSON decode FAILED: {json_err}. "
+            f"Skipping relationship probability for {sample_id_upper}."
         )
         logger.debug(f"Response text: {response_rel.text[:500]}")
-        raise RequestException("JSONDecodeError") from json_err
+        return None  # Don't raise - just skip this optional data
 
     if "matchProbabilityToSampleId" not in data:
         logger.warning(
@@ -4914,6 +4915,14 @@ def _fetch_batch_relationship_prob(
             f"<-- {api_description} Response Status: {response_rel.status_code} {response_rel.reason}"
         )
 
+        # Check for redirects (303, 301, 302, etc.) - API may have changed or session expired
+        if response_rel.status_code in (301, 302, 303, 307, 308):
+            logger.warning(
+                f"{api_description}: Received redirect ({response_rel.status_code}) for {sample_id_upper}. "
+                f"API endpoint may have changed or session expired. Skipping relationship probability."
+            )
+            return None
+
         if not response_rel.ok:
             status_code = response_rel.status_code
             logger.warning(
@@ -4930,28 +4939,30 @@ def _fetch_batch_relationship_prob(
                 response_rel, sample_id_upper, api_description, max_labels_param
             )
         except Exception as e:
-            logger.error(
-                f"{api_description}: Error processing successful response for {sample_id_upper}: {e}",
-                exc_info=True,
+            logger.warning(
+                f"{api_description}: Error processing response for {sample_id_upper}: {e}. "
+                f"Skipping relationship probability (optional data)."
             )
-            raise RequestException("Response Processing Error") from e
+            return None  # Don't raise - this is optional data
 
     except cloudscraper.exceptions.CloudflareException as cf_e:  # type: ignore
-        logger.error(
-            f"{api_description}: Cloudflare challenge failed for {sample_id_upper}: {cf_e}"
+        logger.warning(
+            f"{api_description}: Cloudflare challenge failed for {sample_id_upper}: {cf_e}. "
+            f"Skipping relationship probability (optional data)."
         )
-        raise
+        return None  # Don't raise - this is optional data
     except requests.exceptions.RequestException as req_e:
-        logger.error(
-            f"{api_description}: RequestException for {sample_id_upper}: {req_e}"
+        logger.warning(
+            f"{api_description}: RequestException for {sample_id_upper}: {req_e}. "
+            f"Skipping relationship probability (optional data)."
         )
-        raise
+        return None  # Don't raise - this is optional data
     except Exception as e:
-        logger.error(
-            f"{api_description}: Unexpected error for {sample_id_upper}: {type(e).__name__} - {e}",
-            exc_info=True,
+        logger.warning(
+            f"{api_description}: Unexpected error for {sample_id_upper}: {type(e).__name__} - {e}. "
+            f"Skipping relationship probability (optional data)."
         )
-        raise RequestException(f"Unexpected Fetch Error: {type(e).__name__}") from e
+        return None  # Don't raise - this is optional data
 
 
 # End of _fetch_batch_relationship_prob
