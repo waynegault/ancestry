@@ -638,6 +638,7 @@ class ConfigSchema:
     max_productive_to_process: int = 50
     max_inbox: int = 100
     person_refresh_days: int = 14  # Skip re-fetching person details if updated within this many days (0 = always fetch)
+    parallel_workers: int = 1  # Number of parallel workers for Action 6 match detail fetching (1=sequential, 2-3=parallel)
 
     # Tree search settings
     tree_search_method: str = "api"

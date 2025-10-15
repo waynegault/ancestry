@@ -88,6 +88,28 @@ class BrowserManager:
                 logger.error(
                     "WebDriver initialization failed (init_webdvr returned None)."
                 )
+                logger.error("=" * 80)
+                logger.error("BROWSER INITIALIZATION FAILED")
+                logger.error("=" * 80)
+                logger.error("Possible causes:")
+                logger.error("  1. Chrome is already running - close all Chrome instances")
+                logger.error("  2. Chrome profile is corrupted - delete/rename profile")
+                logger.error("  3. Chrome/ChromeDriver version mismatch")
+                logger.error("  4. Security software blocking Chrome")
+                logger.error("")
+                logger.error("Run diagnostics: python diagnose_chrome.py")
+                logger.error("=" * 80)
+                return False
+
+            # Verify browser is actually open
+            try:
+                _ = self.driver.current_url
+                logger.debug("Browser window verified as open")
+            except Exception as verify_err:
+                logger.error(f"Browser window closed immediately after initialization: {verify_err}")
+                logger.error("This indicates a critical Chrome/ChromeDriver issue")
+                logger.error("Run diagnostics: python diagnose_chrome.py")
+                self.close_browser()
                 return False
 
             logger.debug("WebDriver initialization successful.")
@@ -101,6 +123,7 @@ class BrowserManager:
                 logger.error(
                     f"Failed to navigate to base URL: {config_schema.api.base_url}"
                 )
+                logger.error("Browser may have closed during navigation")
                 self.close_browser()
                 return False
 

@@ -843,7 +843,7 @@ def fast_bidirectional_bfs(
     max_depth: int = 25,
     node_limit: int = 150000,
     timeout_sec: int = 45,
-    _log_progress: bool = False,  # noqa: ARG001 - Kept for API compatibility
+    _log_progress: bool = False,
 ) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
@@ -1357,7 +1357,7 @@ def _are_cousins(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
-    _id_to_children: dict[str, set[str]],  # noqa: ARG001 - Kept for API consistency
+    _id_to_children: dict[str, set[str]],
 ) -> bool:
     """Check if id1 and id2 are cousins (children of siblings)."""
     # Get parents of id1 and id2
@@ -1736,7 +1736,7 @@ def calculate_match_score(
     search_criteria: dict,
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    _name_flexibility: Optional[dict] = None,  # noqa: ARG001 - Kept for API consistency
+    _name_flexibility: Optional[dict] = None,
     date_flexibility: Optional[dict] = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """

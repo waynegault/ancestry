@@ -896,6 +896,13 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid MAX_INBOX value: {max_inbox_value}")
 
+        parallel_workers_value = os.getenv("PARALLEL_WORKERS")
+        if parallel_workers_value:
+            try:
+                config["parallel_workers"] = int(parallel_workers_value)
+            except ValueError:
+                logger.warning(f"Invalid PARALLEL_WORKERS value: {parallel_workers_value}")
+
     def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
         """Load logging configuration from environment variables."""
         logging_config = {}

@@ -276,12 +276,46 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
         minimal_options.add_argument("--disable-dev-shm-usage")
         driver = uc.Chrome(options=minimal_options)
 
+        # Verify driver is valid before proceeding
+        if not driver:
+            logger.error("[init_webdvr] Driver creation returned None")
+            return None
+
+        # Check if browser window is actually open
+        try:
+            _ = driver.current_url  # This will fail if window is closed
+            logger.debug("[init_webdvr] Browser window verified as open")
+        except Exception as verify_err:
+            logger.error(f"[init_webdvr] Browser window closed immediately after creation: {verify_err}")
+            logger.error("[init_webdvr] This may indicate:")
+            logger.error("  - Chrome profile corruption (try deleting profile)")
+            logger.error("  - Multiple Chrome instances running (close all Chrome)")
+            logger.error("  - Chrome/ChromeDriver version mismatch")
+            logger.error("  - Security software blocking Chrome")
+            logger.error("  Run 'python diagnose_chrome.py' for detailed diagnostics")
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            return None
+
         # Minimize window immediately after creation
         try:
             driver.minimize_window()
             logger.debug("Browser window minimized after initialization")
         except Exception as min_err:
-            logger.debug(f"Could not minimize window (non-critical): {min_err}")
+            # Check if window is still open
+            try:
+                _ = driver.current_url
+                logger.debug(f"Could not minimize window (non-critical): {min_err}")
+            except Exception:
+                logger.error(f"Browser window closed during minimize attempt: {min_err}")
+                logger.error("Run 'python diagnose_chrome.py' for detailed diagnostics")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                return None
 
         elapsed = time.time() - start_time
         logger.info(f"Chrome WebDriver initialization succeeded in {elapsed:.2f}s (attempt {attempt_num})")
@@ -296,6 +330,7 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
             logger.debug(f"Full error details: {chrome_exc}", exc_info=True)
 
         print(f"  ✗ ChromeDriver initialization failed (attempt {attempt_num})", flush=True)
+        print(f"  ℹ Run 'python diagnose_chrome.py' for detailed diagnostics", flush=True)
         return None
 
 

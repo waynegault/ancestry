@@ -247,7 +247,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:  # noqa: ARG001 - Used in core/browser_manager.py
+def _load_login_cookies(session_manager: SessionManager) -> bool:
     """Load saved login cookies from file."""
     try:
         if not session_manager.driver:
@@ -892,6 +892,22 @@ class RateLimiter:
         # Thread safety for parallel API calls
         self._lock = threading.Lock()
 
+        # Metrics tracking
+        self._metrics = {
+            'total_requests': 0,
+            'total_wait_time': 0.0,
+            'token_bucket_empty_count': 0,
+            'delay_increases': 0,
+            'delay_decreases': 0,
+            'error_429_count': 0,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'max_wait_time': 0.0,
+            'min_wait_time': float('inf'),
+            'start_time': time.time(),
+        }
+        self._metrics_lock = threading.Lock()
+
         # Load rate limiting settings if they exist
         self._load_rate_limiting_settings()
 
@@ -959,6 +975,7 @@ class RateLimiter:
             self._refill_tokens()
             # requested_at = time.monotonic() # Less critical now
             sleep_duration = 0.0
+            bucket_was_empty = False
 
             if self.tokens >= 1.0:
                 self.tokens -= 1.0
@@ -972,6 +989,7 @@ class RateLimiter:
                 )
             else:
                 # Token bucket empty, wait for a token to generate
+                bucket_was_empty = True
                 wait_needed = (1.0 - self.tokens) / self.fill_rate
                 jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
                 sleep_duration = wait_needed + jitter_amount
@@ -989,6 +1007,9 @@ class RateLimiter:
 
             # Refill again *after* sleeping
             self._refill_tokens()
+
+            # Update metrics
+            self._update_metrics(sleep_duration, bucket_was_empty)
 
             return sleep_duration
 
@@ -1021,9 +1042,15 @@ class RateLimiter:
                     logger.debug(
                         f"Decreased base delay component to {self.current_delay:.2f}s"
                     )
+                    # Track metric
+                    with self._metrics_lock:
+                        self._metrics['delay_decreases'] += 1
                 # End of if
             # End of if
             self.last_throttled = False  # Reset flag after successful operation
+            # Track successful request
+            with self._metrics_lock:
+                self._metrics['successful_requests'] += 1
 
     # End of decrease_delay
 
@@ -1046,6 +1073,11 @@ class RateLimiter:
                 )
             # End of if/else
             self.last_throttled = True
+            # Track metrics
+            with self._metrics_lock:
+                self._metrics['delay_increases'] += 1
+                self._metrics['error_429_count'] += 1
+                self._metrics['failed_requests'] += 1
 
     # End of increase_delay
 
@@ -1053,6 +1085,116 @@ class RateLimiter:
         return self.last_throttled
 
     # End of is_throttled
+
+    def _update_metrics(self, wait_time: float, bucket_was_empty: bool) -> None:
+        """Update internal metrics tracking."""
+        with self._metrics_lock:
+            self._metrics['total_requests'] += 1
+            self._metrics['total_wait_time'] += wait_time
+            if bucket_was_empty:
+                self._metrics['token_bucket_empty_count'] += 1
+            self._metrics['max_wait_time'] = max(wait_time, self._metrics['max_wait_time'])
+            self._metrics['min_wait_time'] = min(wait_time, self._metrics['min_wait_time'])
+
+    # End of _update_metrics
+
+    def get_metrics(self) -> dict:
+        """
+        Get current rate limiter metrics.
+
+        Returns:
+            Dictionary containing:
+            - total_requests: Total number of API requests made
+            - total_wait_time: Total time spent waiting (seconds)
+            - avg_wait_time: Average wait time per request (seconds)
+            - token_bucket_empty_count: Number of times bucket was empty
+            - delay_increases: Number of times delay was increased (429 errors)
+            - delay_decreases: Number of times delay was decreased (successful requests)
+            - error_429_count: Total 429 errors encountered
+            - successful_requests: Total successful requests
+            - failed_requests: Total failed requests
+            - max_wait_time: Maximum wait time for a single request
+            - min_wait_time: Minimum wait time for a single request
+            - uptime_seconds: Time since rate limiter was created
+            - current_delay: Current base delay setting
+            - requests_per_second: Configured RPS limit
+            - effective_rps: Actual requests per second achieved
+        """
+        with self._metrics_lock:
+            metrics = self._metrics.copy()
+
+        # Calculate derived metrics
+        uptime = time.time() - metrics['start_time']
+        metrics['uptime_seconds'] = uptime
+        metrics['avg_wait_time'] = (
+            metrics['total_wait_time'] / metrics['total_requests']
+            if metrics['total_requests'] > 0
+            else 0.0
+        )
+        metrics['effective_rps'] = (
+            metrics['total_requests'] / uptime
+            if uptime > 0
+            else 0.0
+        )
+        metrics['current_delay'] = self.current_delay
+        metrics['requests_per_second'] = self.fill_rate
+
+        # Handle min_wait_time infinity case
+        if metrics['min_wait_time'] == float('inf'):
+            metrics['min_wait_time'] = 0.0
+
+        return metrics
+
+    # End of get_metrics
+
+    def print_metrics_summary(self) -> None:
+        """Print a formatted summary of rate limiter metrics."""
+        metrics = self.get_metrics()
+
+        logger.info("=" * 80)
+        logger.info("RATE LIMITER METRICS SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"Total Requests:        {metrics['total_requests']}")
+        logger.info(f"Successful Requests:   {metrics['successful_requests']}")
+        logger.info(f"Failed Requests:       {metrics['failed_requests']}")
+        logger.info(f"429 Errors:            {metrics['error_429_count']}")
+        logger.info("")
+        logger.info(f"Total Wait Time:       {metrics['total_wait_time']:.2f}s")
+        logger.info(f"Average Wait Time:     {metrics['avg_wait_time']:.3f}s")
+        logger.info(f"Max Wait Time:         {metrics['max_wait_time']:.3f}s")
+        logger.info(f"Min Wait Time:         {metrics['min_wait_time']:.3f}s")
+        logger.info("")
+        logger.info(f"Token Bucket Empty:    {metrics['token_bucket_empty_count']} times")
+        logger.info(f"Delay Increases:       {metrics['delay_increases']}")
+        logger.info(f"Delay Decreases:       {metrics['delay_decreases']}")
+        logger.info("")
+        logger.info(f"Configured RPS:        {metrics['requests_per_second']:.2f}/s")
+        logger.info(f"Effective RPS:         {metrics['effective_rps']:.2f}/s")
+        logger.info(f"Current Delay:         {metrics['current_delay']:.3f}s")
+        logger.info(f"Uptime:                {metrics['uptime_seconds']:.1f}s")
+        logger.info("=" * 80)
+
+    # End of print_metrics_summary
+
+    def reset_metrics(self) -> None:
+        """Reset all metrics counters."""
+        with self._metrics_lock:
+            self._metrics = {
+                'total_requests': 0,
+                'total_wait_time': 0.0,
+                'token_bucket_empty_count': 0,
+                'delay_increases': 0,
+                'delay_decreases': 0,
+                'error_429_count': 0,
+                'successful_requests': 0,
+                'failed_requests': 0,
+                'max_wait_time': 0.0,
+                'min_wait_time': float('inf'),
+                'start_time': time.time(),
+            }
+        logger.info("Rate limiter metrics reset")
+
+    # End of reset_metrics
 
 # End of RateLimiter class
 
