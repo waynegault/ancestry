@@ -20,7 +20,7 @@ import json
 import random
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urljoin, unquote
+from urllib.parse import unquote, urljoin
 
 # === THIRD-PARTY IMPORTS ===
 from tqdm.auto import tqdm
@@ -29,7 +29,7 @@ from tqdm.auto import tqdm
 from config import config_schema
 from core.database_manager import DatabaseManager
 from core.session_manager import SessionManager
-from database import create_or_update_person, create_or_update_dna_match, create_or_update_family_tree
+from database import create_or_update_dna_match, create_or_update_family_tree, create_or_update_person
 from dna_utils import (
     fetch_in_tree_status,
     fetch_match_list_page,
@@ -39,7 +39,7 @@ from dna_utils import (
 from utils import _api_req, format_name
 
 
-def coord(session_manager: SessionManager, start: int = 1):
+def coord(session_manager: SessionManager, start: int = 1):  # noqa: ARG001
     """Main entry point for Action 6: DNA Match Gatherer (start parameter ignored, always starts from page 1)."""
     logger.info("=" * 80)
     logger.info("Action 6: DNA Match Gatherer")
@@ -51,15 +51,15 @@ def coord(session_manager: SessionManager, start: int = 1):
     batch_size = config_schema.batch_size
 
     logger.info(f"Configuration: MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}")
-    
+
     # Get my_uuid and my_tree_id
     my_uuid = session_manager.my_uuid
     my_tree_id = session_manager.my_tree_id
-    
+
     if not my_uuid:
         logger.error("Cannot proceed: my_uuid is not set")
-        return
-    
+        return None
+
     logger.info(f"My UUID: {my_uuid}")
     logger.info(f"My Tree ID: {my_tree_id}")
 
@@ -67,14 +67,14 @@ def coord(session_manager: SessionManager, start: int = 1):
     logger.info("Navigating to DNA matches page...")
     if not nav_to_dna_matches_page(session_manager):
         logger.error("Failed to navigate to DNA matches page")
-        return
+        return None
 
     # Get CSRF token
     driver = session_manager.driver
     csrf_token = get_csrf_token_for_dna_matches(driver)
     if not csrf_token:
         logger.error("Failed to get CSRF token")
-        return
+        return None
 
     # Process pages
     total_new = 0
@@ -111,32 +111,32 @@ def coord(session_manager: SessionManager, start: int = 1):
 
         # Refine matches
         matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
-        
+
         if not matches:
             logger.warning(f"No matches found on page {page_num}")
             continue
-        
+
         logger.info(f"Found {len(matches)} matches on page {page_num}")
-        
+
         # Process matches in batches
         for batch_start in range(0, len(matches), batch_size):
             batch_end = min(batch_start + batch_size, len(matches))
             batch = matches[batch_start:batch_end]
-            
+
             logger.info(f"\n--- Batch {batch_start//batch_size + 1}: Processing matches {batch_start+1}-{batch_end} ---")
-            
+
             # Process batch
             new, updated, skipped, errors = _process_batch(
                 batch, session_manager, db_manager, my_uuid, my_tree_id
             )
-            
+
             total_new += new
             total_updated += updated
             total_skipped += skipped
             total_errors += errors
-            
+
             logger.info(f"Batch complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
-    
+
     # Final summary
     logger.info(f"\n{'='*80}")
     logger.info("FINAL SUMMARY")
@@ -167,38 +167,38 @@ def _refine_match_from_list_api(match_data: dict, my_uuid: str, in_tree_ids: set
         sample_id = match_data.get("sampleId", "").upper()
         if not sample_id:
             return None
-        
+
         profile_info = match_data.get("matchProfile", {})
         relationship_info = match_data.get("relationship", {})
-        
+
         profile_id = profile_info.get("userId", "").upper() if profile_info.get("userId") else None
         raw_display_name = profile_info.get("displayName")
         username = format_name(raw_display_name) if raw_display_name else "Unknown"
-        
+
         # Extract first name
         first_name = None
         if username and username != "Valued Relative":
             name_parts = username.strip().split()
             if name_parts:
                 first_name = name_parts[0]
-        
+
         # Extract DNA data
         shared_cm = int(relationship_info.get("sharedCentimorgans", 0))
         shared_segments = int(relationship_info.get("numSharedSegments", 0))
-        
+
         # Build links
         compare_link = urljoin(
             config_schema.api.base_url,
             f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id}"
         )
-        
+
         message_link = None
         if profile_id:
             message_link = urljoin(
                 config_schema.api.base_url,
                 f"messaging/?p={profile_id}"
             )
-        
+
         return {
             "uuid": sample_id,
             "profile_id": profile_id,
@@ -213,7 +213,7 @@ def _refine_match_from_list_api(match_data: dict, my_uuid: str, in_tree_ids: set
             "administrator_profile_id": match_data.get("adminId"),
             "administrator_username": match_data.get("adminName"),
         }
-    
+
     except Exception as e:
         logger.error(f"Error refining match: {e}")
         return None
@@ -233,6 +233,9 @@ def _process_batch(
     error_count = 0
 
     session = db_manager.get_session()
+    if not session:
+        logger.error("Failed to get database session")
+        return new_count, updated_count, skipped_count, error_count
 
     try:
         for match in tqdm(batch, desc="Processing matches", leave=False):
@@ -291,7 +294,7 @@ def _process_batch(
 
         # Commit all changes
         session.commit()
-        logger.info(f"Batch committed successfully")
+        logger.info("Batch committed successfully")
 
     except Exception as e:
         logger.error(f"Error committing batch: {e}")
@@ -309,8 +312,9 @@ def _should_skip_person_refresh(session, person_id: int) -> bool:
     Check if person was recently updated and should skip detail refresh.
     Returns True if person was updated within PERSON_REFRESH_DAYS, False otherwise.
     """
+    from datetime import datetime, timedelta, timezone
+
     from database import Person
-    from datetime import datetime, timezone, timedelta
 
     # Get refresh threshold from config
     refresh_days = config_schema.person_refresh_days
@@ -375,9 +379,8 @@ def _save_person_with_status(session, match: dict) -> tuple[Optional[int], str]:
     if person:
         logger.debug(f"Person {status} with ID {person.id} for UUID {match['uuid']}")
         return person.id, status
-    else:
-        logger.error(f"Failed to create/update person for UUID {match['uuid']}")
-        return None, "error"
+    logger.error(f"Failed to create/update person for UUID {match['uuid']}")
+    return None, "error"
 
 
 def _update_person(session, person_id: int, profile_details: dict, badge_details: dict, match_details: dict) -> bool:
@@ -485,7 +488,7 @@ def _fetch_match_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:
+def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # noqa: ARG001
     """Fetch profile details from Profile Details API."""
     url = urljoin(
         config_schema.api.base_url,
@@ -783,11 +786,10 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
                     path_part = f"{name} {lifespan} ({relationship})"
                 else:
                     path_part = f"{name} {lifespan}"
+            elif relationship:
+                path_part = f"{name} ({relationship})"
             else:
-                if relationship:
-                    path_part = f"{name} ({relationship})"
-                else:
-                    path_part = name
+                path_part = name
 
             path_parts.append(path_part)
             logger.debug(f"  Person[{idx}]: {path_part}")

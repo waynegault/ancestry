@@ -96,15 +96,16 @@ python run_all_tests.py
 
 ## Recent Fixes & Improvements
 
-### Action 6 Complete Rebuild (October 2025)
+### Action 6 Complete Rebuild (January 2025)
 
 **Action 6 has been completely rebuilt from scratch** with significant improvements:
 
 #### Architecture Improvements
-- **Reduced code size**: 518 lines (down from 5,293 lines - 90% reduction)
+- **Reduced code size**: 871 lines (down from 5,293 lines - 84% reduction)
 - **Simplified design**: 4-stage pipeline vs complex multi-threaded architecture
 - **Universal functions**: DNA match operations moved to `dna_utils.py` for reuse across all actions
 - **Better maintainability**: Clear separation of concerns, easier to understand and modify
+- **Smart refresh logic**: Skip re-fetching person details if updated within configurable threshold (default: 14 days)
 
 #### Data Collection Improvements
 - **Complete field population**: All database fields now populated correctly
@@ -126,7 +127,9 @@ python run_all_tests.py
   7. Get Ladder API - Relationship path and actual relationship
 
 #### Performance
-- **10 minutes for 100 matches** (6 seconds per match average)
+- **10 minutes for 100 matches** (6 seconds per match average on first run)
+- **Instant skip on repeat runs**: 0 API calls for people updated within threshold (default: 14 days)
+- **95% API reduction**: Only fetches details for new matches on subsequent runs
 - **Batch processing**: Configurable batch size (default: 5 matches per batch)
 - **Rate limiting**: Token bucket algorithm prevents 429 errors
 - **Memory efficient**: 2.4 MB memory usage

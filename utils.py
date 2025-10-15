@@ -247,7 +247,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:  # type: ignore[unused-function] - Used in core/browser_manager.py
+def _load_login_cookies(session_manager: SessionManager) -> bool:  # noqa: ARG001 - Used in core/browser_manager.py
     """Load saved login cookies from file."""
     try:
         if not session_manager.driver:

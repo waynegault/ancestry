@@ -131,7 +131,7 @@ class APIManager:
                     # Prefer domain without leading dot (more specific)
                     if domain.startswith(".") and not existing_domain.startswith("."):
                         continue  # Keep existing (more specific)
-                    elif not domain.startswith(".") and existing_domain.startswith("."):
+                    if not domain.startswith(".") and existing_domain.startswith("."):
                         unique_cookies[key] = cookie  # Replace with more specific
                     else:
                         unique_cookies[key] = cookie  # Keep last one

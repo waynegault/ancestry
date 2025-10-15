@@ -37,7 +37,6 @@ from my_selectors import MATCH_ENTRY_SELECTOR
 from selenium_utils import get_driver_cookies
 from utils import _api_req, nav_to_page
 
-
 # ============================================================================
 # NAVIGATION FUNCTIONS
 # ============================================================================
@@ -91,7 +90,7 @@ def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
             logger.warning(f"Could not verify final URL after navigation: {e}")
     else:
         logger.error("Failed to navigate to DNA matches page.")
-    
+
     return success
 
 
@@ -302,7 +301,7 @@ def _fetch_in_tree_from_api(
         in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
         logger.debug(f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}.")
         return in_tree_ids
-    
+
     status_code_log = (
         f" Status: {response_in_tree.status_code}"  # type: ignore
         if isinstance(response_in_tree, requests.Response)
