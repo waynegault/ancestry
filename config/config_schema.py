@@ -435,6 +435,7 @@ class APIConfig:
     # Tree settings
     tree_name: Optional[str] = None
     tree_id: Optional[str] = None
+    my_user_id: Optional[str] = None  # User profile ID for API calls
 
     # Fields with default_factory must come last
     # User agents list for rotation
@@ -636,6 +637,7 @@ class ConfigSchema:
     matches_per_page: int = 20  # Number of matches displayed per page by Ancestry
     max_productive_to_process: int = 50
     max_inbox: int = 100
+    person_refresh_days: int = 14  # Skip re-fetching person details if updated within this many days (0 = always fetch)
 
     # Tree search settings
     tree_search_method: str = "api"

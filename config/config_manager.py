@@ -851,6 +851,7 @@ class ConfigManager:
         self._set_string_config(config, "api", "api_base_url", "API_BASE_URL")
         self._set_string_config(config, "api", "tree_name", "TREE_NAME")
         self._set_string_config(config, "api", "tree_id", "TREE_ID")
+        self._set_string_config(config, "api", "my_user_id", "MY_PROFILE_ID")
 
         # Integer configurations
         self._set_int_config(config, "api", "request_timeout", "REQUEST_TIMEOUT")

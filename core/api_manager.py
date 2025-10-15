@@ -111,11 +111,35 @@ class APIManager:
                 f"Retrieved {len(driver_cookies)} cookies from browser for API sync."
             )
 
-            # Clear existing cookies
+            # Clear existing cookies to prevent duplicates
             self._requests_session.cookies.clear()
 
-            # Add each cookie to requests session
+            # Deduplicate cookies by (name, path) only - ignore domain differences
+            # Prefer cookies with more specific domains (without leading dot)
+            # This prevents duplicate cookie errors when browser has multiple cookies with same name
+            unique_cookies = {}
             for cookie in driver_cookies:
+                name = cookie["name"]
+                path = cookie.get("path", "/")
+                domain = cookie.get("domain", "")
+
+                key = (name, path)
+
+                # If we already have this cookie, prefer the one with more specific domain
+                if key in unique_cookies:
+                    existing_domain = unique_cookies[key].get("domain", "")
+                    # Prefer domain without leading dot (more specific)
+                    if domain.startswith(".") and not existing_domain.startswith("."):
+                        continue  # Keep existing (more specific)
+                    elif not domain.startswith(".") and existing_domain.startswith("."):
+                        unique_cookies[key] = cookie  # Replace with more specific
+                    else:
+                        unique_cookies[key] = cookie  # Keep last one
+                else:
+                    unique_cookies[key] = cookie
+
+            # Add each unique cookie to requests session
+            for cookie in unique_cookies.values():
                 self._requests_session.cookies.set(
                     cookie["name"],
                     cookie["value"],
@@ -125,7 +149,7 @@ class APIManager:
                 )
 
             logger.debug(
-                f"Synced {len(driver_cookies)} cookies to API requests session."
+                f"Synced {len(unique_cookies)} unique cookies to API requests session (from {len(driver_cookies)} browser cookies)."
             )
             return True
 

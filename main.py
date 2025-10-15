@@ -304,7 +304,8 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     if required_state == "driver_ready":
         return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
     if required_state == "session_ready":
-        skip_csrf = (choice == "11")
+        # Skip CSRF check for Action 11 (cookies available after navigation)
+        skip_csrf = (choice in ["11"])
         return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
     return True
 
@@ -1146,6 +1147,9 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Any] =
 # End of coord_action
 
 
+
+
+
 # Action 7 (srch_inbox_actn)
 def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
@@ -1572,6 +1576,7 @@ def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> b
         exec_actn(check_login_actn, session_manager, choice)
         result = True
     elif choice.startswith("6"):
+        # Action 6 - DNA match gathering (with optional start page)
         result = _handle_action6_with_start_page(choice, session_manager, config)
     elif choice == "7":
         exec_actn(srch_inbox_actn, session_manager, choice)

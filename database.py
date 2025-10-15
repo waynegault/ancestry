@@ -1322,6 +1322,11 @@ def _compare_field_values_with_context(key: str, current_value: Any, new_value: 
     if isinstance(current_value, bool) or isinstance(new_value, bool):
         return _compare_boolean_field(current_value, new_value)
 
+    # NEVER update a field to None if it currently has a value
+    # (fields that will be updated later should not be cleared)
+    if current_value is not None and new_value is None:
+        return False, current_value
+
     # Standard comparison
     if current_value != new_value:
         return True, new_value
@@ -1330,21 +1335,37 @@ def _compare_field_values_with_context(key: str, current_value: Any, new_value: 
 
 
 def _prepare_person_update_fields(person_data: dict[str, Any], profile_id_val: Optional[str], username_val: str) -> dict[str, Any]:
-    """Prepare fields to update for a person."""
-    return {
+    """
+    Prepare fields to update for a person.
+    Excludes None values for fields that will be updated later by additional API calls.
+    """
+    fields = {
         "profile_id": profile_id_val,
         "username": username_val,
-        "administrator_profile_id": person_data.get("administrator_profile_id", "").upper() if person_data.get("administrator_profile_id") else None,
-        "administrator_username": person_data.get("administrator_username"),
         "message_link": person_data.get("message_link"),
         "in_my_tree": bool(person_data.get("in_my_tree", False)),
         "first_name": person_data.get("first_name"),
-        "gender": person_data.get("gender"),
-        "birth_year": person_data.get("birth_year"),
-        "contactable": bool(person_data.get("contactable", True)),
-        "last_logged_in": person_data.get("last_logged_in"),
-        "status": person_data.get("status"),
     }
+
+    # Only include these fields if they have non-None values
+    # (they will be updated later by _update_person if needed)
+    if person_data.get("administrator_profile_id"):
+        fields["administrator_profile_id"] = person_data["administrator_profile_id"].upper()
+    if person_data.get("administrator_username"):
+        fields["administrator_username"] = person_data["administrator_username"]
+    if person_data.get("gender"):
+        fields["gender"] = person_data["gender"]
+    if person_data.get("birth_year"):
+        fields["birth_year"] = person_data["birth_year"]
+    if person_data.get("last_logged_in"):
+        fields["last_logged_in"] = person_data["last_logged_in"]
+    if person_data.get("status"):
+        fields["status"] = person_data["status"]
+
+    # contactable defaults to True, so always include it
+    fields["contactable"] = bool(person_data.get("contactable", True))
+
+    return fields
 
 
 def _update_person_fields(existing_person: Person, fields_to_update: dict[str, Any], log_ref: str) -> bool:
@@ -1356,6 +1377,7 @@ def _update_person_fields(existing_person: Person, fields_to_update: dict[str, A
         value_changed, value_to_set = _compare_field_values_with_context(key, current_value, new_value, log_ref)
 
         if value_changed:
+            logger.debug(f"{log_ref}: Field '{key}' changed: {current_value!r} -> {value_to_set!r}")
             setattr(existing_person, key, value_to_set)
             person_update_needed = True
 
