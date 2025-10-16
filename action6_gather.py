@@ -1445,27 +1445,31 @@ def _test_error_handling() -> bool:
 
 
 def _ensure_session_for_api_tests() -> tuple[SessionManager, str]:
-    """Ensure session is ready for API tests. Returns (session_manager, my_uuid)."""
-    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
-    if skip_live_tests:
-        logger.info("Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
-        raise AssertionError("Live API tests skipped (SKIP_LIVE_API_TESTS=true)")
+    """Ensure session is ready for API tests. Returns (session_manager, my_uuid).
 
+    This function establishes a valid Ancestry session with proper authentication
+    and readiness checks before running functional API tests.
+
+    Raises AssertionError if session cannot be established (tests will be skipped).
+    """
+    # Create session manager
     sm = SessionManager()
+
+    # Start session (initializes database and browser if needed)
     started = sm.start_sess("Action 6 API Tests")
     if not started:
-        logger.warning("Could not start session for API tests")
-        raise AssertionError("Failed to start session - browser may not be available")
+        raise AssertionError("Failed to start session - browser initialization failed")
 
+    # Ensure session is ready (performs login, cookie validation, identifier retrieval)
     ready = sm.ensure_session_ready("Action 6 API Tests")
     if not ready:
-        logger.warning("Session not ready for API tests (login/cookies/ids missing)")
-        raise AssertionError("Session not ready (login/cookies/ids missing)")
+        raise AssertionError("Session not ready - login/cookies/identifiers missing")
 
+    # Verify UUID is available
     if not sm.my_uuid:
-        logger.warning("UUID not available for API tests")
-        raise AssertionError("UUID not available")
+        raise AssertionError("UUID not available - session initialization incomplete")
 
+    logger.debug(f"✅ Valid session established for API tests (UUID: {sm.my_uuid})")
     return sm, sm.my_uuid
 
 
@@ -1756,59 +1760,53 @@ def action6_module_tests() -> bool:
         )
 
     # === FUNCTIONAL API TESTS (Require Live Session) ===
-    # Only run if explicitly enabled via environment variable
-    run_live_api_tests = os.getenv("RUN_LIVE_API_TESTS", "false").lower() == "true"
+    suite.run_test(
+        "Match List API",
+        _test_match_list_api,
+        "Tests fetching match list from Ancestry API with pagination support.",
+        "Call fetch_match_list_page and validate response structure and match data.",
+        "Match List API returns valid matches with uuid, username, cm, and segments.",
+    )
 
-    if run_live_api_tests:
-        suite.run_test(
-            "Match List API",
-            _test_match_list_api,
-            "Tests fetching match list from Ancestry API with pagination support.",
-            "Call fetch_match_list_page and validate response structure and match data.",
-            "Match List API returns valid matches with uuid, username, cm, and segments.",
-        )
+    suite.run_test(
+        "Match Details API",
+        _test_match_details_api,
+        "Tests fetching detailed match information including relationship predictions.",
+        "Call _fetch_match_details and validate shared segments and relationship data.",
+        "Match Details API returns shared_segments, longest_shared_segment, and predicted_relationship.",
+    )
 
-        suite.run_test(
-            "Match Details API",
-            _test_match_details_api,
-            "Tests fetching detailed match information including relationship predictions.",
-            "Call _fetch_match_details and validate shared segments and relationship data.",
-            "Match Details API returns shared_segments, longest_shared_segment, and predicted_relationship.",
-        )
+    suite.run_test(
+        "Profile Details API",
+        _test_profile_details_api,
+        "Tests fetching profile details for matches with public profiles.",
+        "Call _fetch_profile_details and validate last_logged_in and contactable fields.",
+        "Profile Details API returns last_logged_in and contactable status when available.",
+    )
 
-        suite.run_test(
-            "Profile Details API",
-            _test_profile_details_api,
-            "Tests fetching profile details for matches with public profiles.",
-            "Call _fetch_profile_details and validate last_logged_in and contactable fields.",
-            "Profile Details API returns last_logged_in and contactable status when available.",
-        )
+    suite.run_test(
+        "Badge Details API",
+        _test_badge_details_api,
+        "Tests fetching tree badge details for matches in user's tree.",
+        "Call _fetch_badge_details and validate response structure.",
+        "Badge Details API returns tree data for matches in user's family tree.",
+    )
 
-        suite.run_test(
-            "Badge Details API",
-            _test_badge_details_api,
-            "Tests fetching tree badge details for matches in user's tree.",
-            "Call _fetch_badge_details and validate response structure.",
-            "Badge Details API returns tree data for matches in user's family tree.",
-        )
+    suite.run_test(
+        "Relationship Probability API",
+        _test_relationship_probability_api,
+        "Tests fetching predicted relationship from Relationship Probability API.",
+        "Call _fetch_relationship_probability and validate relationship string format.",
+        "Relationship Probability API returns formatted relationship or None if unavailable.",
+    )
 
-        suite.run_test(
-            "Relationship Probability API",
-            _test_relationship_probability_api,
-            "Tests fetching predicted relationship from Relationship Probability API.",
-            "Call _fetch_relationship_probability and validate relationship string format.",
-            "Relationship Probability API returns formatted relationship or None if unavailable.",
-        )
-
-        suite.run_test(
-            "Parallel Match Details Fetching",
-            _test_parallel_fetch_match_details,
-            "Tests parallel fetching of match details using ThreadPoolExecutor.",
-            "Fetch details for multiple matches in parallel and validate all results.",
-            "Parallel fetching completes successfully with all match details retrieved.",
-        )
-    else:
-        logger.info("⏭️  Skipping live API tests (set RUN_LIVE_API_TESTS=true to enable)")
+    suite.run_test(
+        "Parallel Match Details Fetching",
+        _test_parallel_fetch_match_details,
+        "Tests parallel fetching of match details using ThreadPoolExecutor.",
+        "Fetch details for multiple matches in parallel and validate all results.",
+        "Parallel fetching completes successfully with all match details retrieved.",
+    )
 
     return suite.finish_suite()
 
