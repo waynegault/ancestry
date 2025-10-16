@@ -316,7 +316,7 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
                 return None
 
         elapsed = time.time() - start_time
-        logger.info(f"Chrome WebDriver initialization succeeded in {elapsed:.2f}s (attempt {attempt_num})")
+        logger.debug(f"Chrome WebDriver initialization succeeded in {elapsed:.2f}s (attempt {attempt_num})")
         return driver
     except Exception as chrome_exc:
         # Log brief error to file, don't spam console with stacktrace

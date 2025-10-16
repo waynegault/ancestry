@@ -51,7 +51,7 @@ def coord(session_manager: SessionManager, start: int = 1):
     # Reset rate limiter metrics at start of each run
     if session_manager.rate_limiter:
         session_manager.rate_limiter.reset_metrics()
-        logger.info("Rate limiter metrics reset for new run")
+        logger.debug("Rate limiter metrics reset for new run")
 
     max_pages = config_schema.api.max_pages
     # Create database manager
@@ -75,11 +75,11 @@ def coord(session_manager: SessionManager, start: int = 1):
             adaptive_delay = original_delay * math.sqrt(parallel_workers)
             session_manager.rate_limiter.initial_delay = adaptive_delay
             session_manager.rate_limiter.current_delay = adaptive_delay
-            logger.info(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
+            logger.debug(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
             logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
-            logger.info("   Rate limiter is thread-safe and will prevent 429 errors")
+            logger.debug("   Rate limiter is thread-safe and will prevent 429 errors")
     else:
-        logger.info("📝 Sequential processing (PARALLEL_WORKERS=1)")
+        logger.indebugfo("📝 Sequential processing (PARALLEL_WORKERS=1)")
 
     # Get my_uuid and my_tree_id
     my_uuid = session_manager.my_uuid
@@ -93,7 +93,7 @@ def coord(session_manager: SessionManager, start: int = 1):
     logger.info(f"My Tree ID: {my_tree_id}")
 
     # Navigate to DNA matches page to get CSRF token
-    logger.info("Navigating to DNA matches page...")
+    logger.debug("Navigating to DNA matches page...")
     if not nav_to_dna_matches_page(session_manager):
         logger.error("Failed to navigate to DNA matches page")
         return None
@@ -151,10 +151,10 @@ def coord(session_manager: SessionManager, start: int = 1):
 
         logger.info(f"\n{'='*80}")
         if max_pages == 0:
-            logger.info(f"📄 Processing page {page_num} (page {pages_processed + 1} of all pages)")
+            logger.info(f"Processing page {page_num} (page {pages_processed + 1} of all pages)")
         else:
-            logger.info(f"📄 Processing page {page_num} (page {page_num - start_page + 1}/{max_pages})")
-        logger.info(f"   Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
+            logger.info(f"Processing page {page_num} (page {page_num - start_page + 1}/{max_pages})")
+        logger.info(f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
         logger.info(f"{'='*80}")
 
         # Fetch match list for this page
@@ -205,8 +205,7 @@ def coord(session_manager: SessionManager, start: int = 1):
 
         # Fetch in-tree status
         in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
-        logger.info(f"Found {len(in_tree_ids)} matches in tree on page {page_num}")
-
+       
         # Refine matches
         matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
 
@@ -244,7 +243,7 @@ def coord(session_manager: SessionManager, start: int = 1):
             total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
             batch_end = min(batch_start + batch_size, len(matches))
 
-            logger.info(f"   📦 Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end} of {len(matches)} on this page)")
+            logger.info(f"Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end} of {len(matches)} on page {page_num})")
 
             new, updated, skipped, errors = _process_batch(
                 batch, session_manager, db_manager, my_uuid, my_tree_id
@@ -255,9 +254,8 @@ def coord(session_manager: SessionManager, start: int = 1):
             total_skipped += skipped
             total_errors += errors
 
-            logger.info(f"   ✅ Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
-            logger.info(f"   📊 Cumulative totals: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
-
+            logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+        
         # Move to next page
         page_num += 1
         pages_processed += 1
@@ -506,7 +504,7 @@ def _process_batch(
         match_details_map = {}
 
         if parallel_workers > 1 and matches_needing_details:
-            logger.info(f"Fetching match details using {parallel_workers} parallel workers for {len(matches_needing_details)} matches...")
+            logger.debug(f"Fetching match details using {parallel_workers} parallel workers for {len(matches_needing_details)} matches...")
 
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
                 # Submit all fetch tasks (NO database session passed - thread safety!)
@@ -604,7 +602,7 @@ def _process_batch(
 
         # Commit all changes
         session.commit()
-        logger.info("Batch committed successfully")
+        logger.debug("Batch committed to database successfully")
 
     except Exception as e:
         logger.error(f"Error committing batch: {e}")

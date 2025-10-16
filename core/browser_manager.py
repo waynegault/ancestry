@@ -79,7 +79,7 @@ class BrowserManager:
                 logger.debug("Browser already running and valid")
                 return True
 
-            logger.info(f"🌐 Initializing browser for {action_name or 'action'}...")
+            logger.debug(f"🌐 Initializing browser for {action_name or 'action'}...")
             self.driver = init_webdvr()
 
             if not self.driver:
@@ -143,7 +143,7 @@ class BrowserManager:
             self.browser_needed = True
             self.session_start_time = time.time()
 
-            logger.info("✅ Browser initialized successfully")
+            logger.debug("✅ Browser initialized successfully")
             return True
 
         except Exception as e:

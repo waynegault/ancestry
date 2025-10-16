@@ -284,7 +284,7 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
                 logger.debug(f"Failed to add cookie {cookie.get('name', 'unknown')}: {cookie_err}")
                 continue
 
-        logger.info(f"🍪 Loaded {loaded_count}/{len(cookies)} cookies from {cookies_file}")
+        logger.debug(f"🍪 Loaded {loaded_count}/{len(cookies)} cookies from {cookies_file}")
         return loaded_count > 0
 
     except Exception as e:
@@ -1437,7 +1437,7 @@ class RateLimiter:
                 'min_wait_time': float('inf'),
                 'start_time': time.time(),
             }
-        logger.info("Rate limiter metrics reset")
+        logger.debug("Rate limiter metrics reset")
 
     # End of reset_metrics
 
