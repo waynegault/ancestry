@@ -471,6 +471,157 @@ def _get_person_id_by_uuid(session, uuid: str) -> Optional[int]:
         return None
 
 
+def _first_pass_identify_matches(batch: list[dict], session) -> tuple[list[dict], dict]:
+    """
+    First pass: Identify which matches need detail fetching.
+
+    Returns:
+        Tuple of (matches_needing_details, skip_map)
+    """
+    matches_needing_details = []
+    skip_map = {}
+
+    for match in batch:
+        person_id, person_status = _save_person_with_status(session, match)
+        if not person_id:
+            skip_map[match["uuid"]] = {"skip": True, "reason": "no_person_id", "person_id": None, "person_status": None}
+            continue
+
+        skip_details = False
+        skip_reason = None
+
+        if person_status != "created" and _dna_match_exists(session, person_id):
+            skip_details = True
+            skip_reason = "dna_match_exists"
+            logger.debug(f"Skipping detail fetch for person_id={person_id} - DnaMatch already exists")
+        elif person_status != "created" and _should_skip_person_refresh(session, person_id):
+            skip_details = True
+            skip_reason = "recently_updated"
+
+        if skip_details:
+            skip_map[match["uuid"]] = {"skip": True, "reason": skip_reason, "person_id": person_id, "person_status": person_status}
+        else:
+            skip_map[match["uuid"]] = {"skip": False, "person_id": person_id, "person_status": person_status}
+            matches_needing_details.append(match)
+
+    return matches_needing_details, skip_map
+
+
+def _fetch_details_parallel(matches_needing_details: list[dict], session_manager: SessionManager, my_uuid: str, parallel_workers: int) -> dict:
+    """Fetch match details using parallel workers."""
+    match_details_map = {}
+
+    if parallel_workers <= 1 or not matches_needing_details:
+        logger.debug(f"Using sequential processing (parallel_workers={parallel_workers}, matches_needing_details={len(matches_needing_details)})")
+        return match_details_map
+
+    logger.debug(f"Fetching match details using {parallel_workers} parallel workers for {len(matches_needing_details)} matches...")
+
+    with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
+        future_to_match = {
+            executor.submit(_fetch_match_details_parallel, match, session_manager, my_uuid): match
+            for match in matches_needing_details
+        }
+
+        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching data", leave=False):
+            match = future_to_match[future]
+            try:
+                details = future.result()
+                match_details_map[match["uuid"]] = details
+            except Exception as e:
+                logger.error(f"Error in parallel fetch for {match.get('uuid', 'UNKNOWN')}: {e}")
+                match_details_map[match["uuid"]] = {
+                    'match_details': {},
+                    'profile_details': {},
+                    'badge_details': {},
+                    'predicted_rel': None,
+                    'uuid': match.get("uuid"),
+                }
+
+    return match_details_map
+
+
+def _get_match_details(match: dict, skip_details: bool, match_details_map: dict, session_manager: SessionManager, my_uuid: str, parallel_workers: int) -> tuple[dict, dict, dict, Any]:
+    """Get match details from cache or fetch them."""
+    if skip_details:
+        return {}, {}, {}, None
+
+    if parallel_workers > 1:
+        details = match_details_map.get(match["uuid"], {})
+        return (
+            details.get('match_details', {}),
+            details.get('profile_details', {}),
+            details.get('badge_details', {}),
+            details.get('predicted_rel')
+        )
+
+    # Sequential processing: fetch details now
+    match_details = _fetch_match_details(session_manager, my_uuid, match["uuid"])
+    profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
+    badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
+    predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
+
+    return match_details, profile_details, badge_details, predicted_rel
+
+
+def _second_pass_process_matches(batch: list[dict], session: Any, skip_map: dict, match_details_map: dict, session_manager: SessionManager, my_uuid: str, my_tree_id: Optional[str], parallel_workers: int) -> tuple[int, int, int, int]:
+    """Second pass: Process and save all matches."""
+    new_count = 0
+    updated_count = 0
+    skipped_count = 0
+    error_count = 0
+
+    for match in tqdm(batch, desc="Saving to database", leave=False):
+        try:
+            skip_info = skip_map.get(match["uuid"], {})
+            person_id = skip_info.get("person_id")
+            person_status = skip_info.get("person_status")
+            skip_details = skip_info.get("skip", False)
+
+            if not person_id:
+                error_count += 1
+                continue
+
+            # Get match details
+            match_details, profile_details, badge_details, predicted_rel = _get_match_details(
+                match, skip_details, match_details_map, session_manager, my_uuid, parallel_workers
+            )
+
+            if skip_details:
+                logger.debug(f"Skipping detail fetch for person_id={person_id} (reason: {skip_info.get('reason')})")
+
+            # Update Person with additional data
+            additional_updates = False
+            if profile_details or badge_details or match_details:
+                additional_updates = _update_person(session, person_id, profile_details, badge_details, match_details)
+
+            logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
+
+            # Create/update DnaMatch record
+            if not skip_details:
+                _save_dna_match(session, person_id, match, match_details, predicted_rel)
+
+            # Create/update FamilyTree record (if in_tree)
+            if match["in_tree"] and badge_details:
+                _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
+
+            # Count based on skip_details, person status, and additional updates
+            if skip_details:
+                skipped_count += 1
+            elif person_status == "created":
+                new_count += 1
+            elif person_status == "updated" or additional_updates:
+                updated_count += 1
+            elif person_status == "skipped":
+                skipped_count += 1
+
+        except Exception as e:
+            logger.error(f"Error processing match {match.get('uuid')}: {e}")
+            error_count += 1
+
+    return new_count, updated_count, skipped_count, error_count
+
+
 def _process_batch(
     batch: list[dict],
     session_manager: SessionManager,
@@ -489,140 +640,19 @@ def _process_batch(
         logger.error("Failed to get database session")
         return new_count, updated_count, skipped_count, error_count
 
-    # Get parallel workers setting
     parallel_workers = getattr(config_schema, 'parallel_workers', 1)
 
     try:
         # First pass: Identify which matches need detail fetching
-        matches_needing_details = []
-        skip_map = {}  # Track which matches to skip
-
-        for match in batch:
-            # Check if person exists and should be skipped
-            person_id, person_status = _save_person_with_status(session, match)
-            if not person_id:
-                skip_map[match["uuid"]] = {"skip": True, "reason": "no_person_id", "person_id": None, "person_status": None}
-                continue
-
-            # Check if we should skip detail refresh
-            skip_details = False
-            skip_reason = None
-
-            # Skip if DnaMatch already exists (most important check - avoids unnecessary API calls)
-            if person_status != "created" and _dna_match_exists(session, person_id):
-                skip_details = True
-                skip_reason = "dna_match_exists"
-                logger.debug(f"Skipping detail fetch for person_id={person_id} - DnaMatch already exists")
-            # Skip if person was recently updated (timestamp-based)
-            elif person_status != "created" and _should_skip_person_refresh(session, person_id):
-                skip_details = True
-                skip_reason = "recently_updated"
-
-            if skip_details:
-                skip_map[match["uuid"]] = {"skip": True, "reason": skip_reason, "person_id": person_id, "person_status": person_status}
-            else:
-                skip_map[match["uuid"]] = {"skip": False, "person_id": person_id, "person_status": person_status}
-                matches_needing_details.append(match)
+        matches_needing_details, skip_map = _first_pass_identify_matches(batch, session)
 
         # Fetch all match details (parallel or sequential based on config)
-        match_details_map = {}
-
-        if parallel_workers > 1 and matches_needing_details:
-            logger.debug(f"Fetching match details using {parallel_workers} parallel workers for {len(matches_needing_details)} matches...")
-
-            with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
-                # Submit all fetch tasks (NO database session passed - thread safety!)
-                future_to_match = {
-                    executor.submit(_fetch_match_details_parallel, match, session_manager, my_uuid): match
-                    for match in matches_needing_details
-                }
-
-                # Collect results as they complete
-                for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching data", leave=False):
-                    match = future_to_match[future]
-                    try:
-                        details = future.result()
-                        match_details_map[match["uuid"]] = details
-                    except Exception as e:
-                        logger.error(f"Error in parallel fetch for {match.get('uuid', 'UNKNOWN')}: {e}")
-                        # Provide empty results on error
-                        match_details_map[match["uuid"]] = {
-                            'match_details': {},
-                            'profile_details': {},
-                            'badge_details': {},
-                            'predicted_rel': None,
-                            'uuid': match.get("uuid"),
-                        }
-        else:
-            logger.debug(f"Using sequential processing (parallel_workers={parallel_workers}, matches_needing_details={len(matches_needing_details)})")
+        match_details_map = _fetch_details_parallel(matches_needing_details, session_manager, my_uuid, parallel_workers)
 
         # Second pass: Process and save all matches
-        for match in tqdm(batch, desc="Saving to database", leave=False):
-            try:
-                # Get skip info from first pass
-                skip_info = skip_map.get(match["uuid"], {})
-                person_id = skip_info.get("person_id")
-                person_status = skip_info.get("person_status")
-                skip_details = skip_info.get("skip", False)
-
-                if not person_id:
-                    error_count += 1
-                    continue
-
-                # Step 2: Get match details (from parallel fetch or fetch now if sequential)
-                if skip_details:
-                    logger.debug(f"Skipping detail fetch for person_id={person_id} (reason: {skip_info.get('reason')})")
-                    match_details = {}
-                    profile_details = {}
-                    badge_details = {}
-                    predicted_rel = None
-                elif parallel_workers > 1:
-                    # Use pre-fetched details from parallel processing
-                    details = match_details_map.get(match["uuid"], {})
-                    match_details = details.get('match_details', {})
-                    profile_details = details.get('profile_details', {})
-                    badge_details = details.get('badge_details', {})
-                    predicted_rel = details.get('predicted_rel')
-                else:
-                    # Sequential processing: fetch details now
-                    match_details = _fetch_match_details(session_manager, my_uuid, match["uuid"])
-                    profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
-                    badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
-                    predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
-
-                # Step 4: Update Person with additional data
-                additional_updates = False
-                if profile_details or badge_details or match_details:
-                    additional_updates = _update_person(session, person_id, profile_details, badge_details, match_details)
-
-                logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
-
-                # Step 5: Create/update DnaMatch record
-                # Skip logic is handled inside _save_dna_match (checks if record exists)
-                # Only call if we fetched details (skip_details=False)
-                if not skip_details:
-                    _save_dna_match(session, person_id, match, match_details, predicted_rel)
-
-                # Step 6: Create/update FamilyTree record (if in_tree)
-                # Skip logic is handled inside _save_family_tree (checks if record exists)
-                # Only call if we fetched badge_details
-                if match["in_tree"] and badge_details:
-                    _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
-
-                # Count based on skip_details, person status, and additional updates
-                if skip_details:
-                    # Person was skipped due to recent update - no DnaMatch/FamilyTree updates
-                    skipped_count += 1
-                elif person_status == "created":
-                    new_count += 1
-                elif person_status == "updated" or additional_updates:
-                    updated_count += 1
-                elif person_status == "skipped":
-                    skipped_count += 1
-
-            except Exception as e:
-                logger.error(f"Error processing match {match.get('uuid')}: {e}")
-                error_count += 1
+        new_count, updated_count, skipped_count, error_count = _second_pass_process_matches(
+            batch, session, skip_map, match_details_map, session_manager, my_uuid, my_tree_id, parallel_workers
+        )
 
         # Commit all changes
         session.commit()
@@ -890,25 +920,107 @@ def _fetch_badge_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: str, match_uuid: str) -> Optional[str]:  # noqa: PLR0911
+def _validate_relationship_inputs(my_uuid: str, match_uuid: str, session_manager: SessionManager) -> bool:
+    """Validate inputs for relationship probability fetch."""
+    if not my_uuid or not match_uuid:
+        logger.warning("Cannot fetch relationship probability: missing my_uuid or match_uuid")
+        return False
+
+    if not session_manager.scraper:
+        logger.warning("Cannot fetch relationship probability: scraper is None")
+        return False
+
+    if not session_manager.driver:
+        logger.warning("Cannot fetch relationship probability: driver is None")
+        return False
+
+    return True
+
+
+def _sync_cookies_and_get_csrf(driver: Any, scraper: Any, api_description: str) -> Optional[str]:
+    """Sync cookies from driver to scraper and extract CSRF token."""
+    try:
+        driver_cookies = driver.get_cookies()
+        if not driver_cookies:
+            logger.warning(f"{api_description}: No cookies available from driver")
+            return None
+
+        if hasattr(scraper, "cookies"):
+            scraper.cookies.clear()
+            for cookie in driver_cookies:
+                if "name" in cookie and "value" in cookie:
+                    scraper.cookies.set(
+                        cookie["name"],
+                        cookie["value"],
+                        domain=cookie.get("domain"),
+                        path=cookie.get("path", "/"),
+                        secure=cookie.get("secure", False),
+                    )
+
+        csrf_token = None
+        csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
+        for cookie in driver_cookies:
+            if cookie.get("name") in csrf_cookie_names:
+                cookie_value = unquote(cookie.get("value", ""))
+                parts = cookie_value.split("|")
+                csrf_token = parts[0] if parts else None
+                break
+
+        if not csrf_token:
+            logger.debug(f"{api_description}: No CSRF token found in cookies")
+
+        return csrf_token
+
+    except Exception as e:
+        logger.warning(f"{api_description}: Error syncing cookies: {e}")
+        return None
+
+
+def _extract_relationship_from_response(data: dict, sample_id_upper: str, api_description: str) -> Optional[str]:
+    """Extract relationship prediction from API response."""
+    if "matchProbabilityToSampleId" not in data:
+        logger.debug(f"{api_description}: Invalid data structure for {sample_id_upper}")
+        return None
+
+    prob_data = data["matchProbabilityToSampleId"]
+    predictions = prob_data.get("relationships", {}).get("predictions", [])
+
+    if not predictions:
+        logger.debug(f"{api_description}: No predictions for {sample_id_upper}")
+        return "Distant relationship?"
+
+    valid_preds = [
+        p for p in predictions
+        if isinstance(p, dict) and "distributionProbability" in p and "pathsToMatch" in p
+    ]
+
+    if not valid_preds:
+        logger.debug(f"{api_description}: No valid predictions for {sample_id_upper}")
+        return None
+
+    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+    top_prob = best_pred.get("distributionProbability", 0.0)
+    paths = best_pred.get("pathsToMatch", [])
+    labels = [p.get("label") for p in paths if isinstance(p, dict) and p.get("label")]
+
+    if not labels:
+        logger.debug(f"{api_description}: No labels found for {sample_id_upper}")
+        return None
+
+    final_labels = [str(label) for label in labels[:2] if label]
+    if not final_labels:
+        return None
+
+    relationship_str = " or ".join(final_labels)
+    return f"{relationship_str} [{top_prob:.1f}%]"
+
+
+def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: str, match_uuid: str) -> Optional[str]:
     """
     Fetch predicted relationship from Relationship Probability API using cloudscraper.
     This is the working version restored from commit 758cca8.
     """
-    # Validate inputs
-    if not my_uuid or not match_uuid:
-        logger.warning("Cannot fetch relationship probability: missing my_uuid or match_uuid")
-        return None
-
-    scraper = session_manager.scraper
-    driver = session_manager.driver
-
-    if not scraper:
-        logger.warning("Cannot fetch relationship probability: scraper is None")
-        return None
-
-    if not driver:
-        logger.warning("Cannot fetch relationship probability: driver is None")
+    if not _validate_relationship_inputs(my_uuid, match_uuid, session_manager):
         return None
 
     my_uuid_upper = my_uuid.upper()
@@ -929,48 +1041,12 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
         "User-Agent": random.choice(config_schema.api.user_agents),
     }
 
-    # Sync cookies and get CSRF token
+    csrf_token = _sync_cookies_and_get_csrf(session_manager.driver, session_manager.scraper, api_description)
+    if csrf_token:
+        headers["X-CSRF-Token"] = csrf_token
+
     try:
-        driver_cookies = driver.get_cookies()
-        if not driver_cookies:
-            logger.warning(f"{api_description}: No cookies available from driver")
-            return None
-
-        # Sync cookies to scraper
-        if hasattr(scraper, "cookies"):
-            scraper.cookies.clear()
-            for cookie in driver_cookies:
-                if "name" in cookie and "value" in cookie:
-                    scraper.cookies.set(
-                        cookie["name"],
-                        cookie["value"],
-                        domain=cookie.get("domain"),
-                        path=cookie.get("path", "/"),
-                        secure=cookie.get("secure", False),
-                    )
-
-        # Extract CSRF token
-        csrf_token = None
-        csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
-        for cookie in driver_cookies:
-            if cookie.get("name") in csrf_cookie_names:
-                cookie_value = unquote(cookie.get("value", ""))
-                parts = cookie_value.split("|")
-                csrf_token = parts[0] if parts else None  # FIX: Bounds checking for tuple index
-                break
-
-        if csrf_token:
-            headers["X-CSRF-Token"] = csrf_token
-        else:
-            logger.debug(f"{api_description}: No CSRF token found in cookies")
-
-    except Exception as e:
-        logger.warning(f"{api_description}: Error syncing cookies: {e}")
-        return None
-
-    # Make API request
-    try:
-        response = scraper.post(
+        response = session_manager.scraper.post(
             url,
             headers=headers,
             json={},
@@ -978,7 +1054,6 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
             timeout=config_schema.selenium.api_timeout,
         )
 
-        # Check for redirects
         if response.status_code in (301, 302, 303, 307, 308):
             logger.debug(
                 f"{api_description}: Received redirect ({response.status_code}) for {sample_id_upper}. "
@@ -992,7 +1067,6 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
             )
             return None
 
-        # Parse response
         if not response.content:
             logger.warning(f"{api_description}: Empty response body for {sample_id_upper}")
             return None
@@ -1003,47 +1077,54 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
             logger.warning(f"{api_description}: JSON decode failed for {sample_id_upper}: {e}")
             return None
 
-        # Extract relationship prediction
-        if "matchProbabilityToSampleId" not in data:
-            logger.debug(f"{api_description}: Invalid data structure for {sample_id_upper}")
-            return None
-
-        prob_data = data["matchProbabilityToSampleId"]
-        predictions = prob_data.get("relationships", {}).get("predictions", [])
-
-        if not predictions:
-            logger.debug(f"{api_description}: No predictions for {sample_id_upper}")
-            return "Distant relationship?"
-
-        valid_preds = [
-            p for p in predictions
-            if isinstance(p, dict) and "distributionProbability" in p and "pathsToMatch" in p
-        ]
-
-        if not valid_preds:
-            logger.debug(f"{api_description}: No valid predictions for {sample_id_upper}")
-            return None
-
-        best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
-        top_prob = best_pred.get("distributionProbability", 0.0)
-        top_prob_display = top_prob  # Already a percentage (e.g., 99.0 for 99%)
-        paths = best_pred.get("pathsToMatch", [])
-        labels = [p.get("label") for p in paths if isinstance(p, dict) and p.get("label")]
-
-        if not labels:
-            logger.debug(f"{api_description}: No labels found for {sample_id_upper}")
-            return None
-
-        # Take top 2 labels
-        final_labels = [str(label) for label in labels[:2] if label]
-        if not final_labels:
-            return None
-        relationship_str = " or ".join(final_labels)
-        return f"{relationship_str} [{top_prob_display:.1f}%]"
+        return _extract_relationship_from_response(data, sample_id_upper, api_description)
 
     except Exception as e:
         logger.warning(f"{api_description}: Unexpected error for {sample_id_upper}: {e}")
         return None
+
+
+def _format_relationship_path_part(person: dict, idx: int, cfpid: str) -> str:
+    """Format a single person in the relationship path."""
+    name = person.get("name", "")
+    lifespan = person.get("lifeSpan", "")
+    relationship = person.get("relationship", "")
+
+    if relationship.startswith("You are the "):
+        relationship = relationship.replace("You are the ", "", 1)
+        if relationship:
+            relationship = relationship[0].upper() + relationship[1:]
+
+    if lifespan:
+        path_part = f"{name} {lifespan} ({relationship})" if relationship else f"{name} {lifespan}"
+    elif relationship:
+        path_part = f"{name} ({relationship})"
+    else:
+        path_part = name
+
+    logger.debug(f"  Person[{idx}]: {path_part}")
+    return path_part
+
+
+def _build_relationship_path(kinship_persons: list[dict], cfpid: str) -> tuple[Optional[str], Optional[str]]:
+    """Build relationship path and extract actual relationship."""
+    actual_relationship = None
+    if kinship_persons:
+        first_person = kinship_persons[0]
+        actual_relationship = first_person.get("relationship")
+        logger.debug(f"Found actual_relationship for CFPID {cfpid}: {actual_relationship}")
+
+    path_parts = []
+    for idx, person in enumerate(kinship_persons):
+        path_part = _format_relationship_path_part(person, idx, cfpid)
+        path_parts.append(path_part)
+
+    relationship_path = None
+    if path_parts:
+        relationship_path = "\n↓\n".join(path_parts)
+        logger.debug(f"Built relationship_path for CFPID {cfpid} with {len(path_parts)} parts")
+
+    return actual_relationship, relationship_path
 
 
 def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: str) -> dict:
@@ -1052,7 +1133,6 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
         return {}
 
     try:
-        # Get user_id from config
         my_user_id = config_schema.api.my_user_id
         if not my_user_id:
             logger.debug(f"No user_id configured, cannot fetch ladder for CFPID {cfpid}")
@@ -1088,43 +1168,7 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
 
         logger.debug(f"Found {len(kinship_persons)} kinship persons for CFPID {cfpid}")
 
-        # Extract actual relationship from first person
-        actual_relationship = None
-        if kinship_persons and len(kinship_persons) > 0:  # FIX: Bounds checking
-            first_person = kinship_persons[0]
-            actual_relationship = first_person.get("relationship")
-            logger.debug(f"Found actual_relationship for CFPID {cfpid}: {actual_relationship}")
-
-        # Build relationship path from all persons
-        path_parts = []
-        for idx, person in enumerate(kinship_persons):
-            name = person.get("name", "")
-            lifespan = person.get("lifeSpan", "")
-            relationship = person.get("relationship", "")
-
-            # Handle special case for "You are the..." at the end
-            if relationship.startswith("You are the "):
-                # Remove "You are the " and capitalize the first letter only
-                relationship = relationship.replace("You are the ", "", 1)
-                # Capitalize first letter of the relationship phrase
-                if relationship and len(relationship) > 0:  # FIX: Bounds checking
-                    relationship = relationship[0].upper() + relationship[1:]
-
-            # Format: "Name LifeSpan (Relationship)"
-            if lifespan:
-                path_part = f"{name} {lifespan} ({relationship})" if relationship else f"{name} {lifespan}"
-            elif relationship:
-                path_part = f"{name} ({relationship})"
-            else:
-                path_part = name
-
-            path_parts.append(path_part)
-            logger.debug(f"  Person[{idx}]: {path_part}")
-
-        relationship_path = None
-        if path_parts:
-            relationship_path = "\n↓\n".join(path_parts)
-            logger.debug(f"Built relationship_path for CFPID {cfpid} with {len(path_parts)} parts")
+        actual_relationship, relationship_path = _build_relationship_path(kinship_persons, cfpid)
 
         result = {
             "actual_relationship": actual_relationship,
