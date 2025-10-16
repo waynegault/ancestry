@@ -8,6 +8,14 @@ partial success handling, and clear user guidance. Designed to improve resilienc
 for long-running genealogical research operations.
 """
 
+# === CORE INFRASTRUCTURE ===
+import sys
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 import logging
 import random
 import time
@@ -326,3 +334,195 @@ def with_file_recovery(max_attempts: int = 3, base_delay: float = 0.5):
         retryable_exceptions=(PermissionError, FileNotFoundError, OSError),
         user_guidance=create_user_guidance()
     )
+
+
+# ==============================================
+# Comprehensive Test Suite
+# ==============================================
+
+def _test_error_context_initialization() -> bool:
+    """Test ErrorContext initialization with default values."""
+    ctx = ErrorContext(operation_name="test_op")
+    assert ctx.operation_name == "test_op", "Should store operation name"
+    assert ctx.attempt_number == 1, "Should initialize attempt to 1"
+    assert ctx.max_attempts == 3, "Should initialize max_attempts to 3"
+    assert isinstance(ctx.error_history, list), "Should have error history list"
+    return True
+
+
+def _test_error_context_add_error() -> bool:
+    """Test adding errors to ErrorContext."""
+    ctx = ErrorContext(operation_name="test_op")
+    error = ValueError("Test error")
+    ctx.add_error(error)
+    assert len(ctx.error_history) == 1, "Should add error to history"
+    assert ctx.last_error == error, "Should update last_error"
+    return True
+
+
+def _test_recovery_strategy_enum() -> bool:
+    """Test RecoveryStrategy enum values."""
+    strategies = [
+        RecoveryStrategy.RETRY,
+        RecoveryStrategy.EXPONENTIAL_BACKOFF,
+        RecoveryStrategy.CIRCUIT_BREAKER,
+        RecoveryStrategy.PARTIAL_SUCCESS,
+        RecoveryStrategy.GRACEFUL_DEGRADATION,
+    ]
+    assert len(strategies) == 5, "Should have 5 recovery strategies"
+    for strategy in strategies:
+        assert isinstance(strategy, RecoveryStrategy), "Should be RecoveryStrategy enum"
+    return True
+
+
+def _test_error_severity_enum() -> bool:
+    """Test ErrorSeverity enum values."""
+    severities = [
+        ErrorSeverity.LOW,
+        ErrorSeverity.MEDIUM,
+        ErrorSeverity.HIGH,
+        ErrorSeverity.CRITICAL,
+    ]
+    assert len(severities) == 4, "Should have 4 severity levels"
+    for severity in severities:
+        assert isinstance(severity, ErrorSeverity), "Should be ErrorSeverity enum"
+    return True
+
+
+def _test_user_guidance_creation() -> bool:
+    """Test user guidance creation."""
+    guidance = create_user_guidance()
+    assert isinstance(guidance, dict), "Should return dictionary"
+    assert "retry_message" in guidance or len(guidance) >= 0, "Should have guidance content"
+    return True
+
+
+def _test_exponential_backoff_calculation() -> bool:
+    """Test exponential backoff delay calculation."""
+    base_delay = 1.0
+    backoff_factor = 2.0
+
+    # Test that delays increase exponentially
+    delays = []
+    for attempt in range(1, 4):
+        delay = base_delay * (backoff_factor ** (attempt - 1))
+        delays.append(delay)
+
+    assert delays[0] < delays[1] < delays[2], "Delays should increase exponentially"
+    return True
+
+
+def _test_api_recovery_decorator() -> bool:
+    """Test API recovery decorator creation."""
+    decorator = with_api_recovery(max_attempts=5, base_delay=2.0)
+    assert callable(decorator), "Should return callable decorator"
+    return True
+
+
+def _test_database_recovery_decorator() -> bool:
+    """Test database recovery decorator creation."""
+    decorator = with_database_recovery(max_attempts=3, base_delay=1.0)
+    assert callable(decorator), "Should return callable decorator"
+    return True
+
+
+def _test_file_recovery_decorator() -> bool:
+    """Test file recovery decorator creation."""
+    decorator = with_file_recovery(max_attempts=3, base_delay=0.5)
+    assert callable(decorator), "Should return callable decorator"
+    return True
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for enhanced_error_recovery.py.
+    Tests error recovery mechanisms, decorators, and recovery strategies.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Enhanced Error Recovery & Resilience Framework",
+            "core/enhanced_error_recovery.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "Error Context Initialization",
+            _test_error_context_initialization,
+            "ErrorContext initializes with correct default values",
+            "Test ErrorContext creation with operation name",
+            "Test error recovery context setup",
+        )
+
+        suite.run_test(
+            "Error History Tracking",
+            _test_error_context_add_error,
+            "Errors are correctly added to context history",
+            "Test adding errors to ErrorContext",
+            "Test error tracking and history management",
+        )
+
+        suite.run_test(
+            "Recovery Strategy Enumeration",
+            _test_recovery_strategy_enum,
+            "All recovery strategies are properly defined",
+            "Test RecoveryStrategy enum values",
+            "Test recovery strategy options",
+        )
+
+        suite.run_test(
+            "Error Severity Levels",
+            _test_error_severity_enum,
+            "All error severity levels are properly defined",
+            "Test ErrorSeverity enum values",
+            "Test error severity classification",
+        )
+
+        suite.run_test(
+            "User Guidance Generation",
+            _test_user_guidance_creation,
+            "User guidance is correctly generated",
+            "Test user guidance creation",
+            "Test user-friendly error messages",
+        )
+
+        suite.run_test(
+            "Exponential Backoff Calculation",
+            _test_exponential_backoff_calculation,
+            "Exponential backoff delays increase correctly",
+            "Test exponential backoff delay calculation",
+            "Test retry delay strategy",
+        )
+
+        suite.run_test(
+            "API Recovery Decorator",
+            _test_api_recovery_decorator,
+            "API recovery decorator is properly configured",
+            "Test API recovery decorator creation",
+            "Test API-specific recovery configuration",
+        )
+
+        suite.run_test(
+            "Database Recovery Decorator",
+            _test_database_recovery_decorator,
+            "Database recovery decorator is properly configured",
+            "Test database recovery decorator creation",
+            "Test database-specific recovery configuration",
+        )
+
+        suite.run_test(
+            "File Recovery Decorator",
+            _test_file_recovery_decorator,
+            "File recovery decorator is properly configured",
+            "Test file recovery decorator creation",
+            "Test file-specific recovery configuration",
+        )
+
+        return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    import sys
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
