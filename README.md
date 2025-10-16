@@ -97,6 +97,41 @@ python run_all_tests.py
 
 ## Recent Fixes & Improvements
 
+### Connection Resilience Framework (October 2025)
+
+**Comprehensive protection against PC sleep and connection loss:**
+
+#### Features
+- **Sleep Prevention**: Prevents PC sleep during long-running operations (Windows/macOS/Linux)
+- **Connection Detection**: Automatically detects browser disconnection
+- **Automatic Recovery**: Recovers from connection loss with exponential backoff (2s, 4s, 8s)
+- **Cross-Platform**: Works on Windows, macOS, and Linux
+
+#### Protected Actions
+- **Action 6**: DNA Match Gathering
+- **Action 7**: Inbox Processing
+- **Action 8**: Messaging
+- **Action 9**: Productive Processing
+
+#### How It Works
+```python
+@with_connection_resilience("Action 6: DNA Match Gathering")
+def coord(session_manager):
+    # Sleep prevention enabled automatically
+    # Connection monitoring active
+    # Recovery on connection loss
+    pass
+```
+
+#### Benefits
+- ✅ PC won't sleep during long-running operations
+- ✅ Automatic recovery from temporary network issues
+- ✅ Graceful handling of browser disconnection
+- ✅ Detailed logging for debugging
+- ✅ No manual intervention required
+
+---
+
 ### Phase 2 Performance Optimization (October 2025)
 
 **Complete optimization suite with 4 major improvements:**
