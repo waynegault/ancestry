@@ -880,13 +880,14 @@ class CircuitBreaker:
 
         logger.info(f"🔌 Circuit Breaker initialized: threshold={failure_threshold}, recovery={recovery_timeout}s")
 
-    def call(self, func, *args, **kwargs):
+    def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Execute function through circuit breaker.
 
         Args:
             func: Function to execute
-            *args, **kwargs: Arguments to pass to function
+            *args: Positional arguments to pass to function
+            **kwargs: Keyword arguments to pass to function
 
         Returns:
             Function result or None if circuit is open
@@ -1611,6 +1612,90 @@ def _prepare_api_headers(
 # Cookie cache to reduce excessive synchronization
 _cookie_sync_cache = {"last_sync_time": 0.0, "sync_interval": 30.0}  # Sync every 30 seconds max
 
+def _should_skip_cookie_sync(force_sync: bool, time_since_last_sync: float) -> bool:
+    """
+    Determine if cookie sync can be skipped based on cache.
+
+    Args:
+        force_sync: Whether sync is forced
+        time_since_last_sync: Time since last sync in seconds
+
+    Returns:
+        bool: True if sync can be skipped, False otherwise
+    """
+    return not force_sync and time_since_last_sync < _cookie_sync_cache["sync_interval"]
+
+def _validate_driver_for_sync(
+    driver: DriverType,
+    session_manager: SessionManager,
+    api_description: str,
+    attempt: int
+) -> bool:
+    """
+    Validate that driver is available for cookie sync.
+
+    Args:
+        driver: The WebDriver instance
+        session_manager: The session manager instance
+        api_description: Description of the API being called
+        attempt: The current attempt number
+
+    Returns:
+        bool: True if driver is valid, False otherwise
+    """
+    driver_is_valid = driver and session_manager.driver
+    if not driver_is_valid and attempt == 1:
+        logger.warning(
+            f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). "
+            "Runtime headers might be incomplete/stale."
+        )
+    return driver_is_valid
+
+def _perform_cookie_sync(
+    session_manager: SessionManager,
+    api_description: str,
+    attempt: int,
+    force_sync: bool,
+    time_since_last_sync: float,
+    current_time: float
+) -> bool:
+    """
+    Perform the actual cookie synchronization.
+
+    Args:
+        session_manager: The session manager instance
+        api_description: Description of the API being called
+        attempt: The current attempt number
+        force_sync: Whether sync is forced
+        time_since_last_sync: Time since last sync in seconds
+        current_time: Current timestamp
+
+    Returns:
+        bool: True if sync successful, False otherwise
+    """
+    # Only log on first attempt or if forced to reduce verbosity
+    if attempt == 1 or force_sync:
+        logger.debug(
+            f"[{api_description}] Syncing cookies from browser "
+            f"(cache expired, last sync {time_since_last_sync:.1f}s ago)"
+        )
+
+    # Use the API manager's sync_cookies_from_browser method with session_manager for recovery
+    sync_success = session_manager.api_manager.sync_cookies_from_browser(
+        session_manager.browser_manager,
+        session_manager=session_manager
+    )
+
+    if sync_success:
+        # Update cache timestamp
+        _cookie_sync_cache["last_sync_time"] = current_time
+        if attempt == 1 or force_sync:
+            logger.debug(f"[{api_description}] Cookie sync successful")
+        return True
+
+    logger.warning(f"[{api_description}] Cookie sync failed (Attempt {attempt}).")
+    return False
+
 def _sync_cookies_for_request(
     session_manager: SessionManager,
     driver: DriverType,
@@ -1642,47 +1727,23 @@ def _sync_cookies_for_request(
     current_time = time.time()
     time_since_last_sync = current_time - _cookie_sync_cache["last_sync_time"]
 
-    if not force_sync and time_since_last_sync < _cookie_sync_cache["sync_interval"]:
-        # Cookies were synced recently, skip this sync (no logging to reduce verbosity)
+    if _should_skip_cookie_sync(force_sync, time_since_last_sync):
         return True
 
-    # Check driver validity for runtime headers/cookies (avoid is_sess_valid() to prevent recursion)
-    driver_is_valid = driver and session_manager.driver
-    if not driver_is_valid:
-        if attempt == 1:  # Only log on first attempt
-            logger.warning(
-                f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). Runtime headers might be incomplete/stale."
-            )
-        # End of if
+    # Validate driver
+    if not _validate_driver_for_sync(driver, session_manager, api_description, attempt):
         return False
-    # End of if
 
-    # Perform actual cookie synchronization like the working version
+    # Perform cookie synchronization
     try:
-        # Only log on first attempt or if forced to reduce verbosity
-        if attempt == 1 or force_sync:
-            logger.debug(f"[{api_description}] Syncing cookies from browser (cache expired, last sync {time_since_last_sync:.1f}s ago)")
-
-        # Use the API manager's sync_cookies_from_browser method with session_manager for recovery
-        # CRITICAL FIX: Pass session_manager to enable automatic recovery on cookie sync failures
-        sync_success = session_manager.api_manager.sync_cookies_from_browser(
-            session_manager.browser_manager,
-            session_manager=session_manager
+        return _perform_cookie_sync(
+            session_manager, api_description, attempt, force_sync, time_since_last_sync, current_time
         )
-
-        if sync_success:
-            # Update cache timestamp
-            _cookie_sync_cache["last_sync_time"] = current_time
-            # Only log on first attempt or if forced
-            if attempt == 1 or force_sync:
-                logger.debug(f"[{api_description}] Cookie sync successful")
-            return True
-        # Always log failures
-        logger.warning(f"[{api_description}] Cookie sync failed (Attempt {attempt}).")
-        return False
-
     except Exception as e:
-        logger.error(f"[{api_description}] Exception during cookie sync (Attempt {attempt}): {e}", exc_info=True)
+        logger.error(
+            f"[{api_description}] Exception during cookie sync (Attempt {attempt}): {e}",
+            exc_info=True
+        )
         return False
 
 # End of _sync_cookies_for_request
