@@ -644,6 +644,103 @@ def _test_general_exception_handling() -> bool:
     return True
 
 
+def _test_should_skip_cookie_check_action6() -> bool:
+    """Test that Action 6 (gather_DNA_matches) skips cookie check."""
+    validator = SessionValidator()
+
+    # Test with 'gather_DNA_matches' action name
+    should_skip, reason = validator._should_skip_cookie_check("gather_DNA_matches")
+    assert should_skip is True, "Should skip cookie check for gather_DNA_matches"
+    assert reason is not None and "Action 6" in reason, f"Reason should mention Action 6, got: {reason}"
+
+    # Test with 'coord' action name (legacy)
+    should_skip, reason = validator._should_skip_cookie_check("coord")
+    assert should_skip is True, "Should skip cookie check for coord"
+    assert reason is not None and "Action 6" in reason, f"Reason should mention Action 6, got: {reason}"
+
+    return True
+
+
+def _test_should_skip_cookie_check_action7() -> bool:
+    """Test that Action 7 (search_inbox) skips cookie check."""
+    validator = SessionValidator()
+
+    # Test with 'search_inbox' action name
+    should_skip, reason = validator._should_skip_cookie_check("search_inbox")
+    assert should_skip is True, "Should skip cookie check for search_inbox"
+    assert reason is not None and "Action 7" in reason, f"Reason should mention Action 7, got: {reason}"
+
+    # Test with 'srch_inbox' action name (legacy)
+    should_skip, reason = validator._should_skip_cookie_check("srch_inbox")
+    assert should_skip is True, "Should skip cookie check for srch_inbox"
+    assert reason is not None and "Action 7" in reason, f"Reason should mention Action 7, got: {reason}"
+
+    return True
+
+
+def _test_should_skip_cookie_check_action8() -> bool:
+    """Test that Action 8 (send_messages) skips cookie check."""
+    validator = SessionValidator()
+
+    should_skip, reason = validator._should_skip_cookie_check("send_messages")
+    assert should_skip is True, "Should skip cookie check for send_messages"
+    assert reason is not None and "Action 8" in reason, f"Reason should mention Action 8, got: {reason}"
+
+    return True
+
+
+def _test_should_skip_cookie_check_action9() -> bool:
+    """Test that Action 9 (process_productive) skips cookie check."""
+    validator = SessionValidator()
+
+    should_skip, reason = validator._should_skip_cookie_check("process_productive")
+    assert should_skip is True, "Should skip cookie check for process_productive"
+    assert reason is not None and "Action 9" in reason, f"Reason should mention Action 9, got: {reason}"
+
+    return True
+
+
+def _test_should_skip_cookie_check_no_action() -> bool:
+    """Test that None action name does not skip cookie check."""
+    validator = SessionValidator()
+
+    should_skip, reason = validator._should_skip_cookie_check(None)
+    assert should_skip is False, "Should not skip cookie check for None action"
+    assert reason is None, f"Reason should be None, got: {reason}"
+
+    return True
+
+
+def _test_should_skip_cookie_check_unknown_action() -> bool:
+    """Test that unknown action names do not skip cookie check."""
+    validator = SessionValidator()
+
+    should_skip, reason = validator._should_skip_cookie_check("unknown_action")
+    assert should_skip is False, "Should not skip cookie check for unknown action"
+    assert reason is None, f"Reason should be None, got: {reason}"
+
+    return True
+
+
+def _test_should_skip_cookie_check_case_insensitive() -> bool:
+    """Test that action name matching is case-insensitive."""
+    validator = SessionValidator()
+
+    # Test uppercase
+    should_skip, reason = validator._should_skip_cookie_check("GATHER_DNA_MATCHES")
+    assert should_skip is True, "Should skip cookie check for uppercase action name"
+
+    # Test mixed case
+    should_skip, reason = validator._should_skip_cookie_check("Gather_DNA_Matches")
+    assert should_skip is True, "Should skip cookie check for mixed case action name"
+
+    # Test with setup suffix (as seen in logs)
+    should_skip, reason = validator._should_skip_cookie_check("gather_DNA_matches - Setup")
+    assert should_skip is True, "Should skip cookie check for action name with suffix"
+
+    return True
+
+
 def session_validator_module_tests() -> bool:
     """
     Comprehensive test suite for session_validator.py (decomposed).
@@ -717,6 +814,55 @@ def session_validator_module_tests() -> bool:
             "Cookie validation handles unexpected exceptions gracefully",
             "Mock browser to throw unexpected exception and verify graceful failure",
             "Test error handling for general exceptions during validation",
+        )
+        suite.run_test(
+            "Skip Cookie Check - Action 6",
+            _test_should_skip_cookie_check_action6,
+            "Action 6 (gather_DNA_matches) correctly skips cookie check",
+            "Test that both 'gather_DNA_matches' and 'coord' action names skip cookie check",
+            "Test cookie check skip logic for Action 6 with multiple action name patterns",
+        )
+        suite.run_test(
+            "Skip Cookie Check - Action 7",
+            _test_should_skip_cookie_check_action7,
+            "Action 7 (search_inbox) correctly skips cookie check",
+            "Test that both 'search_inbox' and 'srch_inbox' action names skip cookie check",
+            "Test cookie check skip logic for Action 7 with multiple action name patterns",
+        )
+        suite.run_test(
+            "Skip Cookie Check - Action 8",
+            _test_should_skip_cookie_check_action8,
+            "Action 8 (send_messages) correctly skips cookie check",
+            "Test that 'send_messages' action name skips cookie check",
+            "Test cookie check skip logic for Action 8",
+        )
+        suite.run_test(
+            "Skip Cookie Check - Action 9",
+            _test_should_skip_cookie_check_action9,
+            "Action 9 (process_productive) correctly skips cookie check",
+            "Test that 'process_productive' action name skips cookie check",
+            "Test cookie check skip logic for Action 9",
+        )
+        suite.run_test(
+            "Skip Cookie Check - None Action",
+            _test_should_skip_cookie_check_no_action,
+            "None action name does not skip cookie check",
+            "Test that None action name returns False for skip",
+            "Test edge case handling for None action name",
+        )
+        suite.run_test(
+            "Skip Cookie Check - Unknown Action",
+            _test_should_skip_cookie_check_unknown_action,
+            "Unknown action names do not skip cookie check",
+            "Test that unknown action names return False for skip",
+            "Test edge case handling for unknown action names",
+        )
+        suite.run_test(
+            "Skip Cookie Check - Case Insensitivity",
+            _test_should_skip_cookie_check_case_insensitive,
+            "Action name matching is case-insensitive and handles suffixes",
+            "Test uppercase, mixed case, and action names with suffixes",
+            "Test case-insensitive matching and suffix handling in action names",
         )
         return suite.finish_suite()
 

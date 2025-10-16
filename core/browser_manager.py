@@ -397,6 +397,56 @@ def _test_exception_handling():
     return True
 
 
+def _test_cookie_timeout_default():
+    """Test that default cookie timeout is 10 seconds (not 60)."""
+    import inspect
+
+    manager = BrowserManager()
+    sig = inspect.signature(manager.get_cookies)
+    timeout_param = sig.parameters.get("timeout")
+    assert timeout_param is not None, "get_cookies should have timeout parameter"
+    assert timeout_param.default == 10, f"Default timeout should be 10s, got {timeout_param.default}s"
+    return True
+
+
+def _test_cookie_timeout_custom():
+    """Test that custom cookie timeout can be specified."""
+    from unittest.mock import Mock, patch
+
+    manager = BrowserManager()
+    manager.driver = Mock()
+    manager.driver_live = True
+
+    # Mock get_cookies to return False after timeout
+    with patch.object(manager, "is_session_valid", return_value=True):
+        # This should timeout quickly with custom timeout
+        result = manager.get_cookies(["nonexistent_cookie"], timeout=1)
+        assert result is False, "Should return False when cookie not found within timeout"
+
+    return True
+
+
+def _test_cookie_check_prevents_long_waits():
+    """Test that cookie check doesn't wait excessively for missing cookies."""
+    import time
+    from unittest.mock import Mock, patch
+
+    manager = BrowserManager()
+    manager.driver = Mock()
+    manager.driver_live = True
+    manager.driver.get_cookies.return_value = []  # No cookies
+
+    with patch.object(manager, "is_session_valid", return_value=True):
+        start_time = time.time()
+        result = manager.get_cookies(["missing_cookie"], timeout=2)
+        elapsed_time = time.time() - start_time
+
+        assert result is False, "Should return False when cookie not found"
+        assert elapsed_time < 3, f"Should timeout in ~2s, took {elapsed_time:.1f}s"
+
+    return True
+
+
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for browser_manager.py (decomposed).
@@ -477,6 +527,27 @@ def run_comprehensive_tests() -> bool:
             "Browser operations handle invalid states gracefully without raising exceptions",
             "Call various browser methods without valid driver and verify no exceptions are raised",
             "Test error handling and graceful degradation for browser operations",
+        )
+        suite.run_test(
+            "Cookie Timeout Default Value",
+            _test_cookie_timeout_default,
+            "Default cookie timeout is 10 seconds (not 60) to prevent long waits",
+            "Inspect get_cookies method signature and verify default timeout parameter is 10",
+            "Test that cookie timeout default prevents excessive waits for missing cookies",
+        )
+        suite.run_test(
+            "Cookie Timeout Custom Value",
+            _test_cookie_timeout_custom,
+            "Custom cookie timeout can be specified when calling get_cookies",
+            "Call get_cookies with custom timeout and verify it respects the parameter",
+            "Test custom timeout parameter handling in cookie retrieval",
+        )
+        suite.run_test(
+            "Cookie Check Prevents Long Waits",
+            _test_cookie_check_prevents_long_waits,
+            "Cookie check completes within timeout period for missing cookies",
+            "Call get_cookies with 2s timeout for missing cookie and verify it completes in ~2s",
+            "Test that cookie check doesn't wait excessively for non-existent cookies",
         )
         return suite.finish_suite()
 
