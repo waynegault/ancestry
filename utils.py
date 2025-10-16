@@ -594,7 +594,7 @@ def _should_retry_status_code(response: Any, retry_codes: set[int]) -> tuple[boo
     return False, None
 
 
-def _handle_status_code_retry(  # noqa: PLR0913
+def _handle_status_code_retry(
     status_code: int,
     retries: int,
     max_retries: int,
@@ -615,7 +615,7 @@ def _handle_status_code_retry(  # noqa: PLR0913
     return True, delay * backoff_factor
 
 
-def _handle_exception_retry(  # noqa: PLR0913
+def _handle_exception_retry(
     exception: Exception,
     retries: int,
     max_retries: int,
@@ -1023,7 +1023,7 @@ class RateLimiter:
     Implements a token bucket rate limiter with dynamic delay adjustments based on feedback.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         initial_delay: Optional[float] = None,
         max_delay: Optional[float] = None,
@@ -1580,7 +1580,7 @@ def _add_user_id_header(final_headers: dict[str, str], session_manager: SessionM
         logger.debug(f"[{api_description}] Omitting 'ancestry-userid' header as configured.")
 
 
-def _prepare_api_headers(  # noqa: PLR0913
+def _prepare_api_headers(
     session_manager: SessionManager,  # Assume available
     driver: DriverType,
     api_description: str,
@@ -1670,7 +1670,7 @@ def _validate_driver_for_sync(
         )
     return driver_is_valid
 
-def _perform_cookie_sync(  # noqa: PLR0913
+def _perform_cookie_sync(
     session_manager: SessionManager,
     api_description: str,
     attempt: int,
@@ -1970,7 +1970,7 @@ def _calculate_retry_sleep_time(
     return max(0.1, sleep_time)
 
 
-def _handle_failed_request_response(  # noqa: PLR0913
+def _handle_failed_request_response(
     retries_left: int,
     max_retries: int,
     api_description: str,
@@ -2001,7 +2001,7 @@ def _handle_failed_request_response(  # noqa: PLR0913
     return True, retries_left, new_delay
 
 
-def _handle_retryable_status(  # noqa: PLR0913
+def _handle_retryable_status(
     response: RequestsResponseTypeOptional,
     status: int,
     reason: str,
@@ -2178,7 +2178,7 @@ def _process_api_response(
 
 # End of _process_api_response
 
-def _handle_request_exception(  # noqa: PLR0913
+def _handle_request_exception(
     e: Exception,
     attempt: int,
     max_retries: int,
@@ -2213,7 +2213,7 @@ def _handle_request_exception(  # noqa: PLR0913
     return (True, retries_left, current_delay)
 
 
-def _handle_response_status(  # noqa: PLR0913
+def _handle_response_status(
     response: Any,
     retry_ctx: RetryContext,
     api_description: str,
@@ -2365,7 +2365,7 @@ def _execute_request_with_retries(
     return response
 
 
-def _api_req(  # noqa: PLR0913
+def _api_req(
     url: str,
     driver: DriverType,
     session_manager: SessionManager,  # type: ignore
@@ -3834,7 +3834,7 @@ def _handle_webdriver_exception(
     return ("continue", driver)
 
 
-def _check_url_mismatch_and_handle(  # noqa: PLR0913
+def _check_url_mismatch_and_handle(
     driver: WebDriver,  # type: ignore
     landed_url_base: str,
     target_url_base: str,
@@ -3863,7 +3863,7 @@ def _check_url_mismatch_and_handle(  # noqa: PLR0913
     return (None, driver)  # type: ignore  # Continue with normal flow
 
 
-def _validate_post_navigation(  # noqa: PLR0913
+def _validate_post_navigation(
     driver: WebDriver,  # type: ignore
     landed_url_base: str,
     target_url_base: str,

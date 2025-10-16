@@ -433,7 +433,7 @@ def _score_death_bonus(dyear_score: int, ddate_score: int, dplace_score: int, we
     return 0, 0, []
 
 
-def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str, is_living: bool, weights: dict[str, int]) -> tuple[int, dict[str, int], list[str]]:  # noqa: PLR0913
+def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str, is_living: bool, weights: dict[str, int]) -> tuple[int, dict[str, int], list[str]]:
     """Score death year and place matching."""
     score = 0
     field_scores = {"dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0}
@@ -644,7 +644,7 @@ def _extract_candidate_data(raw_candidate: dict, idx: int, clean_param: Callable
     }
 
 
-def _calculate_candidate_score(  # noqa: PLR0913
+def _calculate_candidate_score(
     candidate_data_dict: dict[str, Any],
     search_criteria: dict[str, Any],
     scoring_func: Optional[Callable],
@@ -1967,7 +1967,7 @@ def _extract_selected_person_ids(
     return _extract_ids_from_raw_suggestion(selected_candidate_processed)
 
 
-def _log_final_ids(  # noqa: PLR0913
+def _log_final_ids(
     owner_tree_id: Optional[str],
     owner_profile_id: Optional[str],
     selected_name: str,
@@ -1997,7 +1997,7 @@ def _log_final_ids(  # noqa: PLR0913
 
 # Helper functions for _handle_supplementary_info_phase - Phase 3: Relationship Calculation Method
 
-def _determine_relationship_calculation_method(  # noqa: PLR0913
+def _determine_relationship_calculation_method(
     essential_ids_found: bool,
     owner_tree_id: Optional[str],
     owner_profile_id: Optional[str],
@@ -2164,7 +2164,7 @@ def _format_tree_ladder_path(
         return format_api_relationship_path(api_response_dict, on_str, sn_str)  # type: ignore[possibly-unbound]
 
 
-def _handle_tree_ladder_api_call(  # noqa: PLR0913
+def _handle_tree_ladder_api_call(
     session_manager_local: SessionManager,
     base_url: str,
     owner_tree_id_str: str,
@@ -2251,7 +2251,7 @@ def _format_discovery_api_path(
         return formatted_path
 
 
-def _handle_discovery_api_call(  # noqa: PLR0913
+def _handle_discovery_api_call(
     session_manager_local: SessionManager,
     base_url: str,
     selected_person_global_id: str,
@@ -2393,7 +2393,7 @@ def _display_unexpected_state(
     )
 
 
-def _display_relationship_result(  # noqa: PLR0913
+def _display_relationship_result(
     formatted_path: Optional[str],
     is_owner: bool,
     calculation_performed: bool,

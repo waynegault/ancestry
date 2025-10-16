@@ -850,7 +850,7 @@ class PersonProcessor:
             message_type_id = self.msg_config.ack_msg_type_id or 1  # Provide default
             return message_text, message_type_id
 
-    def _send_message(  # noqa: PLR0913
+    def _send_message(
         self,
         person: Person,
         context_logs: list[ConversationLog],
@@ -1003,7 +1003,7 @@ class PersonProcessor:
             self.db_state.person_updates[person_id_int] = PersonStatusEnum.ARCHIVE
         logger.debug(f"{log_prefix}: Person status staged for ARCHIVE.")
 
-    def _stage_database_updates(  # noqa: PLR0913
+    def _stage_database_updates(
         self,
         person: Person,
         message_text: str,
@@ -1328,7 +1328,7 @@ def _query_candidates(
     return candidates_query.all()
 
 
-def _process_candidates(  # noqa: PLR0913
+def _process_candidates(
     session_manager: SessionManager,
     candidates: list[Person],
     state: ProcessingState,

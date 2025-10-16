@@ -245,7 +245,7 @@ def _save_in_tree_to_cache(
         logger.error(f"Error writing in-tree status to cache: {cache_write_err}")
 
 
-def _fetch_in_tree_from_api(  # noqa: PLR0913
+def _fetch_in_tree_from_api(
     driver: Any,
     session_manager: SessionManager,
     my_uuid: str,
@@ -313,7 +313,7 @@ def _fetch_in_tree_from_api(  # noqa: PLR0913
     return set()
 
 
-def fetch_in_tree_status(  # noqa: PLR0913
+def fetch_in_tree_status(
     driver: Any,
     session_manager: SessionManager,
     my_uuid: str,

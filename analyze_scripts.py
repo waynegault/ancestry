@@ -3,8 +3,8 @@
 
 import os
 import re
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 # Scripts that are definitely needed (core production code)
 KEEP_ESSENTIAL = {
@@ -39,7 +39,7 @@ def get_imports_from_file(filepath):
     """Extract all imports from a Python file."""
     imports = set()
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:
             content = f.read()
             # Find all "from X import" and "import X" statements
             from_imports = re.findall(r'from\s+(\w+)', content)
@@ -53,31 +53,31 @@ def get_imports_from_file(filepath):
 def analyze_scripts():
     """Analyze all scripts and their dependencies."""
     scripts = sorted([f for f in os.listdir('.') if f.endswith('.py')])
-    
+
     # Map module names to files
     module_to_file = {}
     for script in scripts:
         module_name = script.replace('.py', '')
         module_to_file[module_name] = script
-    
+
     # Find which scripts import which modules
     imports_by_script = {}
     for script in scripts:
         imports_by_script[script] = get_imports_from_file(script)
-    
+
     # Find which scripts are imported by others
     imported_scripts = defaultdict(set)
     for script, imports in imports_by_script.items():
         for imp in imports:
             if imp in module_to_file:
                 imported_scripts[module_to_file[imp]].add(script)
-    
+
     # Categorize scripts
     print("=" * 80)
     print("SCRIPT ANALYSIS REPORT")
     print("=" * 80)
     print()
-    
+
     print("KEEP - ESSENTIAL PRODUCTION CODE:")
     print("-" * 80)
     for script in sorted(KEEP_ESSENTIAL):
@@ -85,7 +85,7 @@ def analyze_scripts():
             lines = len(open(script).readlines())
             print(f"  ✅ {script:40} ({lines:5} lines)")
     print()
-    
+
     print("REMOVE - DEVELOPMENT/DIAGNOSTIC TOOLS:")
     print("-" * 80)
     for script in sorted(REMOVE_CANDIDATES):
@@ -97,7 +97,7 @@ def analyze_scripts():
             else:
                 print(f"  ❌ {script:40} ({lines:5} lines) - CAN REMOVE")
     print()
-    
+
     print("REVIEW - UTILITY/SUPPORT MODULES:")
     print("-" * 80)
     other_scripts = set(scripts) - KEEP_ESSENTIAL - REMOVE_CANDIDATES

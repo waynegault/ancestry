@@ -1363,7 +1363,7 @@ def _make_suggest_api_request(
     )
 
 
-def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):  # noqa: PLR0913
+def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):
     """Handle timeout exception for suggest API."""
     timeout_error = NetworkTimeoutError(
         f"API request timed out after {timeout}s",
@@ -2116,7 +2116,7 @@ def _validate_message_response(
     return False, None, SEND_ERROR_VALIDATION_FAILED
 
 
-def _process_send_message_response(  # noqa: PLR0913
+def _process_send_message_response(
     api_response: Any,
     is_initial: bool,
     existing_conv_id: Optional[str],
@@ -2632,7 +2632,7 @@ def call_tree_owner_api(
 # If async functionality is needed in the future, implement using aiohttp
 
 
-def call_enhanced_api(  # noqa: PLR0913
+def call_enhanced_api(
     session_manager: "SessionManager",
     endpoint: str,
     user_id: str,

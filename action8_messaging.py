@@ -2189,7 +2189,7 @@ def _determine_final_status(message_to_send_key: str, message_status: str, send_
     return status_string, person_update
 
 
-def _handle_person_status(  # noqa: PLR0913
+def _handle_person_status(
     person: Person, log_prefix: str, latest_in_log: Optional[ConversationLog],
     latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str],
     message_type_map: dict[str, int]
@@ -2219,7 +2219,7 @@ def _handle_person_status(  # noqa: PLR0913
     logger.error(f"Unexpected status '{getattr(person.status, 'name', 'UNKNOWN')}' encountered for {log_prefix}. Skipping.")
     raise StopIteration("error (unexpected_status)")
 
-def _process_single_person(  # noqa: PLR0913
+def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
     person: Person,
@@ -2468,7 +2468,7 @@ def _setup_progress_bar(total_candidates: int) -> dict:
     }
 
 
-def _handle_critical_db_error(progress_bar, total_candidates: int, processed_in_loop: int,  # noqa: PLR0913
+def _handle_critical_db_error(progress_bar, total_candidates: int, processed_in_loop: int,
                                sent_count: int, acked_count: int, skipped_count: int, error_count: int) -> int:
     """Handle critical database error by updating progress bar and calculating remaining skips."""
     remaining_to_skip = total_candidates - processed_in_loop + 1
@@ -2503,7 +2503,7 @@ def _check_and_handle_browser_health(
     return False, 0
 
 
-def _check_message_send_limit(max_messages_to_send_this_run: int, sent_count: int, acked_count: int,  # noqa: PLR0913
+def _check_message_send_limit(max_messages_to_send_this_run: int, sent_count: int, acked_count: int,
                                progress_bar, skipped_count: int, error_count: int) -> bool:
     """Check if message sending limit has been reached. Returns True if should skip."""
     current_sent_total = sent_count + acked_count
@@ -2520,7 +2520,7 @@ def _check_message_send_limit(max_messages_to_send_this_run: int, sent_count: in
     return False
 
 
-def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_count: int,  # noqa: PLR0913
+def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_count: int,
                            acked_count: int, skipped_count: int, error_count: int) -> None:
     """Log progress every 5% or every 100 people."""
     if processed_in_loop > 0 and (processed_in_loop % max(100, total_candidates // 20) == 0):
@@ -2588,7 +2588,7 @@ def _handle_acked_status(
         person_updates[person_update_tuple[0]] = person_update_tuple[1]
     return acked_count + 1
 
-def _handle_error_or_skip_status(  # noqa: PLR0913
+def _handle_error_or_skip_status(
     status: str,
     counters: 'BatchCounters',
     log_dict: Optional[dict],
@@ -2618,7 +2618,7 @@ def _handle_error_or_skip_status(  # noqa: PLR0913
     logger.warning(f"Unknown status category for {person.username}: {status}")
     return counters.skipped, counters.errors + 1, False
 
-def _update_counters_and_collect_data(  # noqa: PLR0913
+def _update_counters_and_collect_data(
     status: str,
     new_log_object,
     person_update_tuple,
@@ -2745,7 +2745,7 @@ def _handle_batch_commit_if_needed(
     return False, state.batch_num, True
 
 
-def _process_single_candidate_iteration(  # noqa: PLR0913
+def _process_single_candidate_iteration(
     person: Any,
     db_session: Session,
     session_manager: SessionManager,
@@ -2911,7 +2911,7 @@ def _handle_action8_exception(exception: BaseException) -> bool:
     return False  # All exceptions result in overall_success = False
 
 
-def _perform_final_commit(  # noqa: PLR0913
+def _perform_final_commit(
     db_session: Session,
     critical_db_error_occurred: bool,
     db_logs_to_add_dicts: list[dict[str, Any]],
@@ -2956,7 +2956,7 @@ def _perform_final_commit(  # noqa: PLR0913
     return overall_success, batch_num
 
 
-def _perform_final_cleanup(  # noqa: PLR0913
+def _perform_final_cleanup(
     db_session: Optional[Session],
     session_manager: SessionManager,
     critical_db_error_occurred: bool,
@@ -3014,7 +3014,7 @@ def _log_performance_summary() -> None:
         logger.warning(f"Performance monitoring summary failed: {perf_err}")
 
 
-def _process_all_candidates(  # noqa: PLR0913
+def _process_all_candidates(
     candidate_persons: list,
     total_candidates: int,
     db_session: Session,
