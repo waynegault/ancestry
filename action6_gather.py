@@ -17,6 +17,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
+import os
 import random
 import time
 
@@ -1437,6 +1438,273 @@ def _test_error_handling() -> bool:
     return True
 
 
+# ==============================================
+# Functional API Tests (Require Live Session)
+# ==============================================
+
+
+def _ensure_session_for_api_tests() -> tuple[SessionManager, str]:
+    """Ensure session is ready for API tests. Returns (session_manager, my_uuid)."""
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
+        raise AssertionError("Live API tests skipped (SKIP_LIVE_API_TESTS=true)")
+
+    sm = SessionManager()
+    started = sm.start_sess("Action 6 API Tests")
+    if not started:
+        logger.warning("Could not start session for API tests")
+        raise AssertionError("Failed to start session - browser may not be available")
+
+    ready = sm.ensure_session_ready("Action 6 API Tests")
+    if not ready:
+        logger.warning("Session not ready for API tests (login/cookies/ids missing)")
+        raise AssertionError("Session not ready (login/cookies/ids missing)")
+
+    if not sm.my_uuid:
+        logger.warning("UUID not available for API tests")
+        raise AssertionError("UUID not available")
+
+    return sm, sm.my_uuid
+
+
+def _test_match_list_api() -> bool:
+    """Test fetching match list from API."""
+    sm, my_uuid = _ensure_session_for_api_tests()
+
+    try:
+        # Get CSRF token
+        csrf_token = get_csrf_token_for_dna_matches(sm.driver)
+        assert csrf_token, "Failed to get CSRF token"
+
+        # Fetch first page of matches
+        response = fetch_match_list_page(sm.driver, sm, my_uuid, 1, csrf_token)
+        assert response and isinstance(response, dict), "Match list response should be a dictionary"
+
+        # Extract matches from response
+        matches = response.get("matches", [])
+        assert matches and isinstance(matches, list), "Match list should be a non-empty list"
+        assert len(matches) > 0, "Should have at least one match"
+
+        # Validate match structure
+        first_match = matches[0]
+        assert "uuid" in first_match, "Match should have uuid"
+        assert "username" in first_match, "Match should have username"
+        assert "cm" in first_match, "Match should have cm (centiMorgans)"
+        assert "segments" in first_match, "Match should have segments"
+
+        logger.info(f"✅ Match List API: Found {len(matches)} matches")
+        logger.info(f"   First match: {first_match.get('username')} ({first_match.get('cm')} cM)")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Match List API test failed: {e}")
+        raise
+
+
+def _test_match_details_api() -> bool:
+    """Test fetching match details from API."""
+    sm, my_uuid = _ensure_session_for_api_tests()
+
+    try:
+        # Get CSRF token and fetch first page of matches
+        csrf_token = get_csrf_token_for_dna_matches(sm.driver)
+        assert csrf_token, "Failed to get CSRF token"
+
+        response = fetch_match_list_page(sm.driver, sm, my_uuid, 1, csrf_token)
+        assert response and isinstance(response, dict), "Match list response should be a dictionary"
+
+        matches = response.get("matches", [])
+        assert matches and len(matches) > 0, "Need at least one match to test details"
+
+        match_uuid = matches[0]["uuid"]
+        logger.info(f"Testing Match Details API with match: {match_uuid}")
+
+        # Fetch match details
+        details = _fetch_match_details(sm, my_uuid, match_uuid)
+        assert isinstance(details, dict), "Match details should be a dictionary"
+
+        # Validate key fields
+        assert "shared_segments" in details, "Should have shared_segments"
+        assert "longest_shared_segment" in details, "Should have longest_shared_segment"
+        assert "predicted_relationship" in details, "Should have predicted_relationship"
+
+        logger.info(f"✅ Match Details API: Retrieved details for {match_uuid}")
+        logger.info(f"   Shared segments: {details.get('shared_segments')}")
+        logger.info(f"   Predicted relationship: {details.get('predicted_relationship')}")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Match Details API test failed: {e}")
+        raise
+
+
+def _test_profile_details_api() -> bool:
+    """Test fetching profile details from API."""
+    sm, my_uuid = _ensure_session_for_api_tests()
+
+    try:
+        # Get CSRF token and fetch first page of matches
+        csrf_token = get_csrf_token_for_dna_matches(sm.driver)
+        assert csrf_token, "Failed to get CSRF token"
+
+        response = fetch_match_list_page(sm.driver, sm, my_uuid, 1, csrf_token)
+        assert response and isinstance(response, dict), "Match list response should be a dictionary"
+
+        matches = response.get("matches", [])
+        assert matches and len(matches) > 0, "Need at least one match"
+
+        # Find a match with profile_id
+        match_with_profile = None
+        for match in matches:
+            if match.get("profile_id"):
+                match_with_profile = match
+                break
+
+        if not match_with_profile:
+            logger.warning("⚠️  No matches with profile_id found, skipping profile details test")
+            return True
+
+        profile_id = match_with_profile["profile_id"]
+        match_uuid = match_with_profile["uuid"]
+        logger.info(f"Testing Profile Details API with profile: {profile_id}")
+
+        # Fetch profile details
+        details = _fetch_profile_details(sm, profile_id, match_uuid)
+        assert isinstance(details, dict), "Profile details should be a dictionary"
+
+        # Validate key fields
+        assert "last_logged_in" in details, "Should have last_logged_in"
+        assert "contactable" in details, "Should have contactable"
+
+        logger.info(f"✅ Profile Details API: Retrieved details for profile {profile_id}")
+        logger.info(f"   Last logged in: {details.get('last_logged_in')}")
+        logger.info(f"   Contactable: {details.get('contactable')}")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Profile Details API test failed: {e}")
+        raise
+
+
+def _test_badge_details_api() -> bool:
+    """Test fetching badge details (tree data) from API."""
+    sm, my_uuid = _ensure_session_for_api_tests()
+
+    try:
+        # Get CSRF token and fetch first page of matches
+        csrf_token = get_csrf_token_for_dna_matches(sm.driver)
+        assert csrf_token, "Failed to get CSRF token"
+
+        response = fetch_match_list_page(sm.driver, sm, my_uuid, 1, csrf_token)
+        assert response and isinstance(response, dict), "Match list response should be a dictionary"
+
+        matches = response.get("matches", [])
+        assert matches and len(matches) > 0, "Need at least one match"
+
+        # Find a match that's in tree
+        match_in_tree = None
+        for match in matches:
+            if match.get("in_tree", False):
+                match_in_tree = match
+                break
+
+        if not match_in_tree:
+            logger.warning("⚠️  No matches in tree found, skipping badge details test")
+            return True
+
+        match_uuid = match_in_tree["uuid"]
+        logger.info(f"Testing Badge Details API with match: {match_uuid}")
+
+        # Fetch badge details
+        details = _fetch_badge_details(sm, my_uuid, match_uuid)
+        assert isinstance(details, dict), "Badge details should be a dictionary"
+
+        logger.info(f"✅ Badge Details API: Retrieved details for {match_uuid}")
+        logger.info(f"   Badge details keys: {list(details.keys())}")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Badge Details API test failed: {e}")
+        raise
+
+
+def _test_relationship_probability_api() -> bool:
+    """Test fetching relationship probability from API."""
+    sm, my_uuid = _ensure_session_for_api_tests()
+
+    try:
+        # Get CSRF token and fetch first page of matches
+        csrf_token = get_csrf_token_for_dna_matches(sm.driver)
+        assert csrf_token, "Failed to get CSRF token"
+
+        response = fetch_match_list_page(sm.driver, sm, my_uuid, 1, csrf_token)
+        assert response and isinstance(response, dict), "Match list response should be a dictionary"
+
+        matches = response.get("matches", [])
+        assert matches and len(matches) > 0, "Need at least one match"
+
+        match_uuid = matches[0]["uuid"]
+        logger.info(f"Testing Relationship Probability API with match: {match_uuid}")
+
+        # Fetch relationship probability
+        relationship = _fetch_relationship_probability(sm, my_uuid, match_uuid)
+
+        # Relationship can be None or a string
+        if relationship:
+            assert isinstance(relationship, str), "Relationship should be a string"
+            logger.info(f"✅ Relationship Probability API: {relationship}")
+        else:
+            logger.info("✅ Relationship Probability API: No relationship data available")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Relationship Probability API test failed: {e}")
+        raise
+
+
+def _test_parallel_fetch_match_details() -> bool:
+    """Test parallel fetching of match details."""
+    sm, my_uuid = _ensure_session_for_api_tests()
+
+    try:
+        # Get CSRF token and fetch first page of matches
+        csrf_token = get_csrf_token_for_dna_matches(sm.driver)
+        assert csrf_token, "Failed to get CSRF token"
+
+        response = fetch_match_list_page(sm.driver, sm, my_uuid, 1, csrf_token)
+        assert response and isinstance(response, dict), "Match list response should be a dictionary"
+
+        matches = response.get("matches", [])
+        assert matches and len(matches) > 0, "Need at least one match"
+
+        # Test parallel fetch with first 3 matches (or fewer if not available)
+        test_matches = matches[:min(3, len(matches))]
+        logger.info(f"Testing parallel fetch with {len(test_matches)} matches")
+
+        # Fetch details in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(_fetch_match_details_parallel, match, sm, my_uuid)
+                for match in test_matches
+            ]
+
+            results = []
+            for future in as_completed(futures):
+                result = future.result()
+                assert isinstance(result, dict), "Result should be a dictionary"
+                results.append(result)
+
+        assert len(results) == len(test_matches), "Should have results for all matches"
+        logger.info(f"✅ Parallel Fetch: Successfully fetched details for {len(results)} matches")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Parallel fetch test failed: {e}")
+        raise
+
+
 def action6_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py using standardized TestSuite framework."""
     from test_framework import TestSuite, suppress_logging
@@ -1444,6 +1712,7 @@ def action6_module_tests() -> bool:
     suite = TestSuite("Action 6 - DNA Match Gatherer", "action6_gather.py")
     suite.start_suite()
 
+    # === CODE QUALITY & STRUCTURE TESTS ===
     with suppress_logging():
         suite.run_test(
             "Database Schema Validation",
@@ -1484,6 +1753,55 @@ def action6_module_tests() -> bool:
             "Check for try/except blocks in _get_person_id_by_uuid, _fetch_match_details_parallel, and _process_batch.",
             "All functions have appropriate error handling in place.",
         )
+
+    # === FUNCTIONAL API TESTS (Require Live Session) ===
+    suite.run_test(
+        "Match List API",
+        _test_match_list_api,
+        "Tests fetching match list from Ancestry API with pagination support.",
+        "Call fetch_match_list_page and validate response structure and match data.",
+        "Match List API returns valid matches with uuid, username, cm, and segments.",
+    )
+
+    suite.run_test(
+        "Match Details API",
+        _test_match_details_api,
+        "Tests fetching detailed match information including relationship predictions.",
+        "Call _fetch_match_details and validate shared segments and relationship data.",
+        "Match Details API returns shared_segments, longest_shared_segment, and predicted_relationship.",
+    )
+
+    suite.run_test(
+        "Profile Details API",
+        _test_profile_details_api,
+        "Tests fetching profile details for matches with public profiles.",
+        "Call _fetch_profile_details and validate last_logged_in and contactable fields.",
+        "Profile Details API returns last_logged_in and contactable status when available.",
+    )
+
+    suite.run_test(
+        "Badge Details API",
+        _test_badge_details_api,
+        "Tests fetching tree badge details for matches in user's tree.",
+        "Call _fetch_badge_details and validate response structure.",
+        "Badge Details API returns tree data for matches in user's family tree.",
+    )
+
+    suite.run_test(
+        "Relationship Probability API",
+        _test_relationship_probability_api,
+        "Tests fetching predicted relationship from Relationship Probability API.",
+        "Call _fetch_relationship_probability and validate relationship string format.",
+        "Relationship Probability API returns formatted relationship or None if unavailable.",
+    )
+
+    suite.run_test(
+        "Parallel Match Details Fetching",
+        _test_parallel_fetch_match_details,
+        "Tests parallel fetching of match details using ThreadPoolExecutor.",
+        "Fetch details for multiple matches in parallel and validate all results.",
+        "Parallel fetching completes successfully with all match details retrieved.",
+    )
 
     return suite.finish_suite()
 
