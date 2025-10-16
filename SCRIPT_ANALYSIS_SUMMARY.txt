@@ -1,0 +1,124 @@
+================================================================================
+PYTHON SCRIPT ANALYSIS - REMOVAL CANDIDATES
+================================================================================
+
+TOTAL SCRIPTS: 77
+TOTAL LINES: 76,773
+
+================================================================================
+TIER 1: SAFE TO REMOVE (10 scripts, 2,449 lines)
+================================================================================
+
+Development/Diagnostic Tools - No Production Dependencies
+
+1. performance_validation.py          0 lines  [EMPTY FILE]
+2. fix_pylance_issues.py             51 lines  [LINTER TOOL]
+3. add_noqa_comments.py             213 lines  [REFACTORING TOOL]
+4. automate_too_many_args.py        218 lines  [REFACTORING TOOL]
+5. apply_automated_refactoring.py   341 lines  [REFACTORING TOOL]
+6. refactor_test_functions.py       132 lines  [REFACTORING TOOL]
+7. test_phase2_improvements.py      218 lines  [TESTING TOOL]
+8. validate_rate_limiting.py        330 lines  [VALIDATION TOOL]
+9. test_rate_limiting.py            447 lines  [TESTING TOOL]
+10. diagnose_chrome.py              499 lines  [DIAGNOSTIC TOOL]
+
+TOTAL: 2,449 lines (3.2% of codebase)
+IMPACT: Zero production impact - all development-only tools
+
+================================================================================
+TIER 2: INVESTIGATE BEFORE REMOVAL (9 scripts, 7,826 lines)
+================================================================================
+
+Not Currently Imported - Verify Usage Before Removal
+
+1. health_monitor.py               1,860 lines  [MONITORING]
+2. genealogical_task_templates.py  1,139 lines  [TEMPLATES]
+3. api_search_utils.py             1,252 lines  [API UTILITIES]
+4. performance_orchestrator.py       982 lines  [ORCHESTRATION]
+5. chromedriver.py                   839 lines  [DRIVER MANAGEMENT]
+6. genealogical_normalization.py     693 lines  [DATA NORMALIZATION]
+7. performance_dashboard.py          492 lines  [DASHBOARD]
+8. quality_regression_gate.py        176 lines  [QUALITY GATE]
+9. universal_scoring.py              393 lines  [SCORING] *KEEP*
+
+TOTAL: 7,826 lines (10.2% of codebase)
+NOTE: universal_scoring.py should be KEPT (intended for action10/action11)
+
+================================================================================
+TIER 3: KEEP - ESSENTIAL PRODUCTION (11 scripts, 31,947 lines)
+================================================================================
+
+Core Production Code - Must Retain
+
+1. utils.py                        4,717 lines  [CORE UTILITIES]
+2. action8_messaging.py            3,829 lines  [PRODUCTION ACTION]
+3. database.py                     3,425 lines  [DATABASE LAYER]
+4. action11.py                     3,333 lines  [PRODUCTION ACTION]
+5. api_utils.py                    3,328 lines  [API UTILITIES]
+6. action10.py                     2,554 lines  [PRODUCTION ACTION]
+7. main.py                         2,312 lines  [ENTRY POINT]
+8. action9_process_productive.py   2,051 lines  [PRODUCTION ACTION]
+9. action7_inbox.py                2,142 lines  [PRODUCTION ACTION]
+10. action6_gather.py              1,489 lines  [PRODUCTION ACTION]
+11. run_all_tests.py               1,708 lines  [TEST RUNNER]
+12. test_framework.py                959 lines  [TEST INFRASTRUCTURE]
+
+TOTAL: 31,947 lines (41.5% of codebase)
+
+================================================================================
+TIER 4: KEEP - UTILITY/SUPPORT (56 scripts, 40,000+ lines)
+================================================================================
+
+Actively Used by Production Code - Must Retain
+
+Examples of High-Usage Modules:
+- standard_imports.py              [USED BY 46 SCRIPTS]
+- test_utilities.py                [USED BY 39 SCRIPTS]
+- config.py                        [USED BY 25 SCRIPTS]
+- common_params.py                 [USED BY 11 SCRIPTS]
+- cache.py                         [USED BY 10 SCRIPTS]
+- logging_config.py                [USED BY 10 SCRIPTS]
+- gedcom_utils.py                  [USED BY 7 SCRIPTS]
+- relationship_utils.py            [USED BY 5 SCRIPTS]
+- api_utils.py                     [USED BY 5 SCRIPTS]
+
+TOTAL: 56 scripts, 40,000+ lines (52% of codebase)
+
+================================================================================
+REMOVAL IMPACT ANALYSIS
+================================================================================
+
+Phase 1 (Immediate - 10 scripts):
+  Before: 77 scripts, 76,773 lines
+  After:  67 scripts, 74,324 lines
+  Reduction: 2,449 lines (3.2%)
+  Production Impact: NONE
+
+Phase 2 (Investigation - 9 scripts):
+  Potential Reduction: 7,826 lines (10.2%)
+  Requires: Verification of usage patterns
+  Production Impact: DEPENDS ON INVESTIGATION
+
+Total Potential Reduction: 10,275 lines (13.4%)
+
+================================================================================
+RECOMMENDATION
+================================================================================
+
+‚úÖ PROCEED WITH PHASE 1 IMMEDIATELY
+   - Remove 10 development/diagnostic tools
+   - Zero production impact
+   - Cleaner codebase
+   - Estimated time: 1-2 hours
+
+‚ö†Ô∏è  SCHEDULE PHASE 2 INVESTIGATION
+   - Verify usage of 9 scripts under review
+   - Check main.py menu integration
+   - Verify external script dependencies
+   - Estimated time: 2-4 hours
+
+Ì¥ç KEEP universal_scoring.py
+   - Intended for use by action10 and action11
+   - Part of genealogical research functionality
+
+================================================================================
