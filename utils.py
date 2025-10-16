@@ -825,6 +825,176 @@ def time_wait(wait_description: str) -> Callable:
 # End of time_wait
 
 # ------------------------------
+# Circuit Breaker Pattern for 429 Errors
+# ------------------------------
+class CircuitBreaker:
+    """
+    Implements the Circuit Breaker pattern to prevent cascading failures from 429 errors.
+
+    States:
+    - CLOSED: Normal operation, requests pass through
+    - OPEN: Too many failures, requests are blocked
+    - HALF_OPEN: Testing if service has recovered
+
+    The circuit breaker tracks 429 errors and opens the circuit when a threshold is reached,
+    preventing further requests until a recovery period has elapsed.
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        half_open_max_requests: int = 3,
+    ):
+        """
+        Initialize circuit breaker.
+
+        Args:
+            failure_threshold: Number of consecutive 429 errors before opening circuit
+            recovery_timeout: Seconds to wait before attempting recovery (OPEN -> HALF_OPEN)
+            half_open_max_requests: Number of test requests allowed in HALF_OPEN state
+        """
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.half_open_max_requests = half_open_max_requests
+
+        # State management
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+        self.failure_count = 0
+        self.success_count = 0
+        self.last_failure_time = 0.0
+        self.half_open_requests = 0
+
+        # Thread safety
+        self._lock = threading.Lock()
+
+        # Metrics
+        self._metrics = {
+            'total_requests': 0,
+            'blocked_requests': 0,
+            'circuit_opens': 0,
+            'circuit_closes': 0,
+            'half_open_successes': 0,
+            'half_open_failures': 0,
+        }
+
+        logger.info(f"🔌 Circuit Breaker initialized: threshold={failure_threshold}, recovery={recovery_timeout}s")
+
+    def call(self, func, *args, **kwargs):
+        """
+        Execute function through circuit breaker.
+
+        Args:
+            func: Function to execute
+            *args, **kwargs: Arguments to pass to function
+
+        Returns:
+            Function result or None if circuit is open
+
+        Raises:
+            Exception: If circuit is OPEN (too many failures)
+        """
+        with self._lock:
+            self._metrics['total_requests'] += 1
+
+            # Check if circuit should transition from OPEN to HALF_OPEN
+            if self.state == "OPEN":
+                if time.time() - self.last_failure_time >= self.recovery_timeout:
+                    self._transition_to_half_open()
+                else:
+                    self._metrics['blocked_requests'] += 1
+                    raise Exception(f"Circuit breaker is OPEN - blocking request (recovery in {self.recovery_timeout - (time.time() - self.last_failure_time):.1f}s)")
+
+            # In HALF_OPEN state, limit number of test requests
+            if self.state == "HALF_OPEN":
+                if self.half_open_requests >= self.half_open_max_requests:
+                    self._metrics['blocked_requests'] += 1
+                    raise Exception("Circuit breaker is HALF_OPEN - max test requests reached")
+                self.half_open_requests += 1
+
+        # Execute function outside lock to avoid blocking other threads
+        try:
+            result = func(*args, **kwargs)
+            self.record_success()
+            return result
+        except Exception as e:
+            # Check if this is a 429 error
+            if "429" in str(e) or "Too Many Requests" in str(e):
+                self.record_failure()
+            raise
+
+    def record_success(self) -> None:
+        """Record successful request."""
+        with self._lock:
+            self.failure_count = 0
+            self.success_count += 1
+
+            if self.state == "HALF_OPEN":
+                self._metrics['half_open_successes'] += 1
+                # If we've had enough successful test requests, close the circuit
+                if self.success_count >= self.half_open_max_requests:
+                    self._transition_to_closed()
+
+    def record_failure(self) -> None:
+        """Record failed request (429 error)."""
+        with self._lock:
+            self.failure_count += 1
+            self.success_count = 0
+            self.last_failure_time = time.time()
+
+            if self.state == "HALF_OPEN":
+                self._metrics['half_open_failures'] += 1
+                # Any failure in HALF_OPEN state reopens the circuit
+                self._transition_to_open()
+            elif self.state == "CLOSED":
+                # Check if we've hit the failure threshold
+                if self.failure_count >= self.failure_threshold:
+                    self._transition_to_open()
+
+    def _transition_to_open(self) -> None:
+        """Transition to OPEN state (circuit is open, blocking requests)."""
+        if self.state != "OPEN":
+            self.state = "OPEN"
+            self._metrics['circuit_opens'] += 1
+            logger.warning(f"🔴 Circuit breaker OPENED after {self.failure_count} failures - blocking requests for {self.recovery_timeout}s")
+
+    def _transition_to_half_open(self) -> None:
+        """Transition to HALF_OPEN state (testing recovery)."""
+        self.state = "HALF_OPEN"
+        self.half_open_requests = 0
+        self.success_count = 0
+        logger.info(f"🟡 Circuit breaker HALF_OPEN - testing recovery with {self.half_open_max_requests} requests")
+
+    def _transition_to_closed(self) -> None:
+        """Transition to CLOSED state (circuit is closed, normal operation)."""
+        if self.state != "CLOSED":
+            self.state = "CLOSED"
+            self._metrics['circuit_closes'] += 1
+            self.failure_count = 0
+            logger.info("🟢 Circuit breaker CLOSED - normal operation resumed")
+
+    def get_state(self) -> str:
+        """Get current circuit breaker state."""
+        return self.state
+
+    def get_metrics(self) -> dict:
+        """Get circuit breaker metrics."""
+        with self._lock:
+            return self._metrics.copy()
+
+    def reset(self) -> None:
+        """Reset circuit breaker to initial state."""
+        with self._lock:
+            self.state = "CLOSED"
+            self.failure_count = 0
+            self.success_count = 0
+            self.last_failure_time = 0.0
+            self.half_open_requests = 0
+            logger.info("🔄 Circuit breaker reset to CLOSED state")
+
+# End of CircuitBreaker
+
+# ------------------------------
 # Rate Limiting (Remains in utils.py)
 # ------------------------------
 class RateLimiter:
@@ -891,6 +1061,13 @@ class RateLimiter:
 
         # Thread safety for parallel API calls
         self._lock = threading.Lock()
+
+        # Circuit breaker for 429 error protection
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=5,  # Open circuit after 5 consecutive 429 errors
+            recovery_timeout=60.0,  # Wait 60 seconds before testing recovery
+            half_open_max_requests=3,  # Allow 3 test requests in HALF_OPEN state
+        )
 
         # Metrics tracking
         self._metrics = {
@@ -1035,6 +1212,9 @@ class RateLimiter:
         - If delay is > 2x initial_delay: decrease by 10% (fast recovery)
         - Otherwise: decrease by 2% (gradual recovery)
         """
+        # Record success in circuit breaker
+        self.circuit_breaker.record_success()
+
         with self._lock:
             if not self.last_throttled and self.current_delay > self.initial_delay:
                 previous_delay = self.current_delay
@@ -1070,6 +1250,9 @@ class RateLimiter:
 
     def increase_delay(self) -> None:
         """Thread-safe increase of delay on rate limit feedback."""
+        # Record 429 error in circuit breaker
+        self.circuit_breaker.record_failure()
+
         with self._lock:
             previous_delay = self.current_delay
             self.current_delay = min(
@@ -1079,7 +1262,7 @@ class RateLimiter:
                 abs(previous_delay - self.current_delay) > 0.01
             ):  # Log only significant changes
                 logger.info(
-                    f"Rate limit feedback received. Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s"
+                    f"Rate limit feedback received. Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s (Circuit: {self.circuit_breaker.get_state()})"
                 )
             else:
                 logger.debug(
@@ -1099,6 +1282,24 @@ class RateLimiter:
         return self.last_throttled
 
     # End of is_throttled
+
+    def check_circuit_breaker(self) -> bool:
+        """
+        Check if circuit breaker allows requests.
+
+        Returns:
+            True if circuit is CLOSED (requests allowed)
+            False if circuit is OPEN (requests blocked)
+        """
+        state = self.circuit_breaker.get_state()
+        if state == "OPEN":
+            logger.warning("🔴 Circuit breaker is OPEN - blocking API requests to prevent cascading failures")
+            return False
+        if state == "HALF_OPEN":
+            logger.info("🟡 Circuit breaker is HALF_OPEN - allowing limited test requests")
+        return True
+
+    # End of check_circuit_breaker
 
     def _update_metrics(self, wait_time: float, bucket_was_empty: bool) -> None:
         """Update internal metrics tracking."""
@@ -1164,6 +1365,7 @@ class RateLimiter:
     def print_metrics_summary(self) -> None:
         """Print a formatted summary of rate limiter metrics."""
         metrics = self.get_metrics()
+        cb_metrics = self.circuit_breaker.get_metrics()
 
         logger.info("=" * 80)
         logger.info("RATE LIMITER METRICS SUMMARY")
@@ -1185,6 +1387,15 @@ class RateLimiter:
         logger.info(f"Configured RPS:        {metrics['requests_per_second']:.2f}/s")
         logger.info(f"Effective RPS:         {metrics['effective_rps']:.2f}/s")
         logger.info(f"Current Delay:         {metrics['current_delay']:.3f}s")
+        logger.info("")
+        logger.info("CIRCUIT BREAKER METRICS")
+        logger.info(f"Current State:         {self.circuit_breaker.get_state()}")
+        logger.info(f"Total Requests:        {cb_metrics['total_requests']}")
+        logger.info(f"Blocked Requests:      {cb_metrics['blocked_requests']}")
+        logger.info(f"Circuit Opens:         {cb_metrics['circuit_opens']}")
+        logger.info(f"Circuit Closes:        {cb_metrics['circuit_closes']}")
+        logger.info(f"Half-Open Successes:   {cb_metrics['half_open_successes']}")
+        logger.info(f"Half-Open Failures:    {cb_metrics['half_open_failures']}")
         logger.info(f"Uptime:                {metrics['uptime_seconds']:.1f}s")
         logger.info("=" * 80)
 
@@ -4091,6 +4302,41 @@ if __name__ == "__main__":
         result = test_func()
         assert result == "success", "Retry decorator should work"
 
+    def test_circuit_breaker():
+        # Test CircuitBreaker instantiation and state transitions
+        cb = CircuitBreaker(failure_threshold=3, recovery_timeout=1.0, half_open_max_requests=2)
+        assert cb is not None, "Circuit breaker should instantiate"
+        assert cb.get_state() == "CLOSED", "Circuit breaker should start in CLOSED state"
+
+        # Test failure recording and circuit opening
+        cb.record_failure()
+        assert cb.get_state() == "CLOSED", "Circuit should stay CLOSED after 1 failure"
+        cb.record_failure()
+        assert cb.get_state() == "CLOSED", "Circuit should stay CLOSED after 2 failures"
+        cb.record_failure()
+        assert cb.get_state() == "OPEN", "Circuit should OPEN after 3 failures (threshold)"
+
+        # Test that circuit blocks requests when OPEN
+        metrics = cb.get_metrics()
+        assert metrics['circuit_opens'] == 1, "Circuit should have opened once"
+
+        # Test transition to HALF_OPEN after recovery timeout
+        time.sleep(1.1)  # Wait for recovery timeout
+        try:
+            cb.call(lambda: "test")
+        except Exception:
+            pass
+        assert cb.get_state() == "HALF_OPEN", "Circuit should transition to HALF_OPEN after recovery timeout"
+
+        # Test success recording and circuit closing
+        cb.record_success()
+        cb.record_success()
+        assert cb.get_state() == "CLOSED", "Circuit should CLOSE after successful test requests"
+
+        metrics = cb.get_metrics()
+        assert metrics['circuit_closes'] == 1, "Circuit should have closed once"
+        assert metrics['half_open_successes'] == 2, "Should have 2 successful test requests"
+
     def test_rate_limiter():
         # Test RateLimiter instantiation and basic functionality
         limiter = RateLimiter(initial_delay=0.001, max_delay=0.01)
@@ -4105,12 +4351,23 @@ if __name__ == "__main__":
         assert hasattr(
             limiter, "decrease_delay"
         ), "Rate limiter should have decrease_delay method"
+        assert hasattr(
+            limiter, "circuit_breaker"
+        ), "Rate limiter should have circuit_breaker"
+        assert hasattr(
+            limiter, "check_circuit_breaker"
+        ), "Rate limiter should have check_circuit_breaker method"
 
         # Test wait method (should not hang)
         start_time = time.time()
         limiter.wait()
         elapsed = time.time() - start_time
         assert elapsed < 1.0, "Wait should complete quickly in test"
+
+        # Test circuit breaker integration
+        assert limiter.circuit_breaker.get_state() == "CLOSED", "Circuit should start CLOSED"
+        limiter.increase_delay()  # Simulate 429 error
+        assert limiter.circuit_breaker.failure_count == 1, "Circuit should track failure"
 
     def test_session_manager():
         # Test SessionManager class availability and basic attributes
@@ -4294,6 +4551,14 @@ if __name__ == "__main__":
             "11 name formats: basic, None→'Valued Relative', GEDCOM /slashes/, O'Malley, McDonald, MacLeod, 'Betty', hyphenated, initials.",
             "Test name formatting with various input types and edge cases.",
             "Test format_name with: 'john doe'→'John Doe', None→'Valued Relative', 'john /doe/'→'John Doe', 'o'malley'→'O'Malley'.",
+        )
+
+        suite.run_test(
+            "Circuit breaker pattern for 429 errors",
+            test_circuit_breaker,
+            "Test circuit breaker state transitions: CLOSED→OPEN→HALF_OPEN→CLOSED with failure/success tracking",
+            "Circuit breaker prevents cascading failures from 429 errors",
+            "Test CircuitBreaker: 3 failures→OPEN, recovery timeout→HALF_OPEN, 2 successes→CLOSED",
         )
 
         suite.run_test(
