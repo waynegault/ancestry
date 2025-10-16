@@ -173,8 +173,8 @@ def check_chrome_profile() -> dict:
         # Check for lock files (indicates Chrome is running)
         lock_files = ["lockfile", "SingletonLock", "SingletonSocket", "SingletonCookie"]
         for lock_file in lock_files:
-            lock_path = os.path.join(user_data_dir, lock_file)
-            if os.path.exists(lock_path):
+            lock_path = Path(user_data_dir) / lock_file
+            if lock_path.exists():
                 result["issues"].append(f"Lock file exists: {lock_file} (Chrome may be running)")
                 print(f"⚠️  Lock file found: {lock_file} (Chrome may be running)")
     else:
@@ -206,7 +206,7 @@ def check_chromedriver_compatibility() -> dict:
             result["configured"] = True
             result["path"] = "auto"
             print("✅ ChromeDriver set to AUTO (automatic version management)")
-        elif os.path.exists(driver_path):
+        elif Path(driver_path).exists():
             result["configured"] = True
             result["path"] = str(driver_path)
             print(f"✅ ChromeDriver found at: {driver_path}")

@@ -1009,7 +1009,7 @@ def get_rate_limiter() -> 'RateLimiter':
     Returns:
         RateLimiter: The global singleton instance
     """
-    global _global_rate_limiter
+    global _global_rate_limiter  # noqa: PLW0603
     if _global_rate_limiter is None:
         _global_rate_limiter = RateLimiter()
         logger.debug("Global RateLimiter singleton created")
@@ -1908,14 +1908,12 @@ def _execute_api_request(
         # RetryError means the requests library exhausted its internal retries (usually 3x)
         # Each RetryError likely represents 3+ actual 429 errors that were hidden from our rate limiter
         error_str = str(e)
-        if "RetryError" in type(e).__name__ or "RetryError" in error_str:
-            if "429" in error_str or "too many 429" in error_str.lower():
-                # This is a RetryError caused by 429s - track as failed request with 429 errors
-                if session_manager.rate_limiter:
-                    # Estimate 3 actual 429s per RetryError (requests library default retry count)
-                    for _ in range(3):
-                        session_manager.rate_limiter.increase_delay()
-                    logger.debug("Tracked RetryError as ~3 hidden 429 errors for rate limiter")
+        if (("RetryError" in type(e).__name__ or "RetryError" in error_str) and ("429" in error_str or "too many 429" in error_str.lower()) and session_manager.rate_limiter):
+            # This is a RetryError caused by 429s - track as failed request with 429 errors
+            # Estimate 3 actual 429s per RetryError (requests library default retry count)
+            for _ in range(3):
+                session_manager.rate_limiter.increase_delay()
+            logger.debug("Tracked RetryError as ~3 hidden 429 errors for rate limiter")
 
         return None
     except Exception as e:
@@ -4402,10 +4400,9 @@ if __name__ == "__main__":
 
         # Test transition to HALF_OPEN after recovery timeout
         time.sleep(1.1)  # Wait for recovery timeout
-        try:
+        from contextlib import suppress
+        with suppress(Exception):
             cb.call(lambda: "test")
-        except Exception:
-            pass
         assert cb.get_state() == "HALF_OPEN", "Circuit should transition to HALF_OPEN after recovery timeout"
 
         # Test success recording and circuit closing

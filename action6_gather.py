@@ -868,7 +868,7 @@ def _fetch_badge_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: str, match_uuid: str) -> Optional[str]:
+def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: str, match_uuid: str) -> Optional[str]:  # noqa: PLR0911
     """
     Fetch predicted relationship from Relationship Probability API using cloudscraper.
     This is the working version restored from commit 758cca8.

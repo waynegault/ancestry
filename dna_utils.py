@@ -44,10 +44,10 @@ from utils import _api_req, nav_to_page
 def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
     """
     Navigate to the user's DNA matches list page.
-    
+
     Args:
         session_manager: Active SessionManager instance
-        
+
     Returns:
         True if navigation successful, False otherwise
     """
@@ -104,7 +104,7 @@ def _try_get_csrf_from_driver_cookies(
 ) -> Optional[str]:
     """
     Fallback method to get CSRF token using get_driver_cookies.
-    
+
     Returns:
         CSRF token if found, None otherwise
     """
@@ -133,10 +133,10 @@ def _try_get_csrf_from_driver_cookies(
 def get_csrf_token_for_dna_matches(driver: Any) -> Optional[str]:
     """
     Retrieve CSRF token from browser cookies for DNA match list API.
-    
+
     Args:
         driver: Selenium WebDriver instance
-        
+
     Returns:
         CSRF token string if found, None otherwise
     """
@@ -201,7 +201,7 @@ def _try_get_in_tree_from_cache(
 ) -> Optional[set[str]]:
     """
     Try to get in-tree status from cache.
-    
+
     Returns:
         Set of in-tree IDs if found in cache, None otherwise
     """
@@ -255,7 +255,7 @@ def _fetch_in_tree_from_api(
 ) -> set[str]:
     """
     Fetch in-tree status from API.
-    
+
     Returns:
         Set of sample IDs that are in the user's tree
     """
