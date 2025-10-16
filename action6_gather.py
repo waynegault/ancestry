@@ -1358,246 +1358,134 @@ def _save_family_tree(session, person_id: int, badge_details: dict, my_tree_id: 
 # ==============================================
 
 
-def test_database_schema() -> bool:
+def _test_database_schema() -> bool:
     """Test that Person model has 'id' attribute, not 'people_id'."""
-    print("\n" + "=" * 80)
-    print("TEST 1: Database Schema Validation")
-    print("=" * 80)
+    from database import DnaMatch, FamilyTree, Person
 
-    try:
-        from database import DnaMatch, FamilyTree, Person
-
-        # Test Person model
-        assert hasattr(Person, 'id'), "Person should have 'id' attribute"
-        assert not hasattr(Person, 'people_id'), "Person should NOT have 'people_id' attribute"
-        print("✅ Person model has 'id' attribute (correct)")
-
-        # Test DnaMatch model
-        assert hasattr(DnaMatch, 'people_id'), "DnaMatch should have 'people_id' foreign key"
-        print("✅ DnaMatch model has 'people_id' foreign key (correct)")
-
-        # Test FamilyTree model
-        assert hasattr(FamilyTree, 'people_id'), "FamilyTree should have 'people_id' foreign key"
-        print("✅ FamilyTree model has 'people_id' foreign key (correct)")
-
-        print("✅ TEST 1 PASSED: Database schema is correct\n")
-        return True
-
-    except AssertionError as e:
-        print(f"❌ TEST 1 FAILED: {e}\n")
-        return False
-    except Exception as e:
-        print(f"❌ TEST 1 FAILED: {e}\n")
-        return False
+    assert hasattr(Person, 'id'), "Person should have 'id' attribute"
+    assert not hasattr(Person, 'people_id'), "Person should NOT have 'people_id' attribute"
+    assert hasattr(DnaMatch, 'people_id'), "DnaMatch should have 'people_id' foreign key"
+    assert hasattr(FamilyTree, 'people_id'), "FamilyTree should have 'people_id' foreign key"
+    return True
 
 
-def test_person_id_attribute_fix() -> bool:
+def _test_person_id_attribute_fix() -> bool:
     """Test that _get_person_id_by_uuid returns person.id not person.people_id."""
-    print("=" * 80)
-    print("TEST 2: Person ID Attribute Fix")
-    print("=" * 80)
+    import inspect
 
-    try:
-        import inspect
+    source = inspect.getsource(_get_person_id_by_uuid)
+    assert 'return person.id if person else None' in source, "_get_person_id_by_uuid should return person.id"
 
-        # Get source code of _get_person_id_by_uuid
-        source = inspect.getsource(_get_person_id_by_uuid)
+    lines = source.split('\n')
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('#') or stripped.startswith('"""') or stripped.startswith("'''"):
+            continue
+        if 'return person.people_id' in line and 'person.id' not in line:
+            raise AssertionError(f"Old buggy code found: {line.strip()}")
 
-        # Check that the fix is in place
-        if 'return person.id if person else None' in source:
-            print("✅ _get_person_id_by_uuid returns person.id (correct)")
-        else:
-            print("❌ _get_person_id_by_uuid does not return person.id")
-            return False
-
-        # Check that old INCORRECT code is not present (excluding comments)
-        # We need to check for the actual bug: "return person.people_id"
-        lines = source.split('\n')
-        for line in lines:
-            # Skip comments and docstrings
-            stripped = line.strip()
-            if stripped.startswith('#') or stripped.startswith('"""') or stripped.startswith("'''"):
-                continue
-            # Check for the actual bug pattern
-            if 'return person.people_id' in line and 'person.id' not in line:
-                print(f"❌ Old buggy code found: {line.strip()}")
-                return False
-
-        print("✅ Old buggy code 'return person.people_id' not found (correct)")
-        print("✅ TEST 2 PASSED: Person ID attribute fix is correct\n")
-        return True
-
-    except Exception as e:
-        print(f"❌ TEST 2 FAILED: {e}\n")
-        return False
+    return True
 
 
-def test_parallel_function_thread_safety() -> bool:
+def _test_parallel_function_thread_safety() -> bool:
     """Test that parallel function doesn't take database session parameter."""
-    print("=" * 80)
-    print("TEST 3: Thread-Safe Parallel Processing")
-    print("=" * 80)
+    import inspect
 
-    try:
-        import inspect
+    sig = inspect.signature(_fetch_match_details_parallel)
+    params = list(sig.parameters.keys())
 
-        # Get function signature
-        sig = inspect.signature(_fetch_match_details_parallel)
-        params = list(sig.parameters.keys())
+    assert 'session' not in params, f"_fetch_match_details_parallel should not have 'session' parameter: {params}"
+    assert params == ['match', 'session_manager', 'my_uuid'], f"Function signature incorrect: {params}"
 
-        # Check that 'session' is NOT in parameters
-        if 'session' in params:
-            print(f"❌ _fetch_match_details_parallel has 'session' parameter: {params}")
-            print("   This causes database concurrency errors!")
-            return False
-        print(f"✅ _fetch_match_details_parallel parameters: {params}")
-        print("   No 'session' parameter (thread-safe)")
+    source = inspect.getsource(_fetch_match_details_parallel)
+    assert 'concurrency' in source.lower() or 'thread' in source.lower(), "Thread-safety should be documented"
 
-        # Check expected parameters
-        expected_params = ['match', 'session_manager', 'my_uuid']
-        if params == expected_params:
-            print(f"✅ Function signature is correct: {expected_params}")
-        else:
-            print(f"⚠️  Function signature differs from expected: {params} vs {expected_params}")
-
-        # Check for thread-safety documentation
-        source = inspect.getsource(_fetch_match_details_parallel)
-        if 'concurrency' in source.lower() or 'thread' in source.lower():
-            print("✅ Thread-safety documented in function")
-        else:
-            print("⚠️  Thread-safety not explicitly documented")
-
-        print("✅ TEST 3 PASSED: Parallel processing is thread-safe\n")
-        return True
-
-    except Exception as e:
-        print(f"❌ TEST 3 FAILED: {e}\n")
-        return False
+    return True
 
 
-def test_bounds_checking() -> bool:
+def _test_bounds_checking() -> bool:
     """Test that bounds checking is in place for list/tuple access."""
-    print("=" * 80)
-    print("TEST 4: Bounds Checking for Index Errors")
-    print("=" * 80)
+    from pathlib import Path
 
-    try:
-        # Read the entire file to check for bounds checking patterns
-        from pathlib import Path
-        file_content = Path(__file__).read_text(encoding='utf-8')
+    file_content = Path(__file__).read_text(encoding='utf-8')
 
-        # Test 1: CSRF token extraction - check for safe pattern
-        if 'parts[0] if parts else None' in file_content or 'csrf_token = parts[0] if parts' in file_content:
-            print("✅ CSRF token extraction has bounds checking")
-        else:
-            print("❌ CSRF token extraction missing bounds checking")
-            return False
+    assert 'parts[0] if parts else None' in file_content or 'csrf_token = parts[0] if parts' in file_content, \
+        "CSRF token extraction missing bounds checking"
+    assert 'len(kinship_persons) > 0' in file_content or 'if kinship_persons and len(kinship_persons)' in file_content, \
+        "Kinship persons access missing bounds checking"
+    assert 'len(relationship) > 0' in file_content or 'if relationship and len(relationship)' in file_content, \
+        "String capitalization missing bounds checking"
 
-        # Test 2: Kinship persons access
-        if 'len(kinship_persons) > 0' in file_content or 'if kinship_persons and len(kinship_persons)' in file_content:
-            print("✅ Kinship persons access has bounds checking")
-        else:
-            print("❌ Kinship persons access missing bounds checking")
-            return False
-
-        # Test 3: String capitalization
-        if 'len(relationship) > 0' in file_content or 'if relationship and len(relationship)' in file_content:
-            print("✅ String capitalization has bounds checking")
-        else:
-            print("❌ String capitalization missing bounds checking")
-            return False
-
-        print("✅ TEST 4 PASSED: All bounds checking in place\n")
-        return True
-
-    except Exception as e:
-        print(f"❌ TEST 4 FAILED: {e}\n")
-        return False
+    return True
 
 
-def test_error_handling() -> bool:
+def _test_error_handling() -> bool:
     """Test that comprehensive error handling is in place."""
-    print("=" * 80)
-    print("TEST 5: Error Handling")
-    print("=" * 80)
+    import inspect
 
-    try:
-        import inspect
+    source = inspect.getsource(_get_person_id_by_uuid)
+    assert 'try:' in source and 'except' in source, "_get_person_id_by_uuid missing error handling"
 
-        # Check _get_person_id_by_uuid has try/except
-        source = inspect.getsource(_get_person_id_by_uuid)
-        if 'try:' in source and 'except' in source:
-            print("✅ _get_person_id_by_uuid has error handling")
-        else:
-            print("⚠️  _get_person_id_by_uuid missing error handling")
+    parallel_source = inspect.getsource(_fetch_match_details_parallel)
+    assert 'try:' in parallel_source and 'except' in parallel_source, \
+        "_fetch_match_details_parallel missing error handling"
 
-        # Check _fetch_match_details_parallel has try/except
-        parallel_source = inspect.getsource(_fetch_match_details_parallel)
-        if 'try:' in parallel_source and 'except' in parallel_source:
-            print("✅ _fetch_match_details_parallel has error handling")
-        else:
-            print("❌ _fetch_match_details_parallel missing error handling")
-            return False
+    batch_source = inspect.getsource(_process_batch)
+    assert 'try:' in batch_source and 'except' in batch_source and 'finally:' in batch_source, \
+        "_process_batch missing comprehensive error handling (try/except/finally)"
 
-        # Check _process_batch has error handling
-        batch_source = inspect.getsource(_process_batch)
-        if batch_source.count('try:') >= 2 and batch_source.count('except') >= 2:
-            print("✅ _process_batch has comprehensive error handling")
-        else:
-            print("⚠️  _process_batch may need more error handling")
-
-        print("✅ TEST 5 PASSED: Error handling is in place\n")
-        return True
-
-    except Exception as e:
-        print(f"❌ TEST 5 FAILED: {e}\n")
-        return False
+    return True
 
 
 def action6_module_tests() -> bool:
-    """Comprehensive test suite for action6_gather.py parallel processing fixes."""
-    print("\n" + "=" * 80)
-    print("ACTION 6 PARALLEL PROCESSING FIXES - TEST SUITE")
-    print("=" * 80)
+    """Comprehensive test suite for action6_gather.py using standardized TestSuite framework."""
+    from test_framework import TestSuite, suppress_logging
 
-    tests = [
-        ("Database Schema", test_database_schema),
-        ("Person ID Attribute Fix", test_person_id_attribute_fix),
-        ("Thread-Safe Parallel Processing", test_parallel_function_thread_safety),
-        ("Bounds Checking", test_bounds_checking),
-        ("Error Handling", test_error_handling),
-    ]
+    suite = TestSuite("Action 6 - DNA Match Gatherer", "action6_gather.py")
+    suite.start_suite()
 
-    results = []
-    for test_name, test_func in tests:
-        try:
-            result = test_func()
-            results.append((test_name, result))
-        except Exception as e:
-            print(f"❌ {test_name} raised exception: {e}\n")
-            results.append((test_name, False))
+    with suppress_logging():
+        suite.run_test(
+            "Database Schema Validation",
+            _test_database_schema,
+            "Validates Person model has 'id' attribute and DnaMatch/FamilyTree have 'people_id' foreign keys.",
+            "Check database model attributes for correct naming conventions.",
+            "Person model uses 'id', DnaMatch and FamilyTree use 'people_id' foreign key.",
+        )
 
-    # Summary
-    print("=" * 80)
-    print("TEST SUMMARY")
-    print("=" * 80)
+        suite.run_test(
+            "Person ID Attribute Fix",
+            _test_person_id_attribute_fix,
+            "Validates _get_person_id_by_uuid returns person.id, not person.people_id.",
+            "Inspect function source code for correct attribute access.",
+            "Function returns person.id and old buggy code is not present.",
+        )
 
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
+        suite.run_test(
+            "Thread-Safe Parallel Processing",
+            _test_parallel_function_thread_safety,
+            "Validates _fetch_match_details_parallel has no database session parameter.",
+            "Check function signature and thread-safety documentation.",
+            "Function signature is correct and thread-safety is documented.",
+        )
 
-    for test_name, result in results:
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name:.<50} {status}")
+        suite.run_test(
+            "Bounds Checking for Index Errors",
+            _test_bounds_checking,
+            "Validates bounds checking is in place for list/tuple access.",
+            "Search for safe access patterns in CSRF token, kinship persons, and string operations.",
+            "All bounds checking patterns are present in the code.",
+        )
 
-    print("=" * 80)
-    print(f"TOTAL: {passed}/{total} tests passed")
-    print("=" * 80)
+        suite.run_test(
+            "Error Handling Coverage",
+            _test_error_handling,
+            "Validates comprehensive error handling in critical functions.",
+            "Check for try/except blocks in _get_person_id_by_uuid, _fetch_match_details_parallel, and _process_batch.",
+            "All functions have appropriate error handling in place.",
+        )
 
-    if passed == total:
-        print("\n🎉 ALL TESTS PASSED! Action 6 parallel processing fixes validated.\n")
-        return True
-    print(f"\n⚠️  {total - passed} test(s) failed. Please review the fixes.\n")
-    return False
+    return suite.finish_suite()
 
 
 def run_comprehensive_tests() -> bool:
@@ -1605,24 +1493,10 @@ def run_comprehensive_tests() -> bool:
     return action6_module_tests()
 
 
-# ==============================================
-# Standalone Test Block
-# ==============================================
 if __name__ == "__main__":
     import sys
 
-    print("🧪 Running Action 6 test suite...")
+    print("🧪 Running Action 6 comprehensive test suite...")
     success = run_comprehensive_tests()
-
-    if success:
-        print("\n✅ All tests passed! Ready for production use.")
-        print("\nNext steps:")
-        print("1. Run Action 6 from main.py with PARALLEL_WORKERS=2, RPS=2.0")
-        print("2. Process 10 pages and monitor Logs/app.log for errors")
-        print("3. Verify zero concurrency, attribute, and index errors")
-        print("4. Check rate limiter metrics for zero 429 errors\n")
-    else:
-        print("\n❌ Some tests failed. Please fix issues before running Action 6.\n")
-
     sys.exit(0 if success else 1)
 
