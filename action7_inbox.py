@@ -84,6 +84,7 @@ class AuthenticationExpiredError(AuthenticationError):
     pass
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from connection_resilience import with_connection_resilience
 from core.error_handling import (
     circuit_breaker,
     error_context,
@@ -903,6 +904,7 @@ class InboxProcessor:
 
         return tqdm_args
 
+    @with_connection_resilience("Action 7: Inbox Processing", max_recovery_attempts=3)
     def search_inbox(self) -> bool:
         """
         Main method to search the Ancestry inbox with enhanced error handling and statistics.

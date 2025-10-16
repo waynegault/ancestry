@@ -30,6 +30,7 @@ from tqdm.auto import tqdm
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+from connection_resilience import with_connection_resilience
 from core.database_manager import DatabaseManager
 from core.session_manager import SessionManager
 from database import create_or_update_dna_match, create_or_update_family_tree, create_or_update_person
@@ -39,14 +40,12 @@ from dna_utils import (
     get_csrf_token_for_dna_matches,
     nav_to_dna_matches_page,
 )
-from utils import _api_req, format_name, prevent_system_sleep, restore_system_sleep
+from utils import _api_req, format_name
 
 
+@with_connection_resilience("Action 6: DNA Match Gatherer", max_recovery_attempts=3)
 def coord(session_manager: SessionManager, start: int = 1):
     """Main entry point for Action 6: DNA Match Gatherer."""
-    # Prevent system sleep during long-running DNA match gathering
-    sleep_state = prevent_system_sleep()
-
     logger.info("=" * 80)
     logger.info("Action 6: DNA Match Gatherer")
     logger.info("=" * 80)
@@ -307,9 +306,6 @@ def coord(session_manager: SessionManager, start: int = 1):
     logger.info("")
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         session_manager.rate_limiter.print_metrics_summary()
-
-    # Restore normal sleep behavior
-    restore_system_sleep(sleep_state)
 
     return not run_incomplete  # Return False if run was incomplete
 

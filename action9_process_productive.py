@@ -38,6 +38,7 @@ from ai_interface import extract_genealogical_entities
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+from connection_resilience import with_connection_resilience
 from core.error_handling import (  # type: ignore[import-not-found]
     circuit_breaker,
     error_context,
@@ -1122,6 +1123,7 @@ class BatchCommitManager:
 #####################################################
 
 
+@with_connection_resilience("Action 9: Productive Processing", max_recovery_attempts=3)
 @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better AI API handling
 @circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=2400)  # 40 minutes for productive message processing

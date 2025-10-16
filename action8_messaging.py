@@ -179,6 +179,7 @@ from api_utils import (  # API utilities
 from cache import cache_result  # Caching utility
 from common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
 from config import config_schema  # Configuration singletons
+from connection_resilience import with_connection_resilience
 from core.enhanced_error_recovery import with_enhanced_recovery
 from core.error_handling import (
     APIRateLimitError,
@@ -3112,6 +3113,7 @@ def _process_all_candidates(
 
 
 # Updated decorator stack with enhanced error recovery
+@with_connection_resilience("Action 8: Messaging", max_recovery_attempts=3)
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Aligned with ANCESTRY_API_CONFIG
 @graceful_degradation(fallback_value=False)
