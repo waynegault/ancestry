@@ -78,6 +78,124 @@ def _initialize_coord_session(session_manager: SessionManager) -> tuple[str, Opt
     return my_uuid, my_tree_id, db_manager
 
 
+def _handle_session_health_check(session_manager: SessionManager) -> tuple[bool, int, int, str]:
+    """Handle session health check and recovery. Returns (should_continue, deaths, recoveries, reason)."""
+    if session_manager.check_session_health():
+        return True, 0, 0, ""
+
+    logger.warning("🚨 Session health check failed - attempting recovery...")
+    if session_manager.attempt_browser_recovery():
+        logger.info("✅ Session recovered successfully, continuing...")
+        return True, 1, 1, ""
+
+    logger.error("❌ Session recovery failed - stopping processing")
+    return False, 1, 0, "Session recovery failed at page health check"
+
+
+def _handle_api_failure(session_manager: SessionManager, page_num: int, max_pages: int) -> tuple[bool, int, int, str, bool]:
+    """Handle API failure and recovery. Returns (should_continue, deaths, recoveries, reason, should_break)."""
+    if session_manager.check_session_health():
+        if max_pages == 0:
+            logger.info("No more pages available. Stopping.")
+            return False, 0, 0, "", True
+        return True, 0, 0, "", False
+
+    logger.error("🚨 Session appears dead - API failure likely due to invalid session")
+    if session_manager.attempt_browser_recovery():
+        logger.info("✅ Session recovered - retrying current page...")
+        return True, 1, 1, "", False
+
+    logger.error("❌ Session recovery failed - stopping processing")
+    return False, 1, 0, f"Session recovery failed at page {page_num} (API failure)", True
+
+
+def _process_page_batches(matches: list[dict], batch_size: int, session_manager: SessionManager, db_manager: DatabaseManager, my_uuid: str, my_tree_id: Optional[str], page_num: int) -> tuple[int, int, int, int, int, int, bool, str]:
+    """Process all batches on a page. Returns (new, updated, skipped, errors, deaths, recoveries, incomplete, reason)."""
+    total_new = 0
+    total_updated = 0
+    total_skipped = 0
+    total_errors = 0
+    session_deaths = 0
+    session_recoveries = 0
+    run_incomplete = False
+    incomplete_reason = ""
+
+    for batch_start in range(0, len(matches), batch_size):
+        batch_end = min(batch_start + batch_size, len(matches))
+        batch = matches[batch_start:batch_end]
+
+        if not session_manager.check_session_health():
+            logger.warning("🚨 Session health check failed before batch - attempting recovery...")
+            session_deaths += 1
+            if session_manager.attempt_browser_recovery():
+                logger.info("✅ Session recovered successfully, continuing with batch...")
+                session_recoveries += 1
+            else:
+                logger.error("❌ Session recovery failed - skipping remaining batches on this page")
+                run_incomplete = True
+                incomplete_reason = f"Session recovery failed at page {page_num}, batch {batch_start//batch_size + 1}"
+                break
+
+        batch_num = (batch_start // batch_size) + 1
+        total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
+
+        logger.info(f"Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end} of {len(matches)} on page {page_num})")
+
+        new, updated, skipped, errors = _process_batch(batch, session_manager, db_manager, my_uuid, my_tree_id)
+
+        total_new += new
+        total_updated += updated
+        total_skipped += skipped
+        total_errors += errors
+
+        logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+
+    return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
+
+
+def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, my_uuid: str, page_num: int, csrf_token: str, max_pages: int) -> tuple[Optional[list[dict]], int, int, bool, str]:
+    """Fetch and validate page data. Returns (matches, deaths, recoveries, should_break, reason)."""
+    api_response = fetch_match_list_page(driver, session_manager, my_uuid, page_num, csrf_token)
+    if not api_response or not isinstance(api_response, dict):
+        logger.warning(f"No API response for page {page_num}")
+        should_continue, deaths, recoveries, reason, should_break = _handle_api_failure(session_manager, page_num, max_pages)
+        return None, deaths, recoveries, should_break, reason
+
+    match_list = api_response.get("matchList", [])
+    if not match_list:
+        logger.warning(f"No matches in API response for page {page_num}")
+        if max_pages == 0:
+            logger.info("No more matches available. Stopping.")
+            return None, 0, 0, True, ""
+        return None, 0, 0, False, ""
+
+    sample_ids = [m.get("sampleId", "").upper() for m in match_list if m.get("sampleId")]
+    if not sample_ids:
+        logger.warning(f"No sample IDs found on page {page_num}")
+        return None, 0, 0, False, ""
+
+    in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
+    matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
+
+    if not matches:
+        logger.warning(f"No matches found on page {page_num}")
+        return None, 0, 0, False, ""
+
+    logger.info(f"Found {len(matches)} matches on page {page_num}")
+    return matches, 0, 0, False, ""
+
+
+def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int) -> None:
+    """Log page processing header."""
+    logger.info(f"\n{'='*80}")
+    if max_pages == 0:
+        logger.info(f"Processing page {page_num} (page {pages_processed + 1} of all pages)")
+    else:
+        logger.info(f"Processing page {page_num} (page {page_num - pages_processed + 1}/{max_pages})")
+    logger.info(f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
+    logger.info(f"{'='*80}")
+
+
 def _process_pages_loop(
     session_manager: SessionManager,
     driver: Any,
@@ -99,7 +217,6 @@ def _process_pages_loop(
     run_incomplete = False
     incomplete_reason = ""
 
-    # Calculate end page
     if max_pages == 0:
         logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
         end_page = float('inf')
@@ -110,125 +227,93 @@ def _process_pages_loop(
     pages_processed = 0
 
     while True:
-        # Check if we've reached the end
         if max_pages > 0 and page_num > end_page:
             break
 
-        # Session health check
-        if not session_manager.check_session_health():
-            logger.warning("🚨 Session health check failed - attempting recovery...")
-            session_deaths += 1
-            if session_manager.attempt_browser_recovery():
-                logger.info("✅ Session recovered successfully, continuing...")
-                session_recoveries += 1
-            else:
-                logger.error("❌ Session recovery failed - stopping processing")
+        should_continue, deaths, recoveries, reason = _handle_session_health_check(session_manager)
+        session_deaths += deaths
+        session_recoveries += recoveries
+        if not should_continue:
+            run_incomplete = True
+            incomplete_reason = reason
+            break
+
+        _log_page_header(page_num, pages_processed, max_pages, total_new, total_updated, total_skipped, total_errors)
+
+        matches, deaths, recoveries, should_break, reason = _fetch_and_validate_page_data(
+            driver, session_manager, my_uuid, page_num, csrf_token, max_pages
+        )
+        session_deaths += deaths
+        session_recoveries += recoveries
+
+        if should_break:
+            if reason:
                 run_incomplete = True
-                incomplete_reason = "Session recovery failed at page health check"
-                break
-
-        logger.info(f"\n{'='*80}")
-        if max_pages == 0:
-            logger.info(f"Processing page {page_num} (page {pages_processed + 1} of all pages)")
-        else:
-            logger.info(f"Processing page {page_num} (page {page_num - start_page + 1}/{max_pages})")
-        logger.info(f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
-        logger.info(f"{'='*80}")
-
-        # Fetch and process page
-        api_response = fetch_match_list_page(driver, session_manager, my_uuid, page_num, csrf_token)
-        if not api_response or not isinstance(api_response, dict):
-            logger.warning(f"No API response for page {page_num}")
-            if not session_manager.check_session_health():
-                logger.error("🚨 Session appears dead - API failure likely due to invalid session")
-                session_deaths += 1
-                if session_manager.attempt_browser_recovery():
-                    logger.info("✅ Session recovered - retrying current page...")
-                    session_recoveries += 1
-                    continue
-                logger.error("❌ Session recovery failed - stopping processing")
-                run_incomplete = True
-                incomplete_reason = f"Session recovery failed at page {page_num} (API failure)"
-                break
-
-            if max_pages == 0:
-                logger.info("No more pages available. Stopping.")
-                break
-            page_num += 1
-            pages_processed += 1
-            continue
-
-        # Extract and process matches
-        match_list = api_response.get("matchList", [])
-        if not match_list:
-            logger.warning(f"No matches in API response for page {page_num}")
-            if max_pages == 0:
-                logger.info("No more matches available. Stopping.")
-                break
-            page_num += 1
-            pages_processed += 1
-            continue
-
-        # Get sample IDs and in-tree status
-        sample_ids = [m.get("sampleId", "").upper() for m in match_list if m.get("sampleId")]
-        if not sample_ids:
-            logger.warning(f"No sample IDs found on page {page_num}")
-            page_num += 1
-            pages_processed += 1
-            continue
-
-        in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
-        matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
+                incomplete_reason = reason
+            break
 
         if not matches:
-            logger.warning(f"No matches found on page {page_num}")
             page_num += 1
             pages_processed += 1
             continue
 
-        logger.info(f"Found {len(matches)} matches on page {page_num}")
+        new, updated, skipped, errors, deaths, recoveries, page_incomplete, page_reason = _process_page_batches(
+            matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
+        )
 
-        # Process matches in batches
-        for batch_start in range(0, len(matches), batch_size):
-            batch_end = min(batch_start + batch_size, len(matches))
-            batch = matches[batch_start:batch_end]
+        total_new += new
+        total_updated += updated
+        total_skipped += skipped
+        total_errors += errors
+        session_deaths += deaths
+        session_recoveries += recoveries
 
-            logger.info(f"\n--- Batch {batch_start//batch_size + 1}: Processing matches {batch_start+1}-{batch_end} ---")
-
-            # Session health check before batch
-            if not session_manager.check_session_health():
-                logger.warning("🚨 Session health check failed before batch - attempting recovery...")
-                session_deaths += 1
-                if session_manager.attempt_browser_recovery():
-                    logger.info("✅ Session recovered successfully, continuing with batch...")
-                    session_recoveries += 1
-                else:
-                    logger.error("❌ Session recovery failed - skipping remaining batches on this page")
-                    run_incomplete = True
-                    incomplete_reason = f"Session recovery failed at page {page_num}, batch {batch_start//batch_size + 1}"
-                    break
-
-            batch_num = (batch_start // batch_size) + 1
-            total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
-            batch_end = min(batch_start + batch_size, len(matches))
-
-            logger.info(f"Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end} of {len(matches)} on page {page_num})")
-
-            new, updated, skipped, errors = _process_batch(
-                batch, session_manager, db_manager, my_uuid, my_tree_id
-            )
-
-            total_new += new
-            total_updated += updated
-            total_skipped += skipped
-            total_errors += errors
-
-            logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+        if page_incomplete:
+            run_incomplete = True
+            incomplete_reason = page_reason
+            break
 
         page_num += 1
         pages_processed += 1
 
     return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
+
+
+def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int, total_errors: int, total_run_time: float, run_incomplete: bool, incomplete_reason: str, session_deaths: int, session_recoveries: int, start_page: int, max_pages: int, session_manager: SessionManager) -> None:
+    """Print final summary for coord function."""
+    logger.info(f"\n{'='*80}")
+    logger.info("FINAL SUMMARY")
+    logger.info(f"{'='*80}")
+
+    if run_incomplete:
+        logger.warning(f"⚠️  RUN INCOMPLETE: {incomplete_reason}")
+    else:
+        logger.info("✅ Run completed successfully")
+
+    if session_deaths > 0:
+        logger.warning(f"⚠️  Session Deaths: {session_deaths}")
+        logger.warning(f"⚠️  Session Recoveries: {session_recoveries}")
+        if session_deaths > session_recoveries:
+            logger.error(f"❌ {session_deaths - session_recoveries} session death(s) could not be recovered")
+
+    if max_pages == 0:
+        logger.info(f"Page Range: Started at page {start_page}")
+    else:
+        logger.info(f"Page Range: {start_page}-{start_page + max_pages - 1} ({max_pages} pages)")
+
+    logger.info(f"New Added: {total_new}")
+    logger.info(f"Updated: {total_updated}")
+    logger.info(f"Skipped: {total_skipped}")
+    logger.info(f"Errors: {total_errors}")
+
+    logger.info("")
+    logger.info(f"Total Run Time: {total_run_time/3600:.2f} hours ({total_run_time/60:.1f} minutes)")
+
+    logger.info(f"{'='*80}")
+
+    logger.info("")
+    if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
+        session_manager.rate_limiter.print_metrics_summary()
 
 
 @with_connection_resilience("Action 6: DNA Match Gatherer", max_recovery_attempts=3)
@@ -238,7 +323,6 @@ def coord(session_manager: SessionManager, start: int = 1):
     logger.info("Action 6: DNA Match Gatherer")
     logger.info("=" * 80)
 
-    # Reset rate limiter metrics at start of each run
     if session_manager.rate_limiter:
         session_manager.rate_limiter.reset_metrics()
         logger.debug("Rate limiter metrics reset for new run")
@@ -250,17 +334,14 @@ def coord(session_manager: SessionManager, start: int = 1):
 
     logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}")
 
-    # Setup adaptive rate limiting
     _setup_rate_limiting(session_manager, parallel_workers)
 
-    # Initialize session
     try:
         my_uuid, my_tree_id, db_manager = _initialize_coord_session(session_manager)
     except ValueError as e:
         logger.error(f"Session initialization failed: {e}")
         return None
 
-    # Navigate to DNA matches page and get CSRF token
     logger.debug("Navigating to DNA matches page...")
     if not nav_to_dna_matches_page(session_manager):
         logger.error("Failed to navigate to DNA matches page")
@@ -272,63 +353,17 @@ def coord(session_manager: SessionManager, start: int = 1):
         logger.error("Failed to get CSRF token")
         return None
 
-    # Process pages
     run_start_time = time.time()
     total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason = _process_pages_loop(
         session_manager, driver, db_manager, my_uuid, my_tree_id, csrf_token, start_page, max_pages, batch_size
     )
 
-    if False:  # This block is now handled by _process_pages_loop
-        pass
-    else:
-        pass
-
-    # Calculate run statistics
     run_end_time = time.time()
     total_run_time = run_end_time - run_start_time
 
-    # Final summary
-    logger.info(f"\n{'='*80}")
-    logger.info("FINAL SUMMARY")
-    logger.info(f"{'='*80}")
+    _print_coord_summary(total_new, total_updated, total_skipped, total_errors, total_run_time, run_incomplete, incomplete_reason, session_deaths, session_recoveries, start_page, max_pages, session_manager)
 
-    # Run completion status
-    if run_incomplete:
-        logger.warning(f"⚠️  RUN INCOMPLETE: {incomplete_reason}")
-    else:
-        logger.info("✅ Run completed successfully")
-
-    # Session health tracking
-    if session_deaths > 0:
-        logger.warning(f"⚠️  Session Deaths: {session_deaths}")
-        logger.warning(f"⚠️  Session Recoveries: {session_recoveries}")
-        if session_deaths > session_recoveries:
-            logger.error(f"❌ {session_deaths - session_recoveries} session death(s) could not be recovered")
-
-    # Page processing
-    if max_pages == 0:
-        logger.info(f"Page Range: Started at page {start_page}")
-    else:
-        logger.info(f"Page Range: {start_page}-{start_page + max_pages - 1} ({max_pages} pages)")
-
-    # Match statistics
-    logger.info(f"New Added: {total_new}")
-    logger.info(f"Updated: {total_updated}")
-    logger.info(f"Skipped: {total_skipped}")
-    logger.info(f"Errors: {total_errors}")
-
-    # Time statistics
-    logger.info("")
-    logger.info(f"Total Run Time: {total_run_time/3600:.2f} hours ({total_run_time/60:.1f} minutes)")
-
-    logger.info(f"{'='*80}")
-
-    # Print rate limiter metrics
-    logger.info("")
-    if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
-        session_manager.rate_limiter.print_metrics_summary()
-
-    return not run_incomplete  # Return False if run was incomplete
+    return not run_incomplete
 
 
 def _refine_match_list(match_list: list[dict], my_uuid: str, in_tree_ids: set[str]) -> list[dict]:
@@ -564,6 +599,57 @@ def _get_match_details(match: dict, skip_details: bool, match_details_map: dict,
     return match_details, profile_details, badge_details, predicted_rel
 
 
+def _save_match_records(match: dict, person_id: int, match_details: dict, badge_details: dict, predicted_rel: Any, skip_details: bool, my_tree_id: Optional[str], session: Any, session_manager: SessionManager) -> None:
+    """Save DnaMatch and FamilyTree records."""
+    if not skip_details:
+        _save_dna_match(session, person_id, match, match_details, predicted_rel)
+
+    if match["in_tree"] and badge_details:
+        _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
+
+
+def _determine_match_status(skip_details: bool, person_status: str, additional_updates: bool) -> str:
+    """Determine the status of a processed match."""
+    if skip_details:
+        return "skipped"
+    if person_status == "created":
+        return "created"
+    if person_status == "updated" or additional_updates:
+        return "updated"
+    if person_status == "skipped":
+        return "skipped"
+    return "unknown"
+
+
+def _process_single_match(match: dict, skip_map: dict, match_details_map: dict, session: Any, session_manager: SessionManager, my_uuid: str, my_tree_id: Optional[str], parallel_workers: int) -> tuple[str, bool]:
+    """Process a single match and return (status, success)."""
+    skip_info = skip_map.get(match["uuid"], {})
+    person_id = skip_info.get("person_id")
+    person_status = skip_info.get("person_status")
+    skip_details = skip_info.get("skip", False)
+
+    if not person_id:
+        return "error", False
+
+    match_details, profile_details, badge_details, predicted_rel = _get_match_details(
+        match, skip_details, match_details_map, session_manager, my_uuid, parallel_workers
+    )
+
+    if skip_details:
+        logger.debug(f"Skipping detail fetch for person_id={person_id} (reason: {skip_info.get('reason')})")
+
+    additional_updates = False
+    if profile_details or badge_details or match_details:
+        additional_updates = _update_person(session, person_id, profile_details, badge_details, match_details)
+
+    logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
+
+    _save_match_records(match, person_id, match_details, badge_details, predicted_rel, skip_details, my_tree_id, session, session_manager)
+
+    status = _determine_match_status(skip_details, person_status, additional_updates)
+    return status, True
+
+
 def _second_pass_process_matches(batch: list[dict], session: Any, skip_map: dict, match_details_map: dict, session_manager: SessionManager, my_uuid: str, my_tree_id: Optional[str], parallel_workers: int) -> tuple[int, int, int, int]:
     """Second pass: Process and save all matches."""
     new_count = 0
@@ -573,46 +659,17 @@ def _second_pass_process_matches(batch: list[dict], session: Any, skip_map: dict
 
     for match in tqdm(batch, desc="Saving to database", leave=False):
         try:
-            skip_info = skip_map.get(match["uuid"], {})
-            person_id = skip_info.get("person_id")
-            person_status = skip_info.get("person_status")
-            skip_details = skip_info.get("skip", False)
-
-            if not person_id:
-                error_count += 1
-                continue
-
-            # Get match details
-            match_details, profile_details, badge_details, predicted_rel = _get_match_details(
-                match, skip_details, match_details_map, session_manager, my_uuid, parallel_workers
+            status, success = _process_single_match(
+                match, skip_map, match_details_map, session, session_manager, my_uuid, my_tree_id, parallel_workers
             )
 
-            if skip_details:
-                logger.debug(f"Skipping detail fetch for person_id={person_id} (reason: {skip_info.get('reason')})")
-
-            # Update Person with additional data
-            additional_updates = False
-            if profile_details or badge_details or match_details:
-                additional_updates = _update_person(session, person_id, profile_details, badge_details, match_details)
-
-            logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
-
-            # Create/update DnaMatch record
-            if not skip_details:
-                _save_dna_match(session, person_id, match, match_details, predicted_rel)
-
-            # Create/update FamilyTree record (if in_tree)
-            if match["in_tree"] and badge_details:
-                _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
-
-            # Count based on skip_details, person status, and additional updates
-            if skip_details:
-                skipped_count += 1
-            elif person_status == "created":
+            if not success:
+                error_count += 1
+            elif status == "created":
                 new_count += 1
-            elif person_status == "updated" or additional_updates:
+            elif status == "updated":
                 updated_count += 1
-            elif person_status == "skipped":
+            elif status == "skipped":
                 skipped_count += 1
 
         except Exception as e:
@@ -738,6 +795,49 @@ def _save_person_with_status(session, match: dict) -> tuple[Optional[int], str]:
     return None, "error"
 
 
+def _update_profile_details(person: Any, profile_details: dict, updated_fields: list[str]) -> bool:
+    """Update person with profile details. Returns True if any field was updated."""
+    updated = False
+    if profile_details.get("last_logged_in") and profile_details["last_logged_in"] != person.last_logged_in:
+        person.last_logged_in = profile_details["last_logged_in"]
+        updated_fields.append("last_logged_in")
+        updated = True
+    if "contactable" in profile_details and profile_details["contactable"] != person.contactable:
+        person.contactable = profile_details["contactable"]
+        updated_fields.append("contactable")
+        updated = True
+    return updated
+
+
+def _update_badge_details(person: Any, badge_details: dict, updated_fields: list[str]) -> bool:
+    """Update person with badge details. Returns True if any field was updated."""
+    if not badge_details.get("birth_year"):
+        return False
+    try:
+        new_birth_year = int(badge_details["birth_year"])
+        if new_birth_year != person.birth_year:
+            person.birth_year = new_birth_year
+            updated_fields.append("birth_year")
+            return True
+    except (ValueError, TypeError):
+        pass
+    return False
+
+
+def _update_match_details(person: Any, match_details: dict, updated_fields: list[str]) -> bool:
+    """Update person with match details (administrator fields). Returns True if any field was updated."""
+    updated = False
+    if match_details.get("administrator_profile_id") and match_details["administrator_profile_id"] != person.administrator_profile_id:
+        person.administrator_profile_id = match_details["administrator_profile_id"]
+        updated_fields.append("administrator_profile_id")
+        updated = True
+    if match_details.get("administrator_username") and match_details["administrator_username"] != person.administrator_username:
+        person.administrator_username = match_details["administrator_username"]
+        updated_fields.append("administrator_username")
+        updated = True
+    return updated
+
+
 def _update_person(session, person_id: int, profile_details: dict, badge_details: dict, match_details: dict) -> bool:
     """
     Update Person record with additional data from Profile, Badge, and Match Details APIs.
@@ -749,39 +849,12 @@ def _update_person(session, person_id: int, profile_details: dict, badge_details
     if not person:
         return False
 
+    updated_fields: list[str] = []
     updated = False
-    updated_fields = []
 
-    # Update from profile details (only if different)
-    if profile_details.get("last_logged_in") and profile_details["last_logged_in"] != person.last_logged_in:
-        person.last_logged_in = profile_details["last_logged_in"]
-        updated_fields.append("last_logged_in")
-        updated = True
-    if "contactable" in profile_details and profile_details["contactable"] != person.contactable:
-        person.contactable = profile_details["contactable"]
-        updated_fields.append("contactable")
-        updated = True
-
-    # Update from badge details (only if different)
-    if badge_details.get("birth_year"):
-        try:
-            new_birth_year = int(badge_details["birth_year"])
-            if new_birth_year != person.birth_year:
-                person.birth_year = new_birth_year
-                updated_fields.append("birth_year")
-                updated = True
-        except (ValueError, TypeError):
-            pass
-
-    # Update from match details (administrator fields - only if different)
-    if match_details.get("administrator_profile_id") and match_details["administrator_profile_id"] != person.administrator_profile_id:
-        person.administrator_profile_id = match_details["administrator_profile_id"]
-        updated_fields.append("administrator_profile_id")
-        updated = True
-    if match_details.get("administrator_username") and match_details["administrator_username"] != person.administrator_username:
-        person.administrator_username = match_details["administrator_username"]
-        updated_fields.append("administrator_username")
-        updated = True
+    updated = _update_profile_details(person, profile_details, updated_fields) or updated
+    updated = _update_badge_details(person, badge_details, updated_fields) or updated
+    updated = _update_match_details(person, match_details, updated_fields) or updated
 
     if updated:
         session.flush()
