@@ -1774,53 +1774,59 @@ def action6_module_tests() -> bool:
         )
 
     # === FUNCTIONAL API TESTS (Require Live Session) ===
-    suite.run_test(
-        "Match List API",
-        _test_match_list_api,
-        "Tests fetching match list from Ancestry API with pagination support.",
-        "Call fetch_match_list_page and validate response structure and match data.",
-        "Match List API returns valid matches with uuid, username, cm, and segments.",
-    )
+    # Only run if explicitly enabled via environment variable
+    run_live_api_tests = os.getenv("RUN_LIVE_API_TESTS", "false").lower() == "true"
 
-    suite.run_test(
-        "Match Details API",
-        _test_match_details_api,
-        "Tests fetching detailed match information including relationship predictions.",
-        "Call _fetch_match_details and validate shared segments and relationship data.",
-        "Match Details API returns shared_segments, longest_shared_segment, and predicted_relationship.",
-    )
+    if run_live_api_tests:
+        suite.run_test(
+            "Match List API",
+            _test_match_list_api,
+            "Tests fetching match list from Ancestry API with pagination support.",
+            "Call fetch_match_list_page and validate response structure and match data.",
+            "Match List API returns valid matches with uuid, username, cm, and segments.",
+        )
 
-    suite.run_test(
-        "Profile Details API",
-        _test_profile_details_api,
-        "Tests fetching profile details for matches with public profiles.",
-        "Call _fetch_profile_details and validate last_logged_in and contactable fields.",
-        "Profile Details API returns last_logged_in and contactable status when available.",
-    )
+        suite.run_test(
+            "Match Details API",
+            _test_match_details_api,
+            "Tests fetching detailed match information including relationship predictions.",
+            "Call _fetch_match_details and validate shared segments and relationship data.",
+            "Match Details API returns shared_segments, longest_shared_segment, and predicted_relationship.",
+        )
 
-    suite.run_test(
-        "Badge Details API",
-        _test_badge_details_api,
-        "Tests fetching tree badge details for matches in user's tree.",
-        "Call _fetch_badge_details and validate response structure.",
-        "Badge Details API returns tree data for matches in user's family tree.",
-    )
+        suite.run_test(
+            "Profile Details API",
+            _test_profile_details_api,
+            "Tests fetching profile details for matches with public profiles.",
+            "Call _fetch_profile_details and validate last_logged_in and contactable fields.",
+            "Profile Details API returns last_logged_in and contactable status when available.",
+        )
 
-    suite.run_test(
-        "Relationship Probability API",
-        _test_relationship_probability_api,
-        "Tests fetching predicted relationship from Relationship Probability API.",
-        "Call _fetch_relationship_probability and validate relationship string format.",
-        "Relationship Probability API returns formatted relationship or None if unavailable.",
-    )
+        suite.run_test(
+            "Badge Details API",
+            _test_badge_details_api,
+            "Tests fetching tree badge details for matches in user's tree.",
+            "Call _fetch_badge_details and validate response structure.",
+            "Badge Details API returns tree data for matches in user's family tree.",
+        )
 
-    suite.run_test(
-        "Parallel Match Details Fetching",
-        _test_parallel_fetch_match_details,
-        "Tests parallel fetching of match details using ThreadPoolExecutor.",
-        "Fetch details for multiple matches in parallel and validate all results.",
-        "Parallel fetching completes successfully with all match details retrieved.",
-    )
+        suite.run_test(
+            "Relationship Probability API",
+            _test_relationship_probability_api,
+            "Tests fetching predicted relationship from Relationship Probability API.",
+            "Call _fetch_relationship_probability and validate relationship string format.",
+            "Relationship Probability API returns formatted relationship or None if unavailable.",
+        )
+
+        suite.run_test(
+            "Parallel Match Details Fetching",
+            _test_parallel_fetch_match_details,
+            "Tests parallel fetching of match details using ThreadPoolExecutor.",
+            "Fetch details for multiple matches in parallel and validate all results.",
+            "Parallel fetching completes successfully with all match details retrieved.",
+        )
+    else:
+        logger.info("⏭️  Skipping live API tests (set RUN_LIVE_API_TESTS=true to enable)")
 
     return suite.finish_suite()
 
