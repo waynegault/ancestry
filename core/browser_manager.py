@@ -215,13 +215,13 @@ class BrowserManager:
         logger.debug(f"Starting browser session for action: {action_name}")
         return self.start_browser(action_name)
 
-    def get_cookies(self, cookie_names: list, timeout: int = 60) -> bool:
+    def get_cookies(self, cookie_names: list, timeout: int = 10) -> bool:
         """
         Check if specified cookies are present in browser session.
 
         Args:
             cookie_names: List of cookie names to check for
-            timeout: Maximum time to wait for cookies (seconds)
+            timeout: Maximum time to wait for cookies (seconds, default 10s)
 
         Returns:
             bool: True if all specified cookies are found, False otherwise

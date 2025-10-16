@@ -331,8 +331,10 @@ class SessionValidator:
         # Map of action patterns to skip reasons
         skip_patterns = {
             "coord": "Action 6 - cookies will be available after navigation",
+            "gather_dna": "Action 6 - cookies will be available after navigation",
             "action6b": "Action 6B - cookies will be available after navigation",
             "srch_inbox": "Action 7 - API login verification is sufficient",
+            "search_inbox": "Action 7 - API login verification is sufficient",
             "send_messages": "Action 8 - API login verification is sufficient",
             "process_productive": "Action 9 - API login verification is sufficient",
             "main": "Action 10 - Local file operation",
