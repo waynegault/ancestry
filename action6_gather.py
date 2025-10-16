@@ -1094,7 +1094,10 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
     Fetch predicted relationship from Relationship Probability API using cloudscraper.
     This is the working version restored from commit 758cca8.
     """
-    if not _validate_relationship_inputs(my_uuid, match_uuid, session_manager):
+    # Validate inputs
+    if not _validate_relationship_inputs(my_uuid, match_uuid, session_manager) or not session_manager.scraper:
+        if not session_manager.scraper:
+            logger.error("Match Probability API: Scraper not available")
         return None
 
     my_uuid_upper = my_uuid.upper()
@@ -1115,14 +1118,11 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
         "User-Agent": random.choice(config_schema.api.user_agents),
     }
 
-    if not session_manager.scraper:
-        logger.error(f"{api_description}: Scraper not available")
-        return None
-
     csrf_token = _sync_cookies_and_get_csrf(session_manager.driver, session_manager.scraper, api_description)
     if csrf_token:
         headers["X-CSRF-Token"] = csrf_token
 
+    result: Optional[str] = None
     try:
         response = session_manager.scraper.post(
             url,
@@ -1132,37 +1132,34 @@ def _fetch_relationship_probability(session_manager: SessionManager, my_uuid: st
             timeout=config_schema.selenium.api_timeout,
         )
 
+        # Handle redirects
         if response.status_code in (301, 302, 303, 307, 308):
             logger.debug(
                 f"{api_description}: Received redirect ({response.status_code}) for {sample_id_upper}. "
                 f"Skipping (optional data)."
             )
-            return None
-
-        if not response.ok:
+        # Handle errors
+        elif not response.ok:
             logger.warning(
                 f"{api_description} failed for {sample_id_upper}: {response.status_code} {response.reason}"
             )
-            return None
-
-        if not response.content:
+        elif not response.content:
             logger.warning(f"{api_description}: Empty response body for {sample_id_upper}")
-            return None
-
-        try:
-            data = response.json()
-        except json.JSONDecodeError as e:
-            logger.warning(f"{api_description}: JSON decode failed for {sample_id_upper}: {e}")
-            return None
-
-        return _extract_relationship_from_response(data, sample_id_upper, api_description)
+        else:
+            # Parse JSON
+            try:
+                data = response.json()
+                result = _extract_relationship_from_response(data, sample_id_upper, api_description)
+            except json.JSONDecodeError as e:
+                logger.warning(f"{api_description}: JSON decode failed for {sample_id_upper}: {e}")
 
     except Exception as e:
         logger.warning(f"{api_description}: Unexpected error for {sample_id_upper}: {e}")
-        return None
+
+    return result
 
 
-def _format_relationship_path_part(person: dict, idx: int, cfpid: str) -> str:
+def _format_relationship_path_part(person: dict, idx: int) -> str:
     """Format a single person in the relationship path."""
     name = person.get("name", "")
     lifespan = person.get("lifeSpan", "")
@@ -1194,7 +1191,7 @@ def _build_relationship_path(kinship_persons: list[dict], cfpid: str) -> tuple[O
 
     path_parts = []
     for idx, person in enumerate(kinship_persons):
-        path_part = _format_relationship_path_part(person, idx, cfpid)
+        path_part = _format_relationship_path_part(person, idx)
         path_parts.append(path_part)
 
     relationship_path = None
