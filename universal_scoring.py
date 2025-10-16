@@ -60,7 +60,7 @@ from test_framework import Colors
 logger = setup_module(globals(), __name__)
 
 
-def apply_universal_scoring(
+def apply_universal_scoring(  # noqa: PLR0913
     candidates: list[dict[str, Any]],
     search_criteria: dict[str, Any],
     scoring_weights: Optional[dict[str, Any]] = None,

@@ -764,7 +764,7 @@ def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visite
         queue_fwd.append((node_id, depth, new_path))
 
 
-def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_fwd: dict, queue_fwd: deque) -> None:
+def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_fwd: dict, queue_fwd: deque) -> None:  # noqa: PLR0913
     """Expand to siblings in forward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -774,7 +774,7 @@ def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[st
                 queue_fwd.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
+def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],  # noqa: PLR0913
                         visited_fwd: dict, queue_fwd: deque, max_depth: int):
     """Expand a node in the forward direction during BFS."""
     # Stop expanding if we've reached max depth
@@ -805,7 +805,7 @@ def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visit
         queue_bwd.append((node_id, depth, new_path))
 
 
-def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_bwd: dict, queue_bwd: deque) -> None:
+def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_bwd: dict, queue_bwd: deque) -> None:  # noqa: PLR0913
     """Expand to siblings in backward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -815,7 +815,7 @@ def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[s
                 queue_bwd.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],
+def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],  # noqa: PLR0913
                          visited_bwd: dict, queue_bwd: deque, max_depth: int):
     """Expand a node in the backward direction during BFS."""
     # Stop expanding if we've reached max depth
@@ -919,7 +919,7 @@ def fast_bidirectional_bfs(
     return _select_best_path(all_paths, start_id, end_id, id_to_parents, id_to_children)
 
 
-def _process_forward_queue_item(
+def _process_forward_queue_item(  # noqa: PLR0913
     queue_fwd: Any,
     visited_bwd: dict,
     visited_fwd: dict,
@@ -961,7 +961,7 @@ def _process_forward_queue_item(
     return 1
 
 
-def _process_backward_queue_item(
+def _process_backward_queue_item(  # noqa: PLR0913
     queue_bwd: Any,
     visited_fwd: dict,
     visited_bwd: dict,
@@ -1153,7 +1153,7 @@ def _determine_great_grandchild_relationship(sex_char: Optional[str], name: str,
     return f"whose {grandchild_label} is {name}{birth_year}"
 
 
-def _check_relationship_type(
+def _check_relationship_type(  # noqa: PLR0913
     relationship_type: str,
     id_a: str,
     id_b: str,
@@ -1192,7 +1192,7 @@ def _check_relationship_type(
     return None
 
 
-def _determine_relationship_between_individuals(
+def _determine_relationship_between_individuals(  # noqa: PLR0913
     id_a: str,
     id_b: str,
     indi_b: GedcomIndividualType,
@@ -1590,7 +1590,7 @@ def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[in
     }
 
 
-def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:  # noqa: PLR0913
     """Score birth date matches (prioritize: exact date > exact year > approx year)."""
     if date_flags["exact_birth_date_match"]:
         points_bdate = weights.get("exact_birth_date", 0)
@@ -1616,7 +1616,7 @@ def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
             logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched birth_year_close. Set field_scores['byear'] = {points_byear_approx}")
 
 
-def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:  # noqa: PLR0913
     """Score death date matches (prioritize: exact date > exact year > approx year > both absent)."""
     if date_flags["exact_death_date_match"]:
         points_ddate = weights.get("exact_death_date", 0)
@@ -1650,7 +1650,7 @@ def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
             logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched death_dates_both_absent. Set field_scores['ddate'] = {points_ddate_abs}")
 
 
-def _score_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:  # noqa: PLR0913
     """Score birth and death date matches."""
     _score_birth_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
     _score_death_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)

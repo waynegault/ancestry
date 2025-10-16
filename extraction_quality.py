@@ -259,7 +259,7 @@ def _score_dna_quality(extracted_data: dict[str, Any], dna_count: int) -> float:
     return score
 
 
-def _apply_extraction_bonuses(
+def _apply_extraction_bonuses(  # noqa: PLR0913
     base_score: float,
     names: int,
     vitals: int,

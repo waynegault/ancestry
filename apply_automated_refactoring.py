@@ -184,12 +184,158 @@ class ParameterRefactorer:
         print("      approach provides a clear plan for manual/AI-assisted refactoring.")
 
 
+# ==============================================
+# Comprehensive Test Suite
+# ==============================================
+
+def _test_parameter_refactorer_initialization() -> bool:
+    """Test ParameterRefactorer initialization."""
+    try:
+        refactorer = ParameterRefactorer()
+        assert refactorer.refactoring_patterns is not None, "Should initialize patterns"
+        assert isinstance(refactorer.refactoring_patterns, dict), "Patterns should be dict"
+        assert len(refactorer.refactoring_patterns) > 0, "Should have patterns"
+        return True
+    except Exception:
+        return False
+
+
+def _test_find_matching_params() -> bool:
+    """Test finding matching parameters."""
+    try:
+        refactorer = ParameterRefactorer()
+
+        params = ['id_to_parents', 'id_to_children', 'current_id', 'other_param']
+        pattern_params = ['id_to_parents', 'id_to_children', 'current_id', 'start_id']
+
+        matching = refactorer.find_matching_params(params, pattern_params)
+        assert len(matching) == 3, "Should find 3 matching params"
+        assert 'id_to_parents' in matching, "Should include id_to_parents"
+        assert 'other_param' not in matching, "Should not include non-matching params"
+        return True
+    except Exception:
+        return False
+
+
+def _test_should_refactor_function() -> bool:
+    """Test refactoring decision logic."""
+    try:
+        refactorer = ParameterRefactorer()
+
+        # Test with matching file and params
+        func_params = ['id_to_parents', 'id_to_children', 'current_id']
+        should_refactor, matching = refactorer.should_refactor_function(
+            'gedcom_utils.py',
+            func_params,
+            'graph_context'
+        )
+
+        assert isinstance(should_refactor, bool), "Should return bool"
+        assert isinstance(matching, list), "Should return list of matching params"
+        return True
+    except Exception:
+        return False
+
+
+def _test_refactoring_patterns_structure() -> bool:
+    """Test that refactoring patterns have expected structure."""
+    try:
+        refactorer = ParameterRefactorer()
+
+        for pattern_name, pattern in refactorer.refactoring_patterns.items():
+            assert 'params' in pattern, f"Pattern {pattern_name} should have params"
+            assert 'dataclass' in pattern, f"Pattern {pattern_name} should have dataclass"
+            assert 'import' in pattern, f"Pattern {pattern_name} should have import"
+            assert 'files' in pattern, f"Pattern {pattern_name} should have files"
+            assert isinstance(pattern['params'], list), "params should be list"
+            assert isinstance(pattern['files'], list), "files should be list"
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_generate_refactoring_plan() -> bool:
+    """Test refactoring plan generation."""
+    try:
+        refactorer = ParameterRefactorer()
+        plan = refactorer.generate_refactoring_plan()
+
+        assert isinstance(plan, dict), "Should return dict"
+        # Plan may be empty if no matching functions found, which is OK
+        return True
+    except Exception:
+        return False
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for apply_automated_refactoring.py.
+    Tests automated refactoring functionality.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Automated Refactoring Utility",
+            "apply_automated_refactoring.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "ParameterRefactorer Initialization",
+            _test_parameter_refactorer_initialization,
+            "ParameterRefactorer initializes correctly",
+            "Test refactorer initialization",
+            "Test pattern setup",
+        )
+
+        suite.run_test(
+            "Find Matching Parameters",
+            _test_find_matching_params,
+            "Matching parameters are found correctly",
+            "Test parameter matching",
+            "Test pattern matching logic",
+        )
+
+        suite.run_test(
+            "Should Refactor Function",
+            _test_should_refactor_function,
+            "Refactoring decision logic works correctly",
+            "Test refactoring decision",
+            "Test file and parameter matching",
+        )
+
+        suite.run_test(
+            "Refactoring Patterns Structure",
+            _test_refactoring_patterns_structure,
+            "Refactoring patterns have expected structure",
+            "Test pattern structure",
+            "Test pattern validation",
+        )
+
+        suite.run_test(
+            "Generate Refactoring Plan",
+            _test_generate_refactoring_plan,
+            "Refactoring plan generation works",
+            "Test plan generation",
+            "Test refactoring analysis",
+        )
+
+        return suite.finish_suite()
+
+
 def main():
     """Main entry point."""
-    refactorer = ParameterRefactorer()
-    refactorer.print_refactoring_plan()
+    success = run_comprehensive_tests()
+    if success:
+        refactorer = ParameterRefactorer()
+        refactorer.print_refactoring_plan()
+    return success
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    success = main()
+    sys.exit(0 if success else 1)
 

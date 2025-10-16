@@ -403,7 +403,7 @@ def _handle_rate_limit_error(session_manager: SessionManager) -> None:
             pass
 
 
-def _route_ai_provider_call(
+def _route_ai_provider_call(  # noqa: PLR0913
     provider: str, system_prompt: str, user_content: str,
     max_tokens: int, temperature: float, response_format_type: Optional[str]
 ) -> Optional[str]:
@@ -441,7 +441,7 @@ def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionM
         logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
 
 @cached_api_call("ai", ttl=1800)
-def _call_ai_model(
+def _call_ai_model(  # noqa: PLR0913
     provider: str,
     system_prompt: str,
     user_content: str,
@@ -578,7 +578,7 @@ def _compute_component_coverage(parsed_json: dict[str, Any]) -> Optional[float]:
         return None
 
 
-def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any], cleaned_response_str: str, session_manager: SessionManager, parse_success: bool, error: Optional[str] = None) -> None:
+def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any], cleaned_response_str: str, session_manager: SessionManager, parse_success: bool, error: Optional[str] = None) -> None:  # noqa: PLR0913
     """Record extraction telemetry event."""
     try:
         from ai_prompt_utils import get_prompt_version

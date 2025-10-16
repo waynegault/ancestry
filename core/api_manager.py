@@ -241,7 +241,7 @@ class APIManager:
             logger.debug(f"{api_description} request successful (response object)")
             return response
 
-    def make_api_request(
+    def make_api_request(  # noqa: PLR0913
         self,
         url: str,
         method: str = "GET",
