@@ -82,7 +82,8 @@ def _perform_safety_checks() -> list[str]:
     print("-" * 60)
 
     # Check 1: RPS per worker should be <= 0.5 for safety
-    per_worker_rps = config_schema.api.requests_per_second / config_schema.api.thread_pool_workers
+    workers = getattr(config_schema.api, 'thread_pool_workers', 2)
+    per_worker_rps = config_schema.api.requests_per_second / workers
     if per_worker_rps > 0.5:
         print("⚠️  Warning: Per-worker RPS > 0.5 may risk rate limiting")
         warnings.append(f"High per-worker RPS: {per_worker_rps:.2f}")

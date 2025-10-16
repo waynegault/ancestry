@@ -420,6 +420,7 @@ class APIConfig:
     # Previous parallel processing with ThreadPoolExecutor caused burst requests
     # that triggered Ancestry API rate limits (72-second penalties per 429 error)
     max_concurrency: int = 1  # Sequential processing only
+    thread_pool_workers: int = 2  # Number of worker threads for thread pool (loaded from THREAD_POOL_WORKERS env var)
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
