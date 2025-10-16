@@ -374,10 +374,13 @@ class SessionManager:
         logger.debug("Initializing enhanced requests session...")
 
         # Enhanced retry strategy with more comprehensive status codes
+        # NOTE: 429 (Too Many Requests) is NOT in status_forcelist because our rate limiter
+        # needs to see these errors directly to adjust delays and track metrics properly.
+        # If requests library retries 429 internally, our rate limiter never sees them!
         retry_strategy = Retry(
             total=3,
             backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504],
+            status_forcelist=[500, 502, 503, 504],  # Removed 429
             allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
         )
 
@@ -420,10 +423,12 @@ class SessionManager:
             )
 
             # Enhanced retry strategy for CloudScraper
+            # NOTE: 429 (Too Many Requests) is NOT in status_forcelist because our rate limiter
+            # needs to see these errors directly to adjust delays and track metrics properly.
             scraper_retry = Retry(
                 total=3,
                 backoff_factor=0.8,
-                status_forcelist=[403, 429, 500, 502, 503, 504],
+                status_forcelist=[403, 500, 502, 503, 504],  # Removed 429
                 allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
             )
 

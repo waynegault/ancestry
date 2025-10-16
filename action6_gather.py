@@ -18,6 +18,7 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import random
+import time
 
 # === THIRD-PARTY IMPORTS ===
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -47,6 +48,11 @@ def coord(session_manager: SessionManager, start: int = 1):
     logger.info("Action 6: DNA Match Gatherer")
     logger.info("=" * 80)
 
+    # Reset rate limiter metrics at start of each run
+    if session_manager.rate_limiter:
+        session_manager.rate_limiter.reset_metrics()
+        logger.info("Rate limiter metrics reset for new run")
+
     max_pages = config_schema.api.max_pages
     # Create database manager
     db_manager = DatabaseManager()
@@ -58,9 +64,20 @@ def coord(session_manager: SessionManager, start: int = 1):
 
     logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}")
 
+    # Adaptive rate limiting for parallel workers
+    # When using parallel workers, increase base delay to prevent 429 errors
+    # Formula: base_delay * sqrt(workers) to account for concurrent requests
     if parallel_workers > 1:
-        logger.info(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
-        logger.info("   Rate limiter is thread-safe and will prevent 429 errors")
+        import math
+        if session_manager.rate_limiter:
+            original_delay = session_manager.rate_limiter.initial_delay
+            # Increase delay proportionally to worker count (sqrt to avoid over-compensation)
+            adaptive_delay = original_delay * math.sqrt(parallel_workers)
+            session_manager.rate_limiter.initial_delay = adaptive_delay
+            session_manager.rate_limiter.current_delay = adaptive_delay
+            logger.info(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
+            logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
+            logger.info("   Rate limiter is thread-safe and will prevent 429 errors")
     else:
         logger.info("📝 Sequential processing (PARALLEL_WORKERS=1)")
 
@@ -94,30 +111,96 @@ def coord(session_manager: SessionManager, start: int = 1):
     total_skipped = 0
     total_errors = 0
 
-    # Calculate end page
-    end_page = start_page + max_pages - 1
+    # Track session health for accurate reporting
+    session_deaths = 0
+    session_recoveries = 0
+    run_incomplete = False
+    incomplete_reason = ""
+    run_start_time = time.time()
 
-    for page_num in range(start_page, end_page + 1):
+    # Calculate end page
+    # MAX_PAGES=0 means process all pages (infinite loop until no more matches)
+    if max_pages == 0:
+        logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
+        end_page = float('inf')  # Process indefinitely
+    else:
+        end_page = start_page + max_pages - 1
+
+    page_num = start_page
+    pages_processed = 0
+
+    while True:
+        # Check if we've reached the end (for finite page processing)
+        if max_pages > 0 and page_num > end_page:
+            break
+
+        # OPTION 3: Periodic session health check
+        # Check session health at the start of each page to detect dead sessions early
+        # This prevents hours-long delays when browser dies during long-running operations
+        if not session_manager.check_session_health():
+            logger.warning("🚨 Session health check failed - attempting recovery...")
+            session_deaths += 1
+            if session_manager.attempt_browser_recovery():
+                logger.info("✅ Session recovered successfully, continuing...")
+                session_recoveries += 1
+            else:
+                logger.error("❌ Session recovery failed - stopping processing")
+                run_incomplete = True
+                incomplete_reason = "Session recovery failed at page health check"
+                break
+
         logger.info(f"\n{'='*80}")
-        logger.info(f"Processing page {page_num} (page {page_num - start_page + 1}/{max_pages})...")
+        if max_pages == 0:
+            logger.info(f"📄 Processing page {page_num} (page {pages_processed + 1} of all pages)")
+        else:
+            logger.info(f"📄 Processing page {page_num} (page {page_num - start_page + 1}/{max_pages})")
+        logger.info(f"   Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
         logger.info(f"{'='*80}")
 
         # Fetch match list for this page
         api_response = fetch_match_list_page(driver, session_manager, my_uuid, page_num, csrf_token)
         if not api_response or not isinstance(api_response, dict):
             logger.warning(f"No API response for page {page_num}")
+
+            # CRITICAL FIX: Distinguish between "no more pages" and "session dead"
+            # Check if session is still valid before assuming we've reached the end
+            if not session_manager.check_session_health():
+                logger.error("🚨 Session appears dead - API failure likely due to invalid session")
+                session_deaths += 1
+                if session_manager.attempt_browser_recovery():
+                    logger.info("✅ Session recovered - retrying current page...")
+                    session_recoveries += 1
+                    continue  # Retry the same page
+                logger.error("❌ Session recovery failed - stopping processing")
+                run_incomplete = True
+                incomplete_reason = f"Session recovery failed at page {page_num} (API failure)"
+                break
+
+            # Session is valid, so this is genuinely "no more pages"
+            if max_pages == 0:
+                logger.info("No more pages available. Stopping.")
+                break
+            page_num += 1
+            pages_processed += 1
             continue
 
         # Extract matches from API response
         match_list = api_response.get("matchList", [])
         if not match_list:
             logger.warning(f"No matches in API response for page {page_num}")
+            if max_pages == 0:
+                logger.info("No more matches available. Stopping.")
+                break
+            page_num += 1
+            pages_processed += 1
             continue
 
         # Get sample IDs for in-tree status check
         sample_ids = [m.get("sampleId", "").upper() for m in match_list if m.get("sampleId")]
         if not sample_ids:
             logger.warning(f"No sample IDs found on page {page_num}")
+            page_num += 1
+            pages_processed += 1
             continue
 
         # Fetch in-tree status
@@ -129,6 +212,8 @@ def coord(session_manager: SessionManager, start: int = 1):
 
         if not matches:
             logger.warning(f"No matches found on page {page_num}")
+            page_num += 1
+            pages_processed += 1
             continue
 
         logger.info(f"Found {len(matches)} matches on page {page_num}")
@@ -140,7 +225,27 @@ def coord(session_manager: SessionManager, start: int = 1):
 
             logger.info(f"\n--- Batch {batch_start//batch_size + 1}: Processing matches {batch_start+1}-{batch_end} ---")
 
+            # OPTION 3: Periodic session health check before each batch
+            # More frequent checks during parallel processing to catch session death quickly
+            if not session_manager.check_session_health():
+                logger.warning("🚨 Session health check failed before batch - attempting recovery...")
+                session_deaths += 1
+                if session_manager.attempt_browser_recovery():
+                    logger.info("✅ Session recovered successfully, continuing with batch...")
+                    session_recoveries += 1
+                else:
+                    logger.error("❌ Session recovery failed - skipping remaining batches on this page")
+                    run_incomplete = True
+                    incomplete_reason = f"Session recovery failed at page {page_num}, batch {batch_start//batch_size + 1}"
+                    break
+
             # Process batch
+            batch_num = (batch_start // batch_size) + 1
+            total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
+            batch_end = min(batch_start + batch_size, len(matches))
+
+            logger.info(f"   📦 Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end} of {len(matches)} on this page)")
+
             new, updated, skipped, errors = _process_batch(
                 batch, session_manager, db_manager, my_uuid, my_tree_id
             )
@@ -150,17 +255,51 @@ def coord(session_manager: SessionManager, start: int = 1):
             total_skipped += skipped
             total_errors += errors
 
-            logger.info(f"Batch complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+            logger.info(f"   ✅ Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+            logger.info(f"   📊 Cumulative totals: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
+
+        # Move to next page
+        page_num += 1
+        pages_processed += 1
+
+    # Calculate run statistics
+    run_end_time = time.time()
+    total_run_time = run_end_time - run_start_time
 
     # Final summary
     logger.info(f"\n{'='*80}")
     logger.info("FINAL SUMMARY")
     logger.info(f"{'='*80}")
-    logger.info(f"Page Range: {start_page}-{end_page} ({max_pages} pages)")
+
+    # Run completion status
+    if run_incomplete:
+        logger.warning(f"⚠️  RUN INCOMPLETE: {incomplete_reason}")
+    else:
+        logger.info("✅ Run completed successfully")
+
+    # Session health tracking
+    if session_deaths > 0:
+        logger.warning(f"⚠️  Session Deaths: {session_deaths}")
+        logger.warning(f"⚠️  Session Recoveries: {session_recoveries}")
+        if session_deaths > session_recoveries:
+            logger.error(f"❌ {session_deaths - session_recoveries} session death(s) could not be recovered")
+
+    # Page processing
+    if max_pages == 0:
+        logger.info(f"Pages Processed: {pages_processed} (started at page {start_page})")
+    else:
+        logger.info(f"Page Range: {start_page}-{end_page} ({max_pages} pages)")
+
+    # Match statistics
     logger.info(f"New Added: {total_new}")
     logger.info(f"Updated: {total_updated}")
     logger.info(f"Skipped: {total_skipped}")
     logger.info(f"Errors: {total_errors}")
+
+    # Time statistics
+    logger.info("")
+    logger.info(f"Total Run Time: {total_run_time/3600:.2f} hours ({total_run_time/60:.1f} minutes)")
+
     logger.info(f"{'='*80}")
 
     # Print rate limiter metrics
@@ -168,7 +307,7 @@ def coord(session_manager: SessionManager, start: int = 1):
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         session_manager.rate_limiter.print_metrics_summary()
 
-    return True
+    return not run_incomplete  # Return False if run was incomplete
 
 def _refine_match_list(match_list: list[dict], my_uuid: str, in_tree_ids: set[str]) -> list[dict]:
     """Refine raw match list into structured format."""
@@ -258,6 +397,10 @@ def _fetch_match_details_parallel(
     Returns:
         Dictionary with keys: match_details, profile_details, badge_details, predicted_rel, uuid
     """
+    # Add random jitter (0-200ms) to spread out parallel requests and prevent thundering herd
+    jitter = random.uniform(0.0, 0.2)
+    time.sleep(jitter)
+
     result = {
         'match_details': {},
         'profile_details': {},
@@ -328,21 +471,52 @@ def _process_batch(
     parallel_workers = getattr(config_schema, 'parallel_workers', 1)
 
     try:
+        # First pass: Identify which matches need detail fetching
+        matches_needing_details = []
+        skip_map = {}  # Track which matches to skip
+
+        for match in batch:
+            # Check if person exists and should be skipped
+            person_id, person_status = _save_person_with_status(session, match)
+            if not person_id:
+                skip_map[match["uuid"]] = {"skip": True, "reason": "no_person_id", "person_id": None, "person_status": None}
+                continue
+
+            # Check if we should skip detail refresh
+            skip_details = False
+            skip_reason = None
+
+            # Skip if DnaMatch already exists (most important check - avoids unnecessary API calls)
+            if person_status != "created" and _dna_match_exists(session, person_id):
+                skip_details = True
+                skip_reason = "dna_match_exists"
+                logger.debug(f"Skipping detail fetch for person_id={person_id} - DnaMatch already exists")
+            # Skip if person was recently updated (timestamp-based)
+            elif person_status != "created" and _should_skip_person_refresh(session, person_id):
+                skip_details = True
+                skip_reason = "recently_updated"
+
+            if skip_details:
+                skip_map[match["uuid"]] = {"skip": True, "reason": skip_reason, "person_id": person_id, "person_status": person_status}
+            else:
+                skip_map[match["uuid"]] = {"skip": False, "person_id": person_id, "person_status": person_status}
+                matches_needing_details.append(match)
+
         # Fetch all match details (parallel or sequential based on config)
         match_details_map = {}
 
-        if parallel_workers > 1:
-            logger.info(f"Fetching match details using {parallel_workers} parallel workers...")
+        if parallel_workers > 1 and matches_needing_details:
+            logger.info(f"Fetching match details using {parallel_workers} parallel workers for {len(matches_needing_details)} matches...")
 
             with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
                 # Submit all fetch tasks (NO database session passed - thread safety!)
                 future_to_match = {
                     executor.submit(_fetch_match_details_parallel, match, session_manager, my_uuid): match
-                    for match in batch
+                    for match in matches_needing_details
                 }
 
                 # Collect results as they complete
-                for future in tqdm(as_completed(future_to_match), total=len(batch), desc="Fetching details", leave=False):
+                for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching details", leave=False):
                     match = future_to_match[future]
                     try:
                         details = future.result()
@@ -358,44 +532,41 @@ def _process_batch(
                             'uuid': match.get("uuid"),
                         }
         else:
-            logger.debug("Using sequential processing (parallel_workers=1)")
+            logger.debug(f"Using sequential processing (parallel_workers={parallel_workers}, matches_needing_details={len(matches_needing_details)})")
 
-        # Process and save all matches
+        # Second pass: Process and save all matches
         for match in tqdm(batch, desc="Saving to database", leave=False):
             try:
-                # Step 1: Create/update Person record (initial data)
-                person_id, person_status = _save_person_with_status(session, match)
+                # Get skip info from first pass
+                skip_info = skip_map.get(match["uuid"], {})
+                person_id = skip_info.get("person_id")
+                person_status = skip_info.get("person_status")
+                skip_details = skip_info.get("skip", False)
+
                 if not person_id:
                     error_count += 1
                     continue
 
                 # Step 2: Get match details (from parallel fetch or fetch now if sequential)
-                if parallel_workers > 1:
+                if skip_details:
+                    logger.debug(f"Skipping detail fetch for person_id={person_id} (reason: {skip_info.get('reason')})")
+                    match_details = {}
+                    profile_details = {}
+                    badge_details = {}
+                    predicted_rel = None
+                elif parallel_workers > 1:
                     # Use pre-fetched details from parallel processing
                     details = match_details_map.get(match["uuid"], {})
                     match_details = details.get('match_details', {})
                     profile_details = details.get('profile_details', {})
                     badge_details = details.get('badge_details', {})
                     predicted_rel = details.get('predicted_rel')
-                    skip_details = not any([match_details, profile_details, badge_details, predicted_rel])
                 else:
                     # Sequential processing: fetch details now
-                    skip_details = False
-                    if person_status != "created":
-                        skip_details = _should_skip_person_refresh(session, person_id)
-
-                    match_details = {}
-                    profile_details = {}
-                    badge_details = {}
-                    predicted_rel = None
-
-                    if not skip_details:
-                        match_details = _fetch_match_details(session_manager, my_uuid, match["uuid"])
-                        profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
-                        badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
-                        predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
-                    else:
-                        logger.debug(f"Skipping detail fetch for person_id={person_id} (recently updated)")
+                    match_details = _fetch_match_details(session_manager, my_uuid, match["uuid"])
+                    profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
+                    badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
+                    predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
 
                 # Step 4: Update Person with additional data
                 additional_updates = False
@@ -405,14 +576,22 @@ def _process_batch(
                 logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
 
                 # Step 5: Create/update DnaMatch record
-                _save_dna_match(session, person_id, match, match_details, predicted_rel)
+                # Skip logic is handled inside _save_dna_match (checks if record exists)
+                # Only call if we fetched details (skip_details=False)
+                if not skip_details:
+                    _save_dna_match(session, person_id, match, match_details, predicted_rel)
 
                 # Step 6: Create/update FamilyTree record (if in_tree)
+                # Skip logic is handled inside _save_family_tree (checks if record exists)
+                # Only call if we fetched badge_details
                 if match["in_tree"] and badge_details:
                     _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
 
-                # Count based on combined person status and additional updates
-                if person_status == "created":
+                # Count based on skip_details, person status, and additional updates
+                if skip_details:
+                    # Person was skipped due to recent update - no DnaMatch/FamilyTree updates
+                    skipped_count += 1
+                elif person_status == "created":
                     new_count += 1
                 elif person_status == "updated" or additional_updates:
                     updated_count += 1
@@ -442,41 +621,31 @@ def _should_skip_person_refresh(session, person_id: int) -> bool:
     """
     Check if person was recently updated and should skip detail refresh.
     Returns True if person was updated within PERSON_REFRESH_DAYS, False otherwise.
+
+    TEMPORARILY DISABLED - Always returns False to test other skip logic.
     """
-    from datetime import datetime, timedelta, timezone
+    # TEMPORARY: Disable timestamp-based skipping to test other skip logic
+    return False
 
-    from database import Person
-
-    # Get refresh threshold from config
-    refresh_days = config_schema.person_refresh_days
-
-    # If refresh_days is 0, always fetch details
-    if refresh_days == 0:
-        return False
-
-    # Get person's last update time
-    person = session.query(Person).filter_by(id=person_id).first()
-    if not person or not person.updated_at:
-        return False
-
-    # Calculate time since last update
-    now = datetime.now(timezone.utc)
-    last_updated = person.updated_at
-
-    # Ensure last_updated is timezone-aware
-    if last_updated.tzinfo is None:
-        last_updated = last_updated.replace(tzinfo=timezone.utc)
-
-    time_since_update = now - last_updated
-    threshold = timedelta(days=refresh_days)
-
-    # Skip if updated within threshold
-    should_skip = time_since_update < threshold
-
-    if should_skip:
-        logger.debug(f"Person ID {person_id} updated {time_since_update.days} days ago (threshold: {refresh_days} days) - skipping refresh")
-
-    return should_skip
+    # Original code commented out for later restoration:
+    # from datetime import datetime, timedelta, timezone
+    # from database import Person
+    # refresh_days = config_schema.person_refresh_days
+    # if refresh_days == 0:
+    #     return False
+    # person = session.query(Person).filter_by(id=person_id).first()
+    # if not person or not person.updated_at:
+    #     return False
+    # now = datetime.now(timezone.utc)
+    # last_updated = person.updated_at
+    # if last_updated.tzinfo is None:
+    #     last_updated = last_updated.replace(tzinfo=timezone.utc)
+    # time_since_update = now - last_updated
+    # threshold = timedelta(days=refresh_days)
+    # should_skip = time_since_update < threshold
+    # if should_skip:
+    #     logger.debug(f"Person ID {person_id} updated {time_since_update.days} days ago (threshold: {refresh_days} days) - skipping refresh")
+    # return should_skip
 
 
 def _save_person_with_status(session, match: dict) -> tuple[Optional[int], str]:
@@ -526,15 +695,16 @@ def _update_person(session, person_id: int, profile_details: dict, badge_details
         return False
 
     updated = False
+    updated_fields = []
 
     # Update from profile details (only if different)
     if profile_details.get("last_logged_in") and profile_details["last_logged_in"] != person.last_logged_in:
         person.last_logged_in = profile_details["last_logged_in"]
-        logger.debug(f"_update_person: Updated last_logged_in for person_id={person_id}")
+        updated_fields.append("last_logged_in")
         updated = True
     if "contactable" in profile_details and profile_details["contactable"] != person.contactable:
         person.contactable = profile_details["contactable"]
-        logger.debug(f"_update_person: Updated contactable for person_id={person_id}")
+        updated_fields.append("contactable")
         updated = True
 
     # Update from badge details (only if different)
@@ -543,7 +713,7 @@ def _update_person(session, person_id: int, profile_details: dict, badge_details
             new_birth_year = int(badge_details["birth_year"])
             if new_birth_year != person.birth_year:
                 person.birth_year = new_birth_year
-                logger.debug(f"_update_person: Updated birth_year for person_id={person_id}")
+                updated_fields.append("birth_year")
                 updated = True
         except (ValueError, TypeError):
             pass
@@ -551,17 +721,19 @@ def _update_person(session, person_id: int, profile_details: dict, badge_details
     # Update from match details (administrator fields - only if different)
     if match_details.get("administrator_profile_id") and match_details["administrator_profile_id"] != person.administrator_profile_id:
         person.administrator_profile_id = match_details["administrator_profile_id"]
-        logger.debug(f"_update_person: Updated administrator_profile_id for person_id={person_id}: {match_details['administrator_profile_id']}")
+        updated_fields.append("administrator_profile_id")
         updated = True
     if match_details.get("administrator_username") and match_details["administrator_username"] != person.administrator_username:
         person.administrator_username = match_details["administrator_username"]
-        logger.debug(f"_update_person: Updated administrator_username for person_id={person_id}: {match_details['administrator_username']}")
+        updated_fields.append("administrator_username")
         updated = True
 
     if updated:
         session.flush()
+        logger.debug(f"_update_person: person_id={person_id}, updated fields: {', '.join(updated_fields)}")
+    else:
+        logger.debug(f"_update_person: person_id={person_id}, no changes needed")
 
-    logger.debug(f"_update_person: person_id={person_id}, updated={updated}")
     return updated
 
 
@@ -944,8 +1116,21 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
         return {}
 
 
+def _dna_match_exists(session, person_id: int) -> bool:
+    """Check if a DnaMatch record already exists for this person."""
+    from database import DnaMatch
+
+    existing = session.query(DnaMatch).filter_by(people_id=person_id).first()
+    return existing is not None
+
+
 def _save_dna_match(session, person_id: int, match: dict, match_details: dict, predicted_relationship: Optional[str] = None) -> str:
-    """Save DnaMatch record to database."""
+    """
+    Save DnaMatch record to database.
+
+    Skip logic: If a DnaMatch record already exists for this person, skip populating it.
+    This prevents unnecessary updates and preserves existing DNA data.
+    """
     # Use predicted_relationship from API call, fallback to match_details, then "Unknown"
     predicted_rel = predicted_relationship or match_details.get("predicted_relationship", "Unknown")
 
@@ -961,15 +1146,38 @@ def _save_dna_match(session, person_id: int, match: dict, match_details: dict, p
         "from_my_mothers_side": match_details.get("from_my_mothers_side", False),
     }
 
+    # Check if DnaMatch record already exists
+    if _dna_match_exists(session, person_id):
+        logger.debug(f"DnaMatch record already exists for person_id={person_id} - skipping (would save: cm={dna_data['cm_dna']}, rel={dna_data['predicted_relationship']})")
+        return "skipped"
+
     result = create_or_update_dna_match(session, dna_data)
     logger.debug(f"DnaMatch result for person_id={person_id}: {result}")
     return result
 
 
+def _family_tree_exists(session, person_id: int) -> bool:
+    """Check if a FamilyTree record already exists for this person."""
+    from database import FamilyTree
+
+    existing = session.query(FamilyTree).filter_by(people_id=person_id).first()
+    return existing is not None
+
+
 def _save_family_tree(session, person_id: int, badge_details: dict, my_tree_id: Optional[str], session_manager: SessionManager) -> str:
-    """Save FamilyTree record to database."""
+    """
+    Save FamilyTree record to database.
+
+    Skip logic: If a FamilyTree record already exists for this person, skip populating it.
+    This prevents unnecessary API calls and database updates.
+    """
     cfpid = badge_details.get("cfpid")
     person_name = badge_details.get("person_name_in_tree")
+
+    # Check if FamilyTree record already exists
+    if _family_tree_exists(session, person_id):
+        logger.debug(f"FamilyTree record already exists for person_id={person_id} - skipping (would save: cfpid={cfpid}, name={person_name})")
+        return "skipped"
 
     # Build links if we have CFPID
     facts_link = None

@@ -961,8 +961,7 @@ class RateLimiter:
         tokens_to_add = elapsed * self.fill_rate
         self.tokens = min(self.capacity, self.tokens + tokens_to_add)
         self.last_refill_time = now
-        if tokens_to_add > 0:
-            logger.debug(f"Token bucket refilled: +{tokens_to_add:.2f} tokens (elapsed: {elapsed:.2f}s, now: {self.tokens:.2f}/{self.capacity:.1f})")
+        # Removed excessive debug logging - token bucket refill happens on every request
 
     # End of _refill_tokens
 
@@ -1029,18 +1028,33 @@ class RateLimiter:
     # End of reset_delay
 
     def decrease_delay(self) -> None:
-        """Thread-safe decrease of delay on successful operations."""
+        """
+        Thread-safe decrease of delay on successful operations.
+
+        Uses adaptive decrease rate:
+        - If delay is > 2x initial_delay: decrease by 10% (fast recovery)
+        - Otherwise: decrease by 2% (gradual recovery)
+        """
         with self._lock:
             if not self.last_throttled and self.current_delay > self.initial_delay:
                 previous_delay = self.current_delay
+
+                # Adaptive decrease rate: faster recovery when delay is high
+                if self.current_delay > (self.initial_delay * 2.0):
+                    # Fast recovery: 10% decrease when delay is significantly elevated
+                    adaptive_decrease_factor = 0.90
+                else:
+                    # Gradual recovery: 2% decrease when close to initial delay
+                    adaptive_decrease_factor = self.decrease_factor
+
                 self.current_delay = max(
-                    self.current_delay * self.decrease_factor, self.initial_delay
+                    self.current_delay * adaptive_decrease_factor, self.initial_delay
                 )
                 if (
                     abs(previous_delay - self.current_delay) > 0.01
                 ):  # Log only significant changes
                     logger.debug(
-                        f"Decreased base delay component to {self.current_delay:.2f}s"
+                        f"Decreased base delay component to {self.current_delay:.2f}s (from {previous_delay:.2f}s)"
                     )
                     # Track metric
                     with self._metrics_lock:
@@ -1383,24 +1397,44 @@ def _prepare_api_headers(
 
 # End of _prepare_api_headers
 
+# Cookie cache to reduce excessive synchronization
+_cookie_sync_cache = {"last_sync_time": 0.0, "sync_interval": 30.0}  # Sync every 30 seconds max
+
 def _sync_cookies_for_request(
     session_manager: SessionManager,
     driver: DriverType,
     api_description: str,
     attempt: int = 1,
+    force_sync: bool = False,
 ) -> bool:
     """
     Synchronizes cookies from the WebDriver to the requests session.
+
+    Uses caching to reduce excessive cookie synchronization - only syncs if:
+    1. force_sync=True (e.g., after session recovery)
+    2. More than 30 seconds since last sync
+    3. First attempt of a request
 
     Args:
         session_manager: The session manager instance
         driver: The WebDriver instance
         api_description: Description of the API being called
         attempt: The current attempt number
+        force_sync: Force cookie sync regardless of cache
 
     Returns:
         True if cookies were synced successfully, False otherwise
     """
+    import time
+
+    # Check if we can skip cookie sync (use cached cookies)
+    current_time = time.time()
+    time_since_last_sync = current_time - _cookie_sync_cache["last_sync_time"]
+
+    if not force_sync and time_since_last_sync < _cookie_sync_cache["sync_interval"]:
+        # Cookies were synced recently, skip this sync (no logging to reduce verbosity)
+        return True
+
     # Check driver validity for runtime headers/cookies (avoid is_sess_valid() to prevent recursion)
     driver_is_valid = driver and session_manager.driver
     if not driver_is_valid:
@@ -1414,14 +1448,25 @@ def _sync_cookies_for_request(
 
     # Perform actual cookie synchronization like the working version
     try:
-        logger.debug(f"[{api_description}] Syncing cookies from browser to requests session (Attempt {attempt})...")
+        # Only log on first attempt or if forced to reduce verbosity
+        if attempt == 1 or force_sync:
+            logger.debug(f"[{api_description}] Syncing cookies from browser (cache expired, last sync {time_since_last_sync:.1f}s ago)")
 
-        # Use the API manager's sync_cookies_from_browser method like the working version
-        sync_success = session_manager.api_manager.sync_cookies_from_browser(session_manager.browser_manager)
+        # Use the API manager's sync_cookies_from_browser method with session_manager for recovery
+        # CRITICAL FIX: Pass session_manager to enable automatic recovery on cookie sync failures
+        sync_success = session_manager.api_manager.sync_cookies_from_browser(
+            session_manager.browser_manager,
+            session_manager=session_manager
+        )
 
         if sync_success:
-            logger.debug(f"[{api_description}] Cookie sync successful (Attempt {attempt}).")
+            # Update cache timestamp
+            _cookie_sync_cache["last_sync_time"] = current_time
+            # Only log on first attempt or if forced
+            if attempt == 1 or force_sync:
+                logger.debug(f"[{api_description}] Cookie sync successful")
             return True
+        # Always log failures
         logger.warning(f"[{api_description}] Cookie sync failed (Attempt {attempt}).")
         return False
 
@@ -1567,6 +1612,20 @@ def _execute_api_request(
         logger.warning(
             f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}"
         )
+
+        # CRITICAL FIX: Track RetryError (which indicates 429 errors hidden by requests library)
+        # RetryError means the requests library exhausted its internal retries (usually 3x)
+        # Each RetryError likely represents 3+ actual 429 errors that were hidden from our rate limiter
+        error_str = str(e)
+        if "RetryError" in type(e).__name__ or "RetryError" in error_str:
+            if "429" in error_str or "too many 429" in error_str.lower():
+                # This is a RetryError caused by 429s - track as failed request with 429 errors
+                if session_manager.rate_limiter:
+                    # Estimate 3 actual 429s per RetryError (requests library default retry count)
+                    for _ in range(3):
+                        session_manager.rate_limiter.increase_delay()
+                    logger.debug("Tracked RetryError as ~3 hidden 429 errors for rate limiter")
+
         return None
     except Exception as e:
         logger.critical(

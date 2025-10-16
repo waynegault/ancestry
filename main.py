@@ -1132,10 +1132,10 @@ def coord_action(session_manager: SessionManager, config_schema: Optional[Any] =
         # Call the imported function from action6
         result = coord(session_manager, start=start)
         if result is False:
-            logger.error("Match gathering reported failure.")
-            print("ERROR: Match gathering failed. Check logs for details.")
+            logger.error("Match gathering reported failure or incomplete run.")
+            print("⚠️  WARNING: Match gathering incomplete or failed. Check logs for details.")
             return False
-        logger.info("Gathering matches OK.")
+        logger.info("Gathering matches completed successfully.")
         print("✓ Match gathering completed successfully.")
         return True
     except Exception as e:

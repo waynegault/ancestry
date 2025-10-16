@@ -91,18 +91,31 @@ class APIManager:
         self._requests_session.mount("https://", adapter)
         logger.debug("Requests session configured with retry strategy.")
 
-    def sync_cookies_from_browser(self, browser_manager) -> bool:
+    def sync_cookies_from_browser(self, browser_manager, session_manager=None) -> bool:
         """
         Sync cookies from browser to the requests session.
 
         Args:
             browser_manager: BrowserManager instance to sync cookies from
+            session_manager: Optional SessionManager instance for triggering recovery
 
         Returns:
             bool: True if sync successful, False otherwise
         """
         if not browser_manager or not browser_manager.is_session_valid():
             logger.warning("Cannot sync cookies: Browser session invalid.")
+
+            # CRITICAL FIX: Trigger session recovery when browser session is dead
+            # This prevents hours-long delays waiting for recovery to trigger elsewhere
+            if session_manager:
+                logger.info("🔄 Attempting session recovery due to invalid browser session...")
+                # Call session_manager.is_session_valid() which triggers recovery
+                if session_manager.browser_manager and session_manager.browser_manager.is_session_valid():
+                    logger.info("✅ Session recovery successful, retrying cookie sync...")
+                    # Retry the sync after recovery
+                    return self.sync_cookies_from_browser(browser_manager, session_manager=None)
+                logger.warning("❌ Session recovery failed or not available")
+
             return False
 
         try:

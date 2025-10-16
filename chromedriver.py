@@ -330,7 +330,7 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
             logger.debug(f"Full error details: {chrome_exc}", exc_info=True)
 
         print(f"  ✗ ChromeDriver initialization failed (attempt {attempt_num})", flush=True)
-        print(f"  ℹ Run 'python diagnose_chrome.py' for detailed diagnostics", flush=True)
+        print("  ℹ Run 'python diagnose_chrome.py' for detailed diagnostics", flush=True)
         return None
 
 

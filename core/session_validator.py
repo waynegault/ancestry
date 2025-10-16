@@ -83,9 +83,9 @@ class SessionValidator:
         if not cookies_success:
             return False, cookies_error
 
-        # Sync cookies to requests session
+        # Sync cookies to requests session (with session_manager for recovery support)
         sync_success, sync_error = self._sync_cookies_to_requests(
-            browser_manager, api_manager
+            browser_manager, api_manager, session_manager=session_manager
         )
         if not sync_success:
             return False, sync_error
@@ -383,7 +383,7 @@ class SessionValidator:
             return False, error_msg
 
     def _sync_cookies_to_requests(
-        self, browser_manager, api_manager
+        self, browser_manager, api_manager, session_manager=None
     ) -> tuple[bool, Optional[str]]:
         """
         Sync cookies from browser to API requests session.
@@ -391,12 +391,17 @@ class SessionValidator:
         Args:
             browser_manager: BrowserManager instance
             api_manager: APIManager instance
+            session_manager: Optional SessionManager instance for recovery support
 
         Returns:
             Tuple of (success, error_message)
         """
         try:
-            sync_success = api_manager.sync_cookies_from_browser(browser_manager)
+            # CRITICAL FIX: Pass session_manager to enable automatic recovery on cookie sync failures
+            sync_success = api_manager.sync_cookies_from_browser(
+                browser_manager,
+                session_manager=session_manager
+            )
             if not sync_success:
                 error_msg = "Failed to sync cookies to requests session"
                 logger.error(error_msg)
