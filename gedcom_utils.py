@@ -2759,6 +2759,16 @@ def test_error_recovery():
 
 
 # ==============================================
+# Standard Test Suite
+# ==============================================
+# Note: Comprehensive tests are already defined in gedcom_module_tests()
+# Additional test functions for specific GEDCOM operations are defined above
+
+
+
+
+
+# ==============================================
 # Standalone Test Block
 # ==============================================
 if __name__ == "__main__":

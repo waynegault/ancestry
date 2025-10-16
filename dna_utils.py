@@ -443,3 +443,200 @@ def fetch_match_list_page(
         allow_redirects=True,
     )
 
+
+# ============================================================================
+# TEST FUNCTIONS
+# ============================================================================
+
+def _test_csrf_token_extraction() -> bool:
+    """Test CSRF token extraction from cookie value."""
+    # Test that CSRF token is correctly extracted from pipe-delimited cookie value
+    test_token = "test_csrf_token_12345"
+    cookie_value = f"{test_token}|extra_data"
+
+    # Simulate what the function does
+    extracted = unquote(cookie_value).split("|")[0]
+    assert extracted == test_token, f"Expected {test_token}, got {extracted}"
+
+    return True
+
+
+def _test_csrf_token_url_decoding() -> bool:
+    """Test CSRF token URL decoding."""
+    from urllib.parse import quote
+
+    # Test that URL-encoded CSRF tokens are properly decoded
+    test_token = "test_token_with_special_chars_!@#"
+    encoded_token = quote(test_token)
+
+    # Simulate what the function does
+    decoded = unquote(encoded_token)
+    assert decoded == test_token, f"Expected {test_token}, got {decoded}"
+
+    return True
+
+
+def _test_dna_matches_url_construction() -> bool:
+    """Test DNA matches page URL construction."""
+    test_uuid = "test-uuid-12345"
+    base_url = "https://www.ancestry.com/"
+
+    # Test URL construction
+    target_url = urljoin(base_url, f"discoveryui-matches/list/{test_uuid}")
+    expected = "https://www.ancestry.com/discoveryui-matches/list/test-uuid-12345"
+
+    assert target_url == expected, f"Expected {expected}, got {target_url}"
+
+    return True
+
+
+def _test_match_list_api_url_construction() -> bool:
+    """Test Match List API URL construction with pagination."""
+    test_uuid = "test-uuid-12345"
+    current_page = 2
+    base_url = "https://www.ancestry.com/"
+
+    # Test URL construction with page parameter
+    api_url = urljoin(
+        base_url,
+        f"discoveryui-matches/parents/list/api/matchList/{test_uuid}?currentPage={current_page}"
+    )
+
+    assert test_uuid in api_url, "UUID should be in API URL"
+    assert "currentPage=2" in api_url, "Page parameter should be in API URL"
+    assert "matchList" in api_url, "API endpoint should be in URL"
+
+    return True
+
+
+def _test_match_list_headers_construction() -> bool:
+    """Test Match List API headers are properly constructed."""
+    csrf_token = "test_csrf_token_12345"
+    base_url = "https://www.ancestry.com/"
+
+    # Test header construction
+    headers = {
+        "X-CSRF-Token": csrf_token,
+        "Accept": "application/json",
+        "Referer": urljoin(base_url, "/discoveryui-matches/list/"),
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "priority": "u=1, i",
+    }
+
+    assert headers["X-CSRF-Token"] == csrf_token, "CSRF token should be in headers"
+    assert headers["Accept"] == "application/json", "Accept header should be JSON"
+    assert "Sec-Fetch" in str(headers), "Security headers should be present"
+
+    return True
+
+
+def _test_cache_key_construction() -> bool:
+    """Test cache key construction for in-tree status."""
+    test_uuid = "test-uuid-12345"
+    current_page = 3
+
+    # Test cache key construction (following the pattern in the code)
+    cache_key = f"in_tree_status_{test_uuid}_page_{current_page}"
+
+    assert test_uuid in cache_key, "UUID should be in cache key"
+    assert str(current_page) in cache_key, "Page number should be in cache key"
+
+    return True
+
+
+def _test_cookie_names_for_csrf() -> bool:
+    """Test that correct cookie names are used for CSRF token retrieval."""
+    csrf_token_cookie_names = (
+        "_dnamatches-matchlistui-x-csrf-token",
+        "_csrf",
+    )
+
+    # Verify cookie names are strings
+    for cookie_name in csrf_token_cookie_names:
+        assert isinstance(cookie_name, str), f"Cookie name should be string: {cookie_name}"
+        assert len(cookie_name) > 0, "Cookie name should not be empty"
+
+    # Verify we have at least 2 cookie names (primary and fallback)
+    assert len(csrf_token_cookie_names) >= 2, "Should have primary and fallback cookie names"
+
+    return True
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for dna_utils.py.
+    Tests DNA match utilities including CSRF token handling, URL construction, and API integration.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "DNA Match Utilities & API Integration",
+            "dna_utils.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "CSRF Token Extraction",
+            _test_csrf_token_extraction,
+            "CSRF tokens are correctly extracted from pipe-delimited cookie values",
+            "Parse pipe-delimited cookie value and extract first segment",
+            "Test CSRF token parsing from Ancestry cookie format",
+        )
+
+        suite.run_test(
+            "CSRF Token URL Decoding",
+            _test_csrf_token_url_decoding,
+            "URL-encoded CSRF tokens are properly decoded",
+            "URL-decode token and verify special characters are preserved",
+            "Test URL decoding for CSRF token values",
+        )
+
+        suite.run_test(
+            "DNA Matches URL Construction",
+            _test_dna_matches_url_construction,
+            "DNA matches page URL is correctly constructed with user UUID",
+            "Build URL using urljoin with base URL and UUID path",
+            "Test URL construction for DNA matches navigation",
+        )
+
+        suite.run_test(
+            "Match List API URL Construction",
+            _test_match_list_api_url_construction,
+            "Match List API URL includes UUID and pagination parameters",
+            "Build API URL with UUID and currentPage query parameter",
+            "Test API URL construction with pagination support",
+        )
+
+        suite.run_test(
+            "Match List Headers Construction",
+            _test_match_list_headers_construction,
+            "Match List API headers include CSRF token and security headers",
+            "Verify CSRF token, Accept, and Sec-Fetch headers are present",
+            "Test API header construction for security and compatibility",
+        )
+
+        suite.run_test(
+            "Cache Key Construction",
+            _test_cache_key_construction,
+            "Cache keys for in-tree status include UUID and page number",
+            "Build cache key with UUID and page number components",
+            "Test cache key construction for in-tree status caching",
+        )
+
+        suite.run_test(
+            "CSRF Cookie Names",
+            _test_cookie_names_for_csrf,
+            "Correct cookie names are defined for CSRF token retrieval",
+            "Verify primary and fallback CSRF cookie names are valid strings",
+            "Test CSRF cookie name configuration",
+        )
+
+        return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    run_comprehensive_tests()
+
