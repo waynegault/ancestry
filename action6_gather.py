@@ -39,11 +39,14 @@ from dna_utils import (
     get_csrf_token_for_dna_matches,
     nav_to_dna_matches_page,
 )
-from utils import _api_req, format_name
+from utils import _api_req, format_name, prevent_system_sleep, restore_system_sleep
 
 
 def coord(session_manager: SessionManager, start: int = 1):
     """Main entry point for Action 6: DNA Match Gatherer."""
+    # Prevent system sleep during long-running DNA match gathering
+    sleep_state = prevent_system_sleep()
+
     logger.info("=" * 80)
     logger.info("Action 6: DNA Match Gatherer")
     logger.info("=" * 80)
@@ -79,7 +82,7 @@ def coord(session_manager: SessionManager, start: int = 1):
             logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
             logger.debug("   Rate limiter is thread-safe and will prevent 429 errors")
     else:
-        logger.indebugfo("📝 Sequential processing (PARALLEL_WORKERS=1)")
+        logger.debug("📝 Sequential processing (PARALLEL_WORKERS=1)")
 
     # Get my_uuid and my_tree_id
     my_uuid = session_manager.my_uuid
@@ -205,7 +208,7 @@ def coord(session_manager: SessionManager, start: int = 1):
 
         # Fetch in-tree status
         in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
-       
+
         # Refine matches
         matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
 
@@ -255,7 +258,7 @@ def coord(session_manager: SessionManager, start: int = 1):
             total_errors += errors
 
             logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
-        
+
         # Move to next page
         page_num += 1
         pages_processed += 1
@@ -304,6 +307,9 @@ def coord(session_manager: SessionManager, start: int = 1):
     logger.info("")
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         session_manager.rate_limiter.print_metrics_summary()
+
+    # Restore normal sleep behavior
+    restore_system_sleep(sleep_state)
 
     return not run_incomplete  # Return False if run was incomplete
 
