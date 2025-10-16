@@ -1604,7 +1604,7 @@ def print_log_analysis(log_path: str = "Logs/app.log") -> None:
 
 def _print_quality_check_summary(quality_scores: list[tuple[str, float]]) -> None:
     """
-    Print quality check summary at the end of test run.
+    Print average quality check score at the end of test run.
 
     Args:
         quality_scores: List of (filename, score) tuples
@@ -1612,23 +1612,12 @@ def _print_quality_check_summary(quality_scores: list[tuple[str, float]]) -> Non
     if not quality_scores:
         return
 
+    total_score = sum(score for _, score in quality_scores)
+    avg_score = total_score / len(quality_scores)
+
     print("\n" + "=" * 80)
-    print("🔍 QUALITY CHECK SUMMARY")
+    print(f"📊 Code Quality Average: {avg_score:.1f}/100")
     print("=" * 80)
-
-    total_score = 0
-    for file_name, score in quality_scores:
-        if score < 70:
-            print(f"⚠️  {file_name}: Quality score {score:.1f}/100 (below threshold)")
-        else:
-            print(f"✅ {file_name}: Quality score {score:.1f}/100")
-        total_score += score
-
-    if quality_scores:
-        avg_score = total_score / len(quality_scores)
-        print("-" * 80)
-        print(f"📊 Average quality score: {avg_score:.1f}/100")
-        print("=" * 80)
 
 
 def main() -> bool:
