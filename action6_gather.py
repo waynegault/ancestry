@@ -1452,6 +1452,8 @@ def _ensure_session_for_api_tests() -> tuple[SessionManager, str]:
 
     Raises AssertionError if session cannot be established (tests will be skipped).
     """
+    from utils import log_in, login_status
+
     # Create session manager
     sm = SessionManager()
 
@@ -1460,10 +1462,19 @@ def _ensure_session_for_api_tests() -> tuple[SessionManager, str]:
     if not started:
         raise AssertionError("Failed to start session - browser initialization failed")
 
-    # Ensure session is ready (performs login, cookie validation, identifier retrieval)
+    # Check if already logged in
+    login_check = login_status(sm, disable_ui_fallback=True)
+    if login_check is not True:
+        # Not logged in, attempt login
+        logger.debug("Not logged in. Attempting login...")
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            raise AssertionError(f"Login failed: {login_result}")
+
+    # Ensure session is ready (performs cookie validation, identifier retrieval)
     ready = sm.ensure_session_ready("Action 6 API Tests")
     if not ready:
-        raise AssertionError("Session not ready - login/cookies/identifiers missing")
+        raise AssertionError("Session not ready - cookies/identifiers missing")
 
     # Verify UUID is available
     if not sm.my_uuid:
