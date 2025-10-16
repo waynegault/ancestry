@@ -514,7 +514,7 @@ def _process_batch(
                 }
 
                 # Collect results as they complete
-                for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching details", leave=False):
+                for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching data", leave=False):
                     match = future_to_match[future]
                     try:
                         details = future.result()
