@@ -114,6 +114,7 @@ python run_all_tests.py
 - **Action 9**: Productive Processing
 
 #### How It Works
+
 ```python
 @with_connection_resilience("Action 6: DNA Match Gathering")
 def coord(session_manager):
