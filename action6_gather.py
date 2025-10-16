@@ -1457,7 +1457,10 @@ def _ensure_session_for_api_tests() -> tuple[SessionManager, str]:
     # Create session manager
     sm = SessionManager()
 
-    # Start session (initializes database and browser if needed)
+    # Mark that browser is needed for API tests
+    sm.browser_manager.browser_needed = True
+
+    # Start session (initializes database and browser)
     started = sm.start_sess("Action 6 API Tests")
     if not started:
         raise AssertionError("Failed to start session - browser initialization failed")
