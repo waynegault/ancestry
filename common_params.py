@@ -6,6 +6,14 @@ This module provides dataclasses for grouping commonly-used function parameters
 to reduce parameter counts and improve code maintainability.
 """
 
+# === CORE INFRASTRUCTURE ===
+import sys
+from pathlib import Path
+
+parent_dir = str(Path(__file__).resolve().parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Optional, Union
@@ -309,6 +317,193 @@ class RequestConfig:
     json: Optional[dict[str, Any]] = None
     force_text_response: bool = False
     cookie_jar: Optional[Any] = None
+
+
+# ==============================================
+# Comprehensive Test Suite
+# ==============================================
+
+def _test_graph_context_initialization() -> bool:
+    """Test GraphContext initialization."""
+    id_to_parents = {"person1": ["parent1", "parent2"]}
+    id_to_children = {"parent1": ["person1", "person2"]}
+
+    ctx = GraphContext(
+        id_to_parents=id_to_parents,
+        id_to_children=id_to_children,
+        current_id="person1"
+    )
+
+    assert ctx.current_id == "person1", "Should store current_id"
+    assert ctx.id_to_parents == id_to_parents, "Should store id_to_parents"
+    assert ctx.id_to_children == id_to_children, "Should store id_to_children"
+    return True
+
+
+def _test_retry_context_initialization() -> bool:
+    """Test RetryContext initialization."""
+    ctx = RetryContext(
+        attempt=1,
+        max_attempts=3,
+        max_delay=10.0,
+        backoff_factor=2.0
+    )
+
+    assert ctx.attempt == 1, "Should store attempt"
+    assert ctx.max_attempts == 3, "Should store max_attempts"
+    assert ctx.max_delay == 10.0, "Should store max_delay"
+    assert ctx.backoff_factor == 2.0, "Should store backoff_factor"
+    return True
+
+
+def _test_match_identifiers_initialization() -> bool:
+    """Test MatchIdentifiers initialization."""
+    identifiers = MatchIdentifiers(
+        uuid="uuid-123",
+        username="testuser",
+        in_my_tree=True,
+        log_ref_short="REF001",
+        profile_id="12345"
+    )
+
+    assert identifiers.uuid == "uuid-123", "Should store uuid"
+    assert identifiers.username == "testuser", "Should store username"
+    assert identifiers.in_my_tree is True, "Should store in_my_tree"
+    assert identifiers.profile_id == "12345", "Should store profile_id"
+    return True
+
+
+def _test_progress_indicator_config_initialization() -> bool:
+    """Test ProgressIndicatorConfig initialization."""
+    config = ProgressIndicatorConfig(
+        unit="items",
+        show_memory=True,
+        show_rate=True
+    )
+
+    assert config.unit == "items", "Should store unit"
+    assert config.show_memory is True, "Should store show_memory"
+    assert config.show_rate is True, "Should store show_rate"
+    return True
+
+
+def _test_search_criteria_initialization() -> bool:
+    """Test SearchCriteria initialization."""
+    criteria = SearchCriteria(
+        search_name="John Doe",
+        field_name="name"
+    )
+
+    assert criteria.search_name == "John Doe", "Should store search_name"
+    assert criteria.field_name == "name", "Should store field_name"
+    return True
+
+
+def _test_request_config_initialization() -> bool:
+    """Test RequestConfig initialization."""
+    config = RequestConfig(
+        url="https://example.com/api",
+        method="POST",
+        use_csrf_token=True
+    )
+
+    assert config.url == "https://example.com/api", "Should store url"
+    assert config.method == "POST", "Should store method"
+    assert config.use_csrf_token is True, "Should store use_csrf_token"
+    return True
+
+
+def _test_dataclass_defaults() -> bool:
+    """Test that dataclass defaults work correctly."""
+    # RetryContext defaults
+    ctx = RetryContext(attempt=1, max_attempts=3, max_delay=10.0)
+    assert ctx.backoff_factor == 2.0, "Should have default backoff_factor"
+    assert ctx.current_delay == 1.0, "Should have default current_delay"
+
+    # RequestConfig defaults
+    config = RequestConfig(url="https://example.com")
+    assert config.method == "GET", "Should have default method"
+    assert config.allow_redirects is True, "Should have default allow_redirects"
+
+    return True
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for common_params.py.
+    Tests parameter dataclass initialization and defaults.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Common Parameters & Dataclass Definitions",
+            "common_params.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "GraphContext Initialization",
+            _test_graph_context_initialization,
+            "GraphContext initializes with correct graph data",
+            "Test GraphContext creation with parent/child mappings",
+            "Test genealogical graph context setup",
+        )
+
+        suite.run_test(
+            "RetryContext Initialization",
+            _test_retry_context_initialization,
+            "RetryContext initializes with retry parameters",
+            "Test RetryContext creation with retry settings",
+            "Test retry logic parameter setup",
+        )
+
+        suite.run_test(
+            "MatchIdentifiers Initialization",
+            _test_match_identifiers_initialization,
+            "MatchIdentifiers initializes with DNA match data",
+            "Test MatchIdentifiers creation with match data",
+            "Test DNA match identifier setup",
+        )
+
+        suite.run_test(
+            "ProgressIndicatorConfig Initialization",
+            _test_progress_indicator_config_initialization,
+            "ProgressIndicatorConfig initializes with display options",
+            "Test ProgressIndicatorConfig creation",
+            "Test progress indicator configuration",
+        )
+
+        suite.run_test(
+            "SearchCriteria Initialization",
+            _test_search_criteria_initialization,
+            "SearchCriteria initializes with search parameters",
+            "Test SearchCriteria creation with search data",
+            "Test search criteria setup",
+        )
+
+        suite.run_test(
+            "RequestConfig Initialization",
+            _test_request_config_initialization,
+            "RequestConfig initializes with HTTP request parameters",
+            "Test RequestConfig creation with request settings",
+            "Test HTTP request configuration",
+        )
+
+        suite.run_test(
+            "Dataclass Defaults",
+            _test_dataclass_defaults,
+            "Dataclass defaults are correctly applied",
+            "Test default values for dataclass fields",
+            "Test parameter default values",
+        )
+
+        return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 
 
 # End of common_params.py

@@ -330,7 +330,170 @@ def main() -> bool:
     return False
 
 
+# ==============================================
+# Comprehensive Test Suite
+# ==============================================
+
+def _test_print_section() -> bool:
+    """Test print_section function."""
+    try:
+        # This function just prints, so we test it doesn't raise
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            print_section("Test Section")
+
+        output = f.getvalue()
+        assert "Test Section" in output, "Should print section title"
+        assert "=" in output, "Should print separator"
+        return True
+    except Exception:
+        return False
+
+
+def _test_check_chrome_installation_returns_dict() -> bool:
+    """Test that check_chrome_installation returns expected dict structure."""
+    try:
+        result = check_chrome_installation()
+        assert isinstance(result, dict), "Should return dict"
+        assert "installed" in result, "Should have 'installed' key"
+        assert "version" in result, "Should have 'version' key"
+        assert "path" in result, "Should have 'path' key"
+        assert "issues" in result, "Should have 'issues' key"
+        return True
+    except Exception:
+        return False
+
+
+def _test_check_chrome_processes_returns_dict() -> bool:
+    """Test that check_chrome_processes returns expected dict structure."""
+    try:
+        result = check_chrome_processes()
+        assert isinstance(result, dict), "Should return dict"
+        assert "running" in result, "Should have 'running' key"
+        assert "count" in result, "Should have 'count' key"
+        assert "issues" in result, "Should have 'issues' key"
+        return True
+    except Exception:
+        return False
+
+
+def _test_check_chrome_profile_returns_dict() -> bool:
+    """Test that check_chrome_profile returns expected dict structure."""
+    try:
+        result = check_chrome_profile()
+        assert isinstance(result, dict), "Should return dict"
+        assert "profile_path" in result, "Should have 'profile_path' key"
+        assert "exists" in result, "Should have 'exists' key"
+        assert "issues" in result, "Should have 'issues' key"
+        return True
+    except Exception:
+        return False
+
+
+def _test_check_chromedriver_compatibility_returns_dict() -> bool:
+    """Test that check_chromedriver_compatibility returns expected dict structure."""
+    try:
+        result = check_chromedriver_compatibility()
+        assert isinstance(result, dict), "Should return dict"
+        assert "installed" in result, "Should have 'installed' key"
+        assert "version" in result, "Should have 'version' key"
+        assert "issues" in result, "Should have 'issues' key"
+        return True
+    except Exception:
+        return False
+
+
+def _test_generate_recommendations_returns_list() -> bool:
+    """Test that generate_recommendations returns a list."""
+    try:
+        diagnostics = {
+            "chrome": {"installed": False, "issues": ["Chrome not found"]},
+            "processes": {"running": False, "issues": []},
+            "profile": {"exists": False, "issues": []},
+            "chromedriver": {"installed": False, "issues": []},
+            "config": {"valid": False, "issues": []}
+        }
+        result = generate_recommendations(diagnostics)
+        assert isinstance(result, list), "Should return list"
+        return True
+    except Exception:
+        return False
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for diagnose_chrome.py.
+    Tests Chrome diagnostic functions and their return structures.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Chrome/ChromeDriver Diagnostic Tool",
+            "diagnose_chrome.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "Print Section Function",
+            _test_print_section,
+            "print_section function works correctly",
+            "Test section printing",
+            "Test diagnostic output formatting",
+        )
+
+        suite.run_test(
+            "Chrome Installation Check",
+            _test_check_chrome_installation_returns_dict,
+            "check_chrome_installation returns expected structure",
+            "Test Chrome installation check",
+            "Test Chrome detection",
+        )
+
+        suite.run_test(
+            "Chrome Processes Check",
+            _test_check_chrome_processes_returns_dict,
+            "check_chrome_processes returns expected structure",
+            "Test Chrome process check",
+            "Test running process detection",
+        )
+
+        suite.run_test(
+            "Chrome Profile Check",
+            _test_check_chrome_profile_returns_dict,
+            "check_chrome_profile returns expected structure",
+            "Test Chrome profile check",
+            "Test profile directory detection",
+        )
+
+        suite.run_test(
+            "ChromeDriver Compatibility Check",
+            _test_check_chromedriver_compatibility_returns_dict,
+            "check_chromedriver_compatibility returns expected structure",
+            "Test ChromeDriver compatibility check",
+            "Test ChromeDriver version detection",
+        )
+
+        suite.run_test(
+            "Generate Recommendations",
+            _test_generate_recommendations_returns_list,
+            "generate_recommendations returns list of recommendations",
+            "Test recommendation generation",
+            "Test diagnostic recommendations",
+        )
+
+        return suite.finish_suite()
+
+
 if __name__ == "__main__":
-    success = main()
+    success = run_comprehensive_tests()
+    if success:
+        print("\n" + "=" * 80)
+        print("Running full Chrome diagnostics...")
+        print("=" * 80)
+        main()
     sys.exit(0 if success else 1)
 

@@ -1461,6 +1461,11 @@ def action6_module_tests() -> bool:
     return False
 
 
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    return action6_module_tests()
+
+
 # ==============================================
 # Standalone Test Block
 # ==============================================
@@ -1468,7 +1473,7 @@ if __name__ == "__main__":
     import sys
 
     print("🧪 Running Action 6 test suite...")
-    success = action6_module_tests()
+    success = run_comprehensive_tests()
 
     if success:
         print("\n✅ All tests passed! Ready for production use.")
