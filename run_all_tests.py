@@ -299,16 +299,14 @@ def run_linter() -> bool:
         return True
 
 
-def run_quality_checks() -> bool:
+def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
     """
     Run Python best practices quality checks.
 
     Returns:
-        bool: True if quality checks pass, False otherwise
+        Tuple of (success: bool, quality_scores: list of (filename, score) tuples)
     """
     try:
-        print("🔍 QUALITY: Running Python best practices checks...")
-
         # Import and run quality checker
         from code_quality_checker import CodeQualityChecker
 
@@ -321,6 +319,7 @@ def run_quality_checks() -> bool:
             "python_best_practices.py", "code_quality_checker.py"
         ]
 
+        quality_scores = []
         total_score = 0
         files_checked = 0
 
@@ -330,25 +329,17 @@ def run_quality_checks() -> bool:
                 metrics = checker.check_file(file_path)
                 total_score += metrics.quality_score
                 files_checked += 1
-
-                if metrics.quality_score < 70:
-                    print(f"⚠️  {file_name}: Quality score {metrics.quality_score:.1f}/100 (below threshold)")
-                else:
-                    print(f"✅ {file_name}: Quality score {metrics.quality_score:.1f}/100")
+                quality_scores.append((file_name, metrics.quality_score))
 
         if files_checked > 0:
             avg_score = total_score / files_checked
-            print(f"📊 Average quality score: {avg_score:.1f}/100")
-
             if avg_score < 70:
-                print("⚠️  Quality score below recommended threshold (70)")
-                return False
+                return False, quality_scores
 
-        return True
+        return True, quality_scores
 
-    except Exception as e:
-        print(f"⚠️ QUALITY checks skipped due to error: {e}")
-        return True
+    except Exception:
+        return True, []
 
 
 def _should_skip_system_file(python_file: Path) -> bool:
@@ -1219,7 +1210,7 @@ def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool) -> None:
 
 def _run_pre_test_checks() -> bool:
     """
-    Run linter and quality checks before tests.
+    Run linter checks before tests.
 
     Returns:
         True if checks pass or can continue, False if critical failure
@@ -1227,10 +1218,6 @@ def _run_pre_test_checks() -> bool:
     # Run linter first for hygiene; fail fast only on safe subset
     if not run_linter():
         return False
-
-    # Run quality checks for Python best practices
-    if not run_quality_checks():
-        print("⚠️  Quality checks failed - continuing with tests but consider improvements")
 
     return True
 
@@ -1615,6 +1602,35 @@ def print_log_analysis(log_path: str = "Logs/app.log") -> None:
     print("\n" + format_log_analysis(results))
 
 
+def _print_quality_check_summary(quality_scores: list[tuple[str, float]]) -> None:
+    """
+    Print quality check summary at the end of test run.
+
+    Args:
+        quality_scores: List of (filename, score) tuples
+    """
+    if not quality_scores:
+        return
+
+    print("\n" + "=" * 80)
+    print("🔍 QUALITY CHECK SUMMARY")
+    print("=" * 80)
+
+    total_score = 0
+    for file_name, score in quality_scores:
+        if score < 70:
+            print(f"⚠️  {file_name}: Quality score {score:.1f}/100 (below threshold)")
+        else:
+            print(f"✅ {file_name}: Quality score {score:.1f}/100")
+        total_score += score
+
+    if quality_scores:
+        avg_score = total_score / len(quality_scores)
+        print("-" * 80)
+        print(f"📊 Average quality score: {avg_score:.1f}/100")
+        print("=" * 80)
+
+
 def main() -> bool:
     """Comprehensive test runner with performance monitoring and optimization."""
     # Setup environment and parse arguments
@@ -1678,6 +1694,11 @@ def main() -> bool:
         _print_performance_metrics(perf_config)
 
     _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
+
+    # Run quality checks after tests and display results
+    _, quality_scores = run_quality_checks()
+    if quality_scores:
+        _print_quality_check_summary(quality_scores)
 
     # Print log analysis if requested
     if analyze_logs:
