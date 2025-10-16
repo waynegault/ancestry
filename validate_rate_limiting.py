@@ -153,17 +153,178 @@ def validate_rate_limiting_config() -> bool:
     return _print_validation_summary(errors, warnings)
 
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("RATE LIMITING CONFIGURATION VALIDATOR")
-    print("=" * 60)
-    print()
+# ==============================================
+# Comprehensive Test Suite
+# ==============================================
 
+def _test_get_expected_values() -> bool:
+    """Test that expected values are properly defined."""
+    expected = _get_expected_values()
+    assert isinstance(expected, dict), "Should return dict"
+    assert "thread_pool_workers" in expected, "Should have thread_pool_workers"
+    assert "requests_per_second" in expected, "Should have requests_per_second"
+    assert "initial_delay" in expected, "Should have initial_delay"
+    assert "max_delay" in expected, "Should have max_delay"
+    assert "backoff_factor" in expected, "Should have backoff_factor"
+    assert "token_bucket_capacity" in expected, "Should have token_bucket_capacity"
+    return True
+
+
+def _test_validate_config_values_returns_tuple() -> bool:
+    """Test that validate_config_values returns tuple of lists."""
+    expected = _get_expected_values()
+    errors, warnings = _validate_config_values(expected)
+    assert isinstance(errors, list), "Should return list of errors"
+    assert isinstance(warnings, list), "Should return list of warnings"
+    return True
+
+
+def _test_calculate_performance_metrics() -> bool:
+    """Test that performance metrics calculation works."""
     try:
-        success = validate_rate_limiting_config()
-        sys.exit(0 if success else 1)
-    except Exception as e:
-        print(f"\n❌ Validation failed with error: {e}")
-        import traceback
-        traceback.print_exc()
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            _calculate_performance_metrics()
+
+        output = f.getvalue()
+        assert "Workers" in output or "RPS" in output, "Should calculate metrics"
+        return True
+    except Exception:
+        return False
+
+
+def _test_perform_safety_checks_returns_list() -> bool:
+    """Test that safety checks return list of warnings."""
+    try:
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            warnings = _perform_safety_checks()
+
+        assert isinstance(warnings, list), "Should return list"
+        return True
+    except Exception:
+        return False
+
+
+def _test_print_validation_summary_returns_bool() -> bool:
+    """Test that validation summary returns boolean."""
+    try:
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            result = _print_validation_summary([], [])
+
+        assert isinstance(result, bool), "Should return bool"
+        return True
+    except Exception:
+        return False
+
+
+def _test_validate_rate_limiting_config_returns_bool() -> bool:
+    """Test that main validation function returns boolean."""
+    try:
+        import io
+        from contextlib import redirect_stdout
+
+        f = io.StringIO()
+        with redirect_stdout(f):
+            result = validate_rate_limiting_config()
+
+        assert isinstance(result, bool), "Should return bool"
+        return True
+    except Exception:
+        return False
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for validate_rate_limiting.py.
+    Tests rate limiting configuration validation functions.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Rate Limiting Configuration Validator",
+            "validate_rate_limiting.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "Expected Values Definition",
+            _test_get_expected_values,
+            "Expected values are properly defined",
+            "Test expected configuration values",
+            "Test rate limiting configuration defaults",
+        )
+
+        suite.run_test(
+            "Config Validation Returns Tuple",
+            _test_validate_config_values_returns_tuple,
+            "Config validation returns tuple of lists",
+            "Test validation function return type",
+            "Test error and warning collection",
+        )
+
+        suite.run_test(
+            "Performance Metrics Calculation",
+            _test_calculate_performance_metrics,
+            "Performance metrics are calculated",
+            "Test metrics calculation",
+            "Test performance analysis",
+        )
+
+        suite.run_test(
+            "Safety Checks Return List",
+            _test_perform_safety_checks_returns_list,
+            "Safety checks return list of warnings",
+            "Test safety check function",
+            "Test configuration safety validation",
+        )
+
+        suite.run_test(
+            "Validation Summary Returns Bool",
+            _test_print_validation_summary_returns_bool,
+            "Validation summary returns boolean",
+            "Test summary function",
+            "Test validation result reporting",
+        )
+
+        suite.run_test(
+            "Main Validation Function",
+            _test_validate_rate_limiting_config_returns_bool,
+            "Main validation function returns boolean",
+            "Test main validation function",
+            "Test complete validation workflow",
+        )
+
+        return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+
+    if success:
+        print("\n" + "=" * 60)
+        print("RATE LIMITING CONFIGURATION VALIDATOR")
+        print("=" * 60)
+        print()
+
+        try:
+            validation_success = validate_rate_limiting_config()
+            sys.exit(0 if validation_success else 1)
+        except Exception as e:
+            print(f"\n❌ Validation failed with error: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    else:
         sys.exit(1)

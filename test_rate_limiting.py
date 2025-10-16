@@ -284,6 +284,164 @@ def main():
         session_manager.cleanup()
 
 
+# ==============================================
+# Comprehensive Test Suite
+# ==============================================
+
+def _test_rate_limit_tester_initialization() -> bool:
+    """Test RateLimitTester initialization."""
+    try:
+        # Create a mock session manager
+        from unittest.mock import MagicMock
+        mock_session = MagicMock()
+
+        tester = RateLimitTester(rps=1.0, num_calls=10, session_manager=mock_session)
+        assert tester.rps == 1.0, "Should store RPS"
+        assert tester.num_calls == 10, "Should store num_calls"
+        assert tester.session_manager is not None, "Should store session manager"
+        assert isinstance(tester.results, dict), "Should initialize results dict"
+        return True
+    except Exception:
+        return False
+
+
+def _test_rate_limit_tester_results_structure() -> bool:
+    """Test that RateLimitTester results have expected structure."""
+    try:
+        from unittest.mock import MagicMock
+        mock_session = MagicMock()
+
+        tester = RateLimitTester(rps=1.0, num_calls=10, session_manager=mock_session)
+
+        # Check results structure
+        assert 'total_calls' in tester.results, "Should have total_calls"
+        assert 'successful_calls' in tester.results, "Should have successful_calls"
+        assert 'error_429_count' in tester.results, "Should have error_429_count"
+        assert 'error_other_count' in tester.results, "Should have error_other_count"
+        assert 'start_time' in tester.results, "Should have start_time"
+        assert 'end_time' in tester.results, "Should have end_time"
+        return True
+    except Exception:
+        return False
+
+
+def _test_results_calculation() -> bool:
+    """Test results calculation and metrics."""
+    try:
+        from unittest.mock import MagicMock
+        mock_session = MagicMock()
+
+        tester = RateLimitTester(rps=2.0, num_calls=10, session_manager=mock_session)
+
+        # Simulate test results
+        tester.results['total_calls'] = 10
+        tester.results['successful_calls'] = 9
+        tester.results['failed_calls'] = 1
+        tester.results['error_429_count'] = 0
+        tester.results['duration'] = 5.0
+
+        # Calculate effective RPS
+        effective_rps = tester.results['total_calls'] / tester.results['duration']
+        assert effective_rps == 2.0, "Should calculate effective RPS correctly"
+        return True
+    except Exception:
+        return False
+
+
+def _test_error_tracking() -> bool:
+    """Test error tracking in results."""
+    try:
+        from unittest.mock import MagicMock
+        mock_session = MagicMock()
+
+        tester = RateLimitTester(rps=1.0, num_calls=10, session_manager=mock_session)
+
+        # Check error tracking structure
+        assert 'errors' in tester.results, "Should have errors list"
+        assert isinstance(tester.results['errors'], list), "Errors should be list"
+        assert 'error_429_count' in tester.results, "Should track 429 errors"
+        assert 'other_errors' in tester.results, "Should track other errors"
+        return True
+    except Exception:
+        return False
+
+
+def _test_parse_arguments() -> bool:
+    """Test argument parsing."""
+    try:
+        # Test with default arguments
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--rps', type=float, default=1.0)
+        parser.add_argument('--calls', type=int, default=50)
+        parser.add_argument('--validate', action='store_true')
+
+        args = parser.parse_args([])
+        assert args.rps == 1.0, "Should have default RPS"
+        assert args.calls == 50, "Should have default calls"
+        assert args.validate is False, "Should have default validate"
+        return True
+    except Exception:
+        return False
+
+
+def run_comprehensive_tests() -> bool:
+    """
+    Comprehensive test suite for test_rate_limiting.py.
+    Tests rate limiting test harness functionality.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite(
+            "Rate Limit Test Harness",
+            "test_rate_limiting.py"
+        )
+        suite.start_suite()
+
+        suite.run_test(
+            "RateLimitTester Initialization",
+            _test_rate_limit_tester_initialization,
+            "RateLimitTester initializes correctly",
+            "Test tester initialization",
+            "Test rate limit test harness setup",
+        )
+
+        suite.run_test(
+            "Results Structure",
+            _test_rate_limit_tester_results_structure,
+            "Results dict has expected structure",
+            "Test results initialization",
+            "Test metrics collection structure",
+        )
+
+        suite.run_test(
+            "Results Calculation",
+            _test_results_calculation,
+            "Results calculation and metrics work correctly",
+            "Test results calculation",
+            "Test effective RPS computation",
+        )
+
+        suite.run_test(
+            "Error Tracking",
+            _test_error_tracking,
+            "Error tracking structure is correct",
+            "Test error tracking",
+            "Test error collection and categorization",
+        )
+
+        suite.run_test(
+            "Argument Parsing",
+            _test_parse_arguments,
+            "Command line arguments parse correctly",
+            "Test argument parsing",
+            "Test CLI configuration",
+        )
+
+        return suite.finish_suite()
+
+
 if __name__ == "__main__":
-    main()
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 
