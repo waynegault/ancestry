@@ -85,6 +85,7 @@ python run_all_tests.py
 ### Key Capabilities
 
 - **Intelligent Rate Limiting**: Token bucket algorithm prevents API throttling
+- **Circuit Breaker Pattern**: Automatic protection from cascading 429 failures
 - **Session Management**: Automatic browser session recovery and refresh
 - **Database Management**: SQLite with SQLAlchemy ORM
 - **Error Handling**: Comprehensive retry logic and graceful degradation
@@ -95,6 +96,61 @@ python run_all_tests.py
 ---
 
 ## Recent Fixes & Improvements
+
+### Circuit Breaker Pattern Implementation (January 2025)
+
+**Automatic protection from cascading 429 failures** across all API-using actions:
+
+#### What is a Circuit Breaker?
+
+The Circuit Breaker pattern prevents cascading failures by monitoring API errors and temporarily blocking requests when failures exceed a threshold:
+
+- **CLOSED**: Normal operation, requests pass through
+- **OPEN**: Too many failures (5 consecutive 429 errors), requests blocked for 60 seconds
+- **HALF_OPEN**: Testing recovery with limited requests (3 test requests)
+
+#### Benefits
+
+- ✅ **Automatic protection**: All actions using `session_manager.rate_limiter` are protected
+- ✅ **No code changes required**: Circuit breaker is integrated into RateLimiter
+- ✅ **Prevents cascading failures**: Blocks requests after 5 consecutive 429 errors
+- ✅ **Automatic recovery**: Tests service health after 60 seconds
+- ✅ **Comprehensive metrics**: Tracks circuit opens, closes, blocked requests
+
+#### Actions Protected
+
+1. **Action 6** (DNA Match Gathering) - Primary beneficiary
+2. **Action 7** (Inbox Processing) - Message retrieval
+3. **Action 8** (Messaging) - Message sending
+4. **Action 9** (Productive Match Processing) - Match details
+5. **Action 10** (GEDCOM Analysis) - Relationship data
+6. **Action 11** (API Research) - Search and family analysis
+
+#### State Transitions
+
+```
+5 consecutive 429 errors → Circuit OPENS (blocks all requests for 60s)
+60 seconds pass → Circuit transitions to HALF_OPEN (allows 3 test requests)
+3 successful test requests → Circuit CLOSES (normal operation resumes)
+Any test request fails → Circuit reopens (wait another 60s)
+```
+
+#### Metrics
+
+Circuit breaker metrics are included in rate limiter summary:
+
+```
+CIRCUIT BREAKER METRICS
+Current State:         CLOSED
+Total Requests:        549
+Blocked Requests:      0
+Circuit Opens:         0
+Circuit Closes:        0
+Half-Open Successes:   0
+Half-Open Failures:    0
+```
+
+---
 
 ### Action 6 Performance Optimizations (January 2025)
 
@@ -272,7 +328,7 @@ database.py             # SQLAlchemy ORM models
 ai_interface.py         # Multi-provider AI abstraction
 ```
 
-### Rate Limiting (CRITICAL)
+### Rate Limiting & Circuit Breaker (CRITICAL)
 
 **Single Rate Limiter Architecture:**
 - Class: `RateLimiter` in `utils.py`
@@ -283,9 +339,18 @@ ai_interface.py         # Multi-provider AI abstraction
   - Fill rate: 2 tokens/second
   - Thread-safe with `threading.Lock()`
 
+**Circuit Breaker Integration:**
+- Class: `CircuitBreaker` in `utils.py`
+- Instance: `session_manager.rate_limiter.circuit_breaker`
+- Automatic protection from cascading 429 failures
+- Configuration:
+  - Failure threshold: 5 consecutive 429 errors
+  - Recovery timeout: 60 seconds
+  - Half-open test requests: 3
+
 **DO NOT modify rate limiting settings without extensive validation!**
 - Changing `REQUESTS_PER_SECOND` can cause 429 errors
-- 429 errors result in 72-second penalties
+- Circuit breaker will open after 5 consecutive 429 errors
 - Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should return 0
 
 ### Database Schema
