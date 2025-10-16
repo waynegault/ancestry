@@ -31,11 +31,11 @@ F = TypeVar('F', bound=Callable[..., Any])
 class ConnectionResilienceManager:
     """Manages connection resilience and recovery for long-running operations."""
 
-    def __init__(self):
-        self.sleep_state = None
-        self.recovery_attempts = 0
-        self.max_recovery_attempts = 3
-        self.recovery_backoff_base = 2.0  # seconds
+    def __init__(self) -> None:
+        self.sleep_state: Any = None
+        self.recovery_attempts: int = 0
+        self.max_recovery_attempts: int = 3
+        self.recovery_backoff_base: float = 2.0  # seconds
 
     def start_resilience_mode(self) -> None:
         """Start resilience mode: prevent sleep and enable monitoring."""

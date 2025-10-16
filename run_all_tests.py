@@ -1042,19 +1042,18 @@ def run_module_tests(
         # Print results
         _print_test_result(success, duration, test_count, quality_metrics, result)
 
-        # Create metrics object if monitoring enabled
+        # Create metrics object (always include quality metrics for final summary)
         metrics = None
-        if enable_monitoring:
-            test_result = {
-                "duration": duration,
-                "success": success,
-                "test_count": numeric_test_count,
-                "perf_metrics": perf_metrics,
-                "result": result,
-                "start_time": start_datetime,
-                "end_time": end_datetime
-            }
-            metrics = _create_test_metrics(module_name, test_result, quality_metrics)
+        test_result = {
+            "duration": duration,
+            "success": success,
+            "test_count": numeric_test_count,
+            "perf_metrics": perf_metrics,
+            "result": result,
+            "start_time": start_datetime,
+            "end_time": end_datetime
+        }
+        metrics = _create_test_metrics(module_name, test_result, quality_metrics)
 
         return success, numeric_test_count, metrics
 
@@ -1288,8 +1287,9 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
         for i, (module_name, description) in enumerate(config.modules_with_descriptions, 1):
             print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
 
+            # Always collect metrics for quality summary (not just when monitoring enabled)
             success, test_count, metrics = run_module_tests(
-                module_name, description, config.enable_monitoring, coverage=config.enable_benchmark
+                module_name, description, enable_monitoring=True, coverage=config.enable_benchmark
             )
             total_tests_run += test_count
             if success:
@@ -1340,31 +1340,6 @@ def _print_violation_summary(all_violations: list[str]) -> None:
     print("   📋 Common Issues:")
     for vtype, count in sorted(violation_types.items(), key=lambda x: x[1], reverse=True):
         print(f"      {vtype}: {count} violations")
-
-
-def _print_quality_summary(all_metrics: list[Any]) -> None:
-    """Print quality metrics summary."""
-    if not all_metrics or not any(m.quality_metrics for m in all_metrics):
-        return
-
-    quality_scores = [m.quality_metrics.quality_score for m in all_metrics if m.quality_metrics]
-    if not quality_scores:
-        return
-
-    avg_quality = sum(quality_scores) / len(quality_scores)
-    below_70_count = sum(1 for score in quality_scores if score < 70)
-    below_95_count = sum(1 for score in quality_scores if 70 <= score < 95)
-    above_95_count = sum(1 for score in quality_scores if score >= 95)
-
-    print(f"🔍 Quality Score: {avg_quality:.1f}/100 avg")
-    print(f"   ✅ Above 95%: {above_95_count} modules")
-    print(f"   📊 70-95%: {below_95_count} modules")
-    print(f"   ⚠️  Below 70%: {below_70_count} modules")
-
-    # Show most common violation types
-    all_violations = _collect_violations(all_metrics)
-    if all_violations:
-        _print_violation_summary(all_violations)
 
 
 def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
@@ -1602,21 +1577,35 @@ def print_log_analysis(log_path: str = "Logs/app.log") -> None:
     print("\n" + format_log_analysis(results))
 
 
-def _print_quality_check_summary(quality_scores: list[tuple[str, float]]) -> None:
+def _print_final_quality_summary(all_metrics: list[Any]) -> None:
     """
-    Print average quality check score at the end of test run.
+    Print comprehensive quality summary at the end of test run.
 
     Args:
-        quality_scores: List of (filename, score) tuples
+        all_metrics: List of all test execution metrics
     """
+    if not all_metrics:
+        return
+
+    quality_scores = [m.quality_metrics.quality_score for m in all_metrics if hasattr(m, 'quality_metrics') and m.quality_metrics]
     if not quality_scores:
         return
 
-    total_score = sum(score for _, score in quality_scores)
-    avg_score = total_score / len(quality_scores)
+    avg_quality = sum(quality_scores) / len(quality_scores)
+    min_quality = min(quality_scores)
+    max_quality = max(quality_scores)
+    below_70_count = sum(1 for score in quality_scores if score < 70)
+    below_95_count = sum(1 for score in quality_scores if 70 <= score < 95)
+    above_95_count = sum(1 for score in quality_scores if score >= 95)
 
     print("\n" + "=" * 80)
-    print(f"📊 Code Quality Average: {avg_score:.1f}/100")
+    print("📊 Code Quality Summary")
+    print("=" * 80)
+    print(f"Average: {avg_quality:.1f}/100 | Min: {min_quality:.1f}/100 | Max: {max_quality:.1f}/100")
+    print(f"   ✅ Above 95%: {above_95_count} modules")
+    print(f"   📊 70-95%: {below_95_count} modules")
+    if below_70_count > 0:
+        print(f"   ⚠️  Below 70%: {below_70_count} modules (NEEDS ATTENTION)")
     print("=" * 80)
 
 
@@ -1668,7 +1657,6 @@ def main() -> bool:
 
     # Print all summaries
     _print_basic_summary(total_duration, total_tests_run, passed_count, failed_count, results)
-    _print_quality_summary(all_metrics)
 
     if enable_monitoring:
         perf_config = PerformanceMetricsConfig(
@@ -1684,10 +1672,8 @@ def main() -> bool:
 
     _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
 
-    # Run quality checks after tests and display results
-    _, quality_scores = run_quality_checks()
-    if quality_scores:
-        _print_quality_check_summary(quality_scores)
+    # Print comprehensive quality summary at the end
+    _print_final_quality_summary(all_metrics)
 
     # Print log analysis if requested
     if analyze_logs:

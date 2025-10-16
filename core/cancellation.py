@@ -96,13 +96,13 @@ def _test_cancel_state_thread_safety() -> bool:
     import threading
 
     clear_cancel()
-    results = []
+    results: list[bool] = []
 
-    def set_cancel():
+    def set_cancel() -> None:
         request_cancel(scope="thread_test")
         results.append(is_cancel_requested())
 
-    def check_cancel():
+    def check_cancel() -> None:
         import time
         time.sleep(0.01)  # Small delay to ensure set_cancel runs first
         results.append(is_cancel_requested())

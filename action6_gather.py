@@ -23,7 +23,7 @@ import time
 # === THIRD-PARTY IMPORTS ===
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import unquote, urljoin
 
 from tqdm.auto import tqdm
@@ -43,88 +43,66 @@ from dna_utils import (
 from utils import _api_req, format_name
 
 
-@with_connection_resilience("Action 6: DNA Match Gatherer", max_recovery_attempts=3)
-def coord(session_manager: SessionManager, start: int = 1):
-    """Main entry point for Action 6: DNA Match Gatherer."""
-    logger.info("=" * 80)
-    logger.info("Action 6: DNA Match Gatherer")
-    logger.info("=" * 80)
-
-    # Reset rate limiter metrics at start of each run
-    if session_manager.rate_limiter:
-        session_manager.rate_limiter.reset_metrics()
-        logger.debug("Rate limiter metrics reset for new run")
-
-    max_pages = config_schema.api.max_pages
-    # Create database manager
-    db_manager = DatabaseManager()
-    batch_size = config_schema.batch_size
-    parallel_workers = getattr(config_schema, 'parallel_workers', 1)
-
-    # Use start parameter from command line (e.g., "6 140")
-    start_page = start
-
-    logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}")
-
-    # Adaptive rate limiting for parallel workers
-    # When using parallel workers, increase base delay to prevent 429 errors
-    # Formula: base_delay * sqrt(workers) to account for concurrent requests
-    if parallel_workers > 1:
-        import math
-        if session_manager.rate_limiter:
-            original_delay = session_manager.rate_limiter.initial_delay
-            # Increase delay proportionally to worker count (sqrt to avoid over-compensation)
-            adaptive_delay = original_delay * math.sqrt(parallel_workers)
-            session_manager.rate_limiter.initial_delay = adaptive_delay
-            session_manager.rate_limiter.current_delay = adaptive_delay
-            logger.debug(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
-            logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
-            logger.debug("   Rate limiter is thread-safe and will prevent 429 errors")
-    else:
+def _setup_rate_limiting(session_manager: SessionManager, parallel_workers: int) -> None:
+    """Configure adaptive rate limiting based on parallel worker count."""
+    if parallel_workers <= 1:
         logger.debug("📝 Sequential processing (PARALLEL_WORKERS=1)")
+        return
 
-    # Get my_uuid and my_tree_id
+    import math
+    if not session_manager.rate_limiter:
+        return
+
+    original_delay = session_manager.rate_limiter.initial_delay
+    adaptive_delay = original_delay * math.sqrt(parallel_workers)
+    session_manager.rate_limiter.initial_delay = adaptive_delay
+    session_manager.rate_limiter.current_delay = adaptive_delay
+    logger.debug(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
+    logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
+    logger.debug("   Rate limiter is thread-safe and will prevent 429 errors")
+
+
+def _initialize_coord_session(session_manager: SessionManager) -> tuple[str, Optional[str], DatabaseManager]:
+    """Initialize session and get required identifiers."""
     my_uuid = session_manager.my_uuid
     my_tree_id = session_manager.my_tree_id
 
     if not my_uuid:
         logger.error("Cannot proceed: my_uuid is not set")
-        return None
+        raise ValueError("my_uuid is not set")
 
     logger.info(f"My UUID: {my_uuid}")
     logger.info(f"My Tree ID: {my_tree_id}")
 
-    # Navigate to DNA matches page to get CSRF token
-    logger.debug("Navigating to DNA matches page...")
-    if not nav_to_dna_matches_page(session_manager):
-        logger.error("Failed to navigate to DNA matches page")
-        return None
+    db_manager = DatabaseManager()
+    return my_uuid, my_tree_id, db_manager
 
-    # Get CSRF token
-    driver = session_manager.driver
-    csrf_token = get_csrf_token_for_dna_matches(driver)
-    if not csrf_token:
-        logger.error("Failed to get CSRF token")
-        return None
 
-    # Process pages
+def _process_pages_loop(
+    session_manager: SessionManager,
+    driver: Any,
+    db_manager: DatabaseManager,
+    my_uuid: str,
+    my_tree_id: Optional[str],
+    csrf_token: str,
+    start_page: int,
+    max_pages: int,
+    batch_size: int
+) -> tuple[int, int, int, int, int, int, bool, str]:
+    """Process all pages and return statistics."""
     total_new = 0
     total_updated = 0
     total_skipped = 0
     total_errors = 0
-
-    # Track session health for accurate reporting
     session_deaths = 0
     session_recoveries = 0
     run_incomplete = False
     incomplete_reason = ""
-    run_start_time = time.time()
 
     # Calculate end page
-    # MAX_PAGES=0 means process all pages (infinite loop until no more matches)
     if max_pages == 0:
         logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
-        end_page = float('inf')  # Process indefinitely
+        end_page = float('inf')
     else:
         end_page = start_page + max_pages - 1
 
@@ -132,13 +110,11 @@ def coord(session_manager: SessionManager, start: int = 1):
     pages_processed = 0
 
     while True:
-        # Check if we've reached the end (for finite page processing)
+        # Check if we've reached the end
         if max_pages > 0 and page_num > end_page:
             break
 
-        # OPTION 3: Periodic session health check
-        # Check session health at the start of each page to detect dead sessions early
-        # This prevents hours-long delays when browser dies during long-running operations
+        # Session health check
         if not session_manager.check_session_health():
             logger.warning("🚨 Session health check failed - attempting recovery...")
             session_deaths += 1
@@ -159,26 +135,22 @@ def coord(session_manager: SessionManager, start: int = 1):
         logger.info(f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
         logger.info(f"{'='*80}")
 
-        # Fetch match list for this page
+        # Fetch and process page
         api_response = fetch_match_list_page(driver, session_manager, my_uuid, page_num, csrf_token)
         if not api_response or not isinstance(api_response, dict):
             logger.warning(f"No API response for page {page_num}")
-
-            # CRITICAL FIX: Distinguish between "no more pages" and "session dead"
-            # Check if session is still valid before assuming we've reached the end
             if not session_manager.check_session_health():
                 logger.error("🚨 Session appears dead - API failure likely due to invalid session")
                 session_deaths += 1
                 if session_manager.attempt_browser_recovery():
                     logger.info("✅ Session recovered - retrying current page...")
                     session_recoveries += 1
-                    continue  # Retry the same page
+                    continue
                 logger.error("❌ Session recovery failed - stopping processing")
                 run_incomplete = True
                 incomplete_reason = f"Session recovery failed at page {page_num} (API failure)"
                 break
 
-            # Session is valid, so this is genuinely "no more pages"
             if max_pages == 0:
                 logger.info("No more pages available. Stopping.")
                 break
@@ -186,7 +158,7 @@ def coord(session_manager: SessionManager, start: int = 1):
             pages_processed += 1
             continue
 
-        # Extract matches from API response
+        # Extract and process matches
         match_list = api_response.get("matchList", [])
         if not match_list:
             logger.warning(f"No matches in API response for page {page_num}")
@@ -197,7 +169,7 @@ def coord(session_manager: SessionManager, start: int = 1):
             pages_processed += 1
             continue
 
-        # Get sample IDs for in-tree status check
+        # Get sample IDs and in-tree status
         sample_ids = [m.get("sampleId", "").upper() for m in match_list if m.get("sampleId")]
         if not sample_ids:
             logger.warning(f"No sample IDs found on page {page_num}")
@@ -205,10 +177,7 @@ def coord(session_manager: SessionManager, start: int = 1):
             pages_processed += 1
             continue
 
-        # Fetch in-tree status
         in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
-
-        # Refine matches
         matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
 
         if not matches:
@@ -226,8 +195,7 @@ def coord(session_manager: SessionManager, start: int = 1):
 
             logger.info(f"\n--- Batch {batch_start//batch_size + 1}: Processing matches {batch_start+1}-{batch_end} ---")
 
-            # OPTION 3: Periodic session health check before each batch
-            # More frequent checks during parallel processing to catch session death quickly
+            # Session health check before batch
             if not session_manager.check_session_health():
                 logger.warning("🚨 Session health check failed before batch - attempting recovery...")
                 session_deaths += 1
@@ -240,7 +208,6 @@ def coord(session_manager: SessionManager, start: int = 1):
                     incomplete_reason = f"Session recovery failed at page {page_num}, batch {batch_start//batch_size + 1}"
                     break
 
-            # Process batch
             batch_num = (batch_start // batch_size) + 1
             total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
             batch_end = min(batch_start + batch_size, len(matches))
@@ -258,9 +225,63 @@ def coord(session_manager: SessionManager, start: int = 1):
 
             logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
 
-        # Move to next page
         page_num += 1
         pages_processed += 1
+
+    return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
+
+
+@with_connection_resilience("Action 6: DNA Match Gatherer", max_recovery_attempts=3)
+def coord(session_manager: SessionManager, start: int = 1):
+    """Main entry point for Action 6: DNA Match Gatherer."""
+    logger.info("=" * 80)
+    logger.info("Action 6: DNA Match Gatherer")
+    logger.info("=" * 80)
+
+    # Reset rate limiter metrics at start of each run
+    if session_manager.rate_limiter:
+        session_manager.rate_limiter.reset_metrics()
+        logger.debug("Rate limiter metrics reset for new run")
+
+    max_pages = config_schema.api.max_pages
+    batch_size = config_schema.batch_size
+    parallel_workers = getattr(config_schema, 'parallel_workers', 1)
+    start_page = start
+
+    logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}")
+
+    # Setup adaptive rate limiting
+    _setup_rate_limiting(session_manager, parallel_workers)
+
+    # Initialize session
+    try:
+        my_uuid, my_tree_id, db_manager = _initialize_coord_session(session_manager)
+    except ValueError as e:
+        logger.error(f"Session initialization failed: {e}")
+        return None
+
+    # Navigate to DNA matches page and get CSRF token
+    logger.debug("Navigating to DNA matches page...")
+    if not nav_to_dna_matches_page(session_manager):
+        logger.error("Failed to navigate to DNA matches page")
+        return None
+
+    driver = session_manager.driver
+    csrf_token = get_csrf_token_for_dna_matches(driver)
+    if not csrf_token:
+        logger.error("Failed to get CSRF token")
+        return None
+
+    # Process pages
+    run_start_time = time.time()
+    total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason = _process_pages_loop(
+        session_manager, driver, db_manager, my_uuid, my_tree_id, csrf_token, start_page, max_pages, batch_size
+    )
+
+    if False:  # This block is now handled by _process_pages_loop
+        pass
+    else:
+        pass
 
     # Calculate run statistics
     run_end_time = time.time()
@@ -286,9 +307,9 @@ def coord(session_manager: SessionManager, start: int = 1):
 
     # Page processing
     if max_pages == 0:
-        logger.info(f"Pages Processed: {pages_processed} (started at page {start_page})")
+        logger.info(f"Page Range: Started at page {start_page}")
     else:
-        logger.info(f"Page Range: {start_page}-{end_page} ({max_pages} pages)")
+        logger.info(f"Page Range: {start_page}-{start_page + max_pages - 1} ({max_pages} pages)")
 
     # Match statistics
     logger.info(f"New Added: {total_new}")
@@ -308,6 +329,7 @@ def coord(session_manager: SessionManager, start: int = 1):
         session_manager.rate_limiter.print_metrics_summary()
 
     return not run_incomplete  # Return False if run was incomplete
+
 
 def _refine_match_list(match_list: list[dict], my_uuid: str, in_tree_ids: set[str]) -> list[dict]:
     """Refine raw match list into structured format."""
