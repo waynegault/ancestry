@@ -91,7 +91,7 @@ class APIManager:
         self._requests_session.mount("https://", adapter)
         logger.debug("Requests session configured with retry strategy.")
 
-    def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:
+    def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:  # noqa: ARG002
         """
         Attempt to recover browser session when cookie sync fails.
 

@@ -7,8 +7,8 @@ Test suite for Phase 2 improvements:
 4. RPS Increase to 5.0
 """
 
-import sys
 import logging
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,8 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import config_schema
-from utils import get_rate_limiter, RateLimiter
 from core.session_manager import SessionManager
+from utils import RateLimiter, get_rate_limiter
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -32,15 +32,15 @@ def test_rate_limiter_singleton():
     logger.info("=" * 70)
     logger.info("TEST 1: RateLimiter Singleton Pattern")
     logger.info("=" * 70)
-    
+
     # Get rate limiter twice
     rl1 = get_rate_limiter()
     rl2 = get_rate_limiter()
-    
+
     # Verify they're the same instance
     assert rl1 is rl2, "RateLimiter singleton not working - different instances returned"
     assert id(rl1) == id(rl2), "RateLimiter instances have different IDs"
-    
+
     logger.info("✅ PASS: RateLimiter singleton verified")
     logger.info(f"   - Instance ID: {id(rl1)}")
     logger.info(f"   - Type: {type(rl1).__name__}")
@@ -52,15 +52,15 @@ def test_rate_limiter_in_session_manager():
     logger.info("\n" + "=" * 70)
     logger.info("TEST 2: RateLimiter in SessionManager")
     logger.info("=" * 70)
-    
+
     # Create two SessionManager instances
     sm1 = SessionManager()
     sm2 = SessionManager()
-    
+
     # Verify they share the same rate limiter
     assert sm1.rate_limiter is sm2.rate_limiter, "SessionManagers don't share rate limiter"
     assert sm1.rate_limiter is get_rate_limiter(), "SessionManager rate limiter not singleton"
-    
+
     logger.info("✅ PASS: SessionManager uses RateLimiter singleton")
     logger.info(f"   - SM1 rate limiter ID: {id(sm1.rate_limiter)}")
     logger.info(f"   - SM2 rate limiter ID: {id(sm2.rate_limiter)}")
@@ -84,7 +84,7 @@ def test_rps_configuration():
 
     logger.info("✅ PASS: RPS configured")
     logger.info(f"   - Current RPS: {rps}")
-    logger.info(f"   - Default: 5.0 (can be overridden by .env REQUESTS_PER_SECOND)")
+    logger.info("   - Default: 5.0 (can be overridden by .env REQUESTS_PER_SECOND)")
     logger.info(f"   - Speedup vs 0.4: {rps/0.4:.1f}x faster")
     return True
 
@@ -105,7 +105,7 @@ def test_person_refresh_days_config():
 
     logger.info("✅ PASS: person_refresh_days configured")
     logger.info(f"   - Refresh days: {refresh_days}")
-    logger.info(f"   - Default: 7 (can be overridden by .env PERSON_REFRESH_DAYS)")
+    logger.info("   - Default: 7 (can be overridden by .env PERSON_REFRESH_DAYS)")
     logger.info(f"   - Skip if updated within: {refresh_days} days")
     return True
 
@@ -175,7 +175,7 @@ def run_all_tests():
     logger.info("\n" + "=" * 70)
     logger.info("PHASE 2 IMPROVEMENTS - TEST SUITE")
     logger.info("=" * 70)
-    
+
     tests = [
         ("RateLimiter Singleton", test_rate_limiter_singleton),
         ("SessionManager Integration", test_rate_limiter_in_session_manager),
@@ -184,10 +184,10 @@ def run_all_tests():
         ("Timestamp Logic Gate", test_timestamp_logic_gate),
         ("Rate Limiter State", test_rate_limiter_state_preservation),
     ]
-    
+
     passed = 0
     failed = 0
-    
+
     for test_name, test_func in tests:
         try:
             if test_func():
@@ -200,7 +200,7 @@ def run_all_tests():
             failed += 1
             logger.error(f"❌ ERROR: {test_name}")
             logger.error(f"   Exception: {e}")
-    
+
     # Summary
     logger.info("\n" + "=" * 70)
     logger.info("TEST SUMMARY")
@@ -208,7 +208,7 @@ def run_all_tests():
     logger.info(f"✅ Passed: {passed}/{len(tests)}")
     logger.info(f"❌ Failed: {failed}/{len(tests)}")
     logger.info("=" * 70)
-    
+
     return failed == 0
 
 

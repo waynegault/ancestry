@@ -247,7 +247,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:  # noqa: F841
+def _load_login_cookies(session_manager: SessionManager) -> bool:
     """Load saved login cookies from file."""
     try:
         if not session_manager.driver:

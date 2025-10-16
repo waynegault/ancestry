@@ -1230,9 +1230,10 @@ def _test_rate_limiting_configuration() -> None:
     api_config = APIConfig()
 
     # Define validation rules as data structure to reduce complexity
-    # Updated for sequential processing (October 2025)
+    # Updated for Phase 2 optimization (October 2025)
+    # RPS increased to 5.0 with circuit breaker protection
     validation_rules = [
-        ("requests_per_second", lambda v: v > 1.0, "too high"),  # 0.3 RPS is safe for sequential processing
+        ("requests_per_second", lambda v: v > 10.0, "too high"),  # 5.0 RPS is safe with circuit breaker; Ancestry API allows 10-20 RPS
         ("max_concurrency", lambda v: v > 1, "too high"),  # Sequential processing only
         ("burst_limit", lambda v: v > 4, "too high"),
         ("max_retries", lambda v: v < 5, "too low"),

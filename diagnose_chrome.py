@@ -45,7 +45,7 @@ def check_chrome_installation() -> dict:
     chrome_path = config_schema.selenium.chrome_browser_path
     print(f"Configured Chrome path: {chrome_path}")
 
-    if chrome_path and os.path.exists(chrome_path):
+    if chrome_path and Path(chrome_path).exists():
         result["installed"] = True
         result["path"] = chrome_path
         print(f"✅ Chrome found at: {chrome_path}")
@@ -145,21 +145,20 @@ def check_chrome_profile() -> dict:
     user_data_dir = config_schema.selenium.chrome_user_data_dir
     print(f"User data directory: {user_data_dir}")
 
-    if user_data_dir and os.path.exists(user_data_dir):
+    if user_data_dir and Path(user_data_dir).exists():
         result["profile_exists"] = True
         result["profile_path"] = user_data_dir
         print(f"✅ Profile directory exists: {user_data_dir}")
 
         # Check profile size
         try:
+            from contextlib import suppress
             total_size = 0
-            for dirpath, dirnames, filenames in os.walk(user_data_dir):
+            for dirpath, _dirnames, filenames in os.walk(user_data_dir):
                 for filename in filenames:
-                    filepath = os.path.join(dirpath, filename)
-                    try:
-                        total_size += os.path.getsize(filepath)
-                    except (OSError, FileNotFoundError):
-                        pass
+                    filepath = Path(dirpath) / filename
+                    with suppress(OSError, FileNotFoundError):
+                        total_size += filepath.stat().st_size
 
             size_mb = total_size / (1024 * 1024)
             result["profile_size_mb"] = round(size_mb, 2)

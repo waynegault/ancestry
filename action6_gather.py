@@ -625,6 +625,7 @@ def _should_skip_person_refresh(session, person_id: int) -> bool:
     This implements timestamp-based data freshness checking to avoid redundant API calls.
     """
     from datetime import datetime, timedelta, timezone
+
     from database import Person
 
     refresh_days = getattr(config_schema, 'person_refresh_days', 7)  # Default 7 days
@@ -793,7 +794,7 @@ def _fetch_match_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function]
+def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function] # noqa: ARG001
     """Fetch profile details from Profile Details API."""
     url = urljoin(
         config_schema.api.base_url,
@@ -1089,10 +1090,7 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
 
             # Format: "Name LifeSpan (Relationship)"
             if lifespan:
-                if relationship:
-                    path_part = f"{name} {lifespan} ({relationship})"
-                else:
-                    path_part = f"{name} {lifespan}"
+                path_part = f"{name} {lifespan} ({relationship})" if relationship else f"{name} {lifespan}"
             elif relationship:
                 path_part = f"{name} ({relationship})"
             else:
@@ -1346,8 +1344,8 @@ def test_bounds_checking() -> bool:
 
     try:
         # Read the entire file to check for bounds checking patterns
-        with open(__file__, encoding='utf-8') as f:
-            file_content = f.read()
+        from pathlib import Path
+        file_content = Path(__file__).read_text(encoding='utf-8')
 
         # Test 1: CSRF token extraction - check for safe pattern
         if 'parts[0] if parts else None' in file_content or 'csrf_token = parts[0] if parts' in file_content:

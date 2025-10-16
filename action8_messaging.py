@@ -871,7 +871,7 @@ def _update_response_time_average(template_stats: dict[str, Any], template_name:
 
 def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None:
     """Calculate response rates for all templates."""
-    for template_name, stats in template_stats.items():
+    for _template_name, stats in template_stats.items():
         if stats["sent"] > 0:
             stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 

@@ -293,10 +293,9 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
             logger.error("  - Chrome/ChromeDriver version mismatch")
             logger.error("  - Security software blocking Chrome")
             logger.error("  Run 'python diagnose_chrome.py' for detailed diagnostics")
-            try:
+            from contextlib import suppress
+            with suppress(Exception):
                 driver.quit()
-            except Exception:
-                pass
             return None
 
         # Minimize window immediately after creation
@@ -311,10 +310,9 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
             except Exception:
                 logger.error(f"Browser window closed during minimize attempt: {min_err}")
                 logger.error("Run 'python diagnose_chrome.py' for detailed diagnostics")
-                try:
+                from contextlib import suppress
+                with suppress(Exception):
                     driver.quit()
-                except Exception:
-                    pass
                 return None
 
         elapsed = time.time() - start_time
@@ -330,7 +328,7 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
             logger.debug(f"Full error details: {chrome_exc}", exc_info=True)
 
         print(f"  ✗ ChromeDriver initialization failed (attempt {attempt_num})", flush=True)
-        print("  ℹ Run 'python diagnose_chrome.py' for detailed diagnostics", flush=True)
+        print("  i Run 'python diagnose_chrome.py' for detailed diagnostics", flush=True)
         return None
 
 
