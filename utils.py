@@ -247,7 +247,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:
+def _load_login_cookies(session_manager: SessionManager) -> bool:  # noqa: F841
     """Load saved login cookies from file."""
     try:
         if not session_manager.driver:
@@ -878,7 +878,7 @@ class CircuitBreaker:
             'half_open_failures': 0,
         }
 
-        logger.info(f"🔌 Circuit Breaker initialized: threshold={failure_threshold}, recovery={recovery_timeout}s")
+        logger.debug(f"🔌 Circuit Breaker initialized: threshold={failure_threshold}, recovery={recovery_timeout}s")
 
     def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
@@ -995,6 +995,26 @@ class CircuitBreaker:
 
 # End of CircuitBreaker
 
+# Global RateLimiter singleton instance
+_global_rate_limiter: Optional['RateLimiter'] = None
+
+def get_rate_limiter() -> 'RateLimiter':
+    """
+    Get or create the global RateLimiter singleton instance.
+
+    This ensures rate limiting state (delay, metrics, circuit breaker) is preserved
+    across multiple SessionManager instances, preventing redundant initialization
+    and maintaining adaptive delay tuning.
+
+    Returns:
+        RateLimiter: The global singleton instance
+    """
+    global _global_rate_limiter
+    if _global_rate_limiter is None:
+        _global_rate_limiter = RateLimiter()
+        logger.debug("Global RateLimiter singleton created")
+    return _global_rate_limiter
+
 # ------------------------------
 # Rate Limiting (Remains in utils.py)
 # ------------------------------
@@ -1089,9 +1109,8 @@ class RateLimiter:
         # Load rate limiting settings if they exist
         self._load_rate_limiting_settings()
 
-        logger.debug(
-            f"✓ Thread-safe RateLimiter initialized: Capacity={self.capacity:.1f}, FillRate={self.fill_rate:.1f}/s, InitialDelay={self.initial_delay:.2f}s, MaxDelay={self.max_delay:.1f}s, Backoff={self.backoff_factor:.2f}, Decrease={self.decrease_factor:.2f}"
-        )
+        # Only log at DEBUG level to reduce verbosity
+        # Detailed initialization info available if needed for troubleshooting
 
     # End of __init__
 

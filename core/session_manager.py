@@ -301,10 +301,10 @@ class SessionManager:
         self._initialize_reliable_state()
         self._initialize_health_monitors()
 
-        # Initialize rate limiter (single rate limiter for all API calls)
+        # Initialize rate limiter (use global singleton for all API calls)
         try:
-            from utils import RateLimiter
-            self.rate_limiter = RateLimiter()
+            from utils import get_rate_limiter
+            self.rate_limiter = get_rate_limiter()
         except ImportError:
             self.rate_limiter = None
 

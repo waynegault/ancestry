@@ -871,7 +871,7 @@ def _update_response_time_average(template_stats: dict[str, Any], template_name:
 
 def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None:
     """Calculate response rates for all templates."""
-    for _template_name, stats in template_stats.items():
+    for template_name, stats in template_stats.items():
         if stats["sent"] > 0:
             stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 
@@ -2274,7 +2274,7 @@ def _process_single_person(
             getattr(person, 'extracted_genealogical_data', {}) or {}
             # Quality summary (removed verbose debug logging)
             pass
-    except Exception as _qa_err:
+    except Exception:
         # Best-effort logging only; never fail processing due to QA summary issues
         # Skipped quality summary logging (removed verbose debug)
         pass

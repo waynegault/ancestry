@@ -634,7 +634,7 @@ CREATE_VIEW_SQL = text(
 
 
 @event.listens_for(Base.metadata, "after_create")
-def _create_views(_target: Any, connection: Connection, **_kw: Any) -> None:  # type: ignore[misc]
+def _create_views(target: Any, connection: Connection, **kw: Any) -> None:  # type: ignore[misc] # noqa: ARG001,F841
     """SQLAlchemy event listener to create the 'messages' view after tables are created."""
     logger.debug("Executing CREATE VIEW statement for 'messages' view...")
     try:

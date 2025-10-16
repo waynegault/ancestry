@@ -622,30 +622,32 @@ def _should_skip_person_refresh(session, person_id: int) -> bool:
     Check if person was recently updated and should skip detail refresh.
     Returns True if person was updated within PERSON_REFRESH_DAYS, False otherwise.
 
-    TEMPORARILY DISABLED - Always returns False to test other skip logic.
+    This implements timestamp-based data freshness checking to avoid redundant API calls.
     """
-    # TEMPORARY: Disable timestamp-based skipping to test other skip logic
-    return False
+    from datetime import datetime, timedelta, timezone
+    from database import Person
 
-    # Original code commented out for later restoration:
-    # from datetime import datetime, timedelta, timezone
-    # from database import Person
-    # refresh_days = config_schema.person_refresh_days
-    # if refresh_days == 0:
-    #     return False
-    # person = session.query(Person).filter_by(id=person_id).first()
-    # if not person or not person.updated_at:
-    #     return False
-    # now = datetime.now(timezone.utc)
-    # last_updated = person.updated_at
-    # if last_updated.tzinfo is None:
-    #     last_updated = last_updated.replace(tzinfo=timezone.utc)
-    # time_since_update = now - last_updated
-    # threshold = timedelta(days=refresh_days)
-    # should_skip = time_since_update < threshold
-    # if should_skip:
-    #     logger.debug(f"Person ID {person_id} updated {time_since_update.days} days ago (threshold: {refresh_days} days) - skipping refresh")
-    # return should_skip
+    refresh_days = getattr(config_schema, 'person_refresh_days', 7)  # Default 7 days
+    if refresh_days == 0:
+        return False  # Disabled if set to 0
+
+    person = session.query(Person).filter_by(id=person_id).first()
+    if not person or not person.updated_at:
+        return False  # No person or no timestamp, fetch details
+
+    now = datetime.now(timezone.utc)
+    last_updated = person.updated_at
+    if last_updated.tzinfo is None:
+        last_updated = last_updated.replace(tzinfo=timezone.utc)
+
+    time_since_update = now - last_updated
+    threshold = timedelta(days=refresh_days)
+    should_skip = time_since_update < threshold
+
+    if should_skip:
+        logger.debug(f"Person ID {person_id} updated {time_since_update.days} days ago (threshold: {refresh_days} days) - skipping refresh")
+
+    return should_skip
 
 
 def _save_person_with_status(session, match: dict) -> tuple[Optional[int], str]:
@@ -791,7 +793,7 @@ def _fetch_match_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # noqa: ARG001
+def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function]
     """Fetch profile details from Profile Details API."""
     url = urljoin(
         config_schema.api.base_url,

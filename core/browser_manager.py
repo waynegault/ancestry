@@ -74,14 +74,12 @@ class BrowserManager:
         Returns:
             bool: True if browser started successfully, False otherwise
         """
-        logger.debug(f"Starting browser for action: {action_name or 'Unknown'}")
-
         try:
             if self.is_session_valid():
                 logger.debug("Browser already running and valid")
                 return True
 
-            logger.debug("Initializing WebDriver instance...")
+            logger.info(f"🌐 Initializing browser for {action_name or 'action'}...")
             self.driver = init_webdvr()
 
             if not self.driver:
@@ -104,15 +102,12 @@ class BrowserManager:
             # Verify browser is actually open
             try:
                 _ = self.driver.current_url
-                logger.debug("Browser window verified as open")
             except Exception as verify_err:
                 logger.error(f"Browser window closed immediately after initialization: {verify_err}")
                 logger.error("This indicates a critical Chrome/ChromeDriver issue")
                 logger.error("Run diagnostics: python diagnose_chrome.py")
                 self.close_browser()
                 return False
-
-            logger.debug("WebDriver initialization successful.")
 
             # Navigate to base URL to stabilize
             logger.debug(
@@ -148,7 +143,7 @@ class BrowserManager:
             self.browser_needed = True
             self.session_start_time = time.time()
 
-            logger.debug("Browser session started successfully")
+            logger.info("✅ Browser initialized successfully")
             return True
 
         except Exception as e:
@@ -158,12 +153,9 @@ class BrowserManager:
 
     def close_browser(self) -> None:
         """Close the browser and cleanup resources."""
-        logger.debug("Closing browser session...")
-
         if self.driver:
             try:
                 self.driver.quit()
-                logger.debug("WebDriver quit successfully")
             except Exception as e:
                 logger.warning(f"Error quitting WebDriver: {e}")
 
