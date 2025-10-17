@@ -155,13 +155,12 @@ def with_connection_resilience(
                             session_manager = arg
                             break
 
-                    if session_manager:
-                        if _resilience_manager.handle_connection_loss(
-                            session_manager,
-                            operation_name
-                        ):
-                            logger.info(f"🔄 Retrying {operation_name} after recovery...")
-                            return func(*args, **kwargs)
+                    if session_manager and _resilience_manager.handle_connection_loss(
+                        session_manager,
+                        operation_name
+                    ):
+                        logger.info(f"🔄 Retrying {operation_name} after recovery...")
+                        return func(*args, **kwargs)
 
                 raise
 
@@ -207,12 +206,11 @@ def with_periodic_health_check(
                 check_counter['count'] += 1
 
                 # Periodic health check
-                if check_counter['count'] % check_interval == 0:
-                    if not session_manager.check_session_health():
-                        logger.warning(f"🚨 Health check failed in {operation_name} (check #{check_counter['count']})")
-                        if session_manager.attempt_browser_recovery():
-                            logger.info(f"✅ Recovery successful, continuing {operation_name}")
-                        else:
+                if check_counter['count'] % check_interval == 0 and not session_manager.check_session_health():
+                    logger.warning(f"🚨 Health check failed in {operation_name} (check #{check_counter['count']})")
+                    if session_manager.attempt_browser_recovery():
+                        logger.info(f"✅ Recovery successful, continuing {operation_name}")
+                    else:
                             raise RuntimeError(f"Browser recovery failed in {operation_name}")
 
                 return original_func(*inner_args, **inner_kwargs)

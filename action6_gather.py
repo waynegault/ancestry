@@ -1449,7 +1449,7 @@ _test_session_uuid: Optional[str] = None
 
 def _check_cached_session(reuse_session: bool) -> tuple[Optional[SessionManager], Optional[str]]:
     """Check if cached session is available and valid."""
-    global _test_session_manager, _test_session_uuid
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603 - Intentional global for test session caching
 
     if not reuse_session or _test_session_manager is None or _test_session_uuid is None:
         return None, None
@@ -1541,7 +1541,7 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
 
     Raises AssertionError if session cannot be established (tests will be skipped).
     """
-    global _test_session_manager, _test_session_uuid
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603 - Intentional global for test session caching
 
     # Check for cached session
     cached_sm, cached_uuid = _check_cached_session(reuse_session)
@@ -1969,7 +1969,7 @@ def action6_module_tests() -> bool:
     result = suite.finish_suite()
 
     # Clean up test session if it exists
-    global _test_session_manager
+    global _test_session_manager  # noqa: PLW0603 - Intentional global for test session cleanup
     if _test_session_manager is not None:
         try:
             # Suppress all warnings and errors during cleanup
@@ -1978,7 +1978,7 @@ def action6_module_tests() -> bool:
 
             # Redirect stderr temporarily to suppress exception messages
             original_stderr = sys.stderr
-            sys.stderr = open(os.devnull, 'w')
+            sys.stderr = open(os.devnull, 'w')  # noqa: SIM115, PTH123 - Intentional for stderr redirect
 
             try:
                 with warnings.catch_warnings():
@@ -2020,7 +2020,7 @@ if __name__ == "__main__":
         success = run_comprehensive_tests()
 
         # Redirect stderr to devnull before exit to suppress Chrome destructor exceptions
-        sys.stderr = open(os.devnull, 'w')
+        sys.stderr = open(os.devnull, 'w')  # noqa: SIM115, PTH123 - Intentional for stderr redirect
         sys.exit(0 if success else 1)
     except Exception as e:
         # Restore stderr for any unexpected errors
