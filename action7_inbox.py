@@ -919,7 +919,45 @@ class InboxProcessor:
         my_pid_lower = self._validate_session_state()
         if not my_pid_lower:
             return False
-        return None
+
+        # Get database session and comparator
+        session, comp_conv_id, comp_ts = self._get_database_session_and_comparator()
+        if not session:
+            return False
+
+        try:
+            # Run inbox processing loop
+            stop_reason, total_api_items, ai_classified, status_updates, items_processed = (
+                self._run_inbox_processing_loop(session, comp_conv_id, comp_ts, my_pid_lower)
+            )
+
+            # Log unified summary
+            self._log_unified_summary(
+                total_api_items=total_api_items,
+                items_processed=items_processed,
+                new_logs=0,  # Upsert logic makes exact count difficult
+                ai_classified=ai_classified,
+                status_updates=status_updates,
+                stop_reason=stop_reason,
+                max_inbox_limit=self.max_inbox_limit,
+            )
+
+            # Update final statistics
+            self.stats["end_time"] = datetime.now(timezone.utc)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Critical error in search_inbox: {e}", exc_info=True)
+            self.stats["errors"] += 1
+            self.stats["end_time"] = datetime.now(timezone.utc)
+            return False
+        finally:
+            # Ensure session is closed
+            if session:
+                from contextlib import suppress
+                with suppress(Exception):
+                    session.close()
 
     def _get_database_session_and_comparator(self) -> tuple[Optional[DbSession], Optional[str], Optional[datetime]]:
         """Get database session and create comparator for inbox processing."""
@@ -2096,30 +2134,34 @@ def action7_inbox_module_tests() -> bool:
         suite.run_test(
             test_name="Class and method availability",
             test_func=test_class_and_methods_available,
-            expected_behavior="InboxProcessor and key methods present",
-            test_description="Module structure",
+            test_summary="Module structure",
+            functions_tested="InboxProcessor, search_inbox, _process_inbox_loop",
             method_description="Check class and method existence",
+            expected_outcome="InboxProcessor and key methods present",
         )
         suite.run_test(
             test_name="Circuit breaker config",
             test_func=test_circuit_breaker_config,
-            expected_behavior="search_inbox has 'self' parameter and decorators",
-            test_description="Decorator verification",
+            test_summary="Decorator verification",
+            functions_tested="search_inbox",
             method_description="Signature inspection",
+            expected_outcome="search_inbox has 'self' parameter and decorators",
         )
         suite.run_test(
             test_name="Progress indicator smoke",
             test_func=test_progress_indicator_smoke,
-            expected_behavior="ProgressIndicator creates tqdm without errors",
-            test_description="Progress bar integration",
+            test_summary="Progress bar integration",
+            functions_tested="create_progress_indicator",
             method_description="Context manager smoke test",
+            expected_outcome="ProgressIndicator creates tqdm without errors",
         )
         suite.run_test(
             test_name="Summary logging structure",
             test_func=test_summary_logging_structure,
-            expected_behavior="Summary logs contain required lines",
-            test_description="Unified summary logging",
+            test_summary="Unified summary logging",
+            functions_tested="_log_unified_summary",
             method_description="Mock logger capture",
+            expected_outcome="Summary logs contain required lines",
         )
 
     return suite.finish_suite()

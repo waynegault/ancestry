@@ -1178,56 +1178,62 @@ def api_search_utils_module_tests() -> bool:
     with suppress_logging():
         # INITIALIZATION TESTS
         suite.run_test(
-            test_name="Module initialization and DEFAULT_CONFIG",
-            test_func=_test_module_initialization,
-            expected_behavior="Module initializes correctly with proper configuration access and valid DEFAULT_CONFIG structure",
-            test_description="Module initialization and configuration setup processes",
+            "Module initialization and DEFAULT_CONFIG",
+            _test_module_initialization,
+            test_summary="Validates module initialization and configuration access",
+            functions_tested="_test_module_initialization()",
             method_description="Testing configuration access and DEFAULT_CONFIG structure validation",
+            expected_outcome="Module initializes correctly with proper configuration access and valid DEFAULT_CONFIG structure",
         )
 
         # CORE FUNCTIONALITY TESTS
         suite.run_test(
-            test_name="_extract_year_from_date(), _run_simple_suggestion_scoring()",
-            test_func=_test_core_functionality,
-            expected_behavior="All core functions execute correctly, extracting years properly and generating accurate scores",
-            test_description="Core API search and scoring functionality operations",
+            "_extract_year_from_date(), _run_simple_suggestion_scoring()",
+            _test_core_functionality,
+            test_summary="Validates core API search and scoring functionality",
+            functions_tested="_extract_year_from_date(), _run_simple_suggestion_scoring()",
             method_description="Testing year extraction from various date formats and suggestion scoring with matching criteria",
+            expected_outcome="All core functions execute correctly, extracting years properly and generating accurate scores",
         )
 
         # EDGE CASE TESTS
         suite.run_test(
-            test_name="ALL functions with edge case inputs",
-            test_func=_test_edge_cases,
-            expected_behavior="All functions handle edge cases gracefully without crashes or unexpected behavior",
-            test_description="Edge case handling across all module functions",
+            "ALL functions with edge case inputs",
+            _test_edge_cases,
+            test_summary="Validates edge case handling across all module functions",
+            functions_tested="All module functions",
             method_description="Testing functions with empty, None, and boundary condition inputs",
+            expected_outcome="All functions handle edge cases gracefully without crashes or unexpected behavior",
         )
 
         # INTEGRATION TESTS
         suite.run_test(
-            test_name="search_api_for_criteria() with mocked dependencies",
-            test_func=_test_integration,
-            expected_behavior="Integration functions work correctly with mocked external dependencies",
-            test_description="Integration with external API dependencies using mocks",
+            "search_api_for_criteria() with mocked dependencies",
+            _test_integration,
+            test_summary="Validates integration with external API dependencies",
+            functions_tested="search_api_for_criteria()",
             method_description="Testing API search functionality with mocked session and API call responses",
+            expected_outcome="Integration functions work correctly with mocked external dependencies",
         )
 
         # PERFORMANCE TESTS
         suite.run_test(
-            test_name="_run_simple_suggestion_scoring() performance testing",
-            test_func=_test_performance,
-            expected_behavior="Scoring operations complete within acceptable time limits",
-            test_description="Performance characteristics of scoring operations",
+            "_run_simple_suggestion_scoring() performance testing",
+            _test_performance,
+            test_summary="Validates performance characteristics of scoring operations",
+            functions_tested="_run_simple_suggestion_scoring()",
             method_description="Testing execution speed of multiple scoring operations in sequence",
+            expected_outcome="Scoring operations complete within acceptable time limits",
         )
 
         # ERROR HANDLING TESTS
         suite.run_test(
-            test_name="search_api_for_criteria() error handling",
-            test_func=_test_error_handling,
-            expected_behavior="All error conditions handled gracefully with appropriate fallback responses",
-            test_description="Error handling and recovery functionality",
+            "search_api_for_criteria() error handling",
+            _test_error_handling,
+            test_summary="Validates error handling and recovery functionality",
+            functions_tested="search_api_for_criteria()",
             method_description="Testing error scenarios with invalid inputs and failed dependencies",
+            expected_outcome="All error conditions handled gracefully with appropriate fallback responses",
         )
 
     return suite.finish_suite()
