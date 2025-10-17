@@ -39,7 +39,7 @@ def get_imports_from_file(filepath):
     """Extract all imports from a Python file."""
     imports = set()
     try:
-        with open(filepath, encoding='utf-8') as f:
+        with open(filepath, encoding='utf-8') as f:  # noqa: PTH123 - Simple script, pathlib not needed
             content = f.read()
             # Find all "from X import" and "import X" statements
             from_imports = re.findall(r'from\s+(\w+)', content)
@@ -82,7 +82,8 @@ def analyze_scripts():
     print("-" * 80)
     for script in sorted(KEEP_ESSENTIAL):
         if script in scripts:
-            lines = len(open(script).readlines())
+            with open(script, encoding='utf-8') as f:  # noqa: PTH123
+                lines = len(f.readlines())
             print(f"  ✅ {script:40} ({lines:5} lines)")
     print()
 
@@ -90,7 +91,8 @@ def analyze_scripts():
     print("-" * 80)
     for script in sorted(REMOVE_CANDIDATES):
         if script in scripts:
-            lines = len(open(script).readlines())
+            with open(script, encoding='utf-8') as f:  # noqa: PTH123
+                lines = len(f.readlines())
             imported_by = imported_scripts.get(script, set())
             if imported_by:
                 print(f"  ⚠️  {script:40} ({lines:5} lines) - USED BY: {', '.join(sorted(imported_by))}")
@@ -102,7 +104,8 @@ def analyze_scripts():
     print("-" * 80)
     other_scripts = set(scripts) - KEEP_ESSENTIAL - REMOVE_CANDIDATES
     for script in sorted(other_scripts):
-        lines = len(open(script).readlines())
+        with open(script, encoding='utf-8') as f:  # noqa: PTH123
+            lines = len(f.readlines())
         imported_by = imported_scripts.get(script, set())
         if imported_by:
             print(f"  ✅ {script:40} ({lines:5} lines) - USED BY: {len(imported_by)} scripts")

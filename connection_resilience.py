@@ -58,12 +58,12 @@ class ConnectionResilienceManager:
     ) -> bool:
         """
         Handle connection loss with automatic recovery.
-        
+
         Args:
             session_manager: SessionManager instance
             operation_name: Name of operation for logging
             retry_callback: Optional callback to retry operation
-            
+
         Returns:
             bool: True if recovery successful, False otherwise
         """
@@ -112,13 +112,13 @@ def with_connection_resilience(
 ) -> Callable[[F], F]:
     """
     Decorator to add connection resilience to long-running operations.
-    
+
     Features:
     - Prevents PC sleep during operation
     - Detects browser disconnection
     - Automatically recovers from connection loss
     - Provides detailed logging
-    
+
     Usage:
         @with_connection_resilience("Action 6: DNA Match Gathering")
         def coord(session_manager):
@@ -177,7 +177,7 @@ def with_periodic_health_check(
 ) -> Callable[[F], F]:
     """
     Decorator to add periodic browser health checks during operation.
-    
+
     Usage:
         @with_periodic_health_check(check_interval=5, operation_name="Action 7")
         def process_inbox(session_manager):

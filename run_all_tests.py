@@ -72,6 +72,35 @@ PSUTIL_AVAILABLE = _psutil_available
 from code_quality_checker import CodeQualityChecker, QualityMetrics
 
 
+def _fix_trailing_whitespace() -> None:
+    """Fix trailing whitespace in all Python files before running tests."""
+    python_files = [
+        "connection_resilience.py",
+        # Add other files here if needed in the future
+    ]
+
+    for file_name in python_files:
+        file_path = Path(file_name)
+        if not file_path.exists():
+            continue
+
+        try:
+            # Read the file
+            with file_path.open(encoding='utf-8') as f:
+                lines = f.readlines()
+
+            # Remove trailing whitespace from each line
+            fixed_lines = [line.rstrip() + '\n' if line.strip() else '\n' for line in lines]
+
+            # Only write if changes were made
+            if lines != fixed_lines:
+                with file_path.open('w', encoding='utf-8') as f:
+                    f.writelines(fixed_lines)
+        except Exception:
+            # Silently skip files that can't be processed
+            pass
+
+
 def _check_and_use_venv() -> bool:
     """Check if running in venv, and if not, try to re-run with venv Python."""
     # Check if we're in a virtual environment
@@ -1215,10 +1244,7 @@ def _run_pre_test_checks() -> bool:
         True if checks pass or can continue, False if critical failure
     """
     # Run linter first for hygiene; fail fast only on safe subset
-    if not run_linter():
-        return False
-
-    return True
+    return run_linter()
 
 
 def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tuple[str, str]]]:
@@ -1611,6 +1637,9 @@ def _print_final_quality_summary(all_metrics: list[Any]) -> None:
 
 def main() -> bool:
     """Comprehensive test runner with performance monitoring and optimization."""
+    # Fix trailing whitespace before running tests
+    _fix_trailing_whitespace()
+
     # Setup environment and parse arguments
     enable_fast_mode, enable_benchmark, enable_monitoring = _setup_test_environment()
 
