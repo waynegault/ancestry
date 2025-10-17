@@ -699,6 +699,31 @@ def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool
     return confidence_score
 
 
+# === HELPER FUNCTIONS FOR CODE DEDUPLICATION ===
+
+def _get_short_template_if_exists(base_template_key: str) -> Optional[str]:
+    """
+    Return short template key if it exists in MESSAGE_TEMPLATES, else None.
+
+    This helper eliminates repeated pattern of checking for short template variants.
+    """
+    short_key = f"{base_template_key}_Short"
+    return short_key if short_key in MESSAGE_TEMPLATES else None
+
+
+def _ensure_timezone_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """
+    Ensure datetime has timezone info (UTC if none).
+
+    This helper eliminates repeated pattern of timezone checking and conversion.
+    """
+    if dt and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+# === TEMPLATE SELECTION HELPERS ===
+
 def _calculate_dna_match_confidence(dna_match, is_distant_relationship: bool) -> int:
     """Calculate confidence score from DNA match data."""
     if dna_match and not is_distant_relationship:
@@ -715,8 +740,8 @@ def _get_template_for_distant_relationship(base_template_key: str) -> str:
         return exploratory_key
 
     # Fallback to short variant for distant relationships
-    short_key = f"{base_template_key}_Short"
-    if short_key in MESSAGE_TEMPLATES:
+    short_key = _get_short_template_if_exists(base_template_key)
+    if short_key:
         return short_key
 
     return base_template_key
@@ -736,8 +761,8 @@ def _get_template_by_confidence_score(base_template_key: str, confidence_score: 
             return exploratory_key
 
     # Check for short variant (A/B testing)
-    short_key = f"{base_template_key}_Short"
-    if short_key in MESSAGE_TEMPLATES:
+    short_key = _get_short_template_if_exists(base_template_key)
+    if short_key:
         return short_key
 
     # Fallback to standard template
@@ -786,8 +811,8 @@ def select_template_variant_ab_testing(person_id: int, base_template_key: str) -
     use_short = person_id % 2 == 0
 
     if use_short:
-        short_key = f"{base_template_key}_Short"
-        if short_key in MESSAGE_TEMPLATES:
+        short_key = _get_short_template_if_exists(base_template_key)
+        if short_key:
             # A/B Testing: Selected short variant (removed verbose debug)
             return short_key
 
@@ -1843,14 +1868,12 @@ def _check_reply_received(latest_in_log: Optional[ConversationLog], latest_out_l
     last_out_ts_utc = min_aware_dt
     if latest_out_log:
         last_out_ts_utc = safe_column_value(latest_out_log, "latest_timestamp", min_aware_dt)
-        if last_out_ts_utc and last_out_ts_utc.tzinfo is None:
-            last_out_ts_utc = last_out_ts_utc.replace(tzinfo=timezone.utc)
+        last_out_ts_utc = _ensure_timezone_aware(last_out_ts_utc) or min_aware_dt
 
     last_in_ts_utc = min_aware_dt
     if latest_in_log:
         last_in_ts_utc = safe_column_value(latest_in_log, "latest_timestamp", min_aware_dt)
-        if last_in_ts_utc and last_in_ts_utc.tzinfo is None:
-            last_in_ts_utc = last_in_ts_utc.replace(tzinfo=timezone.utc)
+        last_in_ts_utc = _ensure_timezone_aware(last_in_ts_utc) or min_aware_dt
 
     if last_in_ts_utc > last_out_ts_utc:
         logger.debug(f"Skipping {log_prefix}: Reply received after last script msg.")
@@ -1871,14 +1894,13 @@ def _check_message_interval(latest_out_log: Optional[ConversationLog], log_prefi
         return
 
     try:
-        if out_timestamp.tzinfo is None:
-            out_timestamp = out_timestamp.replace(tzinfo=timezone.utc)
-        elif out_timestamp.tzinfo != timezone.utc:
+        out_timestamp = _ensure_timezone_aware(out_timestamp)
+        if not out_timestamp:
+            return
+        if out_timestamp.tzinfo != timezone.utc:
             out_timestamp = out_timestamp.astimezone(timezone.utc)
 
         now_utc = datetime.now(timezone.utc)
-        if now_utc.tzinfo is None:
-            now_utc = now_utc.replace(tzinfo=timezone.utc)
 
         time_since_last = now_utc - out_timestamp
         if time_since_last < MIN_MESSAGE_INTERVAL:
@@ -1899,8 +1921,9 @@ def _get_last_script_message_details(latest_out_log: Optional[ConversationLog], 
         return None
 
     try:
-        if out_timestamp.tzinfo is None:
-            out_timestamp = out_timestamp.replace(tzinfo=timezone.utc)
+        out_timestamp = _ensure_timezone_aware(out_timestamp)
+        if not out_timestamp:
+            out_timestamp = datetime.now(timezone.utc)
         elif out_timestamp.tzinfo != timezone.utc:
             out_timestamp = out_timestamp.astimezone(timezone.utc)
     except Exception as tz_error:
