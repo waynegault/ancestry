@@ -120,13 +120,30 @@ python run_all_tests.py
      - Simplified exception handling
      - Maintained all functionality with zero regressions
 
+3. **action11.py** (Shared Code Extraction)
+   - Extracted duplicate `_calculate_display_bonuses()` function to `universal_scoring.py`
+   - Both action10 and action11 now use shared `calculate_display_bonuses()` function
+   - Reduced code duplication between action10 and action11
+   - File size: 3,335 lines (minimal change, improved code reuse)
+   - All 3 tests passing with 100/100 quality score
+   - **Changes**:
+     - Created universal `calculate_display_bonuses()` in `universal_scoring.py`
+     - Updated action10 and action11 to use shared function
+     - Maintained backward compatibility with different key naming conventions
+
 **Analysis Results**:
 - **action7_inbox.py** (2,184 lines): Already well-structured, no changes needed
 - **action9_process_productive.py** (2,051 lines): Well-structured, max complexity 9
-- **action10.py** (2,554 lines): Good structure, well-organized
-- **action11.py** (3,333 lines): In progress - identifying duplication with action10.py
+- **action10.py** (2,558 lines): Using shared display functions from universal_scoring.py
+- **action11.py** (3,335 lines): Using shared display functions from universal_scoring.py
 
 **Test Results**: All 513 tests passing across 63 modules with 100% quality scores
+
+**Key Achievements**:
+- Eliminated duplicate code between action10 and action11
+- Established `universal_scoring.py` as shared utilities module
+- Maintained 100% test pass rate throughout refactoring
+- Zero functional regressions
 
 ### Connection Resilience Framework (October 2025)
 
