@@ -105,6 +105,9 @@ from relationship_utils import (  # type: ignore[import-not-found]
 )
 from test_framework import mock_logger_context  # type: ignore[import-not-found]
 
+# Import universal scoring utilities
+from universal_scoring import calculate_display_bonuses  # type: ignore[import-not-found]
+
 
 # --- Module-level GEDCOM cache for tests ---
 class _GedcomCacheState:
@@ -974,14 +977,15 @@ def _extract_field_scores(candidate: dict[str, Any]) -> dict[str, int]:
 
 def _calculate_display_bonuses(scores: dict[str, int]) -> dict[str, int]:
     """Calculate display bonus values for birth and death."""
-    birth_date_score_component = max(scores["byear_s"], scores["bdate_s"])
-    death_date_score_component = max(scores["dyear_s"], scores["ddate_s"])
+    # Use universal function (with '_s' key prefix for action10)
+    bonuses = calculate_display_bonuses(scores, key_prefix="_s")
 
+    # Rename keys for action10 compatibility
     return {
-        "birth_date_score_component": birth_date_score_component,
-        "death_date_score_component": death_date_score_component,
-        "birth_bonus_s_disp": 25 if (birth_date_score_component > 0 and scores["bplace_s"] > 0) else 0,
-        "death_bonus_s_disp": 25 if (death_date_score_component > 0 and scores["dplace_s"] > 0) else 0,
+        "birth_date_score_component": bonuses["birth_date_component"],
+        "death_date_score_component": bonuses["death_date_component"],
+        "birth_bonus_s_disp": bonuses["birth_bonus"],
+        "death_bonus_s_disp": bonuses["death_bonus"],
     }
 
 

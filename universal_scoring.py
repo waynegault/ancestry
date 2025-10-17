@@ -60,6 +60,47 @@ from test_framework import Colors
 logger = setup_module(globals(), __name__)
 
 
+# === DISPLAY FORMATTING UTILITIES ===
+# Shared display formatting functions for Action 10 and Action 11
+
+
+def calculate_display_bonuses(scores: dict[str, int], key_prefix: str = "") -> dict[str, int]:
+    """
+    Calculate display bonus values for birth and death.
+
+    Works with both action10 (uses '_s' suffix) and action11 (no suffix) score keys.
+
+    Args:
+        scores: Dictionary of field scores
+        key_prefix: Optional prefix for score keys (e.g., "_s" for action10)
+
+    Returns:
+        Dictionary with bonus calculations
+    """
+    # Determine key names based on prefix
+    byear_key = f"byear{key_prefix}"
+    bdate_key = f"bdate{key_prefix}"
+    dyear_key = f"dyear{key_prefix}"
+    ddate_key = f"ddate{key_prefix}"
+    bplace_key = f"bplace{key_prefix}"
+    dplace_key = f"dplace{key_prefix}"
+
+    # Calculate date components
+    birth_date_component = max(scores.get(byear_key, 0), scores.get(bdate_key, 0))
+    death_date_component = max(scores.get(dyear_key, 0), scores.get(ddate_key, 0))
+
+    # Calculate bonuses
+    birth_bonus = 25 if (birth_date_component > 0 and scores.get(bplace_key, 0) > 0) else 0
+    death_bonus = 25 if (death_date_component > 0 and scores.get(dplace_key, 0) > 0) else 0
+
+    return {
+        "birth_date_component": birth_date_component,
+        "death_date_component": death_date_component,
+        "birth_bonus": birth_bonus,
+        "death_bonus": death_bonus,
+    }
+
+
 def apply_universal_scoring(
     candidates: list[dict[str, Any]],
     search_criteria: dict[str, Any],

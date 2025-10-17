@@ -150,6 +150,9 @@ from relationship_utils import (
     format_relationship_path_unified,
 )
 
+# Import universal scoring utilities
+from universal_scoring import calculate_display_bonuses
+
 logger.debug(
     "Successfully imported required functions from api_utils and relationship_utils."
 )
@@ -857,16 +860,15 @@ def _fix_gender_score_from_reasons(candidate: dict, gender_score: int) -> int:
 
 def _calculate_display_bonuses(scores: dict[str, int]) -> dict[str, int]:
     """Calculate display bonus values for birth and death."""
-    birth_date_component = max(scores["byear"], scores["bdate"])
-    death_date_component = max(scores["dyear"], scores["ddate"])
+    # Use universal function (no key prefix for action11)
+    bonuses = calculate_display_bonuses(scores, key_prefix="")
 
-    return {
-        "name": scores["name_bonus"],
-        "birth": 25 if (birth_date_component > 0 and scores["bplace"] > 0) else 0,
-        "death": 25 if (death_date_component > 0 and scores["dplace"] > 0) else 0,
-        "birth_date_component": birth_date_component,
-        "death_date_component": death_date_component,
-    }
+    # Add name bonus (action11-specific)
+    bonuses["name"] = scores.get("name_bonus", 0)
+    bonuses["birth"] = bonuses.pop("birth_bonus")  # Rename for action11 compatibility
+    bonuses["death"] = bonuses.pop("death_bonus")  # Rename for action11 compatibility
+
+    return bonuses
 
 
 def _format_name_display_with_score(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> str:
