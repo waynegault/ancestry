@@ -1058,6 +1058,63 @@ def wait(self, cost: float = 1.0) -> None:
 
 ---
 
-**Last Updated**: October 14, 2025
+## Supermemory MCP Setup (Cloud Option)
+
+### Quick Setup Guide
+
+Supermemory MCP provides universal memory across all LLMs, allowing Augment to remember your preferences, coding patterns, and project context.
+
+**Setup Steps:**
+
+1. **Get Your Supermemory Account**
+   - Visit https://app.supermemory.ai
+   - Sign up for a free account (no credit card required)
+   - You'll get a unique user ID automatically
+
+2. **Configure in Augment VS Code**
+   - Open VS Code
+   - Click the Augment icon in the sidebar
+   - Click the hamburger menu (☰) in the upper right
+   - Select "Settings"
+   - Navigate to the "MCP" tab
+   - Click "+ Add remote MCP"
+
+3. **Add Supermemory Configuration**
+   - **Connection Type**: Select "SSE" (Server-Sent Events)
+   - **Name**: `supermemory`
+   - **URL**: `https://mcp.supermemory.ai/sse`
+   - Click "Save"
+
+4. **Verify Connection**
+   - The Supermemory server should appear in your MCP servers list
+   - Status should show as "Connected"
+   - You can now use Supermemory in your Agent conversations
+
+**Using Supermemory:**
+
+Once configured, Augment will automatically:
+- Store important information from your conversations
+- Remember your coding preferences and patterns
+- Recall project-specific context across sessions
+- Sync memories across all your LLM tools
+
+**Example Prompts:**
+- "Remember that I prefer using type hints in all Python functions"
+- "What do you know about my coding style?"
+- "Store this: I'm working on an Ancestry genealogy automation project"
+
+**Troubleshooting:**
+- If connection fails, verify the URL is exactly: `https://mcp.supermemory.ai/sse`
+- Make sure you selected "SSE" as the connection type
+- Check that your internet connection is active
+- Restart VS Code if the server doesn't appear
+
+**Documentation:**
+- Supermemory Docs: https://supermemory.ai
+- Augment MCP Guide: https://docs.augmentcode.com/setup-augment/mcp
+
+---
+
+**Last Updated**: October 17, 2025
 **Version**: 2.0 (Sequential Processing, Stable)
 
