@@ -1,0 +1,35 @@
+{
+  "mcpServers": {
+    "supermemory": {
+      "command": "npx",
+      "args": ["wrangler", "dev", "--port", "3000"],
+      "cwd": "supermemory-mcp",
+      "env": {
+        "SUPERMEMORY_API_KEY": "your_supermemory_api_key_here"
+      }
+    },
+    "github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "github.com/github/github-mcp-server": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer your_github_personal_access_token_here"
+      }
+    },
+    "github.com/modelcontextprotocol/servers/tree/main/src/filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "c:/Users/wayne/GitHub/Python/Projects/Ancestry"
+      ]
+    }
+  }
+}
+
