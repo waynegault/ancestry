@@ -963,7 +963,7 @@ class UnifiedCredentialManager:
                 },
             )
 
-    def _save_credential(self, key: str, value: str, _description: str) -> bool:  # type: ignore
+    def _save_credential(self, key: str, value: str, _description: str) -> bool:
         """Save a credential to the secure store.
 
         Args:
@@ -1264,7 +1264,7 @@ def credentials_module_tests() -> bool:
     import json
     import tempfile
     from pathlib import Path
-    from unittest.mock import patch  # type: ignore
+    from unittest.mock import patch
 
     from test_framework import TestSuite, suppress_logging
 

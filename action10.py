@@ -2309,7 +2309,7 @@ def test_main_patch() -> None:
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
-    import builtins  # type: ignore[unused-function] - Used in nested test functions
+    import builtins
 
     original_gedcom, suite = _setup_test_environment()
 

@@ -1066,28 +1066,50 @@ Supermemory MCP provides universal memory across all LLMs, allowing Augment to r
 
 **Setup Steps:**
 
-1. **Get Your Supermemory Account**
-   - Visit https://app.supermemory.ai
+1. **Get Your Unique Supermemory URL**
+   - Visit: https://app.supermemory.ai
    - Sign up for a free account (no credit card required)
-   - You'll get a unique user ID automatically
+   - After signing up, you'll receive a **unique URL** for your Supermemory instance
+   - Copy this URL (it will look something like: `https://mcp.supermemory.ai/YOUR_UNIQUE_ID`)
 
 2. **Configure in Augment VS Code**
    - Open VS Code
-   - Click the Augment icon in the sidebar
-   - Click the hamburger menu (☰) in the upper right
-   - Select "Settings"
-   - Navigate to the "MCP" tab
-   - Click "+ Add remote MCP"
+   - Click the **Augment icon** in the sidebar
+   - Click the **hamburger menu (☰)** in the upper right
+   - Select **"Settings"**
+   - Navigate to the **"MCP"** tab
+   - Click **"Import from JSON"**
 
-3. **Add Supermemory Configuration**
-   - **Connection Type**: Select "SSE" (Server-Sent Events)
-   - **Name**: `supermemory`
-   - **URL**: `https://mcp.supermemory.ai/sse`
-   - Click "Save"
+3. **Paste This JSON Configuration**
+
+   Replace `YOUR_UNIQUE_URL` with the URL you got from step 1:
+
+   ```json
+   {
+     "mcpServers": {
+       "supermemory": {
+         "command": "npx",
+         "args": ["-y", "mcp-remote", "YOUR_UNIQUE_URL"]
+       }
+     }
+   }
+   ```
+
+   **Example** (with a sample URL):
+   ```json
+   {
+     "mcpServers": {
+       "supermemory": {
+         "command": "npx",
+         "args": ["-y", "mcp-remote", "https://mcp.supermemory.ai/abc123xyz"]
+       }
+     }
+   }
+   ```
 
 4. **Verify Connection**
    - The Supermemory server should appear in your MCP servers list
-   - Status should show as "Connected"
+   - Status should show as "Connected" (green dot ✅)
    - You can now use Supermemory in your Agent conversations
 
 **Using Supermemory:**

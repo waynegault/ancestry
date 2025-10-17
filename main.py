@@ -2117,182 +2117,182 @@ def main_module_tests() -> bool:
         suite.run_test(
             test_name="menu(), main(), clear_log_file(), action imports",
             test_func=_test_module_initialization,
-            test_description="Module initialization and core function availability",
+            test_summary="Module initialization and core function availability",
             method_description="Testing availability of main functions and action module imports",
-            expected_behavior="All core functions are available and action modules are properly imported",
+            expected_outcome="All core functions are available and action modules are properly imported",
         )
 
         suite.run_test(
             test_name="config, logger, SessionManager, database models",
             test_func=_test_configuration_availability,
-            test_description="Configuration and database component availability",
+            test_summary="Configuration and database component availability",
             method_description="Testing configuration instance and database model imports",
-            expected_behavior="Configuration and database components are properly available",
+            expected_outcome="Configuration and database components are properly available",
         )
 
         # CORE FUNCTIONALITY TESTS
         suite.run_test(
             test_name="clear_log_file() function logic and return values",
             test_func=_test_clear_log_file_function,
-            test_description="Log file clearing functionality and return structure",
+            test_summary="Log file clearing functionality and return structure",
             method_description="Testing clear_log_file function execution and return tuple structure",
-            expected_behavior="Function executes properly and returns appropriate tuple structure",
+            expected_outcome="Function executes properly and returns appropriate tuple structure",
         )
 
         suite.run_test(
             test_name="main() function structure and signature",
             test_func=_test_main_function_structure,
-            test_description="Main function structure and parameter requirements",
+            test_summary="Main function structure and parameter requirements",
             method_description="Testing main function callable status and parameter signature",
-            expected_behavior="Main function has proper structure and takes no parameters",
+            expected_outcome="Main function has proper structure and takes no parameters",
         )
 
         suite.run_test(
             test_name="menu() system and action function access",
             test_func=_test_menu_system_components,
-            test_description="Menu system components and action function accessibility",
+            test_summary="Menu system components and action function accessibility",
             method_description="Testing menu function and its access to all action functions",
-            expected_behavior="Menu system has access to all required action functions",
+            expected_outcome="Menu system has access to all required action functions",
         )
 
         suite.run_test(
             test_name="coord(), InboxProcessor(), send_messages_to_matches(), process_productive_messages(), run_action10(), run_action11()",
             test_func=_test_action_function_availability,
-            test_description="All action functions are properly imported and callable",
+            test_summary="All action functions are properly imported and callable",
             method_description="Testing callable status of all action module functions",
-            expected_behavior="All action functions are available and callable",
+            expected_outcome="All action functions are available and callable",
         )
 
         suite.run_test(
             test_name="backup_database(), db_transn(), database models",
             test_func=_test_database_operations,
-            test_description="Database operation functions and model availability",
+            test_summary="Database operation functions and model availability",
             method_description="Testing database functions and model imports",
-            expected_behavior="Database operations and models are properly available",
+            expected_outcome="Database operations and models are properly available",
         )
 
         suite.run_test(
             test_name="reset_db_actn() integration and method availability",
             test_func=_test_reset_db_actn_integration,
-            test_description="Database reset function integration and required method verification",
+            test_summary="Database reset function integration and required method verification",
             method_description="Testing reset_db_actn function for proper SessionManager and DatabaseManager method access",
-            expected_behavior="reset_db_actn can access all required methods without AttributeError",
+            expected_outcome="reset_db_actn can access all required methods without AttributeError",
         )
 
         # EDGE CASE TESTS
         suite.run_test(
             test_name="Edge case handling and module import validation",
             test_func=_test_edge_case_handling,
-            test_description="Edge cases and import validation scenarios",
+            test_summary="Edge cases and import validation scenarios",
             method_description="Testing edge conditions and module import status",
-            expected_behavior="Edge cases are handled and imports are properly validated",
+            expected_outcome="Edge cases are handled and imports are properly validated",
         )
 
         suite.run_test(
             test_name="Import error scenarios and required module presence",
             test_func=_test_import_error_handling,
-            test_description="Import error handling and required module validation",
+            test_summary="Import error handling and required module validation",
             method_description="Testing essential module imports and availability",
-            expected_behavior="All essential modules are imported and available",
+            expected_outcome="All essential modules are imported and available",
         )
 
         # INTEGRATION TESTS
         suite.run_test(
             test_name="SessionManager integration and method availability",
             test_func=_test_session_manager_integration,
-            test_description="SessionManager integration with main application",
+            test_summary="SessionManager integration with main application",
             method_description="Testing SessionManager availability and method access",
-            expected_behavior="SessionManager integrates properly with required methods",
+            expected_outcome="SessionManager integrates properly with required methods",
         )
 
         suite.run_test(
             test_name="Logging system integration and method availability",
             test_func=_test_logging_integration,
-            test_description="Logging system integration with main application",
+            test_summary="Logging system integration with main application",
             method_description="Testing logger availability and all required logging methods",
-            expected_behavior="Logging system is properly integrated with all methods available",
+            expected_outcome="Logging system is properly integrated with all methods available",
         )
 
         suite.run_test(
             test_name="Configuration system integration and object access",
             test_func=_test_configuration_integration,
-            test_description="Configuration system integration with main application",
+            test_summary="Configuration system integration with main application",
             method_description="Testing config availability and object structure",
-            expected_behavior="Configuration system is properly integrated and accessible",
+            expected_outcome="Configuration system is properly integrated and accessible",
         )
 
         suite.run_test(
             test_name="Configuration validation system from Action 6 lessons",
             test_func=_test_validate_action_config,
-            test_description="Configuration validation system prevents Action 6-style failures",
+            test_summary="Configuration validation system prevents Action 6-style failures",
             method_description="Testing validate_action_config() function validates .env settings and rate limiting",
-            expected_behavior="Configuration validation function works correctly and returns boolean result",
+            expected_outcome="Configuration validation function works correctly and returns boolean result",
         )
 
         suite.run_test(
             test_name="Database system integration and transaction management",
             test_func=_test_database_integration,
-            test_description="Database system integration with main application",
+            test_summary="Database system integration with main application",
             method_description="Testing database functions and model accessibility",
-            expected_behavior="Database system is properly integrated with transaction support",
+            expected_outcome="Database system is properly integrated with transaction support",
         )
 
         suite.run_test(
             test_name="All action function integration with main application",
             test_func=_test_action_integration,
-            test_description="Action functions integrate properly with main application",
+            test_summary="Action functions integrate properly with main application",
             method_description="Testing action function availability and callable status",
-            expected_behavior="All action functions integrate properly and are callable",
+            expected_outcome="All action functions integrate properly and are callable",
         )
 
         # PERFORMANCE TESTS
         suite.run_test(
             test_name="Module import and reload performance",
             test_func=_test_import_performance,
-            test_description="Import performance and module caching efficiency",
+            test_summary="Import performance and module caching efficiency",
             method_description="Testing module import and reload times for performance",
-            expected_behavior="Module imports and reloads complete within reasonable time limits",
+            expected_outcome="Module imports and reloads complete within reasonable time limits",
         )
 
         suite.run_test(
             test_name="Memory usage efficiency and global variable management",
             test_func=_test_memory_efficiency,
-            test_description="Memory usage efficiency and resource management",
+            test_summary="Memory usage efficiency and resource management",
             method_description="Testing module memory usage and global variable count",
-            expected_behavior="Memory usage is reasonable and global variables are controlled",
+            expected_outcome="Memory usage is reasonable and global variables are controlled",
         )
 
         suite.run_test(
             test_name="Function call performance and responsiveness",
             test_func=_test_function_call_performance,
-            test_description="Function call performance and execution speed",
+            test_summary="Function call performance and execution speed",
             method_description="Testing basic function call performance with multiple iterations",
-            expected_behavior="Function calls execute efficiently within performance limits",
+            expected_outcome="Function calls execute efficiently within performance limits",
         )
 
         # ERROR HANDLING TESTS
         suite.run_test(
             test_name="main() error handling structure and exception coverage",
             test_func=_test_error_handling_structure,
-            test_description="Error handling structure in main function",
+            test_summary="Error handling structure in main function",
             method_description="Testing main function for proper try-except-finally structure",
-            expected_behavior="Main function has comprehensive error handling structure",
+            expected_outcome="Main function has comprehensive error handling structure",
         )
 
         suite.run_test(
             test_name="Cleanup procedures and resource management",
             test_func=_test_cleanup_procedures,
-            test_description="Cleanup procedures and resource management implementation",
+            test_summary="Cleanup procedures and resource management implementation",
             method_description="Testing cleanup code presence and resource management",
-            expected_behavior="Proper cleanup procedures are implemented for resource management",
+            expected_outcome="Proper cleanup procedures are implemented for resource management",
         )
 
         suite.run_test(
             test_name="Exception handling coverage and logging integration",
             test_func=_test_exception_handling_coverage,
-            test_description="Exception handling coverage and error logging",
+            test_summary="Exception handling coverage and error logging",
             method_description="Testing exception handling scope and logging integration",
-            expected_behavior="Exception handling covers expected scenarios with proper logging",
+            expected_outcome="Exception handling covers expected scenarios with proper logging",
         )
 
     return suite.finish_suite()
