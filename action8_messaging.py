@@ -2287,24 +2287,6 @@ def _process_single_person(
     dna_match = None
     new_log_entry: Optional[ConversationLog] = None  # Prepared log object
     person_update: Optional[tuple[int, PersonStatusEnum]] = None  # Staged status update
-    datetime.now(timezone.utc)  # Consistent timestamp for checks
-    datetime.min.replace(tzinfo=timezone.utc)  # For comparisons
-
-    # Processing person (removed verbose debug logging)
-    # Debug-only: log a quality summary of any extracted genealogical data attached to the person
-    try:
-        # Import locally to avoid module-level dependency if file moves
-        if hasattr(person, 'extracted_genealogical_data'):
-            getattr(person, 'extracted_genealogical_data', {}) or {}
-            # Quality summary (removed verbose debug logging)
-            pass
-    except Exception:
-        # Best-effort logging only; never fail processing due to QA summary issues
-        # Skipped quality summary logging (removed verbose debug)
-        pass
-    # Optional: Log latest log details for debugging
-    # if latest_in_log: logger.debug(f"  Latest IN: {latest_in_log.latest_timestamp} ({latest_in_log.ai_sentiment})") else: logger.debug("  Latest IN: None")
-    # if latest_out_log: logger.debug(f"  Latest OUT: {latest_out_log.latest_timestamp} ({getattr(latest_out_log.message_type, 'type_name', 'N/A')}, {latest_out_log.script_message_status})") else: logger.debug("  Latest OUT: None")
 
     try:  # Main processing block for this person
         # --- Step 1: Check Person Status for Eligibility ---
@@ -2371,17 +2353,12 @@ def _process_single_person(
 
     # --- Step 8: Handle clean exits via StopIteration ---
     except StopIteration as si:
-        status_val = (
-            str(si.value) if si.value else "skipped"
-        )  # Get status string from exception value
-        # logger.debug(f"{log_prefix}: Processing stopped cleanly with status '{status_val}'.")
-        return None, None, status_val  # Return None for updates, status string
+        status_val = str(si.value) if si.value else "skipped"
+        return None, None, status_val
     # --- Step 9: Handle unexpected errors ---
     except Exception as e:
-        logger.error(
-            f"Unexpected critical error processing {log_prefix}: {e}", exc_info=True
-        )
-        return None, None, "error"  # Return None, None, 'error'
+        logger.error(f"Unexpected critical error processing {log_prefix}: {e}", exc_info=True)
+        return None, None, "error"
 
 
 # End of _process_single_person
