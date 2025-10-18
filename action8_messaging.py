@@ -3421,6 +3421,7 @@ def _test_main_function_with_dry_run() -> bool:
         # Call the main function
         result = send_messages_to_matches(sm)
         assert isinstance(result, bool), f"Expected bool return, got {type(result).__name__}"
+        assert result is True, f"Expected send_messages_to_matches() to return True, got {result}"
         logger.info(f"✅ send_messages_to_matches() returned: {result}")
 
         return True
@@ -3455,11 +3456,9 @@ def _test_database_message_creation() -> bool:
         final_count = db_session.query(ConversationLog).count()
         logger.info(f"Final ConversationLog count: {final_count}")
 
-        # In dry_run mode, messages should be created
-        if final_count > initial_count:
-            logger.info(f"✅ Messages created: {final_count - initial_count} new entries")
-        else:
-            logger.info("ℹ️ No new messages created (may be expected if no eligible candidates)")
+        # In dry_run mode, messages MUST be created when there are eligible candidates
+        assert final_count > initial_count, f"Expected messages to be created in database, but count stayed at {initial_count}. This indicates send_messages_to_matches() failed to create messages."
+        logger.info(f"✅ Messages created: {final_count - initial_count} new entries")
 
         sm.return_session(db_session)
         return True
@@ -3495,16 +3494,16 @@ def _test_dry_run_mode_no_actual_send() -> bool:
         # Check that messages were created but not sent
         final_count = db_session.query(ConversationLog).count()
 
-        if final_count > initial_count:
-            # Get the new messages
-            new_logs = db_session.query(ConversationLog).order_by(ConversationLog.id.desc()).limit(final_count - initial_count).all()
-            for log in new_logs:
-                # In dry_run mode, messages should be marked as simulated or have special status
-                logger.info(f"   Message created: {log.id} (status: {log.status if hasattr(log, 'status') else 'N/A'})")
+        # In dry_run mode with eligible candidates, messages MUST be created
+        assert final_count > initial_count, f"Expected messages to be created in dry_run mode, but count stayed at {initial_count}. This indicates send_messages_to_matches() failed."
 
-            logger.info(f"✅ Dry-run mode: {final_count - initial_count} messages created but not sent")
-        else:
-            logger.info("ℹ️ No messages created (may be expected if no eligible candidates)")
+        # Get the new messages
+        new_logs = db_session.query(ConversationLog).order_by(ConversationLog.id.desc()).limit(final_count - initial_count).all()
+        for log in new_logs:
+            # In dry_run mode, messages should be marked as simulated or have special status
+            logger.info(f"   Message created: {log.id} (status: {log.status if hasattr(log, 'status') else 'N/A'})")
+
+        logger.info(f"✅ Dry-run mode: {final_count - initial_count} messages created but not sent")
 
         sm.return_session(db_session)
         return True
