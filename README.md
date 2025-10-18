@@ -97,6 +97,39 @@ python run_all_tests.py
 
 ## Recent Fixes & Improvements
 
+### Action 8 Integration Tests & Transaction Fix (October 18, 2025)
+
+**Problem**: Action 8 integration tests were failing due to nested database transactions and processing too much data.
+
+**Issues Fixed**:
+
+1. **Nested Transaction Error** - "A transaction is already begun on this Session"
+   - Root cause: `_safe_commit_with_rollback()` was wrapping `commit_bulk_data()` in `session.begin()`
+   - `commit_bulk_data()` already manages its own transaction via `db_transn()`
+   - Solution: Removed the outer `session.begin()` wrapper to prevent nested transactions
+   - Result: Database commits now work correctly
+
+2. **Slow Integration Tests** - Tests were processing all 14,735 candidates
+   - Root cause: Tests called `send_messages_to_matches()` which processes entire candidate list
+   - Solution: Limited test candidates to 5 for quick validation
+   - Result: Tests now complete in ~0.4s each instead of hanging
+
+**Changes Made**:
+- `action8_messaging.py` line 946-973: Removed nested transaction wrapper
+- `action8_messaging.py` line 3434-3621: Updated tests 17-18 to use limited candidate set
+
+**Test Results**:
+- ✅ All 20 Action 8 tests PASS
+- ✅ Full test suite: 63/63 modules PASS (100% success rate)
+- ✅ No regressions in other modules
+
+**Git Commits**:
+```
+c3d668f - Fix Action 8: remove nested transaction error and limit test candidates to 5 for faster testing
+```
+
+---
+
 ### Code Refactoring Initiative (October 2025)
 
 **Objective**: Apply DRY (Don't Repeat Yourself) principles across the codebase to improve maintainability and reduce duplication.
