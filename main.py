@@ -310,7 +310,7 @@ def _prepare_action_arguments(action_func, session_manager: SessionManager, args
     action_name = action_func.__name__
 
     # Handle keyword args specifically for coord function
-    if action_name in ["coord", "gather_DNA_matches"] and "start" in func_sig.parameters:
+    if action_name in ["coord", "gather_dna_matches"] and "start" in func_sig.parameters:
         start_val = 1
         int_args = [a for a in args if isinstance(a, int)]
         if int_args:
@@ -320,7 +320,7 @@ def _prepare_action_arguments(action_func, session_manager: SessionManager, args
         coord_args = []
         if pass_session_manager:
             coord_args.append(session_manager)
-        if action_name == "gather_DNA_matches" and "config_schema" in func_sig.parameters:
+        if action_name == "gather_dna_matches" and "config_schema" in func_sig.parameters:
             coord_args.append(config)
 
         return coord_args, kwargs_for_action
@@ -595,7 +595,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 def _run_action6_gather(session_manager) -> bool:
     """Run Action 6: Gather Matches."""
     logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-    gather_result = gather_DNA_matches(session_manager, config, start=1)
+    gather_result = gather_dna_matches(session_manager, config, start=1)
     if gather_result is False:
         logger.error("Action 6 FAILED.")
         print("ERROR: Match gathering failed. Check logs for details.")
@@ -1099,8 +1099,8 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 # End Action 5
 
 
-# Action 6 (gather_DNA_matches wrapper)
-def gather_DNA_matches(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:
+# Action 6 (gather_dna_matches wrapper)
+def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1130,12 +1130,12 @@ def gather_DNA_matches(session_manager: SessionManager, config_schema: Optional[
         print("✓ Match gathering completed successfully.")
         return True
     except Exception as e:
-        logger.error(f"Error during gather_DNA_matches: {e}", exc_info=True)
+        logger.error(f"Error during gather_dna_matches: {e}", exc_info=True)
         print(f"ERROR: Exception during match gathering: {e}")
         return False
 
 
-# End of gather_DNA_matches
+# End of gather_dna_matches
 
 
 
@@ -1550,7 +1550,7 @@ def _handle_action6_with_start_page(choice: str, session_manager: Any, config: A
             logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
             print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
 
-    exec_actn(gather_DNA_matches, session_manager, "6", False, config, start_val)
+    exec_actn(gather_dna_matches, session_manager, "6", False, config, start_val)
     return True
 
 

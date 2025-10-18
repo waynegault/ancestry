@@ -303,6 +303,68 @@ def _log_page_complete(new: int, updated: int, skipped: int, errors: int, page_n
         logger.info(f"Page {page_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
 
 
+def _update_api_total_pages(page_total_pages: Optional[int], api_total_pages: Optional[int], max_pages: int) -> Optional[int]:
+    """Update API total pages if available."""
+    if page_total_pages is not None and api_total_pages is None:
+        if max_pages == 0:
+            logger.info(f"API reports {page_total_pages} total pages available")
+        return page_total_pages
+    return api_total_pages
+
+
+def _process_single_page(
+    page_num: int,
+    session_manager: SessionManager,
+    driver: Any,
+    db_manager: DatabaseManager,
+    my_uuid: str,
+    my_tree_id: Optional[str],
+    csrf_token: str,
+    max_pages: int,
+    batch_size: int,
+    end_page: float,
+    api_total_pages: Optional[int],
+    total_new: int,
+    total_updated: int,
+    total_skipped: int,
+    total_errors: int,
+) -> tuple[int, int, int, int, int, int, bool, str, Optional[int]]:
+    """
+    Process a single page and return updated statistics.
+
+    Returns:
+        (new, updated, skipped, errors, deaths, recoveries, should_break, break_reason, updated_api_total_pages)
+    """
+    _log_page_header(page_num, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
+
+    matches, deaths, recoveries, should_break, reason, page_total_pages, is_last_page = _fetch_and_validate_page_data(
+        driver, session_manager, my_uuid, page_num, csrf_token, max_pages
+    )
+
+    api_total_pages = _update_api_total_pages(page_total_pages, api_total_pages, max_pages)
+
+    should_break_loop, should_skip_to_next, break_reason = _handle_page_fetch_result(
+        should_break, reason, matches, is_last_page, page_num, end_page, max_pages
+    )
+
+    if should_break_loop:
+        return 0, 0, 0, 0, deaths, recoveries, True, break_reason, api_total_pages
+
+    if should_skip_to_next:
+        return 0, 0, 0, 0, deaths, recoveries, False, "", api_total_pages
+
+    new, updated, skipped, errors, page_deaths, page_recoveries, page_incomplete, page_reason = _process_page_batches(
+        matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
+    )
+
+    _log_page_complete(new, updated, skipped, errors, page_num)
+
+    if page_incomplete:
+        return new, updated, skipped, errors, deaths + page_deaths, recoveries + page_recoveries, True, page_reason, api_total_pages
+
+    return new, updated, skipped, errors, deaths + page_deaths, recoveries + page_recoveries, False, "", api_total_pages
+
+
 def _process_pages_loop(
     session_manager: SessionManager,
     driver: Any,
@@ -317,8 +379,6 @@ def _process_pages_loop(
     """Process all pages and return statistics."""
     total_new = total_updated = total_skipped = total_errors = 0
     session_deaths = session_recoveries = 0
-    run_incomplete = False
-    incomplete_reason = ""
     api_total_pages: Optional[int] = None
 
     end_page = float('inf') if max_pages == 0 else start_page + max_pages - 1
@@ -326,62 +386,33 @@ def _process_pages_loop(
         logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
 
     page_num = start_page
-    pages_processed = 0
 
-    while True:
-        if max_pages > 0 and page_num > end_page:
-            break
-
+    while max_pages == 0 or page_num <= end_page:
         should_continue, deaths, recoveries, reason = _handle_session_health_check(session_manager)
         session_deaths += deaths
         session_recoveries += recoveries
         if not should_continue:
             return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, True, reason
 
-        _log_page_header(page_num, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
-
-        matches, deaths, recoveries, should_break, reason, page_total_pages, is_last_page = _fetch_and_validate_page_data(
-            driver, session_manager, my_uuid, page_num, csrf_token, max_pages
+        new, updated, skipped, errors, deaths, recoveries, should_break, break_reason, api_total_pages = _process_single_page(
+            page_num, session_manager, driver, db_manager, my_uuid, my_tree_id, csrf_token,
+            max_pages, batch_size, end_page, api_total_pages, total_new, total_updated, total_skipped, total_errors
         )
-
-        if page_total_pages is not None and api_total_pages is None:
-            api_total_pages = page_total_pages
-            if max_pages == 0:
-                logger.info(f"API reports {api_total_pages} total pages available")
 
         session_deaths += deaths
         session_recoveries += recoveries
 
-        should_break_loop, should_skip_to_next, break_reason = _handle_page_fetch_result(
-            should_break, reason, matches, is_last_page, page_num, end_page, max_pages
-        )
-
-        if should_break_loop:
+        if should_break:
             return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, bool(break_reason), break_reason
-
-        if should_skip_to_next:
-            page_num += 1
-            pages_processed += 1
-            continue
-
-        new, updated, skipped, errors, deaths, recoveries, page_incomplete, page_reason = _process_page_batches(
-            matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
-        )
 
         total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries = _update_page_totals(
             total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries,
-            new, updated, skipped, errors, deaths, recoveries
+            new, updated, skipped, errors, 0, 0
         )
 
-        _log_page_complete(new, updated, skipped, errors, page_num)
-
-        if page_incomplete:
-            return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, True, page_reason
-
         page_num += 1
-        pages_processed += 1
 
-    return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
+    return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, False, ""
 
 
 def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int, total_errors: int, total_run_time: float, run_incomplete: bool, incomplete_reason: str, session_deaths: int, session_recoveries: int, start_page: int, max_pages: int, session_manager: SessionManager) -> None:
@@ -576,7 +607,7 @@ def _fetch_match_details_parallel(
         result['match_details'] = _fetch_match_details(session_manager, my_uuid, match["uuid"])
 
         if match.get("profile_id"):
-            result['profile_details'] = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"])
+            result['profile_details'] = _fetch_profile_details(session_manager, match["profile_id"])
 
         if match.get("in_tree", False):
             result['badge_details'] = _fetch_badge_details(session_manager, my_uuid, match["uuid"])
@@ -700,7 +731,7 @@ def _get_match_details(match: dict, skip_details: bool, match_details_map: dict,
 
     # Sequential processing: fetch details now
     match_details = _fetch_match_details(session_manager, my_uuid, match["uuid"])
-    profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
+    profile_details = _fetch_profile_details(session_manager, match["profile_id"]) if match["profile_id"] else {}
     badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
     predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
     ethnicity_data = fetch_ethnicity_comparison(session_manager, my_uuid, match["uuid"]) or {}
@@ -1028,7 +1059,7 @@ def _fetch_match_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function]
+def _fetch_profile_details(session_manager: SessionManager, profile_id: str) -> dict:  # type: ignore[unused-function]
     """Fetch profile details from Profile Details API."""
     url = urljoin(
         config_schema.api.base_url,
@@ -1823,7 +1854,7 @@ def _test_profile_details_api() -> bool:
         logger.info(f"Testing Profile Details API with profile: {profile_id}")
 
         # Fetch profile details
-        details = _fetch_profile_details(sm, profile_id, match_uuid)
+        details = _fetch_profile_details(sm, profile_id)
         assert isinstance(details, dict), "Profile details should be a dictionary"
 
         # Validate key fields
@@ -2096,21 +2127,20 @@ def action6_module_tests() -> bool:
     if _test_session_manager is not None:
         try:
             # Suppress all warnings and errors during cleanup
-            import os
             import sys
+            from pathlib import Path
 
             # Redirect stderr temporarily to suppress exception messages
             original_stderr = sys.stderr
-            sys.stderr = open(os.devnull, 'w')
-
-            try:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore")
-                    _test_session_manager.close_sess(keep_db=False)
-            finally:
-                # Restore stderr
-                sys.stderr.close()
-                sys.stderr = original_stderr
+            with Path('/dev/null' if sys.platform != 'win32' else 'nul').open('w') as devnull:
+                sys.stderr = devnull
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore")
+                        _test_session_manager.close_sess(keep_db=False)
+                finally:
+                    # Restore stderr
+                    sys.stderr = original_stderr
         except Exception:
             # Silently ignore all cleanup errors
             pass
@@ -2143,7 +2173,9 @@ if __name__ == "__main__":
         success = run_comprehensive_tests()
 
         # Redirect stderr to devnull before exit to suppress Chrome destructor exceptions
-        sys.stderr = open(os.devnull, 'w')
+        from pathlib import Path
+        devnull_path = Path('/dev/null' if sys.platform != 'win32' else 'nul')
+        sys.stderr = devnull_path.open('w')
         sys.exit(0 if success else 1)
     except Exception as e:
         # Restore stderr for any unexpected errors

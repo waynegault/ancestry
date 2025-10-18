@@ -645,12 +645,12 @@ def _test_general_exception_handling() -> bool:
 
 
 def _test_should_skip_cookie_check_action6() -> bool:
-    """Test that Action 6 (gather_DNA_matches) skips cookie check."""
+    """Test that Action 6 (gather_dna_matches) skips cookie check."""
     validator = SessionValidator()
 
-    # Test with 'gather_DNA_matches' action name
-    should_skip, reason = validator._should_skip_cookie_check("gather_DNA_matches")
-    assert should_skip is True, "Should skip cookie check for gather_DNA_matches"
+    # Test with 'gather_dna_matches' action name
+    should_skip, reason = validator._should_skip_cookie_check("gather_dna_matches")
+    assert should_skip is True, "Should skip cookie check for gather_dna_matches"
     assert reason is not None and "Action 6" in reason, f"Reason should mention Action 6, got: {reason}"
 
     # Test with 'coord' action name (legacy)
@@ -731,11 +731,11 @@ def _test_should_skip_cookie_check_case_insensitive() -> bool:
     assert should_skip is True, "Should skip cookie check for uppercase action name"
 
     # Test mixed case
-    should_skip, reason = validator._should_skip_cookie_check("Gather_DNA_Matches")
+    should_skip, reason = validator._should_skip_cookie_check("Gather_dna_Matches")
     assert should_skip is True, "Should skip cookie check for mixed case action name"
 
     # Test with setup suffix (as seen in logs)
-    should_skip, reason = validator._should_skip_cookie_check("gather_DNA_matches - Setup")
+    should_skip, reason = validator._should_skip_cookie_check("gather_dna_matches - Setup")
     assert should_skip is True, "Should skip cookie check for action name with suffix"
 
     return True
@@ -818,8 +818,8 @@ def session_validator_module_tests() -> bool:
         suite.run_test(
             "Skip Cookie Check - Action 6",
             _test_should_skip_cookie_check_action6,
-            "Action 6 (gather_DNA_matches) correctly skips cookie check",
-            "Test that both 'gather_DNA_matches' and 'coord' action names skip cookie check",
+            "Action 6 (gather_dna_matches) correctly skips cookie check",
+            "Test that both 'gather_dna_matches' and 'coord' action names skip cookie check",
             "Test cookie check skip logic for Action 6 with multiple action name patterns",
         )
         suite.run_test(
