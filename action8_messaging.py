@@ -2210,14 +2210,11 @@ def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
 
 
 def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:
-    """Convert log object to dict and update status if conversion fails."""
+    """Convert log object to dict."""
     if not new_log_object:
         return None, "unchanged"
-
     log_dict = _convert_log_object_to_dict(new_log_object)
-    if log_dict is None:
-        return None, "error"
-    return log_dict, "unchanged"
+    return (log_dict, "unchanged") if log_dict else (None, "error")
 
 def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list) -> int:
     """Handle sent status updates."""
@@ -2225,10 +2222,7 @@ def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_ad
         db_logs_to_add_dicts.append(log_dict)
     return sent_count + 1
 
-def _handle_acked_status(
-    acked_count: int, log_dict: Optional[dict], person_update_tuple,
-    db_logs_to_add_dicts: list, person_updates: dict
-) -> int:
+def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_update_tuple, db_logs_to_add_dicts: list, person_updates: dict) -> int:
     """Handle acknowledged status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
@@ -2236,15 +2230,7 @@ def _handle_acked_status(
         person_updates[person_update_tuple[0]] = person_update_tuple[1]
     return acked_count + 1
 
-def _handle_error_or_skip_status(
-    status: str,
-    counters: 'BatchCounters',
-    log_dict: Optional[dict],
-    batch_data: 'MessagingBatchData',
-    error_categorizer,
-    person,
-    overall_success: bool
-) -> tuple[int, int, bool]:
+def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dict: Optional[dict], batch_data: 'MessagingBatchData', error_categorizer, person, overall_success: bool) -> tuple[int, int, bool]:
     """Handle error or skipped status updates."""
     category, error_type = error_categorizer.categorize_status(status)
 
@@ -2256,14 +2242,10 @@ def _handle_error_or_skip_status(
     if category == 'error':
         if error_type != 'business_logic_generic':
             severity = 'critical' if 'cascade' in error_type or 'authentication' in error_type else 'warning'
-            error_categorizer.trigger_monitoring_alert(
-                alert_type=error_type,
-                message=f"Technical error processing {person.username}: {status}",
-                severity=severity
-            )
+            error_categorizer.trigger_monitoring_alert(alert_type=error_type, message=f"Technical error: {status}", severity=severity)
         return counters.skipped, counters.errors + 1, False
 
-    logger.warning(f"Unknown status category for {person.username}: {status}")
+    logger.warning(f"Unknown status for {person.username}: {status}")
     return counters.skipped, counters.errors + 1, False
 
 def _update_counters_and_collect_data(
