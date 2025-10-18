@@ -1,6 +1,11 @@
 """Quick script to check backfill status."""
 from sqlalchemy import text
 from core.database_manager import DatabaseManager
+from setup_ethnicity_tracking import load_ethnicity_metadata
+
+# Load metadata to get current column names
+metadata = load_ethnicity_metadata()
+regions = metadata.get("tree_owner_regions", [])
 
 db_manager = DatabaseManager()
 
@@ -8,25 +13,32 @@ with db_manager.get_session_context() as session:
     # Total matches
     result = session.execute(text("SELECT COUNT(*) FROM dna_match")).fetchone()
     total_matches = result[0]
-    
+
+    # Build WHERE clause for matches with any ethnicity data
+    where_clauses = []
+    for region in regions:
+        col = region["column_name"]
+        where_clauses.append(f"({col} IS NOT NULL AND {col} > 0)")
+
+    where_sql = " OR ".join(where_clauses) if where_clauses else "1=0"
+
     # Matches with ethnicity data
-    result = session.execute(text(
-        "SELECT COUNT(*) FROM dna_match WHERE ethnicity_08302 IS NOT NULL AND ethnicity_08302 > 0"
-    )).fetchone()
+    result = session.execute(text(f"""
+        SELECT COUNT(*) FROM dna_match WHERE {where_sql}
+    """)).fetchone()
     matches_with_ethnicity = result[0]
-    
+
     # Matches without ethnicity data
     matches_without_ethnicity = total_matches - matches_with_ethnicity
-    
+
     # Sample of matches with ethnicity data
-    result = session.execute(text(
-        """
-        SELECT dm.ethnicity_08302, dm.ethnicity_06842, dm.ethnicity_08103, dm.ethnicity_06810
-        FROM dna_match dm
-        WHERE dm.ethnicity_08302 IS NOT NULL AND dm.ethnicity_08302 > 0
+    select_cols = ", ".join([region["column_name"] for region in regions])
+    result = session.execute(text(f"""
+        SELECT {select_cols}
+        FROM dna_match
+        WHERE {where_sql}
         LIMIT 10
-        """
-    )).fetchall()
+    """)).fetchall()
 
     print("=" * 80)
     print("BACKFILL STATUS")
@@ -39,9 +51,19 @@ with db_manager.get_session_context() as session:
     print("=" * 80)
     print("\nSample of matches with ethnicity data (first 10):")
     print("-" * 80)
-    print(f"{'08302 (84%)':<12} {'06842 (6%)':<12} {'08103 (6%)':<12} {'06810 (4%)':<12}")
+
+    # Print header with region names
+    header = ""
+    for region in regions:
+        name = region['name'][:18]  # Truncate long names
+        header += f"{name:<20} "
+    print(header)
     print("-" * 80)
+
     for row in result:
-        print(f"{row[0]:<12} {row[1]:<12} {row[2]:<12} {row[3]:<12}")
+        row_str = ""
+        for val in row:
+            row_str += f"{val or 0:<20} "
+        print(row_str)
     print("=" * 80)
 

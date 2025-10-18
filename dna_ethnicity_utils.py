@@ -84,19 +84,23 @@ def fetch_tree_owner_ethnicity_regions(
 
 
 def fetch_ethnicity_region_names(
-    session_manager: SessionManager, locale: str = "en-GB"
+    session_manager: SessionManager, region_keys: list[str], locale: str = "en-GB"
 ) -> Optional[dict[str, str]]:
     """
-    Fetch the mapping of region keys to region names.
-    
+    Fetch the mapping of region keys to region names from public API.
+
+    This endpoint requires POST with a JSON body containing the region keys.
+
     Args:
-        session_manager: Active SessionManager instance
+        session_manager: SessionManager for browser session (required for headers/cookies)
+        region_keys: List of region keys to fetch names for (e.g., ["08302", "06842"])
         locale: Locale for region names (default: en-GB)
-    
+
     Returns:
         Dict mapping region keys to region names, or None if failed
-        
-    Example response:
+
+    Example:
+        >>> fetch_ethnicity_region_names(sm, ["08302", "06842", "08103", "06810"])
         {
             "08103": "North East England",
             "08302": "North East Scotland",
@@ -108,22 +112,24 @@ def fetch_ethnicity_region_names(
         config_schema.api.base_url,
         f"dna/origins/public/ethnicity/2025/names?locale={locale}"
     )
-    
-    logger.debug(f"Fetching ethnicity region names from: {url}")
-    
+
+    logger.debug(f"Fetching ethnicity region names for {len(region_keys)} regions from: {url}")
+
+    # This is a POST request with JSON body containing the region keys
     response = _api_req(
         url=url,
         driver=session_manager.driver,
         session_manager=session_manager,
-        method="GET",
+        method="POST",
+        json_data=region_keys,  # Send list of region keys as JSON body
         use_csrf_token=False,
         api_description="Ethnicity Region Names API"
     )
-    
+
     if not response or not isinstance(response, dict):
         logger.error("Failed to fetch ethnicity region names")
         return None
-    
+
     logger.info(f"Successfully fetched {len(response)} ethnicity region names")
     return response
 
@@ -409,8 +415,8 @@ def _test_region_names_fetch() -> bool:
             logger.error("Failed to navigate to DNA matches page")
             return False
 
-        # Fetch region names
-        region_names = fetch_ethnicity_region_names(sm)
+        # Fetch region names from public API (no authentication needed)
+        region_names = fetch_ethnicity_region_names()
 
         if not region_names:
             logger.error("Failed to fetch region names")

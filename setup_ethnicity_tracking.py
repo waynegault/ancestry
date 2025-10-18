@@ -249,17 +249,17 @@ def setup_ethnicity_tracking() -> None:
         
         regions = ethnicity_data["regions"]
         logger.info(f"Found {len(regions)} ethnicity regions for tree owner")
-        
-        # Fetch region name mappings (optional - use region key if not available)
-        logger.info("Fetching ethnicity region names...")
-        region_names = fetch_ethnicity_region_names(sm)
+
+        # Fetch region names from public API
+        region_keys = [region["key"] for region in regions]
+        logger.info(f"Fetching ethnicity region names for {len(region_keys)} regions from public API...")
+        region_names = fetch_ethnicity_region_names(sm, region_keys)
 
         if not region_names:
-            logger.warning("Failed to fetch ethnicity region names - will use region keys instead")
-            # Create a fallback mapping using region keys
-            region_names = {region["key"]: region.get("name", region["key"]) for region in regions}
-        else:
-            logger.info(f"Fetched {len(region_names)} region name mappings")
+            logger.error("Failed to fetch region names from public API")
+            return
+
+        logger.info(f"Fetched {len(region_names)} region name mappings from public API")
 
         # Display tree owner's regions
         logger.info("\nTree Owner's DNA Ethnicity Regions:")

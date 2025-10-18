@@ -429,6 +429,142 @@ MAX_PAGES=0
 # Expected: ~16,000 people saved, ~67 hours (3 days)
 ```
 
+### DNA Ethnicity Tracking
+
+Action 6 now includes automatic DNA ethnicity region tracking, allowing you to see how much of each match's ethnicity overlaps with your own regions.
+
+#### What It Does
+
+Tracks ethnicity overlap between you and your DNA matches. For example:
+
+**Your DNA:**
+- North East Scotland: 84%
+- Southern Poland: 6%
+- North East England: 6%
+- Western Ukraine: 4%
+
+**Match's DNA (example):**
+- North East Scotland: 0%
+- Southern Poland: 16% ← **Overlap!**
+- North East England: 0%
+- Western Ukraine: 0%
+
+This helps identify which matches share specific regional ancestry with you.
+
+#### Setup (One-Time)
+
+1. **Run the setup script:**
+   ```bash
+   python setup_ethnicity_tracking.py
+   ```
+
+   This will:
+   - Fetch your DNA ethnicity regions from Ancestry
+   - Create database columns for each region
+   - Save configuration to `ethnicity_regions.json`
+
+2. **Backfill existing matches (optional):**
+   ```bash
+   python backfill_ethnicity_data.py
+   ```
+
+   This populates ethnicity data for all existing DNA matches.
+
+3. **Use Action 6 normally** - ethnicity data is now collected automatically!
+
+#### Database Schema
+
+The `dna_match` table is dynamically extended with columns for your ethnicity regions:
+
+```sql
+-- Example columns (based on your DNA regions):
+ALTER TABLE dna_match ADD COLUMN ethnicity_north_east_scotland INTEGER DEFAULT 0;
+ALTER TABLE dna_match ADD COLUMN ethnicity_southern_poland INTEGER DEFAULT 0;
+ALTER TABLE dna_match ADD COLUMN ethnicity_north_east_england INTEGER DEFAULT 0;
+ALTER TABLE dna_match ADD COLUMN ethnicity_western_ukraine INTEGER DEFAULT 0;
+```
+
+Each column stores the percentage (0-100) of that region in the match's DNA.
+
+#### API Endpoints Used
+
+1. **Tree Owner Ethnicity**: `/dna/origins/secure/tests/{test_guid}/v2/ethnicity`
+2. **Region Names**: `/dna/origins/public/ethnicity/2025/names?locale=en-GB`
+3. **Ethnicity Comparison**: `/discoveryui-matchesservice/api/compare/{your_guid}/with/{match_guid}/ethnicity`
+
+#### Example Queries
+
+**Find matches with >10% North East Scotland:**
+```sql
+SELECT p.name, dm.ethnicity_north_east_scotland
+FROM dna_match dm
+JOIN people p ON dm.people_id = p.id
+WHERE dm.ethnicity_north_east_scotland > 10
+ORDER BY dm.ethnicity_north_east_scotland DESC;
+```
+
+**Find matches with ANY ethnicity overlap:**
+```sql
+SELECT p.name,
+       dm.ethnicity_north_east_scotland,
+       dm.ethnicity_southern_poland,
+       dm.ethnicity_north_east_england,
+       dm.ethnicity_western_ukraine
+FROM dna_match dm
+JOIN people p ON dm.people_id = p.id
+WHERE dm.ethnicity_north_east_scotland > 0
+   OR dm.ethnicity_southern_poland > 0
+   OR dm.ethnicity_north_east_england > 0
+   OR dm.ethnicity_western_ukraine > 0;
+```
+
+#### Performance Impact
+
+- Setup: ~30 seconds (one-time)
+- Backfill: ~1 second per match (one-time)
+- Action 6: +0.5 seconds per match (minimal impact)
+
+The ethnicity API call is made in parallel with other match details, so the impact is minimal.
+
+#### Files
+
+- `dna_ethnicity_utils.py` - Core ethnicity utilities
+- `setup_ethnicity_tracking.py` - One-time setup script
+- `backfill_ethnicity_data.py` - Backfill script (can delete after use)
+- `ethnicity_regions.json` - Your region metadata (auto-generated)
+
+#### Testing
+
+Run the tests:
+```bash
+python dna_ethnicity_utils.py
+```
+
+Tests include:
+- Column name sanitization
+- Percentage extraction
+- Tree owner ethnicity fetch
+- Region names fetch
+- Ethnicity comparison
+
+#### Troubleshooting
+
+**"MY_UUID not found in .env file"**
+- Ensure `MY_UUID` is set in your .env file
+
+**"No ethnicity metadata found"**
+- Run `setup_ethnicity_tracking.py` first
+
+**"Failed to fetch tree owner ethnicity"**
+- Check Ancestry login credentials
+- Verify you have a DNA test on Ancestry
+- Try running setup again
+
+**Ethnicity data is all zeros**
+- This is normal - not all matches have ethnicity data
+- Match may not have a DNA test
+- Match may not have shared ethnicity data
+
 ---
 
 ## Architecture

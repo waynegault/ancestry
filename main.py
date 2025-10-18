@@ -61,24 +61,17 @@ def _load_and_validate_config_schema() -> Optional[Any]:
 
 def _check_processing_limits(config: Any) -> None:
     """Check essential processing limits and log warnings."""
-    if config.api.max_pages <= 0:
-        logger.warning("MAX_PAGES not set or invalid - actions may process unlimited pages")
+    # Note: MAX_PAGES=0 is valid (means unlimited), so no warning needed
     if config.batch_size <= 0:
         logger.warning("BATCH_SIZE not set or invalid - actions may use large batches")
-    if config.max_productive_to_process <= 0:
-        logger.warning("MAX_PRODUCTIVE_TO_PROCESS not set - actions may process unlimited items")
-    if config.max_inbox <= 0:
-        logger.warning("MAX_INBOX not set - actions may process unlimited inbox items")
+    # Note: MAX_PRODUCTIVE_TO_PROCESS=0 and MAX_INBOX=0 are valid (means unlimited)
 
 
-def _check_rate_limiting_settings(config: Any) -> None:
+def _check_rate_limiting_settings(config: Any) -> None:  # noqa: ARG001
     """Check rate limiting settings and log warnings."""
-    if config.api.requests_per_second > 1.0:
-        logger.warning(f"requests_per_second ({config.api.requests_per_second}) may be too aggressive - consider ≤1.0")
-    if config.api.retry_backoff_factor < 2.0:
-        logger.warning(f"retry_backoff_factor ({config.api.retry_backoff_factor}) may be too low - consider ≥2.0")
-    if config.api.initial_delay < 1.0:
-        logger.warning(f"initial_delay ({config.api.initial_delay}) may be too short - consider ≥1.0")
+    # Note: Rate limiting settings are user preferences - no warnings needed
+    # Users can adjust REQUESTS_PER_SECOND, INITIAL_DELAY, and BACKOFF_FACTOR as needed
+    pass
 
 
 def _log_configuration_summary(config: Any) -> None:
@@ -602,7 +595,6 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 def _run_action6_gather(session_manager) -> bool:
     """Run Action 6: Gather Matches."""
     logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
-    print("Starting DNA match gathering from page 1...")
     gather_result = gather_DNA_matches(session_manager, config, start=1)
     if gather_result is False:
         logger.error("Action 6 FAILED.")
@@ -1127,7 +1119,6 @@ def gather_DNA_matches(session_manager: SessionManager, config_schema: Optional[
         print("ERROR: Session not ready. Cannot gather matches.")
         return False
 
-    print(f"Gathering DNA Matches from page {start}...")
     try:
         # Call the imported function from action6
         result = coord(session_manager, start=start)
@@ -1559,7 +1550,6 @@ def _handle_action6_with_start_page(choice: str, session_manager: Any, config: A
             logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
             print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
 
-    print(f"Starting DNA match gathering from page {start_val}...")
     exec_actn(gather_DNA_matches, session_manager, "6", False, config, start_val)
     return True
 

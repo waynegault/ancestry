@@ -2,27 +2,27 @@
   "tree_owner_regions": [
     {
       "key": "08302",
-      "name": "08302",
+      "name": "North East Scotland",
       "percentage": 84,
-      "column_name": "ethnicity_08302"
+      "column_name": "ethnicity_north_east_scotland"
     },
     {
       "key": "06842",
-      "name": "06842",
+      "name": "Southern Poland",
       "percentage": 6,
-      "column_name": "ethnicity_06842"
+      "column_name": "ethnicity_southern_poland"
     },
     {
       "key": "08103",
-      "name": "08103",
+      "name": "North East England",
       "percentage": 6,
-      "column_name": "ethnicity_08103"
+      "column_name": "ethnicity_north_east_england"
     },
     {
       "key": "06810",
-      "name": "06810",
+      "name": "Western Ukraine",
       "percentage": 4,
-      "column_name": "ethnicity_06810"
+      "column_name": "ethnicity_western_ukraine"
     }
   ]
 }
