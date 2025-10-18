@@ -16,7 +16,9 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import json
 import re
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin
 
@@ -24,6 +26,24 @@ from urllib.parse import urljoin
 from config import config_schema
 from core.session_manager import SessionManager
 from utils import _api_req
+
+# === CONSTANTS ===
+ETHNICITY_METADATA_FILE = "ethnicity_regions.json"
+
+
+def load_ethnicity_metadata() -> dict[str, Any]:
+    """
+    Load ethnicity region metadata from JSON file.
+
+    Returns:
+        Dict containing tree_owner_regions list
+    """
+    metadata_path = Path(ETHNICITY_METADATA_FILE)
+    if not metadata_path.exists():
+        logger.warning(f"Ethnicity metadata file {ETHNICITY_METADATA_FILE} not found")
+        return {"tree_owner_regions": []}
+
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
 def fetch_tree_owner_ethnicity_regions(
@@ -304,7 +324,7 @@ def _test_extract_match_ethnicity_percentages() -> bool:
     return True
 
 
-def _test_tree_owner_ethnicity_fetch() -> bool:  # noqa: PLR0911
+def _test_tree_owner_ethnicity_fetch() -> bool:
     """Test fetching tree owner's ethnicity regions from API."""
     import os
 
@@ -377,7 +397,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:  # noqa: PLR0911
         sm.close_sess()
 
 
-def _test_region_names_fetch() -> bool:  # noqa: PLR0911
+def _test_region_names_fetch() -> bool:
     """Test fetching region name mappings from API."""
     sm = SessionManager()
 
@@ -436,7 +456,7 @@ def _test_region_names_fetch() -> bool:  # noqa: PLR0911
         sm.close_sess()
 
 
-def _test_ethnicity_comparison() -> bool:  # noqa: PLR0911
+def _test_ethnicity_comparison() -> bool:
     """Test fetching ethnicity comparison for a match."""
     import os
 

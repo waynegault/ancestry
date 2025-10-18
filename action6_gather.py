@@ -37,6 +37,7 @@ from database import create_or_update_dna_match, create_or_update_family_tree, c
 from dna_ethnicity_utils import (
     extract_match_ethnicity_percentages,
     fetch_ethnicity_comparison,
+    load_ethnicity_metadata,
 )
 from dna_utils import (
     fetch_in_tree_status,
@@ -44,7 +45,6 @@ from dna_utils import (
     get_csrf_token_for_dna_matches,
     nav_to_dna_matches_page,
 )
-from setup_ethnicity_tracking import load_ethnicity_metadata
 from utils import _api_req, format_name
 
 
@@ -198,7 +198,7 @@ def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, 
     return matches, 0, 0, False, "", total_pages, is_last_page
 
 
-def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:  # noqa: ARG001 (pages_processed kept for backward compatibility)
+def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:
     """Log page processing header."""
     # Add blank line before separator for readability
     logger.info("")
@@ -218,6 +218,51 @@ def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_
     cumulative_info = f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}"
     logger.info(f"{page_info} | {cumulative_info}")
     logger.info(f"{'='*80}")
+
+
+def _should_stop_processing(
+    page_num: int,
+    end_page: float,
+    max_pages: int,
+    is_last_page: bool,
+    matches: Optional[list],
+) -> tuple[bool, str]:
+    """Check if we should stop processing pages."""
+    if max_pages > 0 and page_num > end_page:
+        return True, "Reached max pages limit"
+
+    if not matches and is_last_page:
+        return True, "Reached last page (isLastPage=true)"
+
+    if is_last_page:
+        return True, "Reached last page according to API"
+
+    return False, ""
+
+
+def _update_page_totals(
+    total_new: int,
+    total_updated: int,
+    total_skipped: int,
+    total_errors: int,
+    session_deaths: int,
+    session_recoveries: int,
+    new: int,
+    updated: int,
+    skipped: int,
+    errors: int,
+    deaths: int,
+    recoveries: int,
+) -> tuple[int, int, int, int, int, int]:
+    """Update running totals with page results."""
+    return (
+        total_new + new,
+        total_updated + updated,
+        total_skipped + skipped,
+        total_errors + errors,
+        session_deaths + deaths,
+        session_recoveries + recoveries,
+    )
 
 
 def _process_pages_loop(
@@ -240,23 +285,21 @@ def _process_pages_loop(
     session_recoveries = 0
     run_incomplete = False
     incomplete_reason = ""
-
-    # Track total pages from API response (will be set on first page fetch)
     api_total_pages: Optional[int] = None
 
+    end_page = float('inf') if max_pages == 0 else start_page + max_pages - 1
     if max_pages == 0:
         logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
-        end_page = float('inf')
-    else:
-        end_page = start_page + max_pages - 1
 
     page_num = start_page
     pages_processed = 0
 
     while True:
+        # Check if we've reached the page limit
         if max_pages > 0 and page_num > end_page:
             break
 
+        # Health check
         should_continue, deaths, recoveries, reason = _handle_session_health_check(session_manager)
         session_deaths += deaths
         session_recoveries += recoveries
@@ -267,11 +310,12 @@ def _process_pages_loop(
 
         _log_page_header(page_num, pages_processed, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
 
+        # Fetch page data
         matches, deaths, recoveries, should_break, reason, page_total_pages, is_last_page = _fetch_and_validate_page_data(
             driver, session_manager, my_uuid, page_num, csrf_token, max_pages
         )
 
-        # Update api_total_pages from first successful API response
+        # Update API total pages on first response
         if page_total_pages is not None and api_total_pages is None:
             api_total_pages = page_total_pages
             if max_pages == 0:
@@ -286,25 +330,28 @@ def _process_pages_loop(
                 incomplete_reason = reason
             break
 
+        # Check if we should stop
+        should_stop, stop_reason = _should_stop_processing(page_num, end_page, max_pages, is_last_page, matches)
+        if should_stop:
+            if stop_reason and "last page" in stop_reason.lower():
+                logger.info(stop_reason)
+            break
+
         if not matches:
-            # Check if this was the last page even though we got no matches
-            if is_last_page:
-                logger.info("Reached last page (isLastPage=true). Stopping.")
-                break
             page_num += 1
             pages_processed += 1
             continue
 
+        # Process matches
         new, updated, skipped, errors, deaths, recoveries, page_incomplete, page_reason = _process_page_batches(
             matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
         )
 
-        total_new += new
-        total_updated += updated
-        total_skipped += skipped
-        total_errors += errors
-        session_deaths += deaths
-        session_recoveries += recoveries
+        # Update totals
+        total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries = _update_page_totals(
+            total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries,
+            new, updated, skipped, errors, deaths, recoveries
+        )
 
         # Log page summary
         if new == 0 and updated == 0 and errors == 0 and skipped > 0:
@@ -315,11 +362,6 @@ def _process_pages_loop(
         if page_incomplete:
             run_incomplete = True
             incomplete_reason = page_reason
-            break
-
-        # Check if this was the last page according to API
-        if is_last_page:
-            logger.info(f"Reached last page (page {page_num} of {api_total_pages}). All matches processed.")
             break
 
         page_num += 1
@@ -972,7 +1014,7 @@ def _fetch_match_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function] # noqa: ARG001
+def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function]
     """Fetch profile details from Profile Details API."""
     url = urljoin(
         config_schema.api.base_url,
@@ -1518,7 +1560,7 @@ _test_session_uuid: Optional[str] = None
 
 def _check_cached_session(reuse_session: bool) -> tuple[Optional[SessionManager], Optional[str]]:
     """Check if cached session is available and valid."""
-    global _test_session_manager, _test_session_uuid  # noqa: PLW0603 - Intentional global for test session caching
+    global _test_session_manager, _test_session_uuid
 
     if not reuse_session or _test_session_manager is None or _test_session_uuid is None:
         return None, None
@@ -1610,7 +1652,7 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
 
     Raises AssertionError if session cannot be established (tests will be skipped).
     """
-    global _test_session_manager, _test_session_uuid  # noqa: PLW0603 - Intentional global for test session caching
+    global _test_session_manager, _test_session_uuid
 
     # Check for cached session
     cached_sm, cached_uuid = _check_cached_session(reuse_session)
@@ -2036,7 +2078,7 @@ def action6_module_tests() -> bool:
     result = suite.finish_suite()
 
     # Clean up test session if it exists
-    global _test_session_manager  # noqa: PLW0603 - Intentional global for test session cleanup
+    global _test_session_manager
     if _test_session_manager is not None:
         try:
             # Suppress all warnings and errors during cleanup
@@ -2045,7 +2087,7 @@ def action6_module_tests() -> bool:
 
             # Redirect stderr temporarily to suppress exception messages
             original_stderr = sys.stderr
-            sys.stderr = open(os.devnull, 'w')  # noqa: SIM115, PTH123 - Intentional for stderr redirect
+            sys.stderr = open(os.devnull, 'w')
 
             try:
                 with warnings.catch_warnings():
@@ -2087,7 +2129,7 @@ if __name__ == "__main__":
         success = run_comprehensive_tests()
 
         # Redirect stderr to devnull before exit to suppress Chrome destructor exceptions
-        sys.stderr = open(os.devnull, 'w')  # noqa: SIM115, PTH123 - Intentional for stderr redirect
+        sys.stderr = open(os.devnull, 'w')
         sys.exit(0 if success else 1)
     except Exception as e:
         # Restore stderr for any unexpected errors

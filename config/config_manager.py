@@ -866,42 +866,22 @@ class ConfigManager:
         self._set_float_config(config, "api", "backoff_factor", "BACKOFF_FACTOR")
         self._set_float_config(config, "api", "decrease_factor", "DECREASE_FACTOR")
 
+    def _load_int_env_var(self, config: dict[str, Any], env_var: str, config_key: str) -> None:
+        """Load a single integer environment variable into config."""
+        value = os.getenv(env_var)
+        if value:
+            try:
+                config[config_key] = int(value)
+            except ValueError:
+                logger.warning(f"Invalid {env_var} value: {value}")
+
     def _load_processing_limits_from_env(self, config: dict[str, Any]) -> None:
         """Load processing limit configuration from environment variables."""
-        batch_size_value = os.getenv("BATCH_SIZE")
-        if batch_size_value:
-            try:
-                config["batch_size"] = int(batch_size_value)
-            except ValueError:
-                logger.warning(f"Invalid BATCH_SIZE value: {batch_size_value}")
-
-        matches_per_page_value = os.getenv("MATCHES_PER_PAGE")
-        if matches_per_page_value:
-            try:
-                config["matches_per_page"] = int(matches_per_page_value)
-            except ValueError:
-                logger.warning(f"Invalid MATCHES_PER_PAGE value: {matches_per_page_value}")
-
-        max_productive_value = os.getenv("MAX_PRODUCTIVE_TO_PROCESS")
-        if max_productive_value:
-            try:
-                config["max_productive_to_process"] = int(max_productive_value)
-            except ValueError:
-                logger.warning(f"Invalid MAX_PRODUCTIVE_TO_PROCESS value: {max_productive_value}")
-
-        max_inbox_value = os.getenv("MAX_INBOX")
-        if max_inbox_value:
-            try:
-                config["max_inbox"] = int(max_inbox_value)
-            except ValueError:
-                logger.warning(f"Invalid MAX_INBOX value: {max_inbox_value}")
-
-        parallel_workers_value = os.getenv("PARALLEL_WORKERS")
-        if parallel_workers_value:
-            try:
-                config["parallel_workers"] = int(parallel_workers_value)
-            except ValueError:
-                logger.warning(f"Invalid PARALLEL_WORKERS value: {parallel_workers_value}")
+        self._load_int_env_var(config, "BATCH_SIZE", "batch_size")
+        self._load_int_env_var(config, "MATCHES_PER_PAGE", "matches_per_page")
+        self._load_int_env_var(config, "MAX_PRODUCTIVE_TO_PROCESS", "max_productive_to_process")
+        self._load_int_env_var(config, "MAX_INBOX", "max_inbox")
+        self._load_int_env_var(config, "PARALLEL_WORKERS", "parallel_workers")
 
     def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
         """Load logging configuration from environment variables."""

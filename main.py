@@ -1100,7 +1100,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
 
 
 # Action 6 (gather_DNA_matches wrapper)
-def gather_DNA_matches(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:  # noqa: N802 - Legacy function name
+def gather_DNA_matches(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.

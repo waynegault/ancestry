@@ -786,7 +786,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
 
     # Default handler for unknown types
     class DefaultHandler(ErrorHandler):
-        def can_handle(self, error: Exception) -> bool:  # noqa: ARG002 - Required by base class interface
+        def can_handle(self, error: Exception) -> bool:
             return True  # Catch-all for unknown errors
 
         def handle(
@@ -960,6 +960,30 @@ def _calculate_retry_delay(attempt: int, backoff_factor: float, jitter: bool) ->
     return delay
 
 
+def _handle_retry_exception(
+    exception: Exception,
+    stop_on: list[type[Exception]],
+    retry_on: list[type[Exception]],
+    attempt: int,
+    max_attempts: int,
+    backoff_factor: float,
+    jitter: bool,
+) -> None:
+    """Handle exception during retry attempt."""
+    # Check if we should stop retrying
+    if _should_stop_retry(exception, stop_on):
+        raise exception
+
+    # Check if we should retry
+    if not _should_retry(exception, retry_on):
+        raise exception
+
+    # Calculate and apply delay before next attempt
+    if attempt < max_attempts - 1:  # Don't sleep on last attempt
+        delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
+        time.sleep(delay)
+
+
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
@@ -982,19 +1006,7 @@ def retry_on_failure(
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_exception = e
-
-                    # Check if we should stop retrying
-                    if _should_stop_retry(e, stop_on):
-                        raise e
-
-                    # Check if we should retry
-                    if not _should_retry(e, retry_on):
-                        raise e
-
-                    # Calculate and apply delay before next attempt
-                    if attempt < max_attempts - 1:  # Don't sleep on last attempt
-                        delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
-                        time.sleep(delay)
+                    _handle_retry_exception(e, stop_on, retry_on, attempt, max_attempts, backoff_factor, jitter)
 
             if last_exception is not None:
                 raise last_exception
