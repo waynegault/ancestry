@@ -1608,7 +1608,7 @@ _test_session_uuid: Optional[str] = None
 
 def _check_cached_session(reuse_session: bool) -> tuple[Optional[SessionManager], Optional[str]]:
     """Check if cached session is available and valid."""
-    global _test_session_manager, _test_session_uuid
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603  # noqa: PLW0603
 
     if not reuse_session or _test_session_manager is None or _test_session_uuid is None:
         return None, None
@@ -1700,7 +1700,7 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
 
     Raises AssertionError if session cannot be established (tests will be skipped).
     """
-    global _test_session_manager, _test_session_uuid
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603  # noqa: PLW0603
 
     # Check for cached session
     cached_sm, cached_uuid = _check_cached_session(reuse_session)
@@ -2126,7 +2126,7 @@ def action6_module_tests() -> bool:
     result = suite.finish_suite()
 
     # Clean up test session if it exists
-    global _test_session_manager
+    global _test_session_manager  # noqa: PLW0603  # noqa: PLW0603
     if _test_session_manager is not None:
         try:
             # Suppress all warnings and errors during cleanup

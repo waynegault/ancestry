@@ -9,7 +9,6 @@ especially important when scaling to 15,000+ conversations.
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 from config.config_manager import ConfigManager
 
@@ -28,7 +27,7 @@ def get_database_path() -> Path:
     return db_path
 
 
-def get_existing_indexes(conn: sqlite3.Connection) -> Dict[str, List[Tuple[str, str]]]:
+def get_existing_indexes(conn: sqlite3.Connection) -> dict[str, list[tuple[str, str]]]:
     """Get all existing indexes grouped by table."""
     cursor = conn.cursor()
     cursor.execute("""
@@ -39,7 +38,7 @@ def get_existing_indexes(conn: sqlite3.Connection) -> Dict[str, List[Tuple[str, 
         ORDER BY tbl_name, name
     """)
 
-    indexes_by_table: Dict[str, List[Tuple[str, str]]] = {}
+    indexes_by_table: dict[str, list[tuple[str, str]]] = {}
     for table, index_name, sql in cursor.fetchall():
         if table not in indexes_by_table:
             indexes_by_table[table] = []
@@ -48,7 +47,7 @@ def get_existing_indexes(conn: sqlite3.Connection) -> Dict[str, List[Tuple[str, 
     return indexes_by_table
 
 
-def get_required_indexes() -> Dict[str, List[Tuple[str, str, str]]]:
+def get_required_indexes() -> dict[str, list[tuple[str, str, str]]]:
     """Define required indexes for optimal performance.
 
     Returns:
@@ -93,7 +92,7 @@ def get_required_indexes() -> Dict[str, List[Tuple[str, str, str]]]:
     }
 
 
-def verify_indexes() -> Tuple[int, int, List[str]]:
+def verify_indexes() -> tuple[int, int, list[str]]:
     """Verify all required indexes exist.
 
     Returns:

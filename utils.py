@@ -1009,7 +1009,7 @@ def get_rate_limiter() -> 'RateLimiter':
     Returns:
         RateLimiter: The global singleton instance
     """
-    global _global_rate_limiter
+    global _global_rate_limiter  # noqa: PLW0603  # noqa: PLW0603
     if _global_rate_limiter is None:
         _global_rate_limiter = RateLimiter()
         logger.debug("Global RateLimiter singleton created")
