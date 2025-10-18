@@ -1142,12 +1142,7 @@ class ResourceManager:
         self.allocated_resources.append((resource_name, resource_obj))
 
     def check_memory_usage(self) -> tuple[float, bool]:
-        """
-        Check current memory usage.
-
-        Returns:
-            Tuple of (memory_mb, should_cleanup)
-        """
+        """Check current memory usage. Returns (memory_mb, should_cleanup)."""
         import os
 
         import psutil
@@ -1158,7 +1153,7 @@ class ResourceManager:
             should_cleanup = memory_mb > self.memory_threshold_mb
 
             if should_cleanup:
-                logger.warning(f"🧠 Memory usage high: {memory_mb:.1f}MB (threshold: {self.memory_threshold_mb}MB)")
+                logger.warning(f"Memory usage high: {memory_mb:.1f}MB (threshold: {self.memory_threshold_mb}MB)")
 
             return memory_mb, should_cleanup
 
@@ -1167,12 +1162,7 @@ class ResourceManager:
             return 0.0, False
 
     def trigger_garbage_collection(self) -> int:
-        """
-        Trigger garbage collection and return objects collected.
-
-        Returns:
-            Number of objects collected
-        """
+        """Trigger garbage collection and return objects collected."""
         import gc
 
         before_count = len(gc.get_objects())
@@ -1221,26 +1211,19 @@ class ResourceManager:
 
 
 class ProactiveApiManager:
-    """
-    Proactive API management with rate limiting, authentication monitoring, and response validation.
-    """
+    """Proactive API management with rate limiting and authentication monitoring."""
 
     def __init__(self, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
         self.consecutive_failures = 0
         self.last_auth_check = 0
-        self.auth_check_interval = 300  # Check auth every 5 minutes
+        self.auth_check_interval = 300
         self.max_consecutive_failures = 3
         self.base_delay = 1.0
         self.max_delay = 30.0
 
     def check_authentication(self) -> bool:
-        """
-        Proactively check authentication status.
-
-        Returns:
-            bool: True if authenticated, False otherwise
-        """
+        """Check authentication status. Returns True if authenticated."""
         current_time = time.time()
 
         # Only check if enough time has passed
@@ -1267,61 +1250,45 @@ class ProactiveApiManager:
             return False
 
     def attempt_reauthentication(self) -> bool:
-        """
-        Attempt to re-authenticate if authentication fails.
-
-        Returns:
-            bool: True if re-authentication successful, False otherwise
-        """
-        logger.warning("🔐 Attempting re-authentication...")
+        """Attempt to re-authenticate. Returns True if successful."""
+        logger.warning("Attempting re-authentication...")
 
         try:
-            # Use session manager's recovery mechanism
             if hasattr(self.session_manager, 'attempt_recovery'):
                 recovery_success = self.session_manager.attempt_recovery('auth_recovery')  # type: ignore[attr-defined]
                 if recovery_success:
-                    logger.info("✅ Re-authentication successful")
+                    logger.info("Re-authentication successful")
                     self.consecutive_failures = 0
                     return True
 
-            logger.error("❌ Re-authentication failed")
+            logger.error("Re-authentication failed")
             return False
 
         except Exception as reauth_err:
-            logger.error(f"❌ Re-authentication error: {reauth_err}")
+            logger.error(f"Re-authentication error: {reauth_err}")
             return False
 
     def calculate_delay(self) -> float:
-        """
-        Calculate proactive delay based on failure history.
-
-        Returns:
-            float: Delay in seconds
-        """
+        """Calculate proactive delay based on failure history."""
         if self.consecutive_failures == 0:
             return 0.0
 
-        # Exponential backoff with jitter
         import random
         delay = min(self.base_delay * (2 ** self.consecutive_failures), self.max_delay)
-        jitter = random.uniform(0.8, 1.2)  # ±20% jitter
-        return delay * jitter
+        return delay * random.uniform(0.8, 1.2)
 
     def _validate_message_send_response(self, response_data: Any, operation: str) -> bool | None:
         """Validate message send response. Returns True/False if validated, None if not applicable."""
-        if not operation.startswith("send_message"):
-            return None
-
-        if not isinstance(response_data, tuple) or len(response_data) < 2:
+        if not operation.startswith("send_message") or not isinstance(response_data, tuple) or len(response_data) < 2:
             return None
 
         status = response_data[0]
         if status and "delivered OK" in status:
-            logger.debug(f"✅ API validation passed for {operation}: {status}")
+            logger.debug(f"API validation passed: {status}")
             return True
 
         if status and "error" in status.lower():
-            logger.warning(f"❌ API validation failed for {operation}: {status}")
+            logger.warning(f"API validation failed: {status}")
             return False
 
         return None
