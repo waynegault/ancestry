@@ -2490,7 +2490,7 @@ def action7_inbox_module_tests() -> bool:
                 max_inbox_limit=2,
             )
             combined = "\n".join(mock_log.lines)
-            assert "Inbox Search Summary" in combined
+            assert "INBOX SEARCH SUMMARY" in combined
             assert "API Conversations Fetched" in combined
             assert "Conversations Processed" in combined
             assert "AI Classifications Attempted" in combined
@@ -2499,7 +2499,7 @@ def action7_inbox_module_tests() -> bool:
         return True
 
     def test_smart_skip_logic() -> None:
-        """Test Phase 1: Smart skip logic with conversation refresh threshold."""
+        """Test Phase 1: Time-based skipping disabled - always returns False."""
         sm = MagicMock()
         processor = InboxProcessor(sm)
 
@@ -2507,7 +2507,7 @@ def action7_inbox_module_tests() -> bool:
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
 
-        # Recent log (should skip)
+        # Recent log (time-based skipping disabled, should NOT skip)
         recent_log = MagicMock()
         recent_log.updated_at = now - timedelta(hours=1)
 
@@ -2515,10 +2515,10 @@ def action7_inbox_module_tests() -> bool:
         old_log = MagicMock()
         old_log.updated_at = now - timedelta(hours=25)
 
-        # Test recent conversation (should skip)
+        # Test recent conversation (time-based skipping disabled)
         existing_logs_recent = {("conv123", "IN"): recent_log}
         result_recent = processor._was_recently_processed(existing_logs_recent, "conv123")
-        assert result_recent is True, "Should skip recently processed conversation"
+        assert result_recent is False, "Time-based skipping disabled - should not skip"
 
         # Test old conversation (should not skip)
         existing_logs_old = {("conv456", "IN"): old_log}
