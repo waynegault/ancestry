@@ -67,25 +67,18 @@ from sqlalchemy import (
 from database import PersonStatusEnum
 
 
-# --- Helper function for SQLAlchemy Column conversion ---
 def _handle_status_enum_conversion(value: Any, default: Any) -> Any:
     """Handle status enum conversion."""
-    # If it's already an enum instance, return it
     if isinstance(value, PersonStatusEnum):
         return value
-    # If it's a string, try to convert to enum
     if isinstance(value, str):
         try:
             return PersonStatusEnum(value)
         except ValueError:
-            logger.warning(
-                f"Invalid status string '{value}', cannot convert to enum"
-            )
+            logger.warning(f"Invalid status string '{value}'")
             return default
-    # If it's something else, log and return default
-    else:
-        logger.warning(f"Unexpected status type: {type(value)}")
-        return default
+    logger.warning(f"Unexpected status type: {type(value)}")
+    return default
 
 
 def _convert_value_to_primitive(value: Any) -> Any:
@@ -96,23 +89,13 @@ def _convert_value_to_primitive(value: Any) -> Any:
         return int(value)
     if isinstance(value, float) or str(value).replace(".", "", 1).isdigit():
         return float(value)
-    if hasattr(value, "isoformat"):  # datetime-like
+    if hasattr(value, "isoformat"):
         return value
     return str(value)
 
 
 def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
-    """
-    Safely extract a value from a SQLAlchemy model attribute, handling Column objects.
-
-    Args:
-        obj: The SQLAlchemy model instance
-        attr_name: The attribute name to access
-        default: Default value to return if attribute doesn't exist or conversion fails
-
-    Returns:
-        The Python primitive value of the attribute, or the default value
-    """
+    """Safely extract a value from a SQLAlchemy model attribute."""
     if not hasattr(obj, attr_name):
         return default
 
@@ -120,38 +103,24 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
     if value is None:
         return default
 
-    # Try to convert to Python primitive
     try:
-        # Special handling for status enum
         if attr_name == "status":
             return _handle_status_enum_conversion(value, default)
-
-        # For different types of attributes
         return _convert_value_to_primitive(value)
-
     except (ValueError, TypeError, AttributeError):
         return default
 
 
-# Corrected SQLAlchemy ORM imports
-from sqlalchemy.orm import (
-    Session,  # Use Session directly
-    joinedload,
-)
-from tqdm.auto import tqdm  # Progress bar
-from tqdm.contrib.logging import logging_redirect_tqdm  # Logging integration
+# === SQLALCHEMY & UTILITIES ===
+from sqlalchemy.orm import Session, joinedload
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
-from api_utils import (  # API utilities
-    call_send_message_api,  # Real API function for sending messages
-)
-
-# AuthenticationExpiredError imported from error_recovery_patterns
-# Import enhanced recovery patterns from Action 6
-# --- Local application imports ---
-# Import standardization handled by setup_module above
-from cache import cache_result  # Caching utility
+# === API & CORE ===
+from api_utils import call_send_message_api
+from cache import cache_result
 from common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
-from config import config_schema  # Configuration singletons
+from config import config_schema
 from connection_resilience import with_connection_resilience
 from core.enhanced_error_recovery import with_enhanced_recovery
 from core.error_handling import (
@@ -160,10 +129,10 @@ from core.error_handling import (
     BrowserSessionError,
     MaxApiFailuresExceededError,
 )
-
-# Import available error types for enhanced error handling
 from core.session_manager import SessionManager
-from database import (  # Database models and utilities
+
+# === DATABASE ===
+from database import (
     ConversationLog,
     DnaMatch,
     FamilyTree,
@@ -172,18 +141,11 @@ from database import (  # Database models and utilities
     Person,
     commit_bulk_data,
 )
+
+# === MONITORING & TESTING ===
 from performance_monitor import start_advanced_monitoring, stop_advanced_monitoring
-
-# --- Test framework imports ---
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-)
-
-# Universal session monitoring now integrated into SessionManager
-from utils import (  # Core utilities
-    format_name,  # Name formatting
-)
+from test_framework import TestSuite, suppress_logging
+from utils import format_name
 
 # === MESSAGE INTERVALS ===
 MESSAGE_INTERVALS = {
