@@ -353,6 +353,9 @@ def _process_single_page(
     if should_skip_to_next:
         return 0, 0, 0, 0, deaths, recoveries, False, "", api_total_pages
 
+    # Type guard: matches cannot be None here due to _handle_page_fetch_result logic
+    assert matches is not None, "matches should not be None when processing batches"
+
     new, updated, skipped, errors, page_deaths, page_recoveries, page_incomplete, page_reason = _process_page_batches(
         matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
     )
