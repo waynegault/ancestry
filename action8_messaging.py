@@ -3280,66 +3280,135 @@ _test_session_manager: Optional['SessionManager'] = None
 _test_session_uuid: Optional[str] = None
 
 
+def _check_cached_session(reuse_session: bool) -> tuple[Optional['SessionManager'], Optional[str]]:
+    """Check if cached session is available and valid."""
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603
+
+    if not reuse_session or _test_session_manager is None or _test_session_uuid is None:
+        return None, None
+
+    if _test_session_manager.is_sess_valid():
+        logger.info("♻️  Reusing existing authenticated session from previous test")
+        return _test_session_manager, _test_session_uuid
+
+    logger.info("⚠️  Cached session invalid, creating new session...")
+    _test_session_manager = None
+    _test_session_uuid = None
+    return None, None
+
+
 def _create_and_start_session() -> 'SessionManager':
-    """Create and start a new SessionManager for testing."""
-    from core.session_manager import SessionManager
-    from utils import _load_login_cookies, log_in, login_status
-
+    """Create and start a new session manager."""
+    logger.info("Step 1: Creating SessionManager...")
     sm = SessionManager()
+    logger.info("✅ SessionManager created")
+
+    logger.info("Step 2: Configuring browser requirement...")
     sm.browser_manager.browser_needed = True
+    logger.info("✅ Browser marked as needed")
 
-    if not sm.start_sess("Action 8 Tests"):
-        raise RuntimeError("Failed to start session")
-
-    _load_login_cookies(sm)
-    login_check = login_status(sm, disable_ui_fallback=True)
-
-    if login_check is False:
-        login_result = log_in(sm)
-        if login_result != "LOGIN_SUCCEEDED":
-            raise RuntimeError(f"Login failed: {login_result}")
-    elif login_check is None:
-        raise RuntimeError("Login status check failed")
-
-    if not sm.ensure_session_ready("Action 8 Tests", skip_csrf=True):
-        raise RuntimeError("Session not ready")
+    logger.info("Step 3: Starting session (database + browser)...")
+    started = sm.start_sess("Action 8 Messaging Tests")
+    if not started:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Failed to start session - browser initialization failed")
+    logger.info("✅ Session started successfully")
 
     return sm
 
 
-def _ensure_session_for_messaging_tests(reuse_session: bool = True) -> Optional['SessionManager']:
-    """Ensure session is ready for messaging tests. Returns None if session cannot be established."""
-    global _test_session_manager
+def _authenticate_session(sm: 'SessionManager') -> None:
+    """Authenticate the session using cookies or login."""
+    from utils import _load_login_cookies, log_in, login_status
 
-    if reuse_session and _test_session_manager is not None:
-        return _test_session_manager
+    logger.info("Step 4: Attempting to load saved cookies...")
+    cookies_loaded = _load_login_cookies(sm)
+    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
 
-    try:
-        logger.info("=" * 80)
-        logger.info("Setting up authenticated session for Action 8 messaging tests...")
-        logger.info("=" * 80)
+    logger.info("Step 5: Checking login status...")
+    login_check = login_status(sm, disable_ui_fallback=True)
 
-        sm = _create_and_start_session()
+    if login_check is True:
+        logger.info("✅ Already logged in")
+    elif login_check is False:
+        logger.info("⚠️  Not logged in - attempting login...")
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            sm.close_sess(keep_db=False)
+            raise AssertionError(f"Login failed: {login_result}")
+        logger.info("✅ Login successful")
+    else:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Login status check failed critically (returned None)")
 
-        logger.info("=" * 80)
-        logger.info("✅ Valid authenticated session established for messaging tests")
-        logger.info("=" * 80)
 
-        _test_session_manager = sm
-        return sm
+def _validate_session_ready(sm: 'SessionManager') -> None:
+    """Validate session is ready with all identifiers."""
+    logger.info("Step 6: Ensuring session is ready...")
+    ready = sm.ensure_session_ready("Action 8 Messaging Tests", skip_csrf=True)
+    if not ready:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Session not ready - cookies/identifiers missing")
+    logger.info("✅ Session ready")
 
-    except Exception as e:
-        logger.warning(f"⚠️ Could not establish live session for integration tests: {e}")
-        logger.warning("Integration tests will be skipped. This is expected in CI/test environments.")
-        return None
+    logger.info("Step 7: Verifying UUID is available...")
+    if not sm.my_uuid:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("UUID not available - session initialization incomplete")
+    logger.info(f"✅ UUID available: {sm.my_uuid}")
+
+
+def _ensure_session_for_messaging_tests(reuse_session: bool = True) -> tuple['SessionManager', str]:
+    """Ensure session is ready for messaging tests. Returns (session_manager, my_uuid).
+
+    This function establishes a valid Ancestry session by:
+    1. Creating and initializing a SessionManager (or reusing existing one)
+    2. Starting the session (database + browser)
+    3. Loading saved cookies from previous session (if available)
+    4. Checking login status and logging in if needed
+    5. Ensuring session is ready with all identifiers
+    6. Validating UUID is available
+
+    Args:
+        reuse_session: If True, reuse existing session from previous test (default: True)
+
+    Raises AssertionError if session cannot be established (tests will fail).
+    """
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603
+
+    # Check for cached session
+    cached_sm, cached_uuid = _check_cached_session(reuse_session)
+    if cached_sm and cached_uuid:
+        return cached_sm, cached_uuid
+
+    logger.info("=" * 80)
+    logger.info("Setting up authenticated session for Action 8 messaging tests...")
+    logger.info("=" * 80)
+
+    # Create and start new session
+    sm = _create_and_start_session()
+
+    # Authenticate the session
+    _authenticate_session(sm)
+
+    # Validate session is ready
+    _validate_session_ready(sm)
+
+    logger.info("=" * 80)
+    logger.info("✅ Valid authenticated session established for messaging tests")
+    logger.info("=" * 80)
+
+    # Cache session for reuse
+    _test_session_manager = sm
+    _test_session_uuid = sm.my_uuid
+
+    return sm, sm.my_uuid
 
 
 def _test_main_function_with_dry_run() -> bool:
     """Test main send_messages_to_matches function in dry_run mode."""
     try:
-        sm = _ensure_session_for_messaging_tests()
-        if sm is None:
-            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing send_messages_to_matches() with real database.")
+        sm, my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing send_messages_to_matches() in dry_run mode...")
 
@@ -3363,9 +3432,7 @@ def _test_main_function_with_dry_run() -> bool:
 def _test_database_message_creation() -> bool:
     """Test that messages are created in database during dry_run."""
     try:
-        sm = _ensure_session_for_messaging_tests()
-        if sm is None:
-            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing database message creation.")
+        sm, my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing database message creation in dry_run mode...")
 
@@ -3404,9 +3471,7 @@ def _test_database_message_creation() -> bool:
 def _test_dry_run_mode_no_actual_send() -> bool:
     """Test that dry_run mode creates messages but doesn't send them."""
     try:
-        sm = _ensure_session_for_messaging_tests()
-        if sm is None:
-            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing dry_run mode behavior.")
+        sm, my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing dry_run mode prevents actual message sending...")
 
@@ -3451,9 +3516,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
 def _test_message_template_loading_from_db() -> bool:
     """Test that message templates are loaded from database."""
     try:
-        sm = _ensure_session_for_messaging_tests()
-        if sm is None:
-            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing message template loading from database.")
+        sm, my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing message template loading from database...")
 
@@ -3484,9 +3547,7 @@ def _test_message_template_loading_from_db() -> bool:
 def _test_conversation_log_tracking() -> bool:
     """Test that conversation logs are properly tracked."""
     try:
-        sm = _ensure_session_for_messaging_tests()
-        if sm is None:
-            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing conversation log tracking.")
+        sm, my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing conversation log tracking...")
 
