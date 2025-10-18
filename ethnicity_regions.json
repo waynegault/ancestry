@@ -1,0 +1,28 @@
+{
+  "tree_owner_regions": [
+    {
+      "key": "08302",
+      "name": "08302",
+      "percentage": 84,
+      "column_name": "ethnicity_08302"
+    },
+    {
+      "key": "06842",
+      "name": "06842",
+      "percentage": 6,
+      "column_name": "ethnicity_06842"
+    },
+    {
+      "key": "08103",
+      "name": "08103",
+      "percentage": 6,
+      "column_name": "ethnicity_08103"
+    },
+    {
+      "key": "06810",
+      "name": "06810",
+      "percentage": 4,
+      "column_name": "ethnicity_06810"
+    }
+  ]
+}

@@ -34,12 +34,17 @@ from connection_resilience import with_connection_resilience
 from core.database_manager import DatabaseManager
 from core.session_manager import SessionManager
 from database import create_or_update_dna_match, create_or_update_family_tree, create_or_update_person
+from dna_ethnicity_utils import (
+    extract_match_ethnicity_percentages,
+    fetch_ethnicity_comparison,
+)
 from dna_utils import (
     fetch_in_tree_status,
     fetch_match_list_page,
     get_csrf_token_for_dna_matches,
     nav_to_dna_matches_page,
 )
+from setup_ethnicity_tracking import load_ethnicity_metadata
 from utils import _api_req, format_name
 
 
@@ -139,7 +144,7 @@ def _process_page_batches(matches: list[dict], batch_size: int, session_manager:
         batch_num = (batch_start // batch_size) + 1
         total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
 
-        logger.info(f"Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end} of {len(matches)} on page {page_num})")
+        logger.info(f"Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end})")
 
         new, updated, skipped, errors = _process_batch(batch, session_manager, db_manager, my_uuid, my_tree_id)
 
@@ -148,51 +153,70 @@ def _process_page_batches(matches: list[dict], batch_size: int, session_manager:
         total_skipped += skipped
         total_errors += errors
 
-        logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+        # Use compact logging for batches with only skips, detailed for batches with changes
+        if new == 0 and updated == 0 and errors == 0 and skipped > 0:
+            logger.info(f"Batch {batch_num} complete: All {skipped} skipped (already in database)")
+        else:
+            logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
 
     return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
 
 
-def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, my_uuid: str, page_num: int, csrf_token: str, max_pages: int) -> tuple[Optional[list[dict]], int, int, bool, str]:
-    """Fetch and validate page data. Returns (matches, deaths, recoveries, should_break, reason)."""
+def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, my_uuid: str, page_num: int, csrf_token: str, max_pages: int) -> tuple[Optional[list[dict]], int, int, bool, str, Optional[int], bool]:
+    """Fetch and validate page data. Returns (matches, deaths, recoveries, should_break, reason, total_pages, is_last_page)."""
     api_response = fetch_match_list_page(driver, session_manager, my_uuid, page_num, csrf_token)
     if not api_response or not isinstance(api_response, dict):
         logger.warning(f"No API response for page {page_num}")
-        should_continue, deaths, recoveries, reason, should_break = _handle_api_failure(session_manager, page_num, max_pages)
-        return None, deaths, recoveries, should_break, reason
+        _, deaths, recoveries, reason, should_break = _handle_api_failure(session_manager, page_num, max_pages)
+        return None, deaths, recoveries, should_break, reason, None, False
+
+    # Extract total pages and last page flag from API response
+    total_pages = api_response.get("totalPages")
+    is_last_page = api_response.get("isLastPage", False)
 
     match_list = api_response.get("matchList", [])
     if not match_list:
         logger.warning(f"No matches in API response for page {page_num}")
-        if max_pages == 0:
+        if max_pages == 0 or is_last_page:
             logger.info("No more matches available. Stopping.")
-            return None, 0, 0, True, ""
-        return None, 0, 0, False, ""
+            return None, 0, 0, True, "", total_pages, is_last_page
+        return None, 0, 0, False, "", total_pages, is_last_page
 
     sample_ids = [m.get("sampleId", "").upper() for m in match_list if m.get("sampleId")]
     if not sample_ids:
         logger.warning(f"No sample IDs found on page {page_num}")
-        return None, 0, 0, False, ""
+        return None, 0, 0, False, "", total_pages, is_last_page
 
     in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
     matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
 
     if not matches:
         logger.warning(f"No matches found on page {page_num}")
-        return None, 0, 0, False, ""
+        return None, 0, 0, False, "", total_pages, is_last_page
 
     logger.info(f"Found {len(matches)} matches on page {page_num}")
-    return matches, 0, 0, False, ""
+    return matches, 0, 0, False, "", total_pages, is_last_page
 
 
-def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int) -> None:
+def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:  # noqa: ARG001 (pages_processed kept for backward compatibility)
     """Log page processing header."""
-    logger.info(f"\n{'='*80}")
-    if max_pages == 0:
-        logger.info(f"Processing page {page_num} (page {pages_processed + 1} of all pages)")
+    # Add blank line before separator for readability
+    logger.info("")
+    logger.info(f"{'='*80}")
+
+    # Format page info - prioritize API total pages, then max_pages setting
+    if api_total_pages is not None:
+        # Use total pages from API response (most accurate)
+        page_info = f"Processing page {page_num} of {api_total_pages} pages"
+    elif max_pages == 0:
+        # When MAX_PAGES=0 and we don't have API total yet, show current page only
+        page_info = f"Processing page {page_num}"
     else:
-        logger.info(f"Processing page {page_num} (page {page_num - pages_processed + 1}/{max_pages})")
-    logger.info(f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
+        # When MAX_PAGES is set, show progress based on configured limit
+        page_info = f"Processing page {page_num} of {max_pages} pages"
+
+    cumulative_info = f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}"
+    logger.info(f"{page_info} | {cumulative_info}")
     logger.info(f"{'='*80}")
 
 
@@ -217,6 +241,9 @@ def _process_pages_loop(
     run_incomplete = False
     incomplete_reason = ""
 
+    # Track total pages from API response (will be set on first page fetch)
+    api_total_pages: Optional[int] = None
+
     if max_pages == 0:
         logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
         end_page = float('inf')
@@ -238,11 +265,18 @@ def _process_pages_loop(
             incomplete_reason = reason
             break
 
-        _log_page_header(page_num, pages_processed, max_pages, total_new, total_updated, total_skipped, total_errors)
+        _log_page_header(page_num, pages_processed, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
 
-        matches, deaths, recoveries, should_break, reason = _fetch_and_validate_page_data(
+        matches, deaths, recoveries, should_break, reason, page_total_pages, is_last_page = _fetch_and_validate_page_data(
             driver, session_manager, my_uuid, page_num, csrf_token, max_pages
         )
+
+        # Update api_total_pages from first successful API response
+        if page_total_pages is not None and api_total_pages is None:
+            api_total_pages = page_total_pages
+            if max_pages == 0:
+                logger.info(f"API reports {api_total_pages} total pages available")
+
         session_deaths += deaths
         session_recoveries += recoveries
 
@@ -253,6 +287,10 @@ def _process_pages_loop(
             break
 
         if not matches:
+            # Check if this was the last page even though we got no matches
+            if is_last_page:
+                logger.info("Reached last page (isLastPage=true). Stopping.")
+                break
             page_num += 1
             pages_processed += 1
             continue
@@ -268,9 +306,20 @@ def _process_pages_loop(
         session_deaths += deaths
         session_recoveries += recoveries
 
+        # Log page summary
+        if new == 0 and updated == 0 and errors == 0 and skipped > 0:
+            logger.info(f"Page {page_num} complete: All {skipped} matches already in database")
+        else:
+            logger.info(f"Page {page_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+
         if page_incomplete:
             run_incomplete = True
             incomplete_reason = page_reason
+            break
+
+        # Check if this was the last page according to API
+        if is_last_page:
+            logger.info(f"Reached last page (page {page_num} of {api_total_pages}). All matches processed.")
             break
 
         page_num += 1
@@ -319,9 +368,7 @@ def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int,
 @with_connection_resilience("Action 6: DNA Match Gatherer", max_recovery_attempts=3)
 def coord(session_manager: SessionManager, start: int = 1):
     """Main entry point for Action 6: DNA Match Gatherer."""
-    logger.info("=" * 80)
-    logger.info("Action 6: DNA Match Gatherer")
-    logger.info("=" * 80)
+    # Note: Connection resilience wrapper already logs action name, so we don't duplicate it here
 
     if session_manager.rate_limiter:
         session_manager.rate_limiter.reset_metrics()
@@ -463,6 +510,7 @@ def _fetch_match_details_parallel(
         'profile_details': {},
         'badge_details': {},
         'predicted_rel': None,
+        'ethnicity_data': {},
         'uuid': match.get("uuid"),  # Include UUID for error tracking
     }
 
@@ -478,6 +526,9 @@ def _fetch_match_details_parallel(
             result['badge_details'] = _fetch_badge_details(session_manager, my_uuid, match["uuid"])
 
         result['predicted_rel'] = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
+
+        # Fetch ethnicity comparison data
+        result['ethnicity_data'] = fetch_ethnicity_comparison(session_manager, my_uuid, match["uuid"]) or {}
 
     except Exception as e:
         logger.error(f"Error fetching details for match {match.get('uuid', 'UNKNOWN')}: {e}")
@@ -576,10 +627,10 @@ def _fetch_details_parallel(matches_needing_details: list[dict], session_manager
     return match_details_map
 
 
-def _get_match_details(match: dict, skip_details: bool, match_details_map: dict, session_manager: SessionManager, my_uuid: str, parallel_workers: int) -> tuple[dict, dict, dict, Any]:
+def _get_match_details(match: dict, skip_details: bool, match_details_map: dict, session_manager: SessionManager, my_uuid: str, parallel_workers: int) -> tuple[dict, dict, dict, Any, dict]:
     """Get match details from cache or fetch them."""
     if skip_details:
-        return {}, {}, {}, None
+        return {}, {}, {}, None, {}
 
     if parallel_workers > 1:
         details = match_details_map.get(match["uuid"], {})
@@ -587,7 +638,8 @@ def _get_match_details(match: dict, skip_details: bool, match_details_map: dict,
             details.get('match_details', {}),
             details.get('profile_details', {}),
             details.get('badge_details', {}),
-            details.get('predicted_rel')
+            details.get('predicted_rel'),
+            details.get('ethnicity_data', {})
         )
 
     # Sequential processing: fetch details now
@@ -595,14 +647,15 @@ def _get_match_details(match: dict, skip_details: bool, match_details_map: dict,
     profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
     badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
     predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
+    ethnicity_data = fetch_ethnicity_comparison(session_manager, my_uuid, match["uuid"]) or {}
 
-    return match_details, profile_details, badge_details, predicted_rel
+    return match_details, profile_details, badge_details, predicted_rel, ethnicity_data
 
 
-def _save_match_records(match: dict, person_id: int, match_details: dict, badge_details: dict, predicted_rel: Any, skip_details: bool, my_tree_id: Optional[str], session: Any, session_manager: SessionManager) -> None:
+def _save_match_records(match: dict, person_id: int, match_details: dict, badge_details: dict, predicted_rel: Any, ethnicity_data: dict, skip_details: bool, my_tree_id: Optional[str], session: Any, session_manager: SessionManager) -> None:
     """Save DnaMatch and FamilyTree records."""
     if not skip_details:
-        _save_dna_match(session, person_id, match, match_details, predicted_rel)
+        _save_dna_match(session, person_id, match, match_details, predicted_rel, ethnicity_data)
 
     if match["in_tree"] and badge_details:
         _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
@@ -631,7 +684,7 @@ def _process_single_match(match: dict, skip_map: dict, match_details_map: dict, 
     if not person_id:
         return "error", False
 
-    match_details, profile_details, badge_details, predicted_rel = _get_match_details(
+    match_details, profile_details, badge_details, predicted_rel, ethnicity_data = _get_match_details(
         match, skip_details, match_details_map, session_manager, my_uuid, parallel_workers
     )
 
@@ -644,7 +697,7 @@ def _process_single_match(match: dict, skip_map: dict, match_details_map: dict, 
 
     logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
 
-    _save_match_records(match, person_id, match_details, badge_details, predicted_rel, skip_details, my_tree_id, session, session_manager)
+    _save_match_records(match, person_id, match_details, badge_details, predicted_rel, ethnicity_data, skip_details, my_tree_id, session, session_manager)
 
     status = _determine_match_status(skip_details, person_status, additional_updates)
     return status, True
@@ -1264,7 +1317,7 @@ def _dna_match_exists(session, person_id: int) -> bool:
     return existing is not None
 
 
-def _save_dna_match(session, person_id: int, match: dict, match_details: dict, predicted_relationship: Optional[str] = None) -> str:
+def _save_dna_match(session, person_id: int, match: dict, match_details: dict, predicted_relationship: Optional[str] = None, ethnicity_data: Optional[dict] = None) -> str:
     """
     Save DnaMatch record to database.
 
@@ -1285,6 +1338,22 @@ def _save_dna_match(session, person_id: int, match: dict, match_details: dict, p
         "from_my_fathers_side": match_details.get("from_my_fathers_side", False),
         "from_my_mothers_side": match_details.get("from_my_mothers_side", False),
     }
+
+    # Add ethnicity data if available
+    if ethnicity_data:
+        ethnicity_metadata = load_ethnicity_metadata()
+        if ethnicity_metadata and ethnicity_metadata.get("tree_owner_regions"):
+            region_keys = [region["key"] for region in ethnicity_metadata["tree_owner_regions"]]
+            column_mapping = {region["key"]: region["column_name"] for region in ethnicity_metadata["tree_owner_regions"]}
+
+            # Extract percentages for tree owner's regions
+            ethnicity_percentages = extract_match_ethnicity_percentages(ethnicity_data, region_keys)
+
+            # Add ethnicity percentages to dna_data using column names
+            for region_key, percentage in ethnicity_percentages.items():
+                column_name = column_mapping.get(region_key)
+                if column_name:
+                    dna_data[column_name] = percentage
 
     # Check if DnaMatch record already exists
     if _dna_match_exists(session, person_id):
@@ -1858,113 +1927,111 @@ def action6_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py using standardized TestSuite framework."""
     import warnings
 
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite
 
     suite = TestSuite("Action 6 - DNA Match Gatherer", "action6_gather.py")
     suite.start_suite()
 
     # === CODE QUALITY & STRUCTURE TESTS ===
-    with suppress_logging():
-        suite.run_test(
-            "Database Schema Validation",
-            _test_database_schema,
-            test_summary="Validates database schema uses correct attribute names for primary and foreign keys",
-            functions_tested="Person, DnaMatch, FamilyTree (database models)",
-            method_description="Check that Person model has 'id' attribute (not 'people_id'), and DnaMatch/FamilyTree have 'people_id' foreign keys using hasattr()",
-            expected_outcome="Person.id exists, Person.people_id does not exist, DnaMatch.people_id and FamilyTree.people_id exist",
-        )
+    suite.run_test(
+        "Database Schema Validation",
+        _test_database_schema,
+        test_summary="Validates database schema uses correct attribute names for primary and foreign keys",
+        functions_tested="Person, DnaMatch, FamilyTree (database models)",
+        method_description="Check that Person model has 'id' attribute (not 'people_id'), and DnaMatch/FamilyTree have 'people_id' foreign keys using hasattr()",
+        expected_outcome="Person.id exists, Person.people_id does not exist, DnaMatch.people_id and FamilyTree.people_id exist",
+    )
 
-        suite.run_test(
-            "Person ID Attribute Fix",
-            _test_person_id_attribute_fix,
-            test_summary="Validates function returns person.id instead of deprecated person.people_id",
-            functions_tested="_get_person_id_by_uuid()",
-            method_description="Inspect function source code using inspect.getsource() to verify it returns 'person.id if person else None'",
-            expected_outcome="Source contains 'return person.id' and does not contain buggy 'return person.people_id'",
-        )
+    suite.run_test(
+        "Person ID Attribute Fix",
+        _test_person_id_attribute_fix,
+        test_summary="Validates function returns person.id instead of deprecated person.people_id",
+        functions_tested="_get_person_id_by_uuid()",
+        method_description="Inspect function source code using inspect.getsource() to verify it returns 'person.id if person else None'",
+        expected_outcome="Source contains 'return person.id' and does not contain buggy 'return person.people_id'",
+    )
 
-        suite.run_test(
-            "Thread-Safe Parallel Processing",
-            _test_parallel_function_thread_safety,
-            test_summary="Validates parallel processing function is thread-safe and doesn't use database session",
-            functions_tested="_fetch_match_details_parallel()",
-            method_description="Check function signature has no 'session' parameter using inspect.signature() and verify thread-safety documentation exists",
-            expected_outcome="Parameters are ['match', 'session_manager', 'my_uuid'] and source mentions concurrency/threads",
-        )
+    suite.run_test(
+        "Thread-Safe Parallel Processing",
+        _test_parallel_function_thread_safety,
+        test_summary="Validates parallel processing function is thread-safe and doesn't use database session",
+        functions_tested="_fetch_match_details_parallel()",
+        method_description="Check function signature has no 'session' parameter using inspect.signature() and verify thread-safety documentation exists",
+        expected_outcome="Parameters are ['match', 'session_manager', 'my_uuid'] and source mentions concurrency/threads",
+    )
 
-        suite.run_test(
-            "Bounds Checking for Index Errors",
-            _test_bounds_checking,
-            test_summary="Validates bounds checking prevents IndexError when accessing lists/tuples",
-            functions_tested="_sync_cookies_and_get_csrf(), _build_relationship_path(), various string operations",
-            method_description="Search file content for safe access patterns like 'parts[0] if parts else None' using conditional expressions",
-            expected_outcome="CSRF token extraction, kinship persons access, and string operations all use bounds checking",
-        )
+    suite.run_test(
+        "Bounds Checking for Index Errors",
+        _test_bounds_checking,
+        test_summary="Validates bounds checking prevents IndexError when accessing lists/tuples",
+        functions_tested="_sync_cookies_and_get_csrf(), _build_relationship_path(), various string operations",
+        method_description="Search file content for safe access patterns like 'parts[0] if parts else None' using conditional expressions",
+        expected_outcome="CSRF token extraction, kinship persons access, and string operations all use bounds checking",
+    )
 
-        suite.run_test(
-            "Error Handling Coverage",
-            _test_error_handling,
-            test_summary="Validates comprehensive error handling with try/except blocks in critical functions",
-            functions_tested="_get_person_id_by_uuid(), _fetch_match_details_parallel(), _process_batch()",
-            method_description="Inspect source code using inspect.getsource() to verify try/except/finally blocks exist",
-            expected_outcome="All critical functions have appropriate error handling (try/except, some with finally)",
-        )
+    suite.run_test(
+        "Error Handling Coverage",
+        _test_error_handling,
+        test_summary="Validates comprehensive error handling with try/except blocks in critical functions",
+        functions_tested="_get_person_id_by_uuid(), _fetch_match_details_parallel(), _process_batch()",
+        method_description="Inspect source code using inspect.getsource() to verify try/except/finally blocks exist",
+        expected_outcome="All critical functions have appropriate error handling (try/except, some with finally)",
+    )
 
     # === FUNCTIONAL API TESTS (Require Live Session) ===
-    with suppress_logging():
-        suite.run_test(
-            "Match List API",
-            _test_match_list_api,
-            test_summary="Validates Match List API returns paginated DNA match data with correct structure",
-            functions_tested="fetch_match_list_page(), nav_to_dna_matches_page(), get_csrf_token_for_dna_matches()",
-            method_description="Navigate to DNA matches page, get CSRF token, call API, validate response contains matchList with sampleId/displayName/sharedCentimorgans/numSharedSegments",
-            expected_outcome="API returns dict with 'matchList' array containing 20+ matches, each with required fields (sampleId, matchProfile, relationship)",
-        )
+    suite.run_test(
+        "Match List API",
+        _test_match_list_api,
+        test_summary="Validates Match List API returns paginated DNA match data with correct structure",
+        functions_tested="fetch_match_list_page(), nav_to_dna_matches_page(), get_csrf_token_for_dna_matches()",
+        method_description="Navigate to DNA matches page, get CSRF token, call API, validate response contains matchList with sampleId/displayName/sharedCentimorgans/numSharedSegments",
+        expected_outcome="API returns dict with 'matchList' array containing 20+ matches, each with required fields (sampleId, matchProfile, relationship)",
+    )
 
-        suite.run_test(
-            "Match Details API",
-            _test_match_details_api,
-            test_summary="Validates Match Details API returns additional DNA data for specific match",
-            functions_tested="_fetch_match_details()",
-            method_description="Get match UUID from Match List, call Match Details API, validate response contains shared_segments/longest_shared_segment/predicted_relationship",
-            expected_outcome="API returns dict with DNA details including segment counts, longest segment, meiosis, and relationship prediction",
-        )
+    suite.run_test(
+        "Match Details API",
+        _test_match_details_api,
+        test_summary="Validates Match Details API returns additional DNA data for specific match",
+        functions_tested="_fetch_match_details()",
+        method_description="Get match UUID from Match List, call Match Details API, validate response contains shared_segments/longest_shared_segment/predicted_relationship",
+        expected_outcome="API returns dict with DNA details including segment counts, longest segment, meiosis, and relationship prediction",
+    )
 
-        suite.run_test(
-            "Profile Details API",
-            _test_profile_details_api,
-            test_summary="Validates Profile Details API returns user profile information for matches with public profiles",
-            functions_tested="_fetch_profile_details()",
-            method_description="Find match with userId, call Profile Details API, validate response contains last_logged_in and contactable fields",
-            expected_outcome="API returns dict with LastLoginDate (parsed to datetime) and IsContactable (boolean) fields",
-        )
+    suite.run_test(
+        "Profile Details API",
+        _test_profile_details_api,
+        test_summary="Validates Profile Details API returns user profile information for matches with public profiles",
+        functions_tested="_fetch_profile_details()",
+        method_description="Find match with userId, call Profile Details API, validate response contains last_logged_in and contactable fields",
+        expected_outcome="API returns dict with LastLoginDate (parsed to datetime) and IsContactable (boolean) fields",
+    )
 
-        suite.run_test(
-            "Badge Details API",
-            _test_badge_details_api,
-            test_summary="Validates Badge Details API returns family tree data for matches in user's tree",
-            functions_tested="_fetch_badge_details(), fetch_in_tree_status()",
-            method_description="Check in-tree status for matches, find match in tree, call Badge Details API, validate response contains cfpid/person_name_in_tree/birth_year",
-            expected_outcome="API returns dict with personBadged object containing tree-specific data (personId, firstName, birthYear)",
-        )
+    suite.run_test(
+        "Badge Details API",
+        _test_badge_details_api,
+        test_summary="Validates Badge Details API returns family tree data for matches in user's tree",
+        functions_tested="_fetch_badge_details(), fetch_in_tree_status()",
+        method_description="Check in-tree status for matches, find match in tree, call Badge Details API, validate response contains cfpid/person_name_in_tree/birth_year",
+        expected_outcome="API returns dict with personBadged object containing tree-specific data (personId, firstName, birthYear)",
+    )
 
-        suite.run_test(
-            "Relationship Probability API",
-            _test_relationship_probability_api,
-            test_summary="Validates Relationship Probability API returns predicted relationship with confidence percentage",
-            functions_tested="_fetch_relationship_probability()",
-            method_description="Get match UUID, call Relationship Probability API using cloudscraper, validate response format",
-            expected_outcome="API returns formatted string like 'mother [99.0%]' or None if data unavailable",
-        )
+    suite.run_test(
+        "Relationship Probability API",
+        _test_relationship_probability_api,
+        test_summary="Validates Relationship Probability API returns predicted relationship with confidence percentage",
+        functions_tested="_fetch_relationship_probability()",
+        method_description="Get match UUID, call Relationship Probability API using cloudscraper, validate response format",
+        expected_outcome="API returns formatted string like 'mother [99.0%]' or None if data unavailable",
+    )
 
-        suite.run_test(
-            "Parallel Match Details Fetching",
-            _test_parallel_fetch_match_details,
-            test_summary="Validates parallel processing of match details using ThreadPoolExecutor with 2 workers",
-            functions_tested="_fetch_match_details_parallel(), _refine_match_list()",
-            method_description="Refine match list, submit 3 matches to ThreadPoolExecutor, collect results, validate all complete successfully",
-            expected_outcome="All 3 parallel fetch operations complete and return dict results with match_details/profile_details/badge_details/predicted_rel",
-        )
+    suite.run_test(
+        "Parallel Match Details Fetching",
+        _test_parallel_fetch_match_details,
+        test_summary="Validates parallel processing of match details using ThreadPoolExecutor with 2 workers",
+        functions_tested="_fetch_match_details_parallel(), _refine_match_list()",
+        method_description="Refine match list, submit 3 matches to ThreadPoolExecutor, collect results, validate all complete successfully",
+        expected_outcome="All 3 parallel fetch operations complete and return dict results with match_details/profile_details/badge_details/predicted_rel",
+    )
 
     result = suite.finish_suite()
 
