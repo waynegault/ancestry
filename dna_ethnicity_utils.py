@@ -31,14 +31,14 @@ def fetch_tree_owner_ethnicity_regions(
 ) -> Optional[dict[str, Any]]:
     """
     Fetch the tree owner's DNA ethnicity regions.
-    
+
     Args:
         session_manager: Active SessionManager instance
         tree_owner_test_guid: Tree owner's DNA test GUID (e.g., MY_UUID from .env)
-    
+
     Returns:
         Dict containing version, createdAt, and regions list, or None if failed
-        
+
     Example response:
         {
             "version": 2025,
@@ -59,9 +59,9 @@ def fetch_tree_owner_ethnicity_regions(
         config_schema.api.base_url,
         f"dna/origins/secure/tests/{tree_owner_test_guid}/v2/ethnicity"
     )
-    
+
     logger.debug(f"Fetching tree owner ethnicity regions from: {url}")
-    
+
     response = _api_req(
         url=url,
         driver=session_manager.driver,
@@ -70,15 +70,15 @@ def fetch_tree_owner_ethnicity_regions(
         use_csrf_token=False,
         api_description="Tree Owner Ethnicity API"
     )
-    
+
     if not response or not isinstance(response, dict):
         logger.error("Failed to fetch tree owner ethnicity regions")
         return None
-    
+
     if "regions" not in response:
         logger.error("Ethnicity response missing 'regions' field")
         return None
-    
+
     logger.info(f"Successfully fetched {len(response['regions'])} ethnicity regions for tree owner")
     return response
 
@@ -141,15 +141,15 @@ def fetch_ethnicity_comparison(
 ) -> Optional[dict[str, Any]]:
     """
     Fetch ethnicity comparison between tree owner and a DNA match.
-    
+
     Args:
         session_manager: Active SessionManager instance
         tree_owner_test_guid: Tree owner's DNA test GUID
         match_test_guid: Match's DNA test GUID
-    
+
     Returns:
         Dict containing comparison data, or None if failed
-        
+
     Example response structure:
         {
             "sameVersion": true,
@@ -171,9 +171,9 @@ def fetch_ethnicity_comparison(
         config_schema.api.base_url,
         f"discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity"
     )
-    
+
     logger.debug(f"Fetching ethnicity comparison for match {match_test_guid}")
-    
+
     response = _api_req(
         url=url,
         driver=session_manager.driver,
@@ -182,15 +182,15 @@ def fetch_ethnicity_comparison(
         use_csrf_token=False,
         api_description="Ethnicity Comparison API"
     )
-    
+
     if not response or not isinstance(response, dict):
         logger.debug(f"No ethnicity comparison data available for match {match_test_guid}")
         return None
-    
+
     if "comparisons" not in response:
         logger.debug(f"Ethnicity comparison response missing 'comparisons' field for match {match_test_guid}")
         return None
-    
+
     logger.debug(f"Successfully fetched ethnicity comparison for match {match_test_guid}")
     return response
 
@@ -198,13 +198,13 @@ def fetch_ethnicity_comparison(
 def sanitize_column_name(region_name: str) -> str:
     """
     Sanitize region name to create a valid database column name.
-    
+
     Args:
         region_name: Original region name (e.g., "North East Scotland")
-    
+
     Returns:
         Sanitized column name (e.g., "north_east_scotland")
-    
+
     Examples:
         >>> sanitize_column_name("North East Scotland")
         'north_east_scotland'
@@ -215,13 +215,13 @@ def sanitize_column_name(region_name: str) -> str:
     """
     # Convert to lowercase
     sanitized = region_name.lower()
-    
+
     # Replace spaces and special characters with underscores
     sanitized = re.sub(r'[^a-z0-9]+', '_', sanitized)
-    
+
     # Remove leading/trailing underscores
     sanitized = sanitized.strip('_')
-    
+
     # Prefix with 'ethnicity_' to avoid conflicts
     return f"ethnicity_{sanitized}"
 
@@ -232,14 +232,14 @@ def extract_match_ethnicity_percentages(
 ) -> dict[str, int]:
     """
     Extract match's ethnicity percentages for tree owner's regions.
-    
+
     Args:
         comparison_data: Response from ethnicity comparison API
         tree_owner_region_keys: List of region keys the tree owner has
-    
+
     Returns:
         Dict mapping region keys to match's percentages
-        
+
     Example:
         >>> comparison_data = {"comparisons": [{"resourceId": "08302", "rightSum": 0}, ...]}
         >>> tree_owner_region_keys = ["08302", "06842"]
@@ -247,22 +247,22 @@ def extract_match_ethnicity_percentages(
         {'08302': 0, '06842': 16}
     """
     percentages = {}
-    
+
     if not comparison_data or "comparisons" not in comparison_data:
         # Return 0% for all regions if no comparison data
         return {key: 0 for key in tree_owner_region_keys}
-    
+
     # Build lookup dict from comparisons
     comparison_lookup = {
         comp["resourceId"]: comp.get("rightSum", 0)
         for comp in comparison_data["comparisons"]
         if "resourceId" in comp
     }
-    
+
     # Extract percentages for tree owner's regions
     for region_key in tree_owner_region_keys:
         percentages[region_key] = comparison_lookup.get(region_key, 0)
-    
+
     return percentages
 
 
@@ -288,23 +288,23 @@ def _test_extract_match_ethnicity_percentages() -> bool:
             {"resourceId": "06810", "leftSum": 4, "rightSum": 0},
         ]
     }
-    
+
     tree_owner_keys = ["08302", "06842", "08103", "06810"]
     result = extract_match_ethnicity_percentages(comparison_data, tree_owner_keys)
-    
+
     assert result["08302"] == 0, f"Expected 0 for 08302, got {result['08302']}"
     assert result["06842"] == 16, f"Expected 16 for 06842, got {result['06842']}"
     assert result["08103"] == 0, f"Expected 0 for 08103, got {result['08103']}"
     assert result["06810"] == 0, f"Expected 0 for 06810, got {result['06810']}"
-    
+
     # Test with missing comparison data
     result_empty = extract_match_ethnicity_percentages({}, tree_owner_keys)
     assert all(v == 0 for v in result_empty.values()), "All percentages should be 0 when no comparison data"
-    
+
     return True
 
 
-def _test_tree_owner_ethnicity_fetch() -> bool:
+def _test_tree_owner_ethnicity_fetch() -> bool:  # noqa: PLR0911
     """Test fetching tree owner's ethnicity regions from API."""
     import os
 
@@ -377,7 +377,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
         sm.close_sess()
 
 
-def _test_region_names_fetch() -> bool:
+def _test_region_names_fetch() -> bool:  # noqa: PLR0911
     """Test fetching region name mappings from API."""
     sm = SessionManager()
 
@@ -415,8 +415,10 @@ def _test_region_names_fetch() -> bool:
             logger.error("Failed to navigate to DNA matches page")
             return False
 
-        # Fetch region names from public API (no authentication needed)
-        region_names = fetch_ethnicity_region_names()
+        # Fetch region names from public API
+        # Use example region keys for testing
+        test_region_keys = ["08302", "06842", "08103", "06810"]
+        region_names = fetch_ethnicity_region_names(sm, test_region_keys)
 
         if not region_names:
             logger.error("Failed to fetch region names")
@@ -434,7 +436,7 @@ def _test_region_names_fetch() -> bool:
         sm.close_sess()
 
 
-def _test_ethnicity_comparison() -> bool:
+def _test_ethnicity_comparison() -> bool:  # noqa: PLR0911
     """Test fetching ethnicity comparison for a match."""
     import os
 

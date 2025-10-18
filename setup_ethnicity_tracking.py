@@ -20,6 +20,7 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 # === THIRD-PARTY IMPORTS ===
@@ -33,7 +34,6 @@ from dna_ethnicity_utils import (
     fetch_tree_owner_ethnicity_regions,
     sanitize_column_name,
 )
-
 
 ETHNICITY_METADATA_FILE = "ethnicity_regions.json"
 
@@ -52,7 +52,7 @@ def save_ethnicity_metadata(
 ) -> None:
     """
     Save ethnicity region metadata to JSON file for future reference.
-    
+
     Args:
         regions: List of region dicts from tree owner's ethnicity data
         region_names: Dict mapping region keys to names
@@ -70,26 +70,25 @@ def save_ethnicity_metadata(
             for region in regions
         ]
     }
-    
-    with open(ETHNICITY_METADATA_FILE, 'w') as f:
-        json.dump(metadata, f, indent=2)
-    
+
+    Path(ETHNICITY_METADATA_FILE).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
     logger.info(f"Saved ethnicity metadata to {ETHNICITY_METADATA_FILE}")
 
 
 def load_ethnicity_metadata() -> dict[str, Any]:
     """
     Load ethnicity region metadata from JSON file.
-    
+
     Returns:
         Dict containing tree_owner_regions list
     """
-    if not os.path.exists(ETHNICITY_METADATA_FILE):
+    metadata_path = Path(ETHNICITY_METADATA_FILE)
+    if not metadata_path.exists():
         logger.warning(f"Ethnicity metadata file {ETHNICITY_METADATA_FILE} not found")
         return {"tree_owner_regions": []}
-    
-    with open(ETHNICITY_METADATA_FILE, 'r') as f:
-        return json.load(f)
+
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
 def column_exists(db_manager: DatabaseManager, table_name: str, column_name: str) -> bool:
@@ -153,10 +152,10 @@ def add_ethnicity_column(
     return True
 
 
-def setup_ethnicity_tracking() -> None:
+def setup_ethnicity_tracking() -> None:  # noqa: PLR0911
     """
     Main setup function to initialize ethnicity tracking.
-    
+
     This function:
     1. Fetches tree owner's ethnicity regions
     2. Fetches region name mappings
@@ -166,7 +165,7 @@ def setup_ethnicity_tracking() -> None:
     logger.info("=" * 80)
     logger.info("DNA ETHNICITY TRACKING SETUP")
     logger.info("=" * 80)
-    
+
     # Get tree owner's test GUID
     try:
         tree_owner_guid = get_tree_owner_test_guid()
@@ -174,7 +173,7 @@ def setup_ethnicity_tracking() -> None:
     except ValueError as e:
         logger.error(f"Failed to get tree owner test GUID: {e}")
         return
-    
+
     # Initialize and authenticate session manager
     logger.info("Initializing session manager...")
     sm = SessionManager()
@@ -246,7 +245,7 @@ def setup_ethnicity_tracking() -> None:
         if not ethnicity_data or "regions" not in ethnicity_data:
             logger.error("Failed to fetch tree owner's ethnicity regions")
             return
-        
+
         regions = ethnicity_data["regions"]
         logger.info(f"Found {len(regions)} ethnicity regions for tree owner")
 
@@ -271,33 +270,33 @@ def setup_ethnicity_tracking() -> None:
             percentage = region["percentage"]
             logger.info(f"  {region_name:40s} {percentage:3d}%")
         logger.info("-" * 80)
-        
+
         # Save metadata
         logger.info("\nSaving ethnicity metadata...")
         save_ethnicity_metadata(regions, region_names)
-        
+
         # Initialize database manager
         logger.info("\nInitializing database manager...")
         db_manager = DatabaseManager()
-        
+
         # Add columns to dna_match table
         logger.info("\nAdding ethnicity columns to dna_match table...")
         columns_added = 0
         columns_existed = 0
-        
+
         for region in regions:
             region_key = region["key"]
             region_name = region_names.get(region_key, f"Unknown Region {region_key}")
             column_name = sanitize_column_name(region_name)
-            
+
             if add_ethnicity_column(db_manager, column_name, region_name):
                 columns_added += 1
             else:
                 columns_existed += 1
-        
+
         logger.info(f"\nColumns added: {columns_added}")
         logger.info(f"Columns already existed: {columns_existed}")
-        
+
         logger.info("\n" + "=" * 80)
         logger.info("ETHNICITY TRACKING SETUP COMPLETE")
         logger.info("=" * 80)

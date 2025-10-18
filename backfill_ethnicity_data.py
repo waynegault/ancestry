@@ -19,7 +19,7 @@ logger = setup_module(globals(), __name__)
 import ctypes
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import text
@@ -33,7 +33,6 @@ from dna_ethnicity_utils import (
     fetch_ethnicity_comparison,
 )
 from setup_ethnicity_tracking import load_ethnicity_metadata
-
 
 # Windows sleep prevention constants
 ES_CONTINUOUS = 0x80000000
@@ -139,45 +138,45 @@ def update_match_ethnicity(
 ) -> bool:
     """
     Update ethnicity columns for a DNA match.
-    
+
     Args:
         db_manager: DatabaseManager instance
         people_id: Person ID to update
         ethnicity_data: Dict mapping region keys to percentages
         column_mapping: Dict mapping region keys to column names
-    
+
     Returns:
         True if successful, False otherwise
     """
     if not ethnicity_data:
         return False
-    
+
     with db_manager.get_session_context() as session:
         if not session:
             logger.error("Failed to get database session")
             return False
-        
+
         # Build UPDATE statement dynamically
         set_clauses = []
         for region_key, percentage in ethnicity_data.items():
             column_name = column_mapping.get(region_key)
             if column_name:
                 set_clauses.append(f"{column_name} = {percentage}")
-        
+
         if not set_clauses:
             return False
-        
+
         update_sql = text(
             f"UPDATE dna_match SET {', '.join(set_clauses)} WHERE people_id = {people_id}"
         )
-        
+
         session.execute(update_sql)
         session.commit()
-        
+
         return True
 
 
-def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50, batch_delay: float = 5.0) -> None:
+def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50, batch_delay: float = 5.0) -> None:  # noqa: PLR0911
     """
     Main backfill function to populate ethnicity data for existing matches.
 
@@ -199,14 +198,14 @@ def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50
     # Load ethnicity metadata
     logger.info("Loading ethnicity metadata...")
     metadata = load_ethnicity_metadata()
-    
+
     if not metadata or not metadata.get("tree_owner_regions"):
         logger.error("No ethnicity metadata found. Please run setup_ethnicity_tracking.py first.")
         return
-    
+
     tree_owner_regions = metadata["tree_owner_regions"]
     logger.info(f"Loaded {len(tree_owner_regions)} tree owner regions")
-    
+
     # Build mappings
     region_keys = [region["key"] for region in tree_owner_regions]
     column_mapping = {region["key"]: region["column_name"] for region in tree_owner_regions}
@@ -222,7 +221,7 @@ def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50
     except ValueError as e:
         logger.error(f"Failed to get tree owner test GUID: {e}")
         return
-    
+
     # Initialize and authenticate session manager
     logger.info("Initializing session manager...")
     sm = SessionManager()
@@ -297,7 +296,7 @@ def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50
         if not matches:
             logger.warning("No DNA matches found with test GUIDs (or all already have ethnicity data)")
             return
-        
+
         # Limit matches if requested
         if max_matches and len(matches) > max_matches:
             logger.info(f"Limiting to first {max_matches} of {len(matches)} matches")
@@ -354,12 +353,12 @@ def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50
                     # Optional batch delay (can be set to 0 now that we have dynamic limiting)
                     if batch_delay > 0:
                         time.sleep(batch_delay)
-                
+
             except Exception as e:
                 logger.error(f"Error processing match {match_uuid}: {e}")
                 error_count += 1
                 continue
-        
+
         # Final statistics
         stats = get_global_rate_limiter_stats()
         logger.info("\n" + "=" * 80)
@@ -375,7 +374,7 @@ def backfill_ethnicity_data(max_matches: int | None = None, batch_size: int = 50
         logger.info(f"  Initial delay: {stats['initial_delay']:.2f}s")
         logger.info(f"  Max delay: {stats['max_delay']:.2f}s")
         logger.info("=" * 80)
-        
+
     finally:
         # Re-enable sleep
         allow_sleep()

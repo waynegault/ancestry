@@ -90,8 +90,8 @@ class ApiRequestConfig:
     # HTTP method and data
     method: str = "GET"
     data: Optional[dict] = None
-    json_data: Optional[dict] = None
-    json: Optional[dict] = None
+    json_data: Optional[Union[dict, list]] = None
+    json: Optional[Union[dict, list]] = None
 
     # Headers and authentication
     headers: Optional[dict[str, str]] = None
@@ -2371,8 +2371,8 @@ def _api_req(
     session_manager: SessionManager,  # type: ignore
     method: str = "GET",
     data: Optional[dict] = None,
-    json_data: Optional[dict] = None,
-    json: Optional[dict] = None,
+    json_data: Optional[Union[dict, list]] = None,
+    json: Optional[Union[dict, list]] = None,
     use_csrf_token: bool = True,
     headers: Optional[dict[str, str]] = None,
     referer_url: Optional[str] = None,

@@ -1,5 +1,6 @@
 """Quick script to check backfill status."""
 from sqlalchemy import text
+
 from core.database_manager import DatabaseManager
 from setup_ethnicity_tracking import load_ethnicity_metadata
 
@@ -10,8 +11,15 @@ regions = metadata.get("tree_owner_regions", [])
 db_manager = DatabaseManager()
 
 with db_manager.get_session_context() as session:
+    if not session:
+        print("ERROR: Failed to get database session")
+        exit(1)
+
     # Total matches
     result = session.execute(text("SELECT COUNT(*) FROM dna_match")).fetchone()
+    if not result:
+        print("ERROR: Failed to query database")
+        exit(1)
     total_matches = result[0]
 
     # Build WHERE clause for matches with any ethnicity data
@@ -26,6 +34,9 @@ with db_manager.get_session_context() as session:
     result = session.execute(text(f"""
         SELECT COUNT(*) FROM dna_match WHERE {where_sql}
     """)).fetchone()
+    if not result:
+        print("ERROR: Failed to query matches with ethnicity")
+        exit(1)
     matches_with_ethnicity = result[0]
 
     # Matches with all zeros (processed but no overlap)
@@ -33,6 +44,9 @@ with db_manager.get_session_context() as session:
     result = session.execute(text(f"""
         SELECT COUNT(*) FROM dna_match WHERE {where_all_zero}
     """)).fetchone()
+    if not result:
+        print("ERROR: Failed to query matches with all zeros")
+        exit(1)
     matches_all_zero = result[0]
 
     # Matches with all NULL (never processed)
@@ -40,6 +54,9 @@ with db_manager.get_session_context() as session:
     result = session.execute(text(f"""
         SELECT COUNT(*) FROM dna_match WHERE {where_all_null}
     """)).fetchone()
+    if not result:
+        print("ERROR: Failed to query matches with all NULL")
+        exit(1)
     matches_all_null = result[0]
 
     # Sample of matches with ethnicity data
