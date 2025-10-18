@@ -324,6 +324,44 @@ def _test_extract_match_ethnicity_percentages() -> bool:
     return True
 
 
+def _setup_test_session(sm: SessionManager) -> bool:
+    """Set up and authenticate a test session."""
+    from utils import _load_login_cookies, log_in, login_status
+
+    sm.browser_manager.browser_needed = True
+
+    if not sm.start_sess("Ethnicity Utils Tests"):
+        logger.error("Failed to start session")
+        return False
+
+    _load_login_cookies(sm)
+    login_check = login_status(sm, disable_ui_fallback=True)
+
+    if login_check is False:
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            logger.error(f"Login failed: {login_result}")
+            return False
+    elif login_check is None:
+        logger.error("Login status check failed")
+        return False
+
+    if not sm.ensure_session_ready("coord", skip_csrf=True):
+        logger.error("Session not ready")
+        return False
+
+    return True
+
+
+def _navigate_to_dna_page(sm: SessionManager) -> bool:
+    """Navigate to DNA matches page."""
+    from dna_utils import nav_to_dna_matches_page
+    if not nav_to_dna_matches_page(sm):
+        logger.error("Failed to navigate to DNA matches page")
+        return False
+    return True
+
+
 def _test_tree_owner_ethnicity_fetch() -> bool:
     """Test fetching tree owner's ethnicity regions from API."""
     import os
@@ -334,65 +372,28 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
         return False
 
     sm = SessionManager()
-
     try:
-        # Mark browser as needed
-        sm.browser_manager.browser_needed = True
-
-        # Start session
-        if not sm.start_sess("Ethnicity Utils Tests"):
-            logger.error("Failed to start session")
-            return False
-
-        # Authenticate session
-        from utils import _load_login_cookies, log_in, login_status
-        _load_login_cookies(sm)
-        login_check = login_status(sm, disable_ui_fallback=True)
-
-        if login_check is False:
-            login_result = log_in(sm)
-            if login_result != "LOGIN_SUCCEEDED":
-                logger.error(f"Login failed: {login_result}")
-                return False
-        elif login_check is None:
-            logger.error("Login status check failed")
-            return False
-
-        # Ensure session ready (use "coord" to skip cookie checks)
-        if not sm.ensure_session_ready("coord", skip_csrf=True):
-            logger.error("Session not ready")
+        if not _setup_test_session(sm):
             return False
 
         if not sm.my_uuid:
             logger.error("UUID not available")
             return False
 
-        # Navigate to DNA matches page
-        from dna_utils import nav_to_dna_matches_page
-        if not nav_to_dna_matches_page(sm):
-            logger.error("Failed to navigate to DNA matches page")
+        if not _navigate_to_dna_page(sm):
             return False
 
-        # Fetch tree owner's ethnicity
         ethnicity_data = fetch_tree_owner_ethnicity_regions(sm, my_uuid)
-
-        if not ethnicity_data:
-            logger.error("Failed to fetch tree owner ethnicity")
-            return False
-
-        if "regions" not in ethnicity_data:
-            logger.error("Ethnicity data missing 'regions' field")
+        if not ethnicity_data or "regions" not in ethnicity_data:
+            logger.error("Failed to fetch tree owner ethnicity or missing regions")
             return False
 
         regions = ethnicity_data["regions"]
         logger.info(f"✅ Successfully fetched {len(regions)} ethnicity regions")
-
-        # Display regions
         for region in regions:
             logger.info(f"  Region {region['key']}: {region['percentage']}%")
 
         return True
-
     finally:
         sm.close_sess()
 
@@ -400,43 +401,13 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
 def _test_region_names_fetch() -> bool:
     """Test fetching region name mappings from API."""
     sm = SessionManager()
-
     try:
-        # Mark browser as needed
-        sm.browser_manager.browser_needed = True
-
-        # Start session
-        if not sm.start_sess("Ethnicity Utils Tests"):
-            logger.error("Failed to start session")
+        if not _setup_test_session(sm):
             return False
 
-        # Authenticate session
-        from utils import _load_login_cookies, log_in, login_status
-        _load_login_cookies(sm)
-        login_check = login_status(sm, disable_ui_fallback=True)
-
-        if login_check is False:
-            login_result = log_in(sm)
-            if login_result != "LOGIN_SUCCEEDED":
-                logger.error(f"Login failed: {login_result}")
-                return False
-        elif login_check is None:
-            logger.error("Login status check failed")
+        if not _navigate_to_dna_page(sm):
             return False
 
-        # Ensure session ready (use "coord" to skip cookie checks)
-        if not sm.ensure_session_ready("coord", skip_csrf=True):
-            logger.error("Session not ready")
-            return False
-
-        # Navigate to DNA matches page
-        from dna_utils import nav_to_dna_matches_page
-        if not nav_to_dna_matches_page(sm):
-            logger.error("Failed to navigate to DNA matches page")
-            return False
-
-        # Fetch region names from public API
-        # Use example region keys for testing
         test_region_keys = ["08302", "06842", "08103", "06810"]
         region_names = fetch_ethnicity_region_names(sm, test_region_keys)
 
@@ -445,13 +416,10 @@ def _test_region_names_fetch() -> bool:
             return False
 
         logger.info(f"✅ Successfully fetched {len(region_names)} region names")
-
-        # Display some examples
         for key, name in list(region_names.items())[:5]:
             logger.info(f"  {key}: {name}")
 
         return True
-
     finally:
         sm.close_sess()
 
@@ -465,46 +433,16 @@ def _test_ethnicity_comparison() -> bool:
         logger.error("MY_UUID not found in .env")
         return False
 
-    # Use a known match UUID (Brent Husson from example)
     match_uuid = "B509B1EB-EE8B-4D28-89A4-6E9B93C4A727"
-
     sm = SessionManager()
 
     try:
-        # Mark browser as needed
-        sm.browser_manager.browser_needed = True
-
-        # Start session
-        if not sm.start_sess("Ethnicity Utils Tests"):
-            logger.error("Failed to start session")
+        if not _setup_test_session(sm):
             return False
 
-        # Authenticate session
-        from utils import _load_login_cookies, log_in, login_status
-        _load_login_cookies(sm)
-        login_check = login_status(sm, disable_ui_fallback=True)
-
-        if login_check is False:
-            login_result = log_in(sm)
-            if login_result != "LOGIN_SUCCEEDED":
-                logger.error(f"Login failed: {login_result}")
-                return False
-        elif login_check is None:
-            logger.error("Login status check failed")
+        if not _navigate_to_dna_page(sm):
             return False
 
-        # Ensure session ready (use "coord" to skip cookie checks)
-        if not sm.ensure_session_ready("coord", skip_csrf=True):
-            logger.error("Session not ready")
-            return False
-
-        # Navigate to DNA matches page
-        from dna_utils import nav_to_dna_matches_page
-        if not nav_to_dna_matches_page(sm):
-            logger.error("Failed to navigate to DNA matches page")
-            return False
-
-        # Fetch comparison
         comparison_data = fetch_ethnicity_comparison(sm, my_uuid, match_uuid)
 
         if not comparison_data:
@@ -518,7 +456,6 @@ def _test_ethnicity_comparison() -> bool:
         comparisons = comparison_data["comparisons"]
         logger.info(f"✅ Successfully fetched ethnicity comparison with {len(comparisons)} regions")
 
-        # Display some comparisons
         for comp in comparisons[:5]:
             resource_id = comp.get("resourceId", "Unknown")
             left_sum = comp.get("leftSum", 0)
@@ -526,7 +463,6 @@ def _test_ethnicity_comparison() -> bool:
             logger.info(f"  Region {resource_id}: You={left_sum}%, Match={right_sum}%")
 
         return True
-
     finally:
         sm.close_sess()
 

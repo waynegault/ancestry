@@ -198,7 +198,7 @@ def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, 
     return matches, 0, 0, False, "", total_pages, is_last_page
 
 
-def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:
+def _log_page_header(page_num: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:
     """Log page processing header."""
     # Add blank line before separator for readability
     logger.info("")
@@ -265,6 +265,44 @@ def _update_page_totals(
     )
 
 
+def _handle_page_fetch_result(
+    should_break: bool,
+    reason: str,
+    matches: Optional[list],
+    is_last_page: bool,
+    page_num: int,
+    end_page: float,
+    max_pages: int,
+) -> tuple[bool, bool, str]:
+    """
+    Handle the result of fetching page data.
+
+    Returns:
+        (should_break_loop, should_continue_to_next, incomplete_reason)
+    """
+    if should_break:
+        return True, False, reason if reason else ""
+
+    should_stop, stop_msg = _should_stop_processing(page_num, end_page, max_pages, is_last_page, matches)
+    if should_stop:
+        if stop_msg and "last page" in stop_msg.lower():
+            logger.info(stop_msg)
+        return True, False, ""
+
+    if not matches:
+        return False, True, ""  # Continue to next page
+
+    return False, False, ""  # Process matches
+
+
+def _log_page_complete(new: int, updated: int, skipped: int, errors: int, page_num: int) -> None:
+    """Log page completion summary."""
+    if new == 0 and updated == 0 and errors == 0 and skipped > 0:
+        logger.info(f"Page {page_num} complete: All {skipped} matches already in database")
+    else:
+        logger.info(f"Page {page_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+
+
 def _process_pages_loop(
     session_manager: SessionManager,
     driver: Any,
@@ -277,12 +315,8 @@ def _process_pages_loop(
     batch_size: int
 ) -> tuple[int, int, int, int, int, int, bool, str]:
     """Process all pages and return statistics."""
-    total_new = 0
-    total_updated = 0
-    total_skipped = 0
-    total_errors = 0
-    session_deaths = 0
-    session_recoveries = 0
+    total_new = total_updated = total_skipped = total_errors = 0
+    session_deaths = session_recoveries = 0
     run_incomplete = False
     incomplete_reason = ""
     api_total_pages: Optional[int] = None
@@ -295,27 +329,21 @@ def _process_pages_loop(
     pages_processed = 0
 
     while True:
-        # Check if we've reached the page limit
         if max_pages > 0 and page_num > end_page:
             break
 
-        # Health check
         should_continue, deaths, recoveries, reason = _handle_session_health_check(session_manager)
         session_deaths += deaths
         session_recoveries += recoveries
         if not should_continue:
-            run_incomplete = True
-            incomplete_reason = reason
-            break
+            return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, True, reason
 
-        _log_page_header(page_num, pages_processed, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
+        _log_page_header(page_num, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
 
-        # Fetch page data
         matches, deaths, recoveries, should_break, reason, page_total_pages, is_last_page = _fetch_and_validate_page_data(
             driver, session_manager, my_uuid, page_num, csrf_token, max_pages
         )
 
-        # Update API total pages on first response
         if page_total_pages is not None and api_total_pages is None:
             api_total_pages = page_total_pages
             if max_pages == 0:
@@ -324,45 +352,31 @@ def _process_pages_loop(
         session_deaths += deaths
         session_recoveries += recoveries
 
-        if should_break:
-            if reason:
-                run_incomplete = True
-                incomplete_reason = reason
-            break
+        should_break_loop, should_skip_to_next, break_reason = _handle_page_fetch_result(
+            should_break, reason, matches, is_last_page, page_num, end_page, max_pages
+        )
 
-        # Check if we should stop
-        should_stop, stop_reason = _should_stop_processing(page_num, end_page, max_pages, is_last_page, matches)
-        if should_stop:
-            if stop_reason and "last page" in stop_reason.lower():
-                logger.info(stop_reason)
-            break
+        if should_break_loop:
+            return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, bool(break_reason), break_reason
 
-        if not matches:
+        if should_skip_to_next:
             page_num += 1
             pages_processed += 1
             continue
 
-        # Process matches
         new, updated, skipped, errors, deaths, recoveries, page_incomplete, page_reason = _process_page_batches(
             matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
         )
 
-        # Update totals
         total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries = _update_page_totals(
             total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries,
             new, updated, skipped, errors, deaths, recoveries
         )
 
-        # Log page summary
-        if new == 0 and updated == 0 and errors == 0 and skipped > 0:
-            logger.info(f"Page {page_num} complete: All {skipped} matches already in database")
-        else:
-            logger.info(f"Page {page_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+        _log_page_complete(new, updated, skipped, errors, page_num)
 
         if page_incomplete:
-            run_incomplete = True
-            incomplete_reason = page_reason
-            break
+            return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, True, page_reason
 
         page_num += 1
         pages_processed += 1
