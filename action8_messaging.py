@@ -1,40 +1,17 @@
 #!/usr/bin/env python3
 
 """
-Intelligent Messaging Automation & Personalization Engine
+Action 8: Intelligent Messaging Automation & Personalization Engine
 
-Sophisticated communication orchestration system that delivers personalized,
-contextually-aware messages to DNA matches through intelligent template selection,
-relationship-based personalization, and automated follow-up sequences with
-comprehensive tracking and engagement optimization.
+Delivers personalized, contextually-aware messages to DNA matches through:
+- Dynamic template selection based on relationship strength
+- Intelligent recipient filtering with engagement prediction
+- Automated follow-up sequences with timing optimization
+- Complete message lifecycle tracking with delivery confirmation
+- Batch processing with intelligent scheduling and rate limiting
+- Comprehensive error recovery with circuit breaker patterns
 
-Personalization Intelligence:
-• Dynamic template selection based on relationship strength and context
-• AI-powered content personalization with genealogical insights
-• Intelligent recipient filtering with engagement prediction
-• Automated follow-up sequences with timing optimization
-• Comprehensive communication history analysis
-• Sentiment-aware message crafting and tone adjustment
-
-Workflow Management:
-• Status-based messaging workflows with conditional logic
-• Batch processing with intelligent scheduling and rate limiting
-• Real-time progress tracking with detailed analytics
-• Comprehensive error recovery with message queue management
-• Circuit breaker patterns for reliable delivery
-• Automated retry logic with exponential backoff
-
-Communication Tracking:
-• Complete message lifecycle tracking with delivery confirmation
-• Engagement analytics with response rate optimization
-• Comprehensive audit trails for compliance and analysis
-• Automated duplicate prevention and message deduplication
-• Historical communication analysis for relationship insights
-
-Quality & Compliance:
-Implements comprehensive validation, delivery tracking, and compliance monitoring
-to ensure professional, effective communication that enhances genealogical
-research relationships while maintaining platform guidelines and user privacy.
+In dry_run mode: Messages are created and saved to DB but NOT sent to Ancestry.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -43,23 +20,19 @@ from standard_imports import setup_module
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
-# === PHASE 1 OPTIMIZATIONS ===
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+# === ERROR HANDLING ===
 from core.error_handling import (
     circuit_breaker,
     error_context,
     graceful_degradation,
 )
 
-# === PHASE 9.1: MESSAGE PERSONALIZATION ===
+# === MESSAGE PERSONALIZATION ===
 _msg_pers_available = False
 try:
     from message_personalization import MessagePersonalizer
     _msg_pers_available = True
-    # Message personalization system loaded successfully (removed verbose debug)
-except ImportError as e:
-    logger.warning(f"Message personalization not available: {e}")
+except ImportError:
     MessagePersonalizer = None
 
 MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
@@ -212,21 +185,17 @@ from utils import (  # Core utilities
     format_name,  # Name formatting
 )
 
-# --- Initialization & Template Loading ---
-# Action 8 Initializing (removed verbose debug logging)
-
-# Define message intervals based on app mode (controls time between follow-ups)
+# === MESSAGE INTERVALS ===
 MESSAGE_INTERVALS = {
-    "testing": timedelta(seconds=10),  # Short interval for testing
-    "production": timedelta(weeks=8),  # Standard interval for production
-    "dry_run": timedelta(seconds=30),  # FIXED: Short interval for dry run testing to allow message progression
+    "testing": timedelta(seconds=10),
+    "production": timedelta(weeks=8),
+    "dry_run": timedelta(seconds=30),
 }
 MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
     getattr(config_schema, 'app_mode', 'production'), timedelta(weeks=8)
 )
-# Using minimum message interval (removed verbose debug logging)
 
-# Define standard message type keys (must match database MessageTemplate table)
+# === MESSAGE TYPES ===
 MESSAGE_TYPES_ACTION8: dict[str, str] = {
     "In_Tree-Initial": "In_Tree-Initial",
     "In_Tree-Follow_Up": "In_Tree-Follow_Up",
@@ -235,10 +204,7 @@ MESSAGE_TYPES_ACTION8: dict[str, str] = {
     "Out_Tree-Follow_Up": "Out_Tree-Follow_Up",
     "Out_Tree-Final_Reminder": "Out_Tree-Final_Reminder",
     "In_Tree-Initial_for_was_Out_Tree": "In_Tree-Initial_for_was_Out_Tree",
-    # Note: Productive Reply ACK is handled by Action 9
-    "User_Requested_Desist": "User_Requested_Desist",  # Handled here if Person status is DESIST
-
-    # New template variants for improved messaging
+    "User_Requested_Desist": "User_Requested_Desist",
     "In_Tree-Initial_Short": "In_Tree-Initial_Short",
     "Out_Tree-Initial_Short": "Out_Tree-Initial_Short",
     "In_Tree-Initial_Confident": "In_Tree-Initial_Confident",
@@ -246,32 +212,22 @@ MESSAGE_TYPES_ACTION8: dict[str, str] = {
 }
 
 
-@cache_result("message_templates")  # Cache the loaded templates
+@cache_result("message_templates")
 def load_message_templates() -> dict[str, str]:
-    """
-    Loads message templates from the database MessageTemplate table.
-    Validates that all required template keys for Action 8 are present.
-
-    Returns:
-        A dictionary mapping template keys to full message content (subject + body).
-        Returns an empty dictionary if loading or validation fails.
-    """
+    """Load message templates from database MessageTemplate table."""
     try:
         from core.session_manager import SessionManager
 
         session_manager = SessionManager()
         with session_manager.get_db_conn_context() as session:
             if not session:
-                logger.critical("CRITICAL: Could not get database session for template loading")
+                logger.critical("Could not get database session for template loading")
                 return {}
 
-            # Fetch all templates from database
             templates_query = session.query(MessageTemplate).all()
-
-            # Build dictionary with full message content (subject + body)
             templates = {}
+
             for template in templates_query:
-                # Reconstruct full message content with subject line
                 if template.subject_line and template.message_content:
                     full_content = f"Subject: {template.subject_line}\n\n{template.message_content}"
                 elif template.message_content:
@@ -282,7 +238,7 @@ def load_message_templates() -> dict[str, str]:
 
                 templates[template.template_key] = full_content
 
-            # Validate that all required keys for Action 8 exist
+            # Validate required keys
             core_required_keys = {
                 "In_Tree-Initial", "In_Tree-Follow_Up", "In_Tree-Final_Reminder",
                 "Out_Tree-Initial", "Out_Tree-Follow_Up", "Out_Tree-Final_Reminder",
@@ -291,116 +247,38 @@ def load_message_templates() -> dict[str, str]:
             }
             missing_keys = core_required_keys - set(templates.keys())
             if missing_keys:
-                logger.critical(
-                    f"CRITICAL: Database is missing required template keys: {', '.join(missing_keys)}"
-                )
+                logger.critical(f"Missing required template keys: {', '.join(missing_keys)}")
                 return {}
 
-            logger.debug(f"Loaded {len(templates)} message templates from database")
+            logger.debug(f"Loaded {len(templates)} message templates")
             return templates
 
     except Exception as e:
-        logger.critical(f"CRITICAL: Error loading templates from database: {e}", exc_info=True)
+        logger.critical(f"Error loading templates: {e}", exc_info=True)
         return {}
 
 
-# End of load_message_templates
-
-# Load templates into a global variable for easy access
+# Load templates into a global variable
 MESSAGE_TEMPLATES: dict[str, str] = load_message_templates()
-# Critical check: exit if essential templates failed to load
-# Check against core required keys only (variants are optional)
+
+# Validate essential templates loaded
 core_required_check_keys = {
     "In_Tree-Initial", "In_Tree-Follow_Up", "In_Tree-Final_Reminder",
     "Out_Tree-Initial", "Out_Tree-Follow_Up", "Out_Tree-Final_Reminder",
     "In_Tree-Initial_for_was_Out_Tree", "User_Requested_Desist",
     "Productive_Reply_Acknowledgement"
 }
-if not MESSAGE_TEMPLATES or not all(
-    key in MESSAGE_TEMPLATES for key in core_required_check_keys
-):
-    logger.critical(
-        "Essential message templates failed to load. Cannot proceed reliably."
-    )
-    # Optionally: sys.exit(1) here if running standalone or want hard failure
-    # For now, allow script to potentially continue but log critical error.
-
-# ------------------------------------------------------------------------------
-# Log-only: Audit template placeholders to ensure safe coverage of Enhanced_* keys
-# ------------------------------------------------------------------------------
-
-def _audit_template_placeholders(templates: dict[str, str]) -> None:
-    """Log-only audit: warn if templates contain unknown placeholders."""
-    try:
-        formatter = Formatter()
-        base_keys = {
-            "name",
-            "predicted_relationship",
-            "actual_relationship",
-            "relationship_path",
-            "total_rows",
-        }
-        enhanced_keys = {
-            # Keys created by MessagePersonalizer._create_enhanced_format_data
-            "shared_ancestors",
-            "ancestors_details",
-            "genealogical_context",
-            "research_focus",
-            "specific_questions",
-            "geographic_context",
-            "location_context",
-            "research_suggestions",
-            "specific_research_questions",
-            "mentioned_people",
-            "research_context",
-            "personalized_response",
-            "research_insights",
-            "follow_up_questions",
-            "estimated_relationship",
-            "shared_dna_amount",
-            "dna_context",
-            "shared_ancestor_information",
-            "research_collaboration_request",
-            "research_topic",
-            "specific_research_needs",
-            "collaboration_proposal",
-        }
-        allowed = base_keys | enhanced_keys
-        for key, tmpl in templates.items():
-            # Only audit Enhanced_* aggressively; others will mostly use base_keys
-            fields = {
-                fname for (_, fname, _, _) in formatter.parse(tmpl) if fname
-            }
-            if key.startswith("Enhanced_"):
-                unknown = sorted(f for f in fields if f not in allowed)
-                if unknown:
-                    logger.warning(
-                        f"Template audit: Template '{key}' has unknown placeholders: {unknown}"
-                    )
-            else:
-                # For standard templates, just note uncommon placeholders
-                uncommon = sorted(f for f in fields if f not in base_keys)
-                if uncommon:
-                    logger.debug(
-                        f"Template audit: Template '{key}' uses non-base placeholders: {uncommon}"
-                    )
-    except Exception as _audit_err:
-        logger.debug(f"Template audit skipped due to error: {_audit_err}")
-
-
-# Run a one-time audit of the loaded templates (log-only)
-if MESSAGE_TEMPLATES:
-    _audit_template_placeholders(MESSAGE_TEMPLATES)
+if not MESSAGE_TEMPLATES or not all(key in MESSAGE_TEMPLATES for key in core_required_check_keys):
+    logger.critical("Essential message templates failed to load")
 
 # Initialize message personalizer
 import contextlib
-from typing import Any as _Any  # alias to avoid conflicts in type annotations
+from typing import Any as _Any
 
 _message_personalizer: Optional[_Any] = None
 if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
     try:
         _message_personalizer = MessagePersonalizer()
-        # Message personalizer initialized successfully (removed verbose debug)
     except Exception as e:
         logger.warning(f"Failed to initialize message personalizer: {e}")
         _message_personalizer = None
@@ -409,212 +287,78 @@ MESSAGE_PERSONALIZER = _message_personalizer
 
 
 # ------------------------------------------------------------------------------
-# Log-only: Personalization sanity checker for enhanced templates
-# ------------------------------------------------------------------------------
-
-def _log_personalization_sanity_for_template(
-    template_key: str,
-    template_str: str,
-    extracted_data: dict[str, Any],
-    log_prefix: str,
-) -> None:
-    """
-    Estimate how well an enhanced template can be personalized from extracted_data.
-    This is LOG-ONLY and does not affect behavior.
-
-    Heuristic: parse the template to find placeholder field names, then score
-    each field based on presence of the underlying data in extracted_data.
-    """
-    try:
-        # Collect placeholders used by this template
-        formatter = Formatter()
-        fields_used = {fname for (_, fname, _, _) in formatter.parse(template_str) if fname}
-
-        # Map of placeholder -> function that checks if data likely exists
-        def has_list(d: dict[str, Any], key: str) -> bool:
-            v = d.get(key)
-            return isinstance(v, list) and len(v) > 0
-
-        checks = {
-            # Genealogical context fields
-            "shared_ancestors": lambda d: has_list(d, "structured_names"),
-            "ancestors_details": lambda d: has_list(d, "vital_records"),
-            "genealogical_context": lambda d: has_list(d, "locations") or has_list(d, "occupations"),
-            "research_focus": lambda d: has_list(d, "research_questions"),
-            "specific_questions": lambda d: has_list(d, "research_questions") or has_list(d, "locations"),
-            "geographic_context": lambda d: has_list(d, "locations"),
-            "location_context": lambda d: has_list(d, "locations"),
-            "research_suggestions": lambda d: has_list(d, "structured_names") or has_list(d, "research_questions"),
-            "specific_research_questions": lambda d: has_list(d, "research_questions"),
-            "mentioned_people": lambda d: has_list(d, "structured_names"),
-            "research_context": lambda d: has_list(d, "research_questions") or has_list(d, "locations"),
-            # DNA-related
-            "estimated_relationship": lambda d: has_list(d, "dna_information"),
-            "shared_dna_amount": lambda d: has_list(d, "dna_information"),
-            # Often defaulted; considered neutral (always True)
-            "dna_context": lambda _: True,
-            "shared_ancestor_information": lambda _: True,
-            "research_collaboration_request": lambda _: True,
-            "personalized_response": lambda _: True,
-            "research_insights": lambda d: has_list(d, "vital_records") or has_list(d, "relationships"),
-            "follow_up_questions": lambda d: has_list(d, "research_questions"),
-            "research_topic": lambda d: has_list(d, "research_questions"),
-            "specific_research_needs": lambda _: True,
-            "collaboration_proposal": lambda _: True,
-            # Standard/base placeholders are handled elsewhere; ignore here (always True)
-            "name": lambda _: True,
-            "predicted_relationship": lambda _: True,
-            "actual_relationship": lambda _: True,
-            "relationship_path": lambda _: True,
-            "total_rows": lambda _: True,
-        }
-
-        scored_fields = [f for f in fields_used if f in checks]
-        if not scored_fields:
-            logger.debug(
-                f"Personalization sanity for {log_prefix}: Template '{template_key}' has no scorable fields."
-            )
-            return
-
-        score = sum(1 for f in scored_fields if checks[f](extracted_data))
-        total = len(scored_fields)
-        pct = (score / total) * 100 if total else 100.0
-        logger.debug(
-            f"Personalization sanity for {log_prefix}: Template '{template_key}' — coverage {score}/{total} ({pct:.0f}%). Fields: {sorted(scored_fields)}"
-        )
-    except Exception as _ps_err:
-        logger.debug(
-            f"Skipped personalization sanity check for {log_prefix} (template '{template_key}'): {_ps_err}"
-        )
-
-
-# ------------------------------------------------------------------------------
 # Message Type Determination Logic
 # ------------------------------------------------------------------------------
 
 
-# Define message transition table as a module-level constant
+# === MESSAGE TRANSITION TABLE ===
 # Maps (current_message_type, is_in_family_tree) to next_message_type
-# None as current_message_type means no previous message
-# None as next_message_type means end of sequence or no appropriate next message
 MESSAGE_TRANSITION_TABLE = {
-    # Initial message cases (no previous message)
+    # Initial messages (no previous message)
     (None, True): "In_Tree-Initial",
     (None, False): "Out_Tree-Initial",
-    # In-Tree sequences - Generic initial types
+    # In-Tree sequences
     ("In_Tree-Initial", True): "In_Tree-Follow_Up",
     ("In_Tree-Initial_for_was_Out_Tree", True): "In_Tree-Follow_Up",
-    ("In_Tree-Follow_Up", True): "In_Tree-Final_Reminder",
-    ("In_Tree-Final_Reminder", True): None,  # End of In-Tree sequence
-    # In-Tree sequences - Specific initial type variants (CRITICAL FIX for message progression)
     ("In_Tree-Initial_Confident", True): "In_Tree-Follow_Up",
     ("In_Tree-Initial_Short", True): "In_Tree-Follow_Up",
-    # Out-Tree sequences - Generic initial types
+    ("In_Tree-Follow_Up", True): "In_Tree-Final_Reminder",
+    ("In_Tree-Final_Reminder", True): None,
+    # Out-Tree sequences
     ("Out_Tree-Initial", False): "Out_Tree-Follow_Up",
-    ("Out_Tree-Follow_Up", False): "Out_Tree-Final_Reminder",
-    ("Out_Tree-Final_Reminder", False): None,  # End of Out-Tree sequence
-    # Out-Tree sequences - Specific initial type variants (CRITICAL FIX for message progression)
     ("Out_Tree-Initial_Short", False): "Out_Tree-Follow_Up",
     ("Out_Tree-Initial_Exploratory", False): "Out_Tree-Follow_Up",
-    # Tree status change transitions - Generic types
-    # Any Out-Tree message -> In-Tree status
+    ("Out_Tree-Follow_Up", False): "Out_Tree-Final_Reminder",
+    ("Out_Tree-Final_Reminder", False): None,
+    # Tree status changes (Out->In)
     ("Out_Tree-Initial", True): "In_Tree-Initial_for_was_Out_Tree",
     ("Out_Tree-Follow_Up", True): "In_Tree-Initial_for_was_Out_Tree",
     ("Out_Tree-Final_Reminder", True): "In_Tree-Initial_for_was_Out_Tree",
-    # Tree status change transitions - Specific variants
     ("Out_Tree-Initial_Short", True): "In_Tree-Initial_for_was_Out_Tree",
     ("Out_Tree-Initial_Exploratory", True): "In_Tree-Initial_for_was_Out_Tree",
-    # Special case: Was Out->In->Out again
-    ("In_Tree-Initial_for_was_Out_Tree", False): "Out_Tree-Initial",
-    # General case: Was In-Tree, now Out-Tree (stop messaging) - Generic types
+    # Tree status changes (In->Out)
     ("In_Tree-Initial", False): None,
     ("In_Tree-Follow_Up", False): None,
     ("In_Tree-Final_Reminder", False): None,
-    # General case: Was In-Tree, now Out-Tree (stop messaging) - Specific variants
     ("In_Tree-Initial_Confident", False): None,
     ("In_Tree-Initial_Short", False): None,
-    # Desist acknowledgment always ends the sequence
+    ("In_Tree-Initial_for_was_Out_Tree", False): "Out_Tree-Initial",
+    # Desist ends sequence
     ("User_Requested_Desist", True): None,
     ("User_Requested_Desist", False): None,
-    # Fallback for unknown/corrupted message types - treat as if no previous message
+    # Fallback for unknown types
     ("Unknown", True): "In_Tree-Initial",
     ("Unknown", False): "Out_Tree-Initial",
 }
 
 
 def determine_next_message_type(
-    last_message_details: Optional[
-        tuple[str, datetime, str]
-    ],  # (type_name, sent_at_utc, status)
+    last_message_details: Optional[tuple[str, datetime, str]],
     is_in_family_tree: bool,
 ) -> Optional[str]:
     """
-    Determines the next standard message type key (from MESSAGE_TYPES_ACTION8)
-    to send based on the last *script-sent* message and the match's current
-    tree status.
+    Determine next message type based on last message and tree status.
 
-    Uses a state machine approach with a transition table that maps
-    (current_message_type, is_in_family_tree) tuples to the next message type.
-
-    Args:
-        last_message_details: A tuple containing details of the last OUT message
-                              sent by the script (type name, timestamp, status),
-                              or None if no script message has been sent yet.
-                              Timestamp MUST be timezone-aware UTC.
-        is_in_family_tree: Boolean indicating if the match is currently linked
-                           in the user's family tree.
-
-    Returns:
-        The string key for the next message template to use (e.g., "In_Tree-Follow_Up"),
-        or None if no standard message should be sent according to the sequence rules.
+    Uses state machine with transition table mapping (current_type, is_in_tree) to next_type.
     """
-    # Step 1: Determine next message type (removed verbose debug logging)
-
-    # Step 2: Extract the last message type (or None if no previous message)
     last_message_type = None
     if last_message_details:
         last_message_type, _, _ = last_message_details
-        # Last message details (removed verbose debug logging)
 
-    # Step 3: Look up the next message type in the transition table
     transition_key = (last_message_type, is_in_family_tree)
-    next_type = None
-    reason = "Unknown transition"
 
     if transition_key in MESSAGE_TRANSITION_TABLE:
-        # Standard transition found in table
         next_type = MESSAGE_TRANSITION_TABLE[transition_key]
-        if next_type:
-            reason = f"Standard transition from '{last_message_type or 'None'}' with in_tree={is_in_family_tree}"
-        else:
-            reason = f"End of sequence for '{last_message_type}' with in_tree={is_in_family_tree}"
-    # Handle unexpected previous message type
     elif last_message_type:
-        tree_status = "In_Tree" if is_in_family_tree else "Out_Tree"
-        reason = f"Unexpected previous {tree_status} type: '{last_message_type}'"
-        logger.warning(f"  Decision: Skip ({reason})")
-
-        # CRITICAL FIX: Instead of skipping, treat unknown types as if no previous message
-        # This allows the system to recover from corrupted/unknown message types
-        logger.info(f"  Recovery: Treating unknown type '{last_message_type}' as initial message")
-        next_type = (
-            "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
-        )
-        reason = f"Recovery from unknown type '{last_message_type}' - treating as initial"
+        # Recover from unknown types by treating as initial
+        logger.warning(f"Unknown message type '{last_message_type}', treating as initial")
+        next_type = "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
     else:
-        # Fallback for initial message if somehow not in transition table
-        next_type = (
-            "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
-        )
-        reason = "Fallback for initial message (no prior message)"
+        # Fallback for initial message
+        next_type = "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
 
-    # Step 4: Convert next_type string to actual message type from MESSAGE_TYPES_ACTION8
     if next_type:
         next_type = MESSAGE_TYPES_ACTION8.get(next_type, next_type)
-        # Decision: Send message (removed verbose debug logging)
-    else:
-        # Decision: Skip message (removed verbose debug logging)
-        pass
 
     return next_type
 
@@ -702,21 +446,13 @@ def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool
 # === HELPER FUNCTIONS FOR CODE DEDUPLICATION ===
 
 def _get_short_template_if_exists(base_template_key: str) -> Optional[str]:
-    """
-    Return short template key if it exists in MESSAGE_TEMPLATES, else None.
-
-    This helper eliminates repeated pattern of checking for short template variants.
-    """
+    """Return short template key if it exists, else None."""
     short_key = f"{base_template_key}_Short"
     return short_key if short_key in MESSAGE_TEMPLATES else None
 
 
 def _ensure_timezone_aware(dt: Optional[datetime]) -> Optional[datetime]:
-    """
-    Ensure datetime has timezone info (UTC if none).
-
-    This helper eliminates repeated pattern of timezone checking and conversion.
-    """
+    """Ensure datetime has timezone info (UTC if none)."""
     if dt and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
@@ -734,57 +470,38 @@ def _calculate_dna_match_confidence(dna_match, is_distant_relationship: bool) ->
 
 
 def _get_template_for_distant_relationship(base_template_key: str) -> str:
-    """Get appropriate template for distant relationships."""
+    """Get template for distant relationships."""
     exploratory_key = f"{base_template_key}_Exploratory"
     if exploratory_key in MESSAGE_TEMPLATES:
         return exploratory_key
-
-    # Fallback to short variant for distant relationships
     short_key = _get_short_template_if_exists(base_template_key)
-    if short_key:
-        return short_key
-
-    return base_template_key
+    return short_key if short_key else base_template_key
 
 
 def _get_template_by_confidence_score(base_template_key: str, confidence_score: int) -> str:
     """Get template based on confidence score."""
     if confidence_score >= 4:
-        # High confidence - use confident variant if available
         confident_key = f"{base_template_key}_Confident"
         if confident_key in MESSAGE_TEMPLATES:
             return confident_key
     elif confidence_score <= 2:
-        # Low confidence - use exploratory variant if available
         exploratory_key = f"{base_template_key}_Exploratory"
         if exploratory_key in MESSAGE_TEMPLATES:
             return exploratory_key
 
-    # Check for short variant (A/B testing)
     short_key = _get_short_template_if_exists(base_template_key)
-    if short_key:
-        return short_key
-
-    # Fallback to standard template
-    return base_template_key
+    return short_key if short_key else base_template_key
 
 
 def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:
-    """
-    Select template variant based on relationship confidence.
-
-    CRITICAL FIX: Enhanced to prevent distant relationships from being marked as "confident".
-    """
+    """Select template variant based on relationship confidence."""
     # Check for distant relationships first
     is_distant_relationship = False
     if family_tree:
         actual_rel = safe_column_value(family_tree, "actual_relationship", None)
         if actual_rel and actual_rel != "N/A" and actual_rel.strip():
             is_distant_relationship = _is_distant_relationship(actual_rel)
-            if is_distant_relationship:
-                logger.debug(f"Detected distant relationship: {actual_rel} - forcing exploratory template")
 
-    # CRITICAL FIX: Force distant relationships to use exploratory templates
     if is_distant_relationship:
         return _get_template_for_distant_relationship(base_template_key)
 
@@ -792,7 +509,6 @@ def select_template_by_confidence(base_template_key: str, family_tree, dna_match
     confidence_score = _calculate_family_tree_confidence(family_tree, is_distant_relationship)
     confidence_score += _calculate_dna_match_confidence(dna_match, is_distant_relationship)
 
-    # Select template based on confidence
     return _get_template_by_confidence_score(base_template_key, confidence_score)
 
 
@@ -821,22 +537,8 @@ def select_template_variant_ab_testing(person_id: int, base_template_key: str) -
 
 
 def track_template_selection(template_key: str, person_id: int, selection_reason: str):
-    """
-    CONSOLIDATED LOGGING: Track template selection for effectiveness analysis.
-
-    This function now only logs for debugging - actual template tracking is handled
-    in the main message creation process to avoid dual logging.
-
-    Args:
-        template_key: Selected template key
-        person_id: Person ID
-        selection_reason: Reason for selection (confidence, A/B testing, etc.)
-    """
-    # CONSOLIDATED APPROACH: Only log for debugging, no separate database entries
+    """Track template selection for debugging."""
     logger.debug(f"Template selected for person {person_id}: {template_key} ({selection_reason})")
-
-    # Template effectiveness tracking is now handled in the main ConversationLog entry
-    # with enhanced script_message_status that includes template selection details
 
 
 # ------------------------------------------------------------------------------
@@ -2053,14 +1755,6 @@ def _format_message_text(message_to_send_key: str, person: Person, format_data: 
                 extracted_data = getattr(person, 'extracted_genealogical_data', {})
                 person_data = {"username": getattr(person, "username", "Unknown")}
 
-                with contextlib.suppress(Exception):
-                    _log_personalization_sanity_for_template(
-                        enhanced_template_key,
-                        MESSAGE_TEMPLATES[enhanced_template_key],
-                        extracted_data or {},
-                        log_prefix,
-                    )
-
                 message_text, _ = MESSAGE_PERSONALIZER.create_personalized_message(
                     enhanced_template_key,
                     person_data,
@@ -2131,7 +1825,7 @@ def _send_or_simulate_message(
     conv_state: 'ConversationState',
     msg_flags: 'MessageFlags'
 ) -> tuple[str, Optional[str]]:
-    """Send or simulate message and return status and conversation ID."""
+    """Send or simulate message, return status and conversation ID."""
     if msg_flags.send_message_flag:
         log_prefix_for_api = f"Action8: {msg_ctx.person.username} #{msg_ctx.person.id}"
         api_success, api_result = _safe_api_call_with_validation(
@@ -2166,18 +1860,16 @@ def _prepare_conversation_log_entry(
     msg_flags: 'MessageFlags',
     message_type_map: dict[str, int]
 ) -> ConversationLog:
-    """Prepare new conversation log entry for database."""
+    """Prepare conversation log entry for database."""
     message_template_id_to_log = message_type_map.get(msg_ctx.message_to_send_key)
     if not message_template_id_to_log:
-        logger.error(f"CRITICAL: MessageTemplate ID missing for key '{msg_ctx.message_to_send_key}' for {msg_ctx.log_prefix}.")
+        logger.error(f"MessageTemplate ID missing for key '{msg_ctx.message_to_send_key}'")
         raise StopIteration("error (db_config)")
     if not conv_state.effective_conv_id:
-        logger.error(f"CRITICAL: effective_conv_id missing after successful send/simulation/skip for {msg_ctx.log_prefix}.")
+        logger.error(f"effective_conv_id missing for {msg_ctx.log_prefix}")
         raise StopIteration("error (internal)")
 
     log_content = (f"[{msg_flags.message_status.upper()}] {msg_ctx.message_text}" if not msg_flags.send_message_flag else msg_ctx.message_text)[:config_schema.message_truncation_length]
-    current_time_for_db = datetime.now(timezone.utc)
-    logger.debug(f"Preparing new OUT log entry for ConvID {conv_state.effective_conv_id}, PersonID {msg_ctx.person.id}")
     enhanced_status = f"{msg_flags.message_status} | Template: {msg_ctx.message_to_send_key} ({msg_ctx.template_selection_reason})"
 
     return ConversationLog(
@@ -2185,7 +1877,7 @@ def _prepare_conversation_log_entry(
         direction=MessageDirectionEnum.OUT,
         people_id=msg_ctx.person.id,
         latest_message_content=log_content,
-        latest_timestamp=current_time_for_db,
+        latest_timestamp=datetime.now(timezone.utc),
         ai_sentiment=None,
         message_template_id=message_template_id_to_log,
         script_message_status=enhanced_status,
@@ -2193,12 +1885,11 @@ def _prepare_conversation_log_entry(
 
 
 def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[str, Optional[tuple[int, PersonStatusEnum]]]:
-    """Determine final status string and person update based on message outcome."""
+    """Determine final status and person update based on message outcome."""
     person_update = None
 
     if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
         if message_to_send_key == "User_Requested_Desist":
-            logger.debug(f"Staging Person status update to ARCHIVE for {log_prefix} (ACK sent/simulated).")
             person_update = (person_id, PersonStatusEnum.ARCHIVE)
             status_string = "acked"
         elif send_message_flag:
@@ -2206,7 +1897,7 @@ def _determine_final_status(message_to_send_key: str, message_status: str, send_
         else:
             status_string = "skipped"
     else:
-        logger.warning(f"Message send failed for {log_prefix} with status '{message_status}'. No DB changes staged.")
+        logger.warning(f"Message send failed for {log_prefix}: {message_status}")
         status_string = "error"
 
     return status_string, person_update
@@ -2225,21 +1916,16 @@ def _handle_person_status(
         return message_to_send_key, send_reason, "Unknown", None, None
 
     if person_status == PersonStatusEnum.ACTIVE:
-        logger.debug(f"{log_prefix}: Status is ACTIVE. Checking messaging rules...")
-
-        # Check messaging rules
         _check_reply_received(latest_in_log, latest_out_log, log_prefix)
         _check_message_interval(latest_out_log, log_prefix)
 
-        # Determine message
         message_to_send_key, template_selection_reason = _determine_message_to_send(
             person, latest_out_log, latest_out_template_key, log_prefix
         )
 
         return message_to_send_key, "Standard Sequence", template_selection_reason, person.dna_match, person.family_tree
 
-    # Unexpected status
-    logger.error(f"Unexpected status '{getattr(person.status, 'name', 'UNKNOWN')}' encountered for {log_prefix}. Skipping.")
+    logger.error(f"Unexpected status for {log_prefix}: {getattr(person.status, 'name', 'UNKNOWN')}")
     raise StopIteration("error (unexpected_status)")
 
 def _process_single_person(
