@@ -1853,7 +1853,7 @@ def _test_profile_details_api() -> bool:
 
         match_profile = match_with_profile.get("matchProfile", {})
         profile_id = match_profile["userId"]
-        match_uuid = match_with_profile["sampleId"]
+        # match_uuid = match_with_profile["sampleId"]  # Not used in this test
         logger.info(f"Testing Profile Details API with profile: {profile_id}")
 
         # Fetch profile details

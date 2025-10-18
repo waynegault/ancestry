@@ -76,6 +76,10 @@ def _check_rate_limiting_settings(config: Any) -> None:
 
 def _log_configuration_summary(config: Any) -> None:
     """Log current configuration for transparency."""
+    # Clear screen for clean output
+    import os
+    os.system('cls' if os.name == 'nt' else 'clear')
+
     logger.info("=== ACTION CONFIGURATION VALIDATION ===")
     logger.info(f"MAX_PAGES: {config.api.max_pages}")
     logger.info(f"BATCH_SIZE: {config.batch_size}")

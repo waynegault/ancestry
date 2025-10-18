@@ -248,6 +248,11 @@ class APICacheManager(BaseCacheModule):
             return False
 
         try:
+            # Check if response is serializable (basic types only)
+            if not self._is_serializable(response):
+                logger.debug(f"Skipping cache for non-serializable response type: {type(response).__name__} for {service}.{method}")
+                return False
+
             # Determine TTL based on service type
             if ttl is None:
                 ttl = self._get_service_ttl(service)
@@ -268,8 +273,35 @@ class APICacheManager(BaseCacheModule):
             return True
 
         except Exception as e:
-            logger.warning(f"Error caching API response for {service}.{method}: {e}")
+            logger.debug(f"Error caching API response for {service}.{method}: {e}")
             return False
+
+    def _is_serializable(self, obj: Any) -> bool:
+        """Check if an object is serializable (safe to cache).
+
+        Returns True for basic JSON-serializable types, False for complex objects
+        like database connections, file handles, etc.
+        """
+        # Allow None
+        if obj is None:
+            return True
+
+        # Allow basic types
+        if isinstance(obj, (str, int, float, bool)):
+            return True
+
+        # Allow lists and dicts (recursively check contents)
+        if isinstance(obj, list):
+            return all(self._is_serializable(item) for item in obj)
+
+        if isinstance(obj, dict):
+            return all(
+                self._is_serializable(k) and self._is_serializable(v)
+                for k, v in obj.items()
+            )
+
+        # Reject everything else (objects, connections, etc.)
+        return False
 
     def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Optional[Any]:
         """Retrieve cached API response."""
