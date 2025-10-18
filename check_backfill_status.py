@@ -28,8 +28,19 @@ with db_manager.get_session_context() as session:
     """)).fetchone()
     matches_with_ethnicity = result[0]
 
-    # Matches without ethnicity data
-    matches_without_ethnicity = total_matches - matches_with_ethnicity
+    # Matches with all zeros (processed but no overlap)
+    where_all_zero = " AND ".join([f"{region['column_name']} = 0" for region in regions])
+    result = session.execute(text(f"""
+        SELECT COUNT(*) FROM dna_match WHERE {where_all_zero}
+    """)).fetchone()
+    matches_all_zero = result[0]
+
+    # Matches with all NULL (never processed)
+    where_all_null = " AND ".join([f"{region['column_name']} IS NULL" for region in regions])
+    result = session.execute(text(f"""
+        SELECT COUNT(*) FROM dna_match WHERE {where_all_null}
+    """)).fetchone()
+    matches_all_null = result[0]
 
     # Sample of matches with ethnicity data
     select_cols = ", ".join([region["column_name"] for region in regions])
@@ -41,13 +52,15 @@ with db_manager.get_session_context() as session:
     """)).fetchall()
 
     print("=" * 80)
-    print("BACKFILL STATUS")
+    print("ETHNICITY BACKFILL STATUS")
     print("=" * 80)
     print(f"Total DNA matches: {total_matches}")
-    print(f"Matches with ethnicity data: {matches_with_ethnicity}")
-    print(f"Matches without ethnicity data: {matches_without_ethnicity}")
-    if total_matches > 0:
-        print(f"Completion: {matches_with_ethnicity / total_matches * 100:.1f}%")
+    print()
+    print(f"Matches with shared ethnicity (>0% in your regions): {matches_with_ethnicity} ({matches_with_ethnicity / total_matches * 100:.1f}%)")
+    print(f"Matches with NO shared ethnicity (0% in your regions): {matches_all_zero} ({matches_all_zero / total_matches * 100:.1f}%)")
+    print(f"Matches not yet processed: {matches_all_null} ({matches_all_null / total_matches * 100:.1f}%)")
+    print()
+    print(f"Total processed: {matches_with_ethnicity + matches_all_zero} ({(matches_with_ethnicity + matches_all_zero) / total_matches * 100:.1f}%)")
     print("=" * 80)
     print("\nSample of matches with ethnicity data (first 10):")
     print("-" * 80)
