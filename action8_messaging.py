@@ -3339,8 +3339,7 @@ def _test_main_function_with_dry_run() -> bool:
     try:
         sm = _ensure_session_for_messaging_tests()
         if sm is None:
-            logger.info("⏭️ Skipping integration test (no live session available)")
-            return True
+            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing send_messages_to_matches() with real database.")
 
         logger.info("Testing send_messages_to_matches() in dry_run mode...")
 
@@ -3366,8 +3365,7 @@ def _test_database_message_creation() -> bool:
     try:
         sm = _ensure_session_for_messaging_tests()
         if sm is None:
-            logger.info("⏭️ Skipping integration test (no live session available)")
-            return True
+            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing database message creation.")
 
         logger.info("Testing database message creation in dry_run mode...")
 
@@ -3408,8 +3406,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
     try:
         sm = _ensure_session_for_messaging_tests()
         if sm is None:
-            logger.info("⏭️ Skipping integration test (no live session available)")
-            return True
+            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing dry_run mode behavior.")
 
         logger.info("Testing dry_run mode prevents actual message sending...")
 
@@ -3456,8 +3453,7 @@ def _test_message_template_loading_from_db() -> bool:
     try:
         sm = _ensure_session_for_messaging_tests()
         if sm is None:
-            logger.info("⏭️ Skipping integration test (no live session available)")
-            return True
+            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing message template loading from database.")
 
         logger.info("Testing message template loading from database...")
 
@@ -3490,8 +3486,7 @@ def _test_conversation_log_tracking() -> bool:
     try:
         sm = _ensure_session_for_messaging_tests()
         if sm is None:
-            logger.info("⏭️ Skipping integration test (no live session available)")
-            return True
+            raise RuntimeError("Cannot execute integration test: no live session available. Required for testing conversation log tracking.")
 
         logger.info("Testing conversation log tracking...")
 
