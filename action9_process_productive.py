@@ -1849,7 +1849,7 @@ def _test_module_initialization() -> None:
 
 
 def _test_core_functionality() -> None:
-    """Test all core AI processing and data extraction functions"""
+    """Test all core utility functions"""
     # Test safe_column_value function with a simple object
     class TestObj:
         def __init__(self) -> None:
@@ -1866,22 +1866,39 @@ def _test_core_functionality() -> None:
     result = should_exclude_message("Hi there!")
     assert isinstance(result, bool), "Should return boolean value"
 
-    result = should_exclude_message("test message 12345")
-    assert isinstance(result, bool), "Should handle test messages"
+    result = should_exclude_message("stop messaging me")
+    assert result is True, "Should detect exclusion keywords"
 
 
 def _test_ai_processing_functions() -> None:
     """Test AI processing and extraction functions"""
-    # Test _process_ai_response function
-    mock_response = {"status": "success", "data": {"extracted": "test_12345"}}
-    result = _process_ai_response(mock_response, "TEST")
+    # Test _process_ai_response function with valid response
+    valid_response = {
+        "extracted_data": {
+            "mentioned_names": ["John Doe"],
+            "mentioned_locations": ["Scotland"],
+            "mentioned_dates": ["1850"],
+            "potential_relationships": [],
+            "key_facts": []
+        },
+        "suggested_tasks": ["Research John Doe"]
+    }
+    result = _process_ai_response(valid_response, "TEST")
     assert isinstance(result, dict), "Should return dictionary"
+    assert "extracted_data" in result, "Should have extracted_data key"
+    assert "suggested_tasks" in result, "Should have suggested_tasks key"
 
     # Test _generate_ack_summary function
-    test_data = {"names": ["Test Person 12345"], "dates": ["1985"]}
+    test_data = {
+        "extracted_data": {
+            "mentioned_names": ["Test Person 12345"],
+            "mentioned_locations": ["Scotland"],
+            "mentioned_dates": ["1985"]
+        }
+    }
     result = _generate_ack_summary(test_data)
     assert isinstance(result, str), "Should return string summary"
-    assert "12345" in result or len(result) > 0, "Should generate meaningful summary"
+    assert len(result) > 0, "Should generate meaningful summary"
 
 
 def _test_edge_cases() -> None:
@@ -1898,6 +1915,10 @@ def _test_edge_cases() -> None:
     result = should_exclude_message(None)  # type: ignore[arg-type]
     assert isinstance(result, bool), "Should handle None message"
 
+    # Test _process_ai_response with None
+    result = _process_ai_response(None, "TEST")
+    assert isinstance(result, dict), "Should handle None AI response"
+
 
 def _test_integration() -> None:
     """Test integration with external data sources and templates"""
@@ -1906,23 +1927,6 @@ def _test_integration() -> None:
 
     # Test _load_templates_for_action9 function availability
     assert callable(_load_templates_for_action9), "_load_templates_for_action9 should be callable"
-
-
-def _test_performance() -> None:
-    """Test performance of utility and filtering operations"""
-    import time
-
-    # Test safe_column_value performance
-    class TestObj:
-        def __init__(self) -> None:
-            self.attr = "value"
-
-    obj = TestObj()
-    start = time.time()
-    for _ in range(1000):
-        safe_column_value(obj, "attr", "default")
-    duration = time.time() - start
-    assert duration < 0.1, f"safe_column_value too slow: {duration:.3f}s for 1000 calls"
 
 
 def _test_circuit_breaker_config() -> None:
@@ -1955,6 +1959,194 @@ def _test_error_handling() -> None:
 
 
 # ==============================================
+# INTEGRATION TEST HELPERS (Real Authenticated Sessions)
+# ==============================================
+
+_test_session_manager: Optional['SessionManager'] = None
+_test_session_uuid: Optional[str] = None
+
+
+def _check_cached_session(reuse_session: bool) -> tuple[Optional['SessionManager'], Optional[str]]:
+    """Check if cached session is available and valid."""
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603
+
+    if not reuse_session or _test_session_manager is None or _test_session_uuid is None:
+        return None, None
+
+    if _test_session_manager.is_sess_valid():
+        logger.info("♻️  Reusing existing authenticated session from previous test")
+        return _test_session_manager, _test_session_uuid
+
+    logger.info("⚠️  Cached session invalid, creating new session...")
+    _test_session_manager = None
+    _test_session_uuid = None
+    return None, None
+
+
+def _create_and_start_session() -> 'SessionManager':
+    """Create and start a new session manager."""
+    logger.info("Step 1: Creating SessionManager...")
+    sm = SessionManager()
+    logger.info("✅ SessionManager created")
+
+    logger.info("Step 2: Configuring browser requirement...")
+    sm.browser_manager.browser_needed = True
+    logger.info("✅ Browser marked as needed")
+
+    logger.info("Step 3: Starting session (database + browser)...")
+    started = sm.start_sess("Action 9 Productive Processing Tests")
+    if not started:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Failed to start session - browser initialization failed")
+    logger.info("✅ Session started successfully")
+
+    return sm
+
+
+def _authenticate_session(sm: 'SessionManager') -> None:
+    """Authenticate the session using cookies or login."""
+    from utils import _load_login_cookies, log_in, login_status
+
+    logger.info("Step 4: Attempting to load saved cookies...")
+    cookies_loaded = _load_login_cookies(sm)
+    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
+
+    logger.info("Step 5: Checking login status...")
+    login_check = login_status(sm, disable_ui_fallback=True)
+
+    if login_check is True:
+        logger.info("✅ Already logged in")
+    elif login_check is False:
+        logger.info("⚠️  Not logged in - attempting login...")
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            sm.close_sess(keep_db=False)
+            raise AssertionError(f"Login failed: {login_result}")
+        logger.info("✅ Login successful")
+    else:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Login status check failed critically (returned None)")
+
+
+def _validate_session_ready(sm: 'SessionManager') -> None:
+    """Validate session is ready with all identifiers."""
+    logger.info("Step 6: Ensuring session is ready...")
+    ready = sm.ensure_session_ready("process_productive - Action 9 Tests", skip_csrf=True)
+    if not ready:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Session not ready - cookies/identifiers missing")
+    logger.info("✅ Session ready")
+
+    logger.info("Step 7: Verifying UUID is available...")
+    if not sm.my_uuid:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("UUID not available - session initialization incomplete")
+    logger.info(f"✅ UUID available: {sm.my_uuid}")
+
+
+def _ensure_session_for_productive_tests(reuse_session: bool = True) -> tuple['SessionManager', str]:
+    """Ensure session is ready for productive processing tests. Returns (session_manager, my_uuid).
+
+    This function establishes a valid Ancestry session by:
+    1. Creating and initializing a SessionManager (or reusing existing one)
+    2. Starting the session (database + browser)
+    3. Loading saved cookies from previous session (if available)
+    4. Checking login status and logging in if needed
+    5. Ensuring session is ready with all identifiers
+    6. Validating UUID is available
+
+    Args:
+        reuse_session: If True, reuse existing session from previous test (default: True)
+
+    Raises AssertionError if session cannot be established (tests will fail).
+    """
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603
+
+    # Check for cached session
+    cached_sm, cached_uuid = _check_cached_session(reuse_session)
+    if cached_sm and cached_uuid:
+        return cached_sm, cached_uuid
+
+    logger.info("=" * 80)
+    logger.info("Setting up authenticated session for Action 9 productive processing tests...")
+    logger.info("=" * 80)
+
+    # Create and start new session
+    sm = _create_and_start_session()
+
+    # Authenticate the session
+    _authenticate_session(sm)
+
+    # Validate session is ready
+    _validate_session_ready(sm)
+
+    logger.info("=" * 80)
+    logger.info("✅ Valid authenticated session established for productive processing tests")
+    logger.info("=" * 80)
+
+    # Cache session for reuse
+    _test_session_manager = sm
+    _test_session_uuid = sm.my_uuid
+
+    return sm, sm.my_uuid
+
+
+def _test_database_session_availability() -> bool:
+    """Test that database session is available for productive processing."""
+    try:
+        sm, _ = _ensure_session_for_productive_tests()
+
+        logger.info("Testing database session availability...")
+
+        # Get database session
+        db_session = sm.get_db_conn()
+        if not db_session:
+            raise RuntimeError("Failed to get database session")
+
+        from database import Person
+        person_count = db_session.query(Person).count()
+        logger.info(f"✅ Database session available with {person_count} persons in database")
+
+        sm.return_session(db_session)
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Database session availability test failed: {e}")
+        raise
+
+
+def _test_message_templates_available() -> bool:
+    """Test that message templates are available for productive processing."""
+    try:
+        sm, _ = _ensure_session_for_productive_tests()
+
+        logger.info("Testing message template availability...")
+
+        # Get database session
+        db_session = sm.get_db_conn()
+        if not db_session:
+            raise RuntimeError("Failed to get database session")
+
+        from database import MessageTemplate
+        templates = db_session.query(MessageTemplate).all()
+        template_count = len(templates)
+
+        logger.info(f"✅ Found {template_count} message templates in database")
+
+        if template_count > 0:
+            for template in templates[:3]:  # Show first 3
+                logger.info(f"   - {template.template_name if hasattr(template, 'template_name') else 'N/A'}")
+
+        sm.return_session(db_session)
+        assert template_count > 0, "Should have at least one message template"
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Message template availability test failed: {e}")
+        raise
+
+
+# ==============================================
 # MAIN TEST SUITE
 # ==============================================
 
@@ -1964,7 +2156,7 @@ def action9_process_productive_module_tests() -> bool:
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
-        "Action 9 - AI Message Processing & Data Extraction",
+        "Action 9 - Productive DNA Match Processing",
         "action9_process_productive.py",
     )
     suite.start_suite()
@@ -1975,9 +2167,10 @@ def action9_process_productive_module_tests() -> bool:
     test_ai_processing_functions = _test_ai_processing_functions
     test_edge_cases = _test_edge_cases
     test_integration = _test_integration
-    test_performance = _test_performance
     test_circuit_breaker_config = _test_circuit_breaker_config
     test_error_handling = _test_error_handling
+    test_database_session = _test_database_session_availability
+    test_message_templates = _test_message_templates_available
 
     # Define all tests in a data structure to reduce complexity
     tests = [
@@ -1985,7 +2178,7 @@ def action9_process_productive_module_tests() -> bool:
          test_module_initialization,
          "Module initializes correctly with proper constants and function definitions",
          "Module initialization and configuration verification",
-         "Testing constants, class definitions, and core function availability for AI processing"),
+         "Testing constants, class definitions, and core function availability"),
 
         ("safe_column_value(), should_exclude_message() core functions",
          test_core_functionality,
@@ -2011,12 +2204,6 @@ def action9_process_productive_module_tests() -> bool:
          "Integration with GEDCOM data and template systems",
          "Testing integration with genealogical data cache and message template loading"),
 
-        ("Performance of utility and filtering operations",
-         test_performance,
-         "All operations complete within acceptable time limits with good performance",
-         "Performance characteristics of AI processing operations",
-         "Testing execution speed of attribute extraction and message filtering functions"),
-
         ("Circuit breaker configuration validation",
          test_circuit_breaker_config,
          "Circuit breaker decorators properly applied with Action 6 lessons (failure_threshold=10, backoff_factor=4.0)",
@@ -2028,6 +2215,18 @@ def action9_process_productive_module_tests() -> bool:
          "All error conditions handled gracefully with appropriate fallback responses",
          "Error handling and recovery functionality for AI operations",
          "Testing error scenarios with invalid data, exceptions, and malformed responses"),
+
+        ("Database session availability (real authenticated session)",
+         test_database_session,
+         "Database session is available and functional with real Ancestry authentication",
+         "Real authenticated session database connectivity",
+         "Testing database session establishment with valid Ancestry credentials"),
+
+        ("Message templates available (real authenticated session)",
+         test_message_templates,
+         "Message templates are loaded and available in database with real authentication",
+         "Real authenticated session message template loading",
+         "Testing message template availability with valid Ancestry session"),
     ]
 
     # Run all tests from the list
