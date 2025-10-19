@@ -154,13 +154,15 @@ def create_test_match(session) -> dict:
     logger.info("\n[1/5] Creating test DNA match in database...")
 
     from database import PersonStatusEnum, DnaMatch, create_person
+    import uuid as uuid_module
 
     with db_transn(session) as transn_session:
-        # Create a test person
+        # Create a test person with unique IDs
+        unique_id = str(uuid_module.uuid4())[:8]
         test_person_data = {
-            'uuid': 'TEST-UUID-12345',
-            'profile_id': 'TEST-PROFILE-12345',
-            'username': 'TestMatch_Phase5',
+            'uuid': f'TEST-UUID-{unique_id}',
+            'profile_id': f'TEST-PROFILE-{unique_id}',
+            'username': f'TestMatch_Phase5_{unique_id}',
             'first_name': 'Test',
             'in_my_tree': False,
             'contactable': True,
@@ -187,13 +189,13 @@ def create_test_match(session) -> dict:
 
         logger.info(f"✅ Created test DNA match:")
         logger.info(f"   Person ID: {person_id}")
-        logger.info(f"   Username: TestMatch_Phase5")
-        logger.info(f"   Profile ID: TEST-PROFILE-12345")
+        logger.info(f"   Username: {test_person_data['username']}")
+        logger.info(f"   Profile ID: {test_person_data['profile_id']}")
 
         return {
             'person_id': person_id,
-            'profile_id': 'TEST-PROFILE-12345',
-            'username': 'TestMatch_Phase5',
+            'profile_id': test_person_data['profile_id'],
+            'username': test_person_data['username'],
             'in_my_tree': False,
             'contactable': True,
             'status': PersonStatusEnum.ACTIVE,
