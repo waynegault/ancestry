@@ -87,15 +87,15 @@ def _ensure_session_for_phase5_test() -> SessionManager:
     logger.info("Setting up authenticated session for Phase 5 Frances Milne test...")
     logger.info("=" * 80)
 
-    # Copy backup database to working location
-    logger.info("Step 0: Copying backup database...")
-    backup_db = 'Data/ancestry_backup.db'
+    # Copy Data/ancestry.db to working location
+    logger.info("Step 0: Copying Data/ancestry.db to working location...")
+    source_db = 'Data/ancestry.db'
     working_db = 'ancestry.db'
-    if os.path.exists(backup_db):
-        shutil.copy2(backup_db, working_db)
-        logger.info(f"✅ Copied {backup_db} to {working_db}")
+    if os.path.exists(source_db):
+        shutil.copy2(source_db, working_db)
+        logger.info(f"✅ Copied {source_db} to {working_db}")
     else:
-        logger.warning(f"⚠️  Backup database not found at {backup_db}")
+        logger.warning(f"⚠️  Database not found at {source_db}")
 
     sm = _create_and_start_session()
     _authenticate_session(sm)
