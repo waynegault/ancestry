@@ -194,18 +194,18 @@ def validate_messages_created(session) -> dict:
         messages = transn_session.query(ConversationLog).all()
         logger.info(f"   ✅ Total messages in database: {len(messages)}")
 
-        # Group by message_type
-        by_type = {}
+        # Group by direction (IN/OUT)
+        by_direction = {}
         for msg in messages:
-            msg_type = msg.message_type or 'unknown'
-            by_type[msg_type] = by_type.get(msg_type, 0) + 1
+            direction = str(msg.direction) or 'unknown'
+            by_direction[direction] = by_direction.get(direction, 0) + 1
 
-        for msg_type, count in sorted(by_type.items()):
-            logger.info(f"      - Type '{msg_type}': {count} messages")
+        for direction, count in sorted(by_direction.items()):
+            logger.info(f"      - Direction '{direction}': {count} messages")
 
         return {
             'total_messages': len(messages),
-            'by_type': by_type
+            'by_direction': by_direction
         }
 
 
