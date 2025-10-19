@@ -2435,32 +2435,34 @@ def _log_final_summary(
     error_categorizer
 ) -> None:
     """Log final summary of message sending action."""
-    print(" ")
-    logger.info("--- Action 8: Message Sending Summary ---")
-    logger.info(f"  Candidates Considered:              {total_candidates}")
-    logger.info(f"  Candidates Processed in Loop:       {state.processed_in_loop}")
-    logger.info(f"  Template Messages Sent/Simulated:   {counters.sent}")
-    logger.info(f"  Desist ACKs Sent/Simulated:         {counters.acked}")
-    logger.info(f"  Skipped (Rules/Filter/Limit/Error): {counters.skipped}")
-    logger.info(f"  Errors during processing/sending:   {counters.errors}")
-    logger.info(f"  Overall Action Success:             {overall_success}")
+    try:
+        logger.info("--- Action 8: Message Sending Summary ---")
+        logger.info(f"  Candidates Considered:              {total_candidates}")
+        logger.info(f"  Candidates Processed in Loop:       {state.processed_in_loop}")
+        logger.info(f"  Template Messages Sent/Simulated:   {counters.sent}")
+        logger.info(f"  Desist ACKs Sent/Simulated:         {counters.acked}")
+        logger.info(f"  Skipped (Rules/Filter/Limit/Error): {counters.skipped}")
+        logger.info(f"  Errors during processing/sending:   {counters.errors}")
+        logger.info(f"  Overall Action Success:             {overall_success}")
 
-    error_summary = error_categorizer.get_error_summary()
-    if error_summary['total_technical_errors'] > 0 or error_summary['total_business_skips'] > 0:
-        logger.info("--- Detailed Error Analysis ---")
-        logger.info(f"  Technical Errors:                   {error_summary['total_technical_errors']}")
-        logger.info(f"  Business Logic Skips:               {error_summary['total_business_skips']}")
-        logger.info(f"  Error Rate:                         {error_summary['error_rate']:.1%}")
+        error_summary = error_categorizer.get_error_summary()
+        if error_summary['total_technical_errors'] > 0 or error_summary['total_business_skips'] > 0:
+            logger.info("--- Detailed Error Analysis ---")
+            logger.info(f"  Technical Errors:                   {error_summary['total_technical_errors']}")
+            logger.info(f"  Business Logic Skips:               {error_summary['total_business_skips']}")
+            logger.info(f"  Error Rate:                         {error_summary['error_rate']:.1%}")
 
-        if error_summary['most_common_error']:
-            logger.info(f"  Most Common Issue:                  {error_summary['most_common_error']}")
+            if error_summary['most_common_error']:
+                logger.info(f"  Most Common Issue:                  {error_summary['most_common_error']}")
 
-        logger.info("--- Error Breakdown ---")
-        for error_type, count in error_summary['error_breakdown'].items():
-            if count > 0:
-                logger.info(f"    {error_type.replace('_', ' ').title()}: {count}")
+            logger.info("--- Error Breakdown ---")
+            for error_type, count in error_summary['error_breakdown'].items():
+                if count > 0:
+                    logger.info(f"    {error_type.replace('_', ' ').title()}: {count}")
 
-    logger.info("-----------------------------------------\n")
+        logger.info("-----------------------------------------")
+    except Exception as summary_err:
+        logger.warning(f"Failed to log final summary: {summary_err}")
 
 
 def _handle_action8_exception(exception: BaseException) -> bool:
@@ -2593,7 +2595,11 @@ def _perform_resource_cleanup(resource_manager: Any) -> None:
         resource_manager.trigger_garbage_collection()
         logger.debug("🧹 Final resource cleanup completed")
     except Exception as cleanup_err:
-        logger.warning(f"Final resource cleanup failed: {cleanup_err}")
+        try:
+            logger.warning(f"Final resource cleanup failed: {cleanup_err}")
+        except Exception:
+            # If logging fails, silently continue - cleanup is best-effort
+            pass
 
 
 def _log_performance_summary() -> None:
@@ -2608,7 +2614,11 @@ def _log_performance_summary() -> None:
         logger.info(f"  Errors: {perf_summary.get('total_errors', 0)}")
         logger.info("---------------------------")
     except Exception as perf_err:
-        logger.warning(f"Performance monitoring summary failed: {perf_err}")
+        try:
+            logger.warning(f"Performance monitoring summary failed: {perf_err}")
+        except Exception:
+            # If logging fails, silently continue - performance summary is non-critical
+            pass
 
 
 def _process_all_candidates(
@@ -2830,10 +2840,16 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         )
 
     # Step 7: Final resource cleanup
-    _perform_resource_cleanup(resource_manager)
+    try:
+        _perform_resource_cleanup(resource_manager)
+    except Exception as cleanup_err:
+        logger.warning(f"Final resource cleanup error (non-critical): {cleanup_err}")
 
     # Step 8: Stop performance monitoring and log summary
-    _log_performance_summary()
+    try:
+        _log_performance_summary()
+    except Exception as perf_err:
+        logger.warning(f"Performance summary error (non-critical): {perf_err}")
 
     # Step 9: Return overall success status
     return overall_success
