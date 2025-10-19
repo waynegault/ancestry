@@ -23,41 +23,62 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.session_manager import SessionManager
 from database import db_transn, Person, ConversationLog, MessageTemplate
 from action8_messaging import send_messages_to_matches
+from utils import _load_login_cookies, log_in, login_status
 
 
 def _create_and_start_session() -> SessionManager:
-    """Create and start a new session."""
-    logger.info("Step 1: Creating session manager...")
+    """Create and start a new session manager."""
+    logger.info("Step 1: Creating SessionManager...")
     sm = SessionManager()
-    
-    logger.info("Step 2: Starting browser...")
-    sm.start_browser()
-    logger.info("✅ Browser started")
-    
+    logger.info("✅ SessionManager created")
+
+    logger.info("Step 2: Configuring browser requirement...")
+    sm.browser_manager.browser_needed = True
+    logger.info("✅ Browser marked as needed")
+
+    logger.info("Step 3: Starting session (database + browser)...")
+    started = sm.start_sess("Phase 6 Final Validation")
+    if not started:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Failed to start session - browser initialization failed")
+    logger.info("✅ Session started successfully")
+
     return sm
 
 
 def _authenticate_session(sm: SessionManager) -> None:
-    """Authenticate the session."""
-    logger.info("Step 3: Loading cookies...")
-    sm.load_cookies()
-    logger.info("✅ Cookies loaded")
-    
-    logger.info("Step 4: Authenticating session...")
-    sm.authenticate_session()
-    logger.info("✅ Session authenticated")
+    """Authenticate the session using cookies or login."""
+    logger.info("Step 4: Attempting to load saved cookies...")
+    cookies_loaded = _load_login_cookies(sm)
+    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
+
+    logger.info("Step 5: Checking login status...")
+    login_check = login_status(sm, disable_ui_fallback=True)
+
+    if login_check is True:
+        logger.info("✅ Already logged in")
+    elif login_check is False:
+        logger.info("⚠️  Not logged in - attempting login...")
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            sm.close_sess(keep_db=False)
+            raise AssertionError(f"Login failed: {login_result}")
+        logger.info("✅ Login successful")
+    else:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Login status check failed critically (returned None)")
 
 
 def _validate_session_ready(sm: SessionManager) -> None:
-    """Validate session is ready."""
-    logger.info("Step 5: Validating session...")
-    ready = sm.session_ready()
+    """Validate session is ready with all identifiers."""
+    logger.info("Step 6: Ensuring session is ready...")
+    ready = sm.ensure_session_ready("send_messages - Phase 6 Final Validation", skip_csrf=True)
     if not ready:
         sm.close_sess(keep_db=False)
         raise AssertionError("Session not ready - cookies/identifiers missing")
     logger.info("✅ Session ready")
 
-    logger.info("Step 6: Verifying UUID is available...")
+    logger.info("Step 7: Verifying UUID is available...")
     if not sm.my_uuid:
         sm.close_sess(keep_db=False)
         raise AssertionError("UUID not available - session initialization incomplete")
@@ -95,10 +116,10 @@ def validate_database_state(session) -> dict:
         logger.info(f"   ✅ Message templates: {len(templates)}")
         
         # List templates by tree_status
-        in_tree = [t for t in templates if t.tree_status == 'in_tree']
-        out_tree = [t for t in templates if t.tree_status == 'out_tree']
-        logger.info(f"      - In-tree templates: {len(in_tree)}")
-        logger.info(f"      - Out-tree templates: {len(out_tree)}")
+        in_tree_count = sum(1 for t in templates if str(t.tree_status) == 'in_tree')
+        out_tree_count = sum(1 for t in templates if str(t.tree_status) == 'out_tree')
+        logger.info(f"      - In-tree templates: {in_tree_count}")
+        logger.info(f"      - Out-tree templates: {out_tree_count}")
         
         # Count existing messages
         messages = transn_session.query(ConversationLog).count()
@@ -107,8 +128,8 @@ def validate_database_state(session) -> dict:
         return {
             'people_count': people_count,
             'templates_count': len(templates),
-            'in_tree_templates': len(in_tree),
-            'out_tree_templates': len(out_tree),
+            'in_tree_templates': in_tree_count,
+            'out_tree_templates': out_tree_count,
             'existing_messages': messages
         }
 
