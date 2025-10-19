@@ -149,59 +149,98 @@ def verify_match_eligible(match_info: dict) -> bool:
     return all_passed
 
 
+def create_test_match(session) -> dict:
+    """Create a test DNA match in the database for Phase 5 testing."""
+    logger.info("\n[1/5] Creating test DNA match in database...")
+
+    from database import PersonStatusEnum, DnaMatch, create_person
+
+    with db_transn(session) as transn_session:
+        # Create a test person
+        test_person_data = {
+            'uuid': 'TEST-UUID-12345',
+            'profile_id': 'TEST-PROFILE-12345',
+            'username': 'TestMatch_Phase5',
+            'first_name': 'Test',
+            'in_my_tree': False,
+            'contactable': True,
+            'status': PersonStatusEnum.ACTIVE,
+        }
+
+        person_id = create_person(transn_session, test_person_data)
+
+        if person_id == 0:
+            logger.error("❌ Failed to create test person")
+            return None
+
+        # Create DNA match record
+        dna_match = DnaMatch(
+            people_id=person_id,
+            confidence_level='High',
+            shared_cm=150.0,
+            shared_segments=5,
+            relationship_hint='Distant Cousin',
+        )
+        transn_session.add(dna_match)
+        transn_session.flush()
+
+        logger.info(f"✅ Created test DNA match:")
+        logger.info(f"   Person ID: {person_id}")
+        logger.info(f"   Username: TestMatch_Phase5")
+        logger.info(f"   Profile ID: TEST-PROFILE-12345")
+
+        return {
+            'person_id': person_id,
+            'profile_id': 'TEST-PROFILE-12345',
+            'username': 'TestMatch_Phase5',
+            'in_my_tree': False,
+            'contactable': True,
+            'status': PersonStatusEnum.ACTIVE,
+        }
+
+
 def run_phase5_test():
     """
-    Phase 5: Test with First Available DNA Match as Test Recipient
+    Phase 5: Test with Test DNA Match as Test Recipient
 
     Objectives:
-    1. Run Action 6 to populate database with DNA matches
-    2. Find first available DNA match
-    3. Verify it's eligible for messaging
-    4. Run Action 8 (still in dry_run mode)
-    5. Verify messages are created for the match
-    6. Check message content
+    1. Create test DNA match in database
+    2. Verify it's eligible for messaging
+    3. Run Action 8 (still in dry_run mode)
+    4. Verify messages are created for the match
+    5. Check message content
     """
 
     print("\n" + "="*80)
-    print("PHASE 5: TEST WITH FIRST AVAILABLE DNA MATCH")
+    print("PHASE 5: TEST WITH TEST DNA MATCH")
     print("="*80)
 
     try:
         # Initialize session
-        print("\n[0/6] Initializing authenticated session...")
+        print("\n[0/5] Initializing authenticated session...")
         sm = _ensure_session_for_phase5_test()
         print("✅ Session initialized and authenticated successfully")
 
-        # Run Action 6 to populate database
-        print("\n[1/6] Running Action 6 to gather DNA match details...")
-        print("⏳ This may take a few minutes...")
-        try:
-            from action6_gather import coord as action6_main
-            action6_main(sm, start=1)
-            print("✅ Action 6 completed - DNA matches populated")
-        except Exception as e:
-            print(f"⚠️  Action 6 encountered an issue: {e}")
-            print("   Continuing with Phase 5 test...")
-
-        # Find first available match
-        print("\n[2/6] Searching for first available DNA match...")
+        # Create test match
+        print("\n[1/5] Creating test DNA match in database...")
         session = sm.get_db_conn()
-        match_info = find_first_available_match(session)
+        match_info = create_test_match(session)
         sm.return_session(session)
 
         if not match_info:
-            print("❌ Phase 5 test failed: No DNA matches found in database")
+            print("❌ Phase 5 test failed: Could not create test match")
             sm.close_sess(keep_db=False)
             return False
 
         # Verify eligibility
+        print("\n[2/5] Verifying match is eligible for messaging...")
         eligible = verify_match_eligible(match_info)
 
         if not eligible:
             print("⚠️  Match may not be eligible for messaging")
 
         # Run Action 8
-        print("\n[4/6] Running Action 8 with dry_run mode...")
+        print("\n[3/5] Running Action 8 with dry_run mode...")
         success = send_messages_to_matches(sm)
 
         if not success:
@@ -210,7 +249,7 @@ def run_phase5_test():
             print("✅ Action 8 completed successfully")
 
         # Check for messages to match
-        print("\n[5/6] Checking for messages to match...")
+        print("\n[4/5] Checking for messages to match...")
         session = sm.get_db_conn()
 
         with db_transn(session) as transn_session:
@@ -230,7 +269,7 @@ def run_phase5_test():
         sm.return_session(session)
 
         # Verify no errors
-        print("\n[6/6] Verifying no critical errors...")
+        print("\n[5/5] Verifying no critical errors...")
         session = sm.get_db_conn()
         with db_transn(session) as transn_session:
             error_count = transn_session.query(ConversationLog).filter(
