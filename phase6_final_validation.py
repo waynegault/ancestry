@@ -189,23 +189,23 @@ def run_action8_dry_run(sm: SessionManager) -> dict:
 def validate_messages_created(session) -> dict:
     """Validate messages were created."""
     logger.info("\n[5/6] Validating messages were created...")
-    
+
     with db_transn(session) as transn_session:
         messages = transn_session.query(ConversationLog).all()
         logger.info(f"   ✅ Total messages in database: {len(messages)}")
-        
-        # Group by status
-        by_status = {}
+
+        # Group by message_type
+        by_type = {}
         for msg in messages:
-            status = msg.status or 'unknown'
-            by_status[status] = by_status.get(status, 0) + 1
-        
-        for status, count in sorted(by_status.items()):
-            logger.info(f"      - Status '{status}': {count} messages")
-        
+            msg_type = msg.message_type or 'unknown'
+            by_type[msg_type] = by_type.get(msg_type, 0) + 1
+
+        for msg_type, count in sorted(by_type.items()):
+            logger.info(f"      - Type '{msg_type}': {count} messages")
+
         return {
             'total_messages': len(messages),
-            'by_status': by_status
+            'by_type': by_type
         }
 
 
