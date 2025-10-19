@@ -79,7 +79,7 @@ import re
 from typing import Any, Optional
 
 # Make re available for module API (tests check for module imports)
-_ensure_re_available = re  # noqa: F841
+_ensure_re_available = re
 
 # Import from local modules
 from utils import SessionManager

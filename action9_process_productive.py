@@ -2154,6 +2154,7 @@ def _test_message_templates_available() -> bool:
 def action9_process_productive_module_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
     import os
+
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(

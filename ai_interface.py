@@ -1477,8 +1477,8 @@ def ai_interface_module_tests() -> bool:
     Comprehensive test suite for ai_interface.py - AI Interface & Integration Layer.
     Tests AI provider configuration, intent classification, entity extraction, and specialized analysis.
     """
-    from test_framework import TestSuite, suppress_logging
     from core.session_manager import SessionManager
+    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("AI Interface & Integration Layer", "ai_interface.py")
     suite.start_suite()
