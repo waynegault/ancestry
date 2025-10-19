@@ -73,10 +73,8 @@ from core.error_handling import (  # type: ignore[import-not-found]
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION ===
 from performance_cache import (  # type: ignore[import-not-found]
-    FastMockDataFactory,
     cache_gedcom_results,
     fast_test_cache,
-    progressive_processing,
 )
 
 # === THIRD-PARTY IMPORTS ===
@@ -126,52 +124,9 @@ def get_cached_gedcom() -> Optional[GedcomData]:
                 print(f"✅ GEDCOM loaded: {len(_GedcomCacheState.cache.indi_index)} individuals")
     return _GedcomCacheState.cache
 
-# === PHASE 4.2: PERFORMANCE OPTIMIZATION CONFIGURATION ===
-class _MockModeState:
-    """Manages mock mode state for ultra-fast testing."""
-    enabled = False
-
-
-def enable_mock_mode() -> None:
-    """
-    Enable mock mode for ultra-fast test execution and development.
-
-    Activates mock data mode which bypasses GEDCOM file loading and uses
-    pre-generated test data for rapid testing and development cycles.
-    Significantly reduces execution time for testing scenarios.
-
-    Returns:
-        None: Modifies global state to enable mock mode.
-
-    Example:
-        >>> enable_mock_mode()
-        >>> print("Mock mode enabled for fast testing")
-    """
-    _MockModeState.enabled = True
-    logger.info("🚀 Mock mode enabled for ultra-fast testing")
-
-
-def disable_mock_mode() -> None:
-    """
-    Disable mock mode to enable real GEDCOM data processing.
-
-    Deactivates mock data mode and returns to normal operation using actual
-    GEDCOM files and real data processing. Used when switching from testing
-    to production scenarios.
-
-    Returns:
-        None: Modifies global state to disable mock mode.
-
-    Example:
-        >>> disable_mock_mode()
-        >>> print("Mock mode disabled - using real data")
-    """
-    _MockModeState.enabled = False
-
-
-def is_mock_mode() -> bool:
-    """Check if mock mode is enabled"""
-    return _MockModeState.enabled
+# === REMOVED: Mock mode is no longer used - all tests use real GEDCOM data ===
+# Mock mode was removed to ensure tests validate real conditions and fail appropriately
+# when GEDCOM data is not available, following action6 refactoring patterns
 
 
 def _format_search_criteria(search_criteria: dict[str, Any]) -> list[str]:
@@ -410,12 +365,12 @@ def _validate_gedcom_file_path() -> Path:
         or not isinstance(gedcom_file_path_config, Path)
         or not gedcom_file_path_config.is_file()
     ):
-        logger.warning(
-            f"GEDCOM file path missing or invalid: {gedcom_file_path_config}. Auto-enabling mock mode."
+        logger.error(
+            f"GEDCOM file path missing or invalid: {gedcom_file_path_config}"
         )
-        enable_mock_mode()
-        # Create a dummy path for mock mode
-        gedcom_file_path_config = Path("mock_gedcom.ged")
+        raise MissingConfigError(
+            f"GEDCOM_FILE_PATH not configured or file not found: {gedcom_file_path_config}"
+        )
 
     return gedcom_file_path_config
 
@@ -502,56 +457,39 @@ def validate_config() -> tuple[
 @cache_gedcom_results(ttl=1800, disk_cache=True)
 @error_context("load_gedcom_data")
 def load_gedcom_data(gedcom_path: Path) -> GedcomData:
-    """Load, parse, and pre-process GEDCOM data."""
+    """Load, parse, and pre-process GEDCOM data with comprehensive error handling."""
+    # Validate input path
+    if not isinstance(gedcom_path, Path):
+        logger.error(f"Invalid GEDCOM path type: {type(gedcom_path)}")
+        raise MissingConfigError(f"GEDCOM path must be a Path object, got {type(gedcom_path)}")
 
-    # PHASE 4.2: Ultra-fast mock mode for testing
-    if is_mock_mode():
-        logger.debug("🚀 Using mock GEDCOM data for ultra-fast testing")
-        return FastMockDataFactory.create_mock_gedcom_data()
-
-    # Auto-enable mock mode if GEDCOM file is missing
-    if (
-        not gedcom_path
-        or not isinstance(gedcom_path, Path)
-        or not gedcom_path.is_file()
-    ):
-        logger.warning(f"GEDCOM file not found: {gedcom_path}. Auto-enabling mock mode for testing.")
-        enable_mock_mode()
-        return FastMockDataFactory.create_mock_gedcom_data()
+    if not gedcom_path.is_file():
+        logger.error(f"GEDCOM file not found: {gedcom_path}")
+        raise MissingConfigError(f"GEDCOM file does not exist: {gedcom_path}")
 
     try:
-        logger.debug("Loading, parsing, and pre-processing GEDCOM data...")
+        logger.info(f"Loading GEDCOM file: {gedcom_path.name}")
         load_start_time = time.time()
         gedcom_data = GedcomData(gedcom_path)
         load_end_time = time.time()
 
-        logger.debug(
-            f"GEDCOM data loaded & processed successfully in {load_end_time - load_start_time:.2f}s."
-        )
-        logger.debug(f"  Index size: {len(getattr(gedcom_data, 'indi_index', {}))}")
-        logger.debug(
-            f"  Pre-processed cache size: {len(getattr(gedcom_data, 'processed_data_cache', {}))}"
-        )
-        logger.debug(
-            f"  Build Times: Index={gedcom_data.indi_index_build_time:.2f}s, Maps={gedcom_data.family_maps_build_time:.2f}s, PreProcess={gedcom_data.data_processing_time:.2f}s"
-        )
-
+        # Validate loaded data
         if not gedcom_data.processed_data_cache or not gedcom_data.indi_index:
-            logger.critical(
-                "GEDCOM data object/cache/index is empty after loading attempt."
-            )
-            raise MissingConfigError(
-                "GEDCOM data object/cache/index is empty after loading attempt."
-            )
-        return gedcom_data
-    except Exception as e:
-        logger.critical(
-            f"Failed to load or process GEDCOM file {gedcom_path.name}: {e}",
-            exc_info=True,
+            logger.error("GEDCOM data loaded but cache/index is empty")
+            raise MissingConfigError("GEDCOM data object/cache/index is empty after loading")
+
+        logger.info(
+            f"✅ GEDCOM loaded in {load_end_time - load_start_time:.2f}s: "
+            f"{len(gedcom_data.indi_index)} individuals, "
+            f"{len(gedcom_data.processed_data_cache)} processed records"
         )
-        raise MissingConfigError(
-            f"Failed to load or process GEDCOM file {gedcom_path.name}: {e}"
-        ) from e
+        return gedcom_data
+
+    except MissingConfigError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to load GEDCOM file {gedcom_path.name}: {e}", exc_info=True)
+        raise MissingConfigError(f"Failed to load GEDCOM file {gedcom_path.name}: {e}") from e
 
 
 def _create_input_getter(args: Optional[argparse.Namespace]) -> Callable[[str], str]:
@@ -727,21 +665,7 @@ def calculate_match_score_cached(
     return cache[cache_key]
 
 
-@cache_gedcom_results(ttl=900, disk_cache=True)
-@progressive_processing(chunk_size=500)
-@error_context("filter_and_score_individuals")
-def _get_mock_filtering_results() -> list[dict[str, Any]]:
-    """Return mock filtering results for testing."""
-    logger.debug("🚀 Using mock filtering results for ultra-fast testing")
-    return [
-        {
-            "id": "@I1@",  # Test expects "id" field
-            "score": 95.0,
-            "first_name": "John",
-            "surname": "Smith",
-            "confidence": "high",
-        }
-    ]
+# === REMOVED: Mock filtering results - all tests use real GEDCOM data ===
 
 
 def _extract_individual_data(indi_data: dict[str, Any]) -> dict[str, Any]:
@@ -866,11 +790,6 @@ def filter_and_score_individuals(
     date_flex: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Filter and score individuals based on criteria using universal scoring."""
-
-    # PHASE 4.2: Ultra-fast mock mode for testing
-    if is_mock_mode():
-        return _get_mock_filtering_results()
-
     logger.debug(
         "\n--- Filtering and Scoring Individuals (using universal scoring) ---"
     )
@@ -1131,19 +1050,9 @@ def display_top_matches(
 
 @error_context("display_relatives")
 def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
-    """Display relatives of the given individual."""
-
-    # PHASE 4.2: Ultra-fast mock mode
-    if is_mock_mode():
-        print("📋 Parents:")
-        print("   - John Smith Sr. (Father)")
-        print("   - Jane Smith (Mother)")
-        print("📋 Siblings:")
-        print("   - James Smith (Brother)")
-        print("📋 Spouses:")
-        print("   - Mary Smith (Spouse)")
-        print("📋 Children:")
-        print("   - John Smith Jr. (Son)")
+    """Display relatives of the given individual with comprehensive error handling."""
+    if not individual:
+        logger.warning("Cannot display relatives: individual is None")
         return
 
     relatives_data = {
@@ -1170,19 +1079,6 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
                 formatted_info = formatted_info.replace("  - ", "- ")
 
             print(f"   {formatted_info}")
-
-
-@error_context("analyze_top_match")
-def _display_mock_analysis(top_match: dict[str, Any], reference_person_name: str) -> None:
-    """Display mock analysis results for testing."""
-    logger.info(
-        f"🎯 Top Match Analysis: {top_match.get('full_name_disp', 'John Smith')}"
-    )
-    logger.info(f"Score: {top_match.get('score', 95)}/100")
-    logger.info(
-        f"Relationship Path: {reference_person_name} → Great Uncle → John Smith"
-    )
-    logger.info("✅ Mock relationship analysis completed successfully")
 
 
 def _get_match_display_info(top_match: dict[str, Any]) -> tuple[str, float, str]:
@@ -1278,13 +1174,7 @@ def analyze_top_match(
     reference_person_id_norm: Optional[str],
     reference_person_name: str,
 ) -> None:
-    """Analyze top match and find relationship path."""
-
-    # PHASE 4.2: Ultra-fast mock mode
-    if is_mock_mode():
-        _display_mock_analysis(top_match, reference_person_name)
-        return
-
+    """Analyze top match and find relationship path with comprehensive error handling."""
     top_match_norm_id = top_match.get("id")
     top_match_indi = gedcom_data.find_individual_by_id(top_match_norm_id)
 
@@ -1434,9 +1324,6 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
         os.environ["GEDCOM_FILE_PATH"] = test_gedcom
         logger.info(f"Using minimal test GEDCOM: {test_gedcom}")
 
-    # PHASE 4.2: Disable mock mode - use real GEDCOM data for testing
-    disable_mock_mode()
-
     suite = TestSuite(
         "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
     )
@@ -1448,9 +1335,6 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
 def _teardown_test_environment(original_gedcom: Optional[str]) -> None:
     """Restore original test environment."""
     import os
-
-    # PHASE 4.2: Disable mock mode after tests complete
-    disable_mock_mode()
 
     # Restore original GEDCOM path
     if original_gedcom:
@@ -1529,14 +1413,7 @@ def _register_relationship_tests(suite: Any, debug_wrapper: Callable, test_famil
     )
 
 
-def _get_gedcom_data_or_skip() -> Optional[Any]:
-    """Get GEDCOM data or return None if not available."""
-    from test_framework import Colors  # type: ignore[import-not-found]
-
-    gedcom_data = get_cached_gedcom()
-    if not gedcom_data:
-        print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
-    return gedcom_data
+# === REMOVED: _get_gedcom_data_or_skip - tests now fail when GEDCOM is not available ===
 
 
 def _create_search_criteria(test_data: dict[str, Any]) -> dict[str, Any]:
@@ -1714,6 +1591,7 @@ def test_sanitize_input() -> None:
 
     print("📋 Testing input sanitization with test cases:")
     results = []
+    failures = []
 
     for input_val, expected, description in test_cases:
         try:
@@ -1727,15 +1605,20 @@ def test_sanitize_input() -> None:
             )
 
             results.append(passed)
-            assert (
-                actual == expected
-            ), f"Failed for '{input_val}': expected '{expected}', got '{actual}'"
+            if not passed:
+                failures.append(f"Failed for '{input_val}': expected '{expected}', got '{actual}'")
 
         except Exception as e:
             print(f"   ❌ {description}: Exception {e}")
             results.append(False)
+            failures.append(f"Exception for '{input_val}': {e}")
 
     print(f"📊 Results: {sum(results)}/{len(results)} test cases passed")
+
+    # Fail if any tests failed
+    if failures:
+        raise AssertionError(f"Input sanitization failed: {'; '.join(failures)}")
+
     return True
 
 
@@ -1754,6 +1637,7 @@ def test_get_validated_year_input_patch() -> None:
     print("📋 Testing year input validation with formats:")
     results = []
     orig_input = builtins.input
+    failures = []
 
     try:
         for input_val, expected, description in test_inputs:
@@ -1771,17 +1655,22 @@ def test_get_validated_year_input_patch() -> None:
                 )
 
                 results.append(passed)
-                assert (
-                    actual == expected
-                ), f"Failed for '{input_val}': expected {expected}, got {actual}"
+                if not passed:
+                    failures.append(f"Failed for '{input_val}': expected {expected}, got {actual}")
 
             except Exception as e:
                 print(f"   ❌ {description}: Exception {e}")
                 results.append(False)
+                failures.append(f"Exception for '{input_val}': {e}")
 
         print(
             f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly"
         )
+
+        # Fail if any tests failed
+        if failures:
+            raise AssertionError(f"Year input validation failed: {'; '.join(failures)}")
+
         return True
 
     finally:
@@ -1795,19 +1684,16 @@ def test_fraser_gault_scoring_algorithm() -> None:
     # Load test person data from .env
     test_data = _load_test_person_data_from_env()
 
-    # Load GEDCOM data or skip if not available
-    gedcom_data = _get_gedcom_data_or_skip()
-    if not gedcom_data:
-        return True
+    # Load GEDCOM data - MUST be available for this test
+    gedcom_data = get_cached_gedcom()
+    assert gedcom_data is not None, "GEDCOM data must be available for scoring algorithm test"
 
     # Create search criteria and search for person
     search_criteria = _create_search_criteria(test_data)
     print(format_search_criteria(search_criteria))
 
     search_results = _search_for_person(gedcom_data, search_criteria)
-    if not search_results:
-        print(f"{Colors.YELLOW}⚠️ Test person not found in GEDCOM, skipping scoring test{Colors.RESET}")
-        return True
+    assert search_results, f"Test person {test_data['first_name']} {test_data['last_name']} must be found in GEDCOM"
 
     # Analyze scoring results
     top_result = search_results[0]
@@ -1841,14 +1727,10 @@ def test_display_relatives_fraser() -> None:
         if config_schema and config_schema.database.gedcom_file_path
         else None
     )
-    if not gedcom_path:
-        print("⚠️ GEDCOM_FILE_PATH not set, skipping test")
-        return True
+    assert gedcom_path is not None, "GEDCOM_FILE_PATH must be configured for this test"
 
     gedcom_data = load_gedcom_data(Path(gedcom_path))
-    if not gedcom_data:
-        print("⚠️ Could not load GEDCOM data, skipping test")
-        return True
+    assert gedcom_data is not None, "GEDCOM data must be loadable for this test"
 
     # Use Fraser Gault for testing
     expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
@@ -1907,19 +1789,16 @@ def test_analyze_top_match_fraser() -> None:
     load_dotenv()
 
     try:
-        # Load real GEDCOM data
+        # Load real GEDCOM data - MUST be available
         gedcom_path = (
             config_schema.database.gedcom_file_path
             if config_schema and config_schema.database.gedcom_file_path
             else None
         )
-        if not gedcom_path:
-            print("⚠️ GEDCOM_FILE_PATH not configured, skipping test")
-            return True
+        assert gedcom_path is not None, "GEDCOM_FILE_PATH must be configured for this test"
 
         gedcom_data = load_gedcom_data(Path(gedcom_path))
-        if not gedcom_data:
-            return True  # Skip if GEDCOM not available
+        assert gedcom_data is not None, "GEDCOM data must be loadable for this test"
 
         # Search for Fraser Gault first
         expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
@@ -1948,8 +1827,7 @@ def test_analyze_top_match_fraser() -> None:
             date_flex,
         )
 
-        if not results:
-            return True  # Skip if Fraser not found
+        assert results, f"Test person {expected_first_name} {expected_last_name} must be found in GEDCOM"
 
         top_match = results[0]
         reference_person_id = (
@@ -2309,8 +2187,6 @@ def test_main_patch() -> None:
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
-    import builtins
-
     original_gedcom, suite = _setup_test_environment()
 
     # --- TESTS ---
