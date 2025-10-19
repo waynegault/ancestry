@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Phase 5: Test with Frances Milne as Test Recipient
+Phase 5: Test with First Available DNA Match as Test Recipient
 Verify that messages can be sent to and received by a real test account.
+
+Note: This phase first runs Action 6 to populate the database with DNA matches,
+then tests messaging with the first available match.
 """
 
 import sys
@@ -10,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.session_manager import SessionManager
 from action8_messaging import send_messages_to_matches
-from database import db_transn, ConversationLog, Person, DnaMatch
+from database import db_transn, ConversationLog, Person
 from utils import _load_login_cookies, log_in, login_status
 import logging
 
@@ -93,151 +96,161 @@ def _ensure_session_for_phase5_test() -> SessionManager:
     return sm
 
 
-def find_frances_milne(session) -> dict:
-    """Find Frances Milne in DNA matches."""
-    logger.info("\n[1/5] Searching for Frances Milne in DNA matches...")
-    
+def find_first_available_match(session) -> dict:
+    """Find first available DNA match in database."""
+    logger.info("\n[1/5] Searching for first available DNA match...")
+
     with db_transn(session) as transn_session:
-        # Search for Frances Milne
-        frances = transn_session.query(Person).filter(
-            Person.name.ilike('%frances%milne%')
-        ).first()
-        
-        if not frances:
-            logger.warning("⚠️  Frances Milne not found in database")
+        # Get first person from database
+        match = transn_session.query(Person).first()
+
+        if not match:
+            logger.warning("⚠️  No DNA matches found in database")
             return None
-        
-        logger.info(f"✅ Found Frances Milne:")
-        logger.info(f"   Profile ID: {frances.profile_id}")
-        logger.info(f"   In My Tree: {frances.in_my_tree}")
-        logger.info(f"   Contactable: {frances.contactable}")
-        logger.info(f"   Status: {frances.status}")
-        
+
+        logger.info(f"✅ Found DNA match:")
+        logger.info(f"   Username: {match.username}")
+        logger.info(f"   Profile ID: {match.profile_id}")
+        logger.info(f"   In My Tree: {match.in_my_tree}")
+        logger.info(f"   Contactable: {match.contactable}")
+        logger.info(f"   Status: {match.status}")
+
         return {
-            'person_id': frances.id,
-            'profile_id': frances.profile_id,
-            'name': frances.name,
-            'in_my_tree': frances.in_my_tree,
-            'contactable': frances.contactable,
-            'status': frances.status
+            'person_id': match.id,
+            'profile_id': match.profile_id,
+            'username': match.username,
+            'in_my_tree': match.in_my_tree,
+            'contactable': match.contactable,
+            'status': match.status
         }
 
 
-def verify_frances_eligible(session, frances_info: dict) -> bool:
-    """Verify Frances is eligible for messaging."""
-    logger.info("\n[2/5] Verifying Frances is eligible for messaging...")
-    
-    if not frances_info:
-        logger.error("❌ Frances Milne not found")
+def verify_match_eligible(match_info: dict) -> bool:
+    """Verify match is eligible for messaging."""
+    logger.info("\n[3/6] Verifying match is eligible for messaging...")
+
+    if not match_info:
+        logger.error("❌ Match not found")
         return False
-    
+
     checks = {
-        'Has profile_id': frances_info['profile_id'] is not None,
-        'Is contactable': frances_info['contactable'] is True,
-        'Status is ACTIVE': frances_info['status'] in ['ACTIVE', 'DESIST'],
+        'Has profile_id': match_info['profile_id'] is not None,
+        'Is contactable': match_info['contactable'] is True,
+        'Status is ACTIVE': match_info['status'] in ['ACTIVE', 'DESIST'],
     }
-    
+
     all_passed = True
     for check_name, result in checks.items():
         status = "✅" if result else "❌"
         logger.info(f"   {status} {check_name}")
         if not result:
             all_passed = False
-    
+
     return all_passed
 
 
 def run_phase5_test():
     """
-    Phase 5: Test with Frances Milne as Test Recipient
-    
+    Phase 5: Test with First Available DNA Match as Test Recipient
+
     Objectives:
-    1. Find Frances Milne in DNA matches
-    2. Verify she's eligible for messaging
-    3. Run Action 8 (still in dry_run mode)
-    4. Verify messages are created for Frances
-    5. Check message content
+    1. Run Action 6 to populate database with DNA matches
+    2. Find first available DNA match
+    3. Verify it's eligible for messaging
+    4. Run Action 8 (still in dry_run mode)
+    5. Verify messages are created for the match
+    6. Check message content
     """
-    
+
     print("\n" + "="*80)
-    print("PHASE 5: FRANCES MILNE TEST RECIPIENT")
+    print("PHASE 5: TEST WITH FIRST AVAILABLE DNA MATCH")
     print("="*80)
-    
+
     try:
         # Initialize session
-        print("\n[0/5] Initializing authenticated session...")
+        print("\n[0/6] Initializing authenticated session...")
         sm = _ensure_session_for_phase5_test()
         print("✅ Session initialized and authenticated successfully")
-        
-        # Find Frances Milne
+
+        # Run Action 6 to populate database
+        print("\n[1/6] Running Action 6 to gather DNA match details...")
+        print("⏳ This may take a few minutes...")
+        try:
+            from action6_gather import coord as action6_main
+            action6_main(sm, start=1)
+            print("✅ Action 6 completed - DNA matches populated")
+        except Exception as e:
+            print(f"⚠️  Action 6 encountered an issue: {e}")
+            print("   Continuing with Phase 5 test...")
+
+        # Find first available match
+        print("\n[2/6] Searching for first available DNA match...")
         session = sm.get_db_conn()
-        frances_info = find_frances_milne(session)
+        match_info = find_first_available_match(session)
         sm.return_session(session)
-        
-        if not frances_info:
-            print("❌ Phase 5 test failed: Frances Milne not found")
+
+        if not match_info:
+            print("❌ Phase 5 test failed: No DNA matches found in database")
             sm.close_sess(keep_db=False)
             return False
-        
+
         # Verify eligibility
-        session = sm.get_db_conn()
-        eligible = verify_frances_eligible(session, frances_info)
-        sm.return_session(session)
-        
+        eligible = verify_match_eligible(match_info)
+
         if not eligible:
-            print("⚠️  Frances may not be eligible for messaging")
-        
+            print("⚠️  Match may not be eligible for messaging")
+
         # Run Action 8
-        print("\n[3/5] Running Action 8 with dry_run mode...")
+        print("\n[4/6] Running Action 8 with dry_run mode...")
         success = send_messages_to_matches(sm)
-        
+
         if not success:
             print("⚠️  Action 8 completed with warnings")
         else:
             print("✅ Action 8 completed successfully")
-        
-        # Check for messages to Frances
-        print("\n[4/5] Checking for messages to Frances...")
+
+        # Check for messages to match
+        print("\n[5/6] Checking for messages to match...")
         session = sm.get_db_conn()
-        
+
         with db_transn(session) as transn_session:
-            frances_messages = transn_session.query(ConversationLog).filter(
-                ConversationLog.people_id == frances_info['person_id']
+            match_messages = transn_session.query(ConversationLog).filter(
+                ConversationLog.people_id == match_info['person_id']
             ).all()
-            
-            if frances_messages:
-                print(f"✅ Found {len(frances_messages)} message(s) to Frances:")
-                for msg in frances_messages:
+
+            if match_messages:
+                print(f"✅ Found {len(match_messages)} message(s) to match:")
+                for msg in match_messages:
                     template = msg.message_template
                     print(f"   - Template: {template.template_key if template else 'Unknown'}")
                     print(f"     Status: {msg.script_message_status}")
             else:
-                print("⚠️  No messages found for Frances")
-        
+                print("⚠️  No messages found for match")
+
         sm.return_session(session)
-        
+
         # Verify no errors
-        print("\n[5/5] Verifying no critical errors...")
+        print("\n[6/6] Verifying no critical errors...")
         session = sm.get_db_conn()
         with db_transn(session) as transn_session:
             error_count = transn_session.query(ConversationLog).filter(
                 ConversationLog.script_message_status.like('%error%')
             ).count()
-            
+
             if error_count == 0:
                 print("✅ No errors recorded")
             else:
                 print(f"⚠️  {error_count} errors recorded")
-        
+
         sm.return_session(session)
         sm.close_sess(keep_db=False)
-        
+
         print("\n" + "="*80)
         print("PHASE 5 TEST COMPLETE")
         print("="*80 + "\n")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"\n❌ Phase 5 test failed: {e}")
         import traceback
