@@ -920,15 +920,16 @@ def _print_failure_details(result, failure_indicators: list[str]) -> None:
             print(f"      {line}")
 
 
-def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], Optional[dict]]:
+def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], dict]:
     """Build the command and environment for running tests."""
     cmd = [sys.executable]
-    env = None
+
+    # Always pass environment to subprocess to ensure SKIP_LIVE_API_TESTS is inherited
+    env = dict(os.environ)
 
     # For modules with internal test suite, set env var to trigger test output
     suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
     if module_name in suite_env_modules:
-        env = dict(os.environ)
         env["RUN_INTERNAL_TESTS"] = "1"
 
     if coverage:
