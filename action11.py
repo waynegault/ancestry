@@ -3115,27 +3115,130 @@ def load_test_person_from_env():
 # ==============================================
 
 
-def _require_env(keys: list[str]) -> None:
-    """Check that required environment variables are set."""
-    missing = [k for k in keys if not os.getenv(k)]
-    assert not missing, f"Missing required env vars for Action 11 tests: {missing}"
+# === SESSION SETUP FOR TESTS ===
+_test_session_manager: Optional[SessionManager] = None
+_test_session_uuid: Optional[str] = None
 
 
-def _ensure_session(skip_live_tests: bool) -> SessionManager:
-    """Ensure session is ready for live API tests."""
-    if skip_live_tests:
-        logger.info("Skipping live API tests (SKIP_LIVE_API_TESTS=true)")
-        return None  # type: ignore[return-value]
-    _require_env(["ANCESTRY_USERNAME", "ANCESTRY_PASSWORD", "TREE_NAME", "API_BASE_URL"])
+def _create_and_start_session() -> SessionManager:
+    """Create and start a new session manager."""
+    logger.info("Step 1: Creating SessionManager...")
     sm = SessionManager()
-    started = sm.start_sess("Action 11 Tests")
-    assert started, "Failed to start session"
-    ready = sm.ensure_session_ready("Action 11 Tests")
-    assert ready, "Session not ready (login/cookies/ids missing)"
-    assert sm.my_profile_id, "Profile ID not available"
-    # TREE_NAME is required; ensure we can resolve a tree id
-    assert sm.my_tree_id, "Tree ID not available (check TREE_NAME in .env)"
+    logger.info("✅ SessionManager created")
+
+    logger.info("Step 2: Configuring browser requirement...")
+    sm.browser_manager.browser_needed = True
+    logger.info("✅ Browser marked as needed")
+
+    logger.info("Step 3: Starting session (database + browser)...")
+    started = sm.start_sess("Action 11 API Tests")
+    if not started:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Failed to start session - browser initialization failed")
+    logger.info("✅ Session started successfully")
+
     return sm
+
+
+def _authenticate_session(sm: SessionManager) -> None:
+    """Authenticate the session using cookies or login."""
+    from utils import _load_login_cookies, log_in, login_status
+
+    logger.info("Step 4: Attempting to load saved cookies...")
+    cookies_loaded = _load_login_cookies(sm)
+    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
+
+    logger.info("Step 5: Checking login status...")
+    login_check = login_status(sm, disable_ui_fallback=True)
+
+    if login_check is True:
+        logger.info("✅ Already logged in")
+    elif login_check is False:
+        logger.info("⚠️  Not logged in - attempting login...")
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            sm.close_sess(keep_db=False)
+            raise AssertionError(f"Login failed: {login_result}")
+        logger.info("✅ Login successful")
+    else:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Login status check failed critically (returned None)")
+
+
+def _validate_session_ready(sm: SessionManager) -> None:
+    """Validate session is ready with all identifiers."""
+    logger.info("Step 6: Ensuring session is ready...")
+    ready = sm.ensure_session_ready("api_research - API Tests", skip_csrf=True)
+    if not ready:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Session not ready - cookies/identifiers missing")
+    logger.info("✅ Session ready")
+
+    logger.info("Step 7: Verifying UUID is available...")
+    if not sm.my_uuid:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("UUID not available - session initialization incomplete")
+    logger.info(f"✅ UUID available: {sm.my_uuid}")
+
+    logger.info("Step 8: Verifying Profile ID is available...")
+    if not sm.my_profile_id:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Profile ID not available - session initialization incomplete")
+    logger.info(f"✅ Profile ID available: {sm.my_profile_id}")
+
+    logger.info("Step 9: Verifying Tree ID is available...")
+    if not sm.my_tree_id:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Tree ID not available - check TREE_NAME in .env")
+    logger.info(f"✅ Tree ID available: {sm.my_tree_id}")
+
+
+def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionManager, str]:
+    """Ensure session is ready for API tests. Returns (session_manager, my_uuid).
+
+    This function establishes a valid Ancestry session by:
+    1. Creating and initializing a SessionManager (or reusing existing one)
+    2. Starting the session (database + browser)
+    3. Loading saved cookies from previous session (if available)
+    4. Checking login status and logging in if needed
+    5. Ensuring session is ready with all identifiers
+    6. Validating UUID is available
+
+    Args:
+        reuse_session: If True, reuse existing session from previous test (default: True)
+
+    Returns:
+        tuple: (SessionManager, UUID string)
+    """
+    global _test_session_manager, _test_session_uuid
+
+    # Reuse session if available and requested
+    if reuse_session and _test_session_manager and _test_session_uuid:
+        logger.info("Reusing authenticated session from previous test")
+        return _test_session_manager, _test_session_uuid
+
+    logger.info("=" * 80)
+    logger.info("Setting up authenticated session for API tests...")
+    logger.info("=" * 80)
+
+    # Create and start new session
+    sm = _create_and_start_session()
+
+    # Authenticate the session
+    _authenticate_session(sm)
+
+    # Validate session is ready
+    _validate_session_ready(sm)
+
+    logger.info("=" * 80)
+    logger.info("✅ Valid authenticated session established for API tests")
+    logger.info("=" * 80)
+
+    # Cache session for reuse
+    _test_session_manager = sm
+    _test_session_uuid = sm.my_uuid
+
+    return sm, sm.my_uuid
 
 
 def _build_search_criteria_from_test_person(tp: dict[str, Any]) -> dict[str, Any]:
@@ -3158,8 +3261,7 @@ def _test_live_search_fraser(skip_live_tests: bool) -> bool:
     """Live API: search for Fraser Gault and ensure a scored match is returned."""
     if skip_live_tests:
         raise AssertionError("Live API tests require SKIP_LIVE_API_TESTS=false and valid .env credentials")
-    sm = _ensure_session(skip_live_tests)
-    assert sm is not None, "Session manager must be available for live API tests"
+    sm, _ = _ensure_session_for_api_tests()
     tp = load_test_person_from_env()
     criteria = _build_search_criteria_from_test_person(tp)
     results = search_ancestry_api_for_person(sm, criteria, max_results=5)
@@ -3178,8 +3280,7 @@ def _test_live_family_matches_env(skip_live_tests: bool) -> bool:
     """Live API: fetch person details and validate spouse/children from .env test data."""
     if skip_live_tests:
         raise AssertionError("Live API tests require SKIP_LIVE_API_TESTS=false and valid .env credentials")
-    sm = _ensure_session(skip_live_tests)
-    assert sm is not None, "Session manager must be available for live API tests"
+    sm, _ = _ensure_session_for_api_tests()
     tp = load_test_person_from_env()
     # Reuse search to pick id/tree
     criteria = _build_search_criteria_from_test_person(tp)
@@ -3205,8 +3306,7 @@ def _test_live_relationship_uncle(skip_live_tests: bool) -> bool:
     """Live API: format relationship path between Fraser Gault and owner; should include 'Uncle'."""
     if skip_live_tests:
         raise AssertionError("Live API tests require SKIP_LIVE_API_TESTS=false and valid .env credentials")
-    sm = _ensure_session(skip_live_tests)
-    assert sm is not None, "Session manager must be available for live API tests"
+    sm, _ = _ensure_session_for_api_tests()
     tp = load_test_person_from_env()
     # Search to get ids
     criteria = _build_search_criteria_from_test_person(tp)
