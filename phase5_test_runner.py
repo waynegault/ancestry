@@ -176,10 +176,11 @@ def create_test_match(session) -> dict:
         # Create DNA match record
         dna_match = DnaMatch(
             people_id=person_id,
-            confidence_level='High',
-            shared_cm=150.0,
+            compare_link='https://www.ancestry.co.uk/dna/compare/test',
+            cm_dna=150,
+            predicted_relationship='Distant Cousin',
             shared_segments=5,
-            relationship_hint='Distant Cousin',
+            longest_shared_segment=25.5,
         )
         transn_session.add(dna_match)
         transn_session.flush()
