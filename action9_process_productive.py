@@ -2153,6 +2153,7 @@ def _test_message_templates_available() -> bool:
 
 def action9_process_productive_module_tests() -> bool:
     """Comprehensive test suite for action9_process_productive.py"""
+    import os
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
@@ -2160,6 +2161,9 @@ def action9_process_productive_module_tests() -> bool:
         "action9_process_productive.py",
     )
     suite.start_suite()
+
+    # Check if we should skip live API tests (set by run_all_tests.py when running in parallel)
+    skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
     # Assign all module-level test functions
     test_module_initialization = _test_module_initialization
@@ -2215,19 +2219,25 @@ def action9_process_productive_module_tests() -> bool:
          "All error conditions handled gracefully with appropriate fallback responses",
          "Error handling and recovery functionality for AI operations",
          "Testing error scenarios with invalid data, exceptions, and malformed responses"),
-
-        ("Database session availability (real authenticated session)",
-         test_database_session,
-         "Database session is available and functional with real Ancestry authentication",
-         "Real authenticated session database connectivity",
-         "Testing database session establishment with valid Ancestry credentials"),
-
-        ("Message templates available (real authenticated session)",
-         test_message_templates,
-         "Message templates are loaded and available in database with real authentication",
-         "Real authenticated session message template loading",
-         "Testing message template availability with valid Ancestry session"),
     ]
+
+    # Only add database session tests if not skipping live API tests
+    if not skip_live_api_tests:
+        tests.extend([
+            ("Database session availability (real authenticated session)",
+             test_database_session,
+             "Database session is available and functional with real Ancestry authentication",
+             "Real authenticated session database connectivity",
+             "Testing database session establishment with valid Ancestry credentials"),
+
+            ("Message templates available (real authenticated session)",
+             test_message_templates,
+             "Message templates are loaded and available in database with real authentication",
+             "Real authenticated session message template loading",
+             "Testing message template availability with valid Ancestry session"),
+        ])
+    else:
+        logger.info("⏭️  Skipping live API tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
     # Run all tests from the list
     with suppress_logging():
