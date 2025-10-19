@@ -3411,7 +3411,35 @@ def action11_module_tests() -> bool:
         )
 
 
-        return suite.finish_suite()
+        result = suite.finish_suite()
+
+    # Clean up test session if it exists
+    global _test_session_manager  # noqa: PLW0603
+    if _test_session_manager is not None:
+        try:
+            # Suppress all warnings and errors during cleanup
+            import sys
+            import warnings
+            from pathlib import Path
+
+            # Redirect stderr temporarily to suppress exception messages
+            original_stderr = sys.stderr
+            with Path('/dev/null' if sys.platform != 'win32' else 'nul').open('w') as devnull:
+                sys.stderr = devnull
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore")
+                        _test_session_manager.close_sess(keep_db=False)
+                finally:
+                    # Restore stderr
+                    sys.stderr = original_stderr
+        except Exception:
+            # Silently ignore all cleanup errors
+            pass
+        finally:
+            _test_session_manager = None
+
+    return result
 
 
 def run_comprehensive_tests() -> bool:
@@ -3421,7 +3449,20 @@ def run_comprehensive_tests() -> bool:
 
 if __name__ == "__main__":
     import sys
+    from pathlib import Path
 
-    print("🔍 Running Action 11 - Live API Research Tool comprehensive test suite...")
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    original_stderr = sys.stderr
+
+    try:
+        print("🔍 Running Action 11 - Live API Research Tool comprehensive test suite...")
+        success = run_comprehensive_tests()
+
+        # Redirect stderr to devnull before exit to suppress Chrome destructor exceptions
+        devnull_path = Path('/dev/null' if sys.platform != 'win32' else 'nul')
+        sys.stderr = devnull_path.open('w')
+        sys.exit(0 if success else 1)
+    except Exception as e:
+        # Restore stderr for any unexpected errors
+        sys.stderr = original_stderr
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
