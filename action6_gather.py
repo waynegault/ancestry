@@ -2015,9 +2015,13 @@ def _test_parallel_fetch_match_details() -> bool:
 
 def action6_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py using standardized TestSuite framework."""
+    import os
     import warnings
 
     from test_framework import TestSuite
+
+    # Check if we should skip live API tests (set by run_all_tests.py when running in parallel)
+    skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
     suite = TestSuite("Action 6 - DNA Match Gatherer", "action6_gather.py")
     suite.start_suite()
@@ -2069,59 +2073,63 @@ def action6_module_tests() -> bool:
     )
 
     # === FUNCTIONAL API TESTS (Require Live Session) ===
-    suite.run_test(
-        "Match List API",
-        _test_match_list_api,
-        test_summary="Validates Match List API returns paginated DNA match data with correct structure",
-        functions_tested="fetch_match_list_page(), nav_to_dna_matches_page(), get_csrf_token_for_dna_matches()",
-        method_description="Navigate to DNA matches page, get CSRF token, call API, validate response contains matchList with sampleId/displayName/sharedCentimorgans/numSharedSegments",
-        expected_outcome="API returns dict with 'matchList' array containing 20+ matches, each with required fields (sampleId, matchProfile, relationship)",
-    )
+    # Skip API tests if running in parallel mode (set by run_all_tests.py)
+    if not skip_live_api_tests:
+        suite.run_test(
+            "Match List API",
+            _test_match_list_api,
+            test_summary="Validates Match List API returns paginated DNA match data with correct structure",
+            functions_tested="fetch_match_list_page(), nav_to_dna_matches_page(), get_csrf_token_for_dna_matches()",
+            method_description="Navigate to DNA matches page, get CSRF token, call API, validate response contains matchList with sampleId/displayName/sharedCentimorgans/numSharedSegments",
+            expected_outcome="API returns dict with 'matchList' array containing 20+ matches, each with required fields (sampleId, matchProfile, relationship)",
+        )
 
-    suite.run_test(
-        "Match Details API",
-        _test_match_details_api,
-        test_summary="Validates Match Details API returns additional DNA data for specific match",
-        functions_tested="_fetch_match_details()",
-        method_description="Get match UUID from Match List, call Match Details API, validate response contains shared_segments/longest_shared_segment/predicted_relationship",
-        expected_outcome="API returns dict with DNA details including segment counts, longest segment, meiosis, and relationship prediction",
-    )
+        suite.run_test(
+            "Match Details API",
+            _test_match_details_api,
+            test_summary="Validates Match Details API returns additional DNA data for specific match",
+            functions_tested="_fetch_match_details()",
+            method_description="Get match UUID from Match List, call Match Details API, validate response contains shared_segments/longest_shared_segment/predicted_relationship",
+            expected_outcome="API returns dict with DNA details including segment counts, longest segment, meiosis, and relationship prediction",
+        )
 
-    suite.run_test(
-        "Profile Details API",
-        _test_profile_details_api,
-        test_summary="Validates Profile Details API returns user profile information for matches with public profiles",
-        functions_tested="_fetch_profile_details()",
-        method_description="Find match with userId, call Profile Details API, validate response contains last_logged_in and contactable fields",
-        expected_outcome="API returns dict with LastLoginDate (parsed to datetime) and IsContactable (boolean) fields",
-    )
+        suite.run_test(
+            "Profile Details API",
+            _test_profile_details_api,
+            test_summary="Validates Profile Details API returns user profile information for matches with public profiles",
+            functions_tested="_fetch_profile_details()",
+            method_description="Find match with userId, call Profile Details API, validate response contains last_logged_in and contactable fields",
+            expected_outcome="API returns dict with LastLoginDate (parsed to datetime) and IsContactable (boolean) fields",
+        )
 
-    suite.run_test(
-        "Badge Details API",
-        _test_badge_details_api,
-        test_summary="Validates Badge Details API returns family tree data for matches in user's tree",
-        functions_tested="_fetch_badge_details(), fetch_in_tree_status()",
-        method_description="Check in-tree status for matches, find match in tree, call Badge Details API, validate response contains cfpid/person_name_in_tree/birth_year",
-        expected_outcome="API returns dict with personBadged object containing tree-specific data (personId, firstName, birthYear)",
-    )
+        suite.run_test(
+            "Badge Details API",
+            _test_badge_details_api,
+            test_summary="Validates Badge Details API returns family tree data for matches in user's tree",
+            functions_tested="_fetch_badge_details(), fetch_in_tree_status()",
+            method_description="Check in-tree status for matches, find match in tree, call Badge Details API, validate response contains cfpid/person_name_in_tree/birth_year",
+            expected_outcome="API returns dict with personBadged object containing tree-specific data (personId, firstName, birthYear)",
+        )
 
-    suite.run_test(
-        "Relationship Probability API",
-        _test_relationship_probability_api,
-        test_summary="Validates Relationship Probability API returns predicted relationship with confidence percentage",
-        functions_tested="_fetch_relationship_probability()",
-        method_description="Get match UUID, call Relationship Probability API using cloudscraper, validate response format",
-        expected_outcome="API returns formatted string like 'mother [99.0%]' or None if data unavailable",
-    )
+        suite.run_test(
+            "Relationship Probability API",
+            _test_relationship_probability_api,
+            test_summary="Validates Relationship Probability API returns predicted relationship with confidence percentage",
+            functions_tested="_fetch_relationship_probability()",
+            method_description="Get match UUID, call Relationship Probability API using cloudscraper, validate response format",
+            expected_outcome="API returns formatted string like 'mother [99.0%]' or None if data unavailable",
+        )
 
-    suite.run_test(
-        "Parallel Match Details Fetching",
-        _test_parallel_fetch_match_details,
-        test_summary="Validates parallel processing of match details using ThreadPoolExecutor with 2 workers",
-        functions_tested="_fetch_match_details_parallel(), _refine_match_list()",
-        method_description="Refine match list, submit 3 matches to ThreadPoolExecutor, collect results, validate all complete successfully",
-        expected_outcome="All 3 parallel fetch operations complete and return dict results with match_details/profile_details/badge_details/predicted_rel",
-    )
+        suite.run_test(
+            "Parallel Match Details Fetching",
+            _test_parallel_fetch_match_details,
+            test_summary="Validates parallel processing of match details using ThreadPoolExecutor with 2 workers",
+            functions_tested="_fetch_match_details_parallel(), _refine_match_list()",
+            method_description="Refine match list, submit 3 matches to ThreadPoolExecutor, collect results, validate all complete successfully",
+            expected_outcome="All 3 parallel fetch operations complete and return dict results with match_details/profile_details/badge_details/predicted_rel",
+        )
+    else:
+        logger.info("⏭️  Skipping live API tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
     result = suite.finish_suite()
 
