@@ -2187,6 +2187,8 @@ def test_main_patch() -> None:
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
+    import os
+
     original_gedcom, suite = _setup_test_environment()
 
     # --- TESTS ---
@@ -2194,8 +2196,14 @@ def action10_module_tests() -> bool:
 
     # Register meaningful tests only
     _register_input_validation_tests(suite, debug_wrapper, test_sanitize_input, test_get_validated_year_input_patch)
-    _register_scoring_tests(suite, debug_wrapper, test_fraser_gault_scoring_algorithm)
-    _register_relationship_tests(suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation)
+
+    # Skip GEDCOM-dependent tests when SKIP_SLOW_TESTS is set (for run_all_tests.py)
+    skip_slow_tests = os.environ.get("SKIP_SLOW_TESTS", "").lower() == "true"
+    if not skip_slow_tests:
+        _register_scoring_tests(suite, debug_wrapper, test_fraser_gault_scoring_algorithm)
+        _register_relationship_tests(suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation)
+    else:
+        logger.info("⏭️  Skipping GEDCOM-dependent tests (SKIP_SLOW_TESTS=true) - running in parallel mode")
 
     _teardown_test_environment(original_gedcom)
     return suite.finish_suite()
