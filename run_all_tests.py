@@ -1331,6 +1331,7 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
         ]
     else:
         print("🔄 Running tests sequentially...")
+        sys.stdout.flush()
         results = []
         all_metrics = []
         total_tests_run = 0
@@ -1338,6 +1339,7 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
 
         for i, (module_name, description) in enumerate(config.modules_with_descriptions, 1):
             print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
+            sys.stdout.flush()
 
             # Always collect metrics for quality summary (not just when monitoring enabled)
             success, test_count, metrics = run_module_tests(
@@ -1679,13 +1681,16 @@ def main() -> bool:
 
     # Print header
     _print_test_header(enable_fast_mode, enable_benchmark)
+    sys.stdout.flush()
 
     # Run pre-test checks
     if not _run_pre_test_checks():
         return False
+    sys.stdout.flush()
 
     # Discover and prepare test modules
     discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules()
+    sys.stdout.flush()
 
     if not discovered_modules:
         print("⚠️  No test modules discovered with run_comprehensive_tests() function.")
