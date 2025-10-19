@@ -15,14 +15,6 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from core.error_handling import (
-    circuit_breaker,
-    error_context,
-    graceful_degradation,
-    retry_on_failure,
-    timeout_protection,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
@@ -40,6 +32,13 @@ from tabulate import tabulate
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+from core.error_handling import (
+    circuit_breaker,
+    error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
+)
 
 # === CONFIGURATION VALIDATION ===
 try:
@@ -295,295 +294,14 @@ def _get_search_criteria() -> Optional[dict[str, Any]]:
 
 # === SIMPLE SCORING HELPER FUNCTIONS ===
 
-def _get_scoring_weights() -> dict[str, int]:
-    """Get scoring weights from config schema."""
-    weights = getattr(config_schema, 'common_scoring_weights', {})
-    return {
-        "birth_year_match": weights.get("birth_year_match", 20) if weights else 20,
-        "birth_year_close": weights.get("birth_year_close", 10) if weights else 10,
-        "birth_place_match": weights.get("birth_place_match", 20) if weights else 20,
-        "death_year_match": weights.get("death_year_match", 20) if weights else 20,
-        "death_year_close": weights.get("death_year_close", 10) if weights else 10,
-        "death_place_match": weights.get("death_place_match", 20) if weights else 20,
-        "death_dates_absent": weights.get("death_dates_both_absent", 15) if weights else 15,
-        "death_bonus": weights.get("bonus_death_date_and_place", 15) if weights else 15,
-        "gender_match": weights.get("gender_match", 15) if weights else 15,
-    }
+# NOTE: Duplicate scoring functions removed - using universal calculate_match_score from gedcom_utils.py
+# This ensures action10 and action11 use identical scoring logic
 
 
-def _score_name_match(search_fn: str, search_sn: str, cand_fn: str, cand_sn: str) -> tuple[int, dict[str, int], list[str]]:
-    """Score name matching (first name, surname, and bonus)."""
-    score = 0
-    field_scores = {"givn": 0, "surn": 0, "bonus": 0}
-    reasons = []
-
-    if cand_fn and search_fn and search_fn in cand_fn:
-        score += 25
-        field_scores["givn"] = 25
-        reasons.append(f"contains first name ({search_fn}) (25pts)")
-
-    if cand_sn and search_sn and search_sn in cand_sn:
-        score += 25
-        field_scores["surn"] = 25
-        reasons.append(f"contains surname ({search_sn}) (25pts)")
-
-    if field_scores["givn"] > 0 and field_scores["surn"] > 0:
-        score += 25
-        field_scores["bonus"] = 25
-        reasons.append("bonus both names (25pts)")
-
-    return score, field_scores, reasons
+# All helper scoring functions removed - using universal calculate_match_score from gedcom_utils.py
 
 
-def _score_birth_info(search_by: int, search_bp: str, cand_by: int, cand_bp: str, weights: dict[str, int]) -> tuple[int, dict[str, int], list[str]]:
-    """Score birth year and place matching."""
-    score = 0
-    field_scores = {"byear": 0, "bplace": 0, "bbonus": 0}
-    reasons = []
-
-    # Birth year scoring
-    if cand_by and search_by:
-        try:
-            cand_by_int = int(cand_by)
-            search_by_int = int(search_by)
-            if cand_by_int == search_by_int:
-                score += weights["birth_year_match"]
-                field_scores["byear"] = weights["birth_year_match"]
-                reasons.append(f"exact birth year ({cand_by}) ({weights['birth_year_match']}pts)")
-            elif abs(cand_by_int - search_by_int) <= 5:
-                score += weights["birth_year_close"]
-                field_scores["byear"] = weights["birth_year_close"]
-                reasons.append(f"close birth year ({cand_by} vs {search_by}) ({weights['birth_year_close']}pts)")
-        except (ValueError, TypeError):
-            pass
-
-    # Birth place scoring
-    if cand_bp and search_bp and search_bp in cand_bp:
-        score += weights["birth_place_match"]
-        field_scores["bplace"] = weights["birth_place_match"]
-        reasons.append(f"birth place contains ({search_bp}) ({weights['birth_place_match']}pts)")
-
-    # Birth bonus
-    if field_scores["byear"] > 0 and field_scores["bplace"] > 0:
-        score += 25
-        field_scores["bbonus"] = 25
-        reasons.append("bonus birth info (25pts)")
-
-    return score, field_scores, reasons
-
-
-# Helper functions for _score_death_info
-
-def _score_death_year(search_dy: int, cand_dy: int, weights: dict[str, int]) -> tuple[int, int, list[str]]:
-    """Score death year matching."""
-    if not cand_dy or not search_dy:
-        return 0, 0, []
-
-    try:
-        cand_dy_int = int(cand_dy)
-        search_dy_int = int(search_dy)
-
-        if cand_dy_int == search_dy_int:
-            return (
-                weights["death_year_match"],
-                weights["death_year_match"],
-                [f"exact death year ({cand_dy}) ({weights['death_year_match']}pts)"]
-            )
-        if abs(cand_dy_int - search_dy_int) <= 5:
-            return (
-                weights["death_year_close"],
-                weights["death_year_close"],
-                [f"close death year ({cand_dy} vs {search_dy}) ({weights['death_year_close']}pts)"]
-            )
-    except (ValueError, TypeError):
-        pass
-
-    return 0, 0, []
-
-
-def _score_death_date_absent(search_dy: int, cand_dy: int, is_living: bool, weights: dict[str, int]) -> tuple[int, int, list[str]]:
-    """Score when both death dates are absent."""
-    if not search_dy and not cand_dy and is_living in [False, None]:
-        return (
-            weights["death_dates_absent"],
-            weights["death_dates_absent"],
-            [f"death date absent ({weights['death_dates_absent']}pts)"]
-        )
-    return 0, 0, []
-
-
-def _score_death_place(search_dp: str, cand_dp: str, weights: dict[str, int]) -> tuple[int, int, list[str]]:
-    """Score death place matching."""
-    if cand_dp and search_dp and search_dp in cand_dp:
-        return (
-            weights["death_place_match"],
-            weights["death_place_match"],
-            [f"death place contains ({search_dp}) ({weights['death_place_match']}pts)"]
-        )
-    return 0, 0, []
-
-
-def _score_death_bonus(dyear_score: int, ddate_score: int, dplace_score: int, weights: dict[str, int]) -> tuple[int, int, list[str]]:
-    """Score death bonus when both date and place are present."""
-    if (dyear_score > 0 or ddate_score > 0) and dplace_score > 0:
-        return (
-            weights["death_bonus"],
-            weights["death_bonus"],
-            [f"bonus death info ({weights['death_bonus']}pts)"]
-        )
-    return 0, 0, []
-
-
-def _score_death_info(search_dy: int, search_dp: str, cand_dy: int, cand_dp: str, is_living: bool, weights: dict[str, int]) -> tuple[int, dict[str, int], list[str]]:
-    """Score death year and place matching."""
-    score = 0
-    field_scores = {"dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0}
-    reasons = []
-
-    # Score death year
-    year_score, year_field_score, year_reasons = _score_death_year(search_dy, cand_dy, weights)
-    score += year_score
-    field_scores["dyear"] = year_field_score
-    reasons.extend(year_reasons)
-
-    # Score death date absent (if year scoring didn't apply)
-    if year_score == 0:
-        date_score, date_field_score, date_reasons = _score_death_date_absent(search_dy, cand_dy, is_living, weights)
-        score += date_score
-        field_scores["ddate"] = date_field_score
-        reasons.extend(date_reasons)
-
-    # Score death place
-    place_score, place_field_score, place_reasons = _score_death_place(search_dp, cand_dp, weights)
-    score += place_score
-    field_scores["dplace"] = place_field_score
-    reasons.extend(place_reasons)
-
-    # Score death bonus
-    bonus_score, bonus_field_score, bonus_reasons = _score_death_bonus(
-        field_scores["dyear"], field_scores["ddate"], field_scores["dplace"], weights
-    )
-    score += bonus_score
-    field_scores["dbonus"] = bonus_field_score
-    reasons.extend(bonus_reasons)
-
-    return score, field_scores, reasons
-
-
-def _score_gender_match(search_gn: str, cand_gn: str, weights: dict[str, int]) -> tuple[int, int, list[str]]:
-    """Score gender matching."""
-    score = 0
-    gender_score = 0
-    reasons = []
-
-    logger.debug(f"[Simple Scoring] Checking Gender: Search='{search_gn}', Candidate='{cand_gn}'")
-    if cand_gn is not None and search_gn is not None and cand_gn == search_gn:
-        score = weights["gender_match"]
-        gender_score = weights["gender_match"]
-        reasons.append(f"Gender Match ({cand_gn.upper()}) ({weights['gender_match']}pts)")
-        logger.debug(f"[Simple Scoring] Gender Match! Adding {weights['gender_match']} points.")
-
-    return score, gender_score, reasons
-
-
-def _extract_candidate_fields(candidate_data_dict: dict[str, Any]) -> dict[str, Any]:
-    """Extract candidate fields from candidate data dictionary."""
-    return {
-        "first_name": candidate_data_dict.get("first_name") or "",
-        "surname": candidate_data_dict.get("surname") or "",
-        "birth_year": candidate_data_dict.get("birth_year") or 0,
-        "birth_place": candidate_data_dict.get("birth_place") or "",
-        "death_year": candidate_data_dict.get("death_year") or 0,
-        "death_place": candidate_data_dict.get("death_place") or "",
-        "gender": candidate_data_dict.get("gender") or "",
-        "is_living": candidate_data_dict.get("is_living") or False,
-    }
-
-
-def _extract_search_fields(search_criteria: dict[str, Any]) -> dict[str, Any]:
-    """Extract search fields from search criteria dictionary."""
-    return {
-        "first_name": search_criteria.get("first_name") or "",
-        "surname": search_criteria.get("surname") or "",
-        "birth_year": search_criteria.get("birth_year") or 0,
-        "birth_place": search_criteria.get("birth_place") or "",
-        "death_year": search_criteria.get("death_year") or 0,
-        "death_place": search_criteria.get("death_place") or "",
-        "gender": search_criteria.get("gender") or "",
-    }
-
-
-def _log_gender_mismatch(cand_gn: Any, search_gn: Any) -> None:
-    """Log gender mismatch information."""
-    if cand_gn is not None and search_gn is not None and cand_gn != search_gn:
-        logger.debug("[Simple Scoring] Gender MISMATCH. No points awarded.")
-    elif search_gn is None:
-        logger.debug("[Simple Scoring] No search gender provided. No points awarded.")
-    elif cand_gn is None:
-        logger.debug("[Simple Scoring] Candidate gender not available. No points awarded.")
-
-
-# Simple scoring fallback (Uses 'gender_match' key)
-def _run_simple_suggestion_scoring(
-    search_criteria: dict[str, Any], candidate_data_dict: dict[str, Any]
-) -> tuple[float, dict[str, Any], list[str]]:
-    """Performs simple fallback scoring based on hardcoded rules. Uses 'gender_match' key."""
-    logger.warning("Using simple fallback scoring for suggestion.")
-
-    # Initialize scoring
-    total_score = 0.0
-    field_scores = {
-        "givn": 0, "surn": 0, "gender_match": 0,
-        "byear": 0, "bdate": 0, "bplace": 0,
-        "dyear": 0, "ddate": 0, "dplace": 0,
-        "bonus": 0, "bbonus": 0, "dbonus": 0,
-    }
-    reasons = ["API Suggest Match", "Fallback Scoring"]
-
-    # Get scoring weights
-    weights = _get_scoring_weights()
-
-    # Extract candidate and search data
-    cand = _extract_candidate_fields(candidate_data_dict)
-    search = _extract_search_fields(search_criteria)
-
-    # Score name matching
-    name_score, name_fields, name_reasons = _score_name_match(
-        search["first_name"], search["surname"], cand["first_name"], cand["surname"]
-    )
-    total_score += name_score
-    field_scores.update(name_fields)
-    reasons.extend(name_reasons)
-
-    # Score birth information
-    birth_score, birth_fields, birth_reasons = _score_birth_info(
-        search["birth_year"], search["birth_place"], cand["birth_year"], cand["birth_place"], weights
-    )
-    total_score += birth_score
-    field_scores.update(birth_fields)
-    reasons.extend(birth_reasons)
-
-    # Score death information
-    death_score, death_fields, death_reasons = _score_death_info(
-        search["death_year"], search["death_place"], cand["death_year"], cand["death_place"], cand["is_living"], weights
-    )
-    total_score += death_score
-    field_scores.update(death_fields)
-    reasons.extend(death_reasons)
-
-    # Score gender matching
-    gender_score, gender_field_score, gender_reasons = _score_gender_match(search["gender"], cand["gender"], weights)
-    total_score += gender_score
-    field_scores["gender_match"] = gender_field_score
-    reasons.extend(gender_reasons)
-
-    # Handle gender mismatch logging
-    _log_gender_mismatch(cand["gender"], search["gender"])
-
-    return total_score, field_scores, reasons
-
-
-# End of _run_simple_suggestion_scoring
+# Fallback scoring removed - using universal calculate_match_score from gedcom_utils.py
 
 
 # === SUGGESTION PROCESSING HELPER FUNCTIONS ===
@@ -701,27 +419,12 @@ def _calculate_candidate_score(
 
             return score, field_scores, reasons
 
-        # Fall back to simple scoring
-        if scoring_func is not None:
-            score, field_scores, reasons = _run_simple_suggestion_scoring(search_criteria, candidate_data_dict)
-            logger.debug(f"Simple Score for {person_id}: {score}, Fields: {field_scores}")
-            if "gender_match" in field_scores:
-                logger.debug(f"Simple Field Score ('gender_match'): {field_scores['gender_match']}")
-            else:
-                logger.debug("Simple Field Scores missing 'gender_match' key.")
-
-            return score, field_scores, reasons
-
-        logger.error("Scoring function is None")
+        logger.error("Scoring function is None - GEDCOM scoring not available")
         return 0.0, {}, []
 
     except Exception as score_err:
         logger.error(f"Error scoring {person_id}: {score_err}", exc_info=True)
-        logger.warning("Falling back to simple scoring...")
-        score, field_scores, reasons = _run_simple_suggestion_scoring(search_criteria, candidate_data_dict)
-        reasons.append("(Error Fallback)")
-        logger.debug(f"Fallback Score for {person_id}: {score}, Fields: {field_scores}")
-        return score, field_scores, reasons
+        return 0.0, {}, []
 
 
 def _build_processed_candidate(
