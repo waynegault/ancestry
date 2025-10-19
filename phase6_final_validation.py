@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from session_manager import SessionManager
+from core.session_manager import SessionManager
 from database import db_transn, Person, ConversationLog, MessageTemplate
-from action8_send_messages import send_messages
+from action8_messaging import send_messages_to_matches
 
 
 def _create_and_start_session() -> SessionManager:
@@ -155,9 +155,9 @@ def run_action8_dry_run(sm: SessionManager) -> dict:
     """Run Action 8 in dry_run mode."""
     logger.info("\n[4/6] Running Action 8 (dry_run mode)...")
     logger.info("   This will process all candidates but NOT send real messages")
-    
+
     try:
-        result = send_messages(sm)
+        result = send_messages_to_matches(sm)
         logger.info("   ✅ Action 8 completed successfully")
         return result
     except Exception as e:
