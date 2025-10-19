@@ -3485,7 +3485,7 @@ def _test_database_message_creation() -> bool:
     try:
         sm, my_uuid = _ensure_session_for_messaging_tests()
 
-        logger.info("Testing database message creation in dry_run mode (limited to 5 candidates)...")
+        logger.info("Testing database message creation in dry_run mode (limited to 10 candidates)...")
 
         # Get database session
         db_session = sm.get_db_conn()
@@ -3497,7 +3497,7 @@ def _test_database_message_creation() -> bool:
         initial_count = db_session.query(ConversationLog).count()
         logger.info(f"Initial ConversationLog count: {initial_count}")
 
-        # Fetch limited candidates for testing (just 5)
+        # Fetch limited candidates for testing (just 10)
         test_candidates = (
             db_session.query(Person)
             .filter(
@@ -3508,7 +3508,7 @@ def _test_database_message_creation() -> bool:
                 Person.deleted_at.is_(None),
             )
             .order_by(Person.id)
-            .limit(5)
+            .limit(10)
             .all()
         )
 
@@ -3576,7 +3576,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
     try:
         sm, my_uuid = _ensure_session_for_messaging_tests()
 
-        logger.info("Testing dry_run mode prevents actual message sending (limited to 5 candidates)...")
+        logger.info("Testing dry_run mode prevents actual message sending (limited to 10 candidates)...")
 
         # Verify APP_MODE is dry_run
         app_mode = getattr(config_schema, 'app_mode', 'production')
@@ -3590,7 +3590,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
         from database import ConversationLog, Person, PersonStatusEnum
         initial_count = db_session.query(ConversationLog).count()
 
-        # Fetch limited candidates for testing (just 5)
+        # Fetch limited candidates for testing (just 10)
         test_candidates = (
             db_session.query(Person)
             .filter(
@@ -3601,7 +3601,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
                 Person.deleted_at.is_(None),
             )
             .order_by(Person.id)
-            .limit(5)
+            .limit(10)
             .all()
         )
 
