@@ -300,4 +300,3 @@ See `.env.example` for complete list. Key variables:
 
 **Last Updated**: October 19, 2025
 **Status**: Production Ready
-

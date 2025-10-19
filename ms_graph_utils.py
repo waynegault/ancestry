@@ -157,7 +157,7 @@ def save_cache_on_exit() -> None:
         logger.debug("Skipping MSAL cache save: Cache path or object unavailable.")
         return
 
-    logger.info("Executing save_cache_on_exit via atexit...")
+    logger.debug("Executing save_cache_on_exit via atexit...")
     try:
         # Check if cache state actually changed since loading/last save
         if persistent_cache.has_state_changed:
