@@ -1133,7 +1133,7 @@ class ResourceManager:
 
     def __init__(self) -> None:
         self.allocated_resources = []
-        self.memory_threshold_mb = 100  # Trigger cleanup at 100MB
+        self.memory_threshold_mb = 250  # Trigger cleanup at 250MB (more appropriate for modern systems)
         self.gc_interval = 50  # Trigger GC every 50 operations
         self.operation_count = 0
 
