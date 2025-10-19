@@ -2917,7 +2917,7 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
     Returns:
         tuple: (SessionManager, UUID string)
     """
-    global _test_session_manager, _test_session_uuid
+    global _test_session_manager, _test_session_uuid  # noqa: PLW0603
 
     # Reuse session if available and requested
     if reuse_session and _test_session_manager and _test_session_uuid:

@@ -2616,11 +2616,9 @@ def _perform_resource_cleanup(resource_manager: Any) -> None:
 
         logger.debug("🧹 Final resource cleanup completed")
     except Exception as cleanup_err:
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             logger.warning(f"Final resource cleanup failed: {cleanup_err}", exc_info=True)
-        except Exception:
-            # If logging fails, silently continue - cleanup is best-effort
-            pass
 
 
 def _log_performance_summary() -> None:
@@ -2646,11 +2644,9 @@ def _log_performance_summary() -> None:
         except Exception as logging_err:
             logger.warning(f"  - Performance summary logging failed: {logging_err}", exc_info=True)
     except Exception as perf_err:
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             logger.warning(f"Performance monitoring summary failed: {perf_err}", exc_info=True)
-        except Exception:
-            # If logging fails, silently continue - performance summary is non-critical
-            pass
 
 
 def _process_all_candidates(
