@@ -502,7 +502,16 @@ def run_comprehensive_tests() -> bool:
 
 
 if __name__ == "__main__":
-    success = run_comprehensive_tests()
+    import traceback
+
+    try:
+        print("🧪 Running Common Parameters & Dataclass Definitions comprehensive test suite...")
+        success = run_comprehensive_tests()
+    except Exception:
+        print("\n[ERROR] Unhandled exception during Common Parameters tests:", file=sys.stderr)
+        traceback.print_exc()
+        success = False
+
     sys.exit(0 if success else 1)
 
 
