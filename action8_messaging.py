@@ -2748,6 +2748,45 @@ def _process_all_candidates(
     }
 
 
+def _execute_main_processing_loop(
+    db_session: Session,
+    session_manager: SessionManager,
+    message_type_map: dict[str, int],
+    candidate_persons: list,
+    total_candidates: int,
+    db_commit_batch_size: int,
+    max_messages_to_send_this_run: int,
+    resource_manager,
+    error_categorizer
+) -> dict:
+    """Execute the main processing loop for all candidates."""
+    batch_config = BatchConfig(
+        commit_batch_size=db_commit_batch_size,
+        max_memory_mb=50,
+        max_items=min(db_commit_batch_size, 100),
+        max_messages_to_send=max_messages_to_send_this_run
+    )
+    return _process_all_candidates(
+        candidate_persons, total_candidates, db_session, session_manager,
+        message_type_map, resource_manager, error_categorizer,
+        batch_config
+    )
+
+
+def _handle_main_processing_exception(
+    outer_err: Exception,
+    resource_manager
+) -> bool:
+    """Handle exceptions during main processing."""
+    overall_success = _handle_action8_exception(outer_err)
+    try:
+        resource_manager.cleanup_resources()
+        logger.warning("🧹 Emergency resource cleanup completed after critical error")
+    except Exception as emergency_cleanup_err:
+        logger.error(f"Emergency resource cleanup failed: {emergency_cleanup_err}")
+    return overall_success
+
+
 # Updated decorator stack with enhanced error recovery
 @with_connection_resilience("Action 8: Messaging", max_recovery_attempts=3)
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
@@ -2789,9 +2828,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     max_messages_to_send_this_run = config_schema.max_inbox
     overall_success = True
 
-    MAX_BATCH_MEMORY_MB = 50
-    MAX_BATCH_ITEMS = min(db_commit_batch_size, 100)
-
     # Initialize resource management
     db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer = _initialize_resource_management()
 
@@ -2813,17 +2849,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
         # --- Step 3: Main Processing Loop ---
         if total_candidates > 0:
-            # Process all candidates
-            batch_config = BatchConfig(
-                commit_batch_size=db_commit_batch_size,
-                max_memory_mb=MAX_BATCH_MEMORY_MB,
-                max_items=MAX_BATCH_ITEMS,
-                max_messages_to_send=max_messages_to_send_this_run
-            )
-            processing_result = _process_all_candidates(
-                candidate_persons, total_candidates, db_session, session_manager,
-                message_type_map, resource_manager, error_categorizer,
-                batch_config
+            processing_result = _execute_main_processing_loop(
+                db_session, session_manager, message_type_map, candidate_persons,
+                total_candidates, db_commit_batch_size, max_messages_to_send_this_run,
+                resource_manager, error_categorizer
             )
 
             # Unpack results
@@ -2838,8 +2867,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             db_logs_to_add_dicts = processing_result['db_logs_to_add_dicts']
             person_updates = processing_result['person_updates']
 
-        # --- End Conditional Processing Block (if total_candidates > 0) ---
-
         # --- Step 4: Final Commit ---
         overall_success, batch_num = _perform_final_commit(
             db_session, critical_db_error_occurred, db_logs_to_add_dicts,
@@ -2849,14 +2876,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---
     except (MaxApiFailuresExceededError, BrowserSessionError, APIRateLimitError,
             AuthenticationExpiredError, ConnectionError, KeyboardInterrupt, Exception) as outer_err:
-        overall_success = _handle_action8_exception(outer_err)
+        overall_success = _handle_main_processing_exception(outer_err, resource_manager)
 
-        # Emergency resource cleanup on critical failure
-        try:
-            resource_manager.cleanup_resources()
-            logger.warning("🧹 Emergency resource cleanup completed after critical error")
-        except Exception as emergency_cleanup_err:
-            logger.error(f"Emergency resource cleanup failed: {emergency_cleanup_err}")
     # --- Step 6: Final Cleanup and Summary ---
     finally:
         from common_params import BatchCounters, ProcessingState
@@ -3481,6 +3502,67 @@ def _test_main_function_with_dry_run() -> bool:
         raise
 
 
+def _fetch_test_candidates(db_session: Session, limit: int = 10) -> list:
+    """Fetch limited test candidates from database."""
+    from database import Person, PersonStatusEnum
+    return (
+        db_session.query(Person)
+        .filter(
+            Person.profile_id.isnot(None),
+            Person.profile_id != "UNKNOWN",
+            Person.contactable,
+            Person.status.in_([PersonStatusEnum.ACTIVE, PersonStatusEnum.DESIST]),
+            Person.deleted_at.is_(None),
+        )
+        .order_by(Person.id)
+        .limit(limit)
+        .all()
+    )
+
+
+def _process_test_candidates(
+    db_session: Session,
+    sm: 'SessionManager',
+    test_candidates: list,
+    message_type_map: dict[str, int]
+) -> tuple[list, dict]:
+    """Process test candidates and collect logs and updates."""
+    db_logs_to_add = []
+    person_updates = {}
+
+    for person in test_candidates:
+        try:
+            new_log, person_update, _ = _process_single_person(
+                db_session, sm, person, None, None, None, message_type_map
+            )
+            if new_log:
+                db_logs_to_add.append(new_log)
+            if person_update:
+                person_id, status = person_update
+                person_updates[person_id] = status
+        except Exception as e:
+            logger.debug(f"Skipping person {person.id}: {e}")
+            continue
+
+    return db_logs_to_add, person_updates
+
+
+def _convert_logs_to_dicts(db_logs_to_add: list) -> list:
+    """Convert ConversationLog objects to dictionaries for commit."""
+    return [
+        {
+            "conversation_id": log.conversation_id,
+            "direction": log.direction,
+            "people_id": log.people_id,
+            "latest_message_content": log.latest_message_content,
+            "latest_timestamp": log.latest_timestamp,
+            "message_template_id": log.message_template_id,
+            "script_message_status": log.script_message_status
+        }
+        for log in db_logs_to_add
+    ]
+
+
 def _test_database_message_creation() -> bool:
     """Test that messages are created in database during dry_run with limited candidates."""
     try:
@@ -3494,24 +3576,12 @@ def _test_database_message_creation() -> bool:
             raise RuntimeError("Failed to get database session")
 
         # Count existing conversation logs
-        from database import ConversationLog, Person, PersonStatusEnum
+        from database import ConversationLog
         initial_count = db_session.query(ConversationLog).count()
         logger.info(f"Initial ConversationLog count: {initial_count}")
 
-        # Fetch limited candidates for testing (just 10)
-        test_candidates = (
-            db_session.query(Person)
-            .filter(
-                Person.profile_id.isnot(None),
-                Person.profile_id != "UNKNOWN",
-                Person.contactable,
-                Person.status.in_([PersonStatusEnum.ACTIVE, PersonStatusEnum.DESIST]),
-                Person.deleted_at.is_(None),
-            )
-            .order_by(Person.id)
-            .limit(10)
-            .all()
-        )
+        # Fetch limited candidates for testing
+        test_candidates = _fetch_test_candidates(db_session, limit=10)
 
         if not test_candidates:
             logger.warning("⚠️  No test candidates available, skipping test")
@@ -3520,36 +3590,22 @@ def _test_database_message_creation() -> bool:
 
         logger.info(f"Processing {len(test_candidates)} test candidates...")
 
-        # Process just these candidates manually
+        # Load message templates
         message_type_map, _ = _get_simple_messaging_data(db_session, sm)
         if not message_type_map:
             raise RuntimeError("Failed to load message templates")
 
-        db_logs_to_add = []
-        person_updates = {}
-
-        for person in test_candidates:
-            try:
-                new_log, person_update, _ = _process_single_person(
-                    db_session, sm, person, None, None, None, message_type_map
-                )
-                if new_log:
-                    db_logs_to_add.append(new_log)
-                if person_update:
-                    person_id, status = person_update
-                    person_updates[person_id] = status
-            except Exception as e:
-                logger.debug(f"Skipping person {person.id}: {e}")
-                continue
+        # Process candidates
+        db_logs_to_add, person_updates = _process_test_candidates(
+            db_session, sm, test_candidates, message_type_map
+        )
 
         # Commit the test data
         if db_logs_to_add or person_updates:
+            log_upserts = _convert_logs_to_dicts(db_logs_to_add)
             commit_success, logs_committed, persons_updated = _safe_commit_with_rollback(
                 session=db_session,
-                log_upserts=[{"conversation_id": log.conversation_id, "direction": log.direction,
-                             "people_id": log.people_id, "latest_message_content": log.latest_message_content,
-                             "latest_timestamp": log.latest_timestamp, "message_template_id": log.message_template_id,
-                             "script_message_status": log.script_message_status} for log in db_logs_to_add],
+                log_upserts=log_upserts,
                 person_updates=person_updates,
                 context="Action 8 Test Batch",
                 session_manager=sm
