@@ -3628,6 +3628,15 @@ def _test_database_message_creation() -> bool:
         raise
 
 
+def _log_created_messages(db_session: Session, initial_count: int, final_count: int) -> None:
+    """Log details of newly created messages."""
+    from database import ConversationLog
+    new_logs = db_session.query(ConversationLog).order_by(ConversationLog.id.desc()).limit(final_count - initial_count).all()
+    for log in new_logs:
+        status = log.script_message_status if hasattr(log, 'script_message_status') else 'N/A'
+        logger.info(f"   Message created: {log.id} (status: {status})")
+
+
 def _test_dry_run_mode_no_actual_send() -> bool:
     """Test that dry_run mode creates messages but doesn't send them (limited to 5 candidates)."""
     try:
@@ -3644,23 +3653,11 @@ def _test_dry_run_mode_no_actual_send() -> bool:
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
-        from database import ConversationLog, Person, PersonStatusEnum
+        from database import ConversationLog
         initial_count = db_session.query(ConversationLog).count()
 
-        # Fetch limited candidates for testing (just 10)
-        test_candidates = (
-            db_session.query(Person)
-            .filter(
-                Person.profile_id.isnot(None),
-                Person.profile_id != "UNKNOWN",
-                Person.contactable,
-                Person.status.in_([PersonStatusEnum.ACTIVE, PersonStatusEnum.DESIST]),
-                Person.deleted_at.is_(None),
-            )
-            .order_by(Person.id)
-            .limit(10)
-            .all()
-        )
+        # Fetch limited candidates for testing
+        test_candidates = _fetch_test_candidates(db_session, limit=10)
 
         if not test_candidates:
             logger.warning("⚠️  No test candidates available, skipping test")
@@ -3669,36 +3666,22 @@ def _test_dry_run_mode_no_actual_send() -> bool:
 
         logger.info(f"Processing {len(test_candidates)} test candidates in dry_run mode...")
 
-        # Process just these candidates manually
+        # Load message templates
         message_type_map, _ = _get_simple_messaging_data(db_session, sm)
         if not message_type_map:
             raise RuntimeError("Failed to load message templates")
 
-        db_logs_to_add = []
-        person_updates = {}
-
-        for person in test_candidates:
-            try:
-                new_log, person_update, _ = _process_single_person(
-                    db_session, sm, person, None, None, None, message_type_map
-                )
-                if new_log:
-                    db_logs_to_add.append(new_log)
-                if person_update:
-                    person_id, status = person_update
-                    person_updates[person_id] = status
-            except Exception as e:
-                logger.debug(f"Skipping person {person.id}: {e}")
-                continue
+        # Process candidates
+        db_logs_to_add, person_updates = _process_test_candidates(
+            db_session, sm, test_candidates, message_type_map
+        )
 
         # Commit the test data
         if db_logs_to_add or person_updates:
+            log_upserts = _convert_logs_to_dicts(db_logs_to_add)
             commit_success, logs_committed, persons_updated = _safe_commit_with_rollback(
                 session=db_session,
-                log_upserts=[{"conversation_id": log.conversation_id, "direction": log.direction,
-                             "people_id": log.people_id, "latest_message_content": log.latest_message_content,
-                             "latest_timestamp": log.latest_timestamp, "message_template_id": log.message_template_id,
-                             "script_message_status": log.script_message_status} for log in db_logs_to_add],
+                log_upserts=log_upserts,
                 person_updates=person_updates,
                 context="Action 8 Test Batch (Dry-run)",
                 session_manager=sm
@@ -3711,11 +3694,8 @@ def _test_dry_run_mode_no_actual_send() -> bool:
         # In dry_run mode with eligible candidates, messages MUST be created
         assert final_count > initial_count, f"Expected messages to be created in dry_run mode, but count stayed at {initial_count}. This indicates send_messages_to_matches() failed."
 
-        # Get the new messages
-        new_logs = db_session.query(ConversationLog).order_by(ConversationLog.id.desc()).limit(final_count - initial_count).all()
-        for log in new_logs:
-            # In dry_run mode, messages should be marked as simulated or have special status
-            logger.info(f"   Message created: {log.id} (status: {log.script_message_status if hasattr(log, 'script_message_status') else 'N/A'})")
+        # Log the created messages
+        _log_created_messages(db_session, initial_count, final_count)
 
         logger.info(f"✅ Dry-run mode: {final_count - initial_count} messages created but not sent")
 
