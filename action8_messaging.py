@@ -1165,12 +1165,20 @@ class ResourceManager:
         """Trigger garbage collection and return objects collected."""
         import gc
 
-        before_count = len(gc.get_objects())
-        collected = gc.collect()
-        after_count = len(gc.get_objects())
+        try:
+            before_count = len(gc.get_objects())
+            collected = gc.collect()
+            after_count = len(gc.get_objects())
 
-        logger.debug(f"🗑️ Garbage collection: {collected} cycles, {before_count - after_count} objects freed")
-        return collected
+            logger.debug(f"🗑️ Garbage collection: {collected} cycles, {before_count - after_count} objects freed")
+            return collected
+        except OSError as os_err:
+            # Handle OS-level errors (e.g., [Errno 22] Invalid argument on Windows during GC)
+            logger.warning(f"⚠️ Garbage collection encountered OS error (non-critical): {os_err}")
+            return 0
+        except Exception as gc_err:
+            logger.warning(f"⚠️ Garbage collection failed (non-critical): {gc_err}")
+            return 0
 
     def cleanup_resources(self) -> None:
         """Clean up tracked resources."""
