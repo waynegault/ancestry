@@ -3168,7 +3168,8 @@ def _authenticate_session(sm: SessionManager) -> None:
 def _validate_session_ready(sm: SessionManager) -> None:
     """Validate session is ready with all identifiers."""
     logger.info("Step 6: Ensuring session is ready...")
-    ready = sm.ensure_session_ready("api_research - API Tests", skip_csrf=True)
+    # Use "api_report" in action name to match skip pattern in session_validator
+    ready = sm.ensure_session_ready("api_report - API Tests", skip_csrf=True)
     if not ready:
         sm.close_sess(keep_db=False)
         raise AssertionError("Session not ready - cookies/identifiers missing")
