@@ -2591,12 +2591,25 @@ def _perform_final_cleanup(
 def _perform_resource_cleanup(resource_manager: Any) -> None:
     """Perform final resource cleanup and garbage collection."""
     try:
-        resource_manager.cleanup_resources()
-        resource_manager.trigger_garbage_collection()
+        logger.debug("🧹 Starting resource cleanup...")
+        try:
+            logger.debug("  - Calling cleanup_resources()...")
+            resource_manager.cleanup_resources()
+            logger.debug("  - cleanup_resources() completed")
+        except Exception as cleanup_resources_err:
+            logger.warning(f"  - cleanup_resources() failed: {cleanup_resources_err}", exc_info=True)
+
+        try:
+            logger.debug("  - Calling trigger_garbage_collection()...")
+            resource_manager.trigger_garbage_collection()
+            logger.debug("  - trigger_garbage_collection() completed")
+        except Exception as gc_err:
+            logger.warning(f"  - trigger_garbage_collection() failed: {gc_err}", exc_info=True)
+
         logger.debug("🧹 Final resource cleanup completed")
     except Exception as cleanup_err:
         try:
-            logger.warning(f"Final resource cleanup failed: {cleanup_err}")
+            logger.warning(f"Final resource cleanup failed: {cleanup_err}", exc_info=True)
         except Exception:
             # If logging fails, silently continue - cleanup is best-effort
             pass
@@ -2605,17 +2618,28 @@ def _perform_resource_cleanup(resource_manager: Any) -> None:
 def _log_performance_summary() -> None:
     """Log performance monitoring summary."""
     try:
-        perf_summary = stop_advanced_monitoring()
-        logger.info("--- Performance Summary ---")
-        logger.info(f"  Runtime: {perf_summary.get('total_runtime', 'N/A')}")
-        logger.info(f"  Memory Peak: {perf_summary.get('peak_memory_mb', 0):.1f}MB")
-        logger.info(f"  Operations Completed: {perf_summary.get('total_operations', 0)}")
-        logger.info(f"  API Calls: {perf_summary.get('api_calls', 0)}")
-        logger.info(f"  Errors: {perf_summary.get('total_errors', 0)}")
-        logger.info("---------------------------")
+        logger.debug("📊 Starting performance summary logging...")
+        try:
+            logger.debug("  - Calling stop_advanced_monitoring()...")
+            perf_summary = stop_advanced_monitoring()
+            logger.debug(f"  - stop_advanced_monitoring() returned: {type(perf_summary)}")
+        except Exception as stop_monitoring_err:
+            logger.warning(f"  - stop_advanced_monitoring() failed: {stop_monitoring_err}", exc_info=True)
+            perf_summary = {}
+
+        try:
+            logger.info("--- Performance Summary ---")
+            logger.info(f"  Runtime: {perf_summary.get('total_runtime', 'N/A')}")
+            logger.info(f"  Memory Peak: {perf_summary.get('peak_memory_mb', 0):.1f}MB")
+            logger.info(f"  Operations Completed: {perf_summary.get('total_operations', 0)}")
+            logger.info(f"  API Calls: {perf_summary.get('api_calls', 0)}")
+            logger.info(f"  Errors: {perf_summary.get('total_errors', 0)}")
+            logger.info("---------------------------")
+        except Exception as logging_err:
+            logger.warning(f"  - Performance summary logging failed: {logging_err}", exc_info=True)
     except Exception as perf_err:
         try:
-            logger.warning(f"Performance monitoring summary failed: {perf_err}")
+            logger.warning(f"Performance monitoring summary failed: {perf_err}", exc_info=True)
         except Exception:
             # If logging fails, silently continue - performance summary is non-critical
             pass
@@ -2840,18 +2864,23 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         )
 
     # Step 7: Final resource cleanup
+    logger.debug("🔧 Step 7: Starting final resource cleanup...")
     try:
         _perform_resource_cleanup(resource_manager)
+        logger.debug("🔧 Step 7: Final resource cleanup completed successfully")
     except Exception as cleanup_err:
-        logger.warning(f"Final resource cleanup error (non-critical): {cleanup_err}")
+        logger.warning(f"Final resource cleanup error (non-critical): {cleanup_err}", exc_info=True)
 
     # Step 8: Stop performance monitoring and log summary
+    logger.debug("📊 Step 8: Starting performance monitoring summary...")
     try:
         _log_performance_summary()
+        logger.debug("📊 Step 8: Performance monitoring summary completed successfully")
     except Exception as perf_err:
-        logger.warning(f"Performance summary error (non-critical): {perf_err}")
+        logger.warning(f"Performance summary error (non-critical): {perf_err}", exc_info=True)
 
     # Step 9: Return overall success status
+    logger.debug(f"✅ Step 9: Returning overall_success={overall_success}")
     return overall_success
 
 
