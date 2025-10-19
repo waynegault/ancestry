@@ -23,8 +23,6 @@ from core.error_handling import (
     timeout_protection,
 )
 
-logger = setup_module(globals(), __name__)
-
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
@@ -3159,11 +3157,9 @@ def _build_search_criteria_from_test_person(tp: dict[str, Any]) -> dict[str, Any
 def _test_live_search_fraser(skip_live_tests: bool) -> bool:
     """Live API: search for Fraser Gault and ensure a scored match is returned."""
     if skip_live_tests:
-        logger.info("Skipping live API test: test_live_search_fraser")
-        return True
+        raise AssertionError("Live API tests require SKIP_LIVE_API_TESTS=false and valid .env credentials")
     sm = _ensure_session(skip_live_tests)
-    if not sm:
-        return True
+    assert sm is not None, "Session manager must be available for live API tests"
     tp = load_test_person_from_env()
     criteria = _build_search_criteria_from_test_person(tp)
     results = search_ancestry_api_for_person(sm, criteria, max_results=5)
@@ -3181,11 +3177,9 @@ def _test_live_search_fraser(skip_live_tests: bool) -> bool:
 def _test_live_family_matches_env(skip_live_tests: bool) -> bool:
     """Live API: fetch person details and validate spouse/children from .env test data."""
     if skip_live_tests:
-        logger.info("Skipping live API test: test_live_family_matches_env")
-        return True
+        raise AssertionError("Live API tests require SKIP_LIVE_API_TESTS=false and valid .env credentials")
     sm = _ensure_session(skip_live_tests)
-    if not sm:
-        return True
+    assert sm is not None, "Session manager must be available for live API tests"
     tp = load_test_person_from_env()
     # Reuse search to pick id/tree
     criteria = _build_search_criteria_from_test_person(tp)
@@ -3210,11 +3204,9 @@ def _test_live_family_matches_env(skip_live_tests: bool) -> bool:
 def _test_live_relationship_uncle(skip_live_tests: bool) -> bool:
     """Live API: format relationship path between Fraser Gault and owner; should include 'Uncle'."""
     if skip_live_tests:
-        logger.info("Skipping live API test: test_live_relationship_uncle")
-        return True
+        raise AssertionError("Live API tests require SKIP_LIVE_API_TESTS=false and valid .env credentials")
     sm = _ensure_session(skip_live_tests)
-    if not sm:
-        return True
+    assert sm is not None, "Session manager must be available for live API tests"
     tp = load_test_person_from_env()
     # Search to get ids
     criteria = _build_search_criteria_from_test_person(tp)
