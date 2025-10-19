@@ -1642,9 +1642,13 @@ def test_get_validated_year_input_patch() -> None:
     try:
         for input_val, expected, description in test_inputs:
             try:
-                def mock_input(val: str = input_val) -> str:
-                    return val
-                builtins.input = mock_input  # type: ignore[assignment]
+                # Create a closure that captures input_val and ignores the prompt argument
+                def make_mock_input(test_value: str) -> Callable[[str], str]:
+                    def mock_input_func(_prompt: str = "") -> str:
+                        return test_value
+                    return mock_input_func
+
+                builtins.input = make_mock_input(input_val)  # type: ignore[assignment]
                 actual = get_validated_year_input("Enter year: ")
                 passed = actual == expected
                 status = "✅" if passed else "❌"
