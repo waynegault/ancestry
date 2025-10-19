@@ -811,6 +811,7 @@ def _get_simple_messaging_data(
                     Person.deleted_at.is_(None),
                 )
                 .order_by(Person.id)
+                .limit(10)
                 .all()
             )
 
