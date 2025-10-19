@@ -1007,9 +1007,23 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
     start_datetime = datetime.now().isoformat()
 
     cmd, env = _build_test_command(module_name, coverage)
-    result = subprocess.run(
-        cmd, check=False, capture_output=True, text=True, cwd=Path.cwd(), env=env
-    )
+
+    # Set timeout for subprocess (300 seconds = 5 minutes)
+    # This prevents tests from hanging indefinitely
+    timeout_seconds = 300
+
+    try:
+        result = subprocess.run(
+            cmd, check=False, capture_output=True, text=True, cwd=Path.cwd(), env=env, timeout=timeout_seconds
+        )
+    except subprocess.TimeoutExpired:
+        # Create a fake CompletedProcess to indicate timeout
+        result = subprocess.CompletedProcess(
+            args=cmd,
+            returncode=124,  # Standard timeout exit code
+            stdout="",
+            stderr=f"Test subprocess timed out after {timeout_seconds}s"
+        )
 
     duration = time.time() - start_time
     return result, duration, start_datetime
@@ -1249,6 +1263,11 @@ def _run_pre_test_checks() -> bool:
     Returns:
         True if checks pass or can continue, False if critical failure
     """
+    # Skip linter if --skip-linter flag is provided
+    if "--skip-linter" in sys.argv:
+        print("⏭️  Skipping linter checks (--skip-linter flag provided)")
+        return True
+
     # Run linter first for hygiene; fail fast only on safe subset
     return run_linter()
 
