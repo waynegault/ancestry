@@ -458,11 +458,7 @@ def validate_config() -> tuple[
 @error_context("load_gedcom_data")
 def load_gedcom_data(gedcom_path: Path) -> GedcomData:
     """Load, parse, and pre-process GEDCOM data with comprehensive error handling."""
-    # Validate input path
-    if not isinstance(gedcom_path, Path):
-        logger.error(f"Invalid GEDCOM path type: {type(gedcom_path)}")
-        raise MissingConfigError(f"GEDCOM path must be a Path object, got {type(gedcom_path)}")
-
+    # Validate input path exists
     if not gedcom_path.is_file():
         logger.error(f"GEDCOM file not found: {gedcom_path}")
         raise MissingConfigError(f"GEDCOM file does not exist: {gedcom_path}")
@@ -1644,7 +1640,7 @@ def test_get_validated_year_input_patch() -> None:
             try:
                 # Create a closure that captures input_val and ignores the prompt argument
                 def make_mock_input(test_value: str) -> Callable[[str], str]:
-                    def mock_input_func(_prompt: str = "") -> str:
+                    def mock_input_func(_: str = "") -> str:
                         return test_value
                     return mock_input_func
 
