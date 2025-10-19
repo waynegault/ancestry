@@ -1008,9 +1008,10 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
 
     cmd, env = _build_test_command(module_name, coverage)
 
-    # Set timeout for subprocess (300 seconds = 5 minutes)
+    # Set timeout for subprocess (60 seconds)
     # This prevents tests from hanging indefinitely
-    timeout_seconds = 300
+    # action10 with SKIP_SLOW_TESTS should complete in <5s, so 60s is generous
+    timeout_seconds = 60
 
     try:
         result = subprocess.run(
