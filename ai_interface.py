@@ -1472,38 +1472,83 @@ def test_ai_functionality(session_manager: SessionManager) -> bool:
         return False
 
 
-def ai_interface_tests() -> dict[str, Any]:
-    """Test suite for ai_interface.py - AI Interface & Integration Layer"""
-    # Test implementation moved to unified test framework
+def ai_interface_module_tests() -> bool:
+    """
+    Comprehensive test suite for ai_interface.py - AI Interface & Integration Layer.
+    Tests AI provider configuration, intent classification, entity extraction, and specialized analysis.
+    """
+    from test_framework import TestSuite, suppress_logging
+    from core.session_manager import SessionManager
 
-    # Simulate comprehensive test suite for reporting
-    test_results = {
-        "test_ai_provider_configuration": True,
-        "test_intent_classification": True,
-        "test_entity_extraction": True,
-        "test_prompt_loading": True,
-        "test_api_key_validation": True,
-        "test_rate_limiting": True,
-        "test_error_handling": True,
-        "test_response_parsing": True,
-        "test_fallback_mechanisms": True,
-        "test_session_integration": True,
-    }
+    suite = TestSuite("AI Interface & Integration Layer", "ai_interface.py")
+    suite.start_suite()
 
-    passed_tests = sum(1 for result in test_results.values() if result)
-    failed_tests = len(test_results) - passed_tests
+    with suppress_logging():
+        # === INITIALIZATION TESTS ===
+        suite.run_test(
+            "AI Provider Configuration",
+            lambda: _validate_ai_provider(config_schema.ai_provider.lower()),
+            "AI provider is properly configured (deepseek or gemini)",
+            "Validate AI_PROVIDER setting from configuration",
+            "Verify AI_PROVIDER is set to 'deepseek' or 'gemini'",
+        )
 
-    # Report test counts in detectable format
-    print(f"✅ Passed: {passed_tests}")
-    print(f"❌ Failed: {failed_tests}")
+        # === CORE FUNCTIONALITY TESTS ===
+        suite.run_test(
+            "Prompt Loading",
+            lambda: _check_prompts_loaded([]),
+            "Prompts are loaded successfully from JSON or fallback",
+            "Test prompt loading functionality",
+            "Verify prompts can be loaded for intent classification and extraction",
+        )
 
-    return all(test_results.values())
+        suite.run_test(
+            "API Key Validation",
+            lambda: _check_api_key_and_dependencies(config_schema.ai_provider.lower())[0],
+            "API key is configured for the selected AI provider",
+            "Test API key configuration",
+            "Verify API key exists for deepseek or gemini",
+        )
+
+        suite.run_test(
+            "Dependencies Available",
+            lambda: _check_api_key_and_dependencies(config_schema.ai_provider.lower())[1],
+            "Required AI libraries are available",
+            "Test library availability",
+            "Verify openai or google.generativeai libraries are installed",
+        )
+
+        # === INTEGRATION TESTS (Require Live Session) ===
+        try:
+            sm = SessionManager()
+            sm.start_sess("AI Interface Tests")
+
+            suite.run_test(
+                "Health Check",
+                lambda: quick_health_check(sm)["overall_health"] in ["healthy", "degraded"],
+                "AI interface health check completes successfully",
+                "Test health check functionality",
+                "Verify health check returns valid status",
+            )
+
+            suite.run_test(
+                "Intent Classification",
+                lambda: test_ai_functionality(sm),
+                "AI intent classification and extraction work correctly",
+                "Test AI functionality with live session",
+                "Verify classify_message_intent and extract_genealogical_entities work",
+            )
+
+            sm.close_sess(keep_db=False)
+        except Exception as e:
+            logger.warning(f"Could not run live session tests: {e}")
+
+    return suite.finish_suite()
 
 
-# Use centralized test runner utility
-from test_utilities import create_standard_test_runner
-
-run_comprehensive_tests = create_standard_test_runner(ai_interface_tests)
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    return ai_interface_module_tests()
 
 
 def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:
@@ -1675,7 +1720,14 @@ USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They marr
 
 if __name__ == "__main__":
     import sys
+    import traceback
 
-    print("🤖 Running AI Interface & Integration Layer comprehensive test suite...")
-    success = run_comprehensive_tests()
+    try:
+        print("🤖 Running AI Interface & Integration Layer comprehensive test suite...")
+        success = run_comprehensive_tests()
+    except Exception:
+        print("\n[ERROR] Unhandled exception during AI Interface tests:", file=sys.stderr)
+        traceback.print_exc()
+        success = False
+
     sys.exit(0 if success else 1)
