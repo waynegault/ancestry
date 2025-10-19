@@ -81,9 +81,21 @@ def _validate_session_ready(sm: SessionManager) -> None:
 
 def _ensure_session_for_phase5_test() -> SessionManager:
     """Ensure session is ready for Phase 5 test. Returns session_manager."""
+    import shutil
+
     logger.info("=" * 80)
     logger.info("Setting up authenticated session for Phase 5 Frances Milne test...")
     logger.info("=" * 80)
+
+    # Copy backup database to working location
+    logger.info("Step 0: Copying backup database...")
+    backup_db = 'Data/ancestry_backup.db'
+    working_db = 'ancestry.db'
+    if os.path.exists(backup_db):
+        shutil.copy2(backup_db, working_db)
+        logger.info(f"✅ Copied {backup_db} to {working_db}")
+    else:
+        logger.warning(f"⚠️  Backup database not found at {backup_db}")
 
     sm = _create_and_start_session()
     _authenticate_session(sm)
@@ -149,56 +161,39 @@ def verify_match_eligible(match_info: dict) -> bool:
     return all_passed
 
 
-def create_test_match(session) -> dict:
-    """Create a test DNA match in the database for Phase 5 testing."""
-    logger.info("\n[1/5] Creating test DNA match in database...")
+def find_frances_milne(session) -> dict:
+    """Find Frances Milne in the database for Phase 5 testing."""
+    logger.info("\n[1/5] Finding Frances Milne in database...")
 
-    from database import PersonStatusEnum, DnaMatch, create_person
-    import uuid as uuid_module
+    from database import Person
 
     with db_transn(session) as transn_session:
-        # Create a test person with unique IDs
-        unique_id = str(uuid_module.uuid4())[:8]
-        test_person_data = {
-            'uuid': f'TEST-UUID-{unique_id}',
-            'profile_id': f'TEST-PROFILE-{unique_id}',
-            'username': f'TestMatch_Phase5_{unique_id}',
-            'first_name': 'Test',
-            'in_my_tree': False,
-            'contactable': True,
-            'status': PersonStatusEnum.ACTIVE,
-        }
+        # Query for Frances Milne by profile_id from .env
+        frances_profile_id = os.getenv('ACTION8_TEST_PROFILE_ID')
 
-        person_id = create_person(transn_session, test_person_data)
+        frances = transn_session.query(Person).filter(
+            Person.profile_id == frances_profile_id
+        ).first()
 
-        if person_id == 0:
-            logger.error("❌ Failed to create test person")
+        if not frances:
+            logger.error(f"❌ Frances Milne not found with profile_id: {frances_profile_id}")
             return None
 
-        # Create DNA match record
-        dna_match = DnaMatch(
-            people_id=person_id,
-            compare_link='https://www.ancestry.co.uk/dna/compare/test',
-            cm_dna=150,
-            predicted_relationship='Distant Cousin',
-            shared_segments=5,
-            longest_shared_segment=25.5,
-        )
-        transn_session.add(dna_match)
-        transn_session.flush()
-
-        logger.info(f"✅ Created test DNA match:")
-        logger.info(f"   Person ID: {person_id}")
-        logger.info(f"   Username: {test_person_data['username']}")
-        logger.info(f"   Profile ID: {test_person_data['profile_id']}")
+        logger.info(f"✅ Found Frances Milne:")
+        logger.info(f"   Person ID: {frances.id}")
+        logger.info(f"   Username: {frances.username}")
+        logger.info(f"   Profile ID: {frances.profile_id}")
+        logger.info(f"   In My Tree: {frances.in_my_tree}")
+        logger.info(f"   Contactable: {frances.contactable}")
+        logger.info(f"   Status: {frances.status}")
 
         return {
-            'person_id': person_id,
-            'profile_id': test_person_data['profile_id'],
-            'username': test_person_data['username'],
-            'in_my_tree': False,
-            'contactable': True,
-            'status': PersonStatusEnum.ACTIVE,
+            'person_id': frances.id,
+            'profile_id': frances.profile_id,
+            'username': frances.username,
+            'in_my_tree': frances.in_my_tree,
+            'contactable': frances.contactable,
+            'status': frances.status,
         }
 
 
@@ -224,10 +219,10 @@ def run_phase5_test():
         sm = _ensure_session_for_phase5_test()
         print("✅ Session initialized and authenticated successfully")
 
-        # Create test match
-        print("\n[1/5] Creating test DNA match in database...")
+        # Find Frances Milne
+        print("\n[1/5] Finding Frances Milne in database...")
         session = sm.get_db_conn()
-        match_info = create_test_match(session)
+        match_info = find_frances_milne(session)
         sm.return_session(session)
 
         if not match_info:
