@@ -2137,17 +2137,17 @@ def _check_dependencies() -> tuple[bool, list[str]]:
 
 
 def _validate_browser_session() -> bool:
-    """Validate that browser session is available."""
-    logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
-    logger.debug(f"Session manager driver: {session_manager.driver}")
+    """Validate that session manager is available (browser not required for API-only operations)."""
+    logger.debug(f"Checking session manager. Session manager ID: {id(session_manager)}")
+    logger.debug(f"Session manager driver: {getattr(session_manager, 'driver', None)}")
     logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
 
-    if not session_manager.driver:
-        logger.error(f"Browser session not available. Session manager: {session_manager}, Driver: {session_manager.driver}")
-        print("\nERROR: Browser session not available.")
+    if not session_manager:
+        logger.error("Session manager not available.")
+        print("\nERROR: Session manager not available.")
         return False
 
-    logger.debug("Browser session is available and ready.")
+    logger.debug("Session manager is available and ready.")
     return True
 
 
@@ -2191,19 +2191,24 @@ def _validate_cookies_available() -> bool:
 # Helper functions for handle_api_report - Phase 2: Login and Cookie Management
 
 def _handle_logged_in_user() -> bool:
-    """Handle case where user is already logged in - refresh cookies."""
-    logger.debug("User is already logged in. Refreshing cookies...")
+    """Handle case where user is already logged in - refresh cookies if browser available."""
+    logger.debug("User is already logged in.")
 
     if not _validate_global_requests_session():
         return False
 
-    if not _refresh_cookies_from_browser():
-        return False
+    # If browser is available, refresh cookies from it
+    if session_manager.driver:
+        logger.debug("Browser available - refreshing cookies from browser...")
+        if not _refresh_cookies_from_browser():
+            return False
+    else:
+        logger.debug("No browser available - using existing cookies from requests session")
 
     if not _validate_cookies_available():
         return False
 
-    logger.debug("Successfully refreshed authentication cookies.")
+    logger.debug("Authentication cookies are available and ready.")
     return True
 
 

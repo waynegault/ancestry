@@ -281,6 +281,7 @@ def _determine_browser_requirement(action_name: str) -> bool:
         "backup_db_actn",
         "restore_db_actn",
         "run_action10",
+        "run_action11_wrapper",  # Action 11 uses API calls only, no browser needed
     ]
     return action_name not in browserless_actions
 
