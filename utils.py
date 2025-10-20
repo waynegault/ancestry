@@ -30,10 +30,6 @@ else:
     # Runtime import to avoid circular dependency issues
     SessionManager = None
 
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-
-logger = setup_module(globals(), __name__)
-
 # === STANDARD LIBRARY IMPORTS ===
 import base64  # For make_ube
 import binascii  # For make_ube

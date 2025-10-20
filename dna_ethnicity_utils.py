@@ -373,28 +373,27 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
 
     sm = SessionManager()
     try:
-        if not _setup_test_session(sm):
-            logger.warning("Could not set up test session - skipping live API test")
+        # Validate prerequisites
+        if not _setup_test_session(sm) or not sm.my_uuid or not _navigate_to_dna_page(sm):
+            if not _setup_test_session(sm):
+                logger.warning("Could not set up test session - skipping live API test")
+            elif not sm.my_uuid:
+                logger.warning("UUID not available - skipping live API test")
+            else:
+                logger.warning("Could not navigate to DNA page - skipping live API test")
             return True
 
-        if not sm.my_uuid:
-            logger.warning("UUID not available - skipping live API test")
-            return True
-
-        if not _navigate_to_dna_page(sm):
-            logger.warning("Could not navigate to DNA page - skipping live API test")
-            return True
-
+        # Fetch and validate ethnicity data
         ethnicity_data = fetch_tree_owner_ethnicity_regions(sm, my_uuid)
         if not ethnicity_data or "regions" not in ethnicity_data:
             logger.error("Failed to fetch tree owner ethnicity or missing regions")
             return False
 
+        # Log results
         regions = ethnicity_data["regions"]
         logger.info(f"✅ Successfully fetched {len(regions)} ethnicity regions")
         for region in regions:
             logger.info(f"  Region {region['key']}: {region['percentage']}%")
-
         return True
     except Exception as e:
         logger.warning(f"Exception in tree owner ethnicity fetch (skipping): {e}")
@@ -453,16 +452,16 @@ def _test_ethnicity_comparison() -> bool:
     sm = SessionManager()
 
     try:
-        if not _setup_test_session(sm):
-            logger.warning("Could not set up test session - skipping live API test")
+        # Validate prerequisites
+        if not _setup_test_session(sm) or not _navigate_to_dna_page(sm):
+            if not _setup_test_session(sm):
+                logger.warning("Could not set up test session - skipping live API test")
+            else:
+                logger.warning("Could not navigate to DNA page - skipping live API test")
             return True
 
-        if not _navigate_to_dna_page(sm):
-            logger.warning("Could not navigate to DNA page - skipping live API test")
-            return True
-
+        # Fetch comparison data
         comparison_data = fetch_ethnicity_comparison(sm, my_uuid, match_uuid)
-
         if not comparison_data:
             logger.warning(f"No ethnicity comparison data for match {match_uuid}")
             return True  # This is OK - not all matches have ethnicity data
@@ -471,15 +470,14 @@ def _test_ethnicity_comparison() -> bool:
             logger.error("Comparison data missing 'comparisons' field")
             return False
 
+        # Log results
         comparisons = comparison_data["comparisons"]
         logger.info(f"✅ Successfully fetched ethnicity comparison with {len(comparisons)} regions")
-
         for comp in comparisons[:5]:
             resource_id = comp.get("resourceId", "Unknown")
             left_sum = comp.get("leftSum", 0)
             right_sum = comp.get("rightSum", 0)
             logger.info(f"  Region {resource_id}: You={left_sum}%, Match={right_sum}%")
-
         return True
     except Exception as e:
         logger.warning(f"Exception in ethnicity comparison (skipping): {e}")

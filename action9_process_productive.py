@@ -31,9 +31,6 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import ms_graph_utils
-
-# === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
-# from core.system_cache import cached_database_query  # Module doesn't exist yet
 from ai_interface import extract_genealogical_entities
 
 # === LOCAL IMPORTS ===
@@ -2224,7 +2221,7 @@ def action9_process_productive_module_tests() -> bool:
 
     # Only add database session tests if not skipping live API tests
     if not skip_live_api_tests:
-        tests.extend([
+        tests.extend([  # type: ignore[arg-type]
             ("Database session availability (real authenticated session)",
              test_database_session,
              "Database session is available and functional with real Ancestry authentication",

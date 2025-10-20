@@ -120,44 +120,59 @@ APP_MODE=production
 
 ## Developer Instructions
 
-### Architecture
+### Architecture Overview
 
-**Core Components**:
-```
-core/
-  session_manager.py    # Central coordinator with RateLimiter
-  browser_manager.py    # WebDriver lifecycle management
-  api_manager.py        # REST API client
-  database_manager.py   # SQLAlchemy connection pooling
-  error_handling.py     # Exception hierarchy and retry logic
+The system uses a modular, layered architecture with clear separation of concerns:
 
-config/
-  config_schema.py      # Type-safe configuration dataclasses
-  config_manager.py     # .env loading and validation
+**Core Infrastructure** (`core/`):
+- `session_manager.py`: Central coordinator managing browser, API, and database connections with integrated RateLimiter
+- `browser_manager.py`: WebDriver lifecycle management with health checks and recovery
+- `api_manager.py`: REST API client with cookie synchronization and retry logic
+- `database_manager.py`: SQLAlchemy connection pooling with transaction management
+- `error_handling.py`: Comprehensive exception hierarchy with retry decorators and circuit breaker
 
-utils.py                # RateLimiter, API helpers, navigation
-database.py             # SQLAlchemy ORM models
-ai_interface.py         # Multi-provider AI abstraction
-```
+**Configuration** (`config/`):
+- `config_schema.py`: Type-safe configuration dataclasses with validation
+- `config_manager.py`: .env loading and environment variable management
+
+**Core Utilities**:
+- `utils.py`: RateLimiter (thread-safe token bucket), API helpers, navigation utilities
+- `database.py`: SQLAlchemy ORM models with Enums for controlled vocabulary
+- `ai_interface.py`: Multi-provider AI abstraction (Google Gemini, DeepSeek)
+
+**Action Modules** (Autonomous workflows):
+- `action6_gather.py`: DNA match collection with parallel processing
+- `action7_inbox.py`: Message processing with conversation analysis
+- `action8_messaging.py`: Personalized message sending with state machine
+- `action9_process_productive.py`: High-value match analysis with AI integration
+- `action10.py`: GEDCOM file analysis and scoring
+- `action11.py`: API-based genealogical research
 
 ### Rate Limiting & Circuit Breaker
 
 **Single Rate Limiter Architecture**:
-- Class: `RateLimiter` in `utils.py`
-- Instance: `session_manager.rate_limiter`
-- Algorithm: Thread-safe token bucket
-- Configuration:
-  - Capacity: 10 tokens
-  - Fill rate: 2 tokens/second
-  - Thread-safe with `threading.Lock()`
+- **Class**: `RateLimiter` in `utils.py` - implements thread-safe token bucket algorithm
+- **Instance**: `session_manager.rate_limiter` - shared across all API calls
+- **Algorithm**: Token bucket with adaptive delays for parallel workers
+- **Configuration**:
+  - Capacity: 10 tokens (burst allowance)
+  - Fill rate: 2 tokens/second (0.5s per request baseline)
+  - Thread-safe with `threading.Lock()` for concurrent access
+  - Adaptive delay: multiplied by sqrt(parallel_workers) to prevent thundering herd
+
+**Why This Design**:
+- Single rate limiter prevents cascading 429 errors across all API calls
+- Token bucket allows burst traffic while maintaining average rate
+- Adaptive delays for parallel workers prevent synchronized request storms
+- Thread-safe implementation supports concurrent batch processing
 
 **Circuit Breaker Integration**:
 - Automatic protection from cascading 429 failures
 - Failure threshold: 5 consecutive 429 errors
 - Recovery timeout: 60 seconds
-- Half-open test requests: 3
+- Half-open test requests: 3 (validates recovery before resuming)
 
-**CRITICAL**: Do not modify rate limiting settings without extensive validation!
+**CRITICAL**: Do not modify rate limiting settings without extensive validation! Changes affect all API interactions and can trigger 429 rate limit errors.
 
 ### Database Schema
 
@@ -185,13 +200,32 @@ python action11.py
 - Use real API sessions for integration tests
 - Maintain 100% test pass rate
 
-### Code Quality
+### Code Quality Standards
 
-- Follow DRY (Don't Repeat Yourself) principles
-- Use type hints for function signatures
+**Commenting Philosophy**:
+- Comments should explain **WHY**, not **WHAT** (code shows what it does)
+- Use section headers with `===` markers for logical organization
+- Include docstrings for all public functions with Args, Returns, and Raises
+- Remove commented-out code - use git history if you need it back
+- Add comments for non-obvious behavior or complex logic
+
+**Code Style**:
+- Follow DRY (Don't Repeat Yourself) principles - extract common patterns
+- Use type hints for all function signatures (required for new code)
 - Add docstrings to all public functions
 - Keep functions under 50 lines when possible
-- Fix all pylance errors before committing
+- Fix all Pylance errors before committing
+
+**Testing Requirements**:
+- All new features must have tests
+- Tests must fail when conditions are not met (no fake passes)
+- Use real API sessions for integration tests
+- Maintain 100% test pass rate
+
+**Linting & Type Checking**:
+- Ruff for code style: `ruff check --fix .`
+- Pyright for type hints: configured in `pyrightconfig.json`
+- Intentional ignores documented in `.ruff.toml`
 
 ### Git Workflow
 
@@ -199,6 +233,38 @@ python action11.py
 - Write descriptive commit messages
 - Test before committing
 - Revert if tests fail
+
+### Important Implementation Details & Gotchas
+
+**Session Management**:
+- SessionManager is a singleton-like pattern - reuse the same instance across actions
+- Always call `session_manager.ensure_session_ready()` before API calls
+- Browser recovery is automatic but can take 30-60 seconds
+- Cookies are synced from browser to requests session once per session
+
+**Database Operations**:
+- Use `commit_bulk_data()` for batch inserts/updates (more efficient than individual commits)
+- Always use context managers for database sessions to ensure cleanup
+- Enums (PersonStatusEnum, MessageDirectionEnum) provide controlled vocabulary
+- Foreign key constraints are enforced - respect the schema
+
+**API Rate Limiting**:
+- Rate limiter is shared across all API calls - don't bypass it
+- 429 errors trigger circuit breaker (5 consecutive failures = 60s timeout)
+- Parallel workers automatically adjust rate limiting (adaptive delays)
+- Always use `session_manager.rate_limiter.wait()` before API calls
+
+**Error Handling**:
+- Use decorators for automatic retry: `@retry_on_failure()`, `@circuit_breaker()`
+- Catch specific exceptions (APIError, DatabaseError) not generic Exception
+- Log errors with context using `@error_context()` decorator
+- Recovery attempts are logged - check logs for failure reasons
+
+**Testing**:
+- Tests must use real API sessions (no mocking for integration tests)
+- Tests should fail when conditions not met (strict validation)
+- Use `suppress_logging()` context manager to reduce test output noise
+- Run `python run_all_tests.py` before committing
 
 ---
 
@@ -216,6 +282,14 @@ python action11.py
 ---
 
 ## Appendix A: Chronology of Changes
+
+### Phase 7: Code Review & Quality Improvements (October 20, 2025)
+- ✅ Fixed all Pylance errors (unused imports, type hints, duplicate code)
+- ✅ Removed commented-out code blocks
+- ✅ Enhanced commenting for clarity and WHY explanations
+- ✅ Updated README with implementation details and gotchas
+- ✅ Improved code organization and documentation
+- ✅ All 513+ tests passing
 
 ### Phase 6: Final Validation (October 19, 2025)
 - ✅ Validated all systems with Wayne's account
@@ -298,5 +372,5 @@ See `.env.example` for complete list. Key variables:
 
 ---
 
-**Last Updated**: October 19, 2025
-**Status**: Production Ready
+**Last Updated**: October 20, 2025
+**Status**: Production Ready - Phase 7 Code Review Complete

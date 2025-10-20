@@ -43,7 +43,6 @@ import sys
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from string import Formatter
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
 if TYPE_CHECKING:
@@ -234,7 +233,6 @@ if not MESSAGE_TEMPLATES or not all(key in MESSAGE_TEMPLATES for key in core_req
     logger.critical("Essential message templates failed to load")
 
 # Initialize message personalizer
-import contextlib
 from typing import Any as _Any
 
 _message_personalizer: Optional[_Any] = None
@@ -2774,7 +2772,7 @@ def _execute_main_processing_loop(
 
 
 def _handle_main_processing_exception(
-    outer_err: Exception,
+    outer_err: BaseException,
     resource_manager
 ) -> bool:
     """Handle exceptions during main processing."""
@@ -3480,7 +3478,7 @@ def _ensure_session_for_messaging_tests(reuse_session: bool = True) -> tuple['Se
 def _test_main_function_with_dry_run() -> bool:
     """Test main send_messages_to_matches function in dry_run mode."""
     try:
-        sm, my_uuid = _ensure_session_for_messaging_tests()
+        sm, _my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing send_messages_to_matches() in dry_run mode...")
 
@@ -3566,7 +3564,7 @@ def _convert_logs_to_dicts(db_logs_to_add: list) -> list:
 def _test_database_message_creation() -> bool:
     """Test that messages are created in database during dry_run with limited candidates."""
     try:
-        sm, my_uuid = _ensure_session_for_messaging_tests()
+        sm, _my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing database message creation in dry_run mode (limited to 10 candidates)...")
 
@@ -3640,7 +3638,7 @@ def _log_created_messages(db_session: Session, initial_count: int, final_count: 
 def _test_dry_run_mode_no_actual_send() -> bool:
     """Test that dry_run mode creates messages but doesn't send them (limited to 5 candidates)."""
     try:
-        sm, my_uuid = _ensure_session_for_messaging_tests()
+        sm, _my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing dry_run mode prevents actual message sending (limited to 10 candidates)...")
 
@@ -3710,7 +3708,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
 def _test_message_template_loading_from_db() -> bool:
     """Test that message templates are loaded from database."""
     try:
-        sm, my_uuid = _ensure_session_for_messaging_tests()
+        sm, _my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing message template loading from database...")
 
@@ -3741,7 +3739,7 @@ def _test_message_template_loading_from_db() -> bool:
 def _test_conversation_log_tracking() -> bool:
     """Test that conversation logs are properly tracked."""
     try:
-        sm, my_uuid = _ensure_session_for_messaging_tests()
+        sm, _my_uuid = _ensure_session_for_messaging_tests()
 
         logger.info("Testing conversation log tracking...")
 

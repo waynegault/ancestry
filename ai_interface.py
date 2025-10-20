@@ -581,13 +581,12 @@ def _compute_component_coverage(parsed_json: dict[str, Any]) -> Optional[float]:
 def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any], cleaned_response_str: str, session_manager: SessionManager, parse_success: bool, error: Optional[str] = None) -> None:
     """Record extraction telemetry event."""
     try:
-        from extraction_quality import compute_anomaly_summary, compute_extraction_quality
-
         from ai_prompt_utils import get_prompt_version
         from prompt_telemetry import record_extraction_experiment_event
 
         variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
-        quality_score = compute_extraction_quality(parsed_json) if parsed_json else None
+        # Note: extraction_quality module not yet implemented, so quality_score is None
+        quality_score = None
         component_coverage = _compute_component_coverage(parsed_json) if parsed_json else None
 
         if quality_score is not None and parsed_json:
@@ -595,9 +594,6 @@ def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any]
                 parsed_json["quality_score"] = quality_score
 
         anomaly_summary = None
-        if parsed_json:
-            with contextlib.suppress(Exception):
-                anomaly_summary = compute_anomaly_summary(parsed_json)
 
         record_extraction_experiment_event(
             variant_label=variant_label,
