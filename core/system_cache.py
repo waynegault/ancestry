@@ -15,8 +15,8 @@ Building on Phase 5.1 success (1,281x session manager improvement), Phase 5.2 ta
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,47 +28,46 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    APIRateLimitError,
-    ErrorContext,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
 import gc
 import hashlib
+import json
 import threading
 import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, List, Callable, Union
-import json
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
+    BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
     cache_result,  # Existing cache decorator
+    clear_cache,  # Cache clearing
+    get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
     warm_cache_with_data,  # Cache warming
-    get_cache_stats,  # Statistics
-    clear_cache,  # Cache clearing
-    BaseCacheModule,  # Base cache interface
 )
 
 # === SESSION CACHE INTEGRATION ===
 from core.session_cache import (
     SessionCacheConfig,
-    get_session_cache_stats,
     _session_cache,
+    get_session_cache_stats,
+)
+from error_handling import (
+    AncestryException,
+    APIRateLimitError,
+    ErrorContext,
+    NetworkTimeoutError,
+    RetryableError,
+    circuit_breaker,
+    error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
 
 # === PHASE 5.2 CONFIGURATION ===
@@ -335,8 +334,7 @@ class MemoryOptimizer(BaseCacheModule):
 
             with self._lock:
                 self._memory_stats["current_memory_mb"] = memory_mb
-                if memory_mb > self._memory_stats["peak_memory_mb"]:
-                    self._memory_stats["peak_memory_mb"] = memory_mb
+                self._memory_stats["peak_memory_mb"] = max(memory_mb, self._memory_stats["peak_memory_mb"])
 
             return memory_mb
         except ImportError:
@@ -364,7 +362,7 @@ class MemoryOptimizer(BaseCacheModule):
                     try:
                         if obj() is None:
                             del obj
-                    except:
+                    except Exception:
                         pass
 
             # Get memory usage after optimization
@@ -519,7 +517,7 @@ def memory_optimized(gc_threshold: Optional[float] = None):
 
                 return result
 
-            except Exception as e:
+            except Exception:
                 # Optimize memory on exception to clean up partial allocations
                 _memory_optimizer.optimize_memory(force=True)
                 raise
@@ -753,7 +751,7 @@ if __name__ == "__main__":
         print("Result: ❌ FAIL")
 
     # Overall results
-    print(f"\n🎯 Phase 5.2 Optimization Summary:")
+    print("\n🎯 Phase 5.2 Optimization Summary:")
     print("=" * 70)
     all_passed = success1 and success2 and success3
     print(
@@ -768,7 +766,7 @@ if __name__ == "__main__":
         print("Ready to apply decorators to target modules for performance gains.")
 
     # Display comprehensive statistics
-    print(f"\nDetailed System Stats:")
+    print("\nDetailed System Stats:")
     try:
         final_stats = get_system_cache_stats()
         for category, data in final_stats.items():

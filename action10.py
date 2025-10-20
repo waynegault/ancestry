@@ -102,7 +102,7 @@ from relationship_utils import (  # type: ignore[import-not-found]
 )
 
 # Import unified search criteria and display functions
-from search_criteria_utils import get_unified_search_criteria, display_family_members  # type: ignore[import-not-found]
+from search_criteria_utils import display_family_members, get_unified_search_criteria  # type: ignore[import-not-found]
 from test_framework import mock_logger_context  # type: ignore[import-not-found]
 
 # Import universal scoring utilities
@@ -485,21 +485,18 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
                 # Display clear message about where data came from
                 cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
 
-                if cache_source == "memory":
-                    print(f"\n✅ Using GEDCOM cache")
-                elif cache_source == "disk":
-                    print(f"\n✅ Using GEDCOM cache")
+                if cache_source == "memory" or cache_source == "disk":
+                    print("\n✅ Using GEDCOM cache")
                 elif cache_source == "file":
-                    print(f"\n✅ Using GEDCOM file")
-                    print(f"✅ Cache saved")
+                    print("\n✅ Using GEDCOM file")
+                    print("✅ Cache saved")
                 else:
-                    print(f"\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
+                    print("\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
 
                 print(f"   📊 {len(gedcom_data.indi_index):,} individuals indexed")
 
                 return gedcom_data
-            else:
-                raise MissingConfigError("Aggressive caching returned None")
+            raise MissingConfigError("Aggressive caching returned None")
 
         except ImportError:
             logger.debug("Aggressive caching not available, using standard loading")

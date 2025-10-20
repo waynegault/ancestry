@@ -409,9 +409,10 @@ python action11.py
 - Message history endpoint
 
 **Action 11 - API Research**:
-- Person search endpoint
-- Family analysis endpoint
-- Relationship ladder endpoint
+1. TreesUI List API - `trees/{tree_id}/persons` - Person search within a tree
+2. Facts User API - `family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}` - Detailed person information
+3. GetLadder API - `family-tree/person/tree/{tree_id}/person/{person_id}/getladder` - Relationship path calculation (tree-based)
+4. Discovery Relationship API - `discoveryui-matchingservice/api/relationship` - Relationship path calculation (profile-based, fallback)
 
 ### Performance Metrics
 

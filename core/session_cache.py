@@ -11,8 +11,8 @@ Extends the existing cache.py infrastructure rather than duplicating functionali
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for standard_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,32 +24,31 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-)
-
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
 import threading
 import time
 import weakref
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-from dataclasses import dataclass
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
+    BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
     cache_result,  # Existing cache decorator
+    clear_cache,  # Cache clearing
+    get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
     warm_cache_with_data,  # Cache warming
-    get_cache_stats,  # Statistics
-    clear_cache,  # Cache clearing
-    BaseCacheModule,  # Base cache interface
+)
+from error_handling import (
+    circuit_breaker,
+    error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
 
 # === SESSION CACHE CONFIGURATION ===
@@ -128,10 +127,9 @@ class SessionComponentCache(BaseCacheModule):
                 if age < CACHE_CONFIG.component_ttl_seconds:
                     logger.debug(f"Cache HIT for {component_type} (age: {age:.1f}s)")
                     return cached_data.get("component")
-                else:
-                    logger.debug(
-                        f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
-                    )
+                logger.debug(
+                    f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
+                )
                     # Let existing cache eviction handle cleanup
 
             logger.debug(f"Cache MISS for {component_type}")
@@ -437,18 +435,19 @@ if __name__ == "__main__":
     # === COMPREHENSIVE SESSION CACHE TESTING ===
     print("🚀 Session Cache - Phase 5.1 Optimization Test")
     print("=" * 60)
-    
+
     # Test 1: Basic cache functionality
     print("\n📋 Test 1: Basic Cache Performance")
     success1 = test_session_cache_performance()
     print(f"Result: {'✅ PASS' if success1 else '❌ FAIL'}")
-    
+
     # Test 2: Component caching with real session manager
     print("\n� Test 2: Session Manager Integration")
     try:
-        from core.session_manager import SessionManager
         import time
-        
+
+        from core.session_manager import SessionManager
+
         times = []
         for i in range(3):
             start = time.time()
@@ -456,41 +455,41 @@ if __name__ == "__main__":
             elapsed = time.time() - start
             times.append(elapsed)
             print(f"  Initialization {i+1}: {elapsed:.3f}s")
-        
+
         avg_time = sum(times) / len(times)
         success2 = avg_time < 1.0  # Should be under 1 second with caching
         print(f"  Average: {avg_time:.3f}s")
         print(f"Result: {'✅ PASS' if success2 else '❌ FAIL'} (Target: <1.0s)")
-        
+
     except Exception as e:
         print(f"  Error: {e}")
         success2 = False
         print("Result: ❌ FAIL")
-    
+
     # Test 3: Cache statistics
     print("\n📋 Test 3: Cache Health & Statistics")
     stats = get_session_cache_stats()
     health = _session_cache.get_health_status()
-    
+
     print(f"  Cache hit rate: {stats.get('hit_rate', 0):.1f}%")
     print(f"  Cache entries: {stats.get('entries', 0)}")
     print(f"  Health status: {health.get('health', 'unknown')}")
-    
+
     success3 = (
-        stats.get('hit_rate', 0) > 0 and 
+        stats.get('hit_rate', 0) > 0 and
         health.get('health') in ['good', 'excellent']
     )
     print(f"Result: {'✅ PASS' if success3 else '❌ FAIL'}")
-    
+
     # Overall results
-    print(f"\n🎯 Phase 5.1 Optimization Summary:")
-    print(f"=" * 60)
+    print("\n🎯 Phase 5.1 Optimization Summary:")
+    print("=" * 60)
     all_passed = success1 and success2 and success3
     print(f"Overall Result: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
     print(f"Cache Performance: {'✅ OPTIMIZED' if success1 else '❌ NEEDS WORK'}")
     print(f"Session Integration: {'✅ WORKING' if success2 else '❌ ISSUES'}")
     print(f"Cache Health: {'✅ HEALTHY' if success3 else '❌ DEGRADED'}")
-    
+
     # Performance target validation
     if success2:
         avg_time = sum(times) / len(times) if 'times' in locals() else 0
@@ -500,5 +499,5 @@ if __name__ == "__main__":
             print("🚀 GREAT: Sub-500ms session initialization!")
         else:
             print("✅ GOOD: Under 1s session initialization")
-    
+
     print(f"\nDetailed Cache Stats: {stats}")

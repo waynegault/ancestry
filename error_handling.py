@@ -7,10 +7,10 @@ Enhanced for Phase 4.1: Error Handling & Resilience Enhancement
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    setup_module,
-    safe_execute,
     get_function,
     is_function_available,
+    safe_execute,
+    setup_module,
 )
 
 logger = setup_module(globals(), __name__)
@@ -33,22 +33,15 @@ import requests
 
 # === LOCAL IMPORTS ===
 # Module logger is set up by setup_module() above
-
 # --- Test framework imports ---
 from test_framework import (
     TestSuite,
-    suppress_logging,
-    create_mock_data,
     assert_valid_function,
+    create_mock_data,
+    suppress_logging,
 )
 
 # --- Test framework imports ---
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
 
 
 class CircuitState(Enum):
@@ -152,7 +145,7 @@ class IntelligentRetryHandler:
         if self.config.strategy == RetryStrategy.IMMEDIATE:
             return 0.0
 
-        elif self.config.strategy == RetryStrategy.FIXED_DELAY:
+        if self.config.strategy == RetryStrategy.FIXED_DELAY:
             delay = self.config.base_delay
 
         elif self.config.strategy == RetryStrategy.LINEAR_BACKOFF:
@@ -246,8 +239,7 @@ class CircuitBreaker:
         # Execute with retry if configured
         if self.retry_handler:
             return self._execute_with_retry(func, *args, **kwargs)
-        else:
-            return self._execute_once(func, *args, **kwargs)
+        return self._execute_once(func, *args, **kwargs)
 
     def _execute_with_retry(self, func: Callable, *args, **kwargs) -> Any:
         """Execute function with intelligent retry logic."""
@@ -281,13 +273,13 @@ class CircuitBreaker:
                 ):
                     delay = self.retry_handler.calculate_delay(attempt)
                     logger.warning(
-                        f"Function {func.__name__} failed (attempt {attempt}), retrying in {delay:.2f}s: {str(e)}"
+                        f"Function {func.__name__} failed (attempt {attempt}), retrying in {delay:.2f}s: {e!s}"
                     )
                     time.sleep(delay)
                 else:
                     self.retry_handler.record_attempt(e, False)
                     logger.error(
-                        f"Function {func.__name__} failed after {attempt} attempts: {str(e)}"
+                        f"Function {func.__name__} failed after {attempt} attempts: {e!s}"
                     )
                     raise
 
@@ -371,21 +363,6 @@ class CircuitBreaker:
             return 0
         elapsed = (datetime.now() - self._last_failure_time).total_seconds()
         return max(0, int(self.config.recovery_timeout - elapsed))
-
-        try:
-            # Execute the function
-            start_time = time.time()
-            result = func(*args, **kwargs)
-            execution_time = time.time() - start_time
-
-            # Record success
-            self._record_success(execution_time)
-            return result
-
-        except Exception as e:
-            # Record failure
-            self._record_failure(e)
-            raise
 
     def _should_attempt_reset(self) -> bool:
         """Check if enough time has passed to attempt reset."""
@@ -1088,7 +1065,7 @@ def with_recovery(service_name: str):
 
 
 # Specific recovery strategies for Ancestry.com automation
-def ancestry_session_recovery(error: Exception):
+def ancestry_session_recovery():
     """Recovery strategy for Ancestry session failures."""
     logger.info("Attempting Ancestry session recovery")
     # This would be implemented to reset session, re-login, etc.
@@ -1106,7 +1083,7 @@ def ancestry_api_recovery(error: Exception):
         time.sleep(10)  # Wait for network issues to resolve
 
 
-def ancestry_database_recovery(error: Exception):
+def ancestry_database_recovery():
     """Recovery strategy for database failures."""
     logger.info("Attempting database recovery")
     # Implement database-specific recovery (reconnect, retry transaction, etc.)
@@ -1372,7 +1349,7 @@ def error_handling_module_tests() -> bool:
 
         for _ in range(100):
             # Test circuit breaker creation performance
-            cb = CircuitBreaker(f"perf_test")
+            cb = CircuitBreaker("perf_test")
             assert cb.name == "perf_test", "Circuit breaker should initialize quickly"
 
         end_time = time.time()
@@ -1472,7 +1449,7 @@ def error_handling_module_tests() -> bool:
             recovery_manager.log_failure_warnings()
             # Should not raise any exceptions
             success = True
-        except Exception as e:
+        except Exception:
             success = False
 
         assert success, "log_failure_warnings should execute without errors"
