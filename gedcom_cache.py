@@ -376,13 +376,20 @@ def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Opt
 
 
 def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str]) -> None:
-    """Store GEDCOM data in disk cache (without reader object)."""
+    """
+    Store GEDCOM data in disk cache (without reader object or indi_index).
+
+    Note: We don't cache indi_index because Individual objects cannot be pickled
+    (they contain references to the file reader). Instead, we cache only the
+    processed data and family maps, which are plain Python dicts/sets.
+    The indi_index will be rebuilt quickly when loading from cache.
+    """
     try:
         if cache is not None and disk_cache_key is not None:
-            # Create a serializable version without the reader
+            # Create a serializable version without the reader and indi_index
+            # Only cache the processed data and family relationships
             cache_data = {
                 "path": str(gedcom_data.path),
-                "indi_index": gedcom_data.indi_index,
                 "processed_data_cache": gedcom_data.processed_data_cache,
                 "id_to_parents": gedcom_data.id_to_parents,
                 "id_to_children": gedcom_data.id_to_children,
@@ -391,9 +398,12 @@ def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str])
                 "data_processing_time": gedcom_data.data_processing_time,
             }
             cache.set(disk_cache_key, cache_data, expire=86400, retry=True)
-            logger.debug("GEDCOM data cached (without reader) in disk cache")
+            logger.debug(
+                f"GEDCOM data cached to disk: {len(cache_data['processed_data_cache'])} individuals, "
+                f"{len(cache_data['id_to_parents'])} parent relationships"
+            )
     except Exception as e:
-        logger.debug(f"Error storing in disk cache: {e}")
+        logger.warning(f"Error storing in disk cache: {e}")
 
 
 def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
@@ -408,17 +418,38 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
 
     Returns:
         GedcomData instance or None if loading fails
+
+    Note:
+        The returned GedcomData object will have a _cache_source attribute
+        set to "memory", "disk", or "file" to indicate where it was loaded from.
     """
     # Check memory cache first
     memory_key = _get_memory_cache_key(gedcom_path, "gedcom_load")
     cached_data = _get_from_memory_cache(memory_key)
     if cached_data is not None:
+        logger.debug("GEDCOM data loaded from memory cache")
+        # Mark the source for user visibility
+        cached_data._cache_source = "memory"
         return cached_data
 
     # Check disk cache
     disk_cached, disk_cache_key = _check_disk_cache_for_gedcom(gedcom_path, memory_key)
     if disk_cached is not None:
-        return disk_cached
+        # Reconstruct GedcomData from cached data
+        try:
+            from gedcom_utils import GedcomData
+            gedcom_data = GedcomData.from_cache(disk_cached, gedcom_path)
+
+            # Store in memory cache for faster next access
+            _store_in_memory_cache(memory_key, gedcom_data)
+
+            logger.debug("GEDCOM data reconstructed from disk cache")
+            # Mark the source for user visibility
+            gedcom_data._cache_source = "disk"
+            return gedcom_data
+        except Exception as e:
+            logger.warning(f"Failed to reconstruct from cache, will reload: {e}")
+            # Fall through to reload from file
 
     logger.debug(f"Loading GEDCOM file with aggressive caching: {gedcom_path}")
     start_time = time.time()
@@ -445,6 +476,8 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
             if stats:
                 logger.debug(f"Cache stats after GEDCOM load: {stats}")
 
+            # Mark the source for user visibility
+            gedcom_data._cache_source = "file"
             return gedcom_data
         logger.error("Failed to create GedcomData instance")
         return None

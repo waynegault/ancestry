@@ -1793,7 +1793,14 @@ def calculate_match_score(
 # GedcomData Class
 # ==============================================
 class GedcomData:
-    def __init__(self, gedcom_path: Union[str, Path]):
+    def __init__(self, gedcom_path: Union[str, Path], skip_cache_build: bool = False):
+        """
+        Initialize GedcomData from a GEDCOM file.
+
+        Args:
+            gedcom_path: Path to the GEDCOM file
+            skip_cache_build: If True, skip building caches (used when loading from cache)
+        """
         self.path = Path(gedcom_path).resolve()
         self.reader: Optional[GedcomReaderType] = None
         self.indi_index: dict[str, GedcomIndividualType] = {}  # Index of INDI records
@@ -1805,6 +1812,7 @@ class GedcomData:
         self.indi_index_build_time: float = 0
         self.family_maps_build_time: float = 0
         self.data_processing_time: float = 0  # NEW: Time for pre-processing
+        self._cache_source: str = "unknown"  # Track where data was loaded from: "memory", "disk", or "file"
 
         if not self.path.is_file():
             logger.critical(f"GEDCOM file not found: {self.path}")
@@ -1834,7 +1842,48 @@ class GedcomData:
             logger.critical(error_msg, exc_info=True)
             # Use exception chaining to preserve the original error context
             raise RuntimeError(error_msg) from e
-        self.build_caches()  # Build caches upon initialization
+
+        if not skip_cache_build:
+            self.build_caches()  # Build caches upon initialization
+
+    @classmethod
+    def from_cache(cls, cached_data: dict[str, Any], gedcom_path: str) -> "GedcomData":
+        """
+        Create a GedcomData instance from cached data.
+
+        This method creates a GedcomData instance with the reader initialized,
+        but populates the expensive-to-build data structures from cache.
+        The indi_index is rebuilt quickly from the reader (just indexing, no parsing).
+
+        Args:
+            cached_data: Dictionary containing cached GEDCOM data
+            gedcom_path: Path to the GEDCOM file
+
+        Returns:
+            GedcomData instance with cached data populated
+        """
+        # Create instance with reader but skip cache building
+        instance = cls(gedcom_path, skip_cache_build=True)
+
+        # Populate from cached data (note: indi_index is NOT in cache because
+        # Individual objects cannot be pickled)
+        instance.processed_data_cache = cached_data.get("processed_data_cache", {})
+        instance.id_to_parents = cached_data.get("id_to_parents", {})
+        instance.id_to_children = cached_data.get("id_to_children", {})
+        instance.indi_index_build_time = cached_data.get("indi_index_build_time", 0)
+        instance.family_maps_build_time = cached_data.get("family_maps_build_time", 0)
+        instance.data_processing_time = cached_data.get("data_processing_time", 0)
+
+        # Rebuild indi_index from reader (fast - just indexing, no data extraction)
+        instance._build_indi_index()
+
+        logger.debug(
+            f"GedcomData restored from cache: {len(instance.processed_data_cache)} processed individuals, "
+            f"{len(instance.id_to_parents)} parent relationships, "
+            f"{len(instance.indi_index)} individuals indexed"
+        )
+
+        return instance
 
     def build_caches(self) -> None:
         """Builds the individual index, family maps, and pre-processes data."""

@@ -477,16 +477,28 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
                     return _GedcomCacheState.cache
 
             # Not in module cache, try aggressive caching (will check disk cache then file)
-            print(f"\n⏳ Loading GEDCOM: {gedcom_path.name}")
             gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_path))
 
             if gedcom_data:
                 # Store in module-level cache for fastest access
                 _GedcomCacheState.cache = gedcom_data
-                # Determine source based on timing (disk cache is very fast, file load is slower)
-                load_time = getattr(gedcom_data, 'indi_index_build_time', 0) + getattr(gedcom_data, 'data_processing_time', 0)
-                source = "DISK CACHE" if load_time < 0.1 else "FILE"
-                print(f"✅ GEDCOM loaded from: {source} ({len(gedcom_data.indi_index)} individuals)")
+
+                # Display clear message about where data came from
+                cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
+
+                if cache_source == "memory":
+                    print(f"\n✅ Using cached GEDCOM from MEMORY (instant access)")
+                elif cache_source == "disk":
+                    print(f"\n📀 Loading GEDCOM from DISK CACHE: {gedcom_path.name}")
+                    print(f"✅ Loaded from disk cache (~6x faster than parsing file)")
+                elif cache_source == "file":
+                    print(f"\n📂 Parsing GEDCOM FILE: {gedcom_path.name}")
+                    print(f"✅ File parsed and cached for next time")
+                else:
+                    print(f"\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
+
+                print(f"   📊 {len(gedcom_data.indi_index):,} individuals indexed")
+
                 return gedcom_data
             else:
                 raise MissingConfigError("Aggressive caching returned None")

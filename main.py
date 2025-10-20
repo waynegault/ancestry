@@ -273,23 +273,39 @@ def ensure_caching_initialized() -> None:
 
 # Helper functions for exec_actn
 
-def _determine_browser_requirement(action_name: str) -> bool:
-    """Determine if action requires a browser."""
-    browserless_actions = [
-        "all_but_first_actn",
-        "reset_db_actn",
-        "backup_db_actn",
-        "restore_db_actn",
-        "run_action10",
+def _determine_browser_requirement(choice: str) -> bool:
+    """
+    Determine if action requires a browser based on user choice.
+
+    Args:
+        choice: The user's menu choice (e.g., "10", "11", "6")
+
+    Returns:
+        True if action requires browser, False otherwise
+    """
+    browserless_choices = [
+        "10",  # Action 10 - GEDCOM analysis (no browser needed)
+        "reset",
+        "backup",
+        "restore",
     ]
-    return action_name not in browserless_actions
+    return choice not in browserless_choices
 
 
-def _determine_required_state(action_name: str, requires_browser: bool) -> str:
-    """Determine the required session state for the action."""
+def _determine_required_state(choice: str, requires_browser: bool) -> str:
+    """
+    Determine the required session state for the action.
+
+    Args:
+        choice: The user's menu choice
+        requires_browser: Whether the action requires a browser
+
+    Returns:
+        Required state: "db_ready", "driver_ready", or "session_ready"
+    """
     if not requires_browser:
         return "db_ready"
-    if action_name == "check_login_actn":
+    if choice == "5":  # check_login_actn
         return "driver_ready"
     return "session_ready"
 
@@ -426,10 +442,10 @@ def exec_actn(
     action_result = None
     action_exception = None
 
-    # Determine browser requirement and required state
-    requires_browser = _determine_browser_requirement(action_name)
+    # Determine browser requirement and required state based on user choice
+    requires_browser = _determine_browser_requirement(choice)
     session_manager.browser_needed = requires_browser
-    required_state = _determine_required_state(action_name, requires_browser)
+    required_state = _determine_required_state(choice, requires_browser)
 
     try:
         # Ensure Required State
