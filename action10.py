@@ -73,7 +73,6 @@ from core.error_handling import (  # type: ignore[import-not-found]
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION ===
 from performance_cache import (  # type: ignore[import-not-found]
-    cache_gedcom_results,
     fast_test_cache,
 )
 
@@ -487,13 +486,12 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
                 cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
 
                 if cache_source == "memory":
-                    print(f"\n✅ Using cached GEDCOM from MEMORY (instant access)")
+                    print(f"\n✅ Using GEDCOM cache")
                 elif cache_source == "disk":
-                    print(f"\n📀 Loading GEDCOM from DISK CACHE: {gedcom_path.name}")
-                    print(f"✅ Loaded from disk cache (~6x faster than parsing file)")
+                    print(f"\n✅ Using GEDCOM cache")
                 elif cache_source == "file":
-                    print(f"\n📂 Parsing GEDCOM FILE: {gedcom_path.name}")
-                    print(f"✅ File parsed and cached for next time")
+                    print(f"\n✅ Using GEDCOM file")
+                    print(f"✅ Cache saved")
                 else:
                     print(f"\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
 

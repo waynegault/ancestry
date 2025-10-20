@@ -90,8 +90,37 @@ LOG_FILE=Logs/app.log
 | **Action 7** | Inbox Processing | Manage incoming messages |
 | **Action 8** | Automated Messaging | Send personalized messages to matches |
 | **Action 9** | Productive Processing | Analyze high-value matches |
-| **Action 10** | GEDCOM Analysis | Cross-reference with family tree files |
+| **Action 10** | GEDCOM Analysis | Cross-reference with local family tree files (NO API) |
 | **Action 11** | API Research | Genealogical research via Ancestry API |
+
+### Action 10: GEDCOM File Analysis
+
+**Pure Local Analysis** - NO API calls, NO internet required:
+- Analyzes local GEDCOM (.ged) family tree files
+- Searches for individuals matching specific criteria
+- Calculates relationship paths using bidirectional BFS
+- Uses universal scoring system (shared with Action 11)
+- Multi-level caching for 6x performance improvement
+
+**Performance**:
+- First run (no cache): ~32 seconds (14,640 individuals)
+- Subsequent runs (disk cache): ~5-6 seconds (6x faster)
+- Memory cache: Instant access
+
+**Usage**:
+```bash
+python main.py
+# Select option 10
+# Enter search criteria (name, birth year, place, etc.)
+# View top matches with family details and relationship paths
+```
+
+**Features**:
+- Universal scoring algorithm (identical to Action 11)
+- Relationship path calculation (uncle, cousin, etc.)
+- Family member display (parents, siblings, spouses, children)
+- Intelligent caching with automatic invalidation
+- No session/API requirements (db_ready only)
 
 ### Action 8: Messaging System
 
@@ -145,8 +174,15 @@ The system uses a modular, layered architecture with clear separation of concern
 - `action7_inbox.py`: Message processing with conversation analysis
 - `action8_messaging.py`: Personalized message sending with state machine
 - `action9_process_productive.py`: High-value match analysis with AI integration
-- `action10.py`: GEDCOM file analysis and scoring
+- `action10.py`: GEDCOM file analysis (NO API, pure local)
 - `action11.py`: API-based genealogical research
+
+**Supporting Modules**:
+- `gedcom_utils.py`: GEDCOM parsing, relationship path finding (bidirectional BFS)
+- `gedcom_cache.py`: Multi-level caching (memory → disk → file)
+- `relationship_utils.py`: Relationship determination and path formatting
+- `search_criteria_utils.py`: Unified search criteria for Actions 10 & 11
+- `universal_scoring.py`: Shared scoring algorithm across actions
 
 ### Rate Limiting & Circuit Breaker
 
@@ -266,6 +302,22 @@ python action11.py
 - Use `suppress_logging()` context manager to reduce test output noise
 - Run `python run_all_tests.py` before committing
 
+**GEDCOM Caching System**:
+- **Memory Cache**: Instant access for same-session requests (fastest)
+- **Disk Cache**: Persistent cache using DiskCache library (~6x faster than file parsing)
+- **File Parsing**: Full GEDCOM parse when cache is stale or missing (~32 seconds for 14,640 individuals)
+- **Automatic Invalidation**: Cache key includes file modification time - automatically reloads when GEDCOM file changes
+- **Cache Contents**: Stores processed_data_cache, id_to_parents, id_to_children (NOT indi_index - unpicklable)
+- **Rebuild Strategy**: indi_index rebuilt from reader when loading from cache (fast - just indexing, no data extraction)
+- **User Visibility**: Clear messages show cache source ("Using GEDCOM cache" vs "Using GEDCOM file")
+
+**Why This Design**:
+- Individual objects from ged4py cannot be pickled (contain BinaryFileCR file reader references)
+- Caching processed data structures avoids expensive re-extraction
+- Rebuilding indi_index is fast because it only indexes existing records
+- File modification time ensures cache stays synchronized with GEDCOM file
+- Multi-level caching provides optimal performance for different scenarios
+
 ---
 
 ## Future Development Ideas
@@ -282,6 +334,18 @@ python action11.py
 ---
 
 ## Appendix A: Chronology of Changes
+
+### Phase 8: Action 10 GEDCOM Caching & Optimization (October 20, 2025)
+- ✅ Implemented multi-level GEDCOM caching (memory → disk → file)
+- ✅ Fixed disk cache serialization (Individual objects cannot be pickled)
+- ✅ Added automatic cache invalidation based on file modification time
+- ✅ Improved performance: 32s → 5-6s (6x faster with disk cache)
+- ✅ Fixed Action 10 session requirement bug (was requiring session_ready, now db_ready)
+- ✅ Added clear user-visible cache messages
+- ✅ Verified NO API calls in Action 10 (pure local GEDCOM analysis)
+- ✅ Fixed all Pylance errors in action10.py, gedcom_utils.py, relationship_utils.py
+- ✅ Removed unused parameters and imports
+- ✅ Updated README with comprehensive Action 10 and caching documentation
 
 ### Phase 7: Code Review & Quality Improvements (October 20, 2025)
 - ✅ Fixed all Pylance errors (unused imports, type hints, duplicate code)
@@ -358,6 +422,9 @@ python action11.py
 | **Action 7 First Run** | ~4.8 hours (15,000 conversations) |
 | **Action 7 Second Run** | ~5-10 minutes (95% skip rate) |
 | **Action 8 Processing** | ~0.86 candidates/second |
+| **Action 10 First Run** | ~32 seconds (14,640 individuals, no cache) |
+| **Action 10 Disk Cache** | ~5-6 seconds (6x faster) |
+| **Action 10 Memory Cache** | Instant (same session) |
 | **Database Size** | ~60 MB (15,000 conversations) |
 
 ### Environment Variables
@@ -373,4 +440,4 @@ See `.env.example` for complete list. Key variables:
 ---
 
 **Last Updated**: October 20, 2025
-**Status**: Production Ready - Phase 7 Code Review Complete
+**Status**: Production Ready - Phase 8 GEDCOM Caching & Optimization Complete

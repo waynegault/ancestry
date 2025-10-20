@@ -824,7 +824,7 @@ def _determine_gedcom_relationship(
         (lambda: _is_great_grandchild(prev_id, current_id, id_to_children), "great-grandson", "great-granddaughter", "great-grandchild"),
         (lambda: _is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children), "uncle", "aunt", "aunt/uncle"),
         (lambda: _is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children), "nephew", "niece", "niece/nephew"),
-        (lambda: _are_cousins(prev_id, current_id, id_to_parents, id_to_children), "cousin", "cousin", "cousin"),
+        (lambda: _are_cousins(prev_id, current_id, id_to_parents), "cousin", "cousin", "cousin"),
     ]
 
     for check_func, male_term, female_term, neutral_term in relationship_checks:

@@ -843,7 +843,6 @@ def fast_bidirectional_bfs(
     max_depth: int = 25,
     node_limit: int = 150000,
     timeout_sec: int = 45,
-    log_progress: bool = False,  # noqa: ARG001
 ) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
@@ -1177,7 +1176,7 @@ def _check_relationship_type(
         "spouse": (lambda: _are_spouses(id_a, id_b, reader), lambda: _determine_spouse_relationship(sex_char, name_b, birth_year_b)),
         "aunt_uncle": (lambda: _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children), lambda: _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)),
         "niece_nephew": (lambda: _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children), lambda: _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)),
-        "cousin": (lambda: _are_cousins(id_a, id_b, id_to_parents, id_to_children), lambda: f"whose cousin is {name_b}{birth_year_b}"),
+        "cousin": (lambda: _are_cousins(id_a, id_b, id_to_parents), lambda: f"whose cousin is {name_b}{birth_year_b}"),
         "grandparent": (lambda: _is_grandparent(id_a, id_b, id_to_parents), lambda: _determine_grandparent_relationship(sex_char, name_b, birth_year_b)),
         "grandchild": (lambda: _is_grandchild(id_a, id_b, id_to_children), lambda: _determine_grandchild_relationship(sex_char, name_b, birth_year_b)),
         "great_grandparent": (lambda: _is_great_grandparent(id_a, id_b, id_to_parents), lambda: _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)),
@@ -1357,7 +1356,6 @@ def _are_cousins(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],  # noqa: ARG001
 ) -> bool:
     """Check if id1 and id2 are cousins (children of siblings)."""
     # Get parents of id1 and id2
@@ -1736,7 +1734,6 @@ def calculate_match_score(
     search_criteria: dict,
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    name_flexibility: Optional[dict] = None,  # noqa: ARG001
     date_flexibility: Optional[dict] = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """
