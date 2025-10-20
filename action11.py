@@ -20,7 +20,6 @@ import json
 import os
 import re  # Added for robust lifespan splitting
 import sys
-from datetime import datetime
 from typing import Any, Callable, Optional, Union
 from urllib.parse import quote, urlencode
 
@@ -147,6 +146,9 @@ from relationship_utils import (
     format_relationship_path_unified,
 )
 
+# Import unified search criteria collection (shared with Action 10)
+from search_criteria_utils import display_family_members, get_unified_search_criteria
+
 # Import universal scoring utilities
 from universal_scoring import calculate_display_bonuses
 
@@ -175,118 +177,29 @@ if not session_manager:
 
 # === SEARCH CRITERIA HELPER FUNCTIONS ===
 
-def _parse_year_from_string(date_str: str, parse_date_func: Optional[Callable]) -> tuple[Optional[int], Optional[datetime]]:
-    """Parse year from date string, trying full date parse first, then year extraction."""
-    date_obj: Optional[datetime] = None
-    year: Optional[int] = None
-
-    # Try full date parsing
-    if parse_date_func:
-        try:
-            date_obj = parse_date_func(date_str)
-            if date_obj:
-                year = date_obj.year
-                logger.debug(f"Successfully parsed date: {date_obj}, year: {year}")
-                return year, date_obj
-        except Exception as e:
-            logger.debug(f"Could not parse date with parse_date_func: {e}")
-
-    # Fallback: extract year with regex
-    logger.warning(f"Could not parse input year/date: '{date_str}'")
-    year_match = re.search(r"\b(\d{4})\b", date_str)
-    if year_match:
-        try:
-            year = int(year_match.group(1))
-            logger.debug(f"Extracted year {year} from '{date_str}' as fallback.")
-        except ValueError:
-            logger.warning(f"Could not convert extracted year '{year_match.group(1)}' to int.")
-
-    return year, date_obj
-
-
-def _get_user_input() -> dict[str, str]:
-    """Get search criteria input from user."""
-    print("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---\n")
-    return {
-        "first_name": input("  First Name Contains: ").strip(),
-        "surname": input("  Last Name Contains: ").strip(),
-        "gender_input": input("  Gender (M/F): ").strip().upper(),
-        "dob_str": input("  Birth Year (YYYY): ").strip(),
-        "pob": input("  Birth Place Contains: ").strip(),
-        "dod_str": input("  Death Year (YYYY): ").strip() or None,
-        "pod": input("  Death Place Contains: ").strip() or None,
-    }
-
-
-def _validate_required_fields(first_name: str, surname: str) -> bool:
-    """Validate that at least first name or surname is provided."""
-    if not (first_name or surname):
-        logger.warning("API search needs First Name or Surname. Report cancelled.")
-        print("\nAPI search needs First Name or Surname. Report cancelled.")
-        return False
-    return True
+# Removed: _parse_year_from_string, _get_user_input, _validate_required_fields
+# These functions are now handled by get_unified_search_criteria() from search_criteria_utils.py
+# This ensures identical search criteria collection between Action 10 and Action 11
 
 
 def _get_search_criteria() -> Optional[dict[str, Any]]:
-    """Gets search criteria from the user via input prompts."""
+    """
+    Gets search criteria from the user via unified input prompts.
 
-    # Get user input
-    user_input = _get_user_input()
-    print("")
+    Uses get_unified_search_criteria to ensure identical user experience
+    with Action 10 (GEDCOM analysis).
+    """
+    # Use unified search criteria collection (shared with Action 10)
+    criteria = get_unified_search_criteria()
 
-    # Validate required fields
-    if not _validate_required_fields(user_input["first_name"], user_input["surname"]):
+    if not criteria:
         return None
 
-    # Parse gender
-    gender = None
-    if user_input["gender_input"] and user_input["gender_input"][0] in ["M", "F"]:
-        gender = user_input["gender_input"][0].lower()
+    # Add raw name fields for API search (needed by TreesUI API)
+    criteria["first_name_raw"] = criteria.get("first_name", "")
+    criteria["surname_raw"] = criteria.get("surname", "")
 
-    # Parse dates
-    def clean_param(p: Any) -> Optional[str]:
-        return (p.strip().lower() if p and isinstance(p, str) else None)
-    parse_date_func = _parse_date if callable(_parse_date) else None
-
-    target_birth_year, target_birth_date_obj = (None, None)
-    if user_input["dob_str"]:
-        target_birth_year, target_birth_date_obj = _parse_year_from_string(user_input["dob_str"], parse_date_func)
-
-    target_death_year, target_death_date_obj = (None, None)
-    if user_input["dod_str"]:
-        target_death_year, target_death_date_obj = _parse_year_from_string(user_input["dod_str"], parse_date_func)
-
-    # Build search criteria dictionary
-    search_criteria_dict = {
-        "first_name_raw": user_input["first_name"],
-        "surname_raw": user_input["surname"],
-        "first_name": clean_param(user_input["first_name"]),
-        "surname": clean_param(user_input["surname"]),
-        "birth_year": target_birth_year,
-        "birth_date_obj": target_birth_date_obj,
-        "birth_place": clean_param(user_input["pob"]),
-        "death_year": target_death_year,
-        "death_date_obj": target_death_date_obj,
-        "death_place": clean_param(user_input["pod"]),
-        "gender": gender,
-    }
-
-    # Log search criteria
-    log_display_map = {
-        "first_name": "First Name",
-        "surname": "Surname",
-        "birth_year": "Birth Year",
-        "birth_place": "Birth Place",
-        "death_year": "Death Year",
-        "death_place": "Death Place",
-        "gender": "Gender",
-    }
-    for key, display_name in log_display_map.items():
-        value = search_criteria_dict.get(key)
-        log_value = "None" if value is None else (f"'{value}'" if isinstance(value, str) else str(value))
-        logger.debug(f"  {display_name}: {log_value}")
-
-    return search_criteria_dict
+    return criteria
 
 
 # End of _get_search_criteria
@@ -532,119 +445,103 @@ def _process_and_score_suggestions(
 # Helper functions for _display_search_results
 
 def _extract_field_scores_for_display(candidate: dict) -> dict[str, int]:
-    """Extract all field scores from candidate."""
+    """Extract all field scores from candidate (matches action10 format)."""
     fs = candidate.get("field_scores", {})
     return {
-        "givn": fs.get("givn", 0),
-        "surn": fs.get("surn", 0),
-        "name_bonus": fs.get("bonus", 0),
-        "gender": fs.get("gender_match", 0),
-        "byear": fs.get("byear", 0),
-        "bdate": fs.get("bdate", 0),
-        "bplace": fs.get("bplace", 0),
-        "dyear": fs.get("dyear", 0),
-        "ddate": fs.get("ddate", 0),
-        "dplace": fs.get("dplace", 0),
+        "givn_s": fs.get("givn", 0),
+        "surn_s": fs.get("surn", 0),
+        "name_bonus_orig": fs.get("bonus", 0),
+        "gender_s": fs.get("gender_match", 0),
+        "byear_s": fs.get("byear", 0),
+        "bdate_s": fs.get("bdate", 0),
+        "bplace_s": fs.get("bplace", 0),
+        "dyear_s": fs.get("dyear", 0),
+        "ddate_s": fs.get("ddate", 0),
+        "dplace_s": fs.get("dplace", 0),
     }
 
 
-def _fix_gender_score_from_reasons(candidate: dict, gender_score: int) -> int:
-    """Fix gender score by extracting from reasons if score is 0."""
-    if gender_score != 0:
-        return gender_score
-
-    for reason in candidate.get("reasons", []):
-        if "Gender Match" in reason:
-            match = re.search(r"Gender Match \([MF]\) \((\d+)pts\)", reason)
-            if match:
-                return int(match.group(1))
-
-    return gender_score
-
-
 def _calculate_display_bonuses(scores: dict[str, int]) -> dict[str, int]:
-    """Calculate display bonus values for birth and death."""
-    # Use universal function (no key prefix for action11)
-    bonuses = calculate_display_bonuses(scores, key_prefix="")
+    """Calculate display bonus values for birth and death (matches action10 format)."""
+    # Use universal function with '_s' key prefix to match action10
+    bonuses = calculate_display_bonuses(scores, key_prefix="_s")
 
-    # Add name bonus (action11-specific)
-    bonuses["name"] = scores.get("name_bonus", 0)
-    bonuses["birth"] = bonuses.pop("birth_bonus")  # Rename for action11 compatibility
-    bonuses["death"] = bonuses.pop("death_bonus")  # Rename for action11 compatibility
+    # Rename keys for action11 compatibility
+    return {
+        "birth_date_score_component": bonuses["birth_date_component"],
+        "death_date_score_component": bonuses["death_date_component"],
+        "birth_bonus_s_disp": bonuses["birth_bonus"],
+        "death_bonus_s_disp": bonuses["death_bonus"],
+    }
 
-    return bonuses
 
-
-def _format_name_display_with_score(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> str:
-    """Format name display with scores."""
+def _format_name_display_with_score(candidate: dict, scores: dict[str, int]) -> str:
+    """Format name display with scores (matches action10 format)."""
     name_disp = candidate.get("name", "N/A")
     name_disp_short = name_disp[:30] + ("..." if len(name_disp) > 30 else "")
 
-    name_base_score = scores["givn"] + scores["surn"]
+    name_base_score = scores["givn_s"] + scores["surn_s"]
     name_score_str = f"[{name_base_score}]"
-    if bonuses["name"] > 0:
-        name_score_str += f"[+{bonuses['name']}]"
+    if scores["name_bonus_orig"] > 0:
+        name_score_str += f"[+{scores['name_bonus_orig']}]"
 
     return f"{name_disp_short} {name_score_str}"
 
 
-def _format_gender_display_with_score(candidate: dict, gender_score: int) -> str:
-    """Format gender display with score."""
+def _format_gender_display_with_score(candidate: dict, scores: dict[str, int]) -> str:
+    """Format gender display with score (matches action10 format)."""
     gender_disp_val = candidate.get("gender", "N/A")
     gender_disp_str = str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
-    return f"{gender_disp_str} [{gender_score}]"
+    return f"{gender_disp_str} [{scores['gender_s']}]"
 
 
 def _format_birth_displays_with_scores(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
-    """Format birth date and place displays with scores."""
+    """Format birth date and place displays with scores (matches action10 format)."""
     # Birth date
     bdate_disp = str(candidate.get("birth_date", "N/A"))
-    birth_score_display = f"[{bonuses['birth_date_component']}]"
+    birth_score_display = f"[{bonuses['birth_date_score_component']}]"
     bdate_with_score = f"{bdate_disp} {birth_score_display}"
 
     # Birth place
     bplace_disp_val = candidate.get("birth_place", "N/A")
     bplace_disp_str = str(bplace_disp_val) if bplace_disp_val is not None else "N/A"
     bplace_disp_short = bplace_disp_str[:20] + ("..." if len(bplace_disp_str) > 20 else "")
-    bplace_with_score = f"{bplace_disp_short} [{scores['bplace']}]"
-    if bonuses["birth"] > 0:
-        bplace_with_score += f" [+{bonuses['birth']}]"
+    bplace_with_score = f"{bplace_disp_short} [{scores['bplace_s']}]"
+    if bonuses["birth_bonus_s_disp"] > 0:
+        bplace_with_score += f" [+{bonuses['birth_bonus_s_disp']}]"
 
     return bdate_with_score, bplace_with_score
 
 
 def _format_death_displays_with_scores(candidate: dict, scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
-    """Format death date and place displays with scores."""
+    """Format death date and place displays with scores (matches action10 format)."""
     # Death date
     ddate_disp = str(candidate.get("death_date", "N/A"))
-    death_score_display = f"[{bonuses['death_date_component']}]"
+    death_score_display = f"[{bonuses['death_date_score_component']}]"
     ddate_with_score = f"{ddate_disp} {death_score_display}"
 
     # Death place
     dplace_disp_val = candidate.get("death_place", "N/A")
     dplace_disp_str = str(dplace_disp_val) if dplace_disp_val is not None else "N/A"
     dplace_disp_short = dplace_disp_str[:20] + ("..." if len(dplace_disp_str) > 20 else "")
-    dplace_with_score = f"{dplace_disp_short} [{scores['dplace']}]"
-    if bonuses["death"] > 0:
-        dplace_with_score += f" [+{bonuses['death']}]"
+    dplace_with_score = f"{dplace_disp_short} [{scores['dplace_s']}]"
+    if bonuses["death_bonus_s_disp"] > 0:
+        dplace_with_score += f" [+{bonuses['death_bonus_s_disp']}]"
 
     return ddate_with_score, dplace_with_score
 
 
 def _create_table_row_for_candidate(candidate: dict) -> list[str]:
-    """Create a table row for a single candidate."""
+    """Create a table row for a single candidate (matches action10 format)."""
     # Extract scores
     scores = _extract_field_scores_for_display(candidate)
-
-    # Fix gender score from reasons if needed
-    gender_score = _fix_gender_score_from_reasons(candidate, scores["gender"])
 
     # Calculate bonuses
     bonuses = _calculate_display_bonuses(scores)
 
     # Format displays
-    name_with_score = _format_name_display_with_score(candidate, scores, bonuses)
-    gender_with_score = _format_gender_display_with_score(candidate, gender_score)
+    name_with_score = _format_name_display_with_score(candidate, scores)
+    gender_with_score = _format_gender_display_with_score(candidate, scores)
     bdate_with_score, bplace_with_score = _format_birth_displays_with_scores(candidate, scores, bonuses)
     ddate_with_score, dplace_with_score = _format_death_displays_with_scores(candidate, scores, bonuses)
 
@@ -2138,24 +2035,49 @@ def _check_dependencies() -> tuple[bool, list[str]]:
 
 def _validate_browser_session() -> bool:
     """Validate that browser session is available, start if needed."""
+    import threading
+
     logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
     logger.debug(f"Session manager driver: {getattr(session_manager, 'driver', None)}")
     logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
 
-    # Check if driver exists - if not, try to start it
-    if not hasattr(session_manager, 'driver') or not session_manager.driver:
-        logger.warning("Browser session not available. Attempting to start browser...")
+    result = {"success": False, "error": None}
 
-        # Try to start the browser
-        if not session_manager.start_browser("Action 11 - Browser Init"):
-            logger.error("Failed to start browser session.")
-            print("\nERROR: Failed to start browser session. Please check Chrome is not already running.")
-            return False
+    def browser_check():
+        try:
+            # Check if driver exists - if not, try to start it
+            if not hasattr(session_manager, 'driver') or not session_manager.driver:
+                logger.warning("Browser session not available. Attempting to start browser...")
 
-        logger.info("Browser session started successfully.")
+                # Try to start the browser
+                if not session_manager.start_browser("Action 11 - Browser Init"):
+                    logger.error("Failed to start browser session.")
+                    result["error"] = "Failed to start browser session"
+                    return
 
-    logger.debug("Browser session is available and ready.")
-    return True
+                logger.info("Browser session started successfully.")
+
+            logger.debug("Browser session is available and ready.")
+            result["success"] = True
+        except Exception as e:
+            logger.error(f"Error during browser session validation: {e}")
+            result["error"] = str(e)
+
+    # Run browser check in a thread with 60-second timeout
+    thread = threading.Thread(target=browser_check, daemon=True)
+    thread.start()
+    thread.join(timeout=60)
+
+    if thread.is_alive():
+        logger.error("Browser session check timed out after 60 seconds")
+        print("\nERROR: Browser initialization timed out. Website may be down or network issue.")
+        return False
+
+    if result["error"]:
+        print(f"\nERROR: Browser validation failed: {result['error']}")
+        return False
+
+    return result["success"]
 
 
 def _refresh_cookies_from_browser() -> bool:
@@ -2216,55 +2138,103 @@ def _handle_logged_in_user() -> bool:
 
 def _attempt_browser_login() -> bool:
     """Attempt to log in via browser and refresh cookies."""
+    import threading
+
     from utils import log_in, login_status
 
-    # First check if we're already logged in
-    login_stat = login_status(session_manager, disable_ui_fallback=True)
-    if login_stat is True:
-        logger.info("User is already logged in. No need to navigate to sign-in page.")
+    result = {"success": False, "error": None}
 
-        # Refresh the cookies in the requests session
-        return _refresh_cookies_from_browser()
-    # Try to log in
-    login_result = log_in(session_manager)
-    if login_result != "LOGIN_SUCCEEDED":
-        logger.error(f"Failed to log in: {login_result}")
-        print(f"\nERROR: Failed to log in: {login_result}")
+    def login_attempt():
+        try:
+            # First check if we're already logged in
+            login_stat = login_status(session_manager, disable_ui_fallback=True)
+            if login_stat is True:
+                logger.info("User is already logged in. No need to navigate to sign-in page.")
+
+                # Refresh the cookies in the requests session
+                result["success"] = _refresh_cookies_from_browser()
+                return
+            # Try to log in
+            login_result = log_in(session_manager)
+            if login_result != "LOGIN_SUCCEEDED":
+                logger.error(f"Failed to log in: {login_result}")
+                result["error"] = f"Failed to log in: {login_result}"
+                return
+
+            result["success"] = True
+        except Exception as e:
+            logger.error(f"Error during login attempt: {e}")
+            result["error"] = str(e)
+
+    # Run login in a thread with 120-second timeout
+    thread = threading.Thread(target=login_attempt, daemon=True)
+    thread.start()
+    thread.join(timeout=120)
+
+    if thread.is_alive():
+        logger.error("Login attempt timed out after 120 seconds")
+        print("\nERROR: Login timed out. Website may be down or network issue.")
         return False
 
-    return True
+    if result["error"]:
+        print(f"\nERROR: {result['error']}")
+        return False
+
+    return result["success"]
 
 
 def _initialize_session_with_login() -> bool:
     """Initialize session with authentication cookies via login."""
+    import threading
+
     logger.warning("No cookies available in the requests session. Need to log in.")
 
     # Try to initialize the session with authentication cookies
     print("\nAttempting to log in to Ancestry...")
-    try:
-        # Try to start the browser session
-        if not session_manager.start_browser(action_name="API Report Browser Init"):
-            logger.error("Failed to start browser session.")
-            print("\nERROR: Failed to start browser session.")
-            return False
 
-        # Attempt login
-        if not _attempt_browser_login():
-            return False
+    result = {"success": False, "error": None}
 
-        # Check if we now have cookies
-        if not session_manager._requests_session.cookies:
-            logger.error("Still no cookies available after login attempt.")
-            print("\nERROR: Still no cookies available after login attempt.")
-            return False
+    def session_init():
+        try:
+            # Try to start the browser session
+            if not session_manager.start_browser(action_name="API Report Browser Init"):
+                logger.error("Failed to start browser session.")
+                result["error"] = "Failed to start browser session"
+                return
 
-        print("\nSuccessfully initialized session with authentication cookies.")
-        logger.info("Successfully initialized session with authentication cookies.")
-        return True
-    except Exception as e:
-        logger.error(f"Error initializing session: {e}")
-        print(f"\nERROR: Error initializing session: {e}")
+            # Attempt login
+            if not _attempt_browser_login():
+                result["error"] = "Login attempt failed"
+                return
+
+            # Check if we now have cookies
+            if not session_manager._requests_session.cookies:
+                logger.error("Still no cookies available after login attempt.")
+                result["error"] = "No cookies available after login"
+                return
+
+            print("\nSuccessfully initialized session with authentication cookies.")
+            logger.info("Successfully initialized session with authentication cookies.")
+            result["success"] = True
+        except Exception as e:
+            logger.error(f"Error initializing session: {e}")
+            result["error"] = str(e)
+
+    # Run session initialization in a thread with 180-second timeout
+    thread = threading.Thread(target=session_init, daemon=True)
+    thread.start()
+    thread.join(timeout=180)
+
+    if thread.is_alive():
+        logger.error("Session initialization timed out after 180 seconds")
+        print("\nERROR: Session initialization timed out. Website may be down or network issue.")
         return False
+
+    if result["error"]:
+        print(f"\nERROR: {result['error']}")
+        return False
+
+    return result["success"]
 
 
 def _handle_not_logged_in_user() -> bool:
@@ -2282,13 +2252,37 @@ def _handle_not_logged_in_user() -> bool:
 
 def _ensure_authenticated_session() -> bool:
     """Ensure we have an authenticated session with valid cookies."""
+    import threading
+
     from utils import login_status
 
-    # Check login status
-    login_stat = login_status(session_manager, disable_ui_fallback=True)
+    result: dict[str, Any] = {"login_stat": None, "error": None}
+
+    def check_login():
+        try:
+            # Check login status
+            result["login_stat"] = login_status(session_manager, disable_ui_fallback=True)
+        except Exception as e:
+            logger.error(f"Error during login status check: {e}")
+            result["error"] = str(e)
+
+    # Run login status check in a thread with 30-second timeout
+    thread = threading.Thread(target=check_login, daemon=True)
+    thread.start()
+    thread.join(timeout=30)
+
+    if thread.is_alive():
+        logger.error("Login status check timed out after 30 seconds")
+        print("\nERROR: Login check timed out. Website may be down or network issue.")
+        return False
+
+    if result["error"]:
+        logger.error(f"Error during authentication: {result['error']}")
+        print(f"\nERROR: Authentication failed: {result['error']}")
+        return False
 
     # If we're already logged in, refresh the cookies
-    if login_stat is True:
+    if result["login_stat"] is True:
         return _handle_logged_in_user()
     return _handle_not_logged_in_user()
 
@@ -2317,42 +2311,10 @@ def _display_family_details_from_api(
 
 
 def _display_family_members_simple(family_data: dict) -> None:
-    """Display family members in a simple format matching Action 10."""
-    from relationship_utils import _format_years_display  # type: ignore[import-not-found]
-
-    relation_labels = {
-        "parents": "📋 Parents",
-        "siblings": "📋 Siblings",
-        "spouses": "💕 Spouses",
-        "children": "👶 Children",
-    }
-
-    first_section = True
-    for relation_key, label in relation_labels.items():
-        members = family_data.get(relation_key, [])
-
-        # Add blank line before each section except the first
-        if first_section:
-            print(f"{label}:")
-            first_section = False
-        else:
-            print(f"\n{label}:")
-
-        if not members:
-            print("   - None found")
-            continue
-
-        for member in members:
-            name = member.get("name", "Unknown")
-            birth_year = member.get("birth_year")
-            death_year = member.get("death_year")
-
-            # Use shared formatting function from relationship_utils (same as Action 10)
-            years_display = _format_years_display(birth_year, death_year)
-
-            print(f"   - {name}{years_display}")
-
-    print("")  # Blank line after family section
+    """Display family members using unified function (matches Action 10 exactly)."""
+    # Use the unified display function from search_criteria_utils
+    # This ensures identical formatting between Action 10 and Action 11
+    display_family_members(family_data)
 
 
 def _handle_supplementary_info_phase(
@@ -2914,6 +2876,8 @@ _test_session_uuid: Optional[str] = None
 
 def _create_and_start_session() -> SessionManager:
     """Create and start a new session manager."""
+    import threading
+
     logger.info("Step 1: Creating SessionManager...")
     sm = SessionManager()
     logger.info("✅ SessionManager created")
@@ -2923,10 +2887,34 @@ def _create_and_start_session() -> SessionManager:
     logger.info("✅ Browser marked as needed")
 
     logger.info("Step 3: Starting session (database + browser)...")
-    started = sm.start_sess("Action 11 API Tests")
-    if not started:
+
+    result: dict[str, Any] = {"started": False, "error": None}
+
+    def start_session():
+        try:
+            result["started"] = sm.start_sess("Action 11 API Tests")
+        except Exception as e:
+            logger.error(f"Error starting session: {e}")
+            result["error"] = str(e)
+
+    # Run session start in a thread with 120-second timeout
+    thread = threading.Thread(target=start_session, daemon=True)
+    thread.start()
+    thread.join(timeout=120)
+
+    if thread.is_alive():
+        logger.error("Session start timed out after 120 seconds")
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Session start timed out - website may be down or network issue")
+
+    if result["error"]:
+        sm.close_sess(keep_db=False)
+        raise AssertionError(f"Session start failed: {result['error']}")
+
+    if not result["started"]:
         sm.close_sess(keep_db=False)
         raise AssertionError("Failed to start session - browser initialization failed")
+
     logger.info("✅ Session started successfully")
 
     return sm
@@ -3003,6 +2991,8 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
     Returns:
         tuple: (SessionManager, UUID string)
     """
+    import threading
+
     global _test_session_manager, _test_session_uuid  # noqa: PLW0603
 
     # Reuse session if available and requested
@@ -3014,14 +3004,39 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
     logger.info("Setting up authenticated session for API tests...")
     logger.info("=" * 80)
 
-    # Create and start new session
-    sm = _create_and_start_session()
+    result: dict[str, Any] = {"sm": None, "error": None}
 
-    # Authenticate the session
-    _authenticate_session(sm)
+    def setup_session():
+        try:
+            # Create and start new session
+            sm = _create_and_start_session()
 
-    # Validate session is ready
-    _validate_session_ready(sm)
+            # Authenticate the session
+            _authenticate_session(sm)
+
+            # Validate session is ready
+            _validate_session_ready(sm)
+
+            result["sm"] = sm
+        except Exception as e:
+            logger.error(f"Session setup failed: {e}")
+            result["error"] = str(e)
+
+    # Run session setup in a thread with 300-second timeout (5 minutes)
+    thread = threading.Thread(target=setup_session, daemon=True)
+    thread.start()
+    thread.join(timeout=300)
+
+    if thread.is_alive():
+        logger.error("Session setup timed out after 300 seconds")
+        raise AssertionError("Session setup timed out - website may be down or network issue")
+
+    if result["error"]:
+        raise AssertionError(f"Session setup failed: {result['error']}")
+
+    sm = result["sm"]
+    if not sm:
+        raise AssertionError("Session setup failed - no session manager returned")
 
     logger.info("=" * 80)
     logger.info("✅ Valid authenticated session established for API tests")
@@ -3270,7 +3285,13 @@ if __name__ == "__main__":
     original_stderr = sys.stderr
 
     try:
+        # Run live API tests by default when running directly
+        # Tests will timeout gracefully if website is down
+        if "SKIP_LIVE_API_TESTS" not in os.environ:
+            os.environ["SKIP_LIVE_API_TESTS"] = "false"
+
         print("🔍 Running Action 11 - Live API Research Tool comprehensive test suite...")
+        print("   (Live API tests enabled - will timeout gracefully if website is down)\n")
         success = run_comprehensive_tests()
 
         # Redirect stderr to devnull before exit to suppress Chrome destructor exceptions
