@@ -2324,57 +2324,62 @@ def _display_family_details_from_edit_api(
 
     if not family_api_response:
         logger.warning("Edit Relationships API returned no data")
+    elif not isinstance(family_api_response, dict):
+        logger.error(f"Edit Relationships API returned non-dict type: {type(family_api_response)}")
     elif "data" in family_api_response:
         data = family_api_response["data"]
-        logger.debug(f"Edit Relationships API response keys: {list(data.keys())}")
+        if not isinstance(data, dict):
+            logger.error(f"Edit Relationships API 'data' field is not a dict: {type(data)}")
+        else:
+            logger.debug(f"Edit Relationships API response keys: {list(data.keys())}")
 
-        # Extract parents
-        if "parents" in data:
-            for parent in data["parents"]:
-                name = parent.get("name", "Unknown")
-                birth_year = _extract_year_simple(parent.get("birthDate", ""))
-                death_year = _extract_year_simple(parent.get("deathDate", ""))
-                family_data["parents"].append({
-                    "name": name,
-                    "birth_year": birth_year,
-                    "death_year": death_year,
-                })
+            # Extract parents
+            if "parents" in data:
+                for parent in data["parents"]:
+                    name = parent.get("name", "Unknown")
+                    birth_year = _extract_year_simple(parent.get("birthDate", ""))
+                    death_year = _extract_year_simple(parent.get("deathDate", ""))
+                    family_data["parents"].append({
+                        "name": name,
+                        "birth_year": birth_year,
+                        "death_year": death_year,
+                    })
 
-        # Extract siblings
-        if "siblings" in data:
-            for sibling in data["siblings"]:
-                name = sibling.get("name", "Unknown")
-                birth_year = _extract_year_simple(sibling.get("birthDate", ""))
-                death_year = _extract_year_simple(sibling.get("deathDate", ""))
-                family_data["siblings"].append({
-                    "name": name,
-                    "birth_year": birth_year,
-                    "death_year": death_year,
-                })
+            # Extract siblings
+            if "siblings" in data:
+                for sibling in data["siblings"]:
+                    name = sibling.get("name", "Unknown")
+                    birth_year = _extract_year_simple(sibling.get("birthDate", ""))
+                    death_year = _extract_year_simple(sibling.get("deathDate", ""))
+                    family_data["siblings"].append({
+                        "name": name,
+                        "birth_year": birth_year,
+                        "death_year": death_year,
+                    })
 
-        # Extract spouses
-        if "spouses" in data:
-            for spouse in data["spouses"]:
-                name = spouse.get("name", "Unknown")
-                birth_year = _extract_year_simple(spouse.get("birthDate", ""))
-                death_year = _extract_year_simple(spouse.get("deathDate", ""))
-                family_data["spouses"].append({
-                    "name": name,
-                    "birth_year": birth_year,
-                    "death_year": death_year,
-                })
+            # Extract spouses
+            if "spouses" in data:
+                for spouse in data["spouses"]:
+                    name = spouse.get("name", "Unknown")
+                    birth_year = _extract_year_simple(spouse.get("birthDate", ""))
+                    death_year = _extract_year_simple(spouse.get("deathDate", ""))
+                    family_data["spouses"].append({
+                        "name": name,
+                        "birth_year": birth_year,
+                        "death_year": death_year,
+                    })
 
-        # Extract children
-        if "children" in data:
-            for child in data["children"]:
-                name = child.get("name", "Unknown")
-                birth_year = _extract_year_simple(child.get("birthDate", ""))
-                death_year = _extract_year_simple(child.get("deathDate", ""))
-                family_data["children"].append({
-                    "name": name,
-                    "birth_year": birth_year,
-                    "death_year": death_year,
-                })
+            # Extract children
+            if "children" in data:
+                for child in data["children"]:
+                    name = child.get("name", "Unknown")
+                    birth_year = _extract_year_simple(child.get("birthDate", ""))
+                    death_year = _extract_year_simple(child.get("deathDate", ""))
+                    family_data["children"].append({
+                        "name": name,
+                        "birth_year": birth_year,
+                        "death_year": death_year,
+                    })
 
     # Display family members
     _display_family_members_simple(family_data)
