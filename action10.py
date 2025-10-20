@@ -101,6 +101,9 @@ from relationship_utils import (  # type: ignore[import-not-found]
     fast_bidirectional_bfs,
     format_relationship_path_unified,
 )
+
+# Import unified search criteria and display functions
+from search_criteria_utils import get_unified_search_criteria, display_family_members  # type: ignore[import-not-found]
 from test_framework import mock_logger_context  # type: ignore[import-not-found]
 
 # Import universal scoring utilities
@@ -408,9 +411,8 @@ def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
         }
     )
 
-    max_display_results = (
-        config_schema.max_candidates_to_display if config_schema else 10
-    )
+    # Limit to top 3 matches for cleaner output
+    max_display_results = 3
 
     return date_flex, scoring_weights, max_display_results
 
@@ -458,13 +460,23 @@ def validate_config() -> tuple[
 @error_context("load_gedcom_data")
 def load_gedcom_data(gedcom_path: Path) -> GedcomData:
     """Load, parse, and pre-process GEDCOM data with comprehensive error handling."""
+    # Check if we already have this GEDCOM loaded in module cache
+    if _GedcomCacheState.cache is not None:
+        # Verify it's the same file
+        cached_path = getattr(_GedcomCacheState.cache, 'path', None)
+        if cached_path and Path(cached_path) == gedcom_path:
+            print(f"\n✅ Using GEDCOM data from MEMORY CACHE: {gedcom_path.name} ({len(_GedcomCacheState.cache.indi_index)} individuals)")
+            return _GedcomCacheState.cache
+
     # Validate input path exists
     if not gedcom_path.is_file():
         logger.error(f"GEDCOM file not found: {gedcom_path}")
         raise MissingConfigError(f"GEDCOM file does not exist: {gedcom_path}")
 
     try:
-        logger.info(f"Loading GEDCOM file: {gedcom_path.name}")
+        # Note: If disk cache exists, the @cache_gedcom_results decorator will load it
+        # and return before reaching this point. If we're here, cache was not found.
+        print(f"\n⏳ Loading GEDCOM from FILE (no cache available): {gedcom_path.name}")
         load_start_time = time.time()
         gedcom_data = GedcomData(gedcom_path)
         load_end_time = time.time()
@@ -479,6 +491,10 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
             f"{len(gedcom_data.indi_index)} individuals, "
             f"{len(gedcom_data.processed_data_cache)} processed records"
         )
+
+        # Cache the loaded data
+        _GedcomCacheState.cache = gedcom_data
+
         return gedcom_data
 
     except MissingConfigError:
@@ -994,20 +1010,20 @@ def _display_results_table(table_data: list[list[str]], headers: list[str]) -> N
         # Use tabulate if available
         table_output = tabulate(table_data, headers=headers, tablefmt="simple")
         for line in table_output.split("\n"):
-            logger.info(line)
+            print(line)
     else:
         # Fallback to simple formatting if tabulate is not available
-        logger.info(" | ".join(headers))
-        logger.info("-" * 100)
+        print(" | ".join(headers))
+        print("-" * 100)
         for row in table_data:
-            logger.info(" | ".join(row))
+            print(" | ".join(row))
 
 
 def display_top_matches(
     scored_matches: list[dict[str, Any]], max_results: int
 ) -> Optional[dict[str, Any]]:
     """Display top matching results and return the top match."""
-    logger.info(f"\n=== SEARCH RESULTS (Top {max_results} Matches) ===")
+    print(f"\n=== Top {max_results} Matches Found ===")
 
     if not scored_matches:
         logger.info("No individuals matched the filter criteria or scored > 0.")
@@ -1051,30 +1067,84 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
         logger.warning("Cannot display relatives: individual is None")
         return
 
-    relatives_data = {
-        "📋 Parents": gedcom_data.get_related_individuals(individual, "parents"),
-        "📋 Siblings": gedcom_data.get_related_individuals(individual, "siblings"),
-        "💕 Spouses": gedcom_data.get_related_individuals(individual, "spouses"),
-        "👶 Children": gedcom_data.get_related_individuals(individual, "children"),
+    # Get relatives from GEDCOM data
+    parents = gedcom_data.get_related_individuals(individual, "parents")
+    siblings = gedcom_data.get_related_individuals(individual, "siblings")
+    spouses = gedcom_data.get_related_individuals(individual, "spouses")
+    children = gedcom_data.get_related_individuals(individual, "children")
+
+    # Convert to standardized format for unified display
+    family_data = {
+        "parents": _convert_gedcom_relatives_to_standard_format(parents),
+        "siblings": _convert_gedcom_relatives_to_standard_format(siblings),
+        "spouses": _convert_gedcom_relatives_to_standard_format(spouses),
+        "children": _convert_gedcom_relatives_to_standard_format(children),
     }
 
-    for relation_type, relatives in relatives_data.items():
-        print(f"\n{relation_type}:")
-        if not relatives:
-            print("   - None found")
+    # Use unified display function
+    display_family_members(family_data)
+
+
+def _convert_gedcom_relatives_to_standard_format(relatives: list) -> list[dict]:
+    """Convert GEDCOM relative objects to standardized dictionary format."""
+    import re
+
+    standardized = []
+    for relative in relatives:
+        if not relative:
             continue
 
-        for relative in relatives:
-            if not relative:
-                continue
+        # Extract name
+        name = format_relative_info(relative)
+        # Remove the leading "  - " if present
+        if name.strip().startswith("-"):
+            name = name.strip()[2:].strip()
 
-            # Use the format_relative_info function from gedcom_utils
-            formatted_info = format_relative_info(relative)
-            # Add a dash at the beginning to match action11 format
-            if not formatted_info.strip().startswith("-"):
-                formatted_info = formatted_info.replace("  - ", "- ")
+        # Extract years from the formatted string
+        # Formats: "(b. 26 April 1906, d. 16 JULY 1988)" or "(1900-1950)" or "(b. 1900)"
+        birth_year = None
+        death_year = None
 
-            print(f"   {formatted_info}")
+        if "(" in name and ")" in name:
+            years_part = name[name.find("(")+1:name.find(")")]
+
+            # Try to extract birth year from "b. <date>" pattern
+            birth_match = re.search(r'b\.\s+.*?(\d{4})', years_part)
+            if birth_match:
+                try:
+                    birth_year = int(birth_match.group(1))
+                except ValueError:
+                    pass
+
+            # Try to extract death year from "d. <date>" pattern
+            death_match = re.search(r'd\.\s+.*?(\d{4})', years_part)
+            if death_match:
+                try:
+                    death_year = int(death_match.group(1))
+                except ValueError:
+                    pass
+
+            # If no "b." or "d." found, try simple year range format "(1900-1950)"
+            if not birth_year and not death_year and "-" in years_part:
+                parts = years_part.split("-")
+                try:
+                    if parts[0].strip().isdigit():
+                        birth_year = int(parts[0].strip())
+                    if len(parts) > 1 and parts[1].strip().isdigit():
+                        death_year = int(parts[1].strip())
+                except (ValueError, IndexError):
+                    pass
+
+            # Remove years from name
+            name = name[:name.find("(")].strip()
+
+        standardized.append({
+            "name": name,
+            "birth_year": birth_year,
+            "death_year": death_year,
+        })
+
+    return standardized
 
 
 def _get_match_display_info(top_match: dict[str, Any]) -> tuple[str, float, str]:
@@ -1100,7 +1170,7 @@ def _get_match_display_info(top_match: dict[str, Any]) -> tuple[str, float, str]
 
 def _display_match_header(display_name: str, years_display: str, score: float) -> None:
     """Display the match analysis header."""
-    logger.info(f"\n==={display_name}{years_display} (score: {score:.0f}) ===\n")
+    print(f"\n==={display_name}{years_display} (score: {score:.0f}) ===\n")
 
 
 def _handle_same_person_case(display_name: str, reference_person_name: str) -> None:
@@ -1154,14 +1224,12 @@ def _calculate_relationship_path(
             relationship_explanation = format_relationship_path_unified(
                 unified_path, display_name, reference_person_name, None
             )
-            # Print the formatted relationship path
-            logger.info(relationship_explanation)
+            # Print the formatted relationship path (use print to avoid logging preamble)
+            print(relationship_explanation)
         else:
-            # Just log an error message if conversion failed
-            logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
-            logger.info(
-                f"(Error: Could not determine relationship path for {display_name})"
-            )
+            # Just print an error message if conversion failed
+            print(f"\n===Relationship Path to {reference_person_name}===")
+            print(f"(Error: Could not determine relationship path for {display_name})")
 
 
 def analyze_top_match(
@@ -1225,32 +1293,8 @@ def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
     return gedcom_data
 
 
-def _process_matches(
-    gedcom_data: Any,
-    args: argparse.Namespace,
-    date_flex: dict[str, Any],
-    scoring_weights: dict[str, int],
-    max_display_results: int
-) -> Optional[Any]:
-    """Process matches by getting criteria, filtering, and scoring."""
-    # Get user criteria
-    scoring_criteria, filter_criteria = get_user_criteria(args)
-    log_criteria_summary(scoring_criteria, date_flex)
-
-    # Filter and score individuals
-    scored_matches = filter_and_score_individuals(
-        gedcom_data,
-        filter_criteria,
-        scoring_criteria,
-        scoring_weights,
-        date_flex,
-    )
-
-    if not scored_matches:
-        return None
-
-    # Display top matches
-    return display_top_matches(scored_matches, max_display_results)
+# _process_matches function removed - logic inlined into main() to allow getting
+# search criteria before loading GEDCOM data
 
 
 @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better error handling
@@ -1272,15 +1316,37 @@ def main() -> bool:
             max_display_results,
         ) = config_data
 
-        # Load and validate GEDCOM data
+        # Get search criteria FIRST (before loading GEDCOM)
+        get_input = _create_input_getter(args)
+        scoring_criteria = get_unified_search_criteria(get_input)
+
+        if not scoring_criteria:
+            return False
+
+        log_criteria_summary(scoring_criteria, date_flex)
+
+        # NOW load and validate GEDCOM data (will log which cache source is used)
         gedcom_data = _load_and_validate_gedcom(gedcom_file_path)
         if not gedcom_data:
             return False
 
-        # Process matches
-        top_match = _process_matches(
-            gedcom_data, args, date_flex, scoring_weights, max_display_results
+        # Build filter criteria from scoring criteria
+        filter_criteria = _build_filter_criteria(scoring_criteria)
+
+        # Filter and score individuals
+        scored_matches = filter_and_score_individuals(
+            gedcom_data,
+            filter_criteria,
+            scoring_criteria,
+            scoring_weights,
+            date_flex,
         )
+
+        if not scored_matches:
+            return False
+
+        # Display top matches
+        top_match = display_top_matches(scored_matches, max_display_results)
         if not top_match:
             return False
 
