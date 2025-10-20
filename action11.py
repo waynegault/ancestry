@@ -2314,6 +2314,11 @@ def _display_family_details_from_edit_api(
         person_id=person_id
     )
 
+    # Debug: Log the response structure
+    logger.debug(f"Edit Relationships API response type: {type(family_api_response)}")
+    if isinstance(family_api_response, dict):
+        logger.debug(f"Edit Relationships API response keys: {list(family_api_response.keys())}")
+
     # Initialize family data structure
     family_data = {
         "parents": [],
