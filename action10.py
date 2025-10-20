@@ -1190,10 +1190,7 @@ def _display_match_header(display_name: str, years_display: str, score: float) -
 
 def _handle_same_person_case(display_name: str, reference_person_name: str) -> None:
     """Handle case where top match is the reference person."""
-    logger.info(f"\n\n===Relationship Path to {reference_person_name}===")
-    logger.info(
-        f"{display_name} is the reference person ({reference_person_name})."
-    )
+    print(f"\n📋 {display_name} is the reference person ({reference_person_name}).")
 
 
 def _calculate_relationship_path(
@@ -1243,8 +1240,7 @@ def _calculate_relationship_path(
             print(relationship_explanation)
         else:
             # Just print an error message if conversion failed
-            print(f"\n===Relationship Path to {reference_person_name}===")
-            print(f"(Error: Could not determine relationship path for {display_name})")
+            print(f"\n(Error: Could not determine relationship path for {display_name})")
 
 
 def analyze_top_match(

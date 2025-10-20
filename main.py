@@ -244,7 +244,7 @@ def initialize_aggressive_caching() -> None:
         from core.system_cache import warm_system_caches  # type: ignore[import-not-found]
         return warm_system_caches()
     except ImportError:
-        logger.warning("System cache module not available")
+        logger.debug("System cache module not available (non-critical)")
         return False
     except Exception as e:
         logger.error(f"Failed to initialize aggressive caching: {e}")
@@ -260,7 +260,7 @@ def ensure_caching_initialized() -> None:
             logger.debug("Caching systems initialized successfully")
             _caching_state.initialized = True
         else:
-            logger.warning(
+            logger.debug(
                 "Some caching systems failed to initialize, continuing with reduced performance"
             )
         return cache_init_success

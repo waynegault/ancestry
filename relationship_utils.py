@@ -1340,9 +1340,6 @@ def format_relationship_path_unified(
     if not path_data or len(path_data) < 2:
         return f"(No relationship path data available for {target_name})"
 
-    # Format the header
-    header = f"===Relationship Path to {owner_name}==="
-
     # Format the target person with birth/death years
     first_person = path_data[0]
     target_display = target_name
@@ -1357,10 +1354,10 @@ def format_relationship_path_unified(
     if relationship_type is None or relationship_type == "relative":
         relationship_type = _determine_relationship_type_from_path(path_data) or "relative"
 
-    # Format the summary line
-    summary = f"{target_display}{years_display} is {owner_name}'s {relationship_type}:"
+    # Format the header with emoji
+    header = f"\n📋 {target_display}{years_display} is {owner_name}'s {relationship_type}:"
 
-    # Format each step in the path
+    # Format each step in the path with indentation
     path_lines = []
 
     # Keep track of names we've already seen to avoid adding years multiple times
@@ -1398,13 +1395,11 @@ def format_relationship_path_unified(
             )
             seen_names.add(next_name_clean.lower())
 
-        line = f"- {current_name_clean}{current_years}'s {relationship} is {next_name_clean}{next_years}"
+        line = f"   - {current_name_clean}{current_years}'s {relationship} is {next_name_clean}{next_years}"
         path_lines.append(line)
 
     # Combine all parts
-    return f"{header}\n{summary}\n\n" + "\n".join(
-        path_lines
-    )  # Renamed result to result_str
+    return f"{header}\n" + "\n".join(path_lines)
 
 
 def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str:
