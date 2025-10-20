@@ -113,6 +113,7 @@ def run_action10_search(criteria: dict[str, Any]) -> Optional[list[dict[str, Any
 
         # Call Action 10's filter_and_score_individuals function
         from pathlib import Path
+
         from gedcom_utils import load_gedcom_data  # type: ignore[import-not-found]
 
         gedcom_path = os.getenv("GEDCOM_FILE_PATH")

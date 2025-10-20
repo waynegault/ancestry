@@ -455,6 +455,76 @@ def validate_config() -> tuple[
     )
 
 
+def _check_memory_cache(gedcom_path: Path) -> Optional[GedcomData]:
+    """Check if GEDCOM is in module-level memory cache."""
+    if _GedcomCacheState.cache is not None:
+        cached_path = getattr(_GedcomCacheState.cache, 'path', None)
+        if cached_path and Path(cached_path) == gedcom_path:
+            print(f"\n✅ Using GEDCOM from: MEMORY CACHE ({len(_GedcomCacheState.cache.indi_index)} individuals)")
+            return _GedcomCacheState.cache
+    return None
+
+
+def _display_cache_source_message(gedcom_data: GedcomData) -> None:
+    """Display message about where GEDCOM data came from."""
+    cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
+
+    if cache_source in ("memory", "disk"):
+        print("\n✅ Using GEDCOM cache")
+    elif cache_source == "file":
+        print("\n✅ Using GEDCOM file")
+        print("✅ Cache saved")
+    else:
+        print("\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
+
+    print(f"   📊 {len(gedcom_data.indi_index):,} individuals indexed")
+
+
+def _load_with_aggressive_caching(gedcom_path: Path) -> GedcomData:
+    """Load GEDCOM using aggressive caching (memory + disk)."""
+    from gedcom_cache import load_gedcom_with_aggressive_caching
+
+    # Check memory cache first
+    cached_data = _check_memory_cache(gedcom_path)
+    if cached_data:
+        return cached_data
+
+    # Try aggressive caching (will check disk cache then file)
+    gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_path))
+
+    if not gedcom_data:
+        raise MissingConfigError("Aggressive caching returned None")
+
+    # Store in module-level cache for fastest access
+    _GedcomCacheState.cache = gedcom_data
+    _display_cache_source_message(gedcom_data)
+
+    return gedcom_data
+
+
+def _load_with_standard_method(gedcom_path: Path) -> GedcomData:
+    """Load GEDCOM using standard method (no caching)."""
+    print(f"\n⏳ Loading GEDCOM: {gedcom_path.name}")
+    load_start_time = time.time()
+    gedcom_data = GedcomData(gedcom_path)
+    load_end_time = time.time()
+
+    # Validate loaded data
+    if not gedcom_data.processed_data_cache or not gedcom_data.indi_index:
+        logger.error("GEDCOM data loaded but cache/index is empty")
+        raise MissingConfigError("GEDCOM data object/cache/index is empty after loading")
+
+    print(
+        f"✅ GEDCOM loaded from: FILE ({len(gedcom_data.indi_index)} individuals, "
+        f"{load_end_time - load_start_time:.2f}s)"
+    )
+
+    # Cache the loaded data in memory for subsequent runs
+    _GedcomCacheState.cache = gedcom_data
+
+    return gedcom_data
+
+
 @error_context("load_gedcom_data")
 def load_gedcom_data(gedcom_path: Path) -> GedcomData:
     """Load, parse, and pre-process GEDCOM data with comprehensive error handling."""
@@ -466,60 +536,10 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
     try:
         # Try to use aggressive caching (memory + disk with file mtime tracking)
         try:
-            from gedcom_cache import load_gedcom_with_aggressive_caching
-
-            # Check if we have it in module-level memory cache first
-            if _GedcomCacheState.cache is not None:
-                cached_path = getattr(_GedcomCacheState.cache, 'path', None)
-                if cached_path and Path(cached_path) == gedcom_path:
-                    print(f"\n✅ Using GEDCOM from: MEMORY CACHE ({len(_GedcomCacheState.cache.indi_index)} individuals)")
-                    return _GedcomCacheState.cache
-
-            # Not in module cache, try aggressive caching (will check disk cache then file)
-            gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_path))
-
-            if gedcom_data:
-                # Store in module-level cache for fastest access
-                _GedcomCacheState.cache = gedcom_data
-
-                # Display clear message about where data came from
-                cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
-
-                if cache_source == "memory" or cache_source == "disk":
-                    print("\n✅ Using GEDCOM cache")
-                elif cache_source == "file":
-                    print("\n✅ Using GEDCOM file")
-                    print("✅ Cache saved")
-                else:
-                    print("\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
-
-                print(f"   📊 {len(gedcom_data.indi_index):,} individuals indexed")
-
-                return gedcom_data
-            raise MissingConfigError("Aggressive caching returned None")
-
+            return _load_with_aggressive_caching(gedcom_path)
         except ImportError:
             logger.debug("Aggressive caching not available, using standard loading")
-            # Fall back to standard loading
-            print(f"\n⏳ Loading GEDCOM: {gedcom_path.name}")
-            load_start_time = time.time()
-            gedcom_data = GedcomData(gedcom_path)
-            load_end_time = time.time()
-
-            # Validate loaded data
-            if not gedcom_data.processed_data_cache or not gedcom_data.indi_index:
-                logger.error("GEDCOM data loaded but cache/index is empty")
-                raise MissingConfigError("GEDCOM data object/cache/index is empty after loading")
-
-            print(
-                f"✅ GEDCOM loaded from: FILE ({len(gedcom_data.indi_index)} individuals, "
-                f"{load_end_time - load_start_time:.2f}s)"
-            )
-
-            # Cache the loaded data in memory for subsequent runs
-            _GedcomCacheState.cache = gedcom_data
-
-            return gedcom_data
+            return _load_with_standard_method(gedcom_path)
 
     except MissingConfigError:
         raise
@@ -1109,10 +1129,63 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
     display_family_members(family_data)
 
 
+def _extract_year_from_pattern(years_part: str, pattern: str) -> Optional[int]:
+    """Extract year from a specific regex pattern."""
+    import re
+    match = re.search(pattern, years_part)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return None
+
+
+def _extract_years_from_range(years_part: str) -> tuple[Optional[int], Optional[int]]:
+    """Extract birth and death years from simple range format (1900-1950)."""
+    if "-" not in years_part:
+        return None, None
+
+    parts = years_part.split("-")
+    birth_year = None
+    death_year = None
+
+    try:
+        if parts[0].strip().isdigit():
+            birth_year = int(parts[0].strip())
+        if len(parts) > 1 and parts[1].strip().isdigit():
+            death_year = int(parts[1].strip())
+    except (ValueError, IndexError):
+        pass
+
+    return birth_year, death_year
+
+
+def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[int]]:
+    """Extract birth and death years from formatted name string."""
+    if "(" not in name or ")" not in name:
+        return name, None, None
+
+    years_part = name[name.find("(")+1:name.find(")")]
+
+    # Try to extract birth year from "b. <date>" pattern
+    birth_year = _extract_year_from_pattern(years_part, r'b\.\s+.*?(\d{4})')
+
+    # Try to extract death year from "d. <date>" pattern
+    death_year = _extract_year_from_pattern(years_part, r'd\.\s+.*?(\d{4})')
+
+    # If no "b." or "d." found, try simple year range format
+    if not birth_year and not death_year:
+        birth_year, death_year = _extract_years_from_range(years_part)
+
+    # Remove years from name
+    clean_name = name[:name.find("(")].strip()
+
+    return clean_name, birth_year, death_year
+
+
 def _convert_gedcom_relatives_to_standard_format(relatives: list) -> list[dict]:
     """Convert GEDCOM relative objects to standardized dictionary format."""
-    import re
-
     standardized = []
     for relative in relatives:
         if not relative:
@@ -1125,45 +1198,10 @@ def _convert_gedcom_relatives_to_standard_format(relatives: list) -> list[dict]:
             name = name.strip()[2:].strip()
 
         # Extract years from the formatted string
-        # Formats: "(b. 26 April 1906, d. 16 JULY 1988)" or "(1900-1950)" or "(b. 1900)"
-        birth_year = None
-        death_year = None
-
-        if "(" in name and ")" in name:
-            years_part = name[name.find("(")+1:name.find(")")]
-
-            # Try to extract birth year from "b. <date>" pattern
-            birth_match = re.search(r'b\.\s+.*?(\d{4})', years_part)
-            if birth_match:
-                try:
-                    birth_year = int(birth_match.group(1))
-                except ValueError:
-                    pass
-
-            # Try to extract death year from "d. <date>" pattern
-            death_match = re.search(r'd\.\s+.*?(\d{4})', years_part)
-            if death_match:
-                try:
-                    death_year = int(death_match.group(1))
-                except ValueError:
-                    pass
-
-            # If no "b." or "d." found, try simple year range format "(1900-1950)"
-            if not birth_year and not death_year and "-" in years_part:
-                parts = years_part.split("-")
-                try:
-                    if parts[0].strip().isdigit():
-                        birth_year = int(parts[0].strip())
-                    if len(parts) > 1 and parts[1].strip().isdigit():
-                        death_year = int(parts[1].strip())
-                except (ValueError, IndexError):
-                    pass
-
-            # Remove years from name
-            name = name[:name.find("(")].strip()
+        clean_name, birth_year, death_year = _extract_years_from_name(name)
 
         standardized.append({
-            "name": name,
+            "name": clean_name,
             "birth_year": birth_year,
             "death_year": death_year,
         })

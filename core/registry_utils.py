@@ -53,13 +53,64 @@ from error_handling import (
 class SmartFunctionRegistry:
     """Enhanced function registry with intelligent auto-registration."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.registry: Dict[str, Any] = {}
         self.registration_stats = {
             "total_registered": 0,
             "modules_processed": 0,
             "duplicate_attempts": 0,
         }
+
+    def _get_default_include_patterns(self) -> List[str]:
+        """Get default include patterns for registration."""
+        return [
+            "run_comprehensive_tests",
+            "test_",
+            "call_",
+            "get_",
+            "create_",
+            "parse_",
+            "format_",
+            "cache_",
+            "demonstrate_",
+            "handle_",
+            "process_",
+            "send_",
+            "fetch_",
+            "validate_",
+            "Response",  # For API response classes
+        ]
+
+    def _get_default_exclude_patterns(self) -> List[str]:
+        """Get default exclude patterns for registration."""
+        return [
+            "_private",
+            "__",
+            "_internal",
+            "_temp",
+            "logger",
+            "config",
+        ]
+
+    def _should_register_item(
+        self, name: str, obj: Any, include_patterns: List[str], exclude_patterns: List[str]
+    ) -> bool:
+        """Determine if an item should be registered."""
+        # Skip if not callable
+        if not callable(obj):
+            return False
+
+        # Skip if already registered (prevent duplicates)
+        if name in self.registry:
+            self.registration_stats["duplicate_attempts"] += 1
+            return False
+
+        # Apply exclude patterns
+        if any(pattern in name for pattern in exclude_patterns):
+            return False
+
+        # Apply include patterns
+        return any(name.startswith(pattern) or pattern in name for pattern in include_patterns)
 
     def register_module(
         self,
@@ -85,57 +136,15 @@ class SmartFunctionRegistry:
             Number of functions successfully registered
         """
         if include_patterns is None:
-            include_patterns = [
-                "run_comprehensive_tests",
-                "test_",
-                "call_",
-                "get_",
-                "create_",
-                "parse_",
-                "format_",
-                "cache_",
-                "demonstrate_",
-                "handle_",
-                "process_",
-                "send_",
-                "fetch_",
-                "validate_",
-                "Response",  # For API response classes
-            ]
+            include_patterns = self._get_default_include_patterns()
 
         if exclude_patterns is None:
-            exclude_patterns = [
-                "_private",
-                "__",
-                "_internal",
-                "_temp",
-                "logger",
-                "config",
-            ]
+            exclude_patterns = self._get_default_exclude_patterns()
 
         registered_count = 0
 
         for name, obj in module_globals.items():
-            # Skip if not callable
-            if not callable(obj):
-                continue
-
-            # Skip if already registered (prevent duplicates)
-            if name in self.registry:
-                self.registration_stats["duplicate_attempts"] += 1
-                continue
-
-            # Apply exclude patterns
-            if any(pattern in name for pattern in exclude_patterns):
-                continue
-
-            # Apply include patterns
-            should_include = any(
-                name.startswith(pattern) or pattern in name
-                for pattern in include_patterns
-            )
-
-            if should_include:
+            if self._should_register_item(name, obj, include_patterns, exclude_patterns):
                 try:
                     self.registry[name] = obj
                     registered_count += 1
@@ -149,7 +158,7 @@ class SmartFunctionRegistry:
 
         return registered_count
 
-    def register(self, name: str, func: Callable):
+    def register(self, name: str, func: Callable) -> None:
         """Register a single function (backwards compatibility)."""
         if name not in self.registry:
             self.registry[name] = func
@@ -159,7 +168,7 @@ class SmartFunctionRegistry:
         """Check if a function is available and callable."""
         return name in self.registry and callable(self.registry[name])
 
-    def get(self, name: str, default=None):
+    def get(self, name: str, default: Any = None) -> Any:
         """Get a function from the registry."""
         return self.registry.get(name, default)
 

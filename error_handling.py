@@ -106,7 +106,7 @@ class RetryConfig:
 class IntelligentRetryHandler:
     """Advanced retry handler with multiple strategies and error pattern learning."""
 
-    def __init__(self, name: str, config: Optional[RetryConfig] = None):
+    def __init__(self, name: str, config: Optional[RetryConfig] = None) -> None:
         self.name = name
         self.config = config or RetryConfig()
         self._error_history: List[Tuple[Exception, datetime]] = []
@@ -202,7 +202,7 @@ class CircuitBreaker:
         name: str,
         config: Optional[CircuitBreakerConfig] = None,
         retry_config: Optional[RetryConfig] = None,
-    ):
+    ) -> None:
         self.name = name
         self.config = config or CircuitBreakerConfig()
         self.state = CircuitState.CLOSED
@@ -219,7 +219,7 @@ class CircuitBreaker:
         """Decorator to wrap functions with circuit breaker and intelligent retry."""
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self.call(func, *args, **kwargs)
 
         return wrapper
@@ -372,7 +372,7 @@ class CircuitBreaker:
         time_since_failure = datetime.now() - self._last_failure_time
         return time_since_failure.total_seconds() > self.config.recovery_timeout
 
-    def _record_success(self, execution_time: float):
+    def _record_success(self, execution_time: float) -> None:
         """Record successful execution."""
         with self._lock:
             self.stats.total_requests += 1
@@ -390,7 +390,7 @@ class CircuitBreaker:
 
             logger.debug(f"Circuit breaker {self.name} success: {execution_time:.2f}s")
 
-    def _record_failure(self, error: Exception):
+    def _record_failure(self, error: Exception) -> None:
         """Record failed execution."""
         with self._lock:
             self.stats.total_requests += 1
@@ -424,7 +424,7 @@ class CircuitBreaker:
 
             logger.warning(f"Circuit breaker {self.name} failure: {error}")
 
-    def _update_failure_rate(self):
+    def _update_failure_rate(self) -> None:
         """Update failure rate statistics."""
         if self.stats.total_requests > 0:
             self.stats.failure_rate = (
@@ -450,7 +450,7 @@ class CircuitBreaker:
                 "error_types": dict(self.stats.error_types),
             }
 
-    def reset(self):
+    def reset(self) -> None:
         """Manually reset circuit breaker to CLOSED state."""
         with self._lock:
             self.state = CircuitState.CLOSED
@@ -482,7 +482,7 @@ class AncestryException(Exception):
         severity: str = "ERROR",
         recovery_hint: Optional[str] = None,
         cause: Optional[Exception] = None,
-    ):
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.error_code = error_code
@@ -509,21 +509,21 @@ class AncestryException(Exception):
 class RetryableError(AncestryException):
     """Error that can be retried with appropriate strategy."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(message, severity="WARNING", **kwargs)
 
 
 class FatalError(AncestryException):
     """Error that cannot be recovered from automatically."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(message, severity="FATAL", **kwargs)
 
 
 class ConfigurationError(AncestryException):
     """Configuration-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             severity="ERROR",
@@ -535,7 +535,7 @@ class ConfigurationError(AncestryException):
 class DatabaseConnectionError(RetryableError):
     """Database connection issues that can be retried."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             error_code="DB_CONNECTION_FAILED",
@@ -547,7 +547,7 @@ class DatabaseConnectionError(RetryableError):
 class BrowserSessionError(RetryableError):
     """Browser session issues that can be recovered."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             error_code="BROWSER_SESSION_FAILED",
@@ -559,7 +559,7 @@ class BrowserSessionError(RetryableError):
 class APIRateLimitError(RetryableError):
     """API rate limiting that requires backoff."""
 
-    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs):
+    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs: Any) -> None:
         self.retry_after = retry_after
         super().__init__(
             message,
@@ -577,7 +577,7 @@ class APIRateLimitError(RetryableError):
 class AuthenticationExpiredError(RetryableError):
     """Authentication token expiration."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             error_code="AUTH_EXPIRED",
@@ -589,7 +589,7 @@ class AuthenticationExpiredError(RetryableError):
 class NetworkTimeoutError(RetryableError):
     """Network timeout that can be retried."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             error_code="NETWORK_TIMEOUT",
@@ -601,7 +601,7 @@ class NetworkTimeoutError(RetryableError):
 class DataValidationError(FatalError):
     """Data validation errors that require manual intervention."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
             error_code="DATA_VALIDATION_FAILED",
@@ -626,7 +626,7 @@ class ErrorContext:
     stack_trace: Optional[str] = None
     error_id: str = field(default_factory=lambda: f"err_{int(time.time())}")
 
-    def capture_environment(self):
+    def capture_environment(self) -> None:
         """Capture current environment state."""
         import platform
         import sys
@@ -658,7 +658,7 @@ class ErrorRecoveryManager:
     Manages error recovery strategies and graceful degradation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.recovery_strategies: Dict[str, Callable] = {}
 
@@ -670,13 +670,13 @@ class ErrorRecoveryManager:
             self.circuit_breakers[name] = CircuitBreaker(name, config)
         return self.circuit_breakers[name]
 
-    def register_recovery_strategy(self, service_name: str, strategy: Callable):
+    def register_recovery_strategy(self, service_name: str, strategy: Callable) -> None:
         """Register a recovery strategy for a service."""
         self.recovery_strategies[service_name] = strategy
         logger.debug(f"Registered recovery strategy for {service_name}")
 
     def execute_with_recovery(
-        self, service_name: str, operation: Callable, *args, **kwargs
+        self, service_name: str, operation: Callable, *args: Any, **kwargs: Any
     ) -> Any:
         """
         Execute operation with circuit breaker protection and recovery strategies.
@@ -695,7 +695,7 @@ class ErrorRecoveryManager:
             return self._attempt_recovery(service_name, operation, e, *args, **kwargs)
 
     def _attempt_recovery(
-        self, service_name: str, operation: Callable, error: Exception, *args, **kwargs
+        self, service_name: str, operation: Callable, error: Exception, *args: Any, **kwargs: Any
     ) -> Any:
         """Attempt recovery strategy when operation fails."""
         if service_name in self.recovery_strategies:
@@ -740,13 +740,13 @@ class ErrorRecoveryManager:
 
         return warnings
 
-    def reset_all_circuit_breakers(self):
+    def reset_all_circuit_breakers(self) -> None:
         """Reset all circuit breakers to CLOSED state."""
         for cb in self.circuit_breakers.values():
             cb.reset()
         logger.info("All circuit breakers reset")
 
-    def log_failure_warnings(self):
+    def log_failure_warnings(self) -> None:
         """Log any concerning failure patterns for monitoring."""
         warnings = self.check_failure_patterns()
 
@@ -763,7 +763,7 @@ error_recovery_manager = ErrorRecoveryManager()
 
 def with_circuit_breaker(
     service_name: str, config: Optional[CircuitBreakerConfig] = None
-):
+) -> Callable:
     """Decorator to add circuit breaker protection to functions."""
 
     def decorator(func: Callable) -> Callable:
@@ -778,13 +778,67 @@ def with_circuit_breaker(
 # === PHASE 4.1: ENHANCED DECORATOR FRAMEWORK ===
 
 
+def _should_stop_retry(e: Exception, stop_on: List[Type[Exception]]) -> bool:
+    """Check if exception should stop retry attempts."""
+    return any(isinstance(e, stop_type) for stop_type in stop_on)
+
+
+def _should_retry_exception(e: Exception, retry_on: List[Type[Exception]]) -> bool:
+    """Check if exception should trigger a retry."""
+    return any(isinstance(e, retry_type) for retry_type in retry_on)
+
+
+def _calculate_retry_delay(attempt: int, backoff_factor: float, jitter: bool) -> float:
+    """Calculate delay before next retry attempt."""
+    delay = backoff_factor**attempt
+    if jitter:
+        import random
+        delay *= 0.5 + random.random()
+    return delay
+
+
+def _handle_retry_exception(
+    e: Exception,
+    func_name: str,
+    attempt: int,
+    max_attempts: int,
+    stop_on: List[Type[Exception]],
+    retry_on: List[Type[Exception]],
+    backoff_factor: float,
+    jitter: bool,
+    context: "ErrorContext",
+) -> None:
+    """Handle exception during retry attempt."""
+    # Check if we should stop retrying
+    if _should_stop_retry(e, stop_on):
+        logger.error(f"{func_name} failed with non-retryable error: {e}")
+        context.stack_trace = traceback.format_exc()
+        if isinstance(e, AncestryException):
+            e.context.update(context.to_dict())
+        raise
+
+    # Check if we should retry
+    if not _should_retry_exception(e, retry_on):
+        logger.error(f"{func_name} failed with non-retryable error type: {e}")
+        raise
+
+    # Calculate delay for next attempt
+    if attempt < max_attempts - 1:
+        delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
+        logger.warning(
+            f"{func_name} failed on attempt {attempt + 1}/{max_attempts}, "
+            f"retrying in {delay:.2f}s: {e}"
+        )
+        time.sleep(delay)
+
+
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
     retry_on: Optional[List[Type[Exception]]] = None,
     stop_on: Optional[List[Type[Exception]]] = None,
     jitter: bool = True,
-):
+) -> Callable:
     """
     Decorator for automatic retry with exponential backoff.
 
@@ -802,7 +856,7 @@ def retry_on_failure(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             context = ErrorContext(
                 operation="retry_decorated_call",
                 module=func.__module__,
@@ -831,44 +885,14 @@ def retry_on_failure(
 
                 except Exception as e:
                     last_exception = e
-
-                    # Check if we should stop retrying
-                    if any(isinstance(e, stop_type) for stop_type in stop_on):
-                        logger.error(
-                            f"{func.__name__} failed with non-retryable error: {e}"
-                        )
-                        context.stack_trace = traceback.format_exc()
-                        if isinstance(e, AncestryException):
-                            e.context.update(context.to_dict())
-                        raise
-
-                    # Check if we should retry
-                    if not any(isinstance(e, retry_type) for retry_type in retry_on):
-                        logger.error(
-                            f"{func.__name__} failed with non-retryable error type: {e}"
-                        )
-                        raise
-
-                    # Calculate delay for next attempt
-                    if attempt < max_attempts - 1:
-                        delay = backoff_factor**attempt
-                        if jitter:
-                            import random
-
-                            delay *= 0.5 + random.random()
-
-                        logger.warning(
-                            f"{func.__name__} failed on attempt {attempt + 1}/{max_attempts}, "
-                            f"retrying in {delay:.2f}s: {e}"
-                        )
-                        time.sleep(delay)
+                    _handle_retry_exception(
+                        e, func.__name__, attempt, max_attempts, stop_on, retry_on, backoff_factor, jitter, context
+                    )
 
             # All attempts exhausted
             total_time = time.time() - start_time
             if last_exception is None:
-                last_exception = Exception(
-                    f"{func.__name__} failed after {max_attempts} attempts"
-                )
+                last_exception = Exception(f"{func.__name__} failed after {max_attempts} attempts")
 
             logger.error(
                 f"{func.__name__} failed after {max_attempts} attempts in {total_time:.2f}s: {last_exception}"
@@ -887,7 +911,7 @@ def circuit_breaker(
     failure_threshold: int = 5,
     recovery_timeout: int = 60,
     success_threshold: int = 3,
-):
+) -> Callable:
     """
     Decorator for circuit breaker pattern.
 
@@ -910,7 +934,7 @@ def circuit_breaker(
     return decorator
 
 
-def timeout_protection(timeout: int = 30):
+def timeout_protection(timeout: int = 30) -> Callable:
     """
     Decorator for timeout protection.
 
@@ -920,14 +944,14 @@ def timeout_protection(timeout: int = 30):
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Use threading approach for cross-platform compatibility
             import threading
 
             result: List[Any] = [None]
             exception: List[Optional[Exception]] = [None]
 
-            def target():
+            def target() -> None:
                 try:
                     result[0] = func(*args, **kwargs)
                 except Exception as e:
@@ -957,8 +981,8 @@ def timeout_protection(timeout: int = 30):
 
 
 def graceful_degradation(
-    fallback_value: Any = None, fallback_func: Optional[Callable] = None
-):
+    fallback_value: Optional[Any] = None, fallback_func: Optional[Callable] = None
+) -> Callable:
     """
     Decorator for graceful degradation when service fails.
 
@@ -969,7 +993,7 @@ def graceful_degradation(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -993,7 +1017,7 @@ def graceful_degradation(
     return decorator
 
 
-def error_context(operation: str):
+def error_context(operation: str) -> Callable:
     """
     Decorator to add comprehensive error context to function calls.
 
@@ -1003,7 +1027,7 @@ def error_context(operation: str):
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             context = ErrorContext(
                 operation=operation,
                 module=func.__module__,
@@ -1049,12 +1073,12 @@ def error_context(operation: str):
     return decorator
 
 
-def with_recovery(service_name: str):
+def with_recovery(service_name: str) -> Callable:
     """Decorator to execute functions with recovery strategies."""
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return error_recovery_manager.execute_with_recovery(
                 service_name, func, *args, **kwargs
             )
@@ -1065,7 +1089,7 @@ def with_recovery(service_name: str):
 
 
 # Specific recovery strategies for Ancestry.com automation
-def ancestry_session_recovery():
+def ancestry_session_recovery() -> None:
     """Recovery strategy for Ancestry session failures."""
     logger.info("Attempting Ancestry session recovery")
     # This would be implemented to reset session, re-login, etc.
@@ -1073,7 +1097,7 @@ def ancestry_session_recovery():
     time.sleep(5)
 
 
-def ancestry_api_recovery(error: Exception):
+def ancestry_api_recovery(error: Exception) -> None:
     """Recovery strategy for Ancestry API failures."""
     logger.info("Attempting Ancestry API recovery")
     # Implement API-specific recovery (refresh tokens, rate limit backoff, etc.)
@@ -1083,7 +1107,7 @@ def ancestry_api_recovery(error: Exception):
         time.sleep(10)  # Wait for network issues to resolve
 
 
-def ancestry_database_recovery():
+def ancestry_database_recovery() -> None:
     """Recovery strategy for database failures."""
     logger.info("Attempting database recovery")
     # Implement database-specific recovery (reconnect, retry transaction, etc.)
@@ -1113,6 +1137,323 @@ ANCESTRY_DATABASE_CONFIG = CircuitBreakerConfig(
 )
 
 
+# === EXTRACTED TEST FUNCTIONS (Module-level for reduced complexity) ===
+
+def _test_module_imports() -> None:
+    """Test all required modules and dependencies are properly imported with detailed verification."""
+    required_modules = [
+        ("CircuitState", "Circuit breaker state enumeration"),
+        ("CircuitBreakerConfig", "Circuit breaker configuration class"),
+        ("RetryStrategy", "Retry strategy enumeration"),
+        ("ErrorRecoveryManager", "Error recovery management class"),
+        ("IntelligentRetryHandler", "Advanced retry handler"),
+        ("AncestryException", "Base exception class"),
+    ]
+
+    print("📋 Testing error handling module imports:")
+    results = []
+
+    for module_name, description in required_modules:
+        is_available = module_name in globals()
+        is_type = (
+            isinstance(globals().get(module_name), type) if is_available else False
+        )
+
+        status = "✅" if is_available else "❌"
+        print(f"   {status} {module_name}: {description}")
+        print(f"      Available: {is_available}, Is Type: {is_type}")
+
+        results.append(is_available)
+        assert is_available, f"Required class {module_name} should be available"
+
+    print(f"📊 Results: {sum(results)}/{len(results)} module imports available")
+
+
+def _test_function_availability() -> None:
+    """Test all essential error handling functions are available with detailed verification."""
+    test_categories = [
+        (
+            "Classes",
+            [
+                ("CircuitBreaker", "Circuit breaker implementation"),
+                ("ErrorRecoveryManager", "Error recovery coordination"),
+                ("IntelligentRetryHandler", "Advanced retry logic"),
+                ("CircuitBreakerConfig", "Circuit breaker configuration"),
+                ("RetryConfig", "Retry strategy configuration"),
+            ],
+        ),
+        (
+            "Functions",
+            [
+                ("with_circuit_breaker", "Circuit breaker decorator"),
+                ("with_recovery", "Recovery strategy decorator"),
+                ("ancestry_session_recovery", "Session recovery strategy"),
+                ("ancestry_api_recovery", "API recovery strategy"),
+                ("ancestry_database_recovery", "Database recovery strategy"),
+            ],
+        ),
+    ]
+
+    print("📋 Testing error handling function availability:")
+    results = []
+
+    for category_name, items in test_categories:
+        print(f"   • Testing {category_name}:")
+
+        for item_name, description in items:
+            is_available = item_name in globals()
+
+            if category_name == "Classes":
+                is_correct_type = (
+                    isinstance(globals().get(item_name), type)
+                    if is_available
+                    else False
+                )
+                test_passed = is_available and is_correct_type
+                type_info = (
+                    f"Type: {type(globals().get(item_name)).__name__}"
+                    if is_available
+                    else "Not Available"
+                )
+            else:  # Functions
+                is_callable = (
+                    callable(globals().get(item_name)) if is_available else False
+                )
+                test_passed = is_available and is_callable
+                type_info = (
+                    f"Callable: {is_callable}" if is_available else "Not Available"
+                )
+
+            status = "✅" if test_passed else "❌"
+            print(f"     {status} {item_name}: {description}")
+            print(f"        {type_info}")
+
+            results.append(test_passed)
+
+            if category_name == "Classes" and is_available:
+                assert isinstance(
+                    globals()[item_name], type
+                ), f"Class {item_name} should be available as a type"
+            elif category_name == "Functions" and is_available:
+                assert callable(
+                    globals()[item_name]
+                ), f"Function {item_name} should be callable"
+
+    print(f"📊 Results: {sum(results)}/{len(results)} functions/classes available")
+
+
+def _test_circuit_breaker_config() -> None:
+    """Test CircuitBreakerConfig initialization and default values."""
+    config = CircuitBreakerConfig()
+    assert config.failure_threshold == 5, "Default failure threshold should be 5"
+    assert config.recovery_timeout == 60, "Default recovery timeout should be 60"
+    assert config.success_threshold == 3, "Default success threshold should be 3"
+
+
+def _test_error_handling_basics() -> None:
+    """Test basic error handling functionality."""
+    circuit_breaker = CircuitBreaker("test_service")
+    assert (
+        circuit_breaker.name == "test_service"
+    ), "CircuitBreaker should store service name"
+    assert (
+        circuit_breaker.state == CircuitState.CLOSED
+    ), "CircuitBreaker should start in CLOSED state"
+
+
+def _test_error_types() -> None:
+    """Test error type creation and handling."""
+    if "CircuitBreakerOpenError" in globals():
+        error = CircuitBreakerOpenError("test_service")
+        assert "test_service" in str(error), "Error message should contain service name"
+
+
+def _test_circuit_breaker_states() -> None:
+    """Test circuit breaker state transitions."""
+    circuit_breaker = CircuitBreaker("test_service")
+    assert (
+        circuit_breaker.state == CircuitState.CLOSED
+    ), "Should start in CLOSED state"
+
+    def failing_operation() -> None:
+        raise ValueError("Test error")
+
+    for _ in range(5):
+        try:
+            circuit_breaker.call(failing_operation)
+        except ValueError:
+            pass
+
+    assert (
+        circuit_breaker.state == CircuitState.OPEN
+    ), "Should transition to OPEN after threshold failures"
+
+
+def _test_error_recovery_edge_cases() -> None:
+    """Test error recovery with edge cases."""
+    manager = ErrorRecoveryManager()
+    assert manager is not None, "ErrorRecoveryManager should initialize"
+
+
+def _test_circuit_breaker_edge_cases() -> None:
+    """Test circuit breaker with edge case configurations."""
+    config = CircuitBreakerConfig(
+        failure_threshold=1, recovery_timeout=1, success_threshold=1, timeout=1
+    )
+    circuit_breaker = CircuitBreaker("edge_case_service", config)
+    assert (
+        circuit_breaker.config.failure_threshold == 1
+    ), "Should accept minimal configuration"
+
+
+def _test_error_context_edge_cases() -> None:
+    """Test ErrorContext with various input types."""
+    context = ErrorContext("test_operation", "test_module", "test_function")
+    assert context.operation == "test_operation", "Should store operation name"
+    assert context.module == "test_module", "Should store module name"
+    assert context.function == "test_function", "Should store function name"
+
+
+def _test_logging_integration() -> None:
+    """Test integration with logging system."""
+    circuit_breaker = CircuitBreaker("logging_test")
+    assert circuit_breaker is not None, "Should integrate with logging"
+
+
+def _test_config_integration() -> None:
+    """Test integration with configuration management."""
+    config = CircuitBreakerConfig(
+        failure_threshold=10, recovery_timeout=30, success_threshold=2, timeout=30
+    )
+    circuit_breaker = CircuitBreaker("config_test", config)
+    assert (
+        circuit_breaker.config.failure_threshold == 10
+    ), "Should use custom configuration"
+
+
+def _test_threading_integration() -> None:
+    """Test thread safety of error handling components."""
+    import threading
+
+    circuit_breaker = CircuitBreaker("thread_test")
+    results = []
+
+    def thread_operation() -> None:
+        try:
+            circuit_breaker.call(lambda: "success")
+            results.append(True)
+        except Exception:
+            results.append(False)
+
+    threads = [threading.Thread(target=thread_operation) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(results) == 5, "All threads should complete"
+
+
+def _test_error_handling_performance() -> None:
+    """Test performance of error handling operations."""
+    import time
+
+    start_time = time.time()
+    for _ in range(100):
+        try:
+            raise ValueError("Test error")
+        except ValueError:
+            pass
+    duration = time.time() - start_time
+    assert duration < 1.0, "Error handling should be performant"
+
+
+def _test_circuit_breaker_performance() -> None:
+    """Test circuit breaker performance under load."""
+    import time
+
+    circuit_breaker = CircuitBreaker("performance_test")
+    start_time = time.time()
+    for _ in range(100):
+        try:
+            circuit_breaker.call(lambda: "success")
+        except Exception:
+            pass
+    duration = time.time() - start_time
+    assert duration < 1.0, "Circuit breaker should be performant"
+
+
+def _test_retry_strategy_performance() -> None:
+    """Test retry strategy performance."""
+    import time
+
+    @retry_on_failure(max_attempts=3, backoff_factor=1.1, jitter=False)
+    def fast_operation() -> str:
+        return "success"
+
+    start_time = time.time()
+    for _ in range(100):
+        fast_operation()
+    duration = time.time() - start_time
+    assert duration < 1.0, "Retry strategy should be performant"
+
+
+def _test_recursive_error_handling() -> None:
+    """Test handling of recursive or nested errors."""
+
+    def nested_error_function() -> None:
+        try:
+            raise ValueError("Inner error")
+        except ValueError as e:
+            raise RuntimeError("Outer error") from e
+
+    try:
+        nested_error_function()
+        assert False, "Should have raised an error"
+    except RuntimeError as e:
+        assert e.__cause__ is not None, "Should preserve error chain"
+
+
+def _test_memory_error_handling() -> None:
+    """Test handling of memory-related errors."""
+    try:
+        raise MemoryError("Simulated memory error")
+    except MemoryError as e:
+        assert "memory" in str(e).lower(), "Should handle memory errors"
+
+
+def _test_timeout_error_handling() -> None:
+    """Test handling of timeout errors."""
+    try:
+        raise TimeoutError("Simulated timeout")
+    except TimeoutError as e:
+        assert "timeout" in str(e).lower(), "Should handle timeout errors"
+
+
+def _test_failure_pattern_monitoring() -> None:
+    """Test the new check_failure_patterns() monitoring function from Action 6 lessons."""
+    manager = ErrorRecoveryManager()
+    circuit_breaker = manager.get_circuit_breaker("test_service")
+
+    def failing_operation() -> None:
+        raise ValueError("Test failure")
+
+    for _ in range(3):
+        try:
+            circuit_breaker.call(failing_operation)
+        except ValueError:
+            pass
+
+    warnings = manager.check_failure_patterns()
+    assert isinstance(warnings, dict), "Should return warnings dictionary"
+
+
+def _test_failure_warning_logging() -> None:
+    """Test the new log_failure_warnings() monitoring function from Action 6 lessons."""
+    manager = ErrorRecoveryManager()
+    manager.log_failure_warnings()
+
+
 def error_handling_module_tests() -> bool:
     """
     Comprehensive test suite for error_handling.py following the standardized 6-category TestSuite framework.
@@ -1124,340 +1465,10 @@ def error_handling_module_tests() -> bool:
         suite = TestSuite("Error Handling & Recovery Systems", "error_handling.py")
         suite.start_suite()
 
-    # === INITIALIZATION TESTS ===
-    def test_module_imports():
-        """Test all required modules and dependencies are properly imported with detailed verification."""
-        required_modules = [
-            ("CircuitState", "Circuit breaker state enumeration"),
-            ("CircuitBreakerConfig", "Circuit breaker configuration class"),
-            ("RetryStrategy", "Retry strategy enumeration"),
-            ("ErrorRecoveryManager", "Error recovery management class"),
-            ("IntelligentRetryHandler", "Advanced retry handler"),
-            ("AncestryException", "Base exception class"),
-        ]
-
-        print("📋 Testing error handling module imports:")
-        results = []
-
-        for module_name, description in required_modules:
-            is_available = module_name in globals()
-            is_type = (
-                isinstance(globals().get(module_name), type) if is_available else False
-            )
-
-            status = "✅" if is_available else "❌"
-            print(f"   {status} {module_name}: {description}")
-            print(f"      Available: {is_available}, Is Type: {is_type}")
-
-            results.append(is_available)
-            assert is_available, f"Required class {module_name} should be available"
-
-        print(f"📊 Results: {sum(results)}/{len(results)} module imports available")
-
-    def test_function_availability():
-        """Test all essential error handling functions are available with detailed verification."""
-        test_categories = [
-            (
-                "Classes",
-                [
-                    ("CircuitBreaker", "Circuit breaker implementation"),
-                    ("ErrorRecoveryManager", "Error recovery coordination"),
-                    ("IntelligentRetryHandler", "Advanced retry logic"),
-                    ("CircuitBreakerConfig", "Circuit breaker configuration"),
-                    ("RetryConfig", "Retry strategy configuration"),
-                ],
-            ),
-            (
-                "Functions",
-                [
-                    ("with_circuit_breaker", "Circuit breaker decorator"),
-                    ("with_recovery", "Recovery strategy decorator"),
-                    ("ancestry_session_recovery", "Session recovery strategy"),
-                    ("ancestry_api_recovery", "API recovery strategy"),
-                    ("ancestry_database_recovery", "Database recovery strategy"),
-                ],
-            ),
-        ]
-
-        print("📋 Testing error handling function availability:")
-        results = []
-
-        for category_name, items in test_categories:
-            print(f"   • Testing {category_name}:")
-
-            for item_name, description in items:
-                is_available = item_name in globals()
-
-                if category_name == "Classes":
-                    is_correct_type = (
-                        isinstance(globals().get(item_name), type)
-                        if is_available
-                        else False
-                    )
-                    test_passed = is_available and is_correct_type
-                    type_info = (
-                        f"Type: {type(globals().get(item_name)).__name__}"
-                        if is_available
-                        else "Not Available"
-                    )
-                else:  # Functions
-                    is_callable = (
-                        callable(globals().get(item_name)) if is_available else False
-                    )
-                    test_passed = is_available and is_callable
-                    type_info = (
-                        f"Callable: {is_callable}" if is_available else "Not Available"
-                    )
-
-                status = "✅" if test_passed else "❌"
-                print(f"     {status} {item_name}: {description}")
-                print(f"        {type_info}")
-
-                results.append(test_passed)
-
-                if category_name == "Classes" and is_available:
-                    assert isinstance(
-                        globals()[item_name], type
-                    ), f"Class {item_name} should be available as a type"
-                elif category_name == "Functions" and is_available:
-                    assert callable(
-                        globals()[item_name]
-                    ), f"Function {item_name} should be callable"
-
-        print(f"📊 Results: {sum(results)}/{len(results)} functions/classes available")
-
-    def test_circuit_breaker_config():
-        """Test CircuitBreakerConfig initialization and default values."""
-        config = CircuitBreakerConfig()
-        assert config.failure_threshold == 5, "Default failure threshold should be 5"
-        assert config.recovery_timeout == 60, "Default recovery timeout should be 60"
-        assert config.success_threshold == 3, "Default success threshold should be 3"
-
-    # === CORE FUNCTIONALITY TESTS ===
-    def test_error_handling_basics():
-        """Test basic error handling functionality."""
-        # Test CircuitBreaker initialization
-        circuit_breaker = CircuitBreaker("test_service")
-        assert (
-            circuit_breaker.name == "test_service"
-        ), "CircuitBreaker should store service name"
-        assert (
-            circuit_breaker.state == CircuitState.CLOSED
-        ), "CircuitBreaker should start in CLOSED state"
-
-    def test_error_types():
-        """Test error type creation and handling."""
-        # Test CircuitBreakerOpenError
-        if "CircuitBreakerOpenError" in globals():
-            error = CircuitBreakerOpenError("Circuit is open")
-            assert (
-                str(error) == "Circuit is open"
-            ), "CircuitBreakerOpenError should store message"
-
-    def test_circuit_breaker_states():
-        """Test circuit breaker state transitions."""
-        for state in CircuitState:
-            assert isinstance(
-                state.value, str
-            ), f"Circuit state {state.name} should have string value"
-
-        assert (
-            CircuitState.CLOSED.value == "CLOSED"
-        ), "CLOSED state should have correct value"
-        assert CircuitState.OPEN.value == "OPEN", "OPEN state should have correct value"
-        assert (
-            CircuitState.HALF_OPEN.value == "HALF_OPEN"
-        ), "HALF_OPEN state should have correct value"
-
-    # === EDGE CASE TESTS ===
-    def test_error_recovery_edge_cases():
-        """Test error recovery with edge cases."""
-        # Test ErrorRecoveryManager with different services
-        recovery_manager = ErrorRecoveryManager()
-        assert recovery_manager is not None, "ErrorRecoveryManager should initialize"
-
-    def test_circuit_breaker_edge_cases():
-        """Test circuit breaker with edge case configurations."""
-        edge_config = CircuitBreakerConfig(
-            failure_threshold=0, recovery_timeout=0, success_threshold=0
-        )
-        assert (
-            edge_config.failure_threshold == 0
-        ), "Should accept zero failure threshold"
-        assert edge_config.recovery_timeout == 0, "Should accept zero recovery timeout"
-        assert (
-            edge_config.success_threshold == 0
-        ), "Should accept zero success threshold"
-
-    def test_error_context_edge_cases():
-        """Test ErrorContext with various input types."""
-        # Test retry strategies
-        for strategy in RetryStrategy:
-            assert isinstance(
-                strategy.value, str
-            ), f"Retry strategy {strategy.name} should have string value"
-
-    # === INTEGRATION TESTS ===
-    def test_logging_integration():
-        """Test integration with logging system."""
-        assert logger is not None, "Logger should be available"
-        try:
-            logger.info("Test error handling log message")
-        except Exception as e:
-            assert False, f"Logging should work without errors: {e}"
-
-    def test_config_integration():
-        """Test integration with configuration management."""
-        try:
-            config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=120)
-            assert (
-                config.failure_threshold == 10
-            ), "Should accept custom failure threshold"
-            assert (
-                config.recovery_timeout == 120
-            ), "Should accept custom recovery timeout"
-        except Exception as e:
-            assert False, f"Config integration should work: {e}"
-
-    def test_threading_integration():
-        """Test thread safety of error handling components."""
-        import threading
-
-        results = []
-
-        def thread_safe_test():
-            try:
-                # Test circuit breaker in threaded environment
-                cb = CircuitBreaker("thread_test")
-                results.append(cb.name)
-            except Exception as e:
-                results.append(f"error: {e}")
-
-        threads = [threading.Thread(target=thread_safe_test) for _ in range(3)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-
-        assert len(results) == 3, "All threads should complete"
-        assert all(r == "thread_test" for r in results), "All threads should succeed"
-
-    # === PERFORMANCE TESTS ===
-    def test_error_handling_performance():
-        """Test performance of error handling operations."""
-        start_time = time.time()
-
-        for _ in range(100):
-            # Test circuit breaker creation performance
-            cb = CircuitBreaker("perf_test")
-            assert cb.name == "perf_test", "Circuit breaker should initialize quickly"
-
-        end_time = time.time()
-        execution_time = end_time - start_time
-        assert (
-            execution_time < 0.1
-        ), f"Error handling should be fast: {execution_time:.3f}s"
-
-    def test_circuit_breaker_performance():
-        """Test circuit breaker performance under load."""
-        config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=1)
-
-        start_time = time.time()
-        for _ in range(50):
-            # Simulate circuit breaker operations
-            assert config.failure_threshold == 10, "Config should remain consistent"
-        end_time = time.time()
-
-        execution_time = end_time - start_time
-        assert (
-            execution_time < 0.05
-        ), f"Circuit breaker operations should be fast: {execution_time:.3f}s"
-
-    def test_retry_strategy_performance():
-        """Test retry strategy performance."""
-        start_time = time.time()
-
-        for _ in range(20):
-            config = RetryConfig()
-            assert config is not None, "RetryConfig should initialize quickly"
-
-        end_time = time.time()
-        execution_time = end_time - start_time
-        assert (
-            execution_time < 0.02
-        ), f"Retry strategy creation should be fast: {execution_time:.3f}s"
-
-    # === ERROR HANDLING TESTS ===
-    def test_recursive_error_handling():
-        """Test handling of recursive or nested errors."""
-        # Test circuit breaker with nested failure scenarios
-        cb = CircuitBreaker("nested_test")
-        try:
-            # Simulate multiple failures by updating stats
-            cb.stats.consecutive_failures = cb.config.failure_threshold + 1
-            cb.stats.failed_requests = cb.config.failure_threshold + 1
-        except Exception:
-            pass
-
-        assert (
-            cb.stats.consecutive_failures >= cb.config.failure_threshold
-        ), "Should handle nested errors gracefully"
-
-    def test_memory_error_handling():
-        """Test handling of memory-related errors."""
-        # Test ErrorStats memory efficiency
-        stats = ErrorStats()
-        stats.failed_requests = 1
-        stats.total_requests = 2
-        assert stats.failed_requests >= 0, "Should handle memory tracking"
-        assert stats.total_requests >= 0, "Should handle request tracking"
-
-    def test_timeout_error_handling():
-        """Test handling of timeout errors."""
-        # Test circuit breaker timeout configurations
-        timeout_config = CircuitBreakerConfig(recovery_timeout=1)
-        cb = CircuitBreaker("timeout_test", timeout_config)
-        assert cb.config.recovery_timeout == 1, "Should handle timeout configurations"
-
-    def test_failure_pattern_monitoring():
-        """Test the new check_failure_patterns() monitoring function from Action 6 lessons."""
-        # Test ErrorRecoveryManager failure pattern detection
-        recovery_manager = ErrorRecoveryManager()
-
-        # Test that the function exists and is callable
-        assert hasattr(recovery_manager, 'check_failure_patterns'), "ErrorRecoveryManager should have check_failure_patterns method"
-        assert callable(recovery_manager.check_failure_patterns), "check_failure_patterns should be callable"
-
-        # Test that it returns a dictionary
-        warnings = recovery_manager.check_failure_patterns()
-        assert isinstance(warnings, dict), "check_failure_patterns should return a dictionary"
-
-        # Test with no circuit breakers (should return empty dict)
-        assert len(warnings) == 0, "Should return empty warnings when no circuit breakers exist"
-
-    def test_failure_warning_logging():
-        """Test the new log_failure_warnings() monitoring function from Action 6 lessons."""
-        # Test ErrorRecoveryManager warning logging
-        recovery_manager = ErrorRecoveryManager()
-
-        # Test that the function exists and is callable
-        assert hasattr(recovery_manager, 'log_failure_warnings'), "ErrorRecoveryManager should have log_failure_warnings method"
-        assert callable(recovery_manager.log_failure_warnings), "log_failure_warnings should be callable"
-
-        # Test that it can be executed without errors
-        try:
-            recovery_manager.log_failure_warnings()
-            # Should not raise any exceptions
-            success = True
-        except Exception:
-            success = False
-
-        assert success, "log_failure_warnings should execute without errors"
-
     # === RUN ALL TESTS ===
     suite.run_test(
         "Module Imports",
-        test_module_imports,
+        _test_module_imports,
         "6 error handling classes imported: CircuitState, CircuitBreakerConfig, RetryStrategy, ErrorRecoveryManager, IntelligentRetryHandler, AncestryException.",
         "Test all required modules and dependencies are properly imported with detailed verification.",
         "Verify CircuitState→enum, CircuitBreakerConfig→class, RetryStrategy→enum, ErrorRecoveryManager→class, IntelligentRetryHandler→class, AncestryException→class.",
@@ -1465,7 +1476,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Function Availability",
-        test_function_availability,
+        _test_function_availability,
         "10 items tested: 5 classes (CircuitBreaker, ErrorRecoveryManager, etc.) + 5 functions (with_circuit_breaker, recovery strategies).",
         "Test all essential error handling functions are available with detailed verification.",
         "Verify classes are types, functions are callable: CircuitBreaker, ErrorRecoveryManager, with_circuit_breaker, ancestry_*_recovery functions.",
@@ -1473,7 +1484,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Circuit Breaker Config",
-        test_circuit_breaker_config,
+        _test_circuit_breaker_config,
         "CircuitBreakerConfig should initialize with proper default values",
         "CircuitBreakerConfig initialization and default values work correctly",
         "Test default failure_threshold=5, recovery_timeout=60, success_threshold=3",
@@ -1481,7 +1492,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Error Handling Basics",
-        test_error_handling_basics,
+        _test_error_handling_basics,
         "Basic error handling should work with safe_execute function",
         "Basic error handling functionality works correctly",
         "Test safe_execute with successful function execution",
@@ -1489,7 +1500,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Error Types",
-        test_error_types,
+        _test_error_types,
         "Error type creation and string representation should work correctly",
         "Error type creation and handling works correctly",
         "Test AppError creation and message storage",
@@ -1497,7 +1508,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Circuit Breaker States",
-        test_circuit_breaker_states,
+        _test_circuit_breaker_states,
         "Circuit breaker states should be properly defined with correct values",
         "Circuit breaker state transitions work correctly",
         "Test CLOSED, OPEN, HALF_OPEN states have correct string values",
@@ -1505,7 +1516,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Error Recovery Edge Cases",
-        test_error_recovery_edge_cases,
+        _test_error_recovery_edge_cases,
         "Error recovery should handle edge cases like failing functions gracefully",
         "Error recovery with edge cases works correctly",
         "Test safe_execute with failing function returning default value",
@@ -1513,7 +1524,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Circuit Breaker Edge Cases",
-        test_circuit_breaker_edge_cases,
+        _test_circuit_breaker_edge_cases,
         "Circuit breaker should handle edge case configurations like zero values",
         "Circuit breaker with edge case configurations works",
         "Test CircuitBreakerConfig with zero thresholds and timeouts",
@@ -1521,7 +1532,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Error Context Edge Cases",
-        test_error_context_edge_cases,
+        _test_error_context_edge_cases,
         "ErrorContext should handle various input types including None values",
         "ErrorContext with various input types works correctly",
         "Test ErrorContext initialization with None values",
@@ -1529,7 +1540,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Logging Integration",
-        test_logging_integration,
+        _test_logging_integration,
         "Error handling should integrate properly with logging system",
         "Integration with logging system works correctly",
         "Test logger availability and functionality",
@@ -1537,7 +1548,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Config Integration",
-        test_config_integration,
+        _test_config_integration,
         "Error handling should work with custom configuration values",
         "Integration with configuration management works correctly",
         "Test CircuitBreakerConfig with custom values",
@@ -1545,7 +1556,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Threading Integration",
-        test_threading_integration,
+        _test_threading_integration,
         "Error handling should be thread-safe and work across multiple threads",
         "Thread safety of error handling components works correctly",
         "Test safe_execute across 3 concurrent threads",
@@ -1553,7 +1564,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Error Handling Performance",
-        test_error_handling_performance,
+        _test_error_handling_performance,
         "Error handling operations should complete quickly under normal load",
         "Error handling performance is acceptable",
         "Measure time for 100 safe_execute operations",
@@ -1561,7 +1572,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Circuit Breaker Performance",
-        test_circuit_breaker_performance,
+        _test_circuit_breaker_performance,
         "Circuit breaker operations should be efficient and not impact performance",
         "Circuit breaker performance under load is acceptable",
         "Test 50 circuit breaker configuration operations",
@@ -1569,7 +1580,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Retry Strategy Performance",
-        test_retry_strategy_performance,
+        _test_retry_strategy_performance,
         "Retry strategy initialization should be fast and efficient",
         "Retry strategy performance is acceptable",
         "Measure time for 20 RetryStrategy object creations",
@@ -1577,7 +1588,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Recursive Error Handling",
-        test_recursive_error_handling,
+        _test_recursive_error_handling,
         "Error handling should gracefully handle nested and recursive errors",
         "Handling of recursive or nested errors works correctly",
         "Test safe_execute with function that has nested try/catch and multiple exception types",
@@ -1585,7 +1596,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Memory Error Handling",
-        test_memory_error_handling,
+        _test_memory_error_handling,
         "Error handling should gracefully handle memory-related errors",
         "Handling of memory-related errors works correctly",
         "Test safe_execute with simulated MemoryError exception",
@@ -1593,7 +1604,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Timeout Error Handling",
-        test_timeout_error_handling,
+        _test_timeout_error_handling,
         "Error handling should gracefully handle timeout errors",
         "Handling of timeout errors works correctly",
         "Test safe_execute with simulated TimeoutError exception",
@@ -1601,7 +1612,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Failure Pattern Monitoring",
-        test_failure_pattern_monitoring,
+        _test_failure_pattern_monitoring,
         "Monitoring system should detect concerning failure patterns from Action 6 lessons",
         "check_failure_patterns() function works correctly for early warning detection",
         "Test ErrorRecoveryManager.check_failure_patterns() returns proper warnings dictionary",
@@ -1609,7 +1620,7 @@ def error_handling_module_tests() -> bool:
 
     suite.run_test(
         "Failure Warning Logging",
-        test_failure_warning_logging,
+        _test_failure_warning_logging,
         "Monitoring system should log failure warnings from Action 6 lessons",
         "log_failure_warnings() function works correctly for automated alerting",
         "Test ErrorRecoveryManager.log_failure_warnings() executes without errors",

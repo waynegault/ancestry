@@ -3774,6 +3774,7 @@ def _test_conversation_log_tracking() -> bool:
 
 def action8_messaging_tests() -> None:
     """Test suite for action8_messaging.py - Automated Messaging System with detailed reporting."""
+    import os
 
     suite = TestSuite("Action 8 - Automated Messaging System", "action8_messaging.py")
 
@@ -3901,45 +3902,51 @@ def action8_messaging_tests() -> None:
         )
 
     # === INTEGRATION TESTS (Require Live Session) ===
-    suite.run_test(
-        "Main function with dry_run mode",
-        _test_main_function_with_dry_run,
-        "Main send_messages_to_matches() function executes successfully in dry_run mode.",
-        "Test main function execution with live session.",
-        "Verify send_messages_to_matches() returns bool and APP_MODE is 'dry_run'.",
-    )
+    # Skip API tests if running in parallel mode (set by run_all_tests.py)
+    skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
-    suite.run_test(
-        "Database message creation",
-        _test_database_message_creation,
-        "Messages are created in database during dry_run execution.",
-        "Test database message creation with live session.",
-        "Verify ConversationLog entries are created when messages are processed.",
-    )
+    if not skip_live_api_tests:
+        suite.run_test(
+            "Main function with dry_run mode",
+            _test_main_function_with_dry_run,
+            "Main send_messages_to_matches() function executes successfully in dry_run mode.",
+            "Test main function execution with live session.",
+            "Verify send_messages_to_matches() returns bool and APP_MODE is 'dry_run'.",
+        )
 
-    suite.run_test(
-        "Dry-run mode prevents actual sending",
-        _test_dry_run_mode_no_actual_send,
-        "Dry-run mode creates messages but does not send them to Ancestry.",
-        "Test dry-run mode behavior with live session.",
-        "Verify messages are created in database but not actually transmitted.",
-    )
+        suite.run_test(
+            "Database message creation",
+            _test_database_message_creation,
+            "Messages are created in database during dry_run execution.",
+            "Test database message creation with live session.",
+            "Verify ConversationLog entries are created when messages are processed.",
+        )
 
-    suite.run_test(
-        "Message template loading from database",
-        _test_message_template_loading_from_db,
-        "Message templates are successfully loaded from database.",
-        "Test template loading with live session.",
-        "Verify MessageTemplate table contains templates and can be queried.",
-    )
+        suite.run_test(
+            "Dry-run mode prevents actual sending",
+            _test_dry_run_mode_no_actual_send,
+            "Dry-run mode creates messages but does not send them to Ancestry.",
+            "Test dry-run mode behavior with live session.",
+            "Verify messages are created in database but not actually transmitted.",
+        )
 
-    suite.run_test(
-        "Conversation log tracking",
-        _test_conversation_log_tracking,
-        "Conversation logs are properly tracked and queryable.",
-        "Test conversation log tracking with live session.",
-        "Verify ConversationLog entries contain expected fields and can be retrieved.",
-    )
+        suite.run_test(
+            "Message template loading from database",
+            _test_message_template_loading_from_db,
+            "Message templates are successfully loaded from database.",
+            "Test template loading with live session.",
+            "Verify MessageTemplate table contains templates and can be queried.",
+        )
+
+        suite.run_test(
+            "Conversation log tracking",
+            _test_conversation_log_tracking,
+            "Conversation logs are properly tracked and queryable.",
+            "Test conversation log tracking with live session.",
+            "Verify ConversationLog entries contain expected fields and can be retrieved.",
+        )
+    else:
+        logger.info("⏭️  Skipping live API tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
     return suite.finish_suite()
 

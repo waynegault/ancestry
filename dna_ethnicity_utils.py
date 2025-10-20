@@ -362,6 +362,25 @@ def _navigate_to_dna_page(sm: SessionManager) -> bool:
     return True
 
 
+def _validate_test_prerequisites(sm: SessionManager) -> tuple[bool, str]:
+    """Validate prerequisites for ethnicity test."""
+    if not _setup_test_session(sm):
+        return False, "Could not set up test session - skipping live API test"
+    if not sm.my_uuid:
+        return False, "UUID not available - skipping live API test"
+    if not _navigate_to_dna_page(sm):
+        return False, "Could not navigate to DNA page - skipping live API test"
+    return True, ""
+
+
+def _log_ethnicity_results(ethnicity_data: dict) -> None:
+    """Log ethnicity region results."""
+    regions = ethnicity_data["regions"]
+    logger.info(f"✅ Successfully fetched {len(regions)} ethnicity regions")
+    for region in regions:
+        logger.info(f"  Region {region['key']}: {region['percentage']}%")
+
+
 def _test_tree_owner_ethnicity_fetch() -> bool:
     """Test fetching tree owner's ethnicity regions from API."""
     import os
@@ -374,13 +393,9 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
     sm = SessionManager()
     try:
         # Validate prerequisites
-        if not _setup_test_session(sm) or not sm.my_uuid or not _navigate_to_dna_page(sm):
-            if not _setup_test_session(sm):
-                logger.warning("Could not set up test session - skipping live API test")
-            elif not sm.my_uuid:
-                logger.warning("UUID not available - skipping live API test")
-            else:
-                logger.warning("Could not navigate to DNA page - skipping live API test")
+        valid, message = _validate_test_prerequisites(sm)
+        if not valid:
+            logger.warning(message)
             return True
 
         # Fetch and validate ethnicity data
@@ -390,10 +405,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
             return False
 
         # Log results
-        regions = ethnicity_data["regions"]
-        logger.info(f"✅ Successfully fetched {len(regions)} ethnicity regions")
-        for region in regions:
-            logger.info(f"  Region {region['key']}: {region['percentage']}%")
+        _log_ethnicity_results(ethnicity_data)
         return True
     except Exception as e:
         logger.warning(f"Exception in tree owner ethnicity fetch (skipping): {e}")
