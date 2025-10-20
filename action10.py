@@ -459,40 +459,58 @@ def validate_config() -> tuple[
 @error_context("load_gedcom_data")
 def load_gedcom_data(gedcom_path: Path) -> GedcomData:
     """Load, parse, and pre-process GEDCOM data with comprehensive error handling."""
-    # Check if we already have this GEDCOM loaded in module cache
-    if _GedcomCacheState.cache is not None:
-        # Verify it's the same file
-        cached_path = getattr(_GedcomCacheState.cache, 'path', None)
-        if cached_path and Path(cached_path) == gedcom_path:
-            print(f"\n✅ Using GEDCOM data from MEMORY CACHE: {gedcom_path.name} ({len(_GedcomCacheState.cache.indi_index)} individuals)")
-            return _GedcomCacheState.cache
-
     # Validate input path exists
     if not gedcom_path.is_file():
         logger.error(f"GEDCOM file not found: {gedcom_path}")
         raise MissingConfigError(f"GEDCOM file does not exist: {gedcom_path}")
 
     try:
-        print(f"\n⏳ Loading GEDCOM from FILE: {gedcom_path.name}")
-        load_start_time = time.time()
-        gedcom_data = GedcomData(gedcom_path)
-        load_end_time = time.time()
+        # Try to use aggressive caching (memory + disk with file mtime tracking)
+        try:
+            from gedcom_cache import load_gedcom_with_aggressive_caching
 
-        # Validate loaded data
-        if not gedcom_data.processed_data_cache or not gedcom_data.indi_index:
-            logger.error("GEDCOM data loaded but cache/index is empty")
-            raise MissingConfigError("GEDCOM data object/cache/index is empty after loading")
+            # Check if we have it in module-level memory cache first
+            if _GedcomCacheState.cache is not None:
+                cached_path = getattr(_GedcomCacheState.cache, 'path', None)
+                if cached_path and Path(cached_path) == gedcom_path:
+                    print(f"\n✅ Using GEDCOM data from MEMORY CACHE: {gedcom_path.name} ({len(_GedcomCacheState.cache.indi_index)} individuals)")
+                    return _GedcomCacheState.cache
 
-        logger.info(
-            f"✅ GEDCOM loaded in {load_end_time - load_start_time:.2f}s: "
-            f"{len(gedcom_data.indi_index)} individuals, "
-            f"{len(gedcom_data.processed_data_cache)} processed records"
-        )
+            # Not in module cache, try aggressive caching (will check disk cache)
+            print(f"\n⏳ Loading GEDCOM (checking disk cache): {gedcom_path.name}")
+            gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_path))
 
-        # Cache the loaded data in memory for subsequent runs
-        _GedcomCacheState.cache = gedcom_data
+            if gedcom_data:
+                # Store in module-level cache for fastest access
+                _GedcomCacheState.cache = gedcom_data
+                print(f"✅ GEDCOM loaded: {len(gedcom_data.indi_index)} individuals")
+                return gedcom_data
+            else:
+                raise MissingConfigError("Aggressive caching returned None")
 
-        return gedcom_data
+        except ImportError:
+            logger.debug("Aggressive caching not available, using standard loading")
+            # Fall back to standard loading
+            print(f"\n⏳ Loading GEDCOM from FILE: {gedcom_path.name}")
+            load_start_time = time.time()
+            gedcom_data = GedcomData(gedcom_path)
+            load_end_time = time.time()
+
+            # Validate loaded data
+            if not gedcom_data.processed_data_cache or not gedcom_data.indi_index:
+                logger.error("GEDCOM data loaded but cache/index is empty")
+                raise MissingConfigError("GEDCOM data object/cache/index is empty after loading")
+
+            logger.info(
+                f"✅ GEDCOM loaded in {load_end_time - load_start_time:.2f}s: "
+                f"{len(gedcom_data.indi_index)} individuals, "
+                f"{len(gedcom_data.processed_data_cache)} processed records"
+            )
+
+            # Cache the loaded data in memory for subsequent runs
+            _GedcomCacheState.cache = gedcom_data
+
+            return gedcom_data
 
     except MissingConfigError:
         raise
