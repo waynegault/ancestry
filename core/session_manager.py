@@ -2442,7 +2442,7 @@ class SessionManager:
                 # Store in API manager
                 self.api_manager.tree_owner_name = owner_name
                 if not self._owner_logged:
-                    logger.info(f"Tree owner name: {owner_name}\n")
+                    logger.debug(f"Tree owner name: {owner_name}")
                     self._owner_logged = True
                 return owner_name
             logger.warning("api_utils.call_tree_owner_api returned None.")
