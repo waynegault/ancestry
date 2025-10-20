@@ -2137,16 +2137,22 @@ def _check_dependencies() -> tuple[bool, list[str]]:
 
 
 def _validate_browser_session() -> bool:
-    """Validate that browser session is available."""
+    """Validate that browser session is available, start if needed."""
     logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
     logger.debug(f"Session manager driver: {getattr(session_manager, 'driver', None)}")
     logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
 
-    # Check if driver exists - if not, session_ready should have initialized it
+    # Check if driver exists - if not, try to start it
     if not hasattr(session_manager, 'driver') or not session_manager.driver:
-        logger.error(f"Browser session not available. Session manager: {session_manager}, Driver: {getattr(session_manager, 'driver', None)}")
-        print("\nERROR: Browser session not available. Please ensure the browser is initialized.")
-        return False
+        logger.warning("Browser session not available. Attempting to start browser...")
+
+        # Try to start the browser
+        if not session_manager.start_browser("Action 11 - Browser Init"):
+            logger.error("Failed to start browser session.")
+            print("\nERROR: Failed to start browser session. Please check Chrome is not already running.")
+            return False
+
+        logger.info("Browser session started successfully.")
 
     logger.debug("Browser session is available and ready.")
     return True
