@@ -32,7 +32,7 @@ def get_unified_search_criteria(
     if get_input_func is None:
         get_input_func = input
 
-    print("\n--- Search Criteria ---\n")
+    print("--- Search Criteria ---\n")
 
     # Collect basic criteria
     first_name = _sanitize_input(get_input_func("  First Name Contains: "))

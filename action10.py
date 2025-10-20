@@ -473,17 +473,20 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
             if _GedcomCacheState.cache is not None:
                 cached_path = getattr(_GedcomCacheState.cache, 'path', None)
                 if cached_path and Path(cached_path) == gedcom_path:
-                    print(f"\n✅ Using GEDCOM data from MEMORY CACHE: {gedcom_path.name} ({len(_GedcomCacheState.cache.indi_index)} individuals)")
+                    print(f"\n✅ Using GEDCOM from: MEMORY CACHE ({len(_GedcomCacheState.cache.indi_index)} individuals)")
                     return _GedcomCacheState.cache
 
-            # Not in module cache, try aggressive caching (will check disk cache)
-            print(f"\n⏳ Loading GEDCOM (checking disk cache): {gedcom_path.name}")
+            # Not in module cache, try aggressive caching (will check disk cache then file)
+            print(f"\n⏳ Loading GEDCOM: {gedcom_path.name}")
             gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_path))
 
             if gedcom_data:
                 # Store in module-level cache for fastest access
                 _GedcomCacheState.cache = gedcom_data
-                print(f"✅ GEDCOM loaded: {len(gedcom_data.indi_index)} individuals")
+                # Determine source based on timing (disk cache is very fast, file load is slower)
+                load_time = getattr(gedcom_data, 'indi_index_build_time', 0) + getattr(gedcom_data, 'data_processing_time', 0)
+                source = "DISK CACHE" if load_time < 0.1 else "FILE"
+                print(f"✅ GEDCOM loaded from: {source} ({len(gedcom_data.indi_index)} individuals)")
                 return gedcom_data
             else:
                 raise MissingConfigError("Aggressive caching returned None")
@@ -491,7 +494,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         except ImportError:
             logger.debug("Aggressive caching not available, using standard loading")
             # Fall back to standard loading
-            print(f"\n⏳ Loading GEDCOM from FILE: {gedcom_path.name}")
+            print(f"\n⏳ Loading GEDCOM: {gedcom_path.name}")
             load_start_time = time.time()
             gedcom_data = GedcomData(gedcom_path)
             load_end_time = time.time()
@@ -501,10 +504,9 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
                 logger.error("GEDCOM data loaded but cache/index is empty")
                 raise MissingConfigError("GEDCOM data object/cache/index is empty after loading")
 
-            logger.info(
-                f"✅ GEDCOM loaded in {load_end_time - load_start_time:.2f}s: "
-                f"{len(gedcom_data.indi_index)} individuals, "
-                f"{len(gedcom_data.processed_data_cache)} processed records"
+            print(
+                f"✅ GEDCOM loaded from: FILE ({len(gedcom_data.indi_index)} individuals, "
+                f"{load_end_time - load_start_time:.2f}s)"
             )
 
             # Cache the loaded data in memory for subsequent runs
