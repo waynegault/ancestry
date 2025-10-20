@@ -456,7 +456,6 @@ def validate_config() -> tuple[
     )
 
 
-@cache_gedcom_results(ttl=1800, disk_cache=True)
 @error_context("load_gedcom_data")
 def load_gedcom_data(gedcom_path: Path) -> GedcomData:
     """Load, parse, and pre-process GEDCOM data with comprehensive error handling."""
@@ -474,9 +473,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         raise MissingConfigError(f"GEDCOM file does not exist: {gedcom_path}")
 
     try:
-        # Note: If disk cache exists, the @cache_gedcom_results decorator will load it
-        # and return before reaching this point. If we're here, cache was not found.
-        print(f"\n⏳ Loading GEDCOM from FILE (no cache available): {gedcom_path.name}")
+        print(f"\n⏳ Loading GEDCOM from FILE: {gedcom_path.name}")
         load_start_time = time.time()
         gedcom_data = GedcomData(gedcom_path)
         load_end_time = time.time()
@@ -492,7 +489,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
             f"{len(gedcom_data.processed_data_cache)} processed records"
         )
 
-        # Cache the loaded data
+        # Cache the loaded data in memory for subsequent runs
         _GedcomCacheState.cache = gedcom_data
 
         return gedcom_data
