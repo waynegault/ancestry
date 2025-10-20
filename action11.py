@@ -400,7 +400,7 @@ def _calculate_candidate_score(
                 search_criteria,
                 candidate_data_dict,
                 scoring_weights,
-                _name_flexibility=name_flex if isinstance(name_flex, dict) else None,
+                name_flexibility=name_flex if isinstance(name_flex, dict) else None,
                 date_flexibility=date_flex if isinstance(date_flex, dict) else None,
             )
 
