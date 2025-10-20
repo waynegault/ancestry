@@ -2041,9 +2041,9 @@ def _validate_browser_session() -> bool:
     logger.debug(f"Session manager driver: {getattr(session_manager, 'driver', None)}")
     logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
 
-    result = {"success": False, "error": None}
+    result: dict[str, Any] = {"success": False, "error": None}
 
-    def browser_check():
+    def browser_check() -> None:
         try:
             # Check if driver exists - if not, try to start it
             if not hasattr(session_manager, 'driver') or not session_manager.driver:
@@ -2142,9 +2142,9 @@ def _attempt_browser_login() -> bool:
 
     from utils import log_in, login_status
 
-    result = {"success": False, "error": None}
+    result: dict[str, Any] = {"success": False, "error": None}
 
-    def login_attempt():
+    def login_attempt() -> None:
         try:
             # First check if we're already logged in
             login_stat = login_status(session_manager, disable_ui_fallback=True)
@@ -2192,9 +2192,9 @@ def _initialize_session_with_login() -> bool:
     # Try to initialize the session with authentication cookies
     print("\nAttempting to log in to Ancestry...")
 
-    result = {"success": False, "error": None}
+    result: dict[str, Any] = {"success": False, "error": None}
 
-    def session_init():
+    def session_init() -> None:
         try:
             # Try to start the browser session
             if not session_manager.start_browser(action_name="API Report Browser Init"):
@@ -2258,7 +2258,7 @@ def _ensure_authenticated_session() -> bool:
 
     result: dict[str, Any] = {"login_stat": None, "error": None}
 
-    def check_login():
+    def check_login() -> None:
         try:
             # Check login status
             result["login_stat"] = login_status(session_manager, disable_ui_fallback=True)
@@ -2890,7 +2890,7 @@ def _create_and_start_session() -> SessionManager:
 
     result: dict[str, Any] = {"started": False, "error": None}
 
-    def start_session():
+    def start_session() -> None:
         try:
             result["started"] = sm.start_sess("Action 11 API Tests")
         except Exception as e:
@@ -3006,7 +3006,7 @@ def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionMa
 
     result: dict[str, Any] = {"sm": None, "error": None}
 
-    def setup_session():
+    def setup_session() -> None:
         try:
             # Create and start new session
             sm = _create_and_start_session()
