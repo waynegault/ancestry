@@ -2286,14 +2286,140 @@ def _ensure_authenticated_session() -> bool:
     return _handle_not_logged_in_user()
 
 
+def _display_family_details_from_edit_api(
+    session_manager_local: SessionManager,
+    person_id: str,
+    tree_id: str,
+    user_id: str,
+) -> None:
+    """
+    Fetch and display family details using Edit Relationships API.
+    Matches Action 10's family display format for consistency.
+    """
+    from api_utils import call_edit_relationships_api  # type: ignore[import-not-found]
+
+    # Call the Edit Relationships API to get family data
+    logger.debug(f"Fetching family data for person {person_id} in tree {tree_id}")
+    family_api_response = call_edit_relationships_api(
+        session_manager=session_manager_local,
+        user_id=user_id,
+        tree_id=tree_id,
+        person_id=person_id
+    )
+
+    # Initialize family data structure
+    family_data = {
+        "parents": [],
+        "siblings": [],
+        "spouses": [],
+        "children": [],
+    }
+
+    if not family_api_response:
+        logger.warning("Edit Relationships API returned no data")
+    elif "data" in family_api_response:
+        data = family_api_response["data"]
+        logger.debug(f"Edit Relationships API response keys: {list(data.keys())}")
+
+        # Extract parents
+        if "parents" in data:
+            for parent in data["parents"]:
+                name = parent.get("name", "Unknown")
+                birth_year = _extract_year_simple(parent.get("birthDate", ""))
+                death_year = _extract_year_simple(parent.get("deathDate", ""))
+                family_data["parents"].append({
+                    "name": name,
+                    "birth_year": birth_year,
+                    "death_year": death_year,
+                })
+
+        # Extract siblings
+        if "siblings" in data:
+            for sibling in data["siblings"]:
+                name = sibling.get("name", "Unknown")
+                birth_year = _extract_year_simple(sibling.get("birthDate", ""))
+                death_year = _extract_year_simple(sibling.get("deathDate", ""))
+                family_data["siblings"].append({
+                    "name": name,
+                    "birth_year": birth_year,
+                    "death_year": death_year,
+                })
+
+        # Extract spouses
+        if "spouses" in data:
+            for spouse in data["spouses"]:
+                name = spouse.get("name", "Unknown")
+                birth_year = _extract_year_simple(spouse.get("birthDate", ""))
+                death_year = _extract_year_simple(spouse.get("deathDate", ""))
+                family_data["spouses"].append({
+                    "name": name,
+                    "birth_year": birth_year,
+                    "death_year": death_year,
+                })
+
+        # Extract children
+        if "children" in data:
+            for child in data["children"]:
+                name = child.get("name", "Unknown")
+                birth_year = _extract_year_simple(child.get("birthDate", ""))
+                death_year = _extract_year_simple(child.get("deathDate", ""))
+                family_data["children"].append({
+                    "name": name,
+                    "birth_year": birth_year,
+                    "death_year": death_year,
+                })
+
+    # Display family members
+    _display_family_members_simple(family_data)
+
+
+def _display_family_members_simple(family_data: dict) -> None:
+    """Display family members in a simple format matching Action 10."""
+    from relationship_utils import _format_years_display  # type: ignore[import-not-found]
+
+    relation_labels = {
+        "parents": "📋 Parents",
+        "siblings": "📋 Siblings",
+        "spouses": "💕 Spouses",
+        "children": "👶 Children",
+    }
+
+    first_section = True
+    for relation_key, label in relation_labels.items():
+        members = family_data.get(relation_key, [])
+
+        # Add blank line before each section except the first
+        if first_section:
+            print(f"{label}:")
+            first_section = False
+        else:
+            print(f"\n{label}:")
+
+        if not members:
+            print("   - None found")
+            continue
+
+        for member in members:
+            name = member.get("name", "Unknown")
+            birth_year = member.get("birth_year")
+            death_year = member.get("death_year")
+
+            # Use shared formatting function from relationship_utils (same as Action 10)
+            years_display = _format_years_display(birth_year, death_year)
+
+            print(f"   - {name}{years_display}")
+
+    print("")  # Blank line after family section
+
+
 def _handle_supplementary_info_phase(
     person_research_data: Optional[dict],
     selected_candidate_processed: dict,
     session_manager_local: SessionManager,
 ):
     """
-    Simplified to only calculate and display the relationship path.
-    Family details functionality removed to keep Action 11 focused and reliable.
+    Display family details and calculate relationship path.
+    Now matches Action 10 functionality for consistent user experience.
     """
     # --- Get Base Info ---
     base_url, owner_tree_id, owner_profile_id, owner_name = _get_base_owner_info(session_manager_local)
@@ -2302,9 +2428,6 @@ def _handle_supplementary_info_phase(
     owner_tree_id = _resolve_owner_tree_id_from_config(session_manager_local, owner_tree_id)
     owner_profile_id = _resolve_owner_profile_id(session_manager_local, owner_profile_id)
     owner_name = _resolve_owner_name(session_manager_local, owner_name, owner_profile_id)
-
-    # --- Skip Family Details Section ---
-    # Action 11 simplified to focus on search, scoring, and relationship calculation only
 
     # --- Extract Selected Person IDs ---
     (
@@ -2315,6 +2438,27 @@ def _handle_supplementary_info_phase(
         essential_ids_found,
         source_of_ids,
     ) = _extract_selected_person_ids(person_research_data, selected_candidate_processed)
+
+    # --- Display Family Details Section ---
+    # Get family data from Edit Relationships API
+    if selected_person_tree_id and selected_tree_id and owner_profile_id:
+        _display_family_details_from_edit_api(
+            session_manager_local=session_manager_local,
+            person_id=str(selected_person_tree_id),
+            tree_id=str(selected_tree_id),
+            user_id=str(owner_profile_id),
+        )
+    else:
+        logger.debug(f"Missing IDs for family display: person_id={selected_person_tree_id}, tree_id={selected_tree_id}, user_id={owner_profile_id}")
+        # Display empty family data
+        print("📋 Parents:")
+        print("   - None found")
+        print("\n📋 Siblings:")
+        print("   - None found")
+        print("\n💕 Spouses:")
+        print("   - None found")
+        print("\n👶 Children:")
+        print("   - None found\n")
 
     # --- Log Final IDs Being Used ---
     _log_final_ids(
