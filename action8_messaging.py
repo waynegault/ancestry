@@ -319,6 +319,48 @@ def _has_message_after_tree_creation(person: Person, created_at: datetime) -> bo
     return False
 
 
+def cancel_pending_messages_on_status_change(person: Person, log_prefix: str = "") -> bool:
+    """
+    Cancel pending out-of-tree messages when person is added to tree.
+
+    Phase 4.3: Automatic message cancellation that prevents sending outdated
+    out-of-tree messages when a match has been added to the family tree.
+
+    Args:
+        person: Person object who was recently added to tree
+        log_prefix: Logging prefix for debugging
+
+    Returns:
+        bool: True if messages were cancelled, False otherwise
+
+    Actions:
+        - Updates conversation_state.next_action to 'status_changed'
+        - Updates conversation_state.next_action_date to NULL
+        - Logs the cancellation
+
+    This prevents sending follow-up messages about "finding the connection"
+    when we've already found it and added them to the tree.
+    """
+    if not person.conversation_state:
+        logger.debug(f"{log_prefix}: No conversation_state to update")
+        return False
+
+    try:
+        # Update conversation state to cancel pending messages
+        person.conversation_state.next_action = 'status_changed'
+        person.conversation_state.next_action_date = None
+
+        logger.info(
+            f"✅ Cancelled pending messages for {person.username} (ID {person.id}): "
+            f"Status changed to in-tree"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Error cancelling messages for {person.username} (ID {person.id}): {e}")
+        return False
+
+
 def detect_status_change_to_in_tree(person: Person) -> bool:
     """
     Detect if a person has recently changed from out-of-tree to in-tree status.
@@ -4317,6 +4359,60 @@ def _test_status_change_already_messaged() -> bool:
 
 
 # ==============================================
+# PHASE 4.3: MESSAGE CANCELLATION TEST FUNCTIONS
+# ==============================================
+
+
+def _test_cancel_pending_messages_success() -> bool:
+    """Test successful cancellation of pending messages."""
+    from unittest.mock import Mock
+
+    from database import ConversationState, Person
+
+    # Create mock person with conversation_state
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+
+    # Mock conversation_state with pending action
+    conv_state = Mock(spec=ConversationState)
+    conv_state.next_action = 'send_follow_up'
+    conv_state.next_action_date = datetime.now(timezone.utc) + timedelta(days=7)
+    person.conversation_state = conv_state
+
+    # Cancel pending messages
+    result = cancel_pending_messages_on_status_change(person, "test")
+
+    # Verify cancellation
+    assert result is True, "Should return True on successful cancellation"
+    assert conv_state.next_action == 'status_changed', f"Expected 'status_changed', got '{conv_state.next_action}'"
+    assert conv_state.next_action_date is None, "next_action_date should be None"
+    logger.info("✓ Pending messages cancelled successfully")
+    return True
+
+
+def _test_cancel_pending_messages_no_state() -> bool:
+    """Test cancellation when no conversation_state exists."""
+    from unittest.mock import Mock
+
+    from database import Person
+
+    # Create mock person without conversation_state
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+    person.conversation_state = None
+
+    # Attempt to cancel (should handle gracefully)
+    result = cancel_pending_messages_on_status_change(person, "test")
+
+    # Should return False (nothing to cancel)
+    assert result is False, "Should return False when no conversation_state"
+    logger.info("✓ No conversation_state handled gracefully")
+    return True
+
+
+# ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
 
@@ -4504,6 +4600,19 @@ def action8_messaging_tests() -> None:
         "Status change: Already messaged",
         _test_status_change_already_messaged,
         "Ignores tree addition when already messaged after addition.",
+    )
+
+    # === PHASE 4.3: MESSAGE CANCELLATION TESTS ===
+    suite.run_test(
+        "Message cancellation: Success",
+        _test_cancel_pending_messages_success,
+        "Successfully cancels pending messages on status change.",
+    )
+
+    suite.run_test(
+        "Message cancellation: No conversation state",
+        _test_cancel_pending_messages_no_state,
+        "Handles gracefully when no conversation_state exists.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
