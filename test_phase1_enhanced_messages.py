@@ -8,50 +8,51 @@ Verifies that messages include:
 - Ethnicity commonality (out-of-tree matches)
 """
 
+# === STANDARD IMPORTS ===
 import sys
 from pathlib import Path
 
 # Add current directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-print("=" * 80)
-print("PHASE 1 TESTING: Enhanced Message Content")
-print("=" * 80)
+from standard_imports import setup_module
 
-# Test 1: Verify tree_stats_utils module
-print("\n[Test 1] Verifying tree_stats_utils module...")
-try:
+logger = setup_module(globals(), __file__)
+
+# === TEST FRAMEWORK ===
+from test_framework import TestSuite
+
+
+def test_tree_stats_module_import() -> None:
+    """Test 1: Verify tree_stats_utils module can be imported."""
     from tree_stats_utils import calculate_ethnicity_commonality, calculate_tree_statistics
-    print("✓ tree_stats_utils module imported successfully")
-except ImportError as e:
-    print(f"✗ Failed to import tree_stats_utils: {e}")
-    sys.exit(1)
 
-# Test 2: Verify database schema includes TreeStatisticsCache
-print("\n[Test 2] Verifying TreeStatisticsCache table...")
-try:
-    from database import TreeStatisticsCache
-    print("✓ TreeStatisticsCache model imported successfully")
+    assert calculate_tree_statistics is not None, "calculate_tree_statistics not found"
+    assert calculate_ethnicity_commonality is not None, "calculate_ethnicity_commonality not found"
+    logger.info("✓ tree_stats_utils module imported successfully")
 
+
+def test_database_schema() -> None:
+    """Test 2: Verify TreeStatisticsCache table exists in database."""
     import sqlite3
+
+    from database import TreeStatisticsCache  # noqa: F401
+
     conn = sqlite3.connect("Data/ancestry_test.db")
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tree_statistics_cache'")
-    if cursor.fetchone():
-        print("✓ tree_statistics_cache table exists in database")
-    else:
-        print("✗ tree_statistics_cache table NOT found in database")
-        sys.exit(1)
+    result = cursor.fetchone()
     conn.close()
-except Exception as e:
-    print(f"✗ Error checking TreeStatisticsCache: {e}")
-    sys.exit(1)
 
-# Test 3: Calculate tree statistics for Frances Milne
-print("\n[Test 3] Calculating tree statistics...")
-try:
+    assert result is not None, "tree_statistics_cache table NOT found in database"
+    logger.info("✓ tree_statistics_cache table exists in database")
+
+def test_tree_statistics_calculation() -> None:
+    """Test 3: Calculate tree statistics for Frances Milne."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
+    from tree_stats_utils import calculate_tree_statistics
 
     test_engine = create_engine("sqlite:///Data/ancestry_test.db")
     TestSession = sessionmaker(bind=test_engine)
@@ -60,106 +61,93 @@ try:
     frances_profile_id = "08FA6E79-0006-0000-0000-000000000000"
     stats = calculate_tree_statistics(session, frances_profile_id)
 
-    print("✓ Tree statistics calculated:")
-    print(f"  - Total matches: {stats['total_matches']}")
-    print(f"  - In tree: {stats['in_tree_count']}")
-    print(f"  - Out of tree: {stats['out_tree_count']}")
-    print(f"  - Close matches (>100 cM): {stats['close_matches']}")
-    print(f"  - Moderate matches (20-100 cM): {stats['moderate_matches']}")
-    print(f"  - Distant matches (<20 cM): {stats['distant_matches']}")
-    print(f"  - Ethnicity regions: {len(stats['ethnicity_regions'])}")
+    assert stats is not None, "Tree statistics calculation returned None"
+    assert 'total_matches' in stats, "Missing total_matches in statistics"
+    assert 'in_tree_count' in stats, "Missing in_tree_count in statistics"
+    assert 'ethnicity_regions' in stats, "Missing ethnicity_regions in statistics"
+
+    logger.info(f"✓ Tree statistics calculated: {stats['total_matches']} total matches, {stats['in_tree_count']} in tree")
 
     # Test caching
-    print("\n[Test 3b] Testing cache...")
     stats2 = calculate_tree_statistics(session, frances_profile_id)
-    if stats2 == stats:
-        print("✓ Cache working - same results returned")
-    else:
-        print("⚠ Cache may not be working - different results")
+    assert stats2 == stats, "Cache not working - different results returned"
+    logger.info("✓ Cache working - same results returned")
 
     session.close()
-except Exception as e:
-    print(f"✗ Error calculating tree statistics: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
 
-# Test 4: Test ethnicity commonality
-print("\n[Test 4] Testing ethnicity commonality...")
-try:
+def test_ethnicity_commonality() -> None:
+    """Test 4: Test ethnicity commonality calculation."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from database import Person
+    from tree_stats_utils import calculate_ethnicity_commonality
+
+    test_engine = create_engine("sqlite:///Data/ancestry_test.db")
+    TestSession = sessionmaker(bind=test_engine)
+    session = TestSession()
+
+    frances_profile_id = "08FA6E79-0006-0000-0000-000000000000"
+    frances = session.query(Person).filter(Person.profile_id == frances_profile_id).first()
+
+    assert frances is not None, "Frances not found in database"
+
+    ethnicity = calculate_ethnicity_commonality(session, frances_profile_id, frances.id)
+
+    assert ethnicity is not None, "Ethnicity commonality calculation returned None"
+    assert 'shared_regions' in ethnicity, "Missing shared_regions in ethnicity data"
+    assert 'similarity_score' in ethnicity, "Missing similarity_score in ethnicity data"
+
+    logger.info(f"✓ Ethnicity commonality calculated: {len(ethnicity['shared_regions'])} shared regions, {ethnicity['similarity_score']:.1f}% similarity")
+
+    session.close()
+
+def test_action8_integration() -> None:
+    """Test 5: Verify Action 8 integration with tree statistics."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from action8_messaging import TREE_STATS_AVAILABLE, _prepare_message_format_data
     from database import Person
 
-    session = TestSession()
-    frances = session.query(Person).filter(Person.profile_id == frances_profile_id).first()
-
-    if frances:
-        ethnicity = calculate_ethnicity_commonality(session, frances_profile_id, frances.id)
-        print("✓ Ethnicity commonality calculated:")
-        print(f"  - Shared regions: {len(ethnicity['shared_regions'])}")
-        print(f"  - Similarity score: {ethnicity['similarity_score']:.1f}%")
-        print(f"  - Top shared region: {ethnicity['top_shared_region']}")
-    else:
-        print("⚠ Frances not found in database")
-
-    session.close()
-except Exception as e:
-    print(f"✗ Error calculating ethnicity commonality: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-
-# Test 5: Verify Action 8 integration
-print("\n[Test 5] Verifying Action 8 integration...")
-try:
-    from action8_messaging import TREE_STATS_AVAILABLE, _prepare_message_format_data
-
-    if TREE_STATS_AVAILABLE:
-        print("✓ Tree statistics available in Action 8")
-    else:
-        print("✗ Tree statistics NOT available in Action 8")
-        sys.exit(1)
+    assert TREE_STATS_AVAILABLE, "Tree statistics NOT available in Action 8"
+    logger.info("✓ Tree statistics available in Action 8")
 
     # Test format data preparation
+    test_engine = create_engine("sqlite:///Data/ancestry_test.db")
+    TestSession = sessionmaker(bind=test_engine)
     session = TestSession()
+
+    frances_profile_id = "08FA6E79-0006-0000-0000-000000000000"
     frances = session.query(Person).filter(Person.profile_id == frances_profile_id).first()
 
-    if frances:
-        format_data = _prepare_message_format_data(
-            frances,
-            frances.family_tree,
-            frances.dna_match,
-            session
-        )
+    assert frances is not None, "Frances not found in database"
 
-        print("✓ Message format data prepared:")
-        print(f"  - Name: {format_data.get('name', 'N/A')}")
-        print(f"  - Relationship path: {format_data.get('relationship_path', 'N/A')[:50]}...")
-        print(f"  - Total matches: {format_data.get('total_matches', 'N/A')}")
-        print(f"  - Matches in tree: {format_data.get('matches_in_tree', 'N/A')}")
-        print(f"  - Ethnicity commonality: {format_data.get('ethnicity_commonality', 'N/A')[:50]}...")
+    format_data = _prepare_message_format_data(
+        frances,
+        frances.family_tree,
+        frances.dna_match,
+        session
+    )
 
-        # Verify required fields are present
-        required_fields = ['name', 'relationship_path', 'total_matches', 'matches_in_tree']
-        missing_fields = [f for f in required_fields if f not in format_data]
+    # Verify required fields are present
+    required_fields = ['name', 'relationship_path', 'total_matches', 'matches_in_tree']
+    missing_fields = [f for f in required_fields if f not in format_data]
 
-        if missing_fields:
-            print(f"✗ Missing required fields: {', '.join(missing_fields)}")
-            sys.exit(1)
-        else:
-            print("✓ All required fields present in format data")
+    assert not missing_fields, f"Missing required fields: {', '.join(missing_fields)}"
+    logger.info("✓ All required fields present in format data")
 
     session.close()
-except Exception as e:
-    print(f"✗ Error testing Action 8 integration: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
 
-# Test 6: Verify message templates can use new placeholders
-print("\n[Test 6] Verifying message template compatibility...")
-try:
+def test_message_template_compatibility() -> None:
+    """Test 6: Verify message templates can use new placeholders."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
     from database import MessageTemplate
 
+    test_engine = create_engine("sqlite:///Data/ancestry_test.db")
+    TestSession = sessionmaker(bind=test_engine)
     session = TestSession()
 
     # Get a sample template
@@ -167,47 +155,98 @@ try:
         MessageTemplate.template_key == "In_Tree-Initial"
     ).first()
 
-    if template:
-        # Check if template uses relationship_path
-        if "{relationship_path}" in template.message_content:
-            print("✓ In-tree template uses {relationship_path} placeholder")
-        else:
-            print("⚠ In-tree template does NOT use {relationship_path} placeholder")
+    assert template is not None, "In_Tree-Initial template not found"
 
-        # Try formatting with sample data
-        try:
-            sample_data = {
-                "name": "Test Person",
-                "predicted_relationship": "4th cousin",
-                "actual_relationship": "4th cousin",
-                "relationship_path": "Test → Parent → Grandparent → Great-grandparent",
-                "total_rows": 100,
-                "total_matches": 500,
-                "matches_in_tree": 100,
-                "ethnicity_commonality": "We both have Scottish ancestry"
-            }
+    # Check if template uses relationship_path
+    assert "{relationship_path}" in template.message_content, "In-tree template does NOT use {relationship_path} placeholder"
+    logger.info("✓ In-tree template uses {relationship_path} placeholder")
 
-            formatted = template.message_content.format(**sample_data)
-            print("✓ Template formatted successfully with enhanced data")
-        except KeyError as e:
-            print(f"⚠ Template missing placeholder: {e}")
-    else:
-        print("⚠ In_Tree-Initial template not found")
+    # Try formatting with sample data
+    sample_data = {
+        "name": "Test Person",
+        "predicted_relationship": "4th cousin",
+        "actual_relationship": "4th cousin",
+        "relationship_path": "Test → Parent → Grandparent → Great-grandparent",
+        "total_rows": 100,
+        "total_matches": 500,
+        "matches_in_tree": 100,
+        "ethnicity_commonality": "We both have Scottish ancestry"
+    }
+
+    formatted = template.message_content.format(**sample_data)
+    assert formatted is not None, "Template formatting failed"
+    logger.info("✓ Template formatted successfully with enhanced data")
 
     session.close()
-except Exception as e:
-    print(f"✗ Error testing template compatibility: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
 
-print("\n" + "=" * 80)
-print("✓ ALL PHASE 1 TESTS PASSED!")
-print("=" * 80)
-print("\nPhase 1 implementation complete:")
-print("  ✓ Tree statistics calculation with caching")
-print("  ✓ Ethnicity commonality analysis")
-print("  ✓ Action 8 integration")
-print("  ✓ Message template compatibility")
-print("\nReady for Phase 2: Person Lookup Integration")
+
+def phase1_module_tests() -> bool:
+    """Run all Phase 1 tests using TestSuite framework."""
+    suite = TestSuite("Phase 1: Enhanced Message Content", "test_phase1_enhanced_messages.py")
+    suite.start_suite()
+
+    suite.run_test(
+        "Tree Stats Module Import",
+        test_tree_stats_module_import,
+        "Verifies tree_stats_utils module can be imported",
+        "Test tree_stats_utils module import",
+        "Import calculate_tree_statistics and calculate_ethnicity_commonality functions"
+    )
+
+    suite.run_test(
+        "Database Schema",
+        test_database_schema,
+        "Verifies TreeStatisticsCache table exists in database",
+        "Test TreeStatisticsCache table exists",
+        "Check tree_statistics_cache table in Data/ancestry_test.db"
+    )
+
+    suite.run_test(
+        "Tree Statistics Calculation",
+        test_tree_statistics_calculation,
+        "Calculates tree statistics for Frances Milne and tests caching",
+        "Test tree statistics calculation and caching",
+        "Calculate stats for Frances Milne profile and verify cache works"
+    )
+
+    suite.run_test(
+        "Ethnicity Commonality",
+        test_ethnicity_commonality,
+        "Tests ethnicity commonality calculation",
+        "Test ethnicity commonality calculation",
+        "Calculate ethnicity commonality for Frances Milne"
+    )
+
+    suite.run_test(
+        "Action 8 Integration",
+        test_action8_integration,
+        "Verifies Action 8 integration with tree statistics",
+        "Test Action 8 integration",
+        "Verify TREE_STATS_AVAILABLE and _prepare_message_format_data works"
+    )
+
+    suite.run_test(
+        "Message Template Compatibility",
+        test_message_template_compatibility,
+        "Verifies message templates can use new placeholders",
+        "Test message template compatibility",
+        "Verify In_Tree-Initial template uses {relationship_path} placeholder"
+    )
+
+    return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    import sys
+
+    logger.info("🧪 Running Phase 1 comprehensive test suite...")
+    try:
+        success = phase1_module_tests()
+    except Exception:
+        logger.error("\n[ERROR] Unhandled exception during Phase 1 tests:")
+        import traceback
+        traceback.print_exc()
+        success = False
+
+    sys.exit(0 if success else 1)
 

@@ -199,15 +199,15 @@ def _get_cached_statistics(session: Session, profile_id: str) -> Optional[dict[s
             return None
 
         # Check if cache is expired
-        age_hours = _cache_age_hours(cache_entry.calculated_at)
+        age_hours = _cache_age_hours(cache_entry.calculated_at)  # type: ignore[arg-type]
         if age_hours > CACHE_EXPIRATION_HOURS:
             logger.debug(f"Cache expired (age: {age_hours}h > {CACHE_EXPIRATION_HOURS}h)")
             return None
 
         # Convert cache entry to statistics dict
         ethnicity_regions = {}
-        if cache_entry.ethnicity_regions:
-            ethnicity_regions = json.loads(cache_entry.ethnicity_regions)
+        if cache_entry.ethnicity_regions:  # type: ignore[truthy-bool]
+            ethnicity_regions = json.loads(cache_entry.ethnicity_regions)  # type: ignore[arg-type]
 
         return {
             'total_matches': cache_entry.total_matches,
@@ -245,9 +245,9 @@ def _save_to_cache(session: Session, profile_id: str, statistics: dict[str, Any]
             cache_entry.close_matches = statistics['close_matches']
             cache_entry.moderate_matches = statistics['moderate_matches']
             cache_entry.distant_matches = statistics['distant_matches']
-            cache_entry.ethnicity_regions = ethnicity_json
+            cache_entry.ethnicity_regions = ethnicity_json  # type: ignore[assignment]
             cache_entry.calculated_at = statistics['calculated_at']
-            cache_entry.updated_at = datetime.now(timezone.utc)
+            cache_entry.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
         else:
             # Create new entry
             cache_entry = TreeStatisticsCache(
