@@ -116,12 +116,12 @@ class Phase3DialogueEngineTests:
         tree_stats = "Tree: 2,450 people, large size"
         relationship_path = "3rd cousins through James Gault"
 
-        print(f"\n📊 Test Parameters:")
+        print("\n📊 Test Parameters:")
         print(f"   Conversation Phase: {conversation_phase}")
         print(f"   Engagement Score: {engagement_score}/100")
         print(f"   Last Topic: {last_topic}")
         print(f"   Pending Questions: {pending_questions}")
-        print(f"\n👤 Person Lookup Result:")
+        print("\n👤 Person Lookup Result:")
         print(f"   {lookup_results_str}")
         print(f"\n🧬 DNA Data: {dna_data}")
         print(f"🌳 Tree Stats: {tree_stats}")
@@ -156,9 +156,8 @@ class Phase3DialogueEngineTests:
             print(f"\n📏 Response Length: {len(response)} characters")
             print(f"📝 Word Count: {len(response.split())} words")
             return True
-        else:
-            print("\n❌ Failed to generate AI response")
-            return False
+        print("\n❌ Failed to generate AI response")
+        return False
 
     def test_2_multiple_people_medium_engagement(self) -> bool:
         """Test 2: Multiple people lookup with medium engagement (active_dialogue phase)."""
@@ -219,11 +218,11 @@ class Phase3DialogueEngineTests:
         tree_stats = "Tree: 1,200 people, medium size"
         relationship_path = "4th cousins through Fetch/MacDonald lines"
 
-        print(f"\n📊 Test Parameters:")
+        print("\n📊 Test Parameters:")
         print(f"   Conversation Phase: {conversation_phase}")
         print(f"   Engagement Score: {engagement_score}/100")
         print(f"   Last Topic: {last_topic}")
-        print(f"\n👥 Multiple Person Lookup Results:")
+        print("\n👥 Multiple Person Lookup Results:")
         print(f"   {lookup_results_str}")
         print(f"\n🧬 DNA Data: {dna_data}")
 
@@ -254,9 +253,8 @@ class Phase3DialogueEngineTests:
             print("-" * 80)
             print(f"\n📏 Response Length: {len(response)} characters")
             return True
-        else:
-            print("\n❌ Failed to generate AI response")
-            return False
+        print("\n❌ Failed to generate AI response")
+        return False
 
     def test_3_person_not_found_low_engagement(self) -> bool:
         """Test 3: Person not found with low engagement (initial_outreach phase)."""
@@ -288,10 +286,10 @@ class Phase3DialogueEngineTests:
         tree_stats = "Tree: 350 people, small size"
         relationship_path = "Relationship unknown"
 
-        print(f"\n📊 Test Parameters:")
+        print("\n📊 Test Parameters:")
         print(f"   Conversation Phase: {conversation_phase}")
         print(f"   Engagement Score: {engagement_score}/100")
-        print(f"\n❌ Person Lookup Result:")
+        print("\n❌ Person Lookup Result:")
         print(f"   {lookup_results_str}")
         print(f"\n🧬 DNA Data: {dna_data}")
 
@@ -323,9 +321,8 @@ class Phase3DialogueEngineTests:
             print(f"\n📏 Response Length: {len(response)} characters")
             print("\n💡 Expected: Graceful handling, offer related ancestors, welcoming tone")
             return True
-        else:
-            print("\n❌ Failed to generate AI response")
-            return False
+        print("\n❌ Failed to generate AI response")
+        return False
 
     def test_4_engagement_assessment(self) -> bool:
         """Test 4: Engagement assessment with diverse conversation types."""

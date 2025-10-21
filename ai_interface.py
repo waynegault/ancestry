@@ -870,6 +870,29 @@ def _load_dialogue_prompt(log_prefix: str) -> Optional[str]:
     return None
 
 
+def _get_dialogue_defaults(
+    conversation_history: str,
+    lookup_results: str,
+    dna_data: str,
+    tree_statistics: str,
+    relationship_path: str,
+    conversation_phase: str,
+    last_topic: str,
+    pending_questions: str,
+) -> dict[str, Any]:
+    """Get default values for dialogue prompt variables."""
+    return {
+        "conversation_history": conversation_history or "No previous conversation.",
+        "lookup_results": lookup_results or "No person lookup results available.",
+        "dna_data": dna_data or "No DNA data available.",
+        "tree_statistics": tree_statistics or "No tree statistics available.",
+        "relationship_path": relationship_path or "Relationship unknown.",
+        "conversation_phase": conversation_phase or "initial_outreach",
+        "last_topic": last_topic or "None",
+        "pending_questions": pending_questions or "None",
+    }
+
+
 def _format_dialogue_prompt(
     prompt_template: str,
     conversation_history: str,
@@ -886,26 +909,17 @@ def _format_dialogue_prompt(
 ) -> Optional[str]:
     """Format dialogue prompt with all context variables."""
     try:
-        return prompt_template.format(
-            conversation_history=conversation_history or "No previous conversation.",
-            user_message=user_message,
-            lookup_results=lookup_results or "No person lookup results available.",
-            dna_data=dna_data or "No DNA data available.",
-            tree_statistics=tree_statistics or "No tree statistics available.",
-            relationship_path=relationship_path or "Relationship unknown.",
-            conversation_phase=conversation_phase or "initial_outreach",
-            engagement_score=engagement_score,
-            last_topic=last_topic or "None",
-            pending_questions=pending_questions or "None",
+        defaults = _get_dialogue_defaults(
+            conversation_history, lookup_results, dna_data, tree_statistics,
+            relationship_path, conversation_phase, last_topic, pending_questions
         )
+        defaults["user_message"] = user_message
+        defaults["engagement_score"] = engagement_score
+        return prompt_template.format(**defaults)
     except KeyError as ke:
-        logger.error(
-            f"{log_prefix}: Prompt formatting error. Missing key: {ke}"
-        )
+        logger.error(f"{log_prefix}: Prompt formatting error. Missing key: {ke}")
     except Exception as fe:
-        logger.error(
-            f"{log_prefix}: Unexpected error formatting prompt: {fe}"
-        )
+        logger.error(f"{log_prefix}: Unexpected error formatting prompt: {fe}")
     return None
 
 
