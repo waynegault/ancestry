@@ -167,16 +167,62 @@ def get_fallback_extraction_prompt() -> str:
 Analyze the entire provided conversation history, focusing on information shared by the USER.
 
 Your goal is twofold:
-1.  **Extract Key Genealogical Information:** Identify and extract specific entities mentioned by the USER. Structure this as an object under an "extracted_data" key. This object should contain lists of strings for entities like: "mentioned_names" (full names preferred), "mentioned_locations" (towns, counties, countries), "mentioned_dates" (e.g., "abt 1880", "1912-1915"), "potential_relationships" (e.g., "my grandfather", "her sister"), and "key_facts" (e.g., "immigrated via Liverpool", "worked in coal mines"). Only include entities explicitly mentioned by the USER. Do not infer or add information not present. If no entities of a certain type are found, provide an empty list [].
+1.  **Extract Key Genealogical Information:** Identify and extract specific entities mentioned by the USER. Structure this as an object under an "extracted_data" key. This object should contain:
+    - "mentioned_names": List of full names mentioned (e.g., ["John Smith", "Mary Anne Jones"])
+    - "mentioned_people": List of detailed person objects with structure:
+      {{
+        "name": "Full Name",
+        "first_name": "First" (if mentioned),
+        "last_name": "Last" (if mentioned),
+        "birth_year": year as integer (if mentioned),
+        "birth_place": "Place" (if mentioned),
+        "birth_date": "Full date" (if mentioned),
+        "death_year": year as integer (if mentioned),
+        "death_place": "Place" (if mentioned),
+        "death_date": "Full date" (if mentioned),
+        "gender": "M" or "F" (if mentioned or can be inferred from name),
+        "relationship": "their grandfather" (if mentioned, e.g., "my grandfather", "her sister"),
+        "occupation": "Occupation" (if mentioned),
+        "notes": "Any other relevant details"
+      }}
+    - "mentioned_locations": List of places (towns, counties, countries)
+    - "mentioned_dates": List of dates or date ranges (e.g., ["abt 1880", "1912-1915"])
+    - "potential_relationships": List of relationship descriptions (e.g., ["Grandfather of current user"])
+    - "key_facts": List of important facts (e.g., ["Immigrated via Liverpool", "Worked in coal mines"])
+
+    Only include entities explicitly mentioned by the USER. Do not infer or add information not present. If no entities of a certain type are found, provide an empty list [].
+
 2.  **Suggest Actionable Follow-up Tasks:** Based ONLY on the information provided in the conversation history, suggest 2-4 concrete, actionable research tasks for 'Me'/'{user_name}'. Tasks MUST be directly based on information, questions, or ambiguities present *only* in the provided conversation history. Tasks should be specific. Examples: "Check [Year] census for [Name] in [Location]", "Search ship manifests for [Name] arriving [Port] around [Date]", "Compare shared matches with [Match Name]", "Look for [Event record] for [Name] in [Place]". Provide this as a list of strings under a "suggested_tasks" key. Provide an empty list [] if no specific tasks can be suggested.
 
 Format your response STRICTLY as a JSON object, starting with `{{` and ending with `}}`, with no introductory text or markdown. Example:
 {{
   "extracted_data": {{
     "mentioned_names": ["John Smith", "Mary Anne Jones"],
+    "mentioned_people": [
+      {{
+        "name": "John Smith",
+        "first_name": "John",
+        "last_name": "Smith",
+        "birth_year": 1850,
+        "birth_place": "Glasgow, Scotland",
+        "death_year": 1920,
+        "gender": "M",
+        "relationship": "my great-grandfather",
+        "occupation": "coal miner"
+      }},
+      {{
+        "name": "Mary Anne Jones",
+        "first_name": "Mary Anne",
+        "last_name": "Jones",
+        "birth_year": 1880,
+        "birth_place": "County Cork, Ireland",
+        "gender": "F",
+        "relationship": "his wife"
+      }}
+    ],
     "mentioned_locations": ["Glasgow", "County Cork", "Liverpool"],
     "mentioned_dates": ["abt 1880", "1912"],
-    "potential_relationships": ["Grandfather of current user"],
+    "potential_relationships": ["Great-grandfather of current user"],
     "key_facts": ["Immigrated via Liverpool", "Worked in coal mines"]
   }},
   "suggested_tasks": [
