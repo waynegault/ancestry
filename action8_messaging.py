@@ -37,6 +37,16 @@ except ImportError:
 
 MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
 
+# === PHASE 5 INTEGRATION ===
+_phase5_available = False
+try:
+    from action8_phase5_integration import enhance_message_format_data_phase5
+    _phase5_available = True
+except ImportError:
+    enhance_message_format_data_phase5 = None
+
+PHASE5_INTEGRATION_AVAILABLE = _phase5_available
+
 # === STANDARD LIBRARY IMPORTS ===
 import logging
 import os
@@ -2246,6 +2256,37 @@ def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTre
 
     # Add tree statistics and ethnicity commonality
     _add_tree_statistics_to_format_data(format_data, db_session, person)
+
+    # Add Phase 5 enhancements (source citations, relationship diagrams, research suggestions)
+    if PHASE5_INTEGRATION_AVAILABLE and enhance_message_format_data_phase5:
+        try:
+            from config_manager import ConfigManager
+            config = ConfigManager()
+
+            enable_sources = config.get('phase5.enable_source_citations', True)
+            enable_diagrams = config.get('phase5.enable_relationship_diagrams', True)
+            enable_suggestions = config.get('phase5.enable_research_suggestions', False)
+
+            enhance_message_format_data_phase5(
+                person=person,
+                family_tree=family_tree,
+                format_data=format_data,
+                enable_sources=enable_sources,
+                enable_diagrams=enable_diagrams,
+                enable_suggestions=enable_suggestions
+            )
+            logger.debug(f"Phase 5 enhancements added to message format data for {person.username}")
+        except Exception as e:
+            logger.warning(f"Could not add Phase 5 enhancements: {e}")
+            # Add empty placeholders so templates don't break
+            format_data.setdefault('source_citations', '')
+            format_data.setdefault('relationship_diagram', '')
+            format_data.setdefault('research_suggestions', '')
+    else:
+        # Phase 5 not available - add empty placeholders
+        format_data.setdefault('source_citations', '')
+        format_data.setdefault('relationship_diagram', '')
+        format_data.setdefault('research_suggestions', '')
 
     return format_data
 
