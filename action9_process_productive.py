@@ -2447,6 +2447,94 @@ def _test_error_handling() -> None:
     assert isinstance(result, str), "Should handle empty extraction data"
 
 
+def _test_enhanced_task_creation() -> None:
+    """
+    Test enhanced MS To-Do task creation with priority and due dates.
+
+    Phase 5.3: Enhanced MS To-Do Task Creation
+    Tests the _calculate_task_priority_and_due_date method.
+    """
+    from datetime import datetime, timedelta
+    from unittest.mock import Mock
+
+    from database import DnaMatch, Person
+
+    # Create mock dependencies for PersonProcessor
+    mock_session_manager = Mock()
+    mock_session_manager.my_profile_id = "test_profile"
+    mock_db_state = Mock()
+    mock_msg_config = Mock()
+    mock_ms_state = Mock()
+
+    # Create test processor instance
+    processor = PersonProcessor(
+        session_manager=mock_session_manager,
+        db_state=mock_db_state,
+        msg_config=mock_msg_config,
+        ms_state=mock_ms_state
+    )
+
+    # Test Case 1: High priority - 1st cousin, in tree
+    person1 = Mock(spec=Person)
+    person1.id = 1
+    person1.username = "Test User 1"
+    person1.profile_id = "test123"
+    person1.in_my_tree = True
+    person1.predicted_relationship = "1st cousin"  # Mock property access
+    person1.tree_status = "in_tree"  # Mock property access
+
+    importance1, due_date1, categories1 = processor._calculate_task_priority_and_due_date(person1)
+    assert importance1 == "high", "1st cousin should have high priority"
+    assert "Close Relative" in categories1, "Should include Close Relative category"
+    assert "In Tree" in categories1, "Should include In Tree category"
+    assert due_date1 is not None, "Should have due date"
+
+    # Test Case 2: Normal priority - 3rd cousin, not in tree
+    person2 = Mock(spec=Person)
+    person2.id = 2
+    person2.username = "Test User 2"
+    person2.profile_id = "test456"
+    person2.in_my_tree = False
+    person2.predicted_relationship = "3rd cousin"
+    person2.tree_status = "out_tree"
+
+    importance2, due_date2, categories2 = processor._calculate_task_priority_and_due_date(person2)
+    assert importance2 == "normal", "3rd cousin should have normal priority"
+    assert "Distant Relative" in categories2, "Should include Distant Relative category"
+    assert "Out of Tree" in categories2, "Should include Out of Tree category"
+    assert due_date2 is not None, "Should have due date"
+
+    # Test Case 3: Low priority - 5th cousin, in tree
+    person3 = Mock(spec=Person)
+    person3.id = 3
+    person3.username = "Test User 3"
+    person3.profile_id = "test789"
+    person3.in_my_tree = True
+    person3.predicted_relationship = "5th cousin"
+    person3.tree_status = "in_tree"
+
+    importance3, due_date3, categories3 = processor._calculate_task_priority_and_due_date(person3)
+    assert importance3 == "low", "5th cousin should have low priority"
+    assert "Distant Relative" in categories3, "Should include Distant Relative category"
+    assert due_date3 is not None, "Should have due date"
+
+    # Test Case 4: No relationship - default priority
+    person4 = Mock(spec=Person)
+    person4.id = 4
+    person4.username = "Test User 4"
+    person4.profile_id = "test000"
+    person4.in_my_tree = False
+    person4.predicted_relationship = None
+    person4.tree_status = None
+
+    importance4, due_date4, categories4 = processor._calculate_task_priority_and_due_date(person4)
+    assert importance4 == "normal", "No relationship should default to normal priority"
+    assert "Ancestry Research" in categories4, "Should always include Ancestry Research category"
+    # due_date4 may be None for default case, which is acceptable
+
+    logger.info("✅ Enhanced task creation tests passed")
+
+
 # ==============================================
 # INTEGRATION TEST HELPERS (Real Authenticated Sessions)
 # ==============================================
@@ -2663,6 +2751,7 @@ def action9_process_productive_module_tests() -> bool:
     test_integration = _test_integration
     test_circuit_breaker_config = _test_circuit_breaker_config
     test_error_handling = _test_error_handling
+    test_enhanced_task_creation = _test_enhanced_task_creation
     test_database_session = _test_database_session_availability
     test_message_templates = _test_message_templates_available
 
@@ -2709,6 +2798,12 @@ def action9_process_productive_module_tests() -> bool:
          "All error conditions handled gracefully with appropriate fallback responses",
          "Error handling and recovery functionality for AI operations",
          "Testing error scenarios with invalid data, exceptions, and malformed responses"),
+
+        ("Enhanced MS To-Do task creation with priority and due dates",
+         test_enhanced_task_creation,
+         "Task priority and due dates calculated correctly based on relationship closeness",
+         "Phase 5.3 enhanced task creation with relationship-based priority",
+         "Testing _calculate_task_priority_and_due_date() with various relationship types"),
     ]
 
     # Only add database session tests if not skipping live API tests
