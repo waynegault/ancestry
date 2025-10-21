@@ -439,12 +439,15 @@ class PersonProcessor:
 
             extracted_data, suggested_tasks = ai_results
 
+            # Phase 2: Look up mentioned people
+            lookup_results = self._lookup_mentioned_people(extracted_data, person)
+
             # Create MS Graph tasks
             self._create_ms_tasks(person, suggested_tasks, log_prefix, progress_bar)
 
             # Generate and send response
             success = self._handle_message_response(
-                person, context_logs, extracted_data, log_prefix, progress_bar
+                person, context_logs, extracted_data, lookup_results, log_prefix, progress_bar
             )
             if not success:
                 return False, "send_error"
@@ -627,7 +630,7 @@ class PersonProcessor:
             PersonLookupResult if found, None otherwise
         """
         try:
-            from gedcom_cache import get_cached_gedcom_data
+            from gedcom_cache import load_gedcom_with_aggressive_caching
             from action10 import filter_and_score_individuals
 
             # Load GEDCOM data
@@ -636,7 +639,7 @@ class PersonProcessor:
                 logger.warning("GEDCOM file path not configured, skipping GEDCOM search")
                 return None
 
-            gedcom_data = get_cached_gedcom_data(gedcom_path)
+            gedcom_data = load_gedcom_with_aggressive_caching(gedcom_path)
             if not gedcom_data:
                 logger.warning("Failed to load GEDCOM data, skipping GEDCOM search")
                 return None
@@ -806,6 +809,7 @@ class PersonProcessor:
         person: Person,
         context_logs: list[ConversationLog],
         extracted_data: dict[str, Any],
+        lookup_results: list[PersonLookupResult],
         log_prefix: str,
         progress_bar=None,
     ) -> bool:
@@ -831,6 +835,7 @@ class PersonProcessor:
             person,
             context_logs,
             latest_message,
+            lookup_results,
             log_prefix,
             progress_bar,
         )
@@ -861,11 +866,37 @@ class PersonProcessor:
         except Exception as e:
             logger.error(f"Failed to mark message as processed: {e}")
 
+    def _format_lookup_results_for_ai(self, lookup_results: list[PersonLookupResult]) -> str:
+        """
+        Format lookup results for inclusion in AI prompt.
+
+        Phase 2: Person Lookup Integration
+
+        Args:
+            lookup_results: List of PersonLookupResult objects
+
+        Returns:
+            Formatted string for AI prompt
+        """
+        if not lookup_results:
+            return "No people found in records."
+
+        formatted_parts = []
+
+        for result in lookup_results:
+            if result.found:
+                formatted_parts.append(result.format_for_ai())
+            else:
+                formatted_parts.append(f"Person '{result.name}' not found in tree or records.")
+
+        return "\n\n".join(formatted_parts)
+
     def _generate_custom_reply(
         self,
         person: Person,
         context_logs: list[ConversationLog],
         latest_message: ConversationLog,
+        lookup_results: list[PersonLookupResult],
         log_prefix: str,
         progress_bar=None,
     ) -> Optional[str]:
@@ -876,6 +907,54 @@ class PersonProcessor:
                 f"Processing {person.username}: Identifying person"
             )
 
+        # Phase 2: Use lookup results if available
+        if lookup_results:
+            logger.info(f"{log_prefix}: Using {len(lookup_results)} lookup results for custom reply")
+
+            # Check if custom responses are enabled
+            if not config_schema.custom_response_enabled:
+                logger.info(
+                    f"{log_prefix}: Custom replies disabled via config. Using standard."
+                )
+                return None
+
+            if progress_bar:
+                progress_bar.set_description(
+                    f"Processing {person.username}: Generating custom reply"
+                )
+
+            # Format lookup results for AI
+            genealogical_data_str = self._format_lookup_results_for_ai(lookup_results)
+
+            # Get user's last message
+            user_last_message = safe_column_value(
+                latest_message, "latest_message_content", ""
+            )
+
+            # Format context
+            formatted_context = _format_context_for_ai_extraction(
+                context_logs, self.my_pid_lower
+            )
+
+            # Generate custom reply
+            custom_reply = generate_genealogical_reply(
+                session_manager=self.session_manager,
+                conversation_context=formatted_context,
+                user_message=user_last_message,
+                genealogical_data=genealogical_data_str,
+                log_prefix=log_prefix,
+            )
+
+            if custom_reply:
+                logger.info(f"{log_prefix}: Generated custom genealogical reply with lookup results.")
+            else:
+                logger.warning(
+                    f"{log_prefix}: Failed to generate custom reply. Will fall back."
+                )
+
+            return custom_reply
+
+        # Fallback to old method if no lookup results
         # Try to identify a person mentioned in the message
         person_details = _identify_and_get_person_details(log_prefix)
 
