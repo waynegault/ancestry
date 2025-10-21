@@ -619,6 +619,59 @@ class PersonProcessor:
 
         return lookup_results
 
+    def _load_gedcom_data(self) -> Optional[Any]:
+        """Load GEDCOM data from configured path."""
+        from gedcom_cache import load_gedcom_with_aggressive_caching
+
+        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+        if not gedcom_path:
+            logger.warning("GEDCOM file path not configured, skipping GEDCOM search")
+            return None
+
+        gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_path))
+        if not gedcom_data:
+            logger.warning("Failed to load GEDCOM data, skipping GEDCOM search")
+            return None
+
+        return gedcom_data
+
+    def _build_search_criteria_from_person_data(self, person_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """Build search criteria from extracted person data."""
+        search_criteria = {}
+
+        if person_data.get("first_name"):
+            search_criteria["first_name"] = person_data["first_name"].lower()
+        if person_data.get("last_name"):
+            search_criteria["surname"] = person_data["last_name"].lower()
+        if person_data.get("birth_year"):
+            search_criteria["birth_year"] = person_data["birth_year"]
+        if person_data.get("birth_place"):
+            search_criteria["birth_place"] = person_data["birth_place"]
+        if person_data.get("gender"):
+            search_criteria["gender"] = person_data["gender"].lower()
+
+        # Need at least name to search
+        if not search_criteria.get("first_name") and not search_criteria.get("surname"):
+            logger.warning(f"Insufficient search criteria for {person_data.get('name')}")
+            return None
+
+        return search_criteria
+
+    def _perform_gedcom_search(self, gedcom_data: Any, search_criteria: dict[str, Any]) -> list[dict[str, Any]]:
+        """Perform GEDCOM search using Action 10 logic."""
+        from action10 import filter_and_score_individuals
+
+        scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
+        date_flex = {"year_match_range": 5.0}
+
+        return filter_and_score_individuals(
+            gedcom_data,
+            search_criteria,  # filter_criteria
+            search_criteria,  # scoring_criteria
+            scoring_weights,
+            date_flex,
+        )
+
     def _search_gedcom_for_person(self, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
         """
         Search for a person in GEDCOM data using Action 10 logic.
@@ -630,59 +683,25 @@ class PersonProcessor:
             PersonLookupResult if found, None otherwise
         """
         try:
-            from gedcom_cache import load_gedcom_with_aggressive_caching
-            from action10 import filter_and_score_individuals
-
             # Load GEDCOM data
-            gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
-            if not gedcom_path:
-                logger.warning("GEDCOM file path not configured, skipping GEDCOM search")
-                return None
-
-            gedcom_data = load_gedcom_with_aggressive_caching(gedcom_path)
+            gedcom_data = self._load_gedcom_data()
             if not gedcom_data:
-                logger.warning("Failed to load GEDCOM data, skipping GEDCOM search")
                 return None
 
-            # Build search criteria from person_data
-            search_criteria = {}
-
-            if person_data.get("first_name"):
-                search_criteria["first_name"] = person_data["first_name"].lower()
-            if person_data.get("last_name"):
-                search_criteria["surname"] = person_data["last_name"].lower()
-            if person_data.get("birth_year"):
-                search_criteria["birth_year"] = person_data["birth_year"]
-            if person_data.get("birth_place"):
-                search_criteria["birth_place"] = person_data["birth_place"]
-            if person_data.get("gender"):
-                search_criteria["gender"] = person_data["gender"].lower()
-
-            # Need at least name to search
-            if not search_criteria.get("first_name") and not search_criteria.get("surname"):
-                logger.warning(f"Insufficient search criteria for {person_data.get('name')}")
+            # Build search criteria
+            search_criteria = self._build_search_criteria_from_person_data(person_data)
+            if not search_criteria:
                 return None
 
-            # Search using Action 10 logic
-            scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
-            date_flex = {"year_match_range": 5.0}
-
-            results = filter_and_score_individuals(
-                gedcom_data,
-                search_criteria,  # filter_criteria
-                search_criteria,  # scoring_criteria
-                scoring_weights,
-                date_flex,
-            )
-
+            # Perform search
+            results = self._perform_gedcom_search(gedcom_data, search_criteria)
             if not results:
                 return None
 
-            # Get top result
+            # Validate top result
             top_result = results[0]
             score = top_result.get("total_score", 0)
 
-            # Only accept if score is reasonable (>= 50)
             if score < 50:
                 logger.debug(f"Top result score too low ({score}), rejecting")
                 return None

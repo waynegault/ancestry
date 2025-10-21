@@ -36,7 +36,7 @@ def test_database_schema() -> None:
     """Test 2: Verify TreeStatisticsCache table exists in database."""
     import sqlite3
 
-    from database import TreeStatisticsCache  # noqa: F401
+    from database import TreeStatisticsCache
 
     conn = sqlite3.connect("Data/ancestry_test.db")
     cursor = conn.cursor()
