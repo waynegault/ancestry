@@ -1019,7 +1019,7 @@ def _update_response_time_average(template_stats: dict[str, Any], template_name:
 
 def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None:
     """Calculate response rates for all templates."""
-    for _template_name, stats in template_stats.items():
+    for _, stats in template_stats.items():
         if stats["sent"] > 0:
             stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 
@@ -4052,7 +4052,7 @@ def _ensure_session_for_messaging_tests(reuse_session: bool = True) -> tuple['Se
 def _test_main_function_with_dry_run() -> bool:
     """Test main send_messages_to_matches function in dry_run mode."""
     try:
-        sm, _my_uuid = _ensure_session_for_messaging_tests()
+        sm, _ = _ensure_session_for_messaging_tests()
 
         logger.info("Testing send_messages_to_matches() in dry_run mode...")
 
@@ -4138,7 +4138,7 @@ def _convert_logs_to_dicts(db_logs_to_add: list) -> list:
 def _test_database_message_creation() -> bool:
     """Test that messages are created in database during dry_run with limited candidates."""
     try:
-        sm, _my_uuid = _ensure_session_for_messaging_tests()
+        sm, _ = _ensure_session_for_messaging_tests()
 
         logger.info("Testing database message creation in dry_run mode (limited to 10 candidates)...")
 
@@ -4212,7 +4212,7 @@ def _log_created_messages(db_session: Session, initial_count: int, final_count: 
 def _test_dry_run_mode_no_actual_send() -> bool:
     """Test that dry_run mode creates messages but doesn't send them (limited to 5 candidates)."""
     try:
-        sm, _my_uuid = _ensure_session_for_messaging_tests()
+        sm, _ = _ensure_session_for_messaging_tests()
 
         logger.info("Testing dry_run mode prevents actual message sending (limited to 10 candidates)...")
 
@@ -4282,7 +4282,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
 def _test_message_template_loading_from_db() -> bool:
     """Test that message templates are loaded from database."""
     try:
-        sm, _my_uuid = _ensure_session_for_messaging_tests()
+        sm, _ = _ensure_session_for_messaging_tests()
 
         logger.info("Testing message template loading from database...")
 
@@ -4313,7 +4313,7 @@ def _test_message_template_loading_from_db() -> bool:
 def _test_conversation_log_tracking() -> bool:
     """Test that conversation logs are properly tracked."""
     try:
-        sm, _my_uuid = _ensure_session_for_messaging_tests()
+        sm, _ = _ensure_session_for_messaging_tests()
 
         logger.info("Testing conversation log tracking...")
 
