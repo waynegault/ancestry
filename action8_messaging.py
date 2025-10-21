@@ -520,23 +520,45 @@ def determine_next_action(person: Person, log_prefix: str = "") -> tuple[str, da
             return ('research_needed', None)
 
         # 4. Calculate adaptive follow-up timing
-        engagement_score = conv_state.engagement_score or 0
-        interval = calculate_adaptive_interval(engagement_score, person.last_logged_in, log_prefix)
-        if interval.total_seconds() == 0:
-            # Testing/dry_run mode or no engagement
-            logger.debug(f"{log_prefix}: No adaptive interval - no follow-up scheduled")
-            return ('no_action', None)
-
-        next_date = datetime.now() + interval
-        logger.info(
-            f"{log_prefix}: Follow-up scheduled in {interval.days} days "
-            f"(engagement: {engagement_score})"
-        )
-        return ('send_follow_up', next_date)
+        return _calculate_follow_up_action(person, conv_state, log_prefix)
 
     except Exception as e:
         logger.error(f"{log_prefix}: Error determining next action: {e}")
         return ('no_action', None)
+
+
+def _calculate_follow_up_action(
+    person: Person,
+    conv_state: Any,
+    log_prefix: str = "",
+) -> tuple[str, datetime | None]:
+    """
+    Calculate follow-up action based on adaptive timing.
+
+    Helper function to reduce complexity in determine_next_action().
+
+    Args:
+        person: Person object
+        conv_state: ConversationState object
+        log_prefix: Logging prefix
+
+    Returns:
+        tuple: ('send_follow_up', datetime) or ('no_action', None)
+    """
+    engagement_score = conv_state.engagement_score or 0
+    interval = calculate_adaptive_interval(engagement_score, person.last_logged_in, log_prefix)
+
+    if interval.total_seconds() == 0:
+        # Testing/dry_run mode or no engagement
+        logger.debug(f"{log_prefix}: No adaptive interval - no follow-up scheduled")
+        return ('no_action', None)
+
+    next_date = datetime.now() + interval
+    logger.info(
+        f"{log_prefix}: Follow-up scheduled in {interval.days} days "
+        f"(engagement: {engagement_score})"
+    )
+    return ('send_follow_up', next_date)
 
 
 def detect_status_change_to_in_tree(person: Person) -> bool:
@@ -4908,6 +4930,44 @@ def _test_log_no_conversation_state() -> bool:
     return True
 
 
+def _test_calculate_follow_up_action() -> bool:
+    """Test _calculate_follow_up_action helper function."""
+    from unittest.mock import Mock
+
+    from config import config_schema
+
+    # Save original mode
+    original_mode = config_schema.app_mode
+
+    try:
+        # Set to production mode for adaptive timing
+        config_schema.app_mode = 'production'
+
+        # Create mock person with high engagement
+        person = Mock(spec=Person)
+        person.id = 303
+        person.username = "Follow-up Test User"
+        person.last_logged_in = datetime.now() - timedelta(days=3)
+
+        # Create mock conversation_state with high engagement
+        conv_state = Mock()
+        conv_state.engagement_score = 75
+
+        # Calculate follow-up action
+        action, next_date = _calculate_follow_up_action(person, conv_state, "test")
+
+        # Verify send_follow_up with scheduled date
+        assert action == 'send_follow_up', f"Expected 'send_follow_up', got '{action}'"
+        assert next_date is not None, "next_date should not be None for send_follow_up"
+        assert isinstance(next_date, datetime), "next_date should be datetime object"
+
+        logger.info("✓ Follow-up action calculation works correctly")
+        return True
+
+    finally:
+        config_schema.app_mode = original_mode
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -5181,6 +5241,12 @@ def action8_messaging_tests() -> None:
         "Log with no conversation state",
         _test_log_no_conversation_state,
         "Handles missing conversation_state gracefully.",
+    )
+
+    suite.run_test(
+        "Calculate follow-up action",
+        _test_calculate_follow_up_action,
+        "Helper function calculates adaptive follow-up timing.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
