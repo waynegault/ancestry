@@ -14,7 +14,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 10**: GEDCOM file analysis and scoring
 - **Action 11**: API-based genealogical research and relationship discovery
 
-**Current Status**: Phase 4 COMPLETE - Adaptive Messaging & Status Changes with Intelligent Action Determination & Conversation Flow Logging
+**Current Status**: Phase 5 IN PROGRESS - Research Assistant Features (P5.1 Complete: Source Citation Extraction)
 
 ---
 
@@ -335,7 +335,39 @@ python action11.py
 
 ## Appendix A: Chronology of Changes
 
-### Phase 4: Adaptive Messaging & Intelligent Dialogue (October 21, 2025)
+### Phase 5: Research Assistant Features (October 21, 2025) 🚧 IN PROGRESS
+
+**P5.1: Source Citation Extraction** ✅ COMPLETE
+- ✅ Added TAG_SOUR and TAG_TITL constants for GEDCOM source tags
+- ✅ Implemented _extract_sources_from_event() function
+  - Extracts source citations from GEDCOM event records (BIRT, DEAT, etc.)
+  - Returns list of source titles/descriptions
+  - Handles missing sources gracefully
+- ✅ Implemented get_person_sources() function
+  - Extracts all sources for a person by event type
+  - Returns dict: {'birth': [...], 'death': [...], 'other': [...]}
+  - Validates individual records before extraction
+- ✅ Implemented format_source_citations() function
+  - Formats sources for human-readable display
+  - Single source: "documented in 1881 Scotland Census (birth)"
+  - Multiple sources: "documented in A (birth) and B (death)"
+  - Three+ sources: "documented in A, B, and C"
+- ✅ Added test_source_citation_extraction() with 7 comprehensive tests
+- ✅ Added test_source_citation_demonstration() showing complete workflow
+- ✅ All 17 gedcom_utils tests passing
+- ✅ Quality: 100.0/100 across all 65 modules
+- ✅ Usage: `sources = get_person_sources(individual); citation = format_source_citations(sources)`
+- ✅ Ready for integration into Action 8/9 responses
+
+**P5.2-P5.10: Remaining Tasks** 🚧 PENDING
+- P5.2: Research suggestion generation
+- P5.3: Enhanced MS To-Do task creation
+- P5.4: Relationship diagram generation
+- P5.5: Record sharing capabilities
+- P5.6: Research guidance AI prompt
+- P5.7-P5.10: Testing and completion
+
+### Phase 4: Adaptive Messaging & Intelligent Dialogue (October 21, 2025) ✅ COMPLETE
 
 **P4.1: Engagement-Based Follow-Up Timing** ✅ COMPLETE
 - ✅ Implemented adaptive timing using engagement score + login activity

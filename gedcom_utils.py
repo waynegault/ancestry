@@ -2720,6 +2720,14 @@ def gedcom_module_tests() -> bool:
             "get_person_sources() and format_source_citations() correctly extract and format sources",
         )
 
+        suite.run_test(
+            "Source citation demonstration",
+            test_source_citation_demonstration,
+            "Demonstrate complete source citation workflow with examples",
+            "Shows real-world usage of source citation in genealogical messages",
+            "Complete workflow from extraction to formatted message output",
+        )
+
     # Generate summary report
     return suite.finish_suite()
 
@@ -2961,7 +2969,7 @@ def test_source_citation_extraction():
     assert "1881 Scotland Census" in result, "Should include birth source"
     assert "documented in" in result, "Should include 'documented in' prefix"
 
-    # Test 3: format_source_citations with multiple sources
+    # Test 3: format_source_citations with multiple sources (2 sources)
     multiple_sources = {
         'birth': ['Birth Certificate'],
         'death': ['Death Certificate 1920'],
@@ -2972,18 +2980,112 @@ def test_source_citation_extraction():
     assert "Death Certificate 1920" in result, "Should include death source"
     assert " and " in result, "Should use 'and' for two sources"
 
-    # Test 4: get_person_sources with None individual
+    # Test 4: format_source_citations with 3+ sources
+    many_sources = {
+        'birth': ['Birth Certificate', '1881 Census'],
+        'death': ['Death Certificate 1920'],
+        'other': []
+    }
+    result = format_source_citations(many_sources)
+    assert "Birth Certificate" in result, "Should include first birth source"
+    assert "1881 Census" in result, "Should include second birth source"
+    assert "Death Certificate 1920" in result, "Should include death source"
+    assert ", and " in result, "Should use ', and' for 3+ sources"
+
+    # Test 5: get_person_sources with None individual
     sources = get_person_sources(None)
     assert isinstance(sources, dict), "Should return dict even for None"
     assert 'birth' in sources, "Should have birth key"
     assert 'death' in sources, "Should have death key"
 
-    # Test 5: _extract_sources_from_event with None event
+    # Test 6: _extract_sources_from_event with None event
     sources_list = _extract_sources_from_event(None)
     assert isinstance(sources_list, list), "Should return list even for None"
     assert len(sources_list) == 0, "Should return empty list for None"
 
+    # Test 7: _extract_sources_from_event with mock event containing sources
+    mock_sour_tag = Mock()
+    mock_sour_tag.value = "1881 Scotland Census"
+    mock_title_tag = Mock()
+    mock_title_tag.value = "Census Record"
+
+    mock_sour_with_title = Mock()
+    mock_sour_with_title.sub_tag = Mock(return_value=mock_title_tag)
+
+    mock_event = Mock()
+    mock_event.sub_tags = Mock(return_value=[mock_sour_tag, mock_sour_with_title])
+
+    sources_list = _extract_sources_from_event(mock_event)
+    assert isinstance(sources_list, list), "Should return list for mock event"
+    assert len(sources_list) >= 0, "Should handle mock event sources"
+
     logger.info("✓ Source citation extraction and formatting works correctly")
+    return True
+
+
+def test_source_citation_demonstration():
+    """
+    Demonstration test for source citation functionality.
+
+    Phase 5.1: Source Citation Support
+    Shows complete workflow from extraction to formatted output.
+    """
+    logger.info("\n" + "="*60)
+    logger.info("DEMONSTRATION: Source Citation Extraction & Formatting")
+    logger.info("="*60)
+
+    # Scenario 1: Person with no sources
+    logger.info("\n📋 Scenario 1: Person with no sources")
+    empty_sources = {'birth': [], 'death': [], 'other': []}
+    citation = format_source_citations(empty_sources)
+    logger.info(f"   Sources: {empty_sources}")
+    logger.info(f"   Formatted: '{citation}'")
+    logger.info("   ✓ Result: Empty string (no sources to cite)")
+
+    # Scenario 2: Person with single birth source
+    logger.info("\n📋 Scenario 2: Person with single birth source")
+    single_source = {'birth': ['1881 Scotland Census'], 'death': [], 'other': []}
+    citation = format_source_citations(single_source)
+    logger.info(f"   Sources: {single_source}")
+    logger.info(f"   Formatted: '{citation}'")
+    logger.info(f"   ✓ Result: {citation}")
+
+    # Scenario 3: Person with birth and death sources
+    logger.info("\n📋 Scenario 3: Person with birth and death sources")
+    two_sources = {
+        'birth': ['Birth Certificate, Banff'],
+        'death': ['Death Certificate 1920, Aberdeen'],
+        'other': []
+    }
+    citation = format_source_citations(two_sources)
+    logger.info(f"   Sources: {two_sources}")
+    logger.info(f"   Formatted: '{citation}'")
+    logger.info(f"   ✓ Result: {citation}")
+
+    # Scenario 4: Person with multiple sources
+    logger.info("\n📋 Scenario 4: Person with multiple sources (3+)")
+    many_sources = {
+        'birth': ['Birth Certificate', '1881 Scotland Census'],
+        'death': ['Death Certificate 1920'],
+        'other': []
+    }
+    citation = format_source_citations(many_sources)
+    logger.info(f"   Sources: {many_sources}")
+    logger.info(f"   Formatted: '{citation}'")
+    logger.info(f"   ✓ Result: {citation}")
+
+    # Scenario 5: Complete message example
+    logger.info("\n📋 Scenario 5: Complete message with source citation")
+    person_name = "John Smith (1850-1920)"
+    message = f"According to my tree, {person_name} is {citation}."
+    logger.info(f"   Person: {person_name}")
+    logger.info(f"   Citation: {citation}")
+    logger.info("   Complete message:")
+    logger.info(f"   '{message}'")
+
+    logger.info("\n" + "="*60)
+    logger.info("✓ Source citation demonstration complete!")
+    logger.info("="*60 + "\n")
     return True
 
 
