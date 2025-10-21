@@ -346,9 +346,15 @@ def cancel_pending_messages_on_status_change(person: Person, log_prefix: str = "
         return False
 
     try:
+        # Store old value for logging
+        old_action = person.conversation_state.next_action
+
         # Update conversation state to cancel pending messages
         person.conversation_state.next_action = 'status_changed'
         person.conversation_state.next_action_date = None
+
+        # Log the state change
+        log_conversation_state_change(person, "cancellation", old_action, "status_changed", log_prefix)
 
         logger.info(
             f"✅ Cancelled pending messages for {person.username} (ID {person.id}): "
@@ -389,10 +395,19 @@ def cancel_pending_on_reply(person: Person, log_prefix: str = "") -> bool:
         return False
 
     try:
+        # Store old values for logging
+        old_phase = person.conversation_state.conversation_phase
+        old_action = person.conversation_state.next_action
+
         # Update conversation state to cancel pending follow-ups
         person.conversation_state.next_action = 'await_reply'
         person.conversation_state.next_action_date = None
         person.conversation_state.conversation_phase = 'active_dialogue'
+
+        # Log the state changes
+        if old_phase != 'active_dialogue':
+            log_conversation_state_change(person, "phase", old_phase, "active_dialogue", log_prefix)
+        log_conversation_state_change(person, "next_action", old_action, "await_reply", log_prefix)
 
         logger.info(
             f"✅ Cancelled pending follow-ups for {person.username} (ID {person.id}): "
@@ -403,6 +418,56 @@ def cancel_pending_on_reply(person: Person, log_prefix: str = "") -> bool:
     except Exception as e:
         logger.error(f"Error cancelling follow-ups for {person.username} (ID {person.id}): {e}")
         return False
+
+
+def log_conversation_state_change(
+    person: Person,
+    change_type: str,
+    old_value: str | None = None,
+    new_value: str | None = None,
+    log_prefix: str = "",
+) -> None:
+    """
+    Log conversation state transitions for monitoring and debugging.
+
+    Phase 4.7: Conversation flow logging that tracks all state changes including
+    phase transitions, action updates, and message cancellations.
+
+    Args:
+        person: Person object with conversation_state
+        change_type: Type of change (phase, next_action, cancellation, status_change)
+        old_value: Previous value (if applicable)
+        new_value: New value (if applicable)
+        log_prefix: Logging prefix for debugging
+
+    Logged Information:
+        - Person ID and username
+        - Change type
+        - Old and new values
+        - Current engagement score
+        - Timestamp (automatic via logger)
+    """
+    if not person.conversation_state:
+        return
+
+    conv_state = person.conversation_state
+    engagement = conv_state.engagement_score or 0
+
+    if old_value and new_value:
+        logger.info(
+            f"🔄 {log_prefix}: Conversation state change for {person.username} (ID {person.id}): "
+            f"{change_type} '{old_value}' → '{new_value}' (engagement: {engagement})"
+        )
+    elif new_value:
+        logger.info(
+            f"🔄 {log_prefix}: Conversation state change for {person.username} (ID {person.id}): "
+            f"{change_type} → '{new_value}' (engagement: {engagement})"
+        )
+    else:
+        logger.info(
+            f"🔄 {log_prefix}: Conversation state change for {person.username} (ID {person.id}): "
+            f"{change_type} (engagement: {engagement})"
+        )
 
 
 def determine_next_action(person: Person, log_prefix: str = "") -> tuple[str, datetime | None]:
@@ -441,6 +506,7 @@ def determine_next_action(person: Person, log_prefix: str = "") -> tuple[str, da
         # 1. Check for status change
         if detect_status_change_to_in_tree(person):
             logger.info(f"{log_prefix}: Status changed to in-tree - cancelling pending messages")
+            log_conversation_state_change(person, "status_change", None, "in_tree", log_prefix)
             return ('status_changed', None)
 
         # 2. Check if in active dialogue (awaiting reply)
@@ -4640,6 +4706,7 @@ def _test_cancel_on_reply_already_active() -> bool:
 def _test_determine_next_action_status_change() -> bool:
     """Test determine_next_action when status changed to in-tree."""
     from unittest.mock import Mock, patch
+
     import action8_messaging
 
     # Create mock person with recent tree addition
@@ -4671,6 +4738,7 @@ def _test_determine_next_action_status_change() -> bool:
 def _test_determine_next_action_await_reply() -> bool:
     """Test determine_next_action when in active dialogue awaiting reply."""
     from unittest.mock import Mock, patch
+
     import action8_messaging
 
     # Create mock person in active dialogue
@@ -4701,6 +4769,7 @@ def _test_determine_next_action_await_reply() -> bool:
 def _test_determine_next_action_research_needed() -> bool:
     """Test determine_next_action when research is needed."""
     from unittest.mock import Mock, patch
+
     import action8_messaging
 
     # Create mock person with pending questions
@@ -4731,8 +4800,9 @@ def _test_determine_next_action_research_needed() -> bool:
 def _test_determine_next_action_send_follow_up() -> bool:
     """Test determine_next_action schedules follow-up with adaptive timing."""
     from unittest.mock import Mock, patch
-    from config import config_schema
+
     import action8_messaging
+    from config import config_schema
 
     # Temporarily set production mode for adaptive timing
     original_mode = config_schema.app_mode
@@ -4791,6 +4861,50 @@ def _test_determine_next_action_no_state() -> bool:
     assert next_date is None, "next_date should be None for no_action"
 
     logger.info("✓ No conversation_state - returns 'no_action'")
+    return True
+
+
+def _test_log_conversation_state_change() -> bool:
+    """Test conversation state change logging."""
+    from unittest.mock import Mock
+
+    # Create mock person with conversation_state
+    person = Mock(spec=Person)
+    person.id = 301
+    person.username = "Logging Test User"
+
+    # Create mock conversation_state
+    conv_state = Mock()
+    conv_state.engagement_score = 65
+    person.conversation_state = conv_state
+
+    # Test logging with old and new values
+    log_conversation_state_change(person, "phase", "initial_outreach", "active_dialogue", "test")
+
+    # Test logging with only new value
+    log_conversation_state_change(person, "next_action", None, "send_follow_up", "test")
+
+    # Test logging with no values
+    log_conversation_state_change(person, "cancellation", None, None, "test")
+
+    logger.info("✓ Conversation state logging works correctly")
+    return True
+
+
+def _test_log_no_conversation_state() -> bool:
+    """Test logging when no conversation_state exists."""
+    from unittest.mock import Mock
+
+    # Create mock person without conversation_state
+    person = Mock(spec=Person)
+    person.id = 302
+    person.username = "No State User"
+    person.conversation_state = None
+
+    # Should handle gracefully (no error)
+    log_conversation_state_change(person, "phase", "old", "new", "test")
+
+    logger.info("✓ Logging handles missing conversation_state gracefully")
     return True
 
 
@@ -5054,6 +5168,19 @@ def action8_messaging_tests() -> None:
         "Determine next action: No conversation state",
         _test_determine_next_action_no_state,
         "Returns 'no_action' when no conversation_state exists.",
+    )
+
+    # === PHASE 4.7: CONVERSATION FLOW LOGGING TESTS ===
+    suite.run_test(
+        "Log conversation state change",
+        _test_log_conversation_state_change,
+        "Logs state transitions with old/new values and engagement.",
+    )
+
+    suite.run_test(
+        "Log with no conversation state",
+        _test_log_no_conversation_state,
+        "Handles missing conversation_state gracefully.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
