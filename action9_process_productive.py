@@ -823,27 +823,27 @@ class PersonProcessor:
                 logger.debug(f"{log_prefix}: Created new conversation state")
 
             # Update conversation phase
-            conv_state.conversation_phase = self._determine_conversation_phase(context_logs)
+            conv_state.conversation_phase = self._determine_conversation_phase(context_logs)  # type: ignore[assignment]
 
             # Update engagement score
-            conv_state.engagement_score = self._calculate_engagement_score(extracted_data, context_logs)
+            conv_state.engagement_score = self._calculate_engagement_score(extracted_data, context_logs)  # type: ignore[assignment]
 
             # Update mentioned people (JSON-encoded)
             mentioned_people = extracted_data.get("mentioned_people", [])
             if mentioned_people:
                 # Store just the names for simplicity
                 people_names = [p.get("name", "Unknown") for p in mentioned_people]
-                conv_state.mentioned_people = json.dumps(people_names)
+                conv_state.mentioned_people = json.dumps(people_names)  # type: ignore[assignment]
 
             # Update last topic
             topics = extracted_data.get("topics", [])
             if topics:
-                conv_state.last_topic = topics[0] if isinstance(topics, list) else str(topics)
+                conv_state.last_topic = topics[0] if isinstance(topics, list) else str(topics)  # type: ignore[assignment]
 
             # Update pending questions (JSON-encoded)
             questions = extracted_data.get("questions", [])
             if questions:
-                conv_state.pending_questions = json.dumps(questions)
+                conv_state.pending_questions = json.dumps(questions)  # type: ignore[assignment]
 
             # Commit changes
             self.db_state.session.flush()
