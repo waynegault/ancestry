@@ -382,6 +382,89 @@ class TreeStatisticsCache(Base):
 # End of TreeStatisticsCache class
 
 
+class ConversationState(Base):
+    """
+    Tracks conversation state and engagement for intelligent dialogue management.
+    Used by Action 9 to maintain context and guide conversation flow.
+    """
+
+    __tablename__ = "conversation_state"
+
+    # --- Columns ---
+    id = Column(
+        Integer, primary_key=True, comment="Unique identifier for the conversation state."
+    )
+    people_id = Column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Foreign key to people table (one state per person).",
+    )
+    conversation_phase = Column(
+        String,
+        nullable=False,
+        default="initial_outreach",
+        comment="Current conversation phase: initial_outreach, active_dialogue, research_exchange, concluded.",
+    )
+    engagement_score = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Engagement score (0-100) based on message quality and frequency.",
+    )
+    last_topic = Column(
+        Text,
+        nullable=True,
+        comment="Last topic discussed in the conversation.",
+    )
+    pending_questions = Column(
+        Text,
+        nullable=True,
+        comment="JSON-encoded list of pending questions to ask.",
+    )
+    mentioned_people = Column(
+        Text,
+        nullable=True,
+        comment="JSON-encoded list of people mentioned in conversation.",
+    )
+    shared_ancestors = Column(
+        Text,
+        nullable=True,
+        comment="JSON-encoded list of shared ancestors discovered.",
+    )
+    next_action = Column(
+        String,
+        nullable=True,
+        comment="Next action to take: await_reply, send_follow_up, research_needed, no_action.",
+    )
+    next_action_date = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when next action should be taken.",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when conversation state was created.",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when conversation state was last updated.",
+    )
+
+    # --- Relationships ---
+    person = relationship("Person", back_populates="conversation_state")
+
+
+# End of ConversationState class
+
+
 class DnaMatch(Base):
     """
     Stores DNA match-specific details for a Person.
@@ -659,6 +742,10 @@ class Person(Base):
     # One-to-many relationship with ConversationLog. `cascade` ensures deletion.
     conversation_log_entries = relationship(
         "ConversationLog", back_populates="person", cascade="all, delete-orphan"
+    )
+    # One-to-one relationship with ConversationState. `cascade` ensures deletion.
+    conversation_state = relationship(
+        "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
 
 
