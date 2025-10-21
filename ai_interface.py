@@ -851,6 +851,163 @@ def generate_genealogical_reply(
 # End of generate_genealogical_reply
 
 
+def _load_dialogue_prompt(log_prefix: str) -> Optional[str]:
+    """Load genealogical_dialogue_response prompt from JSON."""
+    if not USE_JSON_PROMPTS:
+        return None
+
+    try:
+        loaded_prompt = get_prompt("genealogical_dialogue_response")
+        if loaded_prompt:
+            return loaded_prompt
+        logger.warning(
+            f"{log_prefix}: Failed to load 'genealogical_dialogue_response' prompt from JSON."
+        )
+    except Exception as e:
+        logger.warning(
+            f"{log_prefix}: Error loading 'genealogical_dialogue_response' prompt: {e}"
+        )
+    return None
+
+
+def _format_dialogue_prompt(
+    prompt_template: str,
+    conversation_history: str,
+    user_message: str,
+    lookup_results: str,
+    dna_data: str,
+    tree_statistics: str,
+    relationship_path: str,
+    conversation_phase: str,
+    engagement_score: int,
+    last_topic: str,
+    pending_questions: str,
+    log_prefix: str,
+) -> Optional[str]:
+    """Format dialogue prompt with all context variables."""
+    try:
+        return prompt_template.format(
+            conversation_history=conversation_history or "No previous conversation.",
+            user_message=user_message,
+            lookup_results=lookup_results or "No person lookup results available.",
+            dna_data=dna_data or "No DNA data available.",
+            tree_statistics=tree_statistics or "No tree statistics available.",
+            relationship_path=relationship_path or "Relationship unknown.",
+            conversation_phase=conversation_phase or "initial_outreach",
+            engagement_score=engagement_score,
+            last_topic=last_topic or "None",
+            pending_questions=pending_questions or "None",
+        )
+    except KeyError as ke:
+        logger.error(
+            f"{log_prefix}: Prompt formatting error. Missing key: {ke}"
+        )
+    except Exception as fe:
+        logger.error(
+            f"{log_prefix}: Unexpected error formatting prompt: {fe}"
+        )
+    return None
+
+
+def generate_contextual_response(
+    conversation_history: str,
+    user_message: str,
+    lookup_results: str,
+    dna_data: str,
+    tree_statistics: str,
+    relationship_path: str,
+    conversation_phase: str,
+    engagement_score: int,
+    last_topic: str,
+    pending_questions: str,
+    session_manager: SessionManager,
+    log_prefix: str = "",
+) -> Optional[str]:
+    """
+    Generate intelligent contextual genealogical response using Phase 3 dialogue engine.
+
+    Uses the genealogical_dialogue_response prompt with full conversation state awareness.
+
+    Args:
+        conversation_history: Formatted conversation history
+        user_message: User's latest message
+        lookup_results: Formatted person lookup results
+        dna_data: DNA match information
+        tree_statistics: Tree statistics summary
+        relationship_path: Relationship path to user
+        conversation_phase: Current phase (initial_outreach/active_dialogue/research_exchange)
+        engagement_score: 0-100 engagement score
+        last_topic: Last conversation topic
+        pending_questions: Pending questions from previous messages
+        session_manager: Session manager for API calls
+        log_prefix: Logging prefix
+
+    Returns:
+        Generated response text or None if generation fails
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error(f"{log_prefix}: AI_PROVIDER not configured.")
+        return None
+
+    if not user_message:
+        logger.error(f"{log_prefix}: user_message is required.")
+        return None
+
+    # Load prompt template
+    system_prompt_template = _load_dialogue_prompt(log_prefix)
+    if not system_prompt_template:
+        logger.error(
+            f"{log_prefix}: genealogical_dialogue_response prompt not available."
+        )
+        return None
+
+    # Format prompt with context
+    final_system_prompt = _format_dialogue_prompt(
+        system_prompt_template,
+        conversation_history,
+        user_message,
+        lookup_results,
+        dna_data,
+        tree_statistics,
+        relationship_path,
+        conversation_phase,
+        engagement_score,
+        last_topic,
+        pending_questions,
+        log_prefix,
+    )
+
+    if not final_system_prompt:
+        return None
+
+    # Call AI model
+    start_time = time.time()
+    response_text = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=final_system_prompt,
+        user_content="Please generate a contextual genealogical response based on the conversation state and lookup results provided in the system prompt.",
+        session_manager=session_manager,
+        max_tokens=1000,
+        temperature=0.7,
+    )
+    duration = time.time() - start_time
+
+    if response_text:
+        logger.info(
+            f"{log_prefix}: Contextual response generation successful. (Took {duration:.2f}s)"
+        )
+    else:
+        logger.error(
+            f"{log_prefix}: Contextual response generation failed. (Took {duration:.2f}s)"
+        )
+
+    return response_text
+
+
+# End of generate_contextual_response
+
+
 def extract_with_custom_prompt(
     context_history: str, custom_prompt: str, session_manager: SessionManager
 ) -> Optional[dict[str, Any]]:

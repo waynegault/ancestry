@@ -31,7 +31,11 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import ms_graph_utils
-from ai_interface import extract_genealogical_entities
+from ai_interface import (
+    extract_genealogical_entities,
+    generate_contextual_response,
+    generate_genealogical_reply,
+)
 
 # === LOCAL IMPORTS ===
 from config import config_schema
@@ -1049,6 +1053,89 @@ class PersonProcessor:
 
         return "\n\n".join(formatted_parts)
 
+    def _get_conversation_state_data(self, person: Person) -> tuple[str, int, str, str]:
+        """Get conversation state data for a person."""
+        from database import ConversationState
+
+        conv_state = None
+        if self.db_state.session:
+            conv_state = (
+                self.db_state.session.query(ConversationState)
+                .filter_by(people_id=person.id)
+                .first()
+            )
+
+        if conv_state:
+            conversation_phase = safe_column_value(conv_state, "conversation_phase", "initial_outreach")
+            engagement_score = safe_column_value(conv_state, "engagement_score", 0)
+            last_topic = safe_column_value(conv_state, "last_topic", "")
+            pending_questions = safe_column_value(conv_state, "pending_questions", "")
+        else:
+            conversation_phase = "initial_outreach"
+            engagement_score = 0
+            last_topic = ""
+            pending_questions = ""
+
+        return conversation_phase, engagement_score, last_topic, pending_questions
+
+    def _get_person_context_data(self, person: Person) -> tuple[str, str, str]:
+        """Get DNA data, tree statistics, and relationship path for a person."""
+        dna_data = ""
+        if person.dna_match:
+            dna_data = f"DNA Match: {person.dna_match.shared_dna_cm} cM shared, Confidence: {person.dna_match.confidence}"
+
+        tree_stats = ""
+        if person.family_tree:
+            tree_stats = f"Tree: {person.family_tree.person_count} people, {person.family_tree.tree_size} size"
+
+        relationship_path = ""
+        if person.dna_match and person.dna_match.relationship:
+            relationship_path = person.dna_match.relationship
+
+        return dna_data, tree_stats, relationship_path
+
+    def _generate_contextual_reply_with_lookup(
+        self,
+        person: Person,
+        context_logs: list[ConversationLog],
+        latest_message: ConversationLog,
+        lookup_results: list[PersonLookupResult],
+        log_prefix: str,
+    ) -> Optional[str]:
+        """Generate contextual reply using Phase 3 dialogue engine."""
+        # Get conversation state
+        conversation_phase, engagement_score, last_topic, pending_questions = (
+            self._get_conversation_state_data(person)
+        )
+
+        # Format lookup results
+        lookup_results_str = self._format_lookup_results_for_ai(lookup_results)
+
+        # Get user's last message
+        user_last_message = safe_column_value(latest_message, "latest_message_content", "")
+
+        # Format conversation history
+        formatted_context = _format_context_for_ai_extraction(context_logs, self.my_pid_lower)
+
+        # Get person context data
+        dna_data, tree_stats, relationship_path = self._get_person_context_data(person)
+
+        # Generate contextual response
+        return generate_contextual_response(
+            conversation_history=formatted_context,
+            user_message=user_last_message,
+            lookup_results=lookup_results_str,
+            dna_data=dna_data,
+            tree_statistics=tree_stats,
+            relationship_path=relationship_path,
+            conversation_phase=conversation_phase,
+            engagement_score=engagement_score,
+            last_topic=last_topic,
+            pending_questions=pending_questions,
+            session_manager=self.session_manager,
+            log_prefix=log_prefix,
+        )
+
     def _generate_custom_reply(
         self,
         person: Person,
@@ -1065,11 +1152,10 @@ class PersonProcessor:
                 f"Processing {person.username}: Identifying person"
             )
 
-        # Phase 2: Use lookup results if available
+        # Phase 3: Use contextual dialogue engine with lookup results
         if lookup_results:
-            logger.info(f"{log_prefix}: Using {len(lookup_results)} lookup results for custom reply")
+            logger.info(f"{log_prefix}: Using {len(lookup_results)} lookup results for contextual reply")
 
-            # Check if custom responses are enabled
             if not config_schema.custom_response_enabled:
                 logger.info(
                     f"{log_prefix}: Custom replies disabled via config. Using standard."
@@ -1078,36 +1164,19 @@ class PersonProcessor:
 
             if progress_bar:
                 progress_bar.set_description(
-                    f"Processing {person.username}: Generating custom reply"
+                    f"Processing {person.username}: Generating contextual reply"
                 )
 
-            # Format lookup results for AI
-            genealogical_data_str = self._format_lookup_results_for_ai(lookup_results)
-
-            # Get user's last message
-            user_last_message = safe_column_value(
-                latest_message, "latest_message_content", ""
-            )
-
-            # Format context
-            formatted_context = _format_context_for_ai_extraction(
-                context_logs, self.my_pid_lower
-            )
-
-            # Generate custom reply
-            custom_reply = generate_genealogical_reply(
-                session_manager=self.session_manager,
-                conversation_context=formatted_context,
-                user_message=user_last_message,
-                genealogical_data=genealogical_data_str,
-                log_prefix=log_prefix,
+            # Generate contextual reply using Phase 3 dialogue engine
+            custom_reply = self._generate_contextual_reply_with_lookup(
+                person, context_logs, latest_message, lookup_results, log_prefix
             )
 
             if custom_reply:
-                logger.info(f"{log_prefix}: Generated custom genealogical reply with lookup results.")
+                logger.info(f"{log_prefix}: Generated contextual dialogue response with lookup results.")
             else:
                 logger.warning(
-                    f"{log_prefix}: Failed to generate custom reply. Will fall back."
+                    f"{log_prefix}: Failed to generate contextual reply. Will fall back to standard reply."
                 )
 
             return custom_reply
@@ -1146,13 +1215,14 @@ class PersonProcessor:
         # Format context
         formatted_context = _format_context_for_ai_extraction(
             context_logs, self.my_pid_lower
-        )  # Generate custom reply
+        )
+
+        # Generate custom reply using standard genealogical reply (fallback)
         custom_reply = generate_genealogical_reply(
-            session_manager=self.session_manager,
             conversation_context=formatted_context,
-            user_message=user_last_message,
-            genealogical_data=genealogical_data_str,
-            log_prefix=log_prefix,
+            user_last_message=user_last_message,
+            genealogical_data_str=genealogical_data_str,
+            session_manager=self.session_manager,
         )
 
         if custom_reply:
@@ -2140,33 +2210,6 @@ def _format_genealogical_data_for_ai(
             formatted_lines.append(f"- {name}")
 
     return "\n".join(formatted_lines)
-
-
-def generate_genealogical_reply(
-    session_manager: SessionManager,
-    conversation_context: str,
-    user_message: str,
-    genealogical_data: str,
-    log_prefix: str,
-) -> Optional[str]:
-    """
-    Generate a genealogical reply using the AI interface.
-    """
-    try:
-        # Import the AI interface function
-        from ai_interface import generate_genealogical_reply as ai_generate_reply
-
-        # Use the AI interface to generate a reply
-        return ai_generate_reply(
-            conversation_context=conversation_context,
-            user_last_message=user_message,
-            genealogical_data_str=genealogical_data,
-            session_manager=session_manager,
-        )
-
-    except Exception as e:
-        logger.error(f"{log_prefix}: Error generating genealogical reply: {e!s}")
-        return None
 
 
 def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:

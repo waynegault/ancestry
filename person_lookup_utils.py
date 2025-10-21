@@ -85,6 +85,47 @@ class PersonLookupResult:
             "found": self.found,
         }
 
+    def _format_birth_info(self) -> Optional[str]:
+        """Format birth information."""
+        if self.birth_year and self.birth_place:
+            return f"born {self.birth_year} in {self.birth_place}"
+        if self.birth_year:
+            return f"born {self.birth_year}"
+        if self.birth_place:
+            return f"born in {self.birth_place}"
+        return None
+
+    def _format_death_info(self) -> Optional[str]:
+        """Format death information."""
+        if self.death_year and self.death_place:
+            return f"died {self.death_year} in {self.death_place}"
+        if self.death_year:
+            return f"died {self.death_year}"
+        return None
+
+    def _format_family_details(self) -> list[str]:
+        """Format family details."""
+        parts = []
+        if not self.family_details:
+            return parts
+
+        if "parents" in self.family_details:
+            parents = self.family_details["parents"]
+            if parents:
+                parts.append(f"parents: {', '.join(parents)}")
+
+        if "spouse" in self.family_details:
+            spouse = self.family_details["spouse"]
+            if spouse:
+                parts.append(f"spouse: {spouse}")
+
+        if "children" in self.family_details:
+            children = self.family_details["children"]
+            if children:
+                parts.append(f"children: {', '.join(children[:3])}")
+
+        return parts
+
     def format_for_ai(self) -> str:
         """Format lookup result for inclusion in AI prompt."""
         if not self.found:
@@ -93,37 +134,21 @@ class PersonLookupResult:
         parts = [f"Found: {self.name}"]
 
         # Add birth info
-        if self.birth_year and self.birth_place:
-            parts.append(f"born {self.birth_year} in {self.birth_place}")
-        elif self.birth_year:
-            parts.append(f"born {self.birth_year}")
-        elif self.birth_place:
-            parts.append(f"born in {self.birth_place}")
+        birth_info = self._format_birth_info()
+        if birth_info:
+            parts.append(birth_info)
 
         # Add death info
-        if self.death_year and self.death_place:
-            parts.append(f"died {self.death_year} in {self.death_place}")
-        elif self.death_year:
-            parts.append(f"died {self.death_year}")
+        death_info = self._format_death_info()
+        if death_info:
+            parts.append(death_info)
 
         # Add relationship
         if self.relationship_path:
             parts.append(f"relationship: {self.relationship_path}")
 
         # Add family details
-        if self.family_details:
-            if "parents" in self.family_details:
-                parents = self.family_details["parents"]
-                if parents:
-                    parts.append(f"parents: {', '.join(parents)}")
-            if "spouse" in self.family_details:
-                spouse = self.family_details["spouse"]
-                if spouse:
-                    parts.append(f"spouse: {spouse}")
-            if "children" in self.family_details:
-                children = self.family_details["children"]
-                if children:
-                    parts.append(f"children: {', '.join(children[:3])}")  # Limit to 3
+        parts.extend(self._format_family_details())
 
         return ", ".join(parts)
 
