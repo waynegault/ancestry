@@ -4412,6 +4412,41 @@ def _test_cancel_pending_messages_no_state() -> bool:
     return True
 
 
+def _test_status_change_template_exists() -> bool:
+    """Test that In_Tree-Status_Change_Update template exists in database."""
+    try:
+        from core.session_manager import SessionManager
+        from database import MessageTemplate
+
+        sm = SessionManager()
+        db_session = sm.get_db_conn()
+        if not db_session:
+            raise RuntimeError("Failed to get database session")
+
+        # Query for the status change template
+        template = db_session.query(MessageTemplate).filter(
+            MessageTemplate.template_key == 'In_Tree-Status_Change_Update'
+        ).first()
+
+        sm.return_session(db_session)
+
+        assert template is not None, "In_Tree-Status_Change_Update template should exist"
+        assert template.tree_status == 'in_tree', f"Expected tree_status='in_tree', got '{template.tree_status}'"
+        assert template.template_category == 'status_change', f"Expected category='status_change', got '{template.template_category}'"
+        assert template.is_active is True, "Template should be active"
+        assert template.subject_line is not None, "Template should have subject line"
+        assert 'relationship_path' in template.message_content, "Template should include {relationship_path} placeholder"
+
+        logger.info(f"✓ Status change template exists: {template.template_key}")
+        logger.info(f"  Subject: {template.subject_line}")
+        logger.info(f"  Category: {template.template_category}, Tree Status: {template.tree_status}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error testing status change template: {e}")
+        return False
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -4613,6 +4648,15 @@ def action8_messaging_tests() -> None:
         "Message cancellation: No conversation state",
         _test_cancel_pending_messages_no_state,
         "Handles gracefully when no conversation_state exists.",
+    )
+
+    # === PHASE 4.4: STATUS CHANGE TEMPLATE TESTS ===
+    suite.run_test(
+        "Status change template exists",
+        _test_status_change_template_exists,
+        "In_Tree-Status_Change_Update template exists in database.",
+        "Test template with live session.",
+        "Verify template has correct fields and placeholders.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
