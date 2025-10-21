@@ -3106,7 +3106,7 @@ def test_source_citation_demonstration():
     return True
 
 
-def _run_mock_demonstration():
+def _run_mock_demonstration() -> None:
     """Run demonstration with mock data."""
     # Scenario 1: Person with no sources
     logger.info("\n   Example 1: Person with no sources")
