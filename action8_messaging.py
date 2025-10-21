@@ -165,6 +165,85 @@ MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
     getattr(config_schema, 'app_mode', 'production'), timedelta(weeks=8)
 )
 
+
+def calculate_adaptive_interval(
+    engagement_score: int,
+    last_logged_in: Optional[datetime],
+    log_prefix: str = "",
+) -> timedelta:
+    """
+    Calculate adaptive follow-up interval based on engagement and activity.
+
+    Phase 4.1: Engagement-based timing that considers both conversation engagement
+    and user login activity to optimize follow-up timing.
+
+    Args:
+        engagement_score: Engagement score from conversation_state (0-100)
+        last_logged_in: Last login timestamp from people table (UTC)
+        log_prefix: Logging prefix for debugging
+
+    Returns:
+        timedelta: Adaptive interval to add to MIN_MESSAGE_INTERVAL
+
+    Timing Tiers:
+        - High engagement (≥70) + active login (<7 days): 7 days
+        - Medium engagement (40-69) or moderate login (7-30 days): 14 days
+        - Low engagement (20-39) or inactive login (>30 days): 21 days
+        - No engagement (<20) or never logged in: 30 days
+    """
+    # Get thresholds from config
+    high_threshold = getattr(config_schema, 'engagement_high_threshold', 70)
+    medium_threshold = getattr(config_schema, 'engagement_medium_threshold', 40)
+    low_threshold = getattr(config_schema, 'engagement_low_threshold', 20)
+    active_login_days = getattr(config_schema, 'login_active_threshold', 7)
+    moderate_login_days = getattr(config_schema, 'login_moderate_threshold', 30)
+
+    # Get follow-up intervals from config
+    high_days = getattr(config_schema, 'followup_high_engagement_days', 7)
+    medium_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
+    low_days = getattr(config_schema, 'followup_low_engagement_days', 21)
+    no_engagement_days = getattr(config_schema, 'followup_no_engagement_days', 30)
+
+    # Calculate days since last login
+    days_since_login = None
+    if last_logged_in:
+        try:
+            now_utc = datetime.now(timezone.utc)
+            # Ensure timezone aware
+            if last_logged_in.tzinfo is None:
+                last_logged_in = last_logged_in.replace(tzinfo=timezone.utc)
+            elif last_logged_in.tzinfo != timezone.utc:
+                last_logged_in = last_logged_in.astimezone(timezone.utc)
+
+            days_since_login = (now_utc - last_logged_in).days
+        except Exception as e:
+            logger.warning(f"{log_prefix}: Error calculating days since login: {e}")
+
+    # Determine tier based on engagement and login activity
+    if engagement_score >= high_threshold and days_since_login is not None and days_since_login < active_login_days:
+        # High engagement + active login
+        interval = timedelta(days=high_days)
+        tier = "high"
+    elif engagement_score >= medium_threshold or (days_since_login is not None and days_since_login < moderate_login_days):
+        # Medium engagement OR moderate login
+        interval = timedelta(days=medium_days)
+        tier = "medium"
+    elif engagement_score >= low_threshold or (days_since_login is not None and days_since_login < 90):
+        # Low engagement OR inactive login (but not never)
+        interval = timedelta(days=low_days)
+        tier = "low"
+    else:
+        # No engagement OR never logged in
+        interval = timedelta(days=no_engagement_days)
+        tier = "none"
+
+    logger.debug(
+        f"{log_prefix}: Adaptive interval: {interval.days} days "
+        f"(tier={tier}, engagement={engagement_score}, days_since_login={days_since_login})"
+    )
+
+    return interval
+
 # === MESSAGE TYPES ===
 MESSAGE_TYPES_ACTION8: dict[str, str] = {
     "In_Tree-Initial": "In_Tree-Initial",
@@ -1531,8 +1610,19 @@ def _check_reply_received(latest_in_log: Optional[ConversationLog], latest_out_l
         raise StopIteration("skipped (custom_reply_sent)")
 
 
-def _check_message_interval(latest_out_log: Optional[ConversationLog], log_prefix: str) -> None:
-    """Check if minimum message interval has passed since last script message."""
+def _check_message_interval(
+    latest_out_log: Optional[ConversationLog],
+    person: Person,
+    log_prefix: str
+) -> None:
+    """
+    Check if adaptive message interval has passed since last script message.
+
+    Phase 4.1: Uses engagement-based timing that considers both MIN_MESSAGE_INTERVAL
+    (base interval) and adaptive interval based on engagement score and login activity.
+
+    Total interval = MIN_MESSAGE_INTERVAL + adaptive_interval
+    """
     if not latest_out_log:
         return
 
@@ -1548,11 +1638,46 @@ def _check_message_interval(latest_out_log: Optional[ConversationLog], log_prefi
             out_timestamp = out_timestamp.astimezone(timezone.utc)
 
         now_utc = datetime.now(timezone.utc)
-
         time_since_last = now_utc - out_timestamp
+
+        # Check minimum interval first (always required)
         if time_since_last < MIN_MESSAGE_INTERVAL:
-            logger.debug(f"Skipping {log_prefix}: Interval not met.")
-            raise StopIteration("skipped (interval)")
+            logger.debug(f"Skipping {log_prefix}: Minimum interval not met ({time_since_last.days} days < {MIN_MESSAGE_INTERVAL.days} days).")
+            raise StopIteration("skipped (min_interval)")
+
+        # Get engagement score from conversation_state
+        engagement_score = 0
+        if person.conversation_state:
+            engagement_score = getattr(person.conversation_state, 'engagement_score', 0)
+
+        # Get last_logged_in from person
+        last_logged_in = getattr(person, 'last_logged_in', None)
+
+        # Calculate adaptive interval
+        adaptive_interval = calculate_adaptive_interval(
+            engagement_score=engagement_score,
+            last_logged_in=last_logged_in,
+            log_prefix=log_prefix
+        )
+
+        # Total required interval = MIN + adaptive
+        total_required_interval = MIN_MESSAGE_INTERVAL + adaptive_interval
+
+        if time_since_last < total_required_interval:
+            logger.debug(
+                f"Skipping {log_prefix}: Adaptive interval not met "
+                f"({time_since_last.days} days < {total_required_interval.days} days). "
+                f"Engagement: {engagement_score}, Adaptive: +{adaptive_interval.days} days"
+            )
+            raise StopIteration("skipped (adaptive_interval)")
+
+        logger.debug(
+            f"{log_prefix}: Interval met ({time_since_last.days} days ≥ {total_required_interval.days} days). "
+            f"Engagement: {engagement_score}, Adaptive: +{adaptive_interval.days} days"
+        )
+
+    except StopIteration:
+        raise
     except Exception as dt_error:
         logger.error(f"Datetime comparison error for {log_prefix}: {dt_error}")
         raise StopIteration("skipped (datetime_error)") from None
@@ -1930,7 +2055,7 @@ def _handle_person_status(
 
     if person_status == PersonStatusEnum.ACTIVE:
         _check_reply_received(latest_in_log, latest_out_log, log_prefix)
-        _check_message_interval(latest_out_log, log_prefix)
+        _check_message_interval(latest_out_log, person, log_prefix)
 
         message_to_send_key, template_selection_reason = _determine_message_to_send(
             person, latest_out_log, latest_out_template_key, log_prefix
@@ -3845,6 +3970,81 @@ def _test_conversation_log_tracking() -> bool:
 
 
 # ==============================================
+# PHASE 4.1: ADAPTIVE TIMING TEST FUNCTIONS
+# ==============================================
+
+
+def _test_adaptive_timing_high_engagement() -> bool:
+    """Test adaptive timing for high engagement + active login."""
+    # High engagement (≥70) + active login (<7 days) = 7 days
+    engagement_score = 85
+    last_logged_in = datetime.now(timezone.utc) - timedelta(days=3)
+
+    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+    expected_days = getattr(config_schema, 'followup_high_engagement_days', 7)
+    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+    logger.info(f"✓ High engagement + active login: {interval.days} days")
+    return True
+
+
+def _test_adaptive_timing_medium_engagement() -> bool:
+    """Test adaptive timing for medium engagement."""
+    # Medium engagement (40-69) = 14 days
+    engagement_score = 55
+    last_logged_in = datetime.now(timezone.utc) - timedelta(days=45)  # Inactive
+
+    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+    expected_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
+    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+    logger.info(f"✓ Medium engagement: {interval.days} days")
+    return True
+
+
+def _test_adaptive_timing_low_engagement() -> bool:
+    """Test adaptive timing for low engagement."""
+    # Low engagement (20-39) = 21 days
+    engagement_score = 30
+    last_logged_in = datetime.now(timezone.utc) - timedelta(days=60)  # Inactive
+
+    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+    expected_days = getattr(config_schema, 'followup_low_engagement_days', 21)
+    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+    logger.info(f"✓ Low engagement: {interval.days} days")
+    return True
+
+
+def _test_adaptive_timing_no_engagement() -> bool:
+    """Test adaptive timing for no engagement or never logged in."""
+    # No engagement (<20) or never logged in = 30 days
+    engagement_score = 10
+    last_logged_in = None  # Never logged in
+
+    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+    expected_days = getattr(config_schema, 'followup_no_engagement_days', 30)
+    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+    logger.info(f"✓ No engagement / never logged in: {interval.days} days")
+    return True
+
+
+def _test_adaptive_timing_moderate_login() -> bool:
+    """Test adaptive timing for moderate login activity."""
+    # Moderate login (7-30 days) with low engagement = 14 days (medium tier)
+    engagement_score = 15  # Low engagement
+    last_logged_in = datetime.now(timezone.utc) - timedelta(days=20)  # Moderate login
+
+    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+    expected_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
+    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+    logger.info(f"✓ Moderate login activity: {interval.days} days")
+    return True
+
+
+# ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
 
@@ -3977,6 +4177,37 @@ def action8_messaging_tests() -> None:
             "Test skip categorization.",
             "Ensure categorizer returns expected tuple.",
         )
+
+    # === PHASE 4.1: ADAPTIVE TIMING TESTS ===
+    suite.run_test(
+        "Adaptive timing: High engagement + active login",
+        _test_adaptive_timing_high_engagement,
+        "High engagement (≥70) + active login (<7 days) returns 7-day interval.",
+    )
+
+    suite.run_test(
+        "Adaptive timing: Medium engagement",
+        _test_adaptive_timing_medium_engagement,
+        "Medium engagement (40-69) returns 14-day interval.",
+    )
+
+    suite.run_test(
+        "Adaptive timing: Low engagement",
+        _test_adaptive_timing_low_engagement,
+        "Low engagement (20-39) returns 21-day interval.",
+    )
+
+    suite.run_test(
+        "Adaptive timing: No engagement or never logged in",
+        _test_adaptive_timing_no_engagement,
+        "No engagement (<20) or never logged in returns 30-day interval.",
+    )
+
+    suite.run_test(
+        "Adaptive timing: Moderate login activity",
+        _test_adaptive_timing_moderate_login,
+        "Moderate login (7-30 days) with low engagement returns 14-day interval.",
+    )
 
     # === INTEGRATION TESTS (Require Live Session) ===
     # Skip API tests if running in parallel mode (set by run_all_tests.py)

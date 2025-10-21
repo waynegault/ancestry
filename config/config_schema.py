@@ -645,6 +645,17 @@ class ConfigSchema:
     conversation_refresh_hours: int = 24  # Skip re-processing conversations if processed within this many hours (0 = always process)
     parallel_workers: int = 1  # Number of parallel workers for Action 6 match detail fetching (1=sequential, 2-3=parallel)
 
+    # Engagement-based messaging timing (Phase 4.1)
+    engagement_high_threshold: int = 70  # High engagement score threshold (0-100)
+    engagement_medium_threshold: int = 40  # Medium engagement score threshold (0-100)
+    engagement_low_threshold: int = 20  # Low engagement score threshold (0-100)
+    login_active_threshold: int = 7  # Active login threshold (days since last_logged_in)
+    login_moderate_threshold: int = 30  # Moderate login threshold (days since last_logged_in)
+    followup_high_engagement_days: int = 7  # Follow-up interval for high engagement
+    followup_medium_engagement_days: int = 14  # Follow-up interval for medium engagement
+    followup_low_engagement_days: int = 21  # Follow-up interval for low engagement
+    followup_no_engagement_days: int = 30  # Follow-up interval for no engagement
+
     # Tree search settings
     tree_search_method: str = "api"
     reference_person_name: str = "Reference Person"
