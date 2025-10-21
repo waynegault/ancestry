@@ -452,6 +452,9 @@ class PersonProcessor:
             if not success:
                 return False, "send_error"
 
+            # Phase 2: Update conversation state tracking
+            self._update_conversation_state(person, extracted_data, context_logs, log_prefix)
+
             return True, "success"
 
         except Exception as e:
@@ -719,6 +722,142 @@ class PersonProcessor:
         except Exception as e:
             logger.error(f"Error searching GEDCOM for person: {e}", exc_info=True)
             return None
+
+    def _determine_conversation_phase(self, context_logs: list[ConversationLog]) -> str:
+        """
+        Determine conversation phase based on message history.
+
+        Phases:
+        - initial_outreach: First 1-2 messages
+        - active_dialogue: 3-5 messages with engagement
+        - research_exchange: 6+ messages with genealogical content
+        - concluded: No response in 30+ days or explicit conclusion
+
+        Args:
+            context_logs: List of conversation logs
+
+        Returns:
+            Conversation phase string
+        """
+        if not context_logs:
+            return "initial_outreach"
+
+        message_count = len(context_logs)
+
+        if message_count <= 2:
+            return "initial_outreach"
+        if message_count <= 5:
+            return "active_dialogue"
+        return "research_exchange"
+
+    def _calculate_engagement_score(self, extracted_data: dict[str, Any], context_logs: list[ConversationLog]) -> int:
+        """
+        Calculate engagement score based on message content and history.
+
+        Score factors:
+        - Message count: +10 per message (max 50)
+        - Mentioned people: +5 per person (max 25)
+        - Questions asked: +10 per question (max 30)
+        - Genealogical content: +20 if present
+
+        Args:
+            extracted_data: Extracted data from AI
+            context_logs: List of conversation logs
+
+        Returns:
+            Engagement score (0-100)
+        """
+        score = 0
+
+        # Message count contribution (max 50)
+        message_count = len(context_logs)
+        score += min(message_count * 10, 50)
+
+        # Mentioned people contribution (max 25)
+        mentioned_people = extracted_data.get("mentioned_people", [])
+        score += min(len(mentioned_people) * 5, 25)
+
+        # Questions contribution (max 30)
+        questions = extracted_data.get("questions", [])
+        score += min(len(questions) * 10, 30)
+
+        # Genealogical content bonus
+        if mentioned_people or questions:
+            score += 20
+
+        return min(score, 100)
+
+    def _update_conversation_state(
+        self,
+        person: Person,
+        extracted_data: dict[str, Any],
+        context_logs: list[ConversationLog],
+        log_prefix: str,
+    ) -> None:
+        """
+        Update conversation state tracking for the person.
+
+        Phase 2: Conversation State Tracking
+
+        Args:
+            person: Person object
+            extracted_data: Extracted data from AI
+            context_logs: List of conversation logs
+            log_prefix: Logging prefix
+        """
+        try:
+            import json
+
+            from database import ConversationState
+
+            if not self.db_state.session:
+                logger.warning(f"{log_prefix}: No database session, skipping conversation state update")
+                return
+
+            # Get or create conversation state
+            conv_state = self.db_state.session.query(ConversationState).filter_by(people_id=person.id).first()
+
+            if not conv_state:
+                conv_state = ConversationState(people_id=person.id)
+                self.db_state.session.add(conv_state)
+                logger.debug(f"{log_prefix}: Created new conversation state")
+
+            # Update conversation phase
+            conv_state.conversation_phase = self._determine_conversation_phase(context_logs)
+
+            # Update engagement score
+            conv_state.engagement_score = self._calculate_engagement_score(extracted_data, context_logs)
+
+            # Update mentioned people (JSON-encoded)
+            mentioned_people = extracted_data.get("mentioned_people", [])
+            if mentioned_people:
+                # Store just the names for simplicity
+                people_names = [p.get("name", "Unknown") for p in mentioned_people]
+                conv_state.mentioned_people = json.dumps(people_names)
+
+            # Update last topic
+            topics = extracted_data.get("topics", [])
+            if topics:
+                conv_state.last_topic = topics[0] if isinstance(topics, list) else str(topics)
+
+            # Update pending questions (JSON-encoded)
+            questions = extracted_data.get("questions", [])
+            if questions:
+                conv_state.pending_questions = json.dumps(questions)
+
+            # Commit changes
+            self.db_state.session.flush()
+
+            logger.info(
+                f"{log_prefix}: Updated conversation state - "
+                f"phase: {conv_state.conversation_phase}, "
+                f"engagement: {conv_state.engagement_score}, "
+                f"people: {len(mentioned_people)}, "
+                f"questions: {len(questions)}"
+            )
+
+        except Exception as e:
+            logger.error(f"{log_prefix}: Error updating conversation state: {e}", exc_info=True)
 
     def _should_skip_ms_task_creation(self, log_prefix: str, suggested_tasks: list[str]) -> bool:
         """Check if MS task creation should be skipped. Returns True if should skip."""
