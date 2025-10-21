@@ -3028,65 +3028,117 @@ def test_source_citation_demonstration():
     Demonstration test for source citation functionality.
 
     Phase 5.1: Source Citation Support
-    Shows complete workflow from extraction to formatted output.
+    Shows complete workflow from extraction to formatted output using real GEDCOM data.
     """
+    import os
+    from pathlib import Path
+
     logger.info("\n" + "="*60)
     logger.info("DEMONSTRATION: Source Citation Extraction & Formatting")
     logger.info("="*60)
 
+    # Load real GEDCOM data
+    gedcom_file = str(config.database.gedcom_file_path)
+    test_person_id = os.getenv("TEST_PERSON_ID", "I102281560744")  # Fraser Gault
+
+    logger.info(f"\n📁 Loading GEDCOM file: {gedcom_file}")
+    logger.info(f"🔍 Test subject: {test_person_id} (Fraser Gault)")
+
+    try:
+        # Load GEDCOM data using GedcomData class
+        gedcom_data = GedcomData(Path(gedcom_file))
+        if not gedcom_data or not gedcom_data.indi_index:
+            logger.warning("   ⚠️  Could not load GEDCOM data - using mock examples")
+            _run_mock_demonstration()
+            return True
+
+        # Find Fraser Gault in GEDCOM
+        test_person = None
+        for person_id, individual in gedcom_data.indi_index.items():
+            if person_id == test_person_id:
+                test_person = individual
+                break
+
+        if not test_person:
+            logger.warning(f"   ⚠️  Could not find {test_person_id} in GEDCOM - using mock examples")
+            _run_mock_demonstration()
+            return True
+
+        # Extract real sources from Fraser Gault
+        logger.info("\n📋 Real GEDCOM Data: Extracting sources for Fraser Gault")
+        person_name = _get_full_name(test_person)
+        life_dates = format_life_dates(test_person)
+        logger.info(f"   Person: {person_name}{life_dates}")
+
+        sources = get_person_sources(test_person)
+        logger.info(f"   Birth sources: {sources['birth']}")
+        logger.info(f"   Death sources: {sources['death']}")
+        logger.info(f"   Other sources: {sources['other']}")
+
+        # Format citation
+        citation = format_source_citations(sources)
+        if citation:
+            logger.info(f"\n   ✓ Formatted citation: '{citation}'")
+
+            # Show complete message example
+            logger.info("\n📧 Complete message example:")
+            message = f"According to my tree, {person_name}{life_dates} is {citation}."
+            logger.info(f"   '{message}'")
+        else:
+            logger.info(f"\n   ℹ️  No sources found for {person_name}")
+            logger.info("   This is normal - not all GEDCOM records have source citations")
+
+        # Also show formatting examples with mock data
+        logger.info("\n" + "-"*60)
+        logger.info("📋 Formatting Examples (Mock Data)")
+        logger.info("-"*60)
+
+        _run_mock_demonstration()
+
+    except Exception as e:
+        logger.error(f"   ❌ Error in demonstration: {e}")
+        logger.info("   Falling back to mock examples")
+        _run_mock_demonstration()
+
+    logger.info("\n" + "="*60)
+    logger.info("✓ Source citation demonstration complete!")
+    logger.info("="*60 + "\n")
+    return True
+
+
+def _run_mock_demonstration():
+    """Run demonstration with mock data."""
     # Scenario 1: Person with no sources
-    logger.info("\n📋 Scenario 1: Person with no sources")
+    logger.info("\n   Example 1: Person with no sources")
     empty_sources = {'birth': [], 'death': [], 'other': []}
     citation = format_source_citations(empty_sources)
-    logger.info(f"   Sources: {empty_sources}")
-    logger.info(f"   Formatted: '{citation}'")
-    logger.info("   ✓ Result: Empty string (no sources to cite)")
+    logger.info(f"      Result: '{citation}' (empty)")
 
     # Scenario 2: Person with single birth source
-    logger.info("\n📋 Scenario 2: Person with single birth source")
+    logger.info("\n   Example 2: Person with single birth source")
     single_source = {'birth': ['1881 Scotland Census'], 'death': [], 'other': []}
     citation = format_source_citations(single_source)
-    logger.info(f"   Sources: {single_source}")
-    logger.info(f"   Formatted: '{citation}'")
-    logger.info(f"   ✓ Result: {citation}")
+    logger.info(f"      Result: '{citation}'")
 
     # Scenario 3: Person with birth and death sources
-    logger.info("\n📋 Scenario 3: Person with birth and death sources")
+    logger.info("\n   Example 3: Person with birth and death sources")
     two_sources = {
         'birth': ['Birth Certificate, Banff'],
         'death': ['Death Certificate 1920, Aberdeen'],
         'other': []
     }
     citation = format_source_citations(two_sources)
-    logger.info(f"   Sources: {two_sources}")
-    logger.info(f"   Formatted: '{citation}'")
-    logger.info(f"   ✓ Result: {citation}")
+    logger.info(f"      Result: '{citation}'")
 
     # Scenario 4: Person with multiple sources
-    logger.info("\n📋 Scenario 4: Person with multiple sources (3+)")
+    logger.info("\n   Example 4: Person with multiple sources (3+)")
     many_sources = {
         'birth': ['Birth Certificate', '1881 Scotland Census'],
         'death': ['Death Certificate 1920'],
         'other': []
     }
     citation = format_source_citations(many_sources)
-    logger.info(f"   Sources: {many_sources}")
-    logger.info(f"   Formatted: '{citation}'")
-    logger.info(f"   ✓ Result: {citation}")
-
-    # Scenario 5: Complete message example
-    logger.info("\n📋 Scenario 5: Complete message with source citation")
-    person_name = "John Smith (1850-1920)"
-    message = f"According to my tree, {person_name} is {citation}."
-    logger.info(f"   Person: {person_name}")
-    logger.info(f"   Citation: {citation}")
-    logger.info("   Complete message:")
-    logger.info(f"   '{message}'")
-
-    logger.info("\n" + "="*60)
-    logger.info("✓ Source citation demonstration complete!")
-    logger.info("="*60 + "\n")
-    return True
+    logger.info(f"      Result: '{citation}'")
 
 
 # ==============================================

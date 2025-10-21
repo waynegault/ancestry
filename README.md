@@ -14,7 +14,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 10**: GEDCOM file analysis and scoring
 - **Action 11**: API-based genealogical research and relationship discovery
 
-**Current Status**: Phase 5 IN PROGRESS - Research Assistant Features (P5.1 Complete: Source Citation Extraction)
+**Current Status**: Phase 5 IN PROGRESS - Research Assistant Features (P5.1 & P5.2 Complete: Source Citation Extraction & Research Suggestions)
 
 ---
 
@@ -354,8 +354,11 @@ python action11.py
   - Three+ sources: "documented in A, B, and C"
 - ✅ Added test_source_citation_extraction() with 7 comprehensive tests
 - ✅ Added test_source_citation_demonstration() showing complete workflow
-- ✅ All 17 gedcom_utils tests passing
-- ✅ Quality: 100.0/100 across all 65 modules
+  - Uses real GEDCOM data for Fraser Gault (I102281560744)
+  - Demonstrates extraction and formatting with actual genealogical records
+  - Falls back to mock examples if real data unavailable
+- ✅ All 18 gedcom_utils tests passing
+- ✅ Quality: 100.0/100 across all 66 modules
 - ✅ Usage: `sources = get_person_sources(individual); citation = format_source_citations(sources)`
 - ✅ Ready for integration into Action 8/9 responses
 
