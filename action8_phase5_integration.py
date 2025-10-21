@@ -13,15 +13,52 @@ This module enhances message content with genealogical research capabilities.
 
 from typing import Any, Optional
 
-from database import DnaMatch, FamilyTree, Person
+from database import FamilyTree, Person
 from gedcom_utils import format_source_citations, get_person_sources
-from record_sharing import create_record_sharing_message, format_record_reference
 from relationship_diagram import format_relationship_for_message
-from research_guidance_prompts import create_research_guidance_prompt
 from research_suggestions import generate_research_suggestions
 from standard_imports import *
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool:
+    """Validate family tree has required attributes for source extraction."""
+    return family_tree is not None and hasattr(family_tree, 'gedcom_id')
+
+
+def _load_and_validate_gedcom() -> Optional[Any]:
+    """Load and validate GEDCOM data file."""
+    try:
+        from config_manager import config
+        gedcom_file = config.database.gedcom_file_path
+
+        if not gedcom_file or not os.path.exists(gedcom_file):
+            return None
+
+        from gedcom_utils import load_gedcom_data
+        gedcom_data = load_gedcom_data(gedcom_file)
+
+        if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
+            return None
+
+        return gedcom_data
+    except Exception:
+        return None
+
+
+def _extract_and_format_sources(gedcom_data: Any, gedcom_id: str) -> str:
+    """Extract and format sources for a GEDCOM individual."""
+    if gedcom_id not in gedcom_data.indi_index:
+        return ""
+
+    individual = gedcom_data.indi_index[gedcom_id]
+    sources = get_person_sources(individual)
+
+    if sources and any(sources.values()):
+        citation = format_source_citations(sources)
+        return f" They are {citation}."
+    return ""
 
 
 def enhance_message_with_sources(
@@ -31,45 +68,24 @@ def enhance_message_with_sources(
 ) -> None:
     """
     Enhance message format data with source citations from GEDCOM.
-    
+
     Args:
         person: Person being messaged
         family_tree: Family tree relationship (if in tree)
         format_data: Message format data to enhance (modified in place)
     """
-    if not family_tree or not hasattr(family_tree, 'gedcom_id'):
+    if not _validate_family_tree_for_sources(family_tree):
         format_data['source_citations'] = ""
         return
 
     try:
-        from config_manager import config
-        gedcom_file = config.database.gedcom_file_path
-
-        if not gedcom_file or not os.path.exists(gedcom_file):
+        gedcom_data = _load_and_validate_gedcom()
+        if not gedcom_data:
             format_data['source_citations'] = ""
             return
 
-        # Load GEDCOM and get sources
-        from gedcom_utils import load_gedcom_data
-        gedcom_data = load_gedcom_data(gedcom_file)
-
-        if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
-            format_data['source_citations'] = ""
-            return
-
-        gedcom_id = family_tree.gedcom_id
-        if gedcom_id not in gedcom_data.indi_index:
-            format_data['source_citations'] = ""
-            return
-
-        individual = gedcom_data.indi_index[gedcom_id]
-        sources = get_person_sources(individual)
-
-        if sources and any(sources.values()):
-            citation = format_source_citations(sources)
-            format_data['source_citations'] = f" They are {citation}."
-        else:
-            format_data['source_citations'] = ""
+        citation = _extract_and_format_sources(gedcom_data, family_tree.gedcom_id)
+        format_data['source_citations'] = citation
 
     except Exception as e:
         logger.debug(f"Could not extract sources for {person.username}: {e}")
@@ -106,7 +122,8 @@ def enhance_message_with_relationship_diagram(
         else:
             path = relationship_path
 
-        if not path or len(path) < 2:
+        # Ensure path is a list before checking length
+        if not isinstance(path, list) or len(path) < 2:
             format_data['relationship_diagram'] = ""
             return
 
@@ -118,8 +135,7 @@ def enhance_message_with_relationship_diagram(
             from_name,
             to_name,
             path,
-            include_diagram=True,
-            style="compact"
+            include_diagram=True
         )
 
         format_data['relationship_diagram'] = f"\n\n{diagram_text}"
@@ -129,6 +145,42 @@ def enhance_message_with_relationship_diagram(
         format_data['relationship_diagram'] = ""
 
 
+def _extract_research_context(person: Person, family_tree: Optional[FamilyTree]) -> tuple[list, list, list]:
+    """Extract location, time period, and common ancestor information."""
+    locations = []
+    time_periods = []
+    common_ancestors = []
+
+    # Get birth/death info from person
+    if hasattr(person, 'birth_year') and person.birth_year:
+        decade = (person.birth_year // 10) * 10
+        time_periods.append(f"{decade}s")
+
+    # Get common ancestor info from family tree
+    if family_tree and hasattr(family_tree, 'common_ancestor_name'):
+        ancestor_name = family_tree.common_ancestor_name
+        if ancestor_name:
+            common_ancestors.append({
+                'name': ancestor_name,
+                'birth_year': None,
+                'birth_place': None
+            })
+
+    return locations, time_periods, common_ancestors
+
+
+def _format_research_suggestions_text(collections: list) -> str:
+    """Format research suggestions into message text."""
+    if not collections:
+        return ""
+
+    top_suggestions = collections[:2]
+    suggestions_text = "\n\nResearch suggestions:\n"
+    for i, coll in enumerate(top_suggestions, 1):
+        suggestions_text += f"{i}. {coll.get('name', 'Unknown collection')}\n"
+    return suggestions_text
+
+
 def enhance_message_with_research_suggestions(
     person: Person,
     family_tree: Optional[FamilyTree],
@@ -136,32 +188,15 @@ def enhance_message_with_research_suggestions(
 ) -> None:
     """
     Enhance message format data with research suggestions.
-    
+
     Args:
         person: Person being messaged
         family_tree: Family tree relationship (if in tree)
         format_data: Message format data to enhance (modified in place)
     """
     try:
-        # Extract location and time period information
-        locations = []
-        time_periods = []
-        common_ancestors = []
-
-        # Get birth/death info from person
-        if hasattr(person, 'birth_year') and person.birth_year:
-            decade = (person.birth_year // 10) * 10
-            time_periods.append(f"{decade}s")
-
-        # Get common ancestor info from family tree
-        if family_tree and hasattr(family_tree, 'common_ancestor_name'):
-            ancestor_name = family_tree.common_ancestor_name
-            if ancestor_name:
-                common_ancestors.append({
-                    'name': ancestor_name,
-                    'birth_year': None,
-                    'birth_place': None
-                })
+        # Extract research context
+        locations, time_periods, common_ancestors = _extract_research_context(person, family_tree)
 
         # Only generate suggestions if we have enough context
         if not (locations or time_periods or common_ancestors):
@@ -176,15 +211,7 @@ def enhance_message_with_research_suggestions(
         )
 
         collections = result.get('collections', [])
-        if collections:
-            # Format top 2 suggestions for message
-            top_suggestions = collections[:2]
-            suggestions_text = "\n\nResearch suggestions:\n"
-            for i, coll in enumerate(top_suggestions, 1):
-                suggestions_text += f"{i}. {coll.get('name', 'Unknown collection')}\n"
-            format_data['research_suggestions'] = suggestions_text
-        else:
-            format_data['research_suggestions'] = ""
+        format_data['research_suggestions'] = _format_research_suggestions_text(collections)
 
     except Exception as e:
         logger.debug(f"Could not generate research suggestions for {person.username}: {e}")
@@ -194,7 +221,6 @@ def enhance_message_with_research_suggestions(
 def enhance_message_format_data_phase5(
     person: Person,
     family_tree: Optional[FamilyTree],
-    dna_match: Optional[DnaMatch],
     format_data: dict[str, Any],
     enable_sources: bool = True,
     enable_diagrams: bool = True,
@@ -307,12 +333,10 @@ def test_enhance_message_format_data_phase5():
     family_tree.relationship_path = '[]'
     family_tree.common_ancestor_name = "William Gault"
 
-    dna_match = Mock()
-
     format_data = {}
 
     enhance_message_format_data_phase5(
-        person, family_tree, dna_match, format_data,
+        person, family_tree, format_data,
         enable_sources=True,
         enable_diagrams=True,
         enable_suggestions=True

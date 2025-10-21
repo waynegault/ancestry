@@ -425,6 +425,64 @@ def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, li
         logger.error(f"Error response content: {http_err.response.text[:500]}")
 
 
+def _build_task_payload(
+    task_title: str,
+    task_body: Optional[str] = None,
+    importance: Optional[str] = None,
+    due_date: Optional[str] = None,
+    categories: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Build task data payload for MS Graph API."""
+    task_data: dict[str, Any] = {"title": task_title}
+
+    if task_body:
+        task_data["body"] = {"content": task_body, "contentType": "text"}
+
+    # Add enhanced fields (Phase 5.3)
+    if importance and importance in ["low", "normal", "high"]:
+        task_data["importance"] = importance
+
+    if due_date:
+        # MS Graph expects dueDateTime in specific format
+        task_data["dueDateTime"] = {
+            "dateTime": f"{due_date}T00:00:00",
+            "timeZone": "UTC"
+        }
+
+    if categories:
+        task_data["categories"] = categories
+
+    return task_data
+
+
+def _execute_task_creation_request(
+    task_create_url: str,
+    headers: dict[str, str],
+    task_data: dict[str, Any],
+    task_title: str,
+    list_id: str,
+) -> bool:
+    """Execute task creation request and handle errors."""
+    try:
+        response = requests.post(task_create_url, headers=headers, json=task_data, timeout=30)
+        response.raise_for_status()
+
+        logger.info(f"Successfully created task '{task_title[:50]}...'.")
+        with contextlib.suppress(json.JSONDecodeError):
+            logger.debug(f"Create task response details: {response.json()}")
+        return True
+
+    except requests.exceptions.HTTPError as http_err:
+        _handle_task_creation_http_error(http_err, list_id)
+        return False
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Network error creating To-Do task: {req_err}", exc_info=False)
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error creating To-Do task: {e}", exc_info=True)
+        return False
+
+
 def create_todo_task(
     access_token: str,
     list_id: str,
@@ -462,47 +520,14 @@ def create_todo_task(
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     task_create_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists/{list_id}/tasks"
 
-    # Construct task data payload
-    task_data: dict[str, Any] = {"title": task_title}
-    if task_body:
-        task_data["body"] = {"content": task_body, "contentType": "text"}
-
-    # Add enhanced fields (Phase 5.3)
-    if importance and importance in ["low", "normal", "high"]:
-        task_data["importance"] = importance
-
-    if due_date:
-        # MS Graph expects dueDateTime in specific format
-        task_data["dueDateTime"] = {
-            "dateTime": f"{due_date}T00:00:00",
-            "timeZone": "UTC"
-        }
-
-    if categories:
-        task_data["categories"] = categories
+    # Build task payload
+    task_data = _build_task_payload(task_title, task_body, importance, due_date, categories)
 
     logger.info(f"Attempting to create MS To-Do task '{task_title[:50]}...' in list ID '{list_id}'...")
     logger.debug(f"Task creation payload: {json.dumps(task_data)}")
 
-    # Execute POST request and handle errors
-    try:
-        response = requests.post(task_create_url, headers=headers, json=task_data, timeout=30)
-        response.raise_for_status()
-
-        logger.info(f"Successfully created task '{task_title[:50]}...'.")
-        with contextlib.suppress(json.JSONDecodeError):
-            logger.debug(f"Create task response details: {response.json()}")
-        return True
-
-    except requests.exceptions.HTTPError as http_err:
-        _handle_task_creation_http_error(http_err, list_id)
-        return False
-    except requests.exceptions.RequestException as req_err:
-        logger.error(f"Network error creating To-Do task: {req_err}", exc_info=False)
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error creating To-Do task: {e}", exc_info=True)
-        return False
+    # Execute request
+    return _execute_task_creation_request(task_create_url, headers, task_data, task_title, list_id)
 
 
 # End of create_todo_task

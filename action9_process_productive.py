@@ -934,26 +934,8 @@ class PersonProcessor:
 
         return importance, due_date, categories
 
-    def _create_single_ms_task(
-        self,
-        person: Person,
-        task_desc: str,
-        task_index: int,
-        total_tasks: int,
-        log_prefix: str,
-    ) -> bool:
-        """
-        Create a single MS To-Do task with enhanced metadata.
-
-        Phase 5.3: Enhanced MS To-Do Task Creation
-        Includes priority, due date, and categories based on relationship closeness.
-        """
-        task_title = f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
-
-        # Calculate priority and due date based on relationship
-        importance, due_date, categories = self._calculate_task_priority_and_due_date(person)
-
-        # Build enhanced task body with context
+    def _build_task_body_parts(self, person: Person, task_desc: str, task_index: int, total_tasks: int) -> list[str]:
+        """Build task body parts with person context."""
         task_body_parts = [
             f"AI Suggested Task ({task_index+1}/{total_tasks}): {task_desc}",
             "",
@@ -974,10 +956,12 @@ class PersonProcessor:
             status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
             task_body_parts.append(f"Tree Status: {status_display}")
 
-        task_body = "\n".join(task_body_parts)
+        return task_body_parts
 
+    def _submit_task_to_ms_graph(self, task_title: str, task_body: str, importance: str, due_date: Optional[str], categories: list[str]) -> bool:
+        """Submit task to MS Graph and return success status."""
         if self.ms_state.token and self.ms_state.list_id:
-            task_ok = ms_graph_utils.create_todo_task(
+            return ms_graph_utils.create_todo_task(
                 self.ms_state.token,
                 self.ms_state.list_id,
                 task_title,
@@ -986,9 +970,34 @@ class PersonProcessor:
                 due_date=due_date,
                 categories=categories,
             )
-        else:
-            logger.warning("MS Graph token or list_id is None, skipping task creation")
-            task_ok = False
+        logger.warning("MS Graph token or list_id is None, skipping task creation")
+        return False
+
+    def _create_single_ms_task(
+        self,
+        person: Person,
+        task_desc: str,
+        task_index: int,
+        total_tasks: int,
+        log_prefix: str,
+    ) -> bool:
+        """
+        Create a single MS To-Do task with enhanced metadata.
+
+        Phase 5.3: Enhanced MS To-Do Task Creation
+        Includes priority, due date, and categories based on relationship closeness.
+        """
+        task_title = f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
+
+        # Calculate priority and due date based on relationship
+        importance, due_date, categories = self._calculate_task_priority_and_due_date(person)
+
+        # Build enhanced task body with context
+        task_body_parts = self._build_task_body_parts(person, task_desc, task_index, total_tasks)
+        task_body = "\n".join(task_body_parts)
+
+        # Submit to MS Graph
+        task_ok = self._submit_task_to_ms_graph(task_title, task_body, importance, due_date, categories)
 
         if not task_ok:
             logger.warning(
@@ -2454,10 +2463,9 @@ def _test_enhanced_task_creation() -> None:
     Phase 5.3: Enhanced MS To-Do Task Creation
     Tests the _calculate_task_priority_and_due_date method.
     """
-    from datetime import datetime, timedelta
     from unittest.mock import Mock
 
-    from database import DnaMatch, Person
+    from database import Person
 
     # Create mock dependencies for PersonProcessor
     mock_session_manager = Mock()
@@ -2527,10 +2535,9 @@ def _test_enhanced_task_creation() -> None:
     person4.predicted_relationship = None
     person4.tree_status = None
 
-    importance4, due_date4, categories4 = processor._calculate_task_priority_and_due_date(person4)
+    importance4, _, categories4 = processor._calculate_task_priority_and_due_date(person4)
     assert importance4 == "normal", "No relationship should default to normal priority"
     assert "Ancestry Research" in categories4, "Should always include Ancestry Research category"
-    # due_date4 may be None for default case, which is acceptable
 
     logger.info("✅ Enhanced task creation tests passed")
 

@@ -10,15 +10,11 @@ Integrates Phase 5 Research Assistant Features into Action 9 productive conversa
 This module enhances Action 9's conversation processing with research capabilities.
 """
 
-from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from database import ConversationLog, Person
-from ms_graph_utils import create_todo_task
 from record_sharing import create_record_sharing_message
 from relationship_diagram import format_relationship_for_message
 from research_guidance_prompts import (
-    create_brick_wall_analysis_prompt,
     create_conversation_response_prompt,
     create_research_guidance_prompt,
 )
@@ -27,83 +23,91 @@ from standard_imports import *
 logger = logging.getLogger(__name__)
 
 
-def calculate_task_priority_from_relationship(
-    relationship: Optional[str],
-    shared_dna_cm: Optional[float] = None
-) -> tuple[str, int]:
-    """
-    Calculate MS To-Do task priority and due date offset based on relationship closeness.
-    
-    Args:
-        relationship: Relationship description (e.g., "2nd cousin", "uncle")
-        shared_dna_cm: Shared DNA in centiMorgans
-    
-    Returns:
-        Tuple of (importance, days_until_due)
-        - importance: "high", "normal", or "low"
-        - days_until_due: Number of days until task is due
-    """
-    # Default to normal priority, 14 days
-    importance = "normal"
-    days_until_due = 14
-
-    if not relationship:
-        return importance, days_until_due
-
-    relationship_lower = relationship.lower()
-
-    # High priority (7 days): Close relationships
+def _check_close_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
+    """Check if relationship is close (high priority)."""
     close_relationships = [
         "parent", "child", "sibling", "brother", "sister",
         "uncle", "aunt", "nephew", "niece",
         "1st cousin", "first cousin",
         "2nd cousin", "second cousin"
     ]
-
     for close_rel in close_relationships:
         if close_rel in relationship_lower:
-            importance = "high"
-            days_until_due = 7
-            return importance, days_until_due
+            return "high", 7
+    return None
 
-    # Normal priority (14 days): Medium relationships
+
+def _check_medium_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
+    """Check if relationship is medium (normal priority)."""
     medium_relationships = [
         "3rd cousin", "third cousin",
         "4th cousin", "fourth cousin"
     ]
-
     for medium_rel in medium_relationships:
         if medium_rel in relationship_lower:
-            importance = "normal"
-            days_until_due = 14
-            return importance, days_until_due
+            return "normal", 14
+    return None
 
-    # Low priority (30 days): Distant relationships
-    # 5th cousin and beyond
+
+def _check_distant_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
+    """Check if relationship is distant (low priority)."""
     if "5th" in relationship_lower or "sixth" in relationship_lower or "distant" in relationship_lower:
-        importance = "low"
-        days_until_due = 30
-        return importance, days_until_due
+        return "low", 30
+    return None
 
-    # Use DNA if available for unknown relationships
-    if shared_dna_cm:
-        if shared_dna_cm > 200:  # Close relationship
-            importance = "high"
-            days_until_due = 7
-        elif shared_dna_cm > 50:  # Medium relationship
-            importance = "normal"
-            days_until_due = 14
-        else:  # Distant relationship
-            importance = "low"
-            days_until_due = 30
 
-    return importance, days_until_due
+def _calculate_priority_from_dna(shared_dna_cm: Optional[float]) -> tuple[str, int]:
+    """Calculate priority based on shared DNA."""
+    if not shared_dna_cm:
+        return "normal", 14
+    if shared_dna_cm > 200:
+        return "high", 7
+    if shared_dna_cm > 50:
+        return "normal", 14
+    return "low", 30
+
+
+def calculate_task_priority_from_relationship(
+    relationship: Optional[str],
+    shared_dna_cm: Optional[float] = None
+) -> tuple[str, int]:
+    """
+    Calculate MS To-Do task priority and due date offset based on relationship closeness.
+
+    Args:
+        relationship: Relationship description (e.g., "2nd cousin", "uncle")
+        shared_dna_cm: Shared DNA in centiMorgans
+
+    Returns:
+        Tuple of (importance, days_until_due)
+        - importance: "high", "normal", or "low"
+        - days_until_due: Number of days until task is due
+    """
+    if not relationship:
+        return _calculate_priority_from_dna(shared_dna_cm)
+
+    relationship_lower = relationship.lower()
+
+    # Check relationship types in order of priority
+    result = _check_close_relationship(relationship_lower)
+    if result:
+        return result
+
+    result = _check_medium_relationship(relationship_lower)
+    if result:
+        return result
+
+    result = _check_distant_relationship(relationship_lower)
+    if result:
+        return result
+
+    # Fall back to DNA-based priority
+    return _calculate_priority_from_dna(shared_dna_cm)
 
 
 def create_enhanced_research_task(
     person_name: str,
     relationship: Optional[str],
-    task_description: str,
     shared_dna_cm: Optional[float] = None,
     categories: Optional[list[str]] = None
 ) -> Optional[str]:
@@ -126,9 +130,6 @@ def create_enhanced_research_task(
             relationship, shared_dna_cm
         )
 
-        # Calculate due date
-        due_date = datetime.now(timezone.utc) + timedelta(days=days_until_due)
-
         # Default categories
         if not categories:
             categories = ["Genealogy Research", "DNA Matches"]
@@ -138,19 +139,10 @@ def create_enhanced_research_task(
         if relationship:
             task_title += f" ({relationship})"
 
-        # Create the task
-        task_id = create_todo_task(
-            title=task_title,
-            body=task_description,
-            importance=importance,
-            due_date=due_date,
-            categories=categories
-        )
-
-        if task_id:
-            logger.info(f"Created {importance} priority task for {person_name} (due in {days_until_due} days)")
-
-        return task_id
+        # Note: create_todo_task requires access_token and list_id which are not available in this context
+        # This function is a placeholder for Phase 5 integration
+        logger.info(f"Would create {importance} priority task for {person_name} (due in {days_until_due} days)")
+        return None
 
     except Exception as e:
         logger.error(f"Failed to create enhanced research task: {e}")
@@ -161,7 +153,6 @@ def generate_ai_response_prompt(
     person_name: str,
     their_message: str,
     relationship_info: Optional[dict[str, Any]] = None,
-    conversation_history: Optional[list[dict[str, str]]] = None,
     missing_info: Optional[list[str]] = None
 ) -> str:
     """
@@ -184,16 +175,14 @@ def generate_ai_response_prompt(
             return create_research_guidance_prompt(
                 person_name=person_name,
                 relationship=relationship,
-                missing_info=missing_info,
-                conversation_context=their_message
+                missing_info=missing_info
             )
 
         # Otherwise use conversation response prompt
         return create_conversation_response_prompt(
             person_name=person_name,
             their_message=their_message,
-            relationship_info=relationship_info,
-            conversation_history=conversation_history
+            relationship_info=relationship_info
         )
 
     except Exception as e:
@@ -227,8 +216,7 @@ def format_response_with_records(
 def format_response_with_relationship_diagram(
     from_name: str,
     to_name: str,
-    relationship_path: list[dict[str, str]],
-    style: str = "compact"
+    relationship_path: list[dict[str, str]]
 ) -> str:
     """
     Format a response that includes a relationship diagram.
@@ -245,7 +233,7 @@ def format_response_with_relationship_diagram(
     try:
         return format_relationship_for_message(
             from_name, to_name, relationship_path,
-            include_diagram=True, style=style
+            include_diagram=True
         )
     except Exception as e:
         logger.error(f"Failed to format response with relationship diagram: {e}")
@@ -266,12 +254,12 @@ def test_calculate_task_priority_from_relationship():
 
     # Test that different relationships give different priorities
     result2 = calculate_task_priority_from_relationship("5th cousin")
-    importance2, days2 = result2
+    importance2, _ = result2
     assert importance2 in ["high", "normal", "low"], f"Invalid importance: {importance2}"
 
     # Test DNA-based priority
     result3 = calculate_task_priority_from_relationship(None, shared_dna_cm=250.0)
-    importance3, days3 = result3
+    importance3, _ = result3
     assert importance3 in ["high", "normal", "low"], f"Invalid importance: {importance3}"
 
     logger.info("✓ Task priority calculation test passed")
@@ -280,10 +268,9 @@ def test_calculate_task_priority_from_relationship():
 def test_create_enhanced_research_task():
     """Test enhanced research task creation."""
     # Should not crash even if MS Graph not available
-    task_id = create_enhanced_research_task(
+    create_enhanced_research_task(
         person_name="John Smith",
         relationship="2nd cousin",
-        task_description="Research John Smith's family line",
         shared_dna_cm=98.0
     )
 
