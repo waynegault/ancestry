@@ -113,14 +113,14 @@ def create_enhanced_research_task(
 ) -> Optional[str]:
     """
     Create an enhanced MS To-Do task with intelligent priority and due date.
-    
+
     Args:
         person_name: Name of the person related to the task
         relationship: Relationship to the person
         task_description: Description of the research task
         shared_dna_cm: Shared DNA in centiMorgans
         categories: Optional categories for the task
-    
+
     Returns:
         Task ID if created successfully, None otherwise
     """
@@ -157,14 +157,14 @@ def generate_ai_response_prompt(
 ) -> str:
     """
     Generate an AI prompt for responding to a conversation.
-    
+
     Args:
         person_name: Name of the person who sent the message
         their_message: The message they sent
         relationship_info: Optional relationship information
         conversation_history: Optional conversation history
         missing_info: Optional list of missing information
-    
+
     Returns:
         AI prompt string for generating a response
     """
@@ -197,12 +197,12 @@ def format_response_with_records(
 ) -> str:
     """
     Format a response that includes record sharing.
-    
+
     Args:
         person_name: Name of the person being responded to
         records: List of record dictionaries
         context: Context message for the records
-    
+
     Returns:
         Formatted message with record references
     """
@@ -220,13 +220,13 @@ def format_response_with_relationship_diagram(
 ) -> str:
     """
     Format a response that includes a relationship diagram.
-    
+
     Args:
         from_name: Name of the first person (usually "me" or tree owner)
         to_name: Name of the second person
         relationship_path: List of relationship path dictionaries
         style: Diagram style ("vertical", "horizontal", or "compact")
-    
+
     Returns:
         Formatted message with relationship diagram
     """

@@ -42,8 +42,9 @@ def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool
 def _load_and_validate_gedcom() -> Optional[Any]:
     """Load and validate GEDCOM data file."""
     try:
-        from config import config_schema
         from pathlib import Path
+
+        from config import config_schema
         gedcom_file = config_schema.database.gedcom_file_path
 
         if not gedcom_file or not os.path.exists(gedcom_file):
@@ -134,10 +135,7 @@ def enhance_message_with_relationship_diagram(
 
         # Parse relationship path (stored as JSON string)
         import json
-        if isinstance(relationship_path, str):
-            path = json.loads(relationship_path)
-        else:
-            path = relationship_path
+        path = json.loads(relationship_path) if isinstance(relationship_path, str) else relationship_path
 
         # Ensure path is a list before checking length
         if not isinstance(path, list) or len(path) < 2:
@@ -245,10 +243,10 @@ def enhance_message_format_data_phase5(
 ) -> None:
     """
     Enhance message format data with all Phase 5 features.
-    
+
     This is the main integration point for Action 8. Call this function
     after preparing base format data to add Phase 5 enhancements.
-    
+
     Args:
         person: Person being messaged
         family_tree: Family tree relationship (if in tree)
@@ -281,7 +279,7 @@ def enhance_message_format_data_phase5(
 
 def test_enhance_message_with_sources():
     """Test source citation enhancement."""
-    from unittest.mock import Mock
+    from unittest.mock import Mock, patch
 
     person = Mock()
     person.username = "test_user"
@@ -291,9 +289,12 @@ def test_enhance_message_with_sources():
 
     format_data = {}
 
-    # Should not crash even if GEDCOM not available
-    enhance_message_with_sources(person, family_tree, format_data)
-    assert 'source_citations' in format_data
+    # Mock _load_and_validate_gedcom to avoid loading large GEDCOM file during tests
+    # Patch at the module level where it's used
+    with patch.object(sys.modules[__name__], '_load_and_validate_gedcom', return_value=None):
+        # Should not crash even if GEDCOM not available
+        enhance_message_with_sources(person, family_tree, format_data)
+        assert 'source_citations' in format_data
 
     logger.info("✓ Source citation enhancement test passed")
 

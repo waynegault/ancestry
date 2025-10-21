@@ -3085,7 +3085,7 @@ def test_source_citation_demonstration():
             message = f"According to my tree, {person_name}{life_dates} is {citation}."
             logger.info(f"   '{message}'")
         else:
-            logger.info(f"\n   ℹ️  No sources found for {person_name}")
+            logger.info(f"\n   [i] No sources found for {person_name}")
             logger.info("   This is normal - not all GEDCOM records have source citations")
 
         # Also show formatting examples with mock data

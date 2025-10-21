@@ -57,8 +57,8 @@ def generate_relationship_diagram(
 
 
 def _generate_vertical_diagram(
-    person1_name: str,
-    person2_name: str,
+    _: str,
+    __: str,
     relationship_path: list[dict[str, str]]
 ) -> str:
     """Generate a vertical relationship diagram."""
@@ -69,7 +69,6 @@ def _generate_vertical_diagram(
 
     for i, step in enumerate(relationship_path):
         name = step.get('name', 'Unknown')
-        relationship = step.get('relationship', '')
 
         # Add the person
         if i == 0:
@@ -89,8 +88,8 @@ def _generate_vertical_diagram(
 
 
 def _generate_horizontal_diagram(
-    person1_name: str,
-    person2_name: str,
+    _: str,
+    __: str,
     relationship_path: list[dict[str, str]]
 ) -> str:
     """Generate a horizontal relationship diagram."""
