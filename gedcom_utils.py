@@ -125,6 +125,8 @@ TAG_SEX = "SEX"
 TAG_NAME = "NAME"
 TAG_GIVN = "GIVN"
 TAG_SURN = "SURN"
+TAG_SOUR = "SOUR"  # Source citation tag
+TAG_TITL = "TITL"  # Source title tag
 
 
 # --- Logging Setup ---
@@ -634,6 +636,44 @@ def _extract_place_from_event(event_record: Any) -> str:
     return place_str
 
 
+def _extract_sources_from_event(event_record: Any) -> list[str]:
+    """
+    Extract source citations from an event record.
+
+    Phase 5.1: Source Citation Support
+    Extracts source titles from SOUR tags within an event (BIRT, DEAT, etc.)
+
+    Args:
+        event_record: GEDCOM event record
+
+    Returns:
+        List of source titles/descriptions
+    """
+    sources = []
+
+    try:
+        if not event_record or not hasattr(event_record, "sub_tags"):
+            return sources
+
+        # Get all SOUR tags from the event
+        for sour_tag in event_record.sub_tags(TAG_SOUR):
+            if not sour_tag:
+                continue
+
+            # Try to get source title
+            title_tag = sour_tag.sub_tag(TAG_TITL)
+            if title_tag and hasattr(title_tag, "value") and title_tag.value:
+                sources.append(str(title_tag.value).strip())
+            # If no title, try to get the source value itself
+            elif hasattr(sour_tag, "value") and sour_tag.value:
+                sources.append(str(sour_tag.value).strip())
+
+    except Exception as e:
+        logger.debug(f"Error extracting sources from event: {e}")
+
+    return sources
+
+
 def _get_event_info(
     individual: GedcomIndividualType, event_tag: str
 ) -> tuple[Optional[datetime], str, str]:  # ... implementation ...
@@ -668,6 +708,56 @@ def _get_event_info(
     return date_obj, date_str, place_str
 
 
+def get_person_sources(individual: GedcomIndividualType) -> dict[str, list[str]]:
+    """
+    Extract all source citations for a person.
+
+    Phase 5.1: Source Citation Support
+    Extracts sources from birth, death, and other events for a person.
+
+    Args:
+        individual: GEDCOM individual record
+
+    Returns:
+        Dictionary mapping event types to lists of source citations:
+        {
+            'birth': ['1881 Scotland Census', 'Birth Certificate'],
+            'death': ['Death Certificate 1920'],
+            'other': ['Marriage Record']
+        }
+    """
+    sources_by_event: dict[str, list[str]] = {
+        'birth': [],
+        'death': [],
+        'other': []
+    }
+
+    try:
+        # Validate individual
+        individual = _validate_and_normalize_individual(individual)
+        if individual is None:
+            return sources_by_event
+
+        indi_id_log = extract_and_fix_id(individual) or "Unknown ID"
+
+        # Extract birth sources
+        birth_record = _extract_event_record(individual, TAG_BIRTH, indi_id_log)
+        if birth_record:
+            sources_by_event['birth'] = _extract_sources_from_event(birth_record)
+
+        # Extract death sources
+        death_record = _extract_event_record(individual, TAG_DEATH, indi_id_log)
+        if death_record:
+            sources_by_event['death'] = _extract_sources_from_event(death_record)
+
+        # Could add more event types here (marriage, census, etc.)
+
+    except Exception as e:
+        logger.debug(f"Error extracting sources for person: {e}")
+
+    return sources_by_event
+
+
 def format_life_dates(indi: GedcomIndividualType) -> str:  # ... implementation ...
     if not _is_individual(indi):
         logger.warning(
@@ -682,6 +772,45 @@ def format_life_dates(indi: GedcomIndividualType) -> str:  # ... implementation 
     death_info = f"d. {d_date_str_cleaned}" if d_date_str_cleaned != "N/A" else ""
     life_parts = [info for info in [birth_info, death_info] if info]
     return f" ({', '.join(life_parts)})" if life_parts else ""
+
+
+def format_source_citations(sources_by_event: dict[str, list[str]]) -> str:
+    """
+    Format source citations for display in messages.
+
+    Phase 5.1: Source Citation Support
+    Creates human-readable source citation text from extracted sources.
+
+    Args:
+        sources_by_event: Dictionary mapping event types to source lists
+
+    Returns:
+        Formatted string like "documented in 1881 Scotland Census (birth) and Death Certificate 1920 (death)"
+        or empty string if no sources
+    """
+    citations = []
+
+    # Add birth sources
+    for source in sources_by_event.get('birth', []):
+        citations.append(f"{source} (birth)")
+
+    # Add death sources
+    for source in sources_by_event.get('death', []):
+        citations.append(f"{source} (death)")
+
+    # Add other sources
+    for source in sources_by_event.get('other', []):
+        citations.append(source)
+
+    if not citations:
+        return ""
+
+    if len(citations) == 1:
+        return f"documented in {citations[0]}"
+    if len(citations) == 2:
+        return f"documented in {citations[0]} and {citations[1]}"
+    # Multiple sources: "documented in A, B, and C"
+    return f"documented in {', '.join(citations[:-1])}, and {citations[-1]}"
 
 
 def format_full_life_details(
@@ -2583,6 +2712,14 @@ def gedcom_module_tests() -> bool:
             "Error conditions are handled gracefully with appropriate fallback behavior",
         )
 
+        suite.run_test(
+            "Source citation extraction",
+            test_source_citation_extraction,
+            "Test extraction of source citations from GEDCOM events",
+            "Source citation extraction enables documentation of genealogical facts",
+            "get_person_sources() and format_source_citations() correctly extract and format sources",
+        )
+
     # Generate summary report
     return suite.finish_suite()
 
@@ -2802,6 +2939,52 @@ def test_error_recovery():
         with contextlib.suppress(Exception):
             result = _get_full_name(None)
             assert result == "Unknown" or isinstance(result, str)
+
+
+def test_source_citation_extraction():
+    """
+    Test source citation extraction and formatting.
+
+    Phase 5.1: Source Citation Support
+    Tests get_person_sources() and format_source_citations() functions.
+    """
+    from unittest.mock import Mock
+
+    # Test 1: format_source_citations with no sources
+    empty_sources = {'birth': [], 'death': [], 'other': []}
+    result = format_source_citations(empty_sources)
+    assert result == "", "Empty sources should return empty string"
+
+    # Test 2: format_source_citations with single birth source
+    single_source = {'birth': ['1881 Scotland Census'], 'death': [], 'other': []}
+    result = format_source_citations(single_source)
+    assert "1881 Scotland Census" in result, "Should include birth source"
+    assert "documented in" in result, "Should include 'documented in' prefix"
+
+    # Test 3: format_source_citations with multiple sources
+    multiple_sources = {
+        'birth': ['Birth Certificate'],
+        'death': ['Death Certificate 1920'],
+        'other': []
+    }
+    result = format_source_citations(multiple_sources)
+    assert "Birth Certificate" in result, "Should include birth source"
+    assert "Death Certificate 1920" in result, "Should include death source"
+    assert " and " in result, "Should use 'and' for two sources"
+
+    # Test 4: get_person_sources with None individual
+    sources = get_person_sources(None)
+    assert isinstance(sources, dict), "Should return dict even for None"
+    assert 'birth' in sources, "Should have birth key"
+    assert 'death' in sources, "Should have death key"
+
+    # Test 5: _extract_sources_from_event with None event
+    sources_list = _extract_sources_from_event(None)
+    assert isinstance(sources_list, list), "Should return list even for None"
+    assert len(sources_list) == 0, "Should return empty list for None"
+
+    logger.info("✓ Source citation extraction and formatting works correctly")
+    return True
 
 
 # ==============================================
