@@ -14,7 +14,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 10**: GEDCOM file analysis and scoring
 - **Action 11**: API-based genealogical research and relationship discovery
 
-**Current Status**: Phase 4 (P4.1) Complete - Intelligent Conversational Messaging with Adaptive Timing
+**Current Status**: Phase 4 (P4.1-P4.4) Complete - Intelligent Conversational Messaging with Adaptive Timing & Status Change Detection
 
 ---
 
@@ -346,10 +346,32 @@ python action11.py
 - ✅ 5 comprehensive tests + demonstration script
 - ✅ NOTE: Adaptive timing only applies in PRODUCTION mode (testing/dry_run use fixed intervals)
 
-**P4.2-P4.11: In Progress**
-- Status change detection (out-of-tree → in-tree)
-- Automatic message cancellation on status change
-- Conversation continuity features
+**P4.2: Status Change Detection** ✅ COMPLETE
+- ✅ Implemented detect_status_change_to_in_tree() function
+- ✅ Detects when DNA matches are recently added to family tree (within 7 days)
+- ✅ Added STATUS_CHANGE_RECENT_DAYS=7 configuration
+- ✅ Helper functions: _is_tree_creation_recent(), _has_message_after_tree_creation()
+- ✅ 4 comprehensive tests (all passing)
+- ✅ Complexity reduced to <11 via helper function extraction
+
+**P4.3: Automatic Message Cancellation** ✅ COMPLETE
+- ✅ Implemented cancel_pending_messages_on_status_change() function
+- ✅ Updates conversation_state.next_action to 'status_changed'
+- ✅ Sets next_action_date to NULL
+- ✅ Prevents sending outdated out-of-tree messages when match added to tree
+- ✅ 2 comprehensive tests (all passing)
+
+**P4.4: Status Change Message Template** ✅ COMPLETE
+- ✅ Created 'In_Tree-Status_Change_Update' template in database
+- ✅ Category: 'status_change', Tree Status: 'in_tree'
+- ✅ Subject: "Update: Found Our Family Connection!"
+- ✅ Concise message announcing connection found with relationship_path
+- ✅ 1 comprehensive test (passing)
+
+**P4.5-P4.11: In Progress**
+- Conversation continuity (cancel on reply)
+- Determine next action function
+- Conversation flow logging
 - Comprehensive testing
 
 ### Phase 3: Conversational Dialogue Engine (October 21, 2025) ✅ COMPLETE

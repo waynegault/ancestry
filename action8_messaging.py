@@ -361,6 +361,50 @@ def cancel_pending_messages_on_status_change(person: Person, log_prefix: str = "
         return False
 
 
+def cancel_pending_on_reply(person: Person, log_prefix: str = "") -> bool:
+    """
+    Cancel pending follow-up messages when recipient replies.
+
+    Phase 4.5: Conversation continuity that switches from automated follow-ups
+    to active dialogue mode when the recipient engages with a reply.
+
+    Args:
+        person: Person object who replied to our message
+        log_prefix: Logging prefix for debugging
+
+    Returns:
+        bool: True if pending messages were cancelled, False otherwise
+
+    Actions:
+        - Updates conversation_state.next_action to 'await_reply'
+        - Updates conversation_state.next_action_date to NULL
+        - Updates conversation_state.conversation_phase to 'active_dialogue'
+        - Logs the transition
+
+    This prevents sending automated follow-ups when we're already in an
+    active conversation with the person.
+    """
+    if not person.conversation_state:
+        logger.debug(f"{log_prefix}: No conversation_state to update")
+        return False
+
+    try:
+        # Update conversation state to cancel pending follow-ups
+        person.conversation_state.next_action = 'await_reply'
+        person.conversation_state.next_action_date = None
+        person.conversation_state.conversation_phase = 'active_dialogue'
+
+        logger.info(
+            f"✅ Cancelled pending follow-ups for {person.username} (ID {person.id}): "
+            f"Switched to active dialogue mode"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Error cancelling follow-ups for {person.username} (ID {person.id}): {e}")
+        return False
+
+
 def detect_status_change_to_in_tree(person: Person) -> bool:
     """
     Detect if a person has recently changed from out-of-tree to in-tree status.
@@ -4447,6 +4491,84 @@ def _test_status_change_template_exists() -> bool:
         return False
 
 
+def _test_cancel_on_reply_success() -> bool:
+    """Test successful cancellation of pending messages when recipient replies."""
+    from unittest.mock import Mock
+
+    # Create mock person with conversation_state
+    person = Mock(spec=Person)
+    person.id = 456
+    person.username = "Reply Test User"
+
+    # Create mock conversation_state with pending follow-up
+    conv_state = Mock()
+    conv_state.next_action = 'send_follow_up'
+    conv_state.next_action_date = datetime.now() + timedelta(days=7)
+    conv_state.conversation_phase = 'initial_outreach'
+    person.conversation_state = conv_state
+
+    # Cancel pending messages on reply
+    result = cancel_pending_on_reply(person, "test")
+
+    # Verify cancellation
+    assert result is True, "Should return True on successful cancellation"
+    assert conv_state.next_action == 'await_reply', f"Expected next_action='await_reply', got '{conv_state.next_action}'"
+    assert conv_state.next_action_date is None, "next_action_date should be NULL"
+    assert conv_state.conversation_phase == 'active_dialogue', f"Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"
+
+    logger.info("✓ Pending messages cancelled on reply")
+    logger.info(f"  next_action: {conv_state.next_action}")
+    logger.info(f"  conversation_phase: {conv_state.conversation_phase}")
+    return True
+
+
+def _test_cancel_on_reply_no_state() -> bool:
+    """Test cancellation when no conversation_state exists."""
+    from unittest.mock import Mock
+
+    # Create mock person without conversation_state
+    person = Mock(spec=Person)
+    person.id = 789
+    person.username = "No State User"
+    person.conversation_state = None
+
+    # Attempt to cancel (should handle gracefully)
+    result = cancel_pending_on_reply(person, "test")
+
+    # Should return False (nothing to cancel)
+    assert result is False, "Should return False when no conversation_state"
+    logger.info("✓ No conversation_state handled gracefully")
+    return True
+
+
+def _test_cancel_on_reply_already_active() -> bool:
+    """Test cancellation when already in active_dialogue phase."""
+    from unittest.mock import Mock
+
+    # Create mock person with conversation_state already in active_dialogue
+    person = Mock(spec=Person)
+    person.id = 101
+    person.username = "Active User"
+
+    # Create mock conversation_state already in active dialogue
+    conv_state = Mock()
+    conv_state.next_action = 'await_reply'
+    conv_state.next_action_date = None
+    conv_state.conversation_phase = 'active_dialogue'
+    person.conversation_state = conv_state
+
+    # Cancel pending messages (should still work, idempotent)
+    result = cancel_pending_on_reply(person, "test")
+
+    # Verify still works
+    assert result is True, "Should return True even if already in active_dialogue"
+    assert conv_state.next_action == 'await_reply', "next_action should remain 'await_reply'"
+    assert conv_state.conversation_phase == 'active_dialogue', "phase should remain 'active_dialogue'"
+
+    logger.info("✓ Idempotent operation - already in active_dialogue")
+    return True
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -4657,6 +4779,25 @@ def action8_messaging_tests() -> None:
         "In_Tree-Status_Change_Update template exists in database.",
         "Test template with live session.",
         "Verify template has correct fields and placeholders.",
+    )
+
+    # === PHASE 4.5: CONVERSATION CONTINUITY TESTS ===
+    suite.run_test(
+        "Cancel on reply: Success",
+        _test_cancel_on_reply_success,
+        "Successfully cancels pending follow-ups when recipient replies.",
+    )
+
+    suite.run_test(
+        "Cancel on reply: No conversation state",
+        _test_cancel_on_reply_no_state,
+        "Handles gracefully when no conversation_state exists.",
+    )
+
+    suite.run_test(
+        "Cancel on reply: Already active dialogue",
+        _test_cancel_on_reply_already_active,
+        "Idempotent operation when already in active_dialogue phase.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
