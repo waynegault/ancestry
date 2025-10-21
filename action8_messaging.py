@@ -2260,12 +2260,12 @@ def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTre
     # Add Phase 5 enhancements (source citations, relationship diagrams, research suggestions)
     if PHASE5_INTEGRATION_AVAILABLE and enhance_message_format_data_phase5:
         try:
-            from config_manager import ConfigManager
-            config = ConfigManager()
+            import os
 
-            enable_sources = config.get('phase5.enable_source_citations', True)
-            enable_diagrams = config.get('phase5.enable_relationship_diagrams', True)
-            enable_suggestions = config.get('phase5.enable_research_suggestions', False)
+            # Read Phase 5 configuration from environment variables
+            enable_sources = os.getenv('PHASE5_ENABLE_SOURCE_CITATIONS', 'true').lower() == 'true'
+            enable_diagrams = os.getenv('PHASE5_ENABLE_RELATIONSHIP_DIAGRAMS', 'true').lower() == 'true'
+            enable_suggestions = os.getenv('PHASE5_ENABLE_RESEARCH_SUGGESTIONS', 'false').lower() == 'true'
 
             enhance_message_format_data_phase5(
                 person=person,
