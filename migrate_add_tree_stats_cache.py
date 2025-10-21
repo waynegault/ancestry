@@ -16,7 +16,7 @@ def migrate_database(db_path: str) -> None:
 
     # Check if table already exists
     cursor.execute("""
-        SELECT name FROM sqlite_master 
+        SELECT name FROM sqlite_master
         WHERE type='table' AND name='tree_statistics_cache'
     """)
 
@@ -44,7 +44,7 @@ def migrate_database(db_path: str) -> None:
 
     # Create index on profile_id
     cursor.execute("""
-        CREATE INDEX ix_tree_statistics_cache_profile_id 
+        CREATE INDEX ix_tree_statistics_cache_profile_id
         ON tree_statistics_cache (profile_id)
     """)
 

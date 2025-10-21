@@ -19,7 +19,9 @@ import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path as PathLib
+
+parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -37,8 +39,7 @@ import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
@@ -122,7 +123,7 @@ class APIResponseCache(BaseCacheModule):
         logger.debug("APIResponseCache initialized for Phase 5.2")
 
     def _get_api_cache_key(
-        self, service: str, method: str, params: Dict[str, Any]
+        self, service: str, method: str, params: dict[str, Any]
     ) -> str:
         """Generate cache key for API requests"""
         # Create a stable hash of parameters
@@ -135,7 +136,7 @@ class APIResponseCache(BaseCacheModule):
         self,
         service: str,
         method: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         response: Any,
         ttl: Optional[int] = None,
     ) -> bool:
@@ -172,7 +173,7 @@ class APIResponseCache(BaseCacheModule):
             return False
 
     def get_cached_api_response(
-        self, service: str, method: str, params: Dict[str, Any]
+        self, service: str, method: str, params: dict[str, Any]
     ) -> Optional[Any]:
         """Retrieve cached API response if valid"""
         if not cache:
@@ -200,7 +201,7 @@ class APIResponseCache(BaseCacheModule):
             logger.warning(f"Error retrieving cached {service}.{method}: {e}")
             return None
 
-    def get_api_cache_stats(self) -> Dict[str, Any]:
+    def get_api_cache_stats(self) -> dict[str, Any]:
         """Get API cache statistics"""
         with self._lock:
             stats = self._api_stats.copy()
@@ -240,7 +241,7 @@ class DatabaseQueryCache(BaseCacheModule):
         self._lock = threading.Lock()
         logger.debug("DatabaseQueryCache initialized for Phase 5.2")
 
-    def _get_query_cache_key(self, query: str, params: Tuple = ()) -> str:
+    def _get_query_cache_key(self, query: str, params: tuple = ()) -> str:
         """Generate cache key for database queries"""
         # Normalize query (remove extra whitespace, convert to lowercase)
         normalized_query = " ".join(query.strip().lower().split())
@@ -252,7 +253,7 @@ class DatabaseQueryCache(BaseCacheModule):
         return get_unified_cache_key("db_query", query_hash)
 
     def cache_query_result(
-        self, query: str, params: Tuple, result: Any, ttl: Optional[int] = None
+        self, query: str, params: tuple, result: Any, ttl: Optional[int] = None
     ) -> bool:
         """Cache database query result"""
         if not cache:
@@ -279,7 +280,7 @@ class DatabaseQueryCache(BaseCacheModule):
             logger.warning(f"Failed to cache database query: {e}")
             return False
 
-    def get_cached_query_result(self, query: str, params: Tuple = ()) -> Optional[Any]:
+    def get_cached_query_result(self, query: str, params: tuple = ()) -> Optional[Any]:
         """Retrieve cached database query result"""
         if not cache:
             return None
@@ -341,7 +342,7 @@ class MemoryOptimizer(BaseCacheModule):
             # Fallback method without psutil
             return 0.0
 
-    def optimize_memory(self, force: bool = False) -> Dict[str, Any]:
+    def optimize_memory(self, force: bool = False) -> dict[str, Any]:
         """Perform intelligent memory optimization"""
         if not SYSTEM_CACHE_CONFIG.enable_aggressive_gc and not force:
             return {"optimized": False, "reason": "Aggressive GC disabled"}
@@ -498,7 +499,7 @@ def memory_optimized(gc_threshold: Optional[float] = None):
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Check memory before execution
-            memory_before = _memory_optimizer.get_memory_usage_mb()
+            _memory_optimizer.get_memory_usage_mb()
 
             try:
                 result = func(*args, **kwargs)
@@ -530,7 +531,7 @@ def memory_optimized(gc_threshold: Optional[float] = None):
 # === CACHE MANAGEMENT FUNCTIONS ===
 
 
-def get_system_cache_stats() -> Dict[str, Any]:
+def get_system_cache_stats() -> dict[str, Any]:
     """Get comprehensive system cache statistics"""
     base_stats = get_cache_stats()
     session_stats = get_session_cache_stats()
@@ -559,7 +560,7 @@ def get_system_cache_stats() -> Dict[str, Any]:
     }
 
 
-def clear_system_caches() -> Dict[str, Union[int, str]]:
+def clear_system_caches() -> dict[str, Union[int, str]]:
     """Clear all system caches"""
     results = {}
 
@@ -611,7 +612,7 @@ def warm_system_caches() -> bool:
         # Warm session cache
         from core.session_cache import warm_session_cache
 
-        session_warmed = warm_session_cache()
+        warm_session_cache()
 
         # Warm base cache with system metadata
         system_metadata = {
@@ -658,12 +659,12 @@ def test_system_cache_performance():
 
         # First call (should be slow)
         start_time = time.time()
-        result1 = mock_api_call("test_data")
+        mock_api_call("test_data")
         first_call_time = time.time() - start_time
 
         # Second call (should be fast - cached)
         start_time = time.time()
-        result2 = mock_api_call("test_data")
+        mock_api_call("test_data")
         second_call_time = time.time() - start_time
 
         api_speedup = first_call_time / max(second_call_time, 0.001)
@@ -680,11 +681,11 @@ def test_system_cache_performance():
             return [{"id": query_id, "data": "test_result"}]
 
         start_time = time.time()
-        db_result1 = mock_db_query(123)
+        mock_db_query(123)
         first_db_time = time.time() - start_time
 
         start_time = time.time()
-        db_result2 = mock_db_query(123)
+        mock_db_query(123)
         second_db_time = time.time() - start_time
 
         db_speedup = first_db_time / max(second_db_time, 0.001)
@@ -695,7 +696,7 @@ def test_system_cache_performance():
         )
 
         # Test memory optimization
-        memory_before = _memory_optimizer.get_memory_usage_mb()
+        _memory_optimizer.get_memory_usage_mb()
         optimization_result = _memory_optimizer.optimize_memory()
         results["memory_optimization_test"] = optimization_result.get(
             "optimized", False

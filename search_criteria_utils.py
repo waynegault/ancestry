@@ -18,14 +18,14 @@ def get_unified_search_criteria(
 ) -> Optional[dict[str, Any]]:
     """
     Collect unified search criteria from user input.
-    
+
     This function provides consistent search criteria collection for both
     Action 10 (GEDCOM) and Action 11 (API) to ensure identical user experience.
-    
+
     Args:
         get_input_func: Optional function to get user input (for testing).
                        If None, uses built-in input().
-    
+
     Returns:
         Dictionary with standardized search criteria, or None if cancelled.
     """

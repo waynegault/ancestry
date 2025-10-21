@@ -3,7 +3,7 @@
 """
 Action 12: Compare GEDCOM vs API Search Results
 
-This action compares the results from Action 10 (GEDCOM-based search) and 
+This action compares the results from Action 10 (GEDCOM-based search) and
 Action 11 (API-based search) to validate consistency between the two approaches.
 
 Workflow:
@@ -33,7 +33,7 @@ from core.session_manager import SessionManager
 def get_search_input() -> dict[str, Any]:
     """
     Prompt user for search criteria.
-    
+
     Returns:
         Dictionary with search criteria
     """
@@ -271,10 +271,10 @@ def compare_results(
 def run_action12_wrapper(session_manager: SessionManager) -> bool:
     """
     Main wrapper for Action 12.
-    
+
     Args:
         session_manager: Active session manager
-        
+
     Returns:
         True if successful, False otherwise
     """

@@ -20,7 +20,9 @@ import os
 import sys
 
 # Add parent directory to path for standard_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path as PathLib
+
+parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -33,7 +35,7 @@ logger = setup_module(globals(), __name__)
 import inspect
 import logging
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Optional
 
 from error_handling import (
     AncestryException,
@@ -54,14 +56,14 @@ class SmartFunctionRegistry:
     """Enhanced function registry with intelligent auto-registration."""
 
     def __init__(self) -> None:
-        self.registry: Dict[str, Any] = {}
+        self.registry: dict[str, Any] = {}
         self.registration_stats = {
             "total_registered": 0,
             "modules_processed": 0,
             "duplicate_attempts": 0,
         }
 
-    def _get_default_include_patterns(self) -> List[str]:
+    def _get_default_include_patterns(self) -> list[str]:
         """Get default include patterns for registration."""
         return [
             "run_comprehensive_tests",
@@ -81,7 +83,7 @@ class SmartFunctionRegistry:
             "Response",  # For API response classes
         ]
 
-    def _get_default_exclude_patterns(self) -> List[str]:
+    def _get_default_exclude_patterns(self) -> list[str]:
         """Get default exclude patterns for registration."""
         return [
             "_private",
@@ -93,7 +95,7 @@ class SmartFunctionRegistry:
         ]
 
     def _should_register_item(
-        self, name: str, obj: Any, include_patterns: List[str], exclude_patterns: List[str]
+        self, name: str, obj: Any, include_patterns: list[str], exclude_patterns: list[str]
     ) -> bool:
         """Determine if an item should be registered."""
         # Skip if not callable
@@ -114,9 +116,9 @@ class SmartFunctionRegistry:
 
     def register_module(
         self,
-        module_globals: Dict[str, Any],
-        include_patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None,
+        module_globals: dict[str, Any],
+        include_patterns: Optional[list[str]] = None,
+        exclude_patterns: Optional[list[str]] = None,
         module_name: Optional[str] = "unknown",
     ) -> int:
         """
@@ -172,7 +174,7 @@ class SmartFunctionRegistry:
         """Get a function from the registry."""
         return self.registry.get(name, default)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get registration statistics."""
         return {
             **self.registration_stats,
@@ -186,7 +188,7 @@ smart_registry = SmartFunctionRegistry()
 
 
 def auto_register_module(
-    module_globals: Dict[str, Any], module_name: Optional[str] = None
+    module_globals: dict[str, Any], module_name: Optional[str] = None
 ) -> int:
     """
     One-line function to replace massive auto-registration blocks.
@@ -202,7 +204,7 @@ def auto_register_module(
     return smart_registry.register_module(module_globals, module_name=module_name)
 
 
-def performance_register(module_globals: Dict[str, Any]) -> int:
+def performance_register(module_globals: dict[str, Any]) -> int:
     """
     Ultra-fast registration for performance-critical modules.
     Only registers the most commonly used function patterns.
@@ -231,7 +233,7 @@ def create_registration_report() -> str:
     avg_lines_per_function = 3  # if/callable/register pattern
     lines_saved = stats["total_registered"] * avg_lines_per_function
 
-    report = f"""
+    return f"""
 🚀 FUNCTION REGISTRATION EFFICIENCY REPORT
 ==========================================
 
@@ -253,7 +255,6 @@ def create_registration_report() -> str:
    • Consistent registration patterns
    • Automatic duplicate prevention
 """
-    return report
 
 
 # Backwards compatibility aliases

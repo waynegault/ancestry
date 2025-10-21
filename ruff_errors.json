@@ -1,0 +1,1875 @@
+[
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 75,
+      "row": 6
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action12.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 75,
+            "row": 6
+          },
+          "location": {
+            "column": 74,
+            "row": 6
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 74,
+      "row": 6
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 15,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 36
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action12.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 36
+          },
+          "location": {
+            "column": 1,
+            "row": 36
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 36
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 39,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 274
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action12.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 274
+          },
+          "location": {
+            "column": 1,
+            "row": 274
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 274
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 280,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 9,
+      "row": 277
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\action12.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 9,
+            "row": 277
+          },
+          "location": {
+            "column": 1,
+            "row": 277
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 277
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 280,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "PTH120",
+    "end_location": {
+      "column": 29,
+      "row": 23
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": null,
+    "location": {
+      "column": 14,
+      "row": 23
+    },
+    "message": "`os.path.dirname()` should be replaced by `Path.parent`",
+    "noqa_row": 23,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-dirname"
+  },
+  {
+    "cell": null,
+    "code": "PTH120",
+    "end_location": {
+      "column": 45,
+      "row": 23
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": null,
+    "location": {
+      "column": 30,
+      "row": 23
+    },
+    "message": "`os.path.dirname()` should be replaced by `Path.parent`",
+    "noqa_row": 23,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-dirname"
+  },
+  {
+    "cell": null,
+    "code": "PTH100",
+    "end_location": {
+      "column": 61,
+      "row": 23
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": null,
+    "location": {
+      "column": 46,
+      "row": 23
+    },
+    "message": "`os.path.abspath()` should be replaced by `Path.resolve()`",
+    "noqa_row": 23,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-abspath"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 60,
+      "row": 36
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 36
+    },
+    "message": "`typing.Dict` is deprecated, use `dict` instead",
+    "noqa_row": 36,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 60,
+      "row": 36
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 36
+    },
+    "message": "`typing.List` is deprecated, use `list` instead",
+    "noqa_row": 36,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 60,
+      "row": 36
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 36
+    },
+    "message": "`typing.Set` is deprecated, use `set` instead",
+    "noqa_row": 36,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "RET504",
+    "end_location": {
+      "column": 18,
+      "row": 256
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\registry_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "return",
+          "end_location": {
+            "column": 13,
+            "row": 234
+          },
+          "location": {
+            "column": 5,
+            "row": 234
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 257
+          },
+          "location": {
+            "column": 1,
+            "row": 256
+          }
+        }
+      ],
+      "message": "Remove unnecessary assignment"
+    },
+    "location": {
+      "column": 12,
+      "row": 256
+    },
+    "message": "Unnecessary assignment to `report` before `return` statement",
+    "noqa_row": 256,
+    "url": "https://docs.astral.sh/ruff/rules/unnecessary-assign"
+  },
+  {
+    "cell": null,
+    "code": "PTH120",
+    "end_location": {
+      "column": 29,
+      "row": 18
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": null,
+    "location": {
+      "column": 14,
+      "row": 18
+    },
+    "message": "`os.path.dirname()` should be replaced by `Path.parent`",
+    "noqa_row": 18,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-dirname"
+  },
+  {
+    "cell": null,
+    "code": "PTH120",
+    "end_location": {
+      "column": 45,
+      "row": 18
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": null,
+    "location": {
+      "column": 30,
+      "row": 18
+    },
+    "message": "`os.path.dirname()` should be replaced by `Path.parent`",
+    "noqa_row": 18,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-dirname"
+  },
+  {
+    "cell": null,
+    "code": "PTH100",
+    "end_location": {
+      "column": 61,
+      "row": 18
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": null,
+    "location": {
+      "column": 46,
+      "row": 18
+    },
+    "message": "`os.path.abspath()` should be replaced by `Path.resolve()`",
+    "noqa_row": 18,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-abspath"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 46,
+      "row": 34
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 34
+    },
+    "message": "`typing.Dict` is deprecated, use `dict` instead",
+    "noqa_row": 34,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 46,
+      "row": 34
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 34
+    },
+    "message": "`typing.Tuple` is deprecated, use `tuple` instead",
+    "noqa_row": 34,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 12,
+      "row": 416
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 15,
+            "row": 416
+          },
+          "location": {
+            "column": 5,
+            "row": 416
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `result1`"
+    },
+    "location": {
+      "column": 5,
+      "row": 416
+    },
+    "message": "Local variable `result1` is assigned to but never used",
+    "noqa_row": 416,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 12,
+      "row": 421
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\session_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 15,
+            "row": 421
+          },
+          "location": {
+            "column": 5,
+            "row": 421
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `result2`"
+    },
+    "location": {
+      "column": 5,
+      "row": 421
+    },
+    "message": "Local variable `result2` is assigned to but never used",
+    "noqa_row": 421,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "PTH120",
+    "end_location": {
+      "column": 29,
+      "row": 22
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": null,
+    "location": {
+      "column": 14,
+      "row": 22
+    },
+    "message": "`os.path.dirname()` should be replaced by `Path.parent`",
+    "noqa_row": 22,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-dirname"
+  },
+  {
+    "cell": null,
+    "code": "PTH120",
+    "end_location": {
+      "column": 45,
+      "row": 22
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": null,
+    "location": {
+      "column": 30,
+      "row": 22
+    },
+    "message": "`os.path.dirname()` should be replaced by `Path.parent`",
+    "noqa_row": 22,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-dirname"
+  },
+  {
+    "cell": null,
+    "code": "PTH100",
+    "end_location": {
+      "column": 61,
+      "row": 22
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": null,
+    "location": {
+      "column": 46,
+      "row": 22
+    },
+    "message": "`os.path.abspath()` should be replaced by `Path.resolve()`",
+    "noqa_row": 22,
+    "url": "https://docs.astral.sh/ruff/rules/os-path-abspath"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 69,
+      "row": 41
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 41
+    },
+    "message": "`typing.Dict` is deprecated, use `dict` instead",
+    "noqa_row": 41,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 69,
+      "row": 41
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 41
+    },
+    "message": "`typing.List` is deprecated, use `list` instead",
+    "noqa_row": 41,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 69,
+      "row": 41
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 41
+    },
+    "message": "`typing.Tuple` is deprecated, use `tuple` instead",
+    "noqa_row": 41,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 26,
+      "row": 501
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 29,
+            "row": 501
+          },
+          "location": {
+            "column": 13,
+            "row": 501
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `memory_before`"
+    },
+    "location": {
+      "column": 13,
+      "row": 501
+    },
+    "message": "Local variable `memory_before` is assigned to but never used",
+    "noqa_row": 501,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 23,
+      "row": 614
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 26,
+            "row": 614
+          },
+          "location": {
+            "column": 9,
+            "row": 614
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `session_warmed`"
+    },
+    "location": {
+      "column": 9,
+      "row": 614
+    },
+    "message": "Local variable `session_warmed` is assigned to but never used",
+    "noqa_row": 614,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 16,
+      "row": 661
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 19,
+            "row": 661
+          },
+          "location": {
+            "column": 9,
+            "row": 661
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `result1`"
+    },
+    "location": {
+      "column": 9,
+      "row": 661
+    },
+    "message": "Local variable `result1` is assigned to but never used",
+    "noqa_row": 661,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 16,
+      "row": 666
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 19,
+            "row": 666
+          },
+          "location": {
+            "column": 9,
+            "row": 666
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `result2`"
+    },
+    "location": {
+      "column": 9,
+      "row": 666
+    },
+    "message": "Local variable `result2` is assigned to but never used",
+    "noqa_row": 666,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 19,
+      "row": 683
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 22,
+            "row": 683
+          },
+          "location": {
+            "column": 9,
+            "row": 683
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `db_result1`"
+    },
+    "location": {
+      "column": 9,
+      "row": 683
+    },
+    "message": "Local variable `db_result1` is assigned to but never used",
+    "noqa_row": 683,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 19,
+      "row": 687
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 22,
+            "row": 687
+          },
+          "location": {
+            "column": 9,
+            "row": 687
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `db_result2`"
+    },
+    "location": {
+      "column": 9,
+      "row": 687
+    },
+    "message": "Local variable `db_result2` is assigned to but never used",
+    "noqa_row": 687,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 22,
+      "row": 698
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\core\\system_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 25,
+            "row": 698
+          },
+          "location": {
+            "column": 9,
+            "row": 698
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `memory_before`"
+    },
+    "location": {
+      "column": 9,
+      "row": 698
+    },
+    "message": "Local variable `memory_before` is assigned to but never used",
+    "noqa_row": 698,
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "I001",
+    "end_location": {
+      "column": 1,
+      "row": 23
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "from sqlalchemy import create_engine\nfrom sqlalchemy.orm import sessionmaker\n\nfrom action8_messaging import _prepare_message_format_data\nfrom database import MessageTemplate, Person\nfrom tree_stats_utils import calculate_ethnicity_commonality, calculate_tree_statistics\n\n",
+          "end_location": {
+            "column": 1,
+            "row": 23
+          },
+          "location": {
+            "column": 1,
+            "row": 17
+          }
+        }
+      ],
+      "message": "Organize imports"
+    },
+    "location": {
+      "column": 1,
+      "row": 17
+    },
+    "message": "Import block is un-sorted or un-formatted",
+    "noqa_row": 17,
+    "url": "https://docs.astral.sh/ruff/rules/unsorted-imports"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 41,
+      "row": 56
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n✓ Tree statistics calculated:\"",
+          "end_location": {
+            "column": 41,
+            "row": 56
+          },
+          "location": {
+            "column": 7,
+            "row": 56
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 7,
+      "row": 56
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 56,
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 47,
+      "row": 80
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n✓ Ethnicity commonality calculated:\"",
+          "end_location": {
+            "column": 47,
+            "row": 80
+          },
+          "location": {
+            "column": 7,
+            "row": 80
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 7,
+      "row": 80
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 80,
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 142
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 142
+          },
+          "location": {
+            "column": 1,
+            "row": 142
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 142
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 142,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 9,
+      "row": 146
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 9,
+            "row": 146
+          },
+          "location": {
+            "column": 1,
+            "row": 146
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 146
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 146,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 167
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 167
+          },
+          "location": {
+            "column": 1,
+            "row": 167
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 167
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 167,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 9,
+      "row": 171
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 9,
+            "row": 171
+          },
+          "location": {
+            "column": 1,
+            "row": 171
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 171
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 171,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 77,
+      "row": 197
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 77,
+            "row": 197
+          },
+          "location": {
+            "column": 76,
+            "row": 197
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 76,
+      "row": 197
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 202,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 74,
+      "row": 211
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 74,
+            "row": 211
+          },
+          "location": {
+            "column": 73,
+            "row": 211
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 73,
+      "row": 211
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 225,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 75,
+      "row": 212
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 75,
+            "row": 212
+          },
+          "location": {
+            "column": 74,
+            "row": 212
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 74,
+      "row": 212
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 225,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 74,
+      "row": 215
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 74,
+            "row": 215
+          },
+          "location": {
+            "column": 73,
+            "row": 215
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 73,
+      "row": 215
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 225,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 76,
+      "row": 216
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\demo_phase1_messages.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 76,
+            "row": 216
+          },
+          "location": {
+            "column": 75,
+            "row": 216
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 75,
+      "row": 216
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 225,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 75,
+      "row": 29
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 29
+    },
+    "message": "`typing.Dict` is deprecated, use `dict` instead",
+    "noqa_row": 29,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 75,
+      "row": 29
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 29
+    },
+    "message": "`typing.List` is deprecated, use `list` instead",
+    "noqa_row": 29,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 75,
+      "row": 29
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 29
+    },
+    "message": "`typing.Tuple` is deprecated, use `tuple` instead",
+    "noqa_row": 29,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "UP035",
+    "end_location": {
+      "column": 75,
+      "row": 29
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 29
+    },
+    "message": "`typing.Type` is deprecated, use `type` instead",
+    "noqa_row": 29,
+    "url": "https://docs.astral.sh/ruff/rules/deprecated-import"
+  },
+  {
+    "cell": null,
+    "code": "B007",
+    "end_location": {
+      "column": 18,
+      "row": 161
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "_i",
+          "end_location": {
+            "column": 18,
+            "row": 161
+          },
+          "location": {
+            "column": 17,
+            "row": 161
+          }
+        }
+      ],
+      "message": "Rename unused `i` to `_i`"
+    },
+    "location": {
+      "column": 17,
+      "row": 161
+    },
+    "message": "Loop control variable `i` not used within loop body",
+    "noqa_row": 161,
+    "url": "https://docs.astral.sh/ruff/rules/unused-loop-control-variable"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 86,
+      "row": 320
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 319
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 319,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 85,
+      "row": 353
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 352
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 352,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 86,
+      "row": 387
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 386
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "noqa_row": 386,
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "N818",
+    "end_location": {
+      "column": 24,
+      "row": 471
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 7,
+      "row": 471
+    },
+    "message": "Exception name `AncestryException` should be named with an Error suffix",
+    "noqa_row": 471,
+    "url": "https://docs.astral.sh/ruff/rules/error-suffix-on-exception-name"
+  },
+  {
+    "cell": null,
+    "code": "B904",
+    "end_location": {
+      "column": 28,
+      "row": 709
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 17,
+      "row": 709
+    },
+    "message": "Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling",
+    "noqa_row": 709,
+    "url": "https://docs.astral.sh/ruff/rules/raise-without-from-inside-except"
+  },
+  {
+    "cell": null,
+    "code": "PLE0704",
+    "end_location": {
+      "column": 14,
+      "row": 818
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 818
+    },
+    "message": "Bare `raise` statement is not inside an exception handler",
+    "noqa_row": 818,
+    "url": "https://docs.astral.sh/ruff/rules/misplaced-bare-raise"
+  },
+  {
+    "cell": null,
+    "code": "PLE0704",
+    "end_location": {
+      "column": 14,
+      "row": 823
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 823
+    },
+    "message": "Bare `raise` statement is not inside an exception handler",
+    "noqa_row": 823,
+    "url": "https://docs.astral.sh/ruff/rules/misplaced-bare-raise"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 1285
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 43
+          },
+          "location": {
+            "column": 1,
+            "row": 43
+          }
+        },
+        {
+          "content": "with contextlib.suppress(ValueError)",
+          "end_location": {
+            "column": 12,
+            "row": 1282
+          },
+          "location": {
+            "column": 9,
+            "row": 1282
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 1286
+          },
+          "location": {
+            "column": 1,
+            "row": 1284
+          }
+        }
+      ],
+      "message": "Replace with `contextlib.suppress(ValueError)`"
+    },
+    "location": {
+      "column": 9,
+      "row": 1282
+    },
+    "message": "Use `contextlib.suppress(ValueError)` instead of `try`-`except`-`pass`",
+    "noqa_row": 1282,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 1381
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 43
+          },
+          "location": {
+            "column": 1,
+            "row": 43
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 1378
+          },
+          "location": {
+            "column": 9,
+            "row": 1378
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 1382
+          },
+          "location": {
+            "column": 1,
+            "row": 1380
+          }
+        }
+      ],
+      "message": "Replace with `contextlib.suppress(Exception)`"
+    },
+    "location": {
+      "column": 9,
+      "row": 1378
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 1378,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "B011",
+    "end_location": {
+      "column": 21,
+      "row": 1412
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "raise AssertionError(\"Should have raised an error\")",
+          "end_location": {
+            "column": 52,
+            "row": 1412
+          },
+          "location": {
+            "column": 9,
+            "row": 1412
+          }
+        }
+      ],
+      "message": "Replace `assert False`"
+    },
+    "location": {
+      "column": 16,
+      "row": 1412
+    },
+    "message": "Do not `assert False` (`python -O` removes these calls), raise `AssertionError()`",
+    "noqa_row": 1412,
+    "url": "https://docs.astral.sh/ruff/rules/assert-false"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 1445
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\error_handling.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 43
+          },
+          "location": {
+            "column": 1,
+            "row": 43
+          }
+        },
+        {
+          "content": "with contextlib.suppress(ValueError)",
+          "end_location": {
+            "column": 12,
+            "row": 1442
+          },
+          "location": {
+            "column": 9,
+            "row": 1442
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 1446
+          },
+          "location": {
+            "column": 1,
+            "row": 1444
+          }
+        }
+      ],
+      "message": "Replace with `contextlib.suppress(ValueError)`"
+    },
+    "location": {
+      "column": 9,
+      "row": 1442
+    },
+    "message": "Use `contextlib.suppress(ValueError)` instead of `try`-`except`-`pass`",
+    "noqa_row": 1442,
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 40,
+      "row": 19
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\migrate_add_tree_stats_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 40,
+            "row": 19
+          },
+          "location": {
+            "column": 39,
+            "row": 19
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 39,
+      "row": 19
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 21,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W291",
+    "end_location": {
+      "column": 58,
+      "row": 47
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\migrate_add_tree_stats_cache.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 58,
+            "row": 47
+          },
+          "location": {
+            "column": 57,
+            "row": 47
+          }
+        }
+      ],
+      "message": "Remove trailing whitespace"
+    },
+    "location": {
+      "column": 57,
+      "row": 47
+    },
+    "message": "Trailing whitespace",
+    "noqa_row": 49,
+    "url": "https://docs.astral.sh/ruff/rules/trailing-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 21
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\search_criteria_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 21
+          },
+          "location": {
+            "column": 1,
+            "row": 21
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 21
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 31,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 24
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\search_criteria_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 24
+          },
+          "location": {
+            "column": 1,
+            "row": 24
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 24
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 31,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 28
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\search_criteria_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 28
+          },
+          "location": {
+            "column": 1,
+            "row": 28
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 28
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 31,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 149
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\tree_stats_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 149
+          },
+          "location": {
+            "column": 1,
+            "row": 149
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 149
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 151,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 306
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\tree_stats_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 306
+          },
+          "location": {
+            "column": 1,
+            "row": 306
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 306
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 323,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 5,
+      "row": 308
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\tree_stats_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 5,
+            "row": 308
+          },
+          "location": {
+            "column": 1,
+            "row": 308
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 308
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 323,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  },
+  {
+    "cell": null,
+    "code": "W293",
+    "end_location": {
+      "column": 9,
+      "row": 313
+    },
+    "filename": "C:\\Users\\wayne\\GitHub\\Python\\Projects\\Ancestry\\tree_stats_utils.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 9,
+            "row": 313
+          },
+          "location": {
+            "column": 1,
+            "row": 313
+          }
+        }
+      ],
+      "message": "Remove whitespace from blank line"
+    },
+    "location": {
+      "column": 1,
+      "row": 313
+    },
+    "message": "Blank line contains whitespace",
+    "noqa_row": 323,
+    "url": "https://docs.astral.sh/ruff/rules/blank-line-with-whitespace"
+  }
+]

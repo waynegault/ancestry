@@ -16,6 +16,7 @@ from standard_imports import (
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import functools
 import sqlite3
 import threading
@@ -26,7 +27,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -72,11 +73,11 @@ class ErrorStats:
     failure_rate: float = 0.0
     consecutive_failures: int = 0
     consecutive_successes: int = 0
-    error_types: Dict[str, int] = field(default_factory=dict)
+    error_types: dict[str, int] = field(default_factory=dict)
     recovery_attempts: int = 0
     last_recovery_time: Optional[datetime] = None
     avg_response_time: float = 0.0
-    error_patterns: List[str] = field(default_factory=list)
+    error_patterns: list[str] = field(default_factory=list)
 
 
 class RetryStrategy(Enum):
@@ -99,8 +100,8 @@ class RetryConfig:
     max_delay: float = 60.0
     exponential_base: float = 2.0
     jitter: bool = True  # Add randomization to prevent thundering herd
-    retry_on: List[Type[Exception]] = field(default_factory=lambda: [Exception])
-    stop_on: List[Type[Exception]] = field(default_factory=list)
+    retry_on: list[type[Exception]] = field(default_factory=lambda: [Exception])
+    stop_on: list[type[Exception]] = field(default_factory=list)
 
 
 class IntelligentRetryHandler:
@@ -109,8 +110,8 @@ class IntelligentRetryHandler:
     def __init__(self, name: str, config: Optional[RetryConfig] = None) -> None:
         self.name = name
         self.config = config or RetryConfig()
-        self._error_history: List[Tuple[Exception, datetime]] = []
-        self._success_patterns: Dict[str, int] = {}
+        self._error_history: list[tuple[Exception, datetime]] = []
+        self._success_patterns: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def should_retry(self, exception: Exception, attempt: int) -> bool:
@@ -158,7 +159,7 @@ class IntelligentRetryHandler:
 
         elif self.config.strategy == RetryStrategy.FIBONACCI_BACKOFF:
             fib_sequence = [1, 1]
-            for i in range(2, attempt + 1):
+            for _i in range(2, attempt + 1):
                 fib_sequence.append(fib_sequence[-1] + fib_sequence[-2])
             delay = (
                 self.config.base_delay
@@ -316,10 +317,9 @@ class CircuitBreaker:
                     0.1 * execution_time
                 )
 
-            if self.state == CircuitState.HALF_OPEN:
-                if self.stats.consecutive_successes >= self.config.success_threshold:
-                    self.state = CircuitState.CLOSED
-                    logger.info(f"Circuit breaker {self.name} is now CLOSED")
+            if self.state == CircuitState.HALF_OPEN and self.stats.consecutive_successes >= self.config.success_threshold:
+                self.state = CircuitState.CLOSED
+                logger.info(f"Circuit breaker {self.name} is now CLOSED")
 
     def _record_failure_with_details(self, exception: Exception) -> None:
         """Record failed execution with error details."""
@@ -349,13 +349,12 @@ class CircuitBreaker:
                 if len(self.stats.error_patterns) > 10:
                     self.stats.error_patterns.pop(0)
 
-            if self.state == CircuitState.CLOSED:
-                if self.stats.consecutive_failures >= self.config.failure_threshold:
-                    self.state = CircuitState.OPEN
-                    self._last_failure_time = datetime.now()
-                    logger.warning(
-                        f"Circuit breaker {self.name} is now OPEN after {self.config.failure_threshold} failures"
-                    )
+            if self.state == CircuitState.CLOSED and self.stats.consecutive_failures >= self.config.failure_threshold:
+                self.state = CircuitState.OPEN
+                self._last_failure_time = datetime.now()
+                logger.warning(
+                    f"Circuit breaker {self.name} is now OPEN after {self.config.failure_threshold} failures"
+                )
 
     def _get_recovery_time_remaining(self) -> int:
         """Get remaining time before recovery attempt."""
@@ -383,10 +382,9 @@ class CircuitBreaker:
             self._update_failure_rate()
 
             # State transitions
-            if self.state == CircuitState.HALF_OPEN:
-                if self.stats.consecutive_successes >= self.config.success_threshold:
-                    self.state = CircuitState.CLOSED
-                    logger.info(f"Circuit breaker {self.name} CLOSED after recovery")
+            if self.state == CircuitState.HALF_OPEN and self.stats.consecutive_successes >= self.config.success_threshold:
+                self.state = CircuitState.CLOSED
+                logger.info(f"Circuit breaker {self.name} CLOSED after recovery")
 
             logger.debug(f"Circuit breaker {self.name} success: {execution_time:.2f}s")
 
@@ -431,7 +429,7 @@ class CircuitBreaker:
                 self.stats.failed_requests / self.stats.total_requests
             )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get circuit breaker statistics."""
         with self._lock:
             return {
@@ -468,7 +466,7 @@ class CircuitBreakerOpenError(Exception):
 # === PHASE 4.1: ENHANCED EXCEPTION HIERARCHY ===
 
 
-class AncestryException(Exception):
+class AncestryException(Exception):  # noqa: N818
     """
     Base exception class for all Ancestry project errors.
     Provides structured error context and recovery guidance.
@@ -478,7 +476,7 @@ class AncestryException(Exception):
         self,
         message: str,
         error_code: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
         severity: str = "ERROR",
         recovery_hint: Optional[str] = None,
         cause: Optional[Exception] = None,
@@ -492,7 +490,7 @@ class AncestryException(Exception):
         self.cause = cause
         self.timestamp = datetime.now()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert exception to dictionary for logging/debugging."""
         return {
             "type": self.__class__.__name__,
@@ -620,9 +618,9 @@ class ErrorContext:
     operation: str
     module: str
     function: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    environment: Dict[str, Any] = field(default_factory=dict)
-    timing: Dict[str, float] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    environment: dict[str, Any] = field(default_factory=dict)
+    timing: dict[str, float] = field(default_factory=dict)
     stack_trace: Optional[str] = None
     error_id: str = field(default_factory=lambda: f"err_{int(time.time())}")
 
@@ -639,7 +637,7 @@ class ErrorContext:
             }
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging."""
         return {
             "operation": self.operation,
@@ -659,8 +657,8 @@ class ErrorRecoveryManager:
     """
 
     def __init__(self) -> None:
-        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
-        self.recovery_strategies: Dict[str, Callable] = {}
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
+        self.recovery_strategies: dict[str, Callable] = {}
 
     def get_circuit_breaker(
         self, name: str, config: Optional[CircuitBreakerConfig] = None
@@ -706,15 +704,15 @@ class ErrorRecoveryManager:
                 return operation(*args, **kwargs)
             except Exception as recovery_error:
                 logger.error(f"Recovery failed for {service_name}: {recovery_error}")
-                raise error  # Re-raise original error
+                raise error from recovery_error  # Re-raise original error with context
         else:
             raise error  # No recovery strategy, re-raise original error
 
-    def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_stats(self) -> dict[str, dict[str, Any]]:
         """Get statistics for all circuit breakers."""
         return {name: cb.get_stats() for name, cb in self.circuit_breakers.items()}
 
-    def check_failure_patterns(self) -> Dict[str, str]:
+    def check_failure_patterns(self) -> dict[str, str]:
         """
         Monitor circuit breakers for concerning failure patterns.
         Returns warnings for actions that may be approaching failure thresholds.
@@ -778,12 +776,12 @@ def with_circuit_breaker(
 # === PHASE 4.1: ENHANCED DECORATOR FRAMEWORK ===
 
 
-def _should_stop_retry(e: Exception, stop_on: List[Type[Exception]]) -> bool:
+def _should_stop_retry(e: Exception, stop_on: list[type[Exception]]) -> bool:
     """Check if exception should stop retry attempts."""
     return any(isinstance(e, stop_type) for stop_type in stop_on)
 
 
-def _should_retry_exception(e: Exception, retry_on: List[Type[Exception]]) -> bool:
+def _should_retry_exception(e: Exception, retry_on: list[type[Exception]]) -> bool:
     """Check if exception should trigger a retry."""
     return any(isinstance(e, retry_type) for retry_type in retry_on)
 
@@ -802,8 +800,8 @@ def _handle_retry_exception(
     func_name: str,
     attempt: int,
     max_attempts: int,
-    stop_on: List[Type[Exception]],
-    retry_on: List[Type[Exception]],
+    stop_on: list[type[Exception]],
+    retry_on: list[type[Exception]],
     backoff_factor: float,
     jitter: bool,
     context: "ErrorContext",
@@ -815,12 +813,12 @@ def _handle_retry_exception(
         context.stack_trace = traceback.format_exc()
         if isinstance(e, AncestryException):
             e.context.update(context.to_dict())
-        raise
+        raise  # noqa: PLE0704
 
     # Check if we should retry
     if not _should_retry_exception(e, retry_on):
         logger.error(f"{func_name} failed with non-retryable error type: {e}")
-        raise
+        raise  # noqa: PLE0704
 
     # Calculate delay for next attempt
     if attempt < max_attempts - 1:
@@ -835,8 +833,8 @@ def _handle_retry_exception(
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
-    retry_on: Optional[List[Type[Exception]]] = None,
-    stop_on: Optional[List[Type[Exception]]] = None,
+    retry_on: Optional[list[type[Exception]]] = None,
+    stop_on: Optional[list[type[Exception]]] = None,
     jitter: bool = True,
 ) -> Callable:
     """
@@ -845,8 +843,8 @@ def retry_on_failure(
     Args:
         max_attempts: Maximum number of retry attempts
         backoff_factor: Multiplier for delay between retries
-        retry_on: List of exceptions to retry on (default: all RetryableError)
-        stop_on: List of exceptions to never retry (default: FatalError)
+        retry_on: list of exceptions to retry on (default: all RetryableError)
+        stop_on: list of exceptions to never retry (default: FatalError)
         jitter: Add randomization to prevent thundering herd
     """
     if retry_on is None:
@@ -948,8 +946,8 @@ def timeout_protection(timeout: int = 30) -> Callable:
             # Use threading approach for cross-platform compatibility
             import threading
 
-            result: List[Any] = [None]
-            exception: List[Optional[Exception]] = [None]
+            result: list[Any] = [None]
+            exception: list[Optional[Exception]] = [None]
 
             def target() -> None:
                 try:
@@ -1161,7 +1159,7 @@ def _test_module_imports() -> None:
 
         status = "✅" if is_available else "❌"
         print(f"   {status} {module_name}: {description}")
-        print(f"      Available: {is_available}, Is Type: {is_type}")
+        print(f"      Available: {is_available}, Is type: {is_type}")
 
         results.append(is_available)
         assert is_available, f"Required class {module_name} should be available"
@@ -1211,7 +1209,7 @@ def _test_function_availability() -> None:
                 )
                 test_passed = is_available and is_correct_type
                 type_info = (
-                    f"Type: {type(globals().get(item_name)).__name__}"
+                    f"type: {type(globals().get(item_name)).__name__}"
                     if is_available
                     else "Not Available"
                 )
@@ -1279,10 +1277,8 @@ def _test_circuit_breaker_states() -> None:
         raise ValueError("Test error")
 
     for _ in range(5):
-        try:
+        with contextlib.suppress(ValueError):
             circuit_breaker.call(failing_operation)
-        except ValueError:
-            pass
 
     assert (
         circuit_breaker.state == CircuitState.OPEN
@@ -1375,10 +1371,8 @@ def _test_circuit_breaker_performance() -> None:
     circuit_breaker = CircuitBreaker("performance_test")
     start_time = time.time()
     for _ in range(100):
-        try:
+        with contextlib.suppress(Exception):
             circuit_breaker.call(lambda: "success")
-        except Exception:
-            pass
     duration = time.time() - start_time
     assert duration < 1.0, "Circuit breaker should be performant"
 
@@ -1409,7 +1403,7 @@ def _test_recursive_error_handling() -> None:
 
     try:
         nested_error_function()
-        assert False, "Should have raised an error"
+        raise AssertionError("Should have raised an error")
     except RuntimeError as e:
         assert e.__cause__ is not None, "Should preserve error chain"
 
@@ -1439,10 +1433,8 @@ def _test_failure_pattern_monitoring() -> None:
         raise ValueError("Test failure")
 
     for _ in range(3):
-        try:
+        with contextlib.suppress(ValueError):
             circuit_breaker.call(failing_operation)
-        except ValueError:
-            pass
 
     warnings = manager.check_failure_patterns()
     assert isinstance(warnings, dict), "Should return warnings dictionary"

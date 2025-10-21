@@ -146,7 +146,7 @@ def calculate_tree_statistics(
 def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
     """
     Calculate distribution of ethnicity regions across all DNA matches.
-    
+
     Returns dictionary mapping region names to count of matches with that region.
     """
     try:
@@ -303,14 +303,14 @@ def calculate_ethnicity_commonality(
 ) -> dict[str, Any]:
     """
     Calculate ethnicity commonality between tree owner and a DNA match.
-    
+
     Compares ethnicity percentages and identifies shared regions.
-    
+
     Args:
         session: SQLAlchemy database session
         owner_profile_id: Profile ID of the tree owner
         match_person_id: Person ID of the DNA match
-        
+
     Returns:
         Dictionary containing ethnicity commonality:
         {
