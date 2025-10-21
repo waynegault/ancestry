@@ -14,7 +14,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 10**: GEDCOM file analysis and scoring
 - **Action 11**: API-based genealogical research and relationship discovery
 
-**Current Status**: Phase 5 IN PROGRESS - Research Assistant Features (P5.1-P5.5 Complete: Source Citations, Research Suggestions, Enhanced Tasks, Relationship Diagrams, Record Sharing)
+**Current Status**: Phase 5 IN PROGRESS - Research Assistant Features (P5.1-P5.6 Complete: Source Citations, Research Suggestions, Enhanced Tasks, Relationship Diagrams, Record Sharing, AI Prompts)
 
 ---
 
@@ -469,8 +469,39 @@ python action11.py
 - ✅ Usage: Record references can be included in messages to provide specific evidence
 - ✅ Ready for integration into Action 8/9 responses
 
-**P5.6-P5.10: Remaining Tasks** 🚧 PENDING
-- P5.6: Research guidance AI prompt
+**P5.6: Research Guidance AI Prompt** ✅ COMPLETE
+- ✅ Created research_guidance_prompts.py module (330 lines)
+- ✅ Implemented create_research_guidance_prompt() for research guidance
+  - Accepts person info, relationship, shared DNA, common ancestors
+  - Includes missing information and available records
+  - Generates structured prompts for AI models
+  - Requests specific research suggestions, collections, and strategies
+- ✅ Implemented create_conversation_response_prompt() for conversational AI
+  - Accepts DNA match info, their message, conversation context
+  - Generates prompts for helpful, friendly responses
+  - Includes relationship information for context
+  - Requests responses that address questions and suggest collaboration
+- ✅ Implemented create_brick_wall_analysis_prompt() for brick wall analysis
+  - Accepts ancestor name, known facts, unknown facts
+  - Includes already-searched collections
+  - Generates prompts for alternative research strategies
+  - Requests collateral research and DNA testing suggestions
+- ✅ Added 5 comprehensive tests covering all prompt types
+- ✅ Created demo_research_guidance_prompts.py demonstration script showing:
+  - Basic research guidance prompt with missing info
+  - Research prompt with common ancestors
+  - Research prompt with available records
+  - Conversation response prompt for DNA match messages
+  - Brick wall analysis prompt with known/unknown facts
+  - Real-world scenario: responding to DNA match about common ancestor
+- ✅ All 5 research_guidance_prompts tests passing
+- ✅ All 550 tests passing across 69 modules
+- ✅ Quality: 100.0/100 across all 69 modules
+- ✅ All functions have complexity < 11
+- ✅ Usage: Prompts can be sent to AI models (GPT-4, Claude, etc.) for personalized guidance
+- ✅ Ready for integration into Action 8/9 for AI-powered responses
+
+**P5.7-P5.10: Remaining Tasks** 🚧 PENDING
 - P5.7-P5.10: Testing and completion
 
 ### Phase 4: Adaptive Messaging & Intelligent Dialogue (October 21, 2025) ✅ COMPLETE
