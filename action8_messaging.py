@@ -405,6 +405,74 @@ def cancel_pending_on_reply(person: Person, log_prefix: str = "") -> bool:
         return False
 
 
+def determine_next_action(person: Person, log_prefix: str = "") -> tuple[str, datetime | None]:
+    """
+    Determine next action and timing based on conversation state.
+
+    Phase 4.6: Intelligent action determination that analyzes conversation state,
+    engagement level, and status to decide what should happen next and when.
+
+    Args:
+        person: Person object with conversation_state
+        log_prefix: Logging prefix for debugging
+
+    Returns:
+        tuple: (action, datetime) where action is one of:
+            - 'await_reply': Waiting for recipient response (no scheduled action)
+            - 'send_follow_up': Send follow-up message at specified datetime
+            - 'status_changed': Status change detected (no scheduled action)
+            - 'research_needed': Requires research before next message
+            - 'no_action': No action needed (conversation complete/desisted)
+
+    Logic:
+        1. Check if status changed (out-of-tree → in-tree)
+        2. Check if in active dialogue (awaiting reply)
+        3. Check if research needed (pending questions)
+        4. Calculate adaptive follow-up timing based on engagement
+        5. Return appropriate action and datetime
+    """
+    if not person.conversation_state:
+        logger.debug(f"{log_prefix}: No conversation_state - no action needed")
+        return ('no_action', None)
+
+    try:
+        conv_state = person.conversation_state
+
+        # 1. Check for status change
+        if detect_status_change_to_in_tree(person):
+            logger.info(f"{log_prefix}: Status changed to in-tree - cancelling pending messages")
+            return ('status_changed', None)
+
+        # 2. Check if in active dialogue (awaiting reply)
+        if conv_state.conversation_phase == 'active_dialogue' and conv_state.next_action == 'await_reply':
+            logger.debug(f"{log_prefix}: In active dialogue - awaiting reply")
+            return ('await_reply', None)
+
+        # 3. Check if research needed
+        if conv_state.pending_questions and len(conv_state.pending_questions) > 0:
+            logger.info(f"{log_prefix}: Research needed - {len(conv_state.pending_questions)} pending questions")
+            return ('research_needed', None)
+
+        # 4. Calculate adaptive follow-up timing
+        engagement_score = conv_state.engagement_score or 0
+        interval = calculate_adaptive_interval(engagement_score, person.last_logged_in, log_prefix)
+        if interval.total_seconds() == 0:
+            # Testing/dry_run mode or no engagement
+            logger.debug(f"{log_prefix}: No adaptive interval - no follow-up scheduled")
+            return ('no_action', None)
+
+        next_date = datetime.now() + interval
+        logger.info(
+            f"{log_prefix}: Follow-up scheduled in {interval.days} days "
+            f"(engagement: {engagement_score})"
+        )
+        return ('send_follow_up', next_date)
+
+    except Exception as e:
+        logger.error(f"{log_prefix}: Error determining next action: {e}")
+        return ('no_action', None)
+
+
 def detect_status_change_to_in_tree(person: Person) -> bool:
     """
     Detect if a person has recently changed from out-of-tree to in-tree status.
@@ -4569,6 +4637,163 @@ def _test_cancel_on_reply_already_active() -> bool:
     return True
 
 
+def _test_determine_next_action_status_change() -> bool:
+    """Test determine_next_action when status changed to in-tree."""
+    from unittest.mock import Mock, patch
+    import action8_messaging
+
+    # Create mock person with recent tree addition
+    person = Mock(spec=Person)
+    person.id = 201
+    person.username = "Status Change User"
+    person.in_my_tree = True
+
+    # Create mock conversation_state
+    conv_state = Mock()
+    conv_state.conversation_phase = 'initial_outreach'
+    conv_state.next_action = 'send_follow_up'
+    conv_state.engagement_score = 50
+    conv_state.pending_questions = []
+    person.conversation_state = conv_state
+
+    # Mock detect_status_change_to_in_tree to return True
+    with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=True):
+        action, next_date = action8_messaging.determine_next_action(person, "test")
+
+    # Verify status_changed action
+    assert action == 'status_changed', f"Expected 'status_changed', got '{action}'"
+    assert next_date is None, "next_date should be None for status_changed"
+
+    logger.info("✓ Status change detected - returns 'status_changed'")
+    return True
+
+
+def _test_determine_next_action_await_reply() -> bool:
+    """Test determine_next_action when in active dialogue awaiting reply."""
+    from unittest.mock import Mock, patch
+    import action8_messaging
+
+    # Create mock person in active dialogue
+    person = Mock(spec=Person)
+    person.id = 202
+    person.username = "Active Dialogue User"
+
+    # Create mock conversation_state in active dialogue
+    conv_state = Mock()
+    conv_state.conversation_phase = 'active_dialogue'
+    conv_state.next_action = 'await_reply'
+    conv_state.engagement_score = 75
+    conv_state.pending_questions = []
+    person.conversation_state = conv_state
+
+    # Mock detect_status_change_to_in_tree to return False
+    with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=False):
+        action, next_date = action8_messaging.determine_next_action(person, "test")
+
+    # Verify await_reply action
+    assert action == 'await_reply', f"Expected 'await_reply', got '{action}'"
+    assert next_date is None, "next_date should be None for await_reply"
+
+    logger.info("✓ Active dialogue - returns 'await_reply'")
+    return True
+
+
+def _test_determine_next_action_research_needed() -> bool:
+    """Test determine_next_action when research is needed."""
+    from unittest.mock import Mock, patch
+    import action8_messaging
+
+    # Create mock person with pending questions
+    person = Mock(spec=Person)
+    person.id = 203
+    person.username = "Research User"
+
+    # Create mock conversation_state with pending questions
+    conv_state = Mock()
+    conv_state.conversation_phase = 'research_exchange'
+    conv_state.next_action = 'send_follow_up'
+    conv_state.engagement_score = 80
+    conv_state.pending_questions = ["Who was John Smith?", "Where did they live?"]
+    person.conversation_state = conv_state
+
+    # Mock detect_status_change_to_in_tree to return False
+    with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=False):
+        action, next_date = action8_messaging.determine_next_action(person, "test")
+
+    # Verify research_needed action
+    assert action == 'research_needed', f"Expected 'research_needed', got '{action}'"
+    assert next_date is None, "next_date should be None for research_needed"
+
+    logger.info("✓ Pending questions - returns 'research_needed'")
+    return True
+
+
+def _test_determine_next_action_send_follow_up() -> bool:
+    """Test determine_next_action schedules follow-up with adaptive timing."""
+    from unittest.mock import Mock, patch
+    from config import config_schema
+    import action8_messaging
+
+    # Temporarily set production mode for adaptive timing
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = 'production'
+
+        # Create mock person ready for follow-up
+        person = Mock(spec=Person)
+        person.id = 204
+        person.username = "Follow Up User"
+        person.last_logged_in = datetime.now() - timedelta(days=5)
+
+        # Create mock conversation_state with high engagement
+        conv_state = Mock()
+        conv_state.conversation_phase = 'active_dialogue'
+        conv_state.next_action = 'send_follow_up'
+        conv_state.engagement_score = 75
+        conv_state.pending_questions = []
+        person.conversation_state = conv_state
+
+        # Mock detect_status_change_to_in_tree to return False
+        with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=False):
+            action, next_date = action8_messaging.determine_next_action(person, "test")
+
+        # Verify send_follow_up action with scheduled date
+        assert action == 'send_follow_up', f"Expected 'send_follow_up', got '{action}'"
+        assert next_date is not None, "next_date should be set for send_follow_up"
+        assert isinstance(next_date, datetime), "next_date should be datetime object"
+
+        # Verify date is in the future (7 days for high engagement)
+        days_until = (next_date - datetime.now()).days
+        assert 6 <= days_until <= 8, f"Expected ~7 days, got {days_until} days"
+
+        logger.info(f"✓ Follow-up scheduled - {days_until} days (high engagement)")
+        return True
+
+    finally:
+        config_schema.app_mode = original_mode
+
+
+def _test_determine_next_action_no_state() -> bool:
+    """Test determine_next_action when no conversation_state exists."""
+    from unittest.mock import Mock
+
+    # Create mock person without conversation_state
+    person = Mock(spec=Person)
+    person.id = 205
+    person.username = "No State User"
+    person.conversation_state = None
+
+    # Determine next action
+    action, next_date = determine_next_action(person, "test")
+
+    # Verify no_action
+    assert action == 'no_action', f"Expected 'no_action', got '{action}'"
+    assert next_date is None, "next_date should be None for no_action"
+
+    logger.info("✓ No conversation_state - returns 'no_action'")
+    return True
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -4798,6 +5023,37 @@ def action8_messaging_tests() -> None:
         "Cancel on reply: Already active dialogue",
         _test_cancel_on_reply_already_active,
         "Idempotent operation when already in active_dialogue phase.",
+    )
+
+    # === PHASE 4.6: DETERMINE NEXT ACTION TESTS ===
+    suite.run_test(
+        "Determine next action: Status change",
+        _test_determine_next_action_status_change,
+        "Returns 'status_changed' when person added to tree.",
+    )
+
+    suite.run_test(
+        "Determine next action: Await reply",
+        _test_determine_next_action_await_reply,
+        "Returns 'await_reply' when in active dialogue.",
+    )
+
+    suite.run_test(
+        "Determine next action: Research needed",
+        _test_determine_next_action_research_needed,
+        "Returns 'research_needed' when pending questions exist.",
+    )
+
+    suite.run_test(
+        "Determine next action: Send follow-up",
+        _test_determine_next_action_send_follow_up,
+        "Schedules follow-up with adaptive timing based on engagement.",
+    )
+
+    suite.run_test(
+        "Determine next action: No conversation state",
+        _test_determine_next_action_no_state,
+        "Returns 'no_action' when no conversation_state exists.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
