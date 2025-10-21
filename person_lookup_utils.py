@@ -205,3 +205,299 @@ def create_result_from_api(
         found=True,
     )
 
+
+# ============================================================================
+# COMPREHENSIVE TEST SUITE
+# ============================================================================
+
+def person_lookup_utils_module_tests() -> bool:
+    """
+    Comprehensive test suite for person_lookup_utils.py.
+    Tests PersonLookupResult data structure and factory functions.
+    """
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Person Lookup Utils Tests", "person_lookup_utils.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        # Test 1: PersonLookupResult creation and basic properties
+        suite.run_test(
+            "PersonLookupResult creation",
+            _test_person_lookup_result_creation,
+            test_summary="Create PersonLookupResult with various data combinations",
+            functions_tested="PersonLookupResult.__init__(), to_dict(), __str__()",
+            method_description="Create result objects with different field combinations and verify properties",
+            expected_outcome="All fields correctly initialized, to_dict() returns complete dictionary",
+        )
+
+        # Test 2: format_for_ai() method
+        suite.run_test(
+            "AI formatting",
+            _test_format_for_ai,
+            test_summary="Test format_for_ai() with found and not-found results",
+            functions_tested="PersonLookupResult.format_for_ai()",
+            method_description="Format person data for AI consumption with various field combinations",
+            expected_outcome="Properly formatted strings for AI prompts with all available data",
+        )
+
+        # Test 3: create_not_found_result()
+        suite.run_test(
+            "Not found result creation",
+            _test_create_not_found_result,
+            test_summary="Create not-found results with various reasons",
+            functions_tested="create_not_found_result()",
+            method_description="Create PersonLookupResult for people not found in tree/API",
+            expected_outcome="Result with found=False, appropriate source and notes",
+        )
+
+        # Test 4: create_result_from_gedcom()
+        suite.run_test(
+            "GEDCOM result creation",
+            _test_create_result_from_gedcom,
+            test_summary="Create results from GEDCOM search data",
+            functions_tested="create_result_from_gedcom()",
+            method_description="Convert Action 10 GEDCOM search results to PersonLookupResult",
+            expected_outcome="Result with source='gedcom', correct confidence based on score",
+        )
+
+        # Test 5: create_result_from_api()
+        suite.run_test(
+            "API result creation",
+            _test_create_result_from_api,
+            test_summary="Create results from API search data",
+            functions_tested="create_result_from_api()",
+            method_description="Convert Action 11 API search results to PersonLookupResult",
+            expected_outcome="Result with source='api', correct field mapping from API response",
+        )
+
+        # Test 6: Confidence scoring
+        suite.run_test(
+            "Confidence scoring",
+            _test_confidence_scoring,
+            test_summary="Verify confidence levels based on match scores",
+            functions_tested="create_result_from_gedcom(), create_result_from_api()",
+            method_description="Test confidence assignment: high (>200), medium (>100), low (<=100)",
+            expected_outcome="Correct confidence levels for different score ranges",
+        )
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Run comprehensive tests using the unified test framework."""
+    return person_lookup_utils_module_tests()
+
+
+# ============================================================================
+# TEST FUNCTIONS
+# ============================================================================
+
+def _test_person_lookup_result_creation() -> bool:
+    """Test PersonLookupResult creation and basic properties."""
+    # Test 1: Minimal creation
+    result1 = PersonLookupResult(name="John Smith")
+    assert result1.name == "John Smith"
+    assert result1.found is False
+    assert result1.match_score == 0
+
+    # Test 2: Full creation
+    result2 = PersonLookupResult(
+        person_id="I123",
+        name="Jane Doe",
+        first_name="Jane",
+        last_name="Doe",
+        birth_year=1850,
+        birth_place="London, England",
+        death_year=1920,
+        death_place="New York, USA",
+        gender="F",
+        relationship_path="3rd great-grandmother",
+        match_score=150,
+        confidence="medium",
+        source="gedcom",
+        found=True,
+    )
+    assert result2.person_id == "I123"
+    assert result2.birth_year == 1850
+    assert result2.found is True
+
+    # Test 3: to_dict() conversion
+    result_dict = result2.to_dict()
+    assert result_dict["name"] == "Jane Doe"
+    assert result_dict["birth_year"] == 1850
+    assert result_dict["found"] is True
+
+    # Test 4: __str__() representation
+    str_repr = str(result2)
+    assert "Jane Doe" in str_repr
+    assert "1850" in str_repr
+
+    return True
+
+
+def _test_format_for_ai() -> bool:
+    """Test format_for_ai() method."""
+    # Test 1: Not found result
+    not_found = PersonLookupResult(name="Unknown Person", found=False)
+    formatted = not_found.format_for_ai()
+    assert "not found" in formatted.lower()
+    assert "Unknown Person" in formatted
+
+    # Test 2: Found with birth/death info
+    found_person = PersonLookupResult(
+        name="Charles Fetch",
+        birth_year=1881,
+        birth_place="Banff, Scotland",
+        death_year=1948,
+        relationship_path="great-grandfather",
+        found=True,
+    )
+    formatted = found_person.format_for_ai()
+    assert "Charles Fetch" in formatted
+    assert "1881" in formatted
+    assert "Banff, Scotland" in formatted
+    assert "1948" in formatted
+    assert "great-grandfather" in formatted
+
+    # Test 3: With family details
+    with_family = PersonLookupResult(
+        name="Mary MacDonald",
+        family_details={
+            "parents": ["William MacDonald", "Margaret Smith"],
+            "spouse": "Charles Fetch",
+            "children": ["Helen Fetch", "James Fetch", "Margaret Fetch"],
+        },
+        found=True,
+    )
+    formatted = with_family.format_for_ai()
+    assert "William MacDonald" in formatted
+    assert "Charles Fetch" in formatted
+    assert "Helen Fetch" in formatted
+
+    return True
+
+
+def _test_create_not_found_result() -> bool:
+    """Test create_not_found_result() function."""
+    # Test 1: Basic not found
+    result1 = create_not_found_result("John Unknown")
+    assert result1.name == "John Unknown"
+    assert result1.found is False
+    assert result1.source == "not_found"
+    assert result1.confidence == "low"
+
+    # Test 2: With custom reason
+    result2 = create_not_found_result("Jane Unknown", reason="No matching records in GEDCOM")
+    assert result2.notes == "No matching records in GEDCOM"
+
+    return True
+
+
+def _test_create_result_from_gedcom() -> bool:
+    """Test create_result_from_gedcom() function."""
+    gedcom_data = {
+        "id": "I456",
+        "name": "James Gault",
+        "first_name": "James",
+        "surname": "Gault",
+        "birth_year": 1885,
+        "birth_place": "Banff, Scotland",
+        "death_year": 1962,
+        "gender": "M",
+        "family": {"spouse": "Margaret Milne", "children": ["Helen Gault"]},
+    }
+
+    result = create_result_from_gedcom(
+        gedcom_data,
+        relationship_path="2nd great-grandfather",
+        match_score=180,
+    )
+
+    assert result.person_id == "I456"
+    assert result.name == "James Gault"
+    assert result.first_name == "James"
+    assert result.last_name == "Gault"
+    assert result.birth_year == 1885
+    assert result.source == "gedcom"
+    assert result.found is True
+    assert result.match_score == 180
+    assert result.confidence == "medium"  # 100 < 180 <= 200
+    assert result.relationship_path == "2nd great-grandfather"
+
+    return True
+
+
+def _test_create_result_from_api() -> bool:
+    """Test create_result_from_api() function."""
+    api_data = {
+        "personId": "P789",
+        "name": "William MacDonald",
+        "givenName": "William",
+        "surname": "MacDonald",
+        "birthYear": 1850,
+        "birthPlace": "Aberdeen, Scotland",
+        "deathYear": 1920,
+        "gender": "M",
+        "family": {"spouse": "Margaret Smith"},
+    }
+
+    result = create_result_from_api(
+        api_data,
+        relationship_path="3rd great-grandfather",
+        match_score=220,
+    )
+
+    assert result.person_id == "P789"
+    assert result.name == "William MacDonald"
+    assert result.first_name == "William"
+    assert result.last_name == "MacDonald"
+    assert result.birth_year == 1850
+    assert result.source == "api"
+    assert result.found is True
+    assert result.match_score == 220
+    assert result.confidence == "high"  # 220 > 200
+    assert result.source_details == "Found via Ancestry API"
+
+    return True
+
+
+def _test_confidence_scoring() -> bool:
+    """Test confidence level assignment based on match scores."""
+    # Test high confidence (>200)
+    high_gedcom = create_result_from_gedcom({"name": "Test"}, match_score=250)
+    assert high_gedcom.confidence == "high"
+
+    high_api = create_result_from_api({"name": "Test"}, match_score=300)
+    assert high_api.confidence == "high"
+
+    # Test medium confidence (100 < score <= 200)
+    medium_gedcom = create_result_from_gedcom({"name": "Test"}, match_score=150)
+    assert medium_gedcom.confidence == "medium"
+
+    medium_api = create_result_from_api({"name": "Test"}, match_score=101)
+    assert medium_api.confidence == "medium"
+
+    # Test low confidence (<=100)
+    low_gedcom = create_result_from_gedcom({"name": "Test"}, match_score=50)
+    assert low_gedcom.confidence == "low"
+
+    low_api = create_result_from_api({"name": "Test"}, match_score=100)
+    assert low_api.confidence == "low"
+
+    return True
+
+
+if __name__ == "__main__":
+    import sys
+    import traceback
+
+    try:
+        print("🧪 Running Person Lookup Utils comprehensive test suite...")
+        success = run_comprehensive_tests()
+    except Exception:
+        print("\n[ERROR] Unhandled exception during Person Lookup Utils tests:", file=sys.stderr)
+        traceback.print_exc()
+        success = False
+
+    sys.exit(0 if success else 1)
