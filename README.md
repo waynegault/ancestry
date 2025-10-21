@@ -359,8 +359,28 @@ python action11.py
 - ✅ Usage: `sources = get_person_sources(individual); citation = format_source_citations(sources)`
 - ✅ Ready for integration into Action 8/9 responses
 
-**P5.2-P5.10: Remaining Tasks** 🚧 PENDING
-- P5.2: Research suggestion generation
+**P5.2: Research Suggestion Generation** ✅ COMPLETE
+- ✅ Created research_suggestions.py module
+- ✅ Implemented generate_research_suggestions() function
+  - Generates relevant Ancestry collection suggestions based on locations
+  - Suggests specific record types based on common ancestors
+  - Provides research strategies based on relationship context
+  - Returns formatted message ready for use in conversations
+- ✅ Added ANCESTRY_COLLECTIONS mapping for Scotland, England, Ireland, Canada, USA
+- ✅ Added TIME_PERIOD_COLLECTIONS for 1800s and 1900s
+- ✅ Implemented helper functions to reduce complexity:
+  - _extract_location_collections()
+  - _extract_time_period_collections()
+  - _generate_record_types()
+  - _generate_strategies()
+  - _format_research_suggestion_message()
+- ✅ Added 4 comprehensive tests
+- ✅ All tests passing
+- ✅ Quality: 100.0/100 across all 66 modules
+- ✅ Usage: `result = generate_research_suggestions(ancestors, locations, periods, relationship)`
+- ✅ Ready for integration into Action 8/9 responses
+
+**P5.3-P5.10: Remaining Tasks** 🚧 PENDING
 - P5.3: Enhanced MS To-Do task creation
 - P5.4: Relationship diagram generation
 - P5.5: Record sharing capabilities
