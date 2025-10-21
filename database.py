@@ -215,7 +215,6 @@ class ConversationLog(Base):
     custom_reply_sent_at = Column(
         DateTime(timezone=True),
         nullable=True,
-        index=True,
         comment="Timestamp (UTC) when an automated genealogical custom reply was sent for this IN message.",
     )
 
@@ -318,6 +317,69 @@ class MessageTemplate(Base):
 
 
 # End of MessageTemplate class
+
+
+class TreeStatisticsCache(Base):
+    """
+    Caches tree statistics to avoid recalculating on every message.
+    Stores aggregate statistics about DNA matches, tree composition, and ethnicity.
+    """
+
+    __tablename__ = "tree_statistics_cache"
+
+    # --- Columns ---
+    id = Column(
+        Integer, primary_key=True, comment="Unique identifier for the cache entry."
+    )
+    profile_id = Column(
+        String,
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Profile ID of the tree owner (unique per owner).",
+    )
+    total_matches = Column(
+        Integer, nullable=False, default=0, comment="Total number of DNA matches."
+    )
+    in_tree_count = Column(
+        Integer, nullable=False, default=0, comment="Number of matches in the tree."
+    )
+    out_tree_count = Column(
+        Integer, nullable=False, default=0, comment="Number of matches out of the tree."
+    )
+    close_matches = Column(
+        Integer, nullable=False, default=0, comment="Number of close matches (>100 cM)."
+    )
+    moderate_matches = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of moderate matches (20-100 cM).",
+    )
+    distant_matches = Column(
+        Integer, nullable=False, default=0, comment="Number of distant matches (<20 cM)."
+    )
+    ethnicity_regions = Column(
+        Text,
+        nullable=True,
+        comment="JSON-encoded dictionary of ethnicity regions and counts.",
+    )
+    calculated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when statistics were calculated.",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when cache was last updated.",
+    )
+
+
+# End of TreeStatisticsCache class
 
 
 class DnaMatch(Base):

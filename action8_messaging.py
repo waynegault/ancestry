@@ -39,6 +39,7 @@ MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
+import os
 import sys
 import time
 import uuid
@@ -140,6 +141,14 @@ from database import (
     Person,
     commit_bulk_data,
 )
+
+# === TREE STATISTICS ===
+try:
+    from tree_stats_utils import calculate_ethnicity_commonality, calculate_tree_statistics
+    TREE_STATS_AVAILABLE = True
+except ImportError:
+    logger.warning("tree_stats_utils not available - tree statistics will not be included in messages")
+    TREE_STATS_AVAILABLE = False
 
 # === MONITORING & TESTING ===
 from performance_monitor import start_advanced_monitoring, stop_advanced_monitoring
@@ -1648,8 +1657,70 @@ def _format_predicted_relationship(rel_str: str) -> str:
     return rel_str
 
 
+def _get_owner_profile_id() -> Optional[str]:
+    """Get tree owner's profile ID from environment or config."""
+    owner_profile_id = os.getenv('MY_PROFILE_ID')
+    if not owner_profile_id:
+        owner_profile_id = getattr(config_schema, 'testing_profile_id', None)
+    return owner_profile_id
+
+
+def _format_ethnicity_text(shared_regions: list[str]) -> str:
+    """Format shared ethnicity regions as readable text."""
+    if not shared_regions:
+        return ""
+    if len(shared_regions) == 1:
+        return f"We both have {shared_regions[0]} ancestry"
+    if len(shared_regions) == 2:
+        return f"We both have {shared_regions[0]} and {shared_regions[1]} ancestry"
+    return f"We share {len(shared_regions)} ethnicity regions including {shared_regions[0]}"
+
+
+def _add_tree_statistics_to_format_data(format_data: dict, db_session: Session, person: Person) -> None:
+    """Add tree statistics and ethnicity commonality to format data."""
+    if not TREE_STATS_AVAILABLE:
+        format_data.update({
+            "total_matches": 0,
+            "matches_in_tree": 0,
+            "matches_out_tree": 0,
+            "ethnicity_commonality": "",
+        })
+        return
+
+    try:
+        owner_profile_id = _get_owner_profile_id()
+        if not owner_profile_id:
+            raise ValueError("No owner profile ID available")
+
+        stats = calculate_tree_statistics(db_session, owner_profile_id)
+        format_data.update({
+            "total_matches": stats.get('total_matches', 0),
+            "matches_in_tree": stats.get('in_tree_count', 0),
+            "matches_out_tree": stats.get('out_tree_count', 0),
+            "close_matches": stats.get('close_matches', 0),
+            "moderate_matches": stats.get('moderate_matches', 0),
+            "distant_matches": stats.get('distant_matches', 0),
+        })
+
+        # Add ethnicity commonality for out-of-tree matches
+        if not person.in_my_tree and person.id:
+            ethnicity = calculate_ethnicity_commonality(db_session, owner_profile_id, person.id)
+            shared_regions = ethnicity.get('shared_regions', [])
+            format_data["ethnicity_commonality"] = _format_ethnicity_text(shared_regions)
+        else:
+            format_data["ethnicity_commonality"] = ""
+    except Exception as e:
+        logger.warning(f"Could not calculate tree statistics: {e}")
+        format_data.update({
+            "total_matches": 0,
+            "matches_in_tree": 0,
+            "matches_out_tree": 0,
+            "ethnicity_commonality": "",
+        })
+
+
 def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch], db_session: Session) -> dict:
-    """Prepare format data for message template."""
+    """Prepare format data for message template with enhanced statistics."""
     name_to_use = _get_best_name_for_person(person, family_tree)
     formatted_name = format_name(name_to_use)
 
@@ -1667,13 +1738,19 @@ def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTre
     safe_actual_relationship = get_safe_relationship_text(family_tree, predicted_rel)
     safe_relationship_path = get_safe_relationship_path(family_tree)
 
-    return {
+    # Base format data
+    format_data = {
         "name": formatted_name,
         "predicted_relationship": predicted_rel if predicted_rel != "N/A" else "family connection",
         "actual_relationship": safe_actual_relationship,
         "relationship_path": safe_relationship_path,
         "total_rows": total_rows_in_tree,
     }
+
+    # Add tree statistics and ethnicity commonality
+    _add_tree_statistics_to_format_data(format_data, db_session, person)
+
+    return format_data
 
 
 def _format_message_text(message_to_send_key: str, person: Person, format_data: dict, log_prefix: str) -> str:
