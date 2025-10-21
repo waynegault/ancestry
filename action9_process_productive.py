@@ -887,6 +887,53 @@ class PersonProcessor:
 
         return False
 
+    def _calculate_task_priority_and_due_date(self, person: Person) -> tuple[str, Optional[str], list[str]]:
+        """
+        Calculate task priority and due date based on relationship closeness.
+
+        Phase 5.3: Enhanced MS To-Do Task Creation
+        Priority based on relationship closeness and DNA match strength.
+
+        Returns:
+            Tuple of (importance, due_date, categories)
+        """
+        from datetime import datetime, timedelta
+
+        # Default values
+        importance = "normal"
+        due_date = None
+        categories = ["Ancestry Research"]
+
+        # Calculate priority based on relationship closeness
+        if person.predicted_relationship:
+            rel_lower = person.predicted_relationship.lower()
+
+            # High priority: Close relatives (1st-2nd cousins, immediate family)
+            if any(term in rel_lower for term in ["1st", "2nd", "parent", "sibling", "child", "grandparent", "grandchild"]):
+                importance = "high"
+                due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")  # 1 week
+                categories.append("Close Relative")
+
+            # Normal priority: 3rd-4th cousins
+            elif any(term in rel_lower for term in ["3rd", "4th"]):
+                importance = "normal"
+                due_date = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")  # 2 weeks
+                categories.append("Distant Relative")
+
+            # Low priority: 5th+ cousins
+            elif any(term in rel_lower for term in ["5th", "6th", "7th", "8th", "distant"]):
+                importance = "low"
+                due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")  # 1 month
+                categories.append("Distant Relative")
+
+        # Adjust based on tree status
+        if person.tree_status == "in_tree":
+            categories.append("In Tree")
+        elif person.tree_status == "out_tree":
+            categories.append("Out of Tree")
+
+        return importance, due_date, categories
+
     def _create_single_ms_task(
         self,
         person: Person,
@@ -895,13 +942,39 @@ class PersonProcessor:
         total_tasks: int,
         log_prefix: str,
     ) -> bool:
-        """Create a single MS To-Do task. Returns True if successful."""
+        """
+        Create a single MS To-Do task with enhanced metadata.
+
+        Phase 5.3: Enhanced MS To-Do Task Creation
+        Includes priority, due date, and categories based on relationship closeness.
+        """
         task_title = f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
-        task_body = (
-            f"AI Suggested Task ({task_index+1}/{total_tasks}): {task_desc}\n\n"
-            f"Match: {person.username or 'Unknown'} (#{person.id})\n"
-            f"Profile: {person.profile_id or 'N/A'}"
-        )
+
+        # Calculate priority and due date based on relationship
+        importance, due_date, categories = self._calculate_task_priority_and_due_date(person)
+
+        # Build enhanced task body with context
+        task_body_parts = [
+            f"AI Suggested Task ({task_index+1}/{total_tasks}): {task_desc}",
+            "",
+            f"Match: {person.username or 'Unknown'} (#{person.id})",
+            f"Profile: {person.profile_id or 'N/A'}",
+        ]
+
+        # Add relationship context
+        if person.predicted_relationship:
+            task_body_parts.append(f"Relationship: {person.predicted_relationship}")
+
+        # Add DNA match info if available
+        if hasattr(person, 'shared_dna_cm') and person.shared_dna_cm:
+            task_body_parts.append(f"Shared DNA: {person.shared_dna_cm} cM")
+
+        # Add tree status
+        if person.tree_status:
+            status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
+            task_body_parts.append(f"Tree Status: {status_display}")
+
+        task_body = "\n".join(task_body_parts)
 
         if self.ms_state.token and self.ms_state.list_id:
             task_ok = ms_graph_utils.create_todo_task(
@@ -909,6 +982,9 @@ class PersonProcessor:
                 self.ms_state.list_id,
                 task_title,
                 task_body,
+                importance=importance,
+                due_date=due_date,
+                categories=categories,
             )
         else:
             logger.warning("MS Graph token or list_id is None, skipping task creation")

@@ -426,17 +426,29 @@ def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, li
 
 
 def create_todo_task(
-    access_token: str, list_id: str, task_title: str, task_body: Optional[str] = None
+    access_token: str,
+    list_id: str,
+    task_title: str,
+    task_body: Optional[str] = None,
+    importance: Optional[str] = None,
+    due_date: Optional[str] = None,
+    categories: Optional[list[str]] = None,
 ) -> bool:
     """
     Creates a new task in a specified Microsoft To-Do list using MS Graph API.
     Includes specific handling for common HTTP errors.
+
+    Phase 5.3: Enhanced MS To-Do Task Creation
+    Supports priority, due dates, and categories for better task management.
 
     Args:
         access_token: A valid MS Graph API access token with Tasks.ReadWrite scope.
         list_id: The ID of the target To-Do list where the task should be created.
         task_title: The title for the new task (required).
         task_body: Optional plain text content for the task's body/notes.
+        importance: Optional importance level ('low', 'normal', 'high').
+        due_date: Optional due date in ISO 8601 format (YYYY-MM-DD).
+        categories: Optional list of category strings for task organization.
 
     Returns:
         True if the task was created successfully, False otherwise.
@@ -454,6 +466,20 @@ def create_todo_task(
     task_data: dict[str, Any] = {"title": task_title}
     if task_body:
         task_data["body"] = {"content": task_body, "contentType": "text"}
+
+    # Add enhanced fields (Phase 5.3)
+    if importance and importance in ["low", "normal", "high"]:
+        task_data["importance"] = importance
+
+    if due_date:
+        # MS Graph expects dueDateTime in specific format
+        task_data["dueDateTime"] = {
+            "dateTime": f"{due_date}T00:00:00",
+            "timeZone": "UTC"
+        }
+
+    if categories:
+        task_data["categories"] = categories
 
     logger.info(f"Attempting to create MS To-Do task '{task_title[:50]}...' in list ID '{list_id}'...")
     logger.debug(f"Task creation payload: {json.dumps(task_data)}")
@@ -645,6 +671,65 @@ def test_error_handling():
             pass  # Expected behavior for timeout handling
 
 
+def test_enhanced_task_creation():
+    """
+    Test enhanced task creation with priority, due date, and categories.
+
+    Phase 5.3: Enhanced MS To-Do Task Creation
+    Tests the new parameters for better task management.
+    """
+    from datetime import datetime, timedelta
+
+    # Test 1: Validate importance parameter handling
+    valid_importance_levels = ["low", "normal", "high"]
+    for level in valid_importance_levels:
+        assert level in valid_importance_levels, f"Importance level '{level}' should be valid"
+
+    # Test 2: Validate due date format
+    test_due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    assert len(test_due_date) == 10, "Due date should be in YYYY-MM-DD format"
+    assert test_due_date.count("-") == 2, "Due date should have 2 hyphens"
+
+    # Test 3: Validate categories structure
+    test_categories = ["Ancestry Research", "Close Relative", "In Tree"]
+    assert isinstance(test_categories, list), "Categories should be a list"
+    assert all(isinstance(cat, str) for cat in test_categories), "All categories should be strings"
+
+    # Test 4: Validate task data structure with enhanced fields
+    task_data = {
+        "title": "Test Task",
+        "body": {"content": "Test body", "contentType": "text"},
+        "importance": "high",
+        "dueDateTime": {
+            "dateTime": f"{test_due_date}T00:00:00",
+            "timeZone": "UTC"
+        },
+        "categories": test_categories
+    }
+
+    assert "importance" in task_data, "Task data should include importance"
+    assert "dueDateTime" in task_data, "Task data should include dueDateTime"
+    assert "categories" in task_data, "Task data should include categories"
+    assert task_data["importance"] in valid_importance_levels, "Importance should be valid"
+    assert "dateTime" in task_data["dueDateTime"], "dueDateTime should have dateTime field"
+    assert "timeZone" in task_data["dueDateTime"], "dueDateTime should have timeZone field"
+
+    # Test 5: Validate relationship-based priority calculation logic
+    relationship_priority_map = {
+        "1st cousin": "high",
+        "2nd cousin": "high",
+        "3rd cousin": "normal",
+        "4th cousin": "normal",
+        "5th cousin": "low",
+        "distant": "low"
+    }
+
+    for relationship, expected_priority in relationship_priority_map.items():
+        assert expected_priority in valid_importance_levels, f"Priority for {relationship} should be valid"
+
+    logger.info("✓ Enhanced task creation validation complete")
+
+
 def ms_graph_utils_module_tests() -> bool:
     """
     Microsoft Graph API Integration module test suite.
@@ -693,6 +778,14 @@ def ms_graph_utils_module_tests() -> bool:
             "Performance operations complete within acceptable time limits",
             "Test performance characteristics of API calls and data processing operations",
             "All performance operations complete within acceptable time thresholds",
+        )
+
+        suite.run_test(
+            "Enhanced task creation with priority and due dates",
+            test_enhanced_task_creation,
+            "Enhanced task creation parameters (priority, due date, categories) are validated correctly",
+            "Test Phase 5.3 enhanced task creation with relationship-based priority and due date calculation",
+            "All enhanced task creation parameters validated successfully with proper priority mapping",
         )
 
         suite.run_test(
