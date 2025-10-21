@@ -22,6 +22,18 @@ from standard_imports import *
 logger = logging.getLogger(__name__)
 
 
+def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
+    """Safely extract a value from a SQLAlchemy model attribute."""
+    if not hasattr(obj, attr_name):
+        return default
+
+    value = getattr(obj, attr_name)
+    if value is None:
+        return default
+
+    return value
+
+
 def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool:
     """Validate family tree has required attributes for source extraction."""
     return family_tree is not None and hasattr(family_tree, 'gedcom_id')
@@ -30,14 +42,15 @@ def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool
 def _load_and_validate_gedcom() -> Optional[Any]:
     """Load and validate GEDCOM data file."""
     try:
-        from config_manager import config
-        gedcom_file = config.database.gedcom_file_path
+        from config import config_schema
+        from pathlib import Path
+        gedcom_file = config_schema.database.gedcom_file_path
 
         if not gedcom_file or not os.path.exists(gedcom_file):
             return None
 
-        from gedcom_utils import load_gedcom_data
-        gedcom_data = load_gedcom_data(gedcom_file)
+        from gedcom_utils import GedcomData
+        gedcom_data = GedcomData(Path(gedcom_file))
 
         if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
             return None
@@ -78,6 +91,9 @@ def enhance_message_with_sources(
         format_data['source_citations'] = ""
         return
 
+    # Type checker: family_tree is guaranteed to be not None here due to validation above
+    assert family_tree is not None
+
     try:
         gedcom_data = _load_and_validate_gedcom()
         if not gedcom_data:
@@ -99,7 +115,7 @@ def enhance_message_with_relationship_diagram(
 ) -> None:
     """
     Enhance message format data with relationship diagram.
-    
+
     Args:
         person: Person being messaged
         family_tree: Family tree relationship (if in tree)
@@ -110,8 +126,9 @@ def enhance_message_with_relationship_diagram(
         return
 
     try:
-        relationship_path = family_tree.relationship_path
-        if not relationship_path:
+        # Use safe_column_value to extract relationship_path
+        relationship_path = safe_column_value(family_tree, 'relationship_path', None)
+        if not relationship_path or relationship_path == "":
             format_data['relationship_diagram'] = ""
             return
 

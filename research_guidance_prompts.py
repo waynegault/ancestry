@@ -19,7 +19,7 @@ def create_research_guidance_prompt(
     shared_dna_cm: Optional[float] = None,
     common_ancestors: Optional[list[str]] = None,
     missing_info: Optional[list[str]] = None,
-    available_records: Optional[list[dict[str, str]]] = None
+    available_records: Optional[list[dict[str, Any]]] = None
 ) -> str:
     """
     Create an AI prompt for generating research guidance.
