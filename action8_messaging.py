@@ -166,6 +166,47 @@ MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
 )
 
 
+def _calculate_days_since_login(last_logged_in: Optional[datetime], log_prefix: str) -> Optional[int]:
+    """Calculate days since last login with timezone handling."""
+    if not last_logged_in:
+        return None
+
+    try:
+        now_utc = datetime.now(timezone.utc)
+        # Ensure timezone aware
+        if last_logged_in.tzinfo is None:
+            last_logged_in = last_logged_in.replace(tzinfo=timezone.utc)
+        elif last_logged_in.tzinfo != timezone.utc:
+            last_logged_in = last_logged_in.astimezone(timezone.utc)
+
+        return (now_utc - last_logged_in).days
+    except Exception as e:
+        logger.warning(f"{log_prefix}: Error calculating days since login: {e}")
+        return None
+
+
+def _determine_engagement_tier(
+    engagement_score: int,
+    days_since_login: Optional[int],
+    thresholds: dict[str, int],
+    intervals: dict[str, int]
+) -> tuple[timedelta, str]:
+    """Determine engagement tier and return interval."""
+    high_threshold = thresholds['high']
+    medium_threshold = thresholds['medium']
+    low_threshold = thresholds['low']
+    active_login_days = thresholds['active_login']
+    moderate_login_days = thresholds['moderate_login']
+
+    if engagement_score >= high_threshold and days_since_login is not None and days_since_login < active_login_days:
+        return timedelta(days=intervals['high']), "high"
+    if engagement_score >= medium_threshold or (days_since_login is not None and days_since_login < moderate_login_days):
+        return timedelta(days=intervals['medium']), "medium"
+    if engagement_score >= low_threshold or (days_since_login is not None and days_since_login < 90):
+        return timedelta(days=intervals['low']), "low"
+    return timedelta(days=intervals['none']), "none"
+
+
 def calculate_adaptive_interval(
     engagement_score: int,
     last_logged_in: Optional[datetime],
@@ -202,50 +243,27 @@ def calculate_adaptive_interval(
         return timedelta(0)
 
     # Get thresholds from config
-    high_threshold = getattr(config_schema, 'engagement_high_threshold', 70)
-    medium_threshold = getattr(config_schema, 'engagement_medium_threshold', 40)
-    low_threshold = getattr(config_schema, 'engagement_low_threshold', 20)
-    active_login_days = getattr(config_schema, 'login_active_threshold', 7)
-    moderate_login_days = getattr(config_schema, 'login_moderate_threshold', 30)
+    thresholds = {
+        'high': getattr(config_schema, 'engagement_high_threshold', 70),
+        'medium': getattr(config_schema, 'engagement_medium_threshold', 40),
+        'low': getattr(config_schema, 'engagement_low_threshold', 20),
+        'active_login': getattr(config_schema, 'login_active_threshold', 7),
+        'moderate_login': getattr(config_schema, 'login_moderate_threshold', 30),
+    }
 
     # Get follow-up intervals from config
-    high_days = getattr(config_schema, 'followup_high_engagement_days', 7)
-    medium_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
-    low_days = getattr(config_schema, 'followup_low_engagement_days', 21)
-    no_engagement_days = getattr(config_schema, 'followup_no_engagement_days', 30)
+    intervals = {
+        'high': getattr(config_schema, 'followup_high_engagement_days', 7),
+        'medium': getattr(config_schema, 'followup_medium_engagement_days', 14),
+        'low': getattr(config_schema, 'followup_low_engagement_days', 21),
+        'none': getattr(config_schema, 'followup_no_engagement_days', 30),
+    }
 
     # Calculate days since last login
-    days_since_login = None
-    if last_logged_in:
-        try:
-            now_utc = datetime.now(timezone.utc)
-            # Ensure timezone aware
-            if last_logged_in.tzinfo is None:
-                last_logged_in = last_logged_in.replace(tzinfo=timezone.utc)
-            elif last_logged_in.tzinfo != timezone.utc:
-                last_logged_in = last_logged_in.astimezone(timezone.utc)
+    days_since_login = _calculate_days_since_login(last_logged_in, log_prefix)
 
-            days_since_login = (now_utc - last_logged_in).days
-        except Exception as e:
-            logger.warning(f"{log_prefix}: Error calculating days since login: {e}")
-
-    # Determine tier based on engagement and login activity
-    if engagement_score >= high_threshold and days_since_login is not None and days_since_login < active_login_days:
-        # High engagement + active login
-        interval = timedelta(days=high_days)
-        tier = "high"
-    elif engagement_score >= medium_threshold or (days_since_login is not None and days_since_login < moderate_login_days):
-        # Medium engagement OR moderate login
-        interval = timedelta(days=medium_days)
-        tier = "medium"
-    elif engagement_score >= low_threshold or (days_since_login is not None and days_since_login < 90):
-        # Low engagement OR inactive login (but not never)
-        interval = timedelta(days=low_days)
-        tier = "low"
-    else:
-        # No engagement OR never logged in
-        interval = timedelta(days=no_engagement_days)
-        tier = "none"
+    # Determine tier and interval
+    interval, tier = _determine_engagement_tier(engagement_score, days_since_login, thresholds, intervals)
 
     logger.debug(
         f"{log_prefix}: Adaptive interval: {interval.days} days "
@@ -253,6 +271,52 @@ def calculate_adaptive_interval(
     )
 
     return interval
+
+
+def _is_tree_creation_recent(created_at: datetime, person: Person) -> bool:
+    """Check if FamilyTree creation is recent (within threshold)."""
+    now_utc = datetime.now(timezone.utc)
+
+    # Ensure timezone aware
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    elif created_at.tzinfo != timezone.utc:
+        created_at = created_at.astimezone(timezone.utc)
+
+    days_since_creation = (now_utc - created_at).days
+    recent_threshold_days = getattr(config_schema, 'status_change_recent_days', 7)
+
+    if days_since_creation > recent_threshold_days:
+        logger.debug(
+            f"Person {person.username} (ID {person.id}): FamilyTree created {days_since_creation} days ago "
+            f"(threshold: {recent_threshold_days} days) - not recent"
+        )
+        return False
+
+    return True
+
+
+def _has_message_after_tree_creation(person: Person, created_at: datetime) -> bool:
+    """Check if any outgoing message was sent after FamilyTree creation."""
+    if not person.conversation_logs:
+        return False
+
+    for log in person.conversation_logs:
+        if log.direction == "OUT" and log.latest_timestamp:
+            log_timestamp = log.latest_timestamp
+            if log_timestamp.tzinfo is None:
+                log_timestamp = log_timestamp.replace(tzinfo=timezone.utc)
+            elif log_timestamp.tzinfo != timezone.utc:
+                log_timestamp = log_timestamp.astimezone(timezone.utc)
+
+            if log_timestamp > created_at:
+                logger.debug(
+                    f"Person {person.username} (ID {person.id}): Already sent message after tree addition "
+                    f"(message: {log_timestamp}, tree: {created_at}) - not a new status change"
+                )
+                return True
+
+    return False
 
 
 def detect_status_change_to_in_tree(person: Person) -> bool:
@@ -286,49 +350,19 @@ def detect_status_change_to_in_tree(person: Person) -> bool:
     if not person.family_tree:
         return False
 
-    # Check if FamilyTree record is recent (within 7 days)
+    # Check if FamilyTree record is recent
     try:
-        now_utc = datetime.now(timezone.utc)
         created_at = person.family_tree.created_at
 
-        # Ensure timezone aware
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        elif created_at.tzinfo != timezone.utc:
-            created_at = created_at.astimezone(timezone.utc)
-
-        days_since_creation = (now_utc - created_at).days
-
-        # Consider "recent" if within 7 days
-        recent_threshold_days = getattr(config_schema, 'status_change_recent_days', 7)
-        if days_since_creation > recent_threshold_days:
-            logger.debug(
-                f"Person {person.username} (ID {person.id}): FamilyTree created {days_since_creation} days ago "
-                f"(threshold: {recent_threshold_days} days) - not recent"
-            )
+        if not _is_tree_creation_recent(created_at, person):
             return False
 
-        # Check if we've already sent an "in_tree" message
-        # (If we have, this isn't a "new" status change)
-        if person.conversation_logs:
-            for log in person.conversation_logs:
-                # Check if any outgoing message was sent after FamilyTree creation
-                if log.direction == "OUT" and log.latest_timestamp:
-                    log_timestamp = log.latest_timestamp
-                    if log_timestamp.tzinfo is None:
-                        log_timestamp = log_timestamp.replace(tzinfo=timezone.utc)
-                    elif log_timestamp.tzinfo != timezone.utc:
-                        log_timestamp = log_timestamp.astimezone(timezone.utc)
-
-                    # If we sent a message after tree creation, we've already handled this
-                    if log_timestamp > created_at:
-                        logger.debug(
-                            f"Person {person.username} (ID {person.id}): Already sent message after tree addition "
-                            f"(message: {log_timestamp}, tree: {created_at}) - not a new status change"
-                        )
-                        return False
+        # Check if we've already sent a message after tree creation
+        if _has_message_after_tree_creation(person, created_at):
+            return False
 
         # All conditions met: recent tree addition, no messages sent yet
+        days_since_creation = (datetime.now(timezone.utc) - created_at).days
         logger.info(
             f"✨ Status change detected: {person.username} (ID {person.id}) recently added to tree "
             f"({days_since_creation} days ago)"
@@ -4072,72 +4106,107 @@ def _test_conversation_log_tracking() -> bool:
 
 def _test_adaptive_timing_high_engagement() -> bool:
     """Test adaptive timing for high engagement + active login."""
-    # High engagement (≥70) + active login (<7 days) = 7 days
-    engagement_score = 85
-    last_logged_in = datetime.now(timezone.utc) - timedelta(days=3)
+    # Temporarily set app_mode to production to test adaptive logic
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = 'production'
 
-    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+        # High engagement (≥70) + active login (<7 days) = 7 days
+        engagement_score = 85
+        last_logged_in = datetime.now(timezone.utc) - timedelta(days=3)
 
-    expected_days = getattr(config_schema, 'followup_high_engagement_days', 7)
-    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
-    logger.info(f"✓ High engagement + active login: {interval.days} days")
-    return True
+        interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+        expected_days = getattr(config_schema, 'followup_high_engagement_days', 7)
+        assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+        logger.info(f"✓ High engagement + active login: {interval.days} days")
+        return True
+    finally:
+        config_schema.app_mode = original_mode
 
 
 def _test_adaptive_timing_medium_engagement() -> bool:
     """Test adaptive timing for medium engagement."""
-    # Medium engagement (40-69) = 14 days
-    engagement_score = 55
-    last_logged_in = datetime.now(timezone.utc) - timedelta(days=45)  # Inactive
+    # Temporarily set app_mode to production to test adaptive logic
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = 'production'
 
-    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+        # Medium engagement (40-69) = 14 days
+        engagement_score = 55
+        last_logged_in = datetime.now(timezone.utc) - timedelta(days=45)  # Inactive
 
-    expected_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
-    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
-    logger.info(f"✓ Medium engagement: {interval.days} days")
-    return True
+        interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+        expected_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
+        assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+        logger.info(f"✓ Medium engagement: {interval.days} days")
+        return True
+    finally:
+        config_schema.app_mode = original_mode
 
 
 def _test_adaptive_timing_low_engagement() -> bool:
     """Test adaptive timing for low engagement."""
-    # Low engagement (20-39) = 21 days
-    engagement_score = 30
-    last_logged_in = datetime.now(timezone.utc) - timedelta(days=60)  # Inactive
+    # Temporarily set app_mode to production to test adaptive logic
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = 'production'
 
-    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+        # Low engagement (20-39) = 21 days
+        engagement_score = 30
+        last_logged_in = datetime.now(timezone.utc) - timedelta(days=60)  # Inactive
 
-    expected_days = getattr(config_schema, 'followup_low_engagement_days', 21)
-    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
-    logger.info(f"✓ Low engagement: {interval.days} days")
-    return True
+        interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+        expected_days = getattr(config_schema, 'followup_low_engagement_days', 21)
+        assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+        logger.info(f"✓ Low engagement: {interval.days} days")
+        return True
+    finally:
+        config_schema.app_mode = original_mode
 
 
 def _test_adaptive_timing_no_engagement() -> bool:
     """Test adaptive timing for no engagement or never logged in."""
-    # No engagement (<20) or never logged in = 30 days
-    engagement_score = 10
-    last_logged_in = None  # Never logged in
+    # Temporarily set app_mode to production to test adaptive logic
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = 'production'
 
-    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+        # No engagement (<20) or never logged in = 30 days
+        engagement_score = 10
+        last_logged_in = None  # Never logged in
 
-    expected_days = getattr(config_schema, 'followup_no_engagement_days', 30)
-    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
-    logger.info(f"✓ No engagement / never logged in: {interval.days} days")
-    return True
+        interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+        expected_days = getattr(config_schema, 'followup_no_engagement_days', 30)
+        assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+        logger.info(f"✓ No engagement / never logged in: {interval.days} days")
+        return True
+    finally:
+        config_schema.app_mode = original_mode
 
 
 def _test_adaptive_timing_moderate_login() -> bool:
     """Test adaptive timing for moderate login activity."""
-    # Moderate login (7-30 days) with low engagement = 14 days (medium tier)
-    engagement_score = 15  # Low engagement
-    last_logged_in = datetime.now(timezone.utc) - timedelta(days=20)  # Moderate login
+    # Temporarily set app_mode to production to test adaptive logic
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = 'production'
 
-    interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+        # Moderate login (7-30 days) with low engagement = 14 days (medium tier)
+        engagement_score = 15  # Low engagement
+        last_logged_in = datetime.now(timezone.utc) - timedelta(days=20)  # Moderate login
 
-    expected_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
-    assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
-    logger.info(f"✓ Moderate login activity: {interval.days} days")
-    return True
+        interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
+
+        expected_days = getattr(config_schema, 'followup_medium_engagement_days', 14)
+        assert interval.days == expected_days, f"Expected {expected_days} days, got {interval.days}"
+        logger.info(f"✓ Moderate login activity: {interval.days} days")
+        return True
+    finally:
+        config_schema.app_mode = original_mode
 
 
 # ==============================================
@@ -4147,8 +4216,9 @@ def _test_adaptive_timing_moderate_login() -> bool:
 
 def _test_status_change_recent_addition() -> bool:
     """Test status change detection for recent tree addition."""
-    from database import Person, FamilyTree
     from unittest.mock import Mock
+
+    from database import FamilyTree, Person
 
     # Create mock person with recent FamilyTree
     person = Mock(spec=Person)
@@ -4171,8 +4241,9 @@ def _test_status_change_recent_addition() -> bool:
 
 def _test_status_change_old_addition() -> bool:
     """Test status change detection for old tree addition."""
-    from database import Person, FamilyTree
     from unittest.mock import Mock
+
+    from database import FamilyTree, Person
 
     # Create mock person with old FamilyTree
     person = Mock(spec=Person)
@@ -4195,8 +4266,9 @@ def _test_status_change_old_addition() -> bool:
 
 def _test_status_change_not_in_tree() -> bool:
     """Test status change detection for person not in tree."""
-    from database import Person
     from unittest.mock import Mock
+
+    from database import Person
 
     # Create mock person NOT in tree
     person = Mock(spec=Person)
@@ -4215,8 +4287,9 @@ def _test_status_change_not_in_tree() -> bool:
 
 def _test_status_change_already_messaged() -> bool:
     """Test status change detection when already messaged after tree addition."""
-    from database import Person, FamilyTree, ConversationLog
     from unittest.mock import Mock
+
+    from database import ConversationLog, FamilyTree, Person
 
     # Create mock person with recent FamilyTree
     person = Mock(spec=Person)
