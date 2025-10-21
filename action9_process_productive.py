@@ -37,6 +37,26 @@ from ai_interface import (
     generate_genealogical_reply,
 )
 
+# === PHASE 5 INTEGRATION ===
+_phase5_available = False
+try:
+    from action9_phase5_integration import (
+        calculate_task_priority_from_relationship,
+        create_enhanced_research_task,
+        format_response_with_records,
+        format_response_with_relationship_diagram,
+        generate_ai_response_prompt,
+    )
+    _phase5_available = True
+except ImportError:
+    calculate_task_priority_from_relationship = None
+    create_enhanced_research_task = None
+    format_response_with_records = None
+    format_response_with_relationship_diagram = None
+    generate_ai_response_prompt = None
+
+PHASE5_INTEGRATION_AVAILABLE = _phase5_available
+
 # === LOCAL IMPORTS ===
 from config import config_schema
 from connection_resilience import with_connection_resilience
