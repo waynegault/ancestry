@@ -52,6 +52,11 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
+from person_lookup_utils import (
+    PersonLookupResult,
+    create_not_found_result,
+    create_result_from_gedcom,
+)
 from utils import format_name
 
 # === CONSTANTS ===
@@ -561,6 +566,137 @@ class PersonProcessor:
         )
 
         return extracted_data, suggested_tasks
+
+    def _lookup_mentioned_people(
+        self, extracted_data: dict[str, Any], person: Person
+    ) -> list[PersonLookupResult]:
+        """
+        Look up people mentioned in the conversation using Action 10 (GEDCOM) and Action 11 (API).
+
+        Phase 2: Person Lookup Integration
+
+        Args:
+            extracted_data: Extracted entities from AI (includes 'mentioned_people' array)
+            person: Person object for logging context
+
+        Returns:
+            List of PersonLookupResult objects with lookup results
+        """
+        mentioned_people = extracted_data.get("mentioned_people", [])
+
+        if not mentioned_people:
+            logger.debug(f"No people mentioned in conversation with {person.username}")
+            return []
+
+        logger.info(f"Looking up {len(mentioned_people)} mentioned people for {person.username}")
+        lookup_results = []
+
+        for person_data in mentioned_people:
+            person_name = person_data.get("name", "Unknown")
+            logger.debug(f"Looking up: {person_name}")
+
+            # Try GEDCOM search first (Action 10)
+            gedcom_result = self._search_gedcom_for_person(person_data)
+
+            if gedcom_result:
+                logger.info(f"Found {person_name} in GEDCOM with score {gedcom_result.match_score}")
+                lookup_results.append(gedcom_result)
+                continue
+
+            # If not found in GEDCOM, try API search (Action 11)
+            # TODO: Implement API search in future iteration
+            logger.debug(f"{person_name} not found in GEDCOM, API search not yet implemented")
+
+            # Create not-found result
+            not_found = create_not_found_result(
+                person_name,
+                reason="Person not found in GEDCOM file"
+            )
+            lookup_results.append(not_found)
+
+        return lookup_results
+
+    def _search_gedcom_for_person(self, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
+        """
+        Search for a person in GEDCOM data using Action 10 logic.
+
+        Args:
+            person_data: Dictionary with person details from AI extraction
+
+        Returns:
+            PersonLookupResult if found, None otherwise
+        """
+        try:
+            from gedcom_cache import get_cached_gedcom_data
+            from action10 import filter_and_score_individuals
+
+            # Load GEDCOM data
+            gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+            if not gedcom_path:
+                logger.warning("GEDCOM file path not configured, skipping GEDCOM search")
+                return None
+
+            gedcom_data = get_cached_gedcom_data(gedcom_path)
+            if not gedcom_data:
+                logger.warning("Failed to load GEDCOM data, skipping GEDCOM search")
+                return None
+
+            # Build search criteria from person_data
+            search_criteria = {}
+
+            if person_data.get("first_name"):
+                search_criteria["first_name"] = person_data["first_name"].lower()
+            if person_data.get("last_name"):
+                search_criteria["surname"] = person_data["last_name"].lower()
+            if person_data.get("birth_year"):
+                search_criteria["birth_year"] = person_data["birth_year"]
+            if person_data.get("birth_place"):
+                search_criteria["birth_place"] = person_data["birth_place"]
+            if person_data.get("gender"):
+                search_criteria["gender"] = person_data["gender"].lower()
+
+            # Need at least name to search
+            if not search_criteria.get("first_name") and not search_criteria.get("surname"):
+                logger.warning(f"Insufficient search criteria for {person_data.get('name')}")
+                return None
+
+            # Search using Action 10 logic
+            scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
+            date_flex = {"year_match_range": 5.0}
+
+            results = filter_and_score_individuals(
+                gedcom_data,
+                search_criteria,  # filter_criteria
+                search_criteria,  # scoring_criteria
+                scoring_weights,
+                date_flex,
+            )
+
+            if not results:
+                return None
+
+            # Get top result
+            top_result = results[0]
+            score = top_result.get("total_score", 0)
+
+            # Only accept if score is reasonable (>= 50)
+            if score < 50:
+                logger.debug(f"Top result score too low ({score}), rejecting")
+                return None
+
+            # TODO: Get relationship path using relationship_utils
+            relationship_path = None  # Will implement in future iteration
+
+            # Create PersonLookupResult from GEDCOM data
+            return create_result_from_gedcom(
+                person_data=top_result,
+                relationship_path=relationship_path,
+                match_score=score,
+            )
+
+        except Exception as e:
+            logger.error(f"Error searching GEDCOM for person: {e}", exc_info=True)
+            return None
 
     def _should_skip_ms_task_creation(self, log_prefix: str, suggested_tasks: list[str]) -> bool:
         """Check if MS task creation should be skipped. Returns True if should skip."""
