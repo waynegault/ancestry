@@ -656,6 +656,9 @@ class ConfigSchema:
     followup_low_engagement_days: int = 21  # Follow-up interval for low engagement
     followup_no_engagement_days: int = 30  # Follow-up interval for no engagement
 
+    # Status change detection (Phase 4.2)
+    status_change_recent_days: int = 7  # Days threshold for "recent" FamilyTree creation
+
     # Tree search settings
     tree_search_method: str = "api"
     reference_person_name: str = "Reference Person"

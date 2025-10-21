@@ -254,6 +254,92 @@ def calculate_adaptive_interval(
 
     return interval
 
+
+def detect_status_change_to_in_tree(person: Person) -> bool:
+    """
+    Detect if a person has recently changed from out-of-tree to in-tree status.
+
+    Phase 4.2: Status change detection that identifies when a DNA match has been
+    added to the family tree, triggering special handling (message cancellation,
+    status update messages, etc.).
+
+    Args:
+        person: Person object to check
+
+    Returns:
+        bool: True if person recently changed to in_tree status, False otherwise
+
+    Detection Logic:
+        - Person.in_my_tree is True (currently in tree)
+        - Person.family_tree exists (FamilyTree record created)
+        - FamilyTree.created_at is recent (within last 7 days)
+        - No previous "in_tree" messages sent (check conversation_log)
+
+    This indicates the person was recently added to the tree and may need
+    special messaging (congratulations, updated information, etc.)
+    """
+    # Must be in tree
+    if not person.in_my_tree:
+        return False
+
+    # Must have family_tree relationship
+    if not person.family_tree:
+        return False
+
+    # Check if FamilyTree record is recent (within 7 days)
+    try:
+        now_utc = datetime.now(timezone.utc)
+        created_at = person.family_tree.created_at
+
+        # Ensure timezone aware
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elif created_at.tzinfo != timezone.utc:
+            created_at = created_at.astimezone(timezone.utc)
+
+        days_since_creation = (now_utc - created_at).days
+
+        # Consider "recent" if within 7 days
+        recent_threshold_days = getattr(config_schema, 'status_change_recent_days', 7)
+        if days_since_creation > recent_threshold_days:
+            logger.debug(
+                f"Person {person.username} (ID {person.id}): FamilyTree created {days_since_creation} days ago "
+                f"(threshold: {recent_threshold_days} days) - not recent"
+            )
+            return False
+
+        # Check if we've already sent an "in_tree" message
+        # (If we have, this isn't a "new" status change)
+        if person.conversation_logs:
+            for log in person.conversation_logs:
+                # Check if any outgoing message was sent after FamilyTree creation
+                if log.direction == "OUT" and log.latest_timestamp:
+                    log_timestamp = log.latest_timestamp
+                    if log_timestamp.tzinfo is None:
+                        log_timestamp = log_timestamp.replace(tzinfo=timezone.utc)
+                    elif log_timestamp.tzinfo != timezone.utc:
+                        log_timestamp = log_timestamp.astimezone(timezone.utc)
+
+                    # If we sent a message after tree creation, we've already handled this
+                    if log_timestamp > created_at:
+                        logger.debug(
+                            f"Person {person.username} (ID {person.id}): Already sent message after tree addition "
+                            f"(message: {log_timestamp}, tree: {created_at}) - not a new status change"
+                        )
+                        return False
+
+        # All conditions met: recent tree addition, no messages sent yet
+        logger.info(
+            f"✨ Status change detected: {person.username} (ID {person.id}) recently added to tree "
+            f"({days_since_creation} days ago)"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Error detecting status change for {person.username} (ID {person.id}): {e}")
+        return False
+
+
 # === MESSAGE TYPES ===
 MESSAGE_TYPES_ACTION8: dict[str, str] = {
     "In_Tree-Initial": "In_Tree-Initial",
@@ -4055,6 +4141,109 @@ def _test_adaptive_timing_moderate_login() -> bool:
 
 
 # ==============================================
+# PHASE 4.2: STATUS CHANGE DETECTION TEST FUNCTIONS
+# ==============================================
+
+
+def _test_status_change_recent_addition() -> bool:
+    """Test status change detection for recent tree addition."""
+    from database import Person, FamilyTree
+    from unittest.mock import Mock
+
+    # Create mock person with recent FamilyTree
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+    person.in_my_tree = True
+    person.conversation_logs = []
+
+    # Mock FamilyTree created 3 days ago
+    family_tree = Mock(spec=FamilyTree)
+    family_tree.created_at = datetime.now(timezone.utc) - timedelta(days=3)
+    person.family_tree = family_tree
+
+    # Should detect as recent status change
+    result = detect_status_change_to_in_tree(person)
+    assert result is True, "Should detect recent tree addition"
+    logger.info("✓ Recent tree addition detected correctly")
+    return True
+
+
+def _test_status_change_old_addition() -> bool:
+    """Test status change detection for old tree addition."""
+    from database import Person, FamilyTree
+    from unittest.mock import Mock
+
+    # Create mock person with old FamilyTree
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+    person.in_my_tree = True
+    person.conversation_logs = []
+
+    # Mock FamilyTree created 30 days ago (beyond threshold)
+    family_tree = Mock(spec=FamilyTree)
+    family_tree.created_at = datetime.now(timezone.utc) - timedelta(days=30)
+    person.family_tree = family_tree
+
+    # Should NOT detect as recent status change
+    result = detect_status_change_to_in_tree(person)
+    assert result is False, "Should not detect old tree addition"
+    logger.info("✓ Old tree addition correctly ignored")
+    return True
+
+
+def _test_status_change_not_in_tree() -> bool:
+    """Test status change detection for person not in tree."""
+    from database import Person
+    from unittest.mock import Mock
+
+    # Create mock person NOT in tree
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+    person.in_my_tree = False
+    person.family_tree = None
+    person.conversation_logs = []
+
+    # Should NOT detect status change
+    result = detect_status_change_to_in_tree(person)
+    assert result is False, "Should not detect for person not in tree"
+    logger.info("✓ Non-tree person correctly ignored")
+    return True
+
+
+def _test_status_change_already_messaged() -> bool:
+    """Test status change detection when already messaged after tree addition."""
+    from database import Person, FamilyTree, ConversationLog
+    from unittest.mock import Mock
+
+    # Create mock person with recent FamilyTree
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+    person.in_my_tree = True
+
+    # Mock FamilyTree created 3 days ago
+    tree_created = datetime.now(timezone.utc) - timedelta(days=3)
+    family_tree = Mock(spec=FamilyTree)
+    family_tree.created_at = tree_created
+    person.family_tree = family_tree
+
+    # Mock conversation log with message sent AFTER tree creation
+    conv_log = Mock(spec=ConversationLog)
+    conv_log.direction = "OUT"
+    conv_log.latest_timestamp = tree_created + timedelta(days=1)  # 1 day after tree creation
+    person.conversation_logs = [conv_log]
+
+    # Should NOT detect as new status change (already handled)
+    result = detect_status_change_to_in_tree(person)
+    assert result is False, "Should not detect when already messaged after tree addition"
+    logger.info("✓ Already-messaged tree addition correctly ignored")
+    return True
+
+
+# ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
 
@@ -4217,6 +4406,31 @@ def action8_messaging_tests() -> None:
         "Adaptive timing: Moderate login activity",
         _test_adaptive_timing_moderate_login,
         "Moderate login (7-30 days) with low engagement returns 14-day interval.",
+    )
+
+    # === PHASE 4.2: STATUS CHANGE DETECTION TESTS ===
+    suite.run_test(
+        "Status change: Recent tree addition",
+        _test_status_change_recent_addition,
+        "Detects person recently added to tree (within 7 days).",
+    )
+
+    suite.run_test(
+        "Status change: Old tree addition",
+        _test_status_change_old_addition,
+        "Ignores person added to tree long ago (>7 days).",
+    )
+
+    suite.run_test(
+        "Status change: Not in tree",
+        _test_status_change_not_in_tree,
+        "Ignores person not in tree.",
+    )
+
+    suite.run_test(
+        "Status change: Already messaged",
+        _test_status_change_already_messaged,
+        "Ignores tree addition when already messaged after addition.",
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
