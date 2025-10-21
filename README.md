@@ -14,7 +14,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 10**: GEDCOM file analysis and scoring
 - **Action 11**: API-based genealogical research and relationship discovery
 
-**Current Status**: Phase 6 Complete - All systems ready for production messaging
+**Current Status**: Phase 4 (P4.1) Complete - Intelligent Conversational Messaging with Adaptive Timing
 
 ---
 
@@ -122,9 +122,9 @@ python main.py
 - Intelligent caching with automatic invalidation
 - No session/API requirements (db_ready only)
 
-### Action 8: Messaging System
+### Action 8: Intelligent Messaging System
 
-**Phase 6 Testing Complete** - All systems validated and ready for production.
+**Phase 4 (P4.1) Complete** - AI-powered conversational messaging with adaptive timing.
 
 **Dry Run Mode** (Safe Testing):
 ```bash
@@ -335,6 +335,51 @@ python action11.py
 
 ## Appendix A: Chronology of Changes
 
+### Phase 4: Adaptive Messaging & Intelligent Dialogue (October 21, 2025)
+
+**P4.1: Engagement-Based Follow-Up Timing** ✅ COMPLETE
+- ✅ Implemented adaptive timing using engagement score + login activity
+- ✅ Four timing tiers: High (7 days), Medium (14 days), Low (21 days), None (30 days)
+- ✅ Configuration added to .env (9 new settings)
+- ✅ calculate_adaptive_interval() function with tier logic
+- ✅ Updated _check_message_interval() to use adaptive timing
+- ✅ 5 comprehensive tests + demonstration script
+- ✅ NOTE: Adaptive timing only applies in PRODUCTION mode (testing/dry_run use fixed intervals)
+
+**P4.2-P4.11: In Progress**
+- Status change detection (out-of-tree → in-tree)
+- Automatic message cancellation on status change
+- Conversation continuity features
+- Comprehensive testing
+
+### Phase 3: Conversational Dialogue Engine (October 21, 2025) ✅ COMPLETE
+- ✅ Created genealogical_dialogue_response AI prompt (v1.0.0)
+- ✅ Created engagement_assessment AI prompt (v1.0.0)
+- ✅ Implemented generate_contextual_response() function
+- ✅ Multi-person lookup and response capabilities
+- ✅ Conversation phase tracking (initial_outreach, active_dialogue, research_exchange)
+- ✅ Engagement scoring implementation (0-100 scale)
+- ✅ Reduced complexity in ai_interface.py (_format_dialogue_prompt < 11)
+- ✅ Comprehensive test infrastructure created and validated
+
+### Phase 2: Person Lookup Integration (October 21, 2025) ✅ COMPLETE
+- ✅ Created ConversationState database table
+- ✅ Created PersonLookupResult dataclass in person_lookup_utils.py
+- ✅ Enhanced AI entity extraction to capture detailed person objects
+- ✅ Implemented lookup_mentioned_people() using Action 10 GEDCOM search
+- ✅ Integrated lookup results into AI response generation pipeline
+- ✅ Added conversation state tracking with phase detection
+- ✅ Engagement scoring (0-100) based on conversation quality
+- ✅ 6 comprehensive tests for PersonLookupResult functionality
+
+### Phase 1: Enhanced Message Content (October 21, 2025) ✅ COMPLETE
+- ✅ Implemented tree statistics calculation and caching
+- ✅ Added ethnicity commonality calculation
+- ✅ Database caching with 24-hour expiration (TreeStatisticsCache table)
+- ✅ Updated message templates with enhanced content
+- ✅ Comprehensive testing in dry_run mode
+- ✅ All 9 Phase 1 tasks completed
+
 ### Phase 8: Action 10 GEDCOM Caching & Optimization (October 20, 2025)
 - ✅ Implemented multi-level GEDCOM caching (memory → disk → file)
 - ✅ Fixed disk cache serialization (Individual objects cannot be pickled)
@@ -440,5 +485,5 @@ See `.env.example` for complete list. Key variables:
 
 ---
 
-**Last Updated**: October 20, 2025
-**Status**: Production Ready - Phase 8 GEDCOM Caching & Optimization Complete
+**Last Updated**: October 21, 2025
+**Status**: Phase 4 (P4.1) Complete - Intelligent Conversational Messaging with Adaptive Timing

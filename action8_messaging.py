@@ -177,20 +177,30 @@ def calculate_adaptive_interval(
     Phase 4.1: Engagement-based timing that considers both conversation engagement
     and user login activity to optimize follow-up timing.
 
+    NOTE: Adaptive intervals only apply in PRODUCTION mode.
+    Testing and dry_run modes use fixed intervals only.
+
     Args:
         engagement_score: Engagement score from conversation_state (0-100)
         last_logged_in: Last login timestamp from people table (UTC)
         log_prefix: Logging prefix for debugging
 
     Returns:
-        timedelta: Adaptive interval to add to MIN_MESSAGE_INTERVAL
+        timedelta: Adaptive interval to add to MIN_MESSAGE_INTERVAL (production only)
+                   Zero timedelta for testing/dry_run modes
 
-    Timing Tiers:
+    Timing Tiers (PRODUCTION only):
         - High engagement (≥70) + active login (<7 days): 7 days
         - Medium engagement (40-69) or moderate login (7-30 days): 14 days
         - Low engagement (20-39) or inactive login (>30 days): 21 days
         - No engagement (<20) or never logged in: 30 days
     """
+    # Only apply adaptive timing in production mode
+    app_mode = getattr(config_schema, 'app_mode', 'production')
+    if app_mode in ('testing', 'dry_run'):
+        logger.debug(f"{log_prefix}: Adaptive timing disabled in {app_mode} mode (fixed interval only)")
+        return timedelta(0)
+
     # Get thresholds from config
     high_threshold = getattr(config_schema, 'engagement_high_threshold', 70)
     medium_threshold = getattr(config_schema, 'engagement_medium_threshold', 40)
