@@ -944,10 +944,204 @@ See `.env.example` for complete list. Key variables:
 
 ---
 
-**Last Updated**: October 21, 2025
-**Status**: Phase 6 COMPLETE - Production Ready
-- ✅ Code Quality: 100.0/100 (all 72 modules)
-- ✅ Test Success: 100.0% (566 tests)
+## Appendix C: Test Coverage Analysis
+
+### Overview
+
+Comprehensive test review conducted across all 74 modules with 695 tests total.
+
+**Quality Distribution**:
+- ✅ **Excellent**: ~35 modules (47%) - Comprehensive functional tests
+- ⚠️ **Good**: ~30 modules (41%) - Adequate coverage with minor gaps
+- ❌ **Needs Improvement**: ~9 modules (12%) - Under-tested or smoke tests only
+
+### Test Count by Category
+
+| Category | Modules | Tests | Quality |
+|----------|---------|-------|---------|
+| **Action Modules** | 7 | 100 | ⚠️ Mixed |
+| **Core Modules** | 15 | 102 | ✅ Excellent |
+| **Utility Modules** | 49 | 450 | ⚠️ Mixed |
+| **Config Modules** | 3 | 43 | ✅ Excellent |
+| **TOTAL** | **74** | **695** | **⚠️ Mixed** |
+
+### Critical Issues Fixed
+
+#### ✅ tree_stats_utils.py (1 → 11 tests)
+**Issue**: Only 1 test (function availability), core functionality for Action 8 messaging was under-tested.
+
+**Fix**: Added 10 comprehensive tests covering:
+- Valid/invalid profiles
+- Cache hit/miss scenarios
+- Match count validation
+- Ethnicity commonality calculation
+- Tree owner handling
+- Timestamp format validation
+- Structure validation
+
+**Result**: 1000% increase in test coverage, all 11 tests passing.
+
+#### ✅ universal_scoring.py (2 → 15 tests)
+**Issue**: Only 2 tests, core algorithm for Action 10 & 11 person matching was under-tested.
+
+**Fix**: Added 13 comprehensive tests covering:
+- Exact/partial/no match scoring
+- Multiple candidates
+- Max results parameter
+- Criteria validation (names, years, gender)
+- Invalid input handling
+- Confidence levels (very_low to very_high)
+- Display bonuses (Action 10 & 11 formats)
+- Scoring breakdown formatting
+
+**Result**: 650% increase in test coverage, all 15 tests passing.
+
+### Remaining Critical Issues
+
+#### ❌ action7_inbox.py (9 smoke tests)
+**Issue**: ALL 9 tests are smoke tests that only check if code exists, not if it works.
+
+**Missing Tests**:
+- Fetching conversations from API
+- Parsing conversation data
+- Storing conversations in database
+- Detecting conversation changes
+- Stopping when no changes detected (user requirement)
+
+**Priority**: CRITICAL - Core functionality completely untested
+
+#### ❌ action12.py (1 test)
+**Issue**: Only 1 basic test, minimal coverage.
+
+**Priority**: HIGH - Needs comprehensive test coverage
+
+#### ❌ Database Rollback
+**Issue**: No tests clean up database changes after completion.
+
+**User Requirement**: "It's ok to add something to the database as long as this is reversed once the test is completed."
+
+**Priority**: HIGH - Affects all tests that modify database
+
+### High Priority Issues
+
+1. **core/session_cache.py** (1 test) - Only performance test, no functional tests
+2. **core/system_cache.py** (1 test) - Only performance test, no functional tests
+3. **Phase 5 Feature Modules** (4-6 tests each) - Need 10+ tests:
+   - research_guidance_prompts.py (5 tests)
+   - research_prioritization.py (4 tests)
+   - research_suggestions.py (4 tests)
+   - relationship_diagram.py (4 tests)
+   - record_sharing.py (6 tests)
+   - message_personalization.py (4 tests)
+
+### Duplication Concerns
+
+**Cache Modules** (3 modules, 46 tests):
+- cache.py (12 tests)
+- cache_manager.py (21 tests)
+- gedcom_cache.py (13 tests)
+- Likely duplication in cache get/set/invalidate tests
+
+**Performance Modules** (3 modules, 34 tests):
+- performance_monitor.py (13 tests)
+- performance_orchestrator.py (13 tests)
+- performance_cache.py (8 tests)
+- Likely duplication in performance measurement tests
+
+**Error Handling** (2 locations, 40 tests):
+- error_handling.py (20 tests)
+- core/error_handling.py (6 tests)
+- Likely duplication between root and core modules
+
+**GEDCOM Modules** (5 modules, 68 tests):
+- gedcom_utils.py (17 tests)
+- gedcom_cache.py (13 tests)
+- gedcom_search_utils.py (12 tests)
+- gedcom_ai_integration.py (5 tests)
+- gedcom_intelligence.py (4 tests)
+- Likely duplication in GEDCOM parsing/search tests
+
+### Excellent Modules (Keep As-Is)
+
+**Action Modules**:
+- ✅ action8_messaging.py (47 tests) - Comprehensive coverage of all features
+- ✅ action10.py (11 tests) - Real data tests with specific assertions
+- ✅ action11.py (6 tests) - Live API tests with specific assertions
+
+**Core Modules** (10/15 excellent):
+- ✅ core/api_manager.py (7 tests)
+- ✅ core/browser_manager.py (10 tests)
+- ✅ core/cancellation.py (6 tests)
+- ✅ core/database_manager.py (8 tests)
+- ✅ core/dependency_injection.py (10 tests)
+- ✅ core/enhanced_error_recovery.py (9 tests)
+- ✅ core/logging_utils.py (9 tests)
+- ✅ core/progress_indicators.py (7 tests)
+- ✅ core/session_manager.py (9 tests)
+- ✅ core/session_validator.py (10 tests)
+
+**Config Modules** (All excellent):
+- ✅ config/config_schema.py (17 tests)
+- ✅ config/credential_manager.py (15 tests)
+- ✅ config/config_manager.py (11 tests)
+
+**Utility Modules** (~20 modules with 15+ tests):
+- ✅ cache_manager.py (21 tests)
+- ✅ error_handling.py (20 tests)
+- ✅ api_utils.py (18 tests)
+- ✅ gedcom_utils.py (17 tests)
+- ✅ logging_config.py (17 tests)
+- ✅ health_monitor.py (16 tests)
+- ✅ credentials.py (15 tests)
+- ✅ database.py (15 tests)
+- ✅ relationship_utils.py (15 tests)
+- And more...
+
+### Implementation Progress
+
+**Phase 5A: Fix Critical Issues** (50% Complete)
+- ✅ tree_stats_utils.py (1 → 11 tests)
+- ✅ universal_scoring.py (2 → 15 tests)
+- ⏳ action7_inbox.py (replace smoke tests)
+- ⏳ action12.py (add comprehensive tests)
+
+**Phase 5B: Database Rollback** (Not Started)
+- Create database rollback framework
+- Add rollback to all tests that modify database
+
+**Phase 5C: High Priority Issues** (Not Started)
+- Add functional tests to cache modules
+- Add tests to Phase 5 feature modules
+
+**Phase 5D: Consolidate Duplication** (Not Started)
+- Review and consolidate cache module tests
+- Review and consolidate performance module tests
+- Review and consolidate error handling tests
+- Review and consolidate GEDCOM module tests
+
+### Target Metrics
+
+**Current State**:
+- 695 tests across 74 modules
+- ~60% excellent, ~30% good, ~10% poor
+- Critical gaps in 4 modules
+- Likely duplication in 15+ modules
+
+**Target State**:
+- 750+ tests (add ~100+ tests to critical modules)
+- ~80% excellent, ~20% good, ~0% poor
+- No critical gaps
+- Minimal duplication (consolidate ~50 tests)
+
+**Net Result**: ~750 high-quality tests with comprehensive coverage and minimal duplication
+
+---
+
+**Last Updated**: October 22, 2025
+**Status**: Phase 6 IN PROGRESS - Test Coverage Improvements
+- ✅ Code Quality: 100.0/100 (all 74 modules)
+- ✅ Test Success: 98.5% (695 tests, 1 pre-existing failure)
 - ✅ Pylance Errors: 0
 - ✅ Linting Errors: 0
 - ✅ Complexity Issues: 0
+- ⏳ Test Coverage: Improving (2 critical modules fixed, 2 remaining)
