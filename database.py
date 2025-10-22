@@ -3288,6 +3288,8 @@ def _test_database_model_definitions() -> None:
             _ = type(instance).__name__  # ensure attribute access is not useless
         except Exception as e:
             print(f"   ❌ {model_name} instantiation failed: {e}")
+            import traceback
+            traceback.print_exc()
             instance_created = False
 
         # Test table definition

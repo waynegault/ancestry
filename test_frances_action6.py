@@ -21,11 +21,13 @@ from typing import Any
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from config import config_schema
-from database import Person, DnaMatch, get_db_conn
-from session_manager import SessionManager
-from action6_gather import coord as gather_dna_matches_coord
 from sqlalchemy import func
+
+from action6_gather import coord as gather_dna_matches_coord
+from config import config_schema
+from core.database_manager import DatabaseManager
+from core.session_manager import SessionManager
+from database import DnaMatch, Person
 
 
 class FrancesAction6Tester:
@@ -34,6 +36,7 @@ class FrancesAction6Tester:
     def __init__(self):
         self.config = config_schema
         self.session_manager = None
+        self.db_manager = DatabaseManager()
         self.test_results = []
         self.start_time = datetime.now(timezone.utc)
 
@@ -54,8 +57,8 @@ class FrancesAction6Tester:
                 return False
 
             # Check processing limits
-            max_pages = self.config.max_pages
-            max_inbox = self.config.max_inbox_to_process
+            max_pages = self.config.api.max_pages
+            max_inbox = self.config.max_inbox
             batch_size = self.config.batch_size
 
             self.log(f"Processing limits: MAX_PAGES={max_pages}, MAX_INBOX={max_inbox}, BATCH_SIZE={batch_size}")
@@ -64,12 +67,12 @@ class FrancesAction6Tester:
                 self.log(f"WARNING: MAX_PAGES={max_pages} is high, recommend ≤5 for testing", "WARN")
 
             # Check database connection
-            session = get_db_conn()
+            session = self.db_manager.get_session()
             if not session:
                 self.log("Database connection failed", "FAIL")
                 return False
 
-            session.close()
+            self.db_manager.return_session(session)
             self.log("Environment validation passed", "PASS")
             return True
 
@@ -82,7 +85,7 @@ class FrancesAction6Tester:
         self.log("Collecting baseline statistics...")
 
         try:
-            session = get_db_conn()
+            session = self.db_manager.get_session()
             stats = {
                 "total_people": session.query(func.count(Person.id)).scalar() or 0,
                 "total_matches": session.query(func.count(DnaMatch.id)).scalar() or 0,
@@ -94,7 +97,7 @@ class FrancesAction6Tester:
                     )
                 ).scalar() or 0,
             }
-            session.close()
+            self.db_manager.return_session(session)
 
             self.log(f"Baseline: {stats['total_people']} people, {stats['total_matches']} matches, "
                     f"{stats['people_with_ethnicity']} with ethnicity data")
@@ -117,7 +120,7 @@ class FrancesAction6Tester:
             # Ensure session is ready
             if not self.session_manager.session_ready:
                 self.log("Initializing browser session...")
-                self.session_manager.ensure_session()
+                self.session_manager.ensure_session_ready("Frances Action 6 Test")
 
             if not self.session_manager.session_ready:
                 self.log("Session initialization failed", "FAIL")
@@ -133,9 +136,8 @@ class FrancesAction6Tester:
             if result:
                 self.log("Action 6 completed successfully", "PASS")
                 return True
-            else:
-                self.log("Action 6 failed", "FAIL")
-                return False
+            self.log("Action 6 failed", "FAIL")
+            return False
 
         except Exception as e:
             self.log(f"Action 6 execution failed: {e}", "FAIL")
@@ -150,7 +152,7 @@ class FrancesAction6Tester:
         self.log("=" * 80)
 
         try:
-            session = get_db_conn()
+            session = self.db_manager.get_session()
 
             # Get new stats
             new_stats = {
@@ -172,7 +174,7 @@ class FrancesAction6Tester:
                 "new_ethnicity": new_stats["people_with_ethnicity"] - baseline_stats.get("people_with_ethnicity", 0),
             }
 
-            session.close()
+            self.db_manager.return_session(session)
 
             # Report results
             self.log(f"New people added: {changes['new_people']}")
@@ -209,7 +211,7 @@ class FrancesAction6Tester:
         end_time = datetime.now(timezone.utc)
         duration = (end_time - self.start_time).total_seconds()
 
-        print(f"\n📊 Frances Milne Action 6 Test Report")
+        print("\n📊 Frances Milne Action 6 Test Report")
         print(f"   Test Duration: {duration:.2f} seconds")
         print(f"   Start Time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         print(f"   End Time: {end_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
