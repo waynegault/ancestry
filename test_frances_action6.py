@@ -91,7 +91,7 @@ class FrancesAction6Tester:
                 "total_matches": session.query(func.count(DnaMatch.id)).scalar() or 0,
                 "people_with_ethnicity": session.query(func.count(Person.id)).filter(
                     Person.id.in_(
-                        session.query(DnaMatch.person_id).filter(
+                        session.query(DnaMatch.people_id).filter(
                             DnaMatch.ethnicity_data.isnot(None)
                         )
                     )
@@ -160,7 +160,7 @@ class FrancesAction6Tester:
                 "total_matches": session.query(func.count(DnaMatch.id)).scalar() or 0,
                 "people_with_ethnicity": session.query(func.count(Person.id)).filter(
                     Person.id.in_(
-                        session.query(DnaMatch.person_id).filter(
+                        session.query(DnaMatch.people_id).filter(
                             DnaMatch.ethnicity_data.isnot(None)
                         )
                     )
