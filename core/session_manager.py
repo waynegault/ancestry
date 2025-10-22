@@ -2608,19 +2608,19 @@ class SessionManager:
 
     # Compatibility properties for legacy code
     @property
-    def browser_needed(self):
+    def browser_needed(self) -> bool:
         """Get/set browser needed flag."""
         return self.browser_manager.browser_needed
 
     @browser_needed.setter
-    def browser_needed(self, value: bool):
+    def browser_needed(self, value: bool) -> None:
         """Set browser needed flag."""
         self.browser_manager.browser_needed = value
 
 
 
     @property
-    def _requests_session(self):
+    def _requests_session(self) -> Any:
         """Get the requests session (compatibility property with underscore)."""
         return self.api_manager.requests_session
 
