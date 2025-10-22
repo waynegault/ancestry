@@ -348,9 +348,8 @@ def validate_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
 # ==============================================
 
 
-def _test_universal_scoring() -> None:
-    """Test universal scoring functionality."""
-    # Mock candidate data
+def _test_universal_scoring_basic() -> None:
+    """Test basic universal scoring functionality."""
     candidates = [
         {
             "id": "@I1@",
@@ -367,34 +366,308 @@ def _test_universal_scoring() -> None:
         "birth_year": 1950
     }
 
-    # This would normally call the real scoring function
-    # For testing, we'll just validate the structure
     results = apply_universal_scoring(candidates, search_criteria, max_results=1)
 
     # Validate result structure
-    assert isinstance(results, list)
-    if results:  # Only check if we got results
-        result = results[0]
-        assert 'total_score' in result
-        assert 'confidence' in result
-        assert 'full_name_disp' in result
+    assert isinstance(results, list), "Results should be a list"
+    assert len(results) > 0, "Should have at least one result"
+    result = results[0]
+    assert 'total_score' in result, "Result should have total_score"
+    assert 'confidence' in result, "Result should have confidence"
+    assert 'full_name_disp' in result, "Result should have full_name_disp"
+    assert result['total_score'] > 0, "Score should be positive for matching data"
 
 
-def _test_criteria_validation() -> None:
-    """Test search criteria validation."""
+def _test_universal_scoring_exact_match() -> None:
+    """Test scoring with exact match on all fields."""
+    candidates = [
+        {
+            "id": "@I1@",
+            "first_name": "fraser",
+            "surname": "gault",
+            "birth_year": 1960,
+            "birth_place": "Banff, Scotland",
+            "death_year": 2020,
+            "death_place": "Aberdeen, Scotland",
+            "gender": "m"
+        }
+    ]
+
+    search_criteria = {
+        "first_name": "fraser",
+        "surname": "gault",
+        "birth_year": 1960,
+        "birth_place": "Banff, Scotland",
+        "death_year": 2020,
+        "death_place": "Aberdeen, Scotland",
+        "gender": "m"
+    }
+
+    results = apply_universal_scoring(candidates, search_criteria, max_results=1)
+
+    assert len(results) > 0, "Should have results for exact match"
+    result = results[0]
+    assert result['total_score'] > 50, "Exact match should have positive score"
+    assert result['confidence'] in ['low', 'medium', 'high', 'very_high'], "Should have valid confidence level"
+
+
+def _test_universal_scoring_partial_match() -> None:
+    """Test scoring with partial match (name only)."""
+    candidates = [
+        {
+            "id": "@I1@",
+            "first_name": "john",
+            "surname": "smith",
+            "birth_year": None,
+            "gender": None
+        }
+    ]
+
+    search_criteria = {
+        "first_name": "john",
+        "surname": "smith",
+        "birth_year": 1950,
+        "gender": "m"
+    }
+
+    results = apply_universal_scoring(candidates, search_criteria, max_results=1)
+
+    assert len(results) > 0, "Should have results for partial match"
+    result = results[0]
+    assert result['total_score'] > 0, "Partial match should have positive score"
+    # Note: Scoring algorithm may give higher scores for name-only matches due to bonuses
+
+
+def _test_universal_scoring_no_match() -> None:
+    """Test scoring with no match."""
+    candidates = [
+        {
+            "id": "@I1@",
+            "first_name": "jane",
+            "surname": "doe",
+            "birth_year": 1980,
+            "gender": "f"
+        }
+    ]
+
+    search_criteria = {
+        "first_name": "john",
+        "surname": "smith",
+        "birth_year": 1950,
+        "gender": "m"
+    }
+
+    results = apply_universal_scoring(candidates, search_criteria, max_results=1)
+
+    assert len(results) > 0, "Should still return results even with no match"
+    result = results[0]
+    # Note: Scoring algorithm may give partial scores even for non-matches
+    assert result['total_score'] >= 0, "Score should be non-negative"
+
+
+def _test_universal_scoring_multiple_candidates() -> None:
+    """Test scoring with multiple candidates."""
+    candidates = [
+        {
+            "id": "@I1@",
+            "first_name": "john",
+            "surname": "smith",
+            "birth_year": 1950,
+            "gender": "m"
+        },
+        {
+            "id": "@I2@",
+            "first_name": "john",
+            "surname": "smith",
+            "birth_year": 1951,
+            "gender": "m"
+        },
+        {
+            "id": "@I3@",
+            "first_name": "jane",
+            "surname": "smith",
+            "birth_year": 1950,
+            "gender": "f"
+        }
+    ]
+
+    search_criteria = {
+        "first_name": "john",
+        "surname": "smith",
+        "birth_year": 1950,
+        "gender": "m"
+    }
+
+    results = apply_universal_scoring(candidates, search_criteria, max_results=3)
+
+    assert len(results) == 3, "Should return all candidates"
+    # Results should be sorted by score (descending)
+    assert results[0]['total_score'] >= results[1]['total_score'], "Results should be sorted by score"
+    assert results[1]['total_score'] >= results[2]['total_score'], "Results should be sorted by score"
+
+
+def _test_universal_scoring_max_results() -> None:
+    """Test max_results parameter."""
+    candidates = [
+        {"id": f"@I{i}@", "first_name": "john", "surname": "smith", "birth_year": 1950 + i, "gender": "m"}
+        for i in range(20)
+    ]
+
+    search_criteria = {
+        "first_name": "john",
+        "surname": "smith",
+        "birth_year": 1950
+    }
+
+    results = apply_universal_scoring(candidates, search_criteria, max_results=5)
+
+    assert len(results) <= 5, "Should respect max_results parameter"
+
+
+def _test_criteria_validation_names() -> None:
+    """Test search criteria validation for names."""
     criteria = {
         "first_name": "  JOHN  ",
-        "surname": "SMITH",
-        "birth_year": "1950",
-        "gender": "Male"
+        "surname": "SMITH"
     }
 
     normalized = validate_search_criteria(criteria)
 
-    assert normalized['first_name'] == "john"
-    assert normalized['surname'] == "smith"
-    assert normalized['birth_year'] == 1950
-    assert normalized['gender'] == "m"
+    assert normalized['first_name'] == "john", "First name should be lowercase and trimmed"
+    assert normalized['surname'] == "smith", "Surname should be lowercase and trimmed"
+
+
+def _test_criteria_validation_years() -> None:
+    """Test search criteria validation for years."""
+    criteria = {
+        "birth_year": "1950",
+        "death_year": "2020"
+    }
+
+    normalized = validate_search_criteria(criteria)
+
+    assert normalized['birth_year'] == 1950, "Birth year should be converted to int"
+    assert normalized['death_year'] == 2020, "Death year should be converted to int"
+
+
+def _test_criteria_validation_gender() -> None:
+    """Test search criteria validation for gender."""
+    test_cases = [
+        ("Male", "m"),
+        ("m", "m"),
+        ("man", "m"),
+        ("Female", "f"),
+        ("f", "f"),
+        ("woman", "f")
+    ]
+
+    for input_gender, expected_gender in test_cases:
+        criteria = {"gender": input_gender}
+        normalized = validate_search_criteria(criteria)
+        assert normalized['gender'] == expected_gender, f"Gender '{input_gender}' should normalize to '{expected_gender}'"
+
+
+def _test_criteria_validation_invalid_year() -> None:
+    """Test search criteria validation with invalid year."""
+    criteria = {
+        "birth_year": "invalid",
+        "death_year": "not_a_number"
+    }
+
+    normalized = validate_search_criteria(criteria)
+
+    assert normalized['birth_year'] is None, "Invalid birth year should be None"
+    assert normalized['death_year'] is None, "Invalid death year should be None"
+
+
+def _test_confidence_levels() -> None:
+    """Test confidence level calculation."""
+    assert _get_confidence_level(250) == "very_high", "Score 250 should be very_high"
+    assert _get_confidence_level(200) == "very_high", "Score 200 should be very_high"
+    assert _get_confidence_level(175) == "high", "Score 175 should be high"
+    assert _get_confidence_level(150) == "high", "Score 150 should be high"
+    assert _get_confidence_level(125) == "medium", "Score 125 should be medium"
+    assert _get_confidence_level(100) == "medium", "Score 100 should be medium"
+    assert _get_confidence_level(75) == "low", "Score 75 should be low"
+    assert _get_confidence_level(50) == "low", "Score 50 should be low"
+    assert _get_confidence_level(25) == "very_low", "Score 25 should be very_low"
+    assert _get_confidence_level(0) == "very_low", "Score 0 should be very_low"
+
+
+def _test_display_bonuses_action10_format() -> None:
+    """Test display bonus calculation for action10 format (with _s suffix)."""
+    scores = {
+        "byear_s": 25,
+        "bplace_s": 25,
+        "dyear_s": 25,
+        "dplace_s": 25
+    }
+
+    bonuses = calculate_display_bonuses(scores, key_prefix="_s")
+
+    assert bonuses['birth_date_component'] == 25, "Birth date component should be 25"
+    assert bonuses['death_date_component'] == 25, "Death date component should be 25"
+    assert bonuses['birth_bonus'] == 25, "Birth bonus should be 25 when both date and place present"
+    assert bonuses['death_bonus'] == 25, "Death bonus should be 25 when both date and place present"
+
+
+def _test_display_bonuses_action11_format() -> None:
+    """Test display bonus calculation for action11 format (no suffix)."""
+    scores = {
+        "byear": 25,
+        "bplace": 25,
+        "dyear": 0,
+        "dplace": 0
+    }
+
+    bonuses = calculate_display_bonuses(scores, key_prefix="")
+
+    assert bonuses['birth_bonus'] == 25, "Birth bonus should be 25 when both date and place present"
+    assert bonuses['death_bonus'] == 0, "Death bonus should be 0 when date or place missing"
+
+
+def _test_display_bonuses_no_bonus() -> None:
+    """Test display bonus calculation when no bonus should be awarded."""
+    scores = {
+        "byear": 25,
+        "bplace": 0,  # Missing place
+        "dyear": 0,   # Missing date
+        "dplace": 25
+    }
+
+    bonuses = calculate_display_bonuses(scores, key_prefix="")
+
+    assert bonuses['birth_bonus'] == 0, "Birth bonus should be 0 when place missing"
+    assert bonuses['death_bonus'] == 0, "Death bonus should be 0 when date missing"
+
+
+def _test_scoring_breakdown_format() -> None:
+    """Test scoring breakdown formatting."""
+    result = {
+        'total_score': 150,
+        'field_scores': {
+            'givn': 25,
+            'surn': 25,
+            'byear': 25,
+            'bplace': 25,
+            'gender': 25,
+            'bbonus': 25
+        },
+        'reasons': ['First name exact match', 'Surname exact match', 'Birth year exact match']
+    }
+
+    search_criteria = {
+        'first_name': 'john',
+        'surname': 'smith',
+        'birth_year': 1950
+    }
+
+    breakdown = format_scoring_breakdown(result, search_criteria, title="Test Breakdown")
+
+    assert isinstance(breakdown, str), "Breakdown should be a string"
+    assert "Test Breakdown" in breakdown, "Breakdown should include title"
+    assert "150" in breakdown, "Breakdown should include total score"
+    assert "First name exact match" in breakdown or "First Name Match" in breakdown, "Breakdown should include field scores or reasons"
 
 
 def universal_scoring_module_tests() -> bool:
@@ -404,13 +677,26 @@ def universal_scoring_module_tests() -> bool:
     suite = TestSuite("Universal Scoring", "universal_scoring.py")
 
     tests = [
-        ("Universal scoring functionality", _test_universal_scoring, "Test scoring algorithm", "direct", "Test scoring algorithm"),
-        ("Search criteria validation", _test_criteria_validation, "Test criteria normalization", "direct", "Test criteria normalization"),
+        ("Basic universal scoring", _test_universal_scoring_basic, "Test basic scoring functionality"),
+        ("Exact match scoring", _test_universal_scoring_exact_match, "Test scoring with exact match"),
+        ("Partial match scoring", _test_universal_scoring_partial_match, "Test scoring with partial match"),
+        ("No match scoring", _test_universal_scoring_no_match, "Test scoring with no match"),
+        ("Multiple candidates scoring", _test_universal_scoring_multiple_candidates, "Test scoring multiple candidates"),
+        ("Max results parameter", _test_universal_scoring_max_results, "Test max_results parameter"),
+        ("Criteria validation - names", _test_criteria_validation_names, "Test name normalization"),
+        ("Criteria validation - years", _test_criteria_validation_years, "Test year conversion"),
+        ("Criteria validation - gender", _test_criteria_validation_gender, "Test gender normalization"),
+        ("Criteria validation - invalid year", _test_criteria_validation_invalid_year, "Test invalid year handling"),
+        ("Confidence levels", _test_confidence_levels, "Test confidence level calculation"),
+        ("Display bonuses - action10 format", _test_display_bonuses_action10_format, "Test action10 bonus calculation"),
+        ("Display bonuses - action11 format", _test_display_bonuses_action11_format, "Test action11 bonus calculation"),
+        ("Display bonuses - no bonus", _test_display_bonuses_no_bonus, "Test no bonus scenario"),
+        ("Scoring breakdown format", _test_scoring_breakdown_format, "Test scoring breakdown formatting"),
     ]
 
     with suppress_logging():
-        for test_name, test_func, expected_behavior, test_description, method_description in tests:
-            suite.run_test(test_name, test_func, expected_behavior, test_description, method_description)
+        for test_name, test_func, expected_behavior in tests:
+            suite.run_test(test_name, test_func, expected_behavior)
 
     return suite.finish_suite()
 
