@@ -3029,6 +3029,7 @@ def test_source_citation_demonstration():
 
     Phase 5.1: Source Citation Support
     Shows complete workflow from extraction to formatted output using real GEDCOM data.
+    Uses cached GEDCOM data for performance.
     """
     import os
     from pathlib import Path
@@ -3037,16 +3038,18 @@ def test_source_citation_demonstration():
     logger.info("DEMONSTRATION: Source Citation Extraction & Formatting")
     logger.info("="*60)
 
-    # Load real GEDCOM data
+    # Load real GEDCOM data using cache
     gedcom_file = str(config.database.gedcom_file_path)
     test_person_id = os.getenv("TEST_PERSON_ID", "I102281560744")  # Fraser Gault
 
-    logger.info(f"\n📁 Loading GEDCOM file: {gedcom_file}")
+    logger.info(f"\n📁 Loading GEDCOM file (cached): {gedcom_file}")
     logger.info(f"🔍 Test subject: {test_person_id} (Fraser Gault)")
 
     try:
-        # Load GEDCOM data using GedcomData class
-        gedcom_data = GedcomData(Path(gedcom_file))
+        # Load GEDCOM data using aggressive caching (memory + disk cache)
+        from gedcom_cache import load_gedcom_with_aggressive_caching
+
+        gedcom_data = load_gedcom_with_aggressive_caching(gedcom_file)
         if not gedcom_data or not gedcom_data.indi_index:
             logger.warning("   ⚠️  Could not load GEDCOM data - using mock examples")
             _run_mock_demonstration()

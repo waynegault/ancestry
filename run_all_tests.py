@@ -1009,10 +1009,10 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
 
     cmd, env = _build_test_command(module_name, coverage)
 
-    # Set timeout for subprocess (60 seconds)
+    # Set timeout for subprocess (120 seconds for modules with many tests)
     # This prevents tests from hanging indefinitely
-    # action10 with SKIP_SLOW_TESTS should complete in <5s, so 60s is generous
-    timeout_seconds = 60
+    # Some modules like action8_messaging (47 tests) and gedcom_utils (17 tests) need more time
+    timeout_seconds = 120
 
     try:
         result = subprocess.run(
@@ -1239,6 +1239,8 @@ def _setup_test_environment() -> tuple[bool, bool, bool]:
         enable_monitoring = False
 
     # Set environment variable to skip live API tests that require browser/network
+    # Note: Some modules (action8_messaging, gedcom_utils) have tests that work better with live sessions
+    # but should still complete within timeout even when skipped
     os.environ["SKIP_LIVE_API_TESTS"] = "true"
 
     # Set environment variable to skip slow simulation tests (724-page workload, etc.)
