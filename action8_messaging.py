@@ -1929,7 +1929,7 @@ def _load_and_validate_gedcom() -> Optional[Any]:
         from config import config_schema
         gedcom_file = config_schema.database.gedcom_file_path
 
-        if not gedcom_file or not os.path.exists(gedcom_file):
+        if not gedcom_file or not Path(gedcom_file).exists():
             return None
 
         from gedcom_utils import GedcomData
