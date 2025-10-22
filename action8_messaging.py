@@ -37,16 +37,6 @@ except ImportError:
 
 MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
 
-# === PHASE 5 INTEGRATION ===
-_phase5_available = False
-try:
-    from action8_phase5_integration import enhance_message_format_data_phase5
-    _phase5_available = True
-except ImportError:
-    enhance_message_format_data_phase5 = None
-
-PHASE5_INTEGRATION_AVAILABLE = _phase5_available
-
 # === STANDARD LIBRARY IMPORTS ===
 import logging
 import os
@@ -1924,6 +1914,251 @@ def _safe_api_call_with_validation(
         return False, None
 
 
+# === PHASE 5 RESEARCH ASSISTANT FEATURES ===
+
+def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool:
+    """Validate family tree has required attributes for source extraction."""
+    return family_tree is not None and hasattr(family_tree, 'gedcom_id')
+
+
+def _load_and_validate_gedcom() -> Optional[Any]:
+    """Load and validate GEDCOM data file."""
+    try:
+        from pathlib import Path
+
+        from config import config_schema
+        gedcom_file = config_schema.database.gedcom_file_path
+
+        if not gedcom_file or not os.path.exists(gedcom_file):
+            return None
+
+        from gedcom_utils import GedcomData
+        gedcom_data = GedcomData(Path(gedcom_file))
+
+        if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
+            return None
+
+        return gedcom_data
+    except Exception:
+        return None
+
+
+def _extract_and_format_sources(gedcom_data: Any, gedcom_id: str) -> str:
+    """Extract and format sources for a GEDCOM individual."""
+    if gedcom_id not in gedcom_data.indi_index:
+        return ""
+
+    from gedcom_utils import format_source_citations, get_person_sources
+    individual = gedcom_data.indi_index[gedcom_id]
+    sources = get_person_sources(individual)
+
+    if sources and any(sources.values()):
+        citation = format_source_citations(sources)
+        return f" They are {citation}."
+    return ""
+
+
+def enhance_message_with_sources(
+    person: Person,
+    family_tree: Optional[FamilyTree],
+    format_data: dict[str, Any]
+) -> None:
+    """
+    Enhance message format data with source citations from GEDCOM.
+
+    Args:
+        person: Person being messaged
+        family_tree: Family tree relationship (if in tree)
+        format_data: Message format data to enhance (modified in place)
+    """
+    if not _validate_family_tree_for_sources(family_tree):
+        format_data['source_citations'] = ""
+        return
+
+    # Type checker: family_tree is guaranteed to be not None here due to validation above
+    assert family_tree is not None
+
+    try:
+        gedcom_data = _load_and_validate_gedcom()
+        if not gedcom_data:
+            format_data['source_citations'] = ""
+            return
+
+        citation = _extract_and_format_sources(gedcom_data, family_tree.gedcom_id)
+        format_data['source_citations'] = citation
+
+    except Exception as e:
+        logger.debug(f"Could not extract sources for {person.username}: {e}")
+        format_data['source_citations'] = ""
+
+
+def enhance_message_with_relationship_diagram(
+    person: Person,
+    family_tree: Optional[FamilyTree],
+    format_data: dict[str, Any]
+) -> None:
+    """
+    Enhance message format data with relationship diagram.
+
+    Args:
+        person: Person being messaged
+        family_tree: Family tree relationship (if in tree)
+        format_data: Message format data to enhance (modified in place)
+    """
+    if not family_tree or not hasattr(family_tree, 'relationship_path'):
+        format_data['relationship_diagram'] = ""
+        return
+
+    try:
+        # Use safe_column_value to extract relationship_path
+        relationship_path = safe_column_value(family_tree, 'relationship_path', None)
+        if not relationship_path or relationship_path == "":
+            format_data['relationship_diagram'] = ""
+            return
+
+        # Parse relationship path (stored as JSON string)
+        import json
+        path = json.loads(relationship_path) if isinstance(relationship_path, str) else relationship_path
+
+        # Ensure path is a list before checking length
+        if not isinstance(path, list) or len(path) < 2:
+            format_data['relationship_diagram'] = ""
+            return
+
+        # Generate compact diagram for messages (not too long)
+        from relationship_diagram import format_relationship_for_message
+        from_name = "You"
+        to_name = person.first_name or person.username or "them"
+
+        diagram_text = format_relationship_for_message(
+            from_name,
+            to_name,
+            path,
+            include_diagram=True
+        )
+
+        format_data['relationship_diagram'] = f"\n\n{diagram_text}"
+
+    except Exception as e:
+        logger.debug(f"Could not generate relationship diagram for {person.username}: {e}")
+        format_data['relationship_diagram'] = ""
+
+
+def _extract_research_context(person: Person, family_tree: Optional[FamilyTree]) -> tuple[list, list, list]:
+    """Extract location, time period, and common ancestor information."""
+    locations = []
+    time_periods = []
+    common_ancestors = []
+
+    # Get birth/death info from person
+    if hasattr(person, 'birth_year') and person.birth_year:
+        decade = (person.birth_year // 10) * 10
+        time_periods.append(f"{decade}s")
+
+    # Get common ancestor info from family tree
+    if family_tree and hasattr(family_tree, 'common_ancestor_name'):
+        ancestor_name = family_tree.common_ancestor_name
+        if ancestor_name:
+            common_ancestors.append({
+                'name': ancestor_name,
+                'birth_year': None,
+                'birth_place': None
+            })
+
+    return locations, time_periods, common_ancestors
+
+
+def _format_research_suggestions_text(collections: list) -> str:
+    """Format research suggestions into message text."""
+    if not collections:
+        return ""
+
+    top_suggestions = collections[:2]
+    suggestions_text = "\n\nResearch suggestions:\n"
+    for i, coll in enumerate(top_suggestions, 1):
+        suggestions_text += f"{i}. {coll.get('name', 'Unknown collection')}\n"
+    return suggestions_text
+
+
+def enhance_message_with_research_suggestions(
+    person: Person,
+    family_tree: Optional[FamilyTree],
+    format_data: dict[str, Any]
+) -> None:
+    """
+    Enhance message format data with research suggestions.
+
+    Args:
+        person: Person being messaged
+        family_tree: Family tree relationship (if in tree)
+        format_data: Message format data to enhance (modified in place)
+    """
+    try:
+        # Extract research context
+        locations, time_periods, common_ancestors = _extract_research_context(person, family_tree)
+
+        # Only generate suggestions if we have enough context
+        if not (locations or time_periods or common_ancestors):
+            format_data['research_suggestions'] = ""
+            return
+
+        # Generate suggestions
+        from research_suggestions import generate_research_suggestions
+        result = generate_research_suggestions(
+            common_ancestors=common_ancestors if common_ancestors else [{}],
+            locations=locations if locations else [""],
+            time_periods=time_periods if time_periods else [""]
+        )
+
+        collections = result.get('collections', [])
+        format_data['research_suggestions'] = _format_research_suggestions_text(collections)
+
+    except Exception as e:
+        logger.debug(f"Could not generate research suggestions for {person.username}: {e}")
+        format_data['research_suggestions'] = ""
+
+
+def enhance_message_format_data_phase5(
+    person: Person,
+    family_tree: Optional[FamilyTree],
+    format_data: dict[str, Any],
+    enable_sources: bool = True,
+    enable_diagrams: bool = True,
+    enable_suggestions: bool = False
+) -> None:
+    """
+    Enhance message format data with all Phase 5 features.
+
+    This is the main integration point for Action 8. Call this function
+    after preparing base format data to add Phase 5 enhancements.
+
+    Args:
+        person: Person being messaged
+        family_tree: Family tree relationship (if in tree)
+        format_data: Message format data to enhance (modified in place)
+        enable_sources: Whether to add source citations
+        enable_diagrams: Whether to add relationship diagrams
+        enable_suggestions: Whether to add research suggestions
+    """
+    # Add source citations (for in-tree matches)
+    if enable_sources and family_tree:
+        enhance_message_with_sources(person, family_tree, format_data)
+    else:
+        format_data['source_citations'] = ""
+
+    # Add relationship diagram (for in-tree matches)
+    if enable_diagrams and family_tree:
+        enhance_message_with_relationship_diagram(person, family_tree, format_data)
+    else:
+        format_data['relationship_diagram'] = ""
+
+    # Add research suggestions (optional, can be verbose)
+    if enable_suggestions:
+        enhance_message_with_research_suggestions(person, family_tree, format_data)
+    else:
+        format_data['research_suggestions'] = ""
+
+
 # === SINGLE PERSON PROCESSING HELPER FUNCTIONS ===
 
 def _check_halt_signal(session_manager: SessionManager) -> None:
@@ -2258,32 +2493,24 @@ def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTre
     _add_tree_statistics_to_format_data(format_data, db_session, person)
 
     # Add Phase 5 enhancements (source citations, relationship diagrams, research suggestions)
-    if PHASE5_INTEGRATION_AVAILABLE and enhance_message_format_data_phase5:
-        try:
-            import os
+    try:
+        # Read Phase 5 configuration from environment variables
+        enable_sources = os.getenv('PHASE5_ENABLE_SOURCE_CITATIONS', 'true').lower() == 'true'
+        enable_diagrams = os.getenv('PHASE5_ENABLE_RELATIONSHIP_DIAGRAMS', 'true').lower() == 'true'
+        enable_suggestions = os.getenv('PHASE5_ENABLE_RESEARCH_SUGGESTIONS', 'false').lower() == 'true'
 
-            # Read Phase 5 configuration from environment variables
-            enable_sources = os.getenv('PHASE5_ENABLE_SOURCE_CITATIONS', 'true').lower() == 'true'
-            enable_diagrams = os.getenv('PHASE5_ENABLE_RELATIONSHIP_DIAGRAMS', 'true').lower() == 'true'
-            enable_suggestions = os.getenv('PHASE5_ENABLE_RESEARCH_SUGGESTIONS', 'false').lower() == 'true'
-
-            enhance_message_format_data_phase5(
-                person=person,
-                family_tree=family_tree,
-                format_data=format_data,
-                enable_sources=enable_sources,
-                enable_diagrams=enable_diagrams,
-                enable_suggestions=enable_suggestions
-            )
-            logger.debug(f"Phase 5 enhancements added to message format data for {person.username}")
-        except Exception as e:
-            logger.warning(f"Could not add Phase 5 enhancements: {e}")
-            # Add empty placeholders so templates don't break
-            format_data.setdefault('source_citations', '')
-            format_data.setdefault('relationship_diagram', '')
-            format_data.setdefault('research_suggestions', '')
-    else:
-        # Phase 5 not available - add empty placeholders
+        enhance_message_format_data_phase5(
+            person=person,
+            family_tree=family_tree,
+            format_data=format_data,
+            enable_sources=enable_sources,
+            enable_diagrams=enable_diagrams,
+            enable_suggestions=enable_suggestions
+        )
+        logger.debug(f"Phase 5 enhancements added to message format data for {person.username}")
+    except Exception as e:
+        logger.warning(f"Could not add Phase 5 enhancements: {e}")
+        # Add empty placeholders so templates don't break
         format_data.setdefault('source_citations', '')
         format_data.setdefault('relationship_diagram', '')
         format_data.setdefault('research_suggestions', '')
@@ -5009,6 +5236,97 @@ def _test_calculate_follow_up_action() -> bool:
         config_schema.app_mode = original_mode
 
 
+# === PHASE 5 INTEGRATION TESTS ===
+
+def _test_enhance_message_with_sources() -> None:
+    """Test source citation enhancement."""
+    from unittest.mock import Mock, patch
+
+    person = Mock()
+    person.username = "test_user"
+
+    family_tree = Mock()
+    family_tree.gedcom_id = "I123"
+
+    format_data = {}
+
+    # Mock _load_and_validate_gedcom to avoid loading large GEDCOM file during tests
+    with patch('action8_messaging._load_and_validate_gedcom', return_value=None):
+        # Should not crash even if GEDCOM not available
+        enhance_message_with_sources(person, family_tree, format_data)
+        assert 'source_citations' in format_data
+
+    logger.info("✓ Source citation enhancement test passed")
+
+
+def _test_enhance_message_with_relationship_diagram() -> None:
+    """Test relationship diagram enhancement."""
+    from unittest.mock import Mock
+
+    person = Mock()
+    person.username = "test_user"
+    person.first_name = "John"
+
+    family_tree = Mock()
+    family_tree.relationship_path = '[{"name": "Wayne", "relationship": "self"}, {"name": "John", "relationship": "cousin"}]'
+
+    format_data = {}
+
+    enhance_message_with_relationship_diagram(person, family_tree, format_data)
+    assert 'relationship_diagram' in format_data
+
+    logger.info("✓ Relationship diagram enhancement test passed")
+
+
+def _test_enhance_message_with_research_suggestions() -> None:
+    """Test research suggestion enhancement."""
+    from unittest.mock import Mock
+
+    person = Mock()
+    person.username = "test_user"
+    person.birth_year = 1950
+
+    family_tree = Mock()
+    family_tree.common_ancestor_name = "William Gault"
+
+    format_data = {}
+
+    enhance_message_with_research_suggestions(person, family_tree, format_data)
+    assert 'research_suggestions' in format_data
+
+    logger.info("✓ Research suggestion enhancement test passed")
+
+
+def _test_enhance_message_format_data_phase5() -> None:
+    """Test complete Phase 5 enhancement."""
+    from unittest.mock import Mock
+
+    person = Mock()
+    person.username = "test_user"
+    person.first_name = "John"
+    person.birth_year = 1950
+
+    family_tree = Mock()
+    family_tree.gedcom_id = "I123"
+    family_tree.relationship_path = '[]'
+    family_tree.common_ancestor_name = "William Gault"
+
+    format_data = {}
+
+    enhance_message_format_data_phase5(
+        person, family_tree, format_data,
+        enable_sources=True,
+        enable_diagrams=True,
+        enable_suggestions=True
+    )
+
+    assert 'source_citations' in format_data
+    assert 'relationship_diagram' in format_data
+    assert 'research_suggestions' in format_data
+
+    logger.info("✓ Complete Phase 5 enhancement test passed")
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -5288,6 +5606,39 @@ def action8_messaging_tests() -> None:
         "Calculate follow-up action",
         _test_calculate_follow_up_action,
         "Helper function calculates adaptive follow-up timing.",
+    )
+
+    # === PHASE 5: RESEARCH ASSISTANT FEATURES TESTS ===
+    suite.run_test(
+        "Phase 5: Source citation enhancement",
+        _test_enhance_message_with_sources,
+        "Source citations added to format data from GEDCOM.",
+        "Test source citation enhancement",
+        "Verifying source citation integration"
+    )
+
+    suite.run_test(
+        "Phase 5: Relationship diagram enhancement",
+        _test_enhance_message_with_relationship_diagram,
+        "Relationship diagrams added to format data.",
+        "Test relationship diagram enhancement",
+        "Verifying relationship diagram integration"
+    )
+
+    suite.run_test(
+        "Phase 5: Research suggestion enhancement",
+        _test_enhance_message_with_research_suggestions,
+        "Research suggestions added to format data.",
+        "Test research suggestion enhancement",
+        "Verifying research suggestion integration"
+    )
+
+    suite.run_test(
+        "Phase 5: Complete enhancement integration",
+        _test_enhance_message_format_data_phase5,
+        "All Phase 5 features integrated correctly.",
+        "Test complete Phase 5 enhancement",
+        "Verifying all Phase 5 features work together"
     )
 
     # === INTEGRATION TESTS (Require Live Session) ===
