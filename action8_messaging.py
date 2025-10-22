@@ -1922,7 +1922,7 @@ def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool
 
 
 def _load_and_validate_gedcom() -> Optional[Any]:
-    """Load and validate GEDCOM data file."""
+    """Load and validate GEDCOM data file using aggressive caching for performance."""
     try:
         from pathlib import Path
 
@@ -1932,8 +1932,10 @@ def _load_and_validate_gedcom() -> Optional[Any]:
         if not gedcom_file or not Path(gedcom_file).exists():
             return None
 
-        from gedcom_utils import GedcomData
-        gedcom_data = GedcomData(Path(gedcom_file))
+        # Use aggressive caching (memory + disk cache) for faster loading
+        # This is much faster than parsing the GEDCOM file each time
+        from gedcom_cache import load_gedcom_with_aggressive_caching
+        gedcom_data = load_gedcom_with_aggressive_caching(str(gedcom_file))
 
         if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
             return None
