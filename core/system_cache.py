@@ -111,7 +111,7 @@ class APIResponseCache(BaseCacheModule):
     Optimizes external API calls with intelligent TTL management.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._api_stats = {
             "ai_requests": 0,
             "ai_cache_hits": 0,
@@ -231,7 +231,7 @@ class DatabaseQueryCache(BaseCacheModule):
     Optimizes database operations with intelligent invalidation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._query_stats = {
             "total_queries": 0,
             "cache_hits": 0,
@@ -315,7 +315,7 @@ class MemoryOptimizer(BaseCacheModule):
     Intelligent memory optimization and garbage collection management.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._memory_stats = {
             "gc_collections": 0,
             "memory_freed_mb": 0.0,
