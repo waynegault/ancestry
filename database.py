@@ -747,6 +747,14 @@ class Person(Base):
     conversation_state = relationship(
         "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
+    # One-to-one relationship with ConversationMetrics. `cascade` ensures deletion.
+    conversation_metrics = relationship(
+        "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
+    )
+    # One-to-many relationship with EngagementTracking. `cascade` ensures deletion.
+    engagement_events = relationship(
+        "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
+    )
 
 
 # End of Person class
