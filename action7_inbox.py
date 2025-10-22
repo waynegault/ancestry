@@ -25,7 +25,6 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 1 OPTIMIZATIONS ===
 # === STANDARD LIBRARY IMPORTS ===
-import inspect
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -1286,19 +1285,21 @@ class InboxProcessor:
 
     def _was_recently_processed(
         self,
-        existing_conv_logs: dict[tuple[str, str], ConversationLog],  # noqa: ARG002
-        api_conv_id: str,  # noqa: ARG002
+        existing_conv_logs: dict[tuple[str, str], ConversationLog],
+        api_conv_id: str,
     ) -> bool:
         """Check if conversation was recently processed and should be skipped.
 
         NOTE: Time-based skipping is disabled. We only stop at comparator (most recent conversation).
-        This function is kept for backward compatibility but always returns False.
+        This function always returns False - parameters kept for API compatibility.
 
         Args:
-            existing_conv_logs: Unused (kept for backward compatibility)
-            api_conv_id: Unused (kept for backward compatibility)
+            existing_conv_logs: Not used (time-based skipping disabled)
+            api_conv_id: Not used (time-based skipping disabled)
         """
         # Time-based skipping disabled - only use comparator logic to stop processing
+        # Parameters kept for API compatibility but not used
+        _ = existing_conv_logs, api_conv_id  # Mark as intentionally unused
         return False
 
     def _should_fetch_based_on_timestamp(
