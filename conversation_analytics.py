@@ -17,13 +17,14 @@ Created: October 22, 2025
 Phase: 6 - Production Deployment & Monitoring
 """
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, Boolean
-from sqlalchemy.orm import relationship, Session
-from database import Base
-import json
 
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Session, relationship
+
+from database import Base
 
 # ----------------------------------------------------------------------
 # Database Models
@@ -50,7 +51,7 @@ class ConversationMetrics(Base):
         index=True,
         comment="Foreign key to people table (one metrics record per person).",
     )
-    
+
     # Message counts
     messages_sent = Column(
         Integer,
@@ -64,7 +65,7 @@ class ConversationMetrics(Base):
         default=0,
         comment="Total number of messages received from this person.",
     )
-    
+
     # Response tracking
     first_response_received = Column(
         Boolean,
@@ -82,7 +83,7 @@ class ConversationMetrics(Base):
         nullable=True,
         comment="Hours between first message sent and first response received.",
     )
-    
+
     # Engagement metrics
     current_engagement_score = Column(
         Integer,
@@ -101,7 +102,7 @@ class ConversationMetrics(Base):
         nullable=True,
         comment="Average engagement score across all updates.",
     )
-    
+
     # Conversation characteristics
     conversation_phase = Column(
         String,
@@ -114,7 +115,7 @@ class ConversationMetrics(Base):
         nullable=True,
         comment="Days between first message and last message.",
     )
-    
+
     # Template effectiveness
     initial_template_used = Column(
         String,
@@ -126,7 +127,7 @@ class ConversationMetrics(Base):
         nullable=True,
         comment="JSON-encoded list of all template keys used in conversation.",
     )
-    
+
     # Research outcomes
     people_looked_up = Column(
         Integer,
@@ -146,7 +147,7 @@ class ConversationMetrics(Base):
         default=0,
         comment="Number of research tasks created from conversation.",
     )
-    
+
     # Tree impact
     added_to_tree = Column(
         Boolean,
@@ -159,7 +160,7 @@ class ConversationMetrics(Base):
         nullable=True,
         comment="Timestamp (UTC) when person was added to tree.",
     )
-    
+
     # Timestamps
     first_message_sent = Column(
         DateTime(timezone=True),
@@ -213,7 +214,7 @@ class EngagementTracking(Base):
         index=True,
         comment="Foreign key to people table.",
     )
-    
+
     # Event details
     event_type = Column(
         String,
@@ -230,7 +231,7 @@ class EngagementTracking(Base):
         nullable=True,
         comment="JSON-encoded additional event data.",
     )
-    
+
     # Engagement impact
     engagement_score_before = Column(
         Integer,
@@ -247,7 +248,7 @@ class EngagementTracking(Base):
         nullable=True,
         comment="Change in engagement score from this event.",
     )
-    
+
     # Context
     conversation_phase = Column(
         String,
@@ -259,7 +260,7 @@ class EngagementTracking(Base):
         nullable=True,
         comment="Template key if event was a message.",
     )
-    
+
     # Timestamp
     event_timestamp = Column(
         DateTime(timezone=True),
@@ -402,8 +403,7 @@ def update_conversation_metrics(
     # Update engagement metrics
     if engagement_score is not None:
         metrics.current_engagement_score = engagement_score
-        if engagement_score > metrics.max_engagement_score:
-            metrics.max_engagement_score = engagement_score
+        metrics.max_engagement_score = max(engagement_score, metrics.max_engagement_score)
 
         # Update average engagement score
         # Simple moving average based on number of updates
@@ -457,7 +457,7 @@ def get_overall_analytics(session: Session) -> dict[str, Any]:
 
     # Get response rate
     conversations_with_responses = session.query(ConversationMetrics).filter(
-        ConversationMetrics.first_response_received == True
+        ConversationMetrics.first_response_received.is_(True)
     ).count()
     response_rate = (conversations_with_responses / total_conversations * 100) if total_conversations > 0 else 0
 
@@ -490,7 +490,7 @@ def get_overall_analytics(session: Session) -> dict[str, Any]:
             ).count()
             responses_with_template = session.query(ConversationMetrics).filter(
                 ConversationMetrics.initial_template_used == template,
-                ConversationMetrics.first_response_received == True
+                ConversationMetrics.first_response_received.is_(True)
             ).count()
 
             template_effectiveness[template] = {
@@ -506,7 +506,7 @@ def get_overall_analytics(session: Session) -> dict[str, Any]:
 
     # Get tree impact
     people_added_to_tree = session.query(ConversationMetrics).filter(
-        ConversationMetrics.added_to_tree == True
+        ConversationMetrics.added_to_tree.is_(True)
     ).count()
 
     return {
@@ -543,29 +543,29 @@ def print_analytics_dashboard(session: Session) -> None:
     print("CONVERSATION ANALYTICS DASHBOARD")
     print("=" * 80)
 
-    print(f"\n📊 OVERALL METRICS")
+    print("\n📊 OVERALL METRICS")
     print(f"   Total Conversations: {analytics['total_conversations']}")
     print(f"   Conversations with Responses: {analytics['conversations_with_responses']}")
     print(f"   Response Rate: {analytics['response_rate_percent']}%")
     print(f"   Average Engagement Score: {analytics['avg_engagement_score']}/100")
     print(f"   Average Time to First Response: {analytics['avg_time_to_first_response_hours']:.1f} hours")
 
-    print(f"\n📈 CONVERSATION PHASES")
+    print("\n📈 CONVERSATION PHASES")
     for phase, count in analytics['phase_distribution'].items():
         print(f"   {phase}: {count}")
 
-    print(f"\n📧 TEMPLATE EFFECTIVENESS")
+    print("\n📧 TEMPLATE EFFECTIVENESS")
     for template, data in analytics['template_effectiveness'].items():
         print(f"   {template}:")
         print(f"      Total: {data['total']}, Responses: {data['responses']}, Rate: {data['response_rate']:.1f}%")
 
-    print(f"\n🔍 RESEARCH OUTCOMES")
+    print("\n🔍 RESEARCH OUTCOMES")
     print(f"   People Looked Up: {analytics['research_outcomes']['people_looked_up']}")
     print(f"   People Found: {analytics['research_outcomes']['people_found']}")
     print(f"   Success Rate: {analytics['research_outcomes']['success_rate_percent']}%")
     print(f"   Research Tasks Created: {analytics['research_outcomes']['research_tasks_created']}")
 
-    print(f"\n🌳 TREE IMPACT")
+    print("\n🌳 TREE IMPACT")
     print(f"   People Added to Tree: {analytics['tree_impact']['people_added_to_tree']}")
     print(f"   Conversion Rate: {analytics['tree_impact']['conversion_rate_percent']}%")
 

@@ -1655,25 +1655,23 @@ def _handle_test_options(choice: str) -> bool:
 
 def _handle_meta_options(choice: str) -> bool:
     """Handle meta options (analytics, sec, s, t, c, q)."""
-    if choice == "analytics":
-        _show_analytics_dashboard()
+    meta_actions = {
+        "analytics": _show_analytics_dashboard,
+        "sec": _run_credential_manager,
+        "s": _show_cache_statistics,
+        "t": _toggle_log_level,
+        "c": lambda: os.system("cls" if os.name == "nt" else "clear"),
+    }
+
+    if choice in meta_actions:
+        meta_actions[choice]()
         return True
-    if choice == "sec":
-        _run_credential_manager()
-        return True
-    if choice == "s":
-        _show_cache_statistics()
-        return True
-    if choice == "t":
-        _toggle_log_level()
-        return True
-    if choice == "c":
-        os.system("cls" if os.name == "nt" else "clear")
-        return True
+
     if choice == "q":
         os.system("cls" if os.name == "nt" else "clear")
         print("Exiting.")
         return False
+
     return False
 
 
