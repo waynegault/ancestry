@@ -89,13 +89,6 @@ class FrancesAction6Tester:
             stats = {
                 "total_people": session.query(func.count(Person.id)).scalar() or 0,
                 "total_matches": session.query(func.count(DnaMatch.id)).scalar() or 0,
-                "people_with_ethnicity": session.query(func.count(Person.id)).filter(
-                    Person.id.in_(
-                        session.query(DnaMatch.people_id).filter(
-                            DnaMatch.ethnicity_data.isnot(None)
-                        )
-                    )
-                ).scalar() or 0,
             }
             self.db_manager.return_session(session)
 
@@ -158,20 +151,12 @@ class FrancesAction6Tester:
             new_stats = {
                 "total_people": session.query(func.count(Person.id)).scalar() or 0,
                 "total_matches": session.query(func.count(DnaMatch.id)).scalar() or 0,
-                "people_with_ethnicity": session.query(func.count(Person.id)).filter(
-                    Person.id.in_(
-                        session.query(DnaMatch.people_id).filter(
-                            DnaMatch.ethnicity_data.isnot(None)
-                        )
-                    )
-                ).scalar() or 0,
             }
 
             # Calculate changes
             changes = {
                 "new_people": new_stats["total_people"] - baseline_stats.get("total_people", 0),
                 "new_matches": new_stats["total_matches"] - baseline_stats.get("total_matches", 0),
-                "new_ethnicity": new_stats["people_with_ethnicity"] - baseline_stats.get("people_with_ethnicity", 0),
             }
 
             self.db_manager.return_session(session)
@@ -179,7 +164,6 @@ class FrancesAction6Tester:
             # Report results
             self.log(f"New people added: {changes['new_people']}")
             self.log(f"New matches added: {changes['new_matches']}")
-            self.log(f"New ethnicity data: {changes['new_ethnicity']}")
 
             # Validate expectations
             validation_passed = True
@@ -221,13 +205,11 @@ class FrancesAction6Tester:
             print("📈 Database Changes:")
             print(f"   New People: {results['changes']['new_people']}")
             print(f"   New Matches: {results['changes']['new_matches']}")
-            print(f"   New Ethnicity Data: {results['changes']['new_ethnicity']}")
             print()
 
             print("📊 Final Statistics:")
             print(f"   Total People: {results['new_stats']['total_people']}")
             print(f"   Total Matches: {results['new_stats']['total_matches']}")
-            print(f"   People with Ethnicity: {results['new_stats']['people_with_ethnicity']}")
             print()
 
         print("✅ Test completed successfully!" if results.get("validation_passed") else "❌ Test failed!")
