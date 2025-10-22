@@ -3032,7 +3032,6 @@ def test_source_citation_demonstration():
     Uses cached GEDCOM data for performance.
     """
     import os
-    from pathlib import Path
 
     logger.info("\n" + "="*60)
     logger.info("DEMONSTRATION: Source Citation Extraction & Formatting")

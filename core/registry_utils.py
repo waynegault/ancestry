@@ -16,11 +16,11 @@ Key improvements:
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
 from pathlib import Path as PathLib
+from typing import Any, Callable, Optional
 
 parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
@@ -29,27 +29,6 @@ if parent_dir not in sys.path:
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-# === STANDARD LIBRARY IMPORTS ===
-import inspect
-import logging
-from functools import wraps
-from typing import Any, Callable, Optional
-
-from error_handling import (
-    AncestryException,
-    APIRateLimitError,
-    AuthenticationExpiredError,
-    ErrorContext,
-    NetworkTimeoutError,
-    RetryableError,
-    circuit_breaker,
-    error_context,
-    graceful_degradation,
-    retry_on_failure,
-    timeout_protection,
-)
 
 
 class SmartFunctionRegistry:
