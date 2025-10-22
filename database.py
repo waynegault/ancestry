@@ -3276,7 +3276,11 @@ def _test_database_model_definitions() -> None:
         # Test model instantiation
         instance_created = False
         try:
-            instance = model_class()
+            # Provide required fields for models that need them
+            if model_class == Person:
+                instance = model_class(username="test_user")
+            else:
+                instance = model_class()
             instance_created = instance is not None
             _ = type(instance).__name__  # ensure attribute access is not useless
         except Exception as e:
@@ -3415,8 +3419,8 @@ def _test_enum_edge_cases() -> None:
 
 def _test_model_instantiation_edge_cases() -> None:
     """Test model instantiation with various edge cases."""
-    # Test Person instantiation with minimal data
-    person = Person()
+    # Test Person instantiation with minimal data (username required)
+    person = Person(username="test_user")
     assert person is not None, "Person should be instantiable"
 
     # Test DnaMatch instantiation
@@ -3453,9 +3457,9 @@ def _test_model_creation_performance() -> None:
     import time
     start_time = time.time()
 
-    # Create multiple model instances
-    for _ in range(100):
-        Person()
+    # Create multiple model instances (Person requires username)
+    for i in range(100):
+        Person(username=f"test_user_{i}")
         DnaMatch()
         FamilyTree()
 

@@ -614,27 +614,7 @@ class PersonProcessor:
                 logger.info(f"Found {person_name} in GEDCOM with score {gedcom_result.match_score}")
                 lookup_results.append(gedcom_result)
                 people_found_count += 1
-
-                # Track analytics for successful person lookup
-                try:
-                    if self.db_state.session:
-                        record_engagement_event(
-                            session=self.db_state.session,
-                            people_id=person.id,
-                            event_type="person_lookup",
-                            event_description=f"Found {person_name} in GEDCOM (score: {gedcom_result.match_score})",
-                            event_data={"person_name": person_name, "match_score": gedcom_result.match_score, "source": "GEDCOM"},
-                        )
-
-                        update_conversation_metrics(
-                            session=self.db_state.session,
-                            people_id=person.id,
-                            person_looked_up=True,
-                            person_found=True,
-                        )
-                except Exception as analytics_error:
-                    logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
-
+                self._track_person_lookup_analytics(person, person_name, gedcom_result.match_score, "GEDCOM", found=True)
                 continue
 
             # If not found in GEDCOM, try API search (Action 11)
@@ -645,27 +625,7 @@ class PersonProcessor:
                 logger.info(f"Found {person_name} via API search (score: {api_result.match_score})")
                 lookup_results.append(api_result)
                 people_found_count += 1
-
-                # Track analytics for successful API lookup
-                try:
-                    if self.db_state.session:
-                        record_engagement_event(
-                            session=self.db_state.session,
-                            people_id=person.id,
-                            event_type="person_lookup",
-                            event_description=f"Found {person_name} via API (score: {api_result.match_score})",
-                            event_data={"person_name": person_name, "match_score": api_result.match_score, "source": "API"},
-                        )
-
-                        update_conversation_metrics(
-                            session=self.db_state.session,
-                            people_id=person.id,
-                            person_looked_up=True,
-                            person_found=True,
-                        )
-                except Exception as analytics_error:
-                    logger.debug(f"Analytics tracking failed for API person lookup: {analytics_error}")
-
+                self._track_person_lookup_analytics(person, person_name, api_result.match_score, "API", found=True)
                 continue
 
             # Not found in GEDCOM or API
@@ -675,29 +635,43 @@ class PersonProcessor:
                 reason="Person not found in GEDCOM file or API"
             )
             lookup_results.append(not_found)
-
-            # Track analytics for unsuccessful person lookup
-            try:
-                if self.db_state.session:
-                    record_engagement_event(
-                        session=self.db_state.session,
-                        people_id=person.id,
-                        event_type="person_lookup",
-                        event_description=f"Person {person_name} not found in GEDCOM or API",
-                        event_data={"person_name": person_name, "source": "GEDCOM+API"},
-                    )
-
-                    update_conversation_metrics(
-                        session=self.db_state.session,
-                        people_id=person.id,
-                        person_looked_up=True,
-                        person_found=False,
-                    )
-            except Exception as analytics_error:
-                logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
+            self._track_person_lookup_analytics(person, person_name, None, "GEDCOM+API", found=False)
 
         logger.info(f"Lookup complete: {people_found_count}/{len(mentioned_people)} people found")
         return lookup_results
+
+    def _track_person_lookup_analytics(
+        self, person: Person, person_name: str, match_score: Optional[float], source: str, found: bool
+    ) -> None:
+        """Track analytics for person lookup attempts."""
+        try:
+            if not self.db_state.session:
+                return
+
+            event_desc = (
+                f"Found {person_name} in {source} (score: {match_score})" if found
+                else f"Person {person_name} not found in {source}"
+            )
+            event_data = {"person_name": person_name, "source": source}
+            if match_score is not None:
+                event_data["match_score"] = match_score
+
+            record_engagement_event(
+                session=self.db_state.session,
+                people_id=person.id,
+                event_type="person_lookup",
+                event_description=event_desc,
+                event_data=event_data,
+            )
+
+            update_conversation_metrics(
+                session=self.db_state.session,
+                people_id=person.id,
+                person_looked_up=True,
+                person_found=found,
+            )
+        except Exception as analytics_error:
+            logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
 
     def _load_gedcom_data(self) -> Optional[Any]:
         """Load GEDCOM data from configured path."""
