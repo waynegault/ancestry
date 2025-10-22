@@ -2515,239 +2515,261 @@ def _ensure_session_for_tests(reuse_session: bool = True) -> SessionManager:
     return sm
 
 
+def _test_class_and_methods_available() -> None:
+    """Ensure core classes and methods exist and are callable."""
+    from unittest.mock import MagicMock
+    # InboxProcessor exists
+    assert 'InboxProcessor' in globals(), "InboxProcessor class should exist"
+    assert callable(InboxProcessor), "InboxProcessor should be callable"
+    # search_inbox method exists and is callable on an instance
+    sm = MagicMock()
+    processor = InboxProcessor(sm)
+    assert hasattr(processor, 'search_inbox') and callable(processor.search_inbox)
+    # internal helpers exist
+    assert hasattr(processor, '_process_inbox_loop'), "_process_inbox_loop should exist"
+    assert hasattr(processor, '_log_unified_summary'), "_log_unified_summary should exist"
+    return True
+
+
+def _test_inbox_processor_initialization() -> None:
+    """Test InboxProcessor can be initialized with SessionManager."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Verify processor initialized correctly
+    assert processor.session_manager == sm, "SessionManager should be stored"
+    assert hasattr(processor, 'stats'), "Processor should have stats dict"
+    assert isinstance(processor.stats, dict), "Stats should be a dictionary"
+
+    return True
+
+
+def _test_fetch_first_page_conversations() -> None:
+    """Test fetching first page of conversations from API."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Fetch first page (limit to 5 conversations for testing)
+    result = processor.search_inbox(max_inbox_limit=5)
+
+    # Verify result structure
+    assert isinstance(result, dict), "search_inbox should return dict"
+    assert "conversations_processed" in result, "Result should have conversations_processed"
+    assert result["conversations_processed"] >= 0, "Should process 0 or more conversations"
+
+    logger.info(f"✅ Fetched {result['conversations_processed']} conversations from first page")
+
+    return True
+
+
+def _test_conversation_database_storage() -> None:
+    """Test conversations are stored in database."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Get count before processing
+    db_session = sm.db_session
+    count_before = db_session.query(ConversationLog).count()
+
+    # Process a small batch
+    processor.search_inbox(max_inbox_limit=3)
+
+    # Get count after processing
+    count_after = db_session.query(ConversationLog).count()
+
+    # Verify conversations were stored (or already existed)
+    assert count_after >= count_before, "Conversation count should not decrease"
+
+    logger.info(f"✅ Database has {count_after} conversations (added {count_after - count_before})")
+
+    return True
+
+
+def _test_conversation_parsing() -> None:
+    """Test conversation data is parsed correctly from API."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Process a small batch and check database
+    processor.search_inbox(max_inbox_limit=2)
+
+    # Get a conversation from database
+    db_session = sm.db_session
+    conv = db_session.query(ConversationLog).first()
+
+    if conv:
+        # Verify conversation has required fields
+        assert conv.conversation_id is not None, "Conversation should have ID"
+        assert conv.direction is not None, "Conversation should have direction"
+        assert conv.updated_at is not None, "Conversation should have timestamp"
+
+        logger.info(f"✅ Parsed conversation {conv.conversation_id} with direction {conv.direction}")
+    else:
+        logger.info("⚠️ No conversations in database (inbox may be empty)")
+
+    return True
+
+
+def _test_ai_classification() -> None:
+    """Test AI classification of messages."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Process conversations with AI classification
+    result = processor.search_inbox(max_inbox_limit=3)
+
+    # Check if any AI classifications were attempted
+    ai_classified = result.get("ai_classifications", 0)
+
+    # AI classification may be 0 if no new messages or if messages already classified
+    assert ai_classified >= 0, "AI classifications should be non-negative"
+
+    logger.info(f"✅ AI classified {ai_classified} messages")
+
+    return True
+
+
+def _test_person_status_updates() -> None:
+    """Test person status updates from conversations."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Process conversations
+    result = processor.search_inbox(max_inbox_limit=3)
+
+    # Check if any person status updates were made
+    status_updates = result.get("person_updates", 0)
+
+    # Status updates may be 0 if no new conversations or if statuses already set
+    assert status_updates >= 0, "Person status updates should be non-negative"
+
+    logger.info(f"✅ Made {status_updates} person status updates")
+
+    return True
+
+
+def _test_stop_on_unchanged_conversation() -> None:
+    """Test processing stops when encountering unchanged conversation (comparator match)."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # First run: process some conversations
+    result1 = processor.search_inbox(max_inbox_limit=5)
+    processed1 = result1.get("conversations_processed", 0)
+
+    # Second run: should stop early when encountering unchanged conversations
+    # (assuming inbox hasn't changed between runs)
+    result2 = processor.search_inbox(max_inbox_limit=5)
+    processed2 = result2.get("conversations_processed", 0)
+
+    # Second run should process fewer or equal conversations
+    # (stops when comparator detects no changes)
+    assert processed2 <= processed1, \
+        f"Second run should process <= conversations (got {processed2} vs {processed1})"
+
+    logger.info(f"✅ First run: {processed1} conversations, Second run: {processed2} conversations")
+    logger.info("✅ Comparator logic working (stops on unchanged conversations)")
+
+    return True
+
+
+def _test_summary_logging() -> None:
+    """Test summary logging produces expected output."""
+    import os
+    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
+    if skip_live_tests:
+        logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
+        return True
+
+    sm = _ensure_session_for_tests()
+    processor = InboxProcessor(sm)
+
+    # Process conversations and verify summary is logged
+    result = processor.search_inbox(max_inbox_limit=3)
+
+    # Verify result has expected keys
+    assert "conversations_processed" in result, "Result should have conversations_processed"
+    assert "conversations_fetched" in result, "Result should have conversations_fetched"
+
+    logger.info(f"✅ Summary: {result['conversations_processed']} processed, "
+               f"{result['conversations_fetched']} fetched")
+
+    return True
+
+
+def _test_error_recovery() -> None:
+    """Test error recovery mechanisms."""
+    from unittest.mock import MagicMock
+    sm = MagicMock()
+    processor = InboxProcessor(sm)
+
+    # Test state initialization
+    state = processor._initialize_loop_state()
+
+    # Verify error tracking fields exist
+    assert "session_deaths" in state, "State should track session deaths"
+    assert "session_recoveries" in state, "State should track session recoveries"
+    assert state["session_deaths"] == 0, "Should start with 0 session deaths"
+    assert state["session_recoveries"] == 0, "Should start with 0 session recoveries"
+
+    logger.info("✅ Error recovery state initialized correctly")
+
+    return True
+
+
 def action7_inbox_module_tests() -> bool:
     """Comprehensive test suite for action7_inbox.py using the unified TestSuite."""
-    import os
-    from unittest.mock import MagicMock
-
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Action 7 - Inbox Processor", "action7_inbox.py")
     suite.start_suite()
 
-    # Check if we should skip live API tests
-    skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
-
-    def test_class_and_methods_available() -> None:
-        """Ensure core classes and methods exist and are callable."""
-        # InboxProcessor exists
-        assert 'InboxProcessor' in globals(), "InboxProcessor class should exist"
-        assert callable(InboxProcessor), "InboxProcessor should be callable"
-        # search_inbox method exists and is callable on an instance
-        sm = MagicMock()
-        processor = InboxProcessor(sm)
-        assert hasattr(processor, 'search_inbox') and callable(processor.search_inbox)
-        # internal helpers exist
-        assert hasattr(processor, '_process_inbox_loop'), "_process_inbox_loop should exist"
-        assert hasattr(processor, '_log_unified_summary'), "_log_unified_summary should exist"
-        return True
-
-    def test_inbox_processor_initialization() -> None:
-        """Test InboxProcessor can be initialized with SessionManager."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Verify processor initialized correctly
-        assert processor.session_manager == sm, "SessionManager should be stored"
-        assert hasattr(processor, 'stats'), "Processor should have stats dict"
-        assert isinstance(processor.stats, dict), "Stats should be a dictionary"
-
-        return True
-
-    def test_fetch_first_page_conversations() -> None:
-        """Test fetching first page of conversations from API."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Fetch first page (limit to 5 conversations for testing)
-        result = processor.search_inbox(max_inbox_limit=5)
-
-        # Verify result structure
-        assert isinstance(result, dict), "search_inbox should return dict"
-        assert "conversations_processed" in result, "Result should have conversations_processed"
-        assert result["conversations_processed"] >= 0, "Should process 0 or more conversations"
-
-        logger.info(f"✅ Fetched {result['conversations_processed']} conversations from first page")
-
-        return True
-
-    def test_conversation_database_storage() -> None:
-        """Test conversations are stored in database."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Get count before processing
-        db_session = sm.db_session
-        count_before = db_session.query(ConversationLog).count()
-
-        # Process a small batch
-        processor.search_inbox(max_inbox_limit=3)
-
-        # Get count after processing
-        count_after = db_session.query(ConversationLog).count()
-
-        # Verify conversations were stored (or already existed)
-        assert count_after >= count_before, "Conversation count should not decrease"
-
-        logger.info(f"✅ Database has {count_after} conversations (added {count_after - count_before})")
-
-        return True
-
-    def test_conversation_parsing() -> None:
-        """Test conversation data is parsed correctly from API."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Process a small batch and check database
-        processor.search_inbox(max_inbox_limit=2)
-
-        # Get a conversation from database
-        db_session = sm.db_session
-        conv = db_session.query(ConversationLog).first()
-
-        if conv:
-            # Verify conversation has required fields
-            assert conv.conversation_id is not None, "Conversation should have ID"
-            assert conv.direction is not None, "Conversation should have direction"
-            assert conv.updated_at is not None, "Conversation should have timestamp"
-
-            logger.info(f"✅ Parsed conversation {conv.conversation_id} with direction {conv.direction}")
-        else:
-            logger.info("⚠️ No conversations in database (inbox may be empty)")
-
-        return True
-
-    def test_ai_classification() -> None:
-        """Test AI classification of messages."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Process conversations with AI classification
-        result = processor.search_inbox(max_inbox_limit=3)
-
-        # Check if any AI classifications were attempted
-        ai_classified = result.get("ai_classifications", 0)
-
-        # AI classification may be 0 if no new messages or if messages already classified
-        assert ai_classified >= 0, "AI classifications should be non-negative"
-
-        logger.info(f"✅ AI classified {ai_classified} messages")
-
-        return True
-
-    def test_person_status_updates() -> None:
-        """Test person status updates from conversations."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Process conversations
-        result = processor.search_inbox(max_inbox_limit=3)
-
-        # Check if any person status updates were made
-        status_updates = result.get("person_updates", 0)
-
-        # Status updates may be 0 if no new conversations or if statuses already set
-        assert status_updates >= 0, "Person status updates should be non-negative"
-
-        logger.info(f"✅ Made {status_updates} person status updates")
-
-        return True
-
-    def test_stop_on_unchanged_conversation() -> None:
-        """Test processing stops when encountering unchanged conversation (comparator match)."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # First run: process some conversations
-        result1 = processor.search_inbox(max_inbox_limit=5)
-        processed1 = result1.get("conversations_processed", 0)
-
-        # Second run: should stop early when encountering unchanged conversations
-        # (assuming inbox hasn't changed between runs)
-        result2 = processor.search_inbox(max_inbox_limit=5)
-        processed2 = result2.get("conversations_processed", 0)
-
-        # Second run should process fewer or equal conversations
-        # (stops when comparator detects no changes)
-        assert processed2 <= processed1, \
-            f"Second run should process <= conversations (got {processed2} vs {processed1})"
-
-        logger.info(f"✅ First run: {processed1} conversations, Second run: {processed2} conversations")
-        logger.info("✅ Comparator logic working (stops on unchanged conversations)")
-
-        return True
-
-    def test_summary_logging() -> None:
-        """Test summary logging produces expected output."""
-        if skip_live_tests:
-            logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
-            return True
-
-        sm = _ensure_session_for_tests()
-        processor = InboxProcessor(sm)
-
-        # Process conversations and verify summary is logged
-        result = processor.search_inbox(max_inbox_limit=3)
-
-        # Verify result has expected keys
-        assert "conversations_processed" in result, "Result should have conversations_processed"
-        assert "conversations_fetched" in result, "Result should have conversations_fetched"
-
-        logger.info(f"✅ Summary: {result['conversations_processed']} processed, "
-                   f"{result['conversations_fetched']} fetched")
-
-        return True
-
-    def test_error_recovery() -> None:
-        """Test error recovery mechanisms."""
-        sm = MagicMock()
-        processor = InboxProcessor(sm)
-
-        # Test state initialization
-        state = processor._initialize_loop_state()
-
-        # Verify error tracking fields exist
-        assert "session_deaths" in state, "State should track session deaths"
-        assert "session_recoveries" in state, "State should track session recoveries"
-        assert state["session_deaths"] == 0, "Should start with 0 session deaths"
-        assert state["session_recoveries"] == 0, "Should start with 0 session recoveries"
-
-        logger.info("✅ Error recovery state initialized correctly")
-
-        return True
-
     with suppress_logging():
         suite.run_test(
             test_name="Class and method availability",
-            test_func=test_class_and_methods_available,
+            test_func=_test_class_and_methods_available,
             test_summary="Module structure",
             functions_tested="InboxProcessor, search_inbox, _process_inbox_loop",
             method_description="Check class and method existence",
@@ -2755,7 +2777,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Inbox processor initialization",
-            test_func=test_inbox_processor_initialization,
+            test_func=_test_inbox_processor_initialization,
             test_summary="SessionManager integration",
             functions_tested="InboxProcessor.__init__",
             method_description="Initialize processor with authenticated session",
@@ -2763,7 +2785,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Fetch first page conversations",
-            test_func=test_fetch_first_page_conversations,
+            test_func=_test_fetch_first_page_conversations,
             test_summary="API conversation fetching",
             functions_tested="search_inbox",
             method_description="Fetch conversations from Ancestry API",
@@ -2771,7 +2793,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Conversation database storage",
-            test_func=test_conversation_database_storage,
+            test_func=_test_conversation_database_storage,
             test_summary="Database synchronization",
             functions_tested="search_inbox, ConversationLog",
             method_description="Store conversations in database",
@@ -2779,7 +2801,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Conversation parsing",
-            test_func=test_conversation_parsing,
+            test_func=_test_conversation_parsing,
             test_summary="API data parsing",
             functions_tested="search_inbox, ConversationLog",
             method_description="Parse conversation data from API response",
@@ -2787,7 +2809,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="AI classification",
-            test_func=test_ai_classification,
+            test_func=_test_ai_classification,
             test_summary="AI-powered message classification",
             functions_tested="search_inbox, classify_message_intent",
             method_description="Classify messages with AI",
@@ -2795,7 +2817,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Person status updates",
-            test_func=test_person_status_updates,
+            test_func=_test_person_status_updates,
             test_summary="Person status synchronization",
             functions_tested="search_inbox, Person",
             method_description="Update person status from conversations",
@@ -2803,7 +2825,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Stop on unchanged conversation",
-            test_func=test_stop_on_unchanged_conversation,
+            test_func=_test_stop_on_unchanged_conversation,
             test_summary="Comparator logic (stop when no changes)",
             functions_tested="search_inbox, comparator",
             method_description="Stop processing when conversation unchanged",
@@ -2811,7 +2833,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Summary logging",
-            test_func=test_summary_logging,
+            test_func=_test_summary_logging,
             test_summary="Result summary",
             functions_tested="search_inbox, _log_unified_summary",
             method_description="Log processing summary",
@@ -2819,7 +2841,7 @@ def action7_inbox_module_tests() -> bool:
         )
         suite.run_test(
             test_name="Error recovery",
-            test_func=test_error_recovery,
+            test_func=_test_error_recovery,
             test_summary="Error recovery mechanisms",
             functions_tested="_initialize_loop_state",
             method_description="Test error recovery state tracking",
