@@ -1646,12 +1646,14 @@ class InboxProcessor:
             logger.debug(f"Created IN message log entry for conversation {api_conv_id}")
 
             # Track analytics for received message
-            self._track_message_analytics(
-                session=session,
-                people_id=people_id,
-                direction=MessageDirectionEnum.IN,
-                ai_sentiment=ai_sentiment_result,
-            )
+            db_session = self.session_manager.get_db_conn()
+            if db_session:
+                self._track_message_analytics(
+                    session=db_session,
+                    people_id=people_id,
+                    direction=MessageDirectionEnum.IN,
+                    ai_sentiment=ai_sentiment_result,
+                )
 
             self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
         else:
@@ -1686,11 +1688,13 @@ class InboxProcessor:
             logger.debug(f"Created OUT message log entry for conversation {api_conv_id}")
 
             # Track analytics for sent message
-            self._track_message_analytics(
-                session=session,
-                people_id=people_id,
-                direction=MessageDirectionEnum.OUT,
-            )
+            db_session = self.session_manager.get_db_conn()
+            if db_session:
+                self._track_message_analytics(
+                    session=db_session,
+                    people_id=people_id,
+                    direction=MessageDirectionEnum.OUT,
+                )
         else:
             logger.debug(f"OUT message for {api_conv_id} is not newer than DB (API: {ctx_ts_out_aware}, DB: {db_latest_ts_out_compare})")
 
