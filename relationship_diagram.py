@@ -252,6 +252,146 @@ def test_message_formatting():
     assert "Relationship Path:" not in message_without_diagram, "Should not include diagram"
 
 
+def _test_empty_relationship_path():
+    """Test diagram generation with empty relationship path."""
+    diagram = generate_relationship_diagram(
+        "Wayne Gault",
+        "John Smith",
+        [],
+        "vertical"
+    )
+
+    assert "Wayne Gault" in diagram, "Should include person1 name"
+    assert "John Smith" in diagram, "Should include person2 name"
+    assert "→" in diagram, "Should have simple arrow for empty path"
+
+    logger.info("✓ Empty relationship path handled correctly")
+    return True
+
+
+def _test_single_step_relationship():
+    """Test diagram generation with single step relationship."""
+    path = [
+        {'name': 'Wayne Gault', 'relationship': 'self'},
+        {'name': 'Fraser Gault', 'relationship': 'father'}
+    ]
+
+    diagram = generate_relationship_diagram(
+        "Wayne Gault",
+        "Fraser Gault",
+        path,
+        "vertical"
+    )
+
+    assert "Wayne Gault" in diagram, "Should include person1 name"
+    assert "Fraser Gault" in diagram, "Should include person2 name"
+    assert len(diagram) > 10, "Should have formatted diagram"
+
+    logger.info("✓ Single step relationship diagram generated correctly")
+    return True
+
+
+def _test_invalid_diagram_style():
+    """Test diagram generation with invalid style defaults to vertical."""
+    path = [
+        {'name': 'Wayne Gault', 'relationship': 'self'},
+        {'name': 'Fraser Gault', 'relationship': 'father'}
+    ]
+
+    diagram = generate_relationship_diagram(
+        "Wayne Gault",
+        "Fraser Gault",
+        path,
+        "invalid_style"
+    )
+
+    # Should default to vertical style
+    assert "Wayne Gault" in diagram, "Should include person1 name"
+    assert "Fraser Gault" in diagram, "Should include person2 name"
+    assert len(diagram) > 10, "Should have formatted diagram"
+
+    logger.info("✓ Invalid diagram style defaults to vertical correctly")
+    return True
+
+
+def _test_all_diagram_styles():
+    """Test all three diagram styles produce different output."""
+    path = [
+        {'name': 'Wayne Gault', 'relationship': 'self'},
+        {'name': 'Fraser Gault', 'relationship': 'father'},
+        {'name': 'John Gault', 'relationship': 'grandfather'}
+    ]
+
+    vertical = generate_relationship_diagram("Wayne Gault", "John Gault", path, "vertical")
+    horizontal = generate_relationship_diagram("Wayne Gault", "John Gault", path, "horizontal")
+    compact = generate_relationship_diagram("Wayne Gault", "John Gault", path, "compact")
+
+    # All should contain the names
+    for diagram in [vertical, horizontal, compact]:
+        assert "Wayne Gault" in diagram, "Should include person1 name"
+        assert "John Gault" in diagram, "Should include person2 name"
+
+    # They should be different (different formatting)
+    assert vertical != horizontal, "Vertical and horizontal should differ"
+    assert vertical != compact, "Vertical and compact should differ"
+    assert horizontal != compact, "Horizontal and compact should differ"
+
+    logger.info("✓ All diagram styles produce different output correctly")
+    return True
+
+
+def _test_format_relationship_simple():
+    """Test simple relationship formatting for messages."""
+    path = [
+        {'name': 'Wayne Gault', 'relationship': 'self'},
+        {'name': 'Fraser Gault', 'relationship': 'father'}
+    ]
+
+    formatted = format_relationship_for_message("Wayne Gault", "Fraser Gault", path)
+
+    assert isinstance(formatted, str), "Should return string"
+    assert "Wayne Gault" in formatted, "Should include person1 name"
+    assert "Fraser Gault" in formatted, "Should include person2 name"
+    assert "father" in formatted.lower(), "Should mention relationship"
+
+    logger.info("✓ Simple relationship formatted correctly for message")
+    return True
+
+
+def _test_format_relationship_complex():
+    """Test complex relationship formatting for messages."""
+    path = [
+        {'name': 'Wayne Gault', 'relationship': 'self'},
+        {'name': 'Fraser Gault', 'relationship': 'father'},
+        {'name': 'John Gault', 'relationship': 'grandfather'},
+        {'name': 'Mary Smith', 'relationship': 'grandmother'},
+        {'name': 'Jane Smith', 'relationship': 'aunt'}
+    ]
+
+    formatted = format_relationship_for_message("Wayne Gault", "Jane Smith", path)
+
+    assert isinstance(formatted, str), "Should return string"
+    assert "Wayne Gault" in formatted, "Should include person1 name"
+    assert "Jane Smith" in formatted, "Should include person2 name"
+    assert len(formatted) > 20, "Should have detailed description"
+
+    logger.info("✓ Complex relationship formatted correctly for message")
+    return True
+
+
+def _test_format_relationship_empty_path():
+    """Test relationship formatting with empty path."""
+    formatted = format_relationship_for_message("Wayne Gault", "John Smith", [])
+
+    assert isinstance(formatted, str), "Should return string"
+    assert "John Smith" in formatted, "Should include person2 name"
+    assert "related" in formatted.lower(), "Should mention relationship"
+    assert "haven't determined" in formatted or "not determined" in formatted, "Should indicate path unknown"
+
+    logger.info("✓ Empty path relationship formatted correctly")
+    return True
+
+
 def relationship_diagram_module_tests() -> bool:
     """Run all relationship diagram tests."""
     from test_framework import TestSuite, suppress_logging
@@ -260,6 +400,41 @@ def relationship_diagram_module_tests() -> bool:
     suite.start_suite()
 
     with suppress_logging():
+        # Edge case tests
+        suite.run_test(
+            "Empty relationship path",
+            _test_empty_relationship_path,
+            "Empty relationship path handled correctly",
+            "Test diagram generation with empty relationship path",
+            "Verify simple arrow format for empty path"
+        )
+
+        suite.run_test(
+            "Single step relationship",
+            _test_single_step_relationship,
+            "Single step relationship diagram generated correctly",
+            "Test diagram generation with single step relationship",
+            "Verify diagram with just two people (self and one relation)"
+        )
+
+        suite.run_test(
+            "Invalid diagram style",
+            _test_invalid_diagram_style,
+            "Invalid diagram style defaults to vertical correctly",
+            "Test diagram generation with invalid style",
+            "Verify invalid style defaults to vertical format"
+        )
+
+        # Style comparison test
+        suite.run_test(
+            "All diagram styles",
+            _test_all_diagram_styles,
+            "All diagram styles produce different output correctly",
+            "Test all three diagram styles produce different output",
+            "Verify vertical, horizontal, and compact styles are distinct"
+        )
+
+        # Original tests
         suite.run_test(
             "Vertical diagram generation",
             test_vertical_diagram,
@@ -282,6 +457,31 @@ def relationship_diagram_module_tests() -> bool:
             "Compact diagrams generated correctly for various path lengths",
             "Test compact relationship diagram generation",
             "Testing compact diagram with generation count for long paths"
+        )
+
+        # Message formatting tests
+        suite.run_test(
+            "Simple relationship formatting",
+            _test_format_relationship_simple,
+            "Simple relationship formatted correctly for message",
+            "Test simple relationship formatting for messages",
+            "Verify formatting with single relationship step"
+        )
+
+        suite.run_test(
+            "Complex relationship formatting",
+            _test_format_relationship_complex,
+            "Complex relationship formatted correctly for message",
+            "Test complex relationship formatting for messages",
+            "Verify formatting with multiple relationship steps"
+        )
+
+        suite.run_test(
+            "Empty path relationship formatting",
+            _test_format_relationship_empty_path,
+            "Empty path relationship formatted correctly",
+            "Test relationship formatting with empty path",
+            "Verify formatting handles empty path gracefully"
         )
 
         suite.run_test(
