@@ -33,6 +33,54 @@ except ImportError as e:
 CACHE_EXPIRATION_HOURS = 24
 
 
+def _validate_profile_owner(session: Session, profile_id: str) -> bool:
+    """Validate profile owner exists or is tree owner."""
+    owner = session.query(Person).filter(Person.profile_id == profile_id).first()
+    if owner:
+        return True
+
+    # Check if this is the tree owner (not a DNA match)
+    tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+    if profile_id == tree_owner_id:
+        logger.debug(f"Profile {profile_id} is tree owner (not in DNA matches) - calculating global statistics")
+        return True
+
+    logger.warning(f"No Person record found for profile_id={profile_id}")
+    return False
+
+
+def _calculate_match_counts(session: Session) -> tuple[int, int, int]:
+    """Calculate total, in-tree, and out-of-tree match counts."""
+    total_matches = session.query(func.count(DnaMatch.people_id)).scalar() or 0
+    in_tree_count = (
+        session.query(func.count(Person.id))
+        .filter(Person.in_my_tree == 1)
+        .scalar() or 0
+    )
+    out_tree_count = total_matches - in_tree_count
+    return total_matches, in_tree_count, out_tree_count
+
+
+def _calculate_relationship_tiers(session: Session) -> tuple[int, int, int]:
+    """Calculate close, moderate, and distant match counts based on cM DNA shared."""
+    close_matches = (
+        session.query(func.count(DnaMatch.people_id))
+        .filter(DnaMatch.cm_dna >= 100)
+        .scalar() or 0
+    )
+    moderate_matches = (
+        session.query(func.count(DnaMatch.people_id))
+        .filter(DnaMatch.cm_dna >= 20, DnaMatch.cm_dna < 100)
+        .scalar() or 0
+    )
+    distant_matches = (
+        session.query(func.count(DnaMatch.people_id))
+        .filter(DnaMatch.cm_dna < 20)
+        .scalar() or 0
+    )
+    return close_matches, moderate_matches, distant_matches
+
+
 def calculate_tree_statistics(
     session: Session,
     profile_id: str,
@@ -80,46 +128,15 @@ def calculate_tree_statistics(
                 logger.debug(f"Using cached tree statistics (age: {age_hours:.1f}h)")
                 return cached
 
-        # Get the tree owner's Person record
-        owner = session.query(Person).filter(Person.profile_id == profile_id).first()
-        if not owner:
-            # Check if this is the tree owner (not a DNA match)
-            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
-            if profile_id == tree_owner_id:
-                logger.debug(f"Profile {profile_id} is tree owner (not in DNA matches) - calculating global statistics")
-                # Continue with statistics calculation without owner record
-                # Tree owner won't have a Person record since they're not a DNA match to themselves
-            else:
-                logger.warning(f"No Person record found for profile_id={profile_id}")
-                return _empty_statistics(profile_id)
+        # Validate profile owner
+        if not _validate_profile_owner(session, profile_id):
+            return _empty_statistics(profile_id)
 
-        # Total DNA matches
-        total_matches = session.query(func.count(DnaMatch.people_id)).scalar() or 0
+        # Calculate match counts
+        total_matches, in_tree_count, out_tree_count = _calculate_match_counts(session)
 
-        # In-tree vs out-of-tree counts
-        in_tree_count = (
-            session.query(func.count(Person.id))
-            .filter(Person.in_my_tree == 1)
-            .scalar() or 0
-        )
-        out_tree_count = total_matches - in_tree_count
-
-        # Relationship tier counts (based on cM DNA shared)
-        close_matches = (
-            session.query(func.count(DnaMatch.people_id))
-            .filter(DnaMatch.cm_dna >= 100)
-            .scalar() or 0
-        )
-        moderate_matches = (
-            session.query(func.count(DnaMatch.people_id))
-            .filter(DnaMatch.cm_dna >= 20, DnaMatch.cm_dna < 100)
-            .scalar() or 0
-        )
-        distant_matches = (
-            session.query(func.count(DnaMatch.people_id))
-            .filter(DnaMatch.cm_dna < 20)
-            .scalar() or 0
-        )
+        # Calculate relationship tiers
+        close_matches, moderate_matches, distant_matches = _calculate_relationship_tiers(session)
 
         # Ethnicity distribution
         ethnicity_regions = _calculate_ethnicity_distribution(session)
@@ -304,6 +321,74 @@ def _empty_statistics(profile_id: str) -> dict[str, Any]:
     }
 
 
+def _get_ethnicity_columns() -> list[str]:
+    """Get list of ethnicity column names from DnaMatch table."""
+    from sqlalchemy import inspect
+    inspector = inspect(DnaMatch)
+    excluded_columns = {
+        'people_id', 'cm_dna', 'predicted_relationship',
+        'relationship_confidence', 'starred', 'viewed',
+        'note', 'tree_size', 'common_ancestors',
+        'shared_matches_count', 'created_at', 'updated_at'
+    }
+    return [col.name for col in inspector.columns if col.name not in excluded_columns]
+
+
+def _compare_ethnicity_regions(
+    owner_dna: DnaMatch,
+    match_dna: DnaMatch,
+    ethnicity_columns: list[str]
+) -> tuple[list[str], dict[str, dict]]:
+    """Compare ethnicity regions between owner and match."""
+    shared_regions = []
+    region_details = {}
+
+    for region in ethnicity_columns:
+        owner_pct = getattr(owner_dna, region, None)
+        match_pct = getattr(match_dna, region, None)
+
+        if owner_pct is not None and match_pct is not None:
+            try:
+                owner_pct_float = float(owner_pct)
+                match_pct_float = float(match_pct)
+
+                if owner_pct_float > 0 and match_pct_float > 0:
+                    shared_regions.append(region)
+                    region_details[region] = {
+                        'owner_percentage': owner_pct_float,
+                        'match_percentage': match_pct_float,
+                        'difference': abs(owner_pct_float - match_pct_float)
+                    }
+            except (ValueError, TypeError):
+                # Skip regions with invalid percentage values
+                continue
+
+    return shared_regions, region_details
+
+
+def _calculate_similarity_score(region_details: dict[str, dict]) -> float:
+    """Calculate ethnicity similarity score from region details."""
+    if not region_details:
+        return 0.0
+
+    total_shared = sum(
+        min(details['owner_percentage'], details['match_percentage'])
+        for details in region_details.values()
+    )
+    return total_shared
+
+
+def _find_top_shared_region(region_details: dict[str, dict]) -> Optional[str]:
+    """Find the region with highest combined percentage."""
+    if not region_details:
+        return None
+
+    return max(
+        region_details.keys(),
+        key=lambda r: region_details[r]['owner_percentage'] + region_details[r]['match_percentage']
+    )
+
+
 def calculate_ethnicity_commonality(
     session: Session,
     owner_profile_id: str,
@@ -355,60 +440,15 @@ def calculate_ethnicity_commonality(
             logger.debug("No DNA data available for comparison")
             return _empty_ethnicity_commonality()
 
-        # Compare ethnicity regions
-        shared_regions = []
-        region_details = {}
+        # Get ethnicity columns and compare regions
+        ethnicity_columns = _get_ethnicity_columns()
+        shared_regions, region_details = _compare_ethnicity_regions(
+            owner_dna, match_dna, ethnicity_columns
+        )
 
-        # Get ethnicity columns
-        from sqlalchemy import inspect
-        inspector = inspect(DnaMatch)
-        ethnicity_columns = [
-            col.name for col in inspector.columns
-            if col.name not in [
-                'people_id', 'cm_dna', 'predicted_relationship',
-                'relationship_confidence', 'starred', 'viewed',
-                'note', 'tree_size', 'common_ancestors',
-                'shared_matches_count', 'created_at', 'updated_at'
-            ]
-        ]
-
-        # Compare each region
-        for region in ethnicity_columns:
-            owner_pct = getattr(owner_dna, region, None)
-            match_pct = getattr(match_dna, region, None)
-
-            if owner_pct is not None and match_pct is not None:
-                try:
-                    owner_pct_float = float(owner_pct)
-                    match_pct_float = float(match_pct)
-
-                    if owner_pct_float > 0 and match_pct_float > 0:
-                        shared_regions.append(region)
-                        region_details[region] = {
-                            'owner_percentage': owner_pct_float,
-                            'match_percentage': match_pct_float,
-                            'difference': abs(owner_pct_float - match_pct_float)
-                        }
-                except (ValueError, TypeError):
-                    # Skip regions with invalid percentage values
-                    continue
-
-        # Calculate similarity score (simple average of shared percentages)
-        similarity_score = 0.0
-        if shared_regions:
-            total_shared = sum(
-                min(details['owner_percentage'], details['match_percentage'])
-                for details in region_details.values()
-            )
-            similarity_score = total_shared
-
-        # Find top shared region
-        top_shared_region = None
-        if region_details:
-            top_shared_region = max(
-                region_details.keys(),
-                key=lambda r: region_details[r]['owner_percentage'] + region_details[r]['match_percentage']
-            )
+        # Calculate similarity score and find top region
+        similarity_score = _calculate_similarity_score(region_details)
+        top_shared_region = _find_top_shared_region(region_details)
 
         result = {
             'shared_regions': shared_regions,
