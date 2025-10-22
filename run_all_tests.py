@@ -393,7 +393,7 @@ def _should_skip_system_file(python_file: Path) -> bool:
 
 
 def _should_skip_cache_or_temp_file(python_file: Path) -> bool:
-    """Check if file should be skipped (cache, backup, temp, venv)."""
+    """Check if file should be skipped (cache, backup, temp, venv, archive)."""
     file_path_str = str(python_file)
     return (
         "__pycache__" in file_path_str
@@ -406,6 +406,7 @@ def _should_skip_cache_or_temp_file(python_file: Path) -> bool:
         or "site-packages" in file_path_str
         or "Cache" in file_path_str
         or "Logs" in file_path_str
+        or "archive" in file_path_str
     )
 
 
