@@ -46,40 +46,23 @@ def get_unified_search_criteria(
 
     # Gender
     gender_input = _sanitize_input(get_input_func("  Gender (M/F): "))
-    gender = None
-    if gender_input and gender_input[0].lower() in ["m", "f"]:
-        gender = gender_input[0].lower()
+    gender = _parse_gender_input(gender_input) if gender_input else None
 
     # Birth year
-    birth_year_str = get_input_func("  Birth Year (YYYY): ").strip()
-    birth_year = int(birth_year_str) if birth_year_str.isdigit() else None
+    birth_year = _parse_year_input(get_input_func("  Birth Year (YYYY): "))
 
     # Birth place
     birth_place = _sanitize_input(get_input_func("  Birth Place Contains: "))
 
     # Death year (optional)
-    death_year_str = get_input_func("  Death Year (YYYY) [Optional]: ").strip()
-    death_year = int(death_year_str) if death_year_str.isdigit() else None
+    death_year = _parse_year_input(get_input_func("  Death Year (YYYY) [Optional]: "))
 
     # Death place (optional)
     death_place = _sanitize_input(get_input_func("  Death Place Contains [Optional]: "))
 
     # Create date objects
-    birth_date_obj = None
-    if birth_year:
-        try:
-            birth_date_obj = datetime(birth_year, 1, 1, tzinfo=timezone.utc)
-        except ValueError:
-            logger.warning(f"Cannot create date object for birth year {birth_year}.")
-            birth_year = None
-
-    death_date_obj = None
-    if death_year:
-        try:
-            death_date_obj = datetime(death_year, 1, 1, tzinfo=timezone.utc)
-        except ValueError:
-            logger.warning(f"Cannot create date object for death year {death_year}.")
-            death_year = None
+    birth_date_obj = _create_date_object(birth_year, "birth")
+    death_date_obj = _create_date_object(death_year, "death")
 
     # Build standardized criteria dictionary
     criteria = {
@@ -111,6 +94,57 @@ def _sanitize_input(value: str) -> Optional[str]:
     return sanitized if sanitized else None
 
 
+def _parse_year_input(year_str: str) -> Optional[int]:
+    """Parse year input string to integer."""
+    return int(year_str) if year_str.strip().isdigit() else None
+
+
+def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetime]:
+    """Create datetime object from year, with error handling."""
+    if not year:
+        return None
+    try:
+        return datetime(year, 1, 1, tzinfo=timezone.utc)
+    except ValueError:
+        logger.warning(f"Cannot create date object for {date_type} year {year}.")
+        return None
+
+
+def _parse_gender_input(gender_input: str) -> Optional[str]:
+    """Parse gender input to standardized format."""
+    if gender_input and gender_input[0].lower() in ["m", "f"]:
+        return gender_input[0].lower()
+    return None
+
+
+def _format_years_display(birth_year: Optional[int], death_year: Optional[int]) -> str:
+    """Format birth and death years for display."""
+    if birth_year and death_year:
+        return f" ({birth_year}-{death_year})"
+    elif birth_year:
+        return f" (b. {birth_year})"
+    elif death_year:
+        return f" (d. {death_year})"
+    return ""
+
+
+def _print_section_header(label: str, is_first: bool) -> None:
+    """Print section header with appropriate spacing."""
+    if is_first:
+        print(f"{label}:")
+    else:
+        print(f"\n{label}:")
+
+
+def _print_family_member(member: dict) -> None:
+    """Print a single family member's information."""
+    name = member.get("name", "Unknown")
+    birth_year = member.get("birth_year")
+    death_year = member.get("death_year")
+    years_display = _format_years_display(birth_year, death_year)
+    print(f"   - {name}{years_display}")
+
+
 def display_family_members(
     family_data: dict[str, list],
     relation_labels: Optional[dict[str, str]] = None
@@ -135,34 +169,14 @@ def display_family_members(
     for relation_key, label in relation_labels.items():
         members = family_data.get(relation_key, [])
 
-        # Add blank line before each section except the first
-        if first_section:
-            print(f"{label}:")
-            first_section = False
-        else:
-            print(f"\n{label}:")
+        _print_section_header(label, first_section)
+        first_section = False
 
         if not members:
             print("   - None found")
             continue
 
         for member in members:
-            if not member:
-                continue
-
-            # Extract member information
-            name = member.get("name", "Unknown")
-            birth_year = member.get("birth_year")
-            death_year = member.get("death_year")
-
-            # Format years display
-            years_display = ""
-            if birth_year and death_year:
-                years_display = f" ({birth_year}-{death_year})"
-            elif birth_year:
-                years_display = f" (b. {birth_year})"
-            elif death_year:
-                years_display = f" (d. {death_year})"
-
-            print(f"   - {name}{years_display}")
+            if member:
+                _print_family_member(member)
 
