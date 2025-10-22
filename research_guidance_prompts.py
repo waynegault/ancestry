@@ -293,6 +293,185 @@ def test_brick_wall_analysis_prompt():
     assert "Scotland Birth Records" in prompt, "Should include searched collections"
 
 
+def _test_minimal_research_guidance_prompt():
+    """Test research guidance prompt with minimal parameters."""
+    prompt = create_research_guidance_prompt(person_name="Jane Doe")
+
+    assert "Jane Doe" in prompt, "Should include person name"
+    assert "Generate genealogical research guidance" in prompt, "Should include header"
+    assert "Please provide:" in prompt, "Should include request section"
+    assert "research suggestions" in prompt, "Should request research suggestions"
+
+    logger.info("✅ Minimal research guidance prompt created successfully")
+    return True
+
+
+def _test_complete_research_guidance_prompt():
+    """Test research guidance prompt with all parameters."""
+    records = [
+        {'type': 'Birth', 'details': {'date': '1941', 'place': 'Banff, Scotland'}},
+        {'type': 'Census', 'details': {'date': '1951', 'place': 'Aberdeen, Scotland'}}
+    ]
+
+    prompt = create_research_guidance_prompt(
+        person_name="Fraser Gault",
+        relationship="father",
+        shared_dna_cm=3400.0,
+        common_ancestors=["William Gault", "Mary Brown"],
+        missing_info=["birth certificate", "military service"],
+        available_records=records
+    )
+
+    # Verify all sections present
+    assert "Fraser Gault" in prompt, "Should include person name"
+    assert "father" in prompt, "Should include relationship"
+    assert "3400" in prompt, "Should include shared DNA"
+    assert "William Gault" in prompt, "Should include common ancestor"
+    assert "Mary Brown" in prompt, "Should include common ancestor"
+    assert "birth certificate" in prompt, "Should include missing info"
+    assert "military service" in prompt, "Should include missing info"
+    assert "Birth: 1941, Banff, Scotland" in prompt, "Should include birth record"
+    assert "Census: 1951, Aberdeen, Scotland" in prompt, "Should include census record"
+
+    logger.info("✅ Complete research guidance prompt created successfully")
+    return True
+
+
+def _test_research_guidance_prompt_structure():
+    """Test research guidance prompt structure and formatting."""
+    prompt = create_research_guidance_prompt(
+        person_name="Test Person",
+        missing_info=["birth date", "death place"]
+    )
+
+    # Verify structure
+    lines = prompt.split('\n')
+    assert len(lines) > 5, "Should have multiple lines"
+    assert lines[0] == "Generate genealogical research guidance for the following person:", "Should have correct header"
+    assert any("Person: Test Person" in line for line in lines), "Should have person line"
+    assert any("Missing Information:" in line for line in lines), "Should have missing info section"
+    assert any("Please provide:" in line for line in lines), "Should have request section"
+
+    logger.info("✅ Research guidance prompt structure validated")
+    return True
+
+
+def _test_minimal_conversation_response_prompt():
+    """Test conversation response prompt with minimal parameters."""
+    prompt = create_conversation_response_prompt(
+        person_name="John Smith",
+        their_message="Hello, I think we might be related."
+    )
+
+    assert "John Smith" in prompt, "Should include person name"
+    assert "Hello, I think we might be related" in prompt, "Should include their message"
+    assert "Generate a helpful, friendly response" in prompt, "Should include response request"
+    assert "Please generate a response" in prompt, "Should include response instructions"
+
+    logger.info("✅ Minimal conversation response prompt created successfully")
+    return True
+
+
+def _test_complete_conversation_response_prompt():
+    """Test conversation response prompt with all parameters."""
+    prompt = create_conversation_response_prompt(
+        person_name="John Smith",
+        their_message="Do you have any information about William Gault?",
+        conversation_context="We previously discussed the Gault family tree.",
+        relationship_info={'relationship': '2nd cousin', 'shared_dna_cm': 212.0}
+    )
+
+    # Verify all sections present
+    assert "John Smith" in prompt, "Should include person name"
+    assert "William Gault" in prompt, "Should include their message content"
+    assert "2nd cousin" in prompt, "Should include relationship"
+    assert "212" in prompt, "Should include shared DNA"
+    assert "We previously discussed" in prompt, "Should include conversation context"
+    assert "Please generate a response" in prompt, "Should include response instructions"
+
+    logger.info("✅ Complete conversation response prompt created successfully")
+    return True
+
+
+def _test_conversation_response_prompt_structure():
+    """Test conversation response prompt structure."""
+    prompt = create_conversation_response_prompt(
+        person_name="Test Person",
+        their_message="Test message"
+    )
+
+    # Verify structure
+    lines = prompt.split('\n')
+    assert len(lines) > 3, "Should have multiple lines"
+    assert any("generate a response" in line.lower() for line in lines), "Should request response generation"
+    assert "Test Person" in prompt, "Should include person name"
+    assert "Test message" in prompt, "Should include their message"
+    assert "DNA Match:" in prompt, "Should have DNA Match label"
+    assert "Their Message:" in prompt, "Should have Their Message label"
+
+    logger.info("✅ Conversation response prompt structure validated")
+    return True
+
+
+def _test_minimal_brick_wall_analysis_prompt():
+    """Test brick wall analysis prompt with minimal parameters."""
+    prompt = create_brick_wall_analysis_prompt(
+        ancestor_name="William Gault",
+        known_facts=["Born 1875"],
+        unknown_facts=["Death date"]
+    )
+
+    assert "William Gault" in prompt, "Should include ancestor name"
+    assert "Born 1875" in prompt, "Should include known facts"
+    assert "Death date" in prompt, "Should include unknown facts"
+    assert "brick wall" in prompt.lower(), "Should mention brick wall"
+
+    logger.info("✅ Minimal brick wall analysis prompt created successfully")
+    return True
+
+
+def _test_complete_brick_wall_analysis_prompt():
+    """Test brick wall analysis prompt with all parameters."""
+    prompt = create_brick_wall_analysis_prompt(
+        ancestor_name="William Gault",
+        known_facts=["Born 1875 in Banff", "Married Mary Brown 1895", "Had 5 children"],
+        unknown_facts=["Death date", "Death place", "Occupation", "Parents' names"],
+        searched_collections=["Scotland Birth Records", "Scotland Census 1881-1901", "Scotland Death Records"]
+    )
+
+    # Verify all sections present
+    assert "William Gault" in prompt, "Should include ancestor name"
+    assert "Born 1875" in prompt, "Should include known facts"
+    assert "Married Mary Brown" in prompt, "Should include known facts"
+    assert "Death date" in prompt, "Should include unknown facts"
+    assert "Occupation" in prompt, "Should include unknown facts"
+    assert "Scotland Birth Records" in prompt, "Should include searched collections"
+    assert "Scotland Census" in prompt, "Should include searched collections"
+
+    logger.info("✅ Complete brick wall analysis prompt created successfully")
+    return True
+
+
+def _test_brick_wall_analysis_prompt_structure():
+    """Test brick wall analysis prompt structure."""
+    prompt = create_brick_wall_analysis_prompt(
+        ancestor_name="Test Ancestor",
+        known_facts=["Fact 1"],
+        unknown_facts=["Unknown 1"]
+    )
+
+    # Verify structure
+    lines = prompt.split('\n')
+    assert len(lines) > 5, "Should have multiple lines"
+    assert any("brick wall" in line.lower() for line in lines), "Should mention brick wall"
+    assert "Test Ancestor" in prompt, "Should include ancestor name"
+    assert "Fact 1" in prompt, "Should include known facts"
+    assert "Unknown 1" in prompt, "Should include unknown facts"
+
+    logger.info("✅ Brick wall analysis prompt structure validated")
+    return True
+
+
 def research_guidance_prompts_module_tests() -> bool:
     """Run all research guidance prompts tests."""
     from test_framework import TestSuite, suppress_logging
@@ -301,6 +480,31 @@ def research_guidance_prompts_module_tests() -> bool:
     suite.start_suite()
 
     with suppress_logging():
+        # Research guidance prompt tests
+        suite.run_test(
+            "Minimal research guidance prompt",
+            _test_minimal_research_guidance_prompt,
+            "Minimal research guidance prompt created successfully",
+            "Test research guidance prompt with minimal parameters",
+            "Verify prompt with only person name"
+        )
+
+        suite.run_test(
+            "Complete research guidance prompt",
+            _test_complete_research_guidance_prompt,
+            "Complete research guidance prompt created successfully",
+            "Test research guidance prompt with all parameters",
+            "Verify prompt with all sections: person, relationship, DNA, ancestors, missing info, records"
+        )
+
+        suite.run_test(
+            "Research guidance prompt structure",
+            _test_research_guidance_prompt_structure,
+            "Research guidance prompt structure validated",
+            "Test research guidance prompt structure and formatting",
+            "Verify prompt has correct header, sections, and formatting"
+        )
+
         suite.run_test(
             "Basic research guidance prompt",
             test_basic_research_guidance_prompt,
@@ -325,12 +529,62 @@ def research_guidance_prompts_module_tests() -> bool:
             "Testing record inclusion in prompts"
         )
 
+        # Conversation response prompt tests
+        suite.run_test(
+            "Minimal conversation response prompt",
+            _test_minimal_conversation_response_prompt,
+            "Minimal conversation response prompt created successfully",
+            "Test conversation response prompt with minimal parameters",
+            "Verify prompt with only person name and message"
+        )
+
+        suite.run_test(
+            "Complete conversation response prompt",
+            _test_complete_conversation_response_prompt,
+            "Complete conversation response prompt created successfully",
+            "Test conversation response prompt with all parameters",
+            "Verify prompt with relationship, tree info, and all details"
+        )
+
+        suite.run_test(
+            "Conversation response prompt structure",
+            _test_conversation_response_prompt_structure,
+            "Conversation response prompt structure validated",
+            "Test conversation response prompt structure",
+            "Verify prompt has correct structure and formatting"
+        )
+
         suite.run_test(
             "Conversation response prompt",
             test_conversation_response_prompt,
             "Conversation prompts created correctly",
             "Test conversation response prompt",
             "Testing conversational prompt generation"
+        )
+
+        # Brick wall analysis prompt tests
+        suite.run_test(
+            "Minimal brick wall analysis prompt",
+            _test_minimal_brick_wall_analysis_prompt,
+            "Minimal brick wall analysis prompt created successfully",
+            "Test brick wall analysis prompt with minimal parameters",
+            "Verify prompt with only ancestor name and basic facts"
+        )
+
+        suite.run_test(
+            "Complete brick wall analysis prompt",
+            _test_complete_brick_wall_analysis_prompt,
+            "Complete brick wall analysis prompt created successfully",
+            "Test brick wall analysis prompt with all parameters",
+            "Verify prompt with all facts, unknowns, and searched collections"
+        )
+
+        suite.run_test(
+            "Brick wall analysis prompt structure",
+            _test_brick_wall_analysis_prompt_structure,
+            "Brick wall analysis prompt structure validated",
+            "Test brick wall analysis prompt structure",
+            "Verify prompt has correct structure and formatting"
         )
 
         suite.run_test(
