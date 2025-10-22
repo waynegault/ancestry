@@ -178,6 +178,8 @@ def menu() -> str:
     print("10. GEDCOM Report (Local File)")
     print("11. API Report (Ancestry Online)")
     print("")
+    print("analytics. View Conversation Analytics Dashboard")
+    print("")
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
     print("")
@@ -1502,6 +1504,36 @@ def _run_credential_manager() -> None:
     input("Press Enter to continue...")
 
 
+def _show_analytics_dashboard() -> None:
+    """Display conversation analytics dashboard."""
+    try:
+        from conversation_analytics import print_analytics_dashboard
+        from core.session_manager import SessionManager
+
+        print("\n" + "=" * 80)
+        print("LOADING ANALYTICS DASHBOARD")
+        print("=" * 80)
+
+        # Get database session
+        sm = SessionManager()
+        db_session = sm.get_db_conn()
+
+        if not db_session:
+            print("✗ Failed to get database session")
+            logger.error("Failed to get database session for analytics")
+            return
+
+        # Display analytics dashboard
+        print_analytics_dashboard(db_session)
+
+    except Exception as e:
+        logger.error(f"Error displaying analytics dashboard: {e}", exc_info=True)
+        print(f"Error displaying analytics dashboard: {e}")
+
+    print("\nReturning to main menu...")
+    input("Press Enter to continue...")
+
+
 def _show_cache_statistics() -> None:
     """Show cache statistics."""
     try:
@@ -1622,7 +1654,10 @@ def _handle_test_options(choice: str) -> bool:
 
 
 def _handle_meta_options(choice: str) -> bool:
-    """Handle meta options (sec, s, t, c, q)."""
+    """Handle meta options (analytics, sec, s, t, c, q)."""
+    if choice == "analytics":
+        _show_analytics_dashboard()
+        return True
     if choice == "sec":
         _run_credential_manager()
         return True
