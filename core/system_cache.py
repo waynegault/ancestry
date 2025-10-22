@@ -748,7 +748,7 @@ def _test_cached_api_call_decorator():
     call_count = {"count": 0}
 
     @cached_api_call("test_service", ttl=60)
-    def mock_api_call(data):
+    def mock_api_call(data: str) -> dict[str, Any]:
         # Sleep to make it "expensive" so caching is beneficial
         time.sleep(0.15)
         call_count["count"] += 1
@@ -777,7 +777,7 @@ def _test_cached_database_query_decorator():
     call_count = {"count": 0}
 
     @cached_database_query(ttl=60)
-    def mock_db_query(query_id):
+    def mock_db_query(query_id: str) -> dict[str, Any]:
         call_count["count"] += 1
         return {"query_id": query_id, "results": [1, 2, 3], "call": call_count["count"]}
 
@@ -802,7 +802,7 @@ def _test_cached_database_query_decorator():
 def _test_memory_optimized_decorator():
     """Test memory_optimized decorator"""
     @memory_optimized(gc_threshold=0.5)
-    def memory_intensive_function():
+    def memory_intensive_function() -> int:
         # Create some objects
         data = [{"item": i} for i in range(1000)]
         return len(data)
@@ -873,7 +873,7 @@ def test_system_cache_performance():
     try:
         # Test API caching
         @cached_api_call("test_service", ttl=60)
-        def mock_api_call(data):
+        def mock_api_call(data: str) -> dict[str, Any]:
             time.sleep(0.1)  # Simulate API delay
             return {"processed": data, "timestamp": time.time()}
 
@@ -896,7 +896,7 @@ def test_system_cache_performance():
 
         # Test database caching
         @cached_database_query(ttl=60)
-        def mock_db_query(query_id):
+        def mock_db_query(query_id: int) -> list[dict[str, Any]]:
             time.sleep(0.05)  # Simulate DB delay
             return [{"id": query_id, "data": "test_result"}]
 
