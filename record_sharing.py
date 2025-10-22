@@ -315,6 +315,137 @@ def test_url_extraction():
     assert url_invalid is None, "Should return None for invalid URL"
 
 
+def _test_minimal_record_formatting():
+    """Test record formatting with minimal details."""
+    formatted = format_record_reference(
+        "Birth",
+        "John Smith",
+        {},
+        include_source=False
+    )
+
+    assert "John Smith" in formatted, "Should include person name"
+    assert "birth" in formatted.lower(), "Should include record type"
+
+    logger.info("✓ Minimal record formatting works correctly")
+    return True
+
+
+def _test_record_with_date_only():
+    """Test record formatting with only date."""
+    formatted = format_record_reference(
+        "Death",
+        "Mary Brown",
+        {'date': '1920'},
+        include_source=False
+    )
+
+    assert "Mary Brown" in formatted, "Should include person name"
+    assert "1920" in formatted, "Should include date"
+    assert "death" in formatted.lower(), "Should include record type"
+
+    logger.info("✓ Record with date only formatted correctly")
+    return True
+
+
+def _test_record_with_place_only():
+    """Test record formatting with only place."""
+    formatted = format_record_reference(
+        "Census",
+        "William Gault",
+        {'place': 'Aberdeen, Scotland'},
+        include_source=False
+    )
+
+    assert "William Gault" in formatted, "Should include person name"
+    assert "Aberdeen, Scotland" in formatted, "Should include place"
+    assert "census" in formatted.lower(), "Should include record type"
+
+    logger.info("✓ Record with place only formatted correctly")
+    return True
+
+
+def _test_empty_multiple_records():
+    """Test multiple records formatting with empty list."""
+    formatted = format_multiple_records("John Smith", [])
+
+    assert isinstance(formatted, str), "Should return string"
+    assert "John Smith" in formatted, "Should include person name"
+    assert "no records" in formatted.lower(), "Should indicate no records"
+
+    logger.info("✓ Empty multiple records handled correctly")
+    return True
+
+
+def _test_single_record_in_list():
+    """Test multiple records formatting with single record."""
+    records = [
+        {
+            'type': 'Birth',
+            'details': {'date': '1850', 'place': 'Scotland'}
+        }
+    ]
+
+    formatted = format_multiple_records("John Smith", records)
+
+    assert "John Smith" in formatted, "Should include person name"
+    assert "1850" in formatted, "Should include date"
+    assert "Scotland" in formatted, "Should include place"
+
+    logger.info("✓ Single record in list formatted correctly")
+    return True
+
+
+def _test_record_url_extraction_missing():
+    """Test URL extraction with missing URL."""
+    url = extract_record_url({})
+
+    assert url is None, "Should return None for missing URL"
+
+    logger.info("✓ Missing URL extraction handled correctly")
+    return True
+
+
+def _test_record_url_extraction_present():
+    """Test URL extraction with present URL."""
+    test_url = "https://www.ancestry.co.uk/test"
+    url = extract_record_url({'url': test_url})
+
+    assert url == test_url, "Should return the URL"
+
+    logger.info("✓ URL extraction works correctly")
+    return True
+
+
+def _test_record_with_link_no_url():
+    """Test record formatting with link when no URL present."""
+    formatted = format_record_with_link(
+        "Birth",
+        "Jane Doe",
+        {'date': '1900'}
+    )
+
+    assert "Jane Doe" in formatted, "Should include person name"
+    assert "1900" in formatted, "Should include date"
+
+    logger.info("✓ Record with link (no URL) formatted correctly")
+    return True
+
+
+def _test_sharing_message_minimal():
+    """Test sharing message creation with minimal parameters."""
+    message = create_record_sharing_message(
+        "John Smith",
+        []
+    )
+
+    assert isinstance(message, str), "Should return string"
+    assert "John Smith" in message, "Should include person name"
+
+    logger.info("✓ Minimal sharing message created correctly")
+    return True
+
+
 def record_sharing_module_tests() -> bool:
     """Run all record sharing tests."""
     from test_framework import TestSuite, suppress_logging
@@ -323,6 +454,80 @@ def record_sharing_module_tests() -> bool:
     suite.start_suite()
 
     with suppress_logging():
+        # Edge case tests
+        suite.run_test(
+            "Minimal record formatting",
+            _test_minimal_record_formatting,
+            "Minimal record formatting works correctly",
+            "Test record formatting with minimal details",
+            "Verify formatting with no date, place, or source"
+        )
+
+        suite.run_test(
+            "Record with date only",
+            _test_record_with_date_only,
+            "Record with date only formatted correctly",
+            "Test record formatting with only date",
+            "Verify formatting with date but no place or source"
+        )
+
+        suite.run_test(
+            "Record with place only",
+            _test_record_with_place_only,
+            "Record with place only formatted correctly",
+            "Test record formatting with only place",
+            "Verify formatting with place but no date or source"
+        )
+
+        suite.run_test(
+            "Empty multiple records",
+            _test_empty_multiple_records,
+            "Empty multiple records handled correctly",
+            "Test multiple records formatting with empty list",
+            "Verify graceful handling of empty record list"
+        )
+
+        suite.run_test(
+            "Single record in list",
+            _test_single_record_in_list,
+            "Single record in list formatted correctly",
+            "Test multiple records formatting with single record",
+            "Verify formatting with one record in list"
+        )
+
+        suite.run_test(
+            "URL extraction missing",
+            _test_record_url_extraction_missing,
+            "Missing URL extraction handled correctly",
+            "Test URL extraction with missing URL",
+            "Verify None returned for missing URL"
+        )
+
+        suite.run_test(
+            "URL extraction present",
+            _test_record_url_extraction_present,
+            "URL extraction works correctly",
+            "Test URL extraction with present URL",
+            "Verify URL returned correctly"
+        )
+
+        suite.run_test(
+            "Record with link no URL",
+            _test_record_with_link_no_url,
+            "Record with link (no URL) formatted correctly",
+            "Test record formatting with link when no URL present",
+            "Verify formatting without URL"
+        )
+
+        suite.run_test(
+            "Sharing message minimal",
+            _test_sharing_message_minimal,
+            "Minimal sharing message created correctly",
+            "Test sharing message creation with minimal parameters",
+            "Verify message with empty records list"
+        )
+
+        # Original tests
         suite.run_test(
             "Basic record reference formatting",
             test_basic_record_formatting,
