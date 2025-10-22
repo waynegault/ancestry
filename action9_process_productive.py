@@ -40,6 +40,7 @@ from ai_interface import (
 # === LOCAL IMPORTS ===
 from config import config_schema
 from connection_resilience import with_connection_resilience
+from conversation_analytics import record_engagement_event, update_conversation_metrics
 from core.error_handling import (  # type: ignore[import-not-found]
     circuit_breaker,
     error_context,
@@ -600,6 +601,7 @@ class PersonProcessor:
 
         logger.info(f"Looking up {len(mentioned_people)} mentioned people for {person.username}")
         lookup_results = []
+        people_found_count = 0
 
         for person_data in mentioned_people:
             person_name = person_data.get("name", "Unknown")
@@ -611,6 +613,28 @@ class PersonProcessor:
             if gedcom_result:
                 logger.info(f"Found {person_name} in GEDCOM with score {gedcom_result.match_score}")
                 lookup_results.append(gedcom_result)
+                people_found_count += 1
+
+                # Track analytics for successful person lookup
+                try:
+                    if self.db_state.session:
+                        record_engagement_event(
+                            session=self.db_state.session,
+                            people_id=person.id,
+                            event_type="person_lookup",
+                            event_description=f"Found {person_name} in GEDCOM (score: {gedcom_result.match_score})",
+                            event_data={"person_name": person_name, "match_score": gedcom_result.match_score, "source": "GEDCOM"},
+                        )
+
+                        update_conversation_metrics(
+                            session=self.db_state.session,
+                            people_id=person.id,
+                            person_looked_up=True,
+                            person_found=True,
+                        )
+                except Exception as analytics_error:
+                    logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
+
                 continue
 
             # If not found in GEDCOM, try API search (Action 11)
@@ -624,6 +648,27 @@ class PersonProcessor:
             )
             lookup_results.append(not_found)
 
+            # Track analytics for unsuccessful person lookup
+            try:
+                if self.db_state.session:
+                    record_engagement_event(
+                        session=self.db_state.session,
+                        people_id=person.id,
+                        event_type="person_lookup",
+                        event_description=f"Person {person_name} not found",
+                        event_data={"person_name": person_name, "source": "GEDCOM"},
+                    )
+
+                    update_conversation_metrics(
+                        session=self.db_state.session,
+                        people_id=person.id,
+                        person_looked_up=True,
+                        person_found=False,
+                    )
+            except Exception as analytics_error:
+                logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
+
+        logger.info(f"Lookup complete: {people_found_count}/{len(mentioned_people)} people found")
         return lookup_results
 
     def _load_gedcom_data(self) -> Optional[Any]:
@@ -859,6 +904,29 @@ class PersonProcessor:
                 f"people: {len(mentioned_people)}, "
                 f"questions: {len(questions)}"
             )
+
+            # Track analytics for conversation state update
+            try:
+                engagement_score_val = safe_column_value(conv_state, "engagement_score", 0)
+                conversation_phase_val = safe_column_value(conv_state, "conversation_phase", "initial_outreach")
+
+                record_engagement_event(
+                    session=self.db_state.session,
+                    people_id=person.id,
+                    event_type="score_update",
+                    event_description=f"Engagement score updated to {engagement_score_val}",
+                    engagement_score_after=engagement_score_val,
+                    conversation_phase=conversation_phase_val,
+                )
+
+                update_conversation_metrics(
+                    session=self.db_state.session,
+                    people_id=person.id,
+                    engagement_score=engagement_score_val,
+                    conversation_phase=conversation_phase_val,
+                )
+            except Exception as analytics_error:
+                logger.debug(f"{log_prefix}: Analytics tracking failed: {analytics_error}")
 
         except Exception as e:
             logger.error(f"{log_prefix}: Error updating conversation state: {e}", exc_info=True)
