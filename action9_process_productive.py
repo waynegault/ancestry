@@ -786,8 +786,10 @@ class PersonProcessor:
                 logger.debug(f"Top result score too low ({score}), rejecting")
                 return None
 
-            # TODO: Get relationship path using relationship_utils
-            relationship_path = None  # Will implement in future iteration
+            # Get relationship path using gedcom_search_utils
+            relationship_path = self._get_relationship_path_for_person(
+                gedcom_data, top_result.get("id")
+            )
 
             # Create PersonLookupResult from GEDCOM data
             return create_result_from_gedcom(
@@ -798,6 +800,55 @@ class PersonProcessor:
 
         except Exception as e:
             logger.error(f"Error searching GEDCOM for person: {e}", exc_info=True)
+            return None
+
+    def _get_relationship_path_for_person(
+        self, gedcom_data: Any, person_id: Optional[str]
+    ) -> Optional[str]:
+        """
+        Get relationship path between found person and reference person.
+
+        Args:
+            gedcom_data: Loaded GEDCOM data
+            person_id: GEDCOM ID of the person
+
+        Returns:
+            Formatted relationship path string, or None if not calculable
+        """
+        if not person_id:
+            logger.debug("No person ID provided for relationship path calculation")
+            return None
+
+        try:
+            from gedcom_search_utils import get_gedcom_relationship_path
+
+            # Get reference person ID from config
+            reference_id = (
+                config_schema.reference_person_id
+                if config_schema and config_schema.reference_person_id
+                else None
+            )
+
+            if not reference_id:
+                logger.debug("No reference person ID configured, skipping relationship path")
+                return None
+
+            # Calculate relationship path
+            relationship_path = get_gedcom_relationship_path(
+                individual_id=person_id,
+                reference_id=reference_id,
+                gedcom_data=gedcom_data,
+            )
+
+            if relationship_path and relationship_path != "(No relationship path found)":
+                logger.debug(f"Calculated relationship path for {person_id}")
+                return relationship_path
+
+            logger.debug(f"No relationship path found for {person_id}")
+            return None
+
+        except Exception as e:
+            logger.debug(f"Error calculating relationship path: {e}")
             return None
 
     def _search_api_for_person(self, person_name: str, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
