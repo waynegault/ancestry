@@ -65,7 +65,7 @@ class GenealogicalTaskGenerator:
 
         # === PHASE 12: GEDCOM AI INTEGRATION ===
         try:
-            from gedcom_ai_integration import GedcomAIIntegrator
+            from archive.gedcom_ai_integration import GedcomAIIntegrator
             self.gedcom_ai_integrator = GedcomAIIntegrator()
             self.gedcom_ai_available = True
             logger.info("GEDCOM AI integration loaded in task generator")
