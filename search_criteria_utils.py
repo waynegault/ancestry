@@ -121,9 +121,9 @@ def _format_years_display(birth_year: Optional[int], death_year: Optional[int]) 
     """Format birth and death years for display."""
     if birth_year and death_year:
         return f" ({birth_year}-{death_year})"
-    elif birth_year:
+    if birth_year:
         return f" (b. {birth_year})"
-    elif death_year:
+    if death_year:
         return f" (d. {death_year})"
     return ""
 
