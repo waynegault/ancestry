@@ -1379,27 +1379,6 @@ def _print_basic_summary(
     print(f"📈 Success Rate: {success_rate:.1f}%")
 
 
-def _collect_violations(all_metrics: list[Any]) -> list[str]:
-    """Collect all violations from metrics."""
-    all_violations = []
-    for m in all_metrics:
-        if m.quality_metrics and m.quality_metrics.violations:
-            all_violations.extend(m.quality_metrics.violations)
-    return all_violations
-
-
-def _print_violation_summary(all_violations: list[str]) -> None:
-    """Print summary of violation types."""
-    violation_types = {}
-    for violation in all_violations:
-        vtype = _categorize_violation(violation)
-        violation_types[vtype] = violation_types.get(vtype, 0) + 1
-
-    print("   📋 Common Issues:")
-    for vtype, count in sorted(violation_types.items(), key=lambda x: x[1], reverse=True):
-        print(f"      {vtype}: {count} violations")
-
-
 def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
     """
     Print performance metrics and analysis.

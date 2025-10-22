@@ -371,14 +371,6 @@ def _test_search_input_optional_fields() -> None:
 
 def _test_run_action10_search_structure() -> None:
     """Test run_action10_search builds proper search criteria."""
-    criteria = {
-        "first_name": "Fraser",
-        "surname": "Gault",
-        "birth_year": "1960",
-        "birth_place": "Banff, Scotland",
-        "gender": "M"
-    }
-
     # We can't run the actual search without GEDCOM file, but we can verify
     # the function exists and has proper signature
     import inspect
@@ -391,14 +383,6 @@ def _test_run_action10_search_structure() -> None:
 
 def _test_run_action11_search_structure() -> None:
     """Test run_action11_search builds proper search criteria."""
-    criteria = {
-        "first_name": "Fraser",
-        "surname": "Gault",
-        "birth_year": "1960",
-        "birth_place": "Banff, Scotland",
-        "gender": "M"
-    }
-
     # Verify function signature
     import inspect
     sig = inspect.signature(run_action11_search)

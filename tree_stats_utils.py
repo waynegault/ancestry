@@ -371,11 +371,10 @@ def _calculate_similarity_score(region_details: dict[str, dict]) -> float:
     if not region_details:
         return 0.0
 
-    total_shared = sum(
+    return sum(
         min(details['owner_percentage'], details['match_percentage'])
         for details in region_details.values()
     )
-    return total_shared
 
 
 def _find_top_shared_region(region_details: dict[str, dict]) -> Optional[str]:
@@ -504,9 +503,11 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             # Use tree owner profile_id (won't be in DNA matches)
             tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            assert tree_owner_id is not None, "Tree owner ID should not be None"
             stats = calculate_tree_statistics(session, tree_owner_id)
 
             # Verify structure
@@ -531,6 +532,7 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             # Use invalid profile_id
             stats = calculate_tree_statistics(session, 'invalid-profile-id-12345')
@@ -568,8 +570,10 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            assert tree_owner_id is not None, "Tree owner ID should not be None"
 
             # First call - should calculate
             stats1 = calculate_tree_statistics(session, tree_owner_id)
@@ -593,8 +597,10 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            assert tree_owner_id is not None, "Tree owner ID should not be None"
             stats = calculate_tree_statistics(session, tree_owner_id)
 
             # Verify counts add up
@@ -629,6 +635,7 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             # Use invalid profile_id and person_id (no ethnicity data)
             result = calculate_ethnicity_commonality(session, 'invalid-profile-id-12345', 99999)
@@ -647,8 +654,10 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            assert tree_owner_id is not None, "Tree owner ID should not be None"
 
             # Should not raise warning for tree owner
             stats = calculate_tree_statistics(session, tree_owner_id)
@@ -666,8 +675,10 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            assert tree_owner_id is not None, "Tree owner ID should not be None"
             stats = calculate_tree_statistics(session, tree_owner_id)
 
             # Verify timestamp
@@ -687,8 +698,10 @@ if __name__ == "__main__":
         from core.database_manager import DatabaseManager
         dm = DatabaseManager()
         session = dm.get_session()
+        assert session is not None, "Session should not be None"
         try:
             tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            assert tree_owner_id is not None, "Tree owner ID should not be None"
             stats = calculate_tree_statistics(session, tree_owner_id)
 
             # Verify ethnicity_regions structure
