@@ -304,14 +304,196 @@ def run_action12_wrapper(session_manager: SessionManager) -> bool:
 
 
 # === TESTS ===
-def _test_action12_basic() -> bool:
-    """Test basic Action 12 functionality."""
-    print("\n🧪 Test: Action 12 basic functionality")
-    print("This test requires manual input - skipping in automated tests")
-    return True
+def _test_search_input_structure() -> None:
+    """Test get_search_input returns proper structure."""
+    # We can't test interactive input, but we can test the expected structure
+    # by mocking input
+    from unittest.mock import patch
+
+    inputs = ["John", "Smith", "1950", "London", "2020", "Manchester", "M"]
+    with patch('builtins.input', side_effect=inputs):
+        criteria = get_search_input()
+
+        assert "first_name" in criteria, "Should have first_name"
+        assert "surname" in criteria, "Should have surname"
+        assert "full_name" in criteria, "Should have full_name"
+        assert "birth_year" in criteria, "Should have birth_year"
+        assert "birth_place" in criteria, "Should have birth_place"
+        assert "death_year" in criteria, "Should have death_year"
+        assert "death_place" in criteria, "Should have death_place"
+        assert "gender" in criteria, "Should have gender"
+
+        assert criteria["first_name"] == "John"
+        assert criteria["surname"] == "Smith"
+        assert criteria["full_name"] == "John Smith"
+        assert criteria["birth_year"] == "1950"
+        assert criteria["gender"] == "M"
+
+
+def _test_search_input_optional_fields() -> None:
+    """Test get_search_input handles optional fields."""
+    from unittest.mock import patch
+
+    # Only provide name, skip all optional fields
+    inputs = ["Jane", "Doe", "", "", "", "", ""]
+    with patch('builtins.input', side_effect=inputs):
+        criteria = get_search_input()
+
+        assert criteria["first_name"] == "Jane"
+        assert criteria["surname"] == "Doe"
+        assert "birth_year" not in criteria, "Should not have birth_year if skipped"
+        assert "birth_place" not in criteria, "Should not have birth_place if skipped"
+        assert "death_year" not in criteria, "Should not have death_year if skipped"
+        assert "death_place" not in criteria, "Should not have death_place if skipped"
+        assert "gender" not in criteria, "Should not have gender if skipped"
+
+
+def _test_run_action10_search_structure() -> None:
+    """Test run_action10_search builds proper search criteria."""
+    criteria = {
+        "first_name": "Fraser",
+        "surname": "Gault",
+        "birth_year": "1960",
+        "birth_place": "Banff, Scotland",
+        "gender": "M"
+    }
+
+    # We can't run the actual search without GEDCOM file, but we can verify
+    # the function exists and has proper signature
+    import inspect
+    sig = inspect.signature(run_action10_search)
+    assert "criteria" in sig.parameters, "Should have criteria parameter"
+
+    # Verify return type annotation
+    assert sig.return_annotation != inspect.Signature.empty, "Should have return type annotation"
+
+
+def _test_run_action11_search_structure() -> None:
+    """Test run_action11_search builds proper search criteria."""
+    criteria = {
+        "first_name": "Fraser",
+        "surname": "Gault",
+        "birth_year": "1960",
+        "birth_place": "Banff, Scotland",
+        "gender": "M"
+    }
+
+    # Verify function signature
+    import inspect
+    sig = inspect.signature(run_action11_search)
+    assert "criteria" in sig.parameters, "Should have criteria parameter"
+    assert "session_manager" in sig.parameters, "Should have session_manager parameter"
+
+    # Verify return type annotation
+    assert sig.return_annotation != inspect.Signature.empty, "Should have return type annotation"
+
+
+def _test_compare_results_structure() -> None:
+    """Test compare_results handles different result scenarios."""
+    # Test with None results (both failed)
+    compare_results(None, None, {"first_name": "Test", "surname": "Person"})
+
+    # Test with empty results
+    compare_results([], [], {"first_name": "Test", "surname": "Person"})
+
+    # Test with one None, one empty
+    compare_results(None, [], {"first_name": "Test", "surname": "Person"})
+    compare_results([], None, {"first_name": "Test", "surname": "Person"})
+
+
+def _test_compare_results_output() -> None:
+    """Test compare_results produces output for different scenarios."""
+    # Test with sample Action 10 and Action 11 results
+    action10_results = [
+        {
+            "id": "@I1@",
+            "first_name": "John",
+            "surname": "Smith",
+            "birth_year": 1950,
+            "total_score": 100,
+            "confidence": "high"
+        }
+    ]
+
+    action11_results = [
+        {
+            "personId": "12345",
+            "givenNames": "John",
+            "surnames": "Smith",
+            "birthDate": "1950",
+            "total_score": 95,
+            "confidence": "high"
+        }
+    ]
+
+    criteria = {"first_name": "John", "surname": "Smith"}
+
+    # Should not raise exception
+    compare_results(action10_results, action11_results, criteria)
+
+
+def _test_action12_functions_available() -> None:
+    """Test all Action 12 functions are available."""
+    import inspect
+
+    # Check main functions exist
+    assert callable(get_search_input), "get_search_input should be callable"
+    assert callable(run_action10_search), "run_action10_search should be callable"
+    assert callable(run_action11_search), "run_action11_search should be callable"
+    assert callable(compare_results), "compare_results should be callable"
+    assert callable(run_action12_wrapper), "run_action12_wrapper should be callable"
+
+    # Verify they have proper signatures
+    for func in [get_search_input, run_action10_search, run_action11_search,
+                 compare_results, run_action12_wrapper]:
+        sig = inspect.signature(func)
+        assert sig is not None, f"{func.__name__} should have signature"
+
+
+def _test_action12_imports() -> None:
+    """Test Action 12 has required imports."""
+    # Verify action10 and action11 are imported
+    import sys
+    assert 'action10' in sys.modules, "action10 should be imported"
+    assert 'action11' in sys.modules, "action11 should be imported"
+
+    # Verify they have required functions
+    assert hasattr(action10, 'filter_and_score_individuals'), "action10 should have filter_and_score_individuals"
+    assert hasattr(action11, 'search_ancestry_api_for_person'), "action11 should have search_ancestry_api_for_person"
+
+
+def action12_module_tests() -> bool:
+    """Run all Action 12 tests."""
+    from test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Action 12", "action12.py")
+
+    tests = [
+        ("Search input structure", _test_search_input_structure, "Test search input returns proper structure"),
+        ("Search input optional fields", _test_search_input_optional_fields, "Test optional field handling"),
+        ("Action 10 search structure", _test_run_action10_search_structure, "Test Action 10 search criteria"),
+        ("Action 11 search structure", _test_run_action11_search_structure, "Test Action 11 search criteria"),
+        ("Compare results structure", _test_compare_results_structure, "Test result comparison"),
+        ("Compare results output", _test_compare_results_output, "Test result output formatting"),
+        ("Action 12 functions available", _test_action12_functions_available, "Test all functions exist"),
+        ("Action 12 imports", _test_action12_imports, "Test required imports"),
+    ]
+
+    with suppress_logging():
+        for test_name, test_func, expected_behavior in tests:
+            suite.run_test(test_name, test_func, expected_behavior)
+
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":
-    print("Action 12: Compare GEDCOM vs API Search Results")
-    print("This action must be run from main.py")
+    import sys
+
+    # If run directly, execute tests
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        action12_module_tests()
+    else:
+        print("Action 12: Compare GEDCOM vs API Search Results")
+        print("This action must be run from main.py")
+        print("\nTo run tests: python action12.py --test")
 
