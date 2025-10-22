@@ -195,6 +195,75 @@ def run_action11_search(
         return None
 
 
+def _print_search_criteria(criteria: dict[str, Any]) -> None:
+    """Print search criteria."""
+    print(f"\nSearch Criteria: {criteria.get('full_name', 'Unknown')}")
+    if criteria.get("birth_year"):
+        print(f"Birth Year: {criteria['birth_year']}")
+    if criteria.get("birth_place"):
+        print(f"Birth Place: {criteria['birth_place']}")
+
+
+def _print_action10_results(action10_result: Optional[list[dict[str, Any]]]) -> None:
+    """Print Action 10 (GEDCOM) results."""
+    print("\n" + "-" * 60)
+    print("ACTION 10 (GEDCOM) RESULTS:")
+    print("-" * 60)
+    if action10_result and len(action10_result) > 0:
+        top_match = action10_result[0]
+        print(f"✅ Found {len(action10_result)} match(es)")
+        print(f"   Top Match: {top_match.get('full_name_disp', 'Unknown')}")
+        print(f"   Score: {top_match.get('score', 0)}")
+        print(f"   Birth: {top_match.get('birth_year', 'Unknown')}")
+        print(f"   Death: {top_match.get('death_year', 'Unknown')}")
+    else:
+        print("❌ No results found")
+
+
+def _print_action11_results(action11_result: Optional[list[dict[str, Any]]]) -> None:
+    """Print Action 11 (API) results."""
+    print("\n" + "-" * 60)
+    print("ACTION 11 (API) RESULTS:")
+    print("-" * 60)
+    if action11_result and len(action11_result) > 0:
+        top_match = action11_result[0]
+        print(f"✅ Found {len(action11_result)} match(es)")
+        print(f"   Top Match: {top_match.get('display_name', 'Unknown')}")
+        print(f"   Score: {top_match.get('score', 0)}")
+        print(f"   Birth: {top_match.get('birth_year', 'Unknown')}")
+        print(f"   Death: {top_match.get('death_year', 'Unknown')}")
+    else:
+        print("❌ No results found")
+
+
+def _print_score_comparison(
+    action10_result: Optional[list[dict[str, Any]]],
+    action11_result: Optional[list[dict[str, Any]]]
+) -> None:
+    """Print score comparison between Action 10 and Action 11."""
+    if not (action10_result and action11_result and
+            len(action10_result) > 0 and len(action11_result) > 0):
+        return
+
+    print("\n" + "-" * 60)
+    print("SCORE COMPARISON:")
+    print("-" * 60)
+    score10 = action10_result[0].get("score", 0)
+    score11 = action11_result[0].get("score", 0)
+    diff = abs(score10 - score11)
+
+    print(f"Action 10 Score: {score10}")
+    print(f"Action 11 Score: {score11}")
+    print(f"Difference: {diff}")
+
+    if diff == 0:
+        print("✅ Scores match perfectly!")
+    elif diff <= 10:
+        print("⚠️  Minor score difference (within tolerance)")
+    else:
+        print("❌ Significant score difference - investigate!")
+
+
 def compare_results(
     action10_result: Optional[list[dict[str, Any]]],
     action11_result: Optional[list[dict[str, Any]]],
@@ -212,58 +281,10 @@ def compare_results(
     print("COMPARISON RESULTS")
     print("=" * 60)
 
-    # Display search criteria
-    print(f"\nSearch Criteria: {criteria.get('full_name', 'Unknown')}")
-    if criteria.get("birth_year"):
-        print(f"Birth Year: {criteria['birth_year']}")
-    if criteria.get("birth_place"):
-        print(f"Birth Place: {criteria['birth_place']}")
-
-    print("\n" + "-" * 60)
-    print("ACTION 10 (GEDCOM) RESULTS:")
-    print("-" * 60)
-    if action10_result and len(action10_result) > 0:
-        top_match = action10_result[0]
-        print(f"✅ Found {len(action10_result)} match(es)")
-        print(f"   Top Match: {top_match.get('full_name_disp', 'Unknown')}")
-        print(f"   Score: {top_match.get('score', 0)}")
-        print(f"   Birth: {top_match.get('birth_year', 'Unknown')}")
-        print(f"   Death: {top_match.get('death_year', 'Unknown')}")
-    else:
-        print("❌ No results found")
-
-    print("\n" + "-" * 60)
-    print("ACTION 11 (API) RESULTS:")
-    print("-" * 60)
-    if action11_result and len(action11_result) > 0:
-        top_match = action11_result[0]
-        print(f"✅ Found {len(action11_result)} match(es)")
-        print(f"   Top Match: {top_match.get('display_name', 'Unknown')}")
-        print(f"   Score: {top_match.get('score', 0)}")
-        print(f"   Birth: {top_match.get('birth_year', 'Unknown')}")
-        print(f"   Death: {top_match.get('death_year', 'Unknown')}")
-    else:
-        print("❌ No results found")
-
-    # Compare scores
-    if action10_result and action11_result and len(action10_result) > 0 and len(action11_result) > 0:
-        print("\n" + "-" * 60)
-        print("SCORE COMPARISON:")
-        print("-" * 60)
-        score10 = action10_result[0].get("score", 0)
-        score11 = action11_result[0].get("score", 0)
-        diff = abs(score10 - score11)
-
-        print(f"Action 10 Score: {score10}")
-        print(f"Action 11 Score: {score11}")
-        print(f"Difference: {diff}")
-
-        if diff == 0:
-            print("✅ Scores match perfectly!")
-        elif diff <= 10:
-            print("⚠️  Minor score difference (within tolerance)")
-        else:
-            print("❌ Significant score difference - investigate!")
+    _print_search_criteria(criteria)
+    _print_action10_results(action10_result)
+    _print_action11_results(action11_result)
+    _print_score_comparison(action10_result, action11_result)
 
     print("\n" + "=" * 60)
 
