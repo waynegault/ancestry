@@ -192,7 +192,7 @@ class ConversationMetrics(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="conversation_metrics")
+    person = relationship("Person", back_populates="conversation_metrics")  # type: ignore
 
 
 class EngagementTracking(Base):
@@ -270,7 +270,7 @@ class EngagementTracking(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="engagement_events")
+    person = relationship("Person", back_populates="engagement_events")  # type: ignore
 
 
 # ----------------------------------------------------------------------

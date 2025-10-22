@@ -652,7 +652,7 @@ class PersonProcessor:
                 f"Found {person_name} in {source} (score: {match_score})" if found
                 else f"Person {person_name} not found in {source}"
             )
-            event_data = {"person_name": person_name, "source": source}
+            event_data: dict[str, Any] = {"person_name": person_name, "source": source}
             if match_score is not None:
                 event_data["match_score"] = match_score
 

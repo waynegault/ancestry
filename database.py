@@ -207,9 +207,9 @@ class ConversationLog(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object. 'back_populates' ensures bidirectional linking.
-    person = relationship("Person", back_populates="conversation_log_entries")
+    person = relationship("Person", back_populates="conversation_log_entries")  # type: ignore
     # Defines the link to the MessageTemplate object for outgoing messages.
-    message_template = relationship("MessageTemplate")
+    message_template = relationship("MessageTemplate")  # type: ignore
 
     # New column for tracking custom genealogical replies
     custom_reply_sent_at = Column(
@@ -459,7 +459,7 @@ class ConversationState(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="conversation_state")
+    person = relationship("Person", back_populates="conversation_state")  # type: ignore
 
 
 # End of ConversationState class
@@ -536,7 +536,7 @@ class DnaMatch(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object.
-    person = relationship("Person", back_populates="dna_match")
+    person = relationship("Person", back_populates="dna_match")  # type: ignore
 
     # --- Properties ---
     @property
@@ -617,7 +617,7 @@ class FamilyTree(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object.
-    person = relationship("Person", back_populates="family_tree")
+    person = relationship("Person", back_populates="family_tree")  # type: ignore
 
     # --- Properties ---
     @property
@@ -729,30 +729,30 @@ class Person(Base):
 
     # --- Relationships ---
     # One-to-one relationship with FamilyTree. `cascade` ensures deletion of related FamilyTree record if Person deleted.
-    family_tree = relationship(
+    family_tree = relationship(  # type: ignore
         "FamilyTree",
         back_populates="person",
         uselist=False,
         cascade="all, delete-orphan",
     )
     # One-to-one relationship with DnaMatch. `cascade` ensures deletion.
-    dna_match = relationship(
+    dna_match = relationship(  # type: ignore
         "DnaMatch", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-many relationship with ConversationLog. `cascade` ensures deletion.
-    conversation_log_entries = relationship(
+    conversation_log_entries = relationship(  # type: ignore
         "ConversationLog", back_populates="person", cascade="all, delete-orphan"
     )
     # One-to-one relationship with ConversationState. `cascade` ensures deletion.
-    conversation_state = relationship(
+    conversation_state = relationship(  # type: ignore
         "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-one relationship with ConversationMetrics. `cascade` ensures deletion.
-    conversation_metrics = relationship(
+    conversation_metrics = relationship(  # type: ignore
         "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-many relationship with EngagementTracking. `cascade` ensures deletion.
-    engagement_events = relationship(
+    engagement_events = relationship(  # type: ignore
         "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
     )
 
@@ -790,9 +790,12 @@ CREATE_VIEW_SQL = text(
 # End of CREATE_VIEW_SQL
 
 
-@event.listens_for(Base.metadata, "after_create")
+@event.listens_for(Base.metadata, "after_create")  # type: ignore
 def _create_views(target: Any, connection: Connection, **kw: Any) -> None:  # type: ignore[misc]
-    """SQLAlchemy event listener to create the 'messages' view after tables are created."""
+    """SQLAlchemy event listener to create the 'messages' view after tables are created.
+
+    Note: Function is accessed by SQLAlchemy event system, not directly called in code.
+    """
     # Parameters required by SQLAlchemy event signature but not used in implementation
     _ = target, kw
     logger.debug("Executing CREATE VIEW statement for 'messages' view...")
