@@ -8,6 +8,7 @@ and DNA ethnicity commonality for enhanced messaging in Action 8.
 Part of Phase 1: Enhanced Message Content (Foundation)
 """
 
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -82,8 +83,15 @@ def calculate_tree_statistics(
         # Get the tree owner's Person record
         owner = session.query(Person).filter(Person.profile_id == profile_id).first()
         if not owner:
-            logger.warning(f"No Person record found for profile_id={profile_id}")
-            return _empty_statistics(profile_id)
+            # Check if this is the tree owner (not a DNA match)
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            if profile_id == tree_owner_id:
+                logger.debug(f"Profile {profile_id} is tree owner (not in DNA matches) - calculating global statistics")
+                # Continue with statistics calculation without owner record
+                # Tree owner won't have a Person record since they're not a DNA match to themselves
+            else:
+                logger.warning(f"No Person record found for profile_id={profile_id}")
+                return _empty_statistics(profile_id)
 
         # Total DNA matches
         total_matches = session.query(func.count(DnaMatch.people_id)).scalar() or 0

@@ -67,7 +67,7 @@ def _check_processing_limits(config: Any) -> None:
     # Note: MAX_PRODUCTIVE_TO_PROCESS=0 and MAX_INBOX=0 are valid (means unlimited)
 
 
-def _check_rate_limiting_settings(_: Any) -> None:
+def _check_rate_limiting_settings(config: Any) -> None:
     """Check rate limiting settings and log warnings."""
     # Note: Rate limiting settings are user preferences - no warnings needed
     # Users can adjust REQUESTS_PER_SECOND, INITIAL_DELAY, and BACKOFF_FACTOR as needed
