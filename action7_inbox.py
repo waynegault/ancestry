@@ -48,6 +48,7 @@ from cache_manager import (
 )
 from common_params import ConversationProcessingContext
 from config import config_schema
+from conversation_analytics import record_engagement_event, update_conversation_metrics
 from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
 
 # === ACTION 7 ERROR CLASSES (Action 8 Pattern) ===
@@ -1474,6 +1475,39 @@ class InboxProcessor:
             "script_message_status": None,
         }
 
+    def _track_message_analytics(
+        self,
+        session: DbSession,
+        people_id: int,
+        direction: MessageDirectionEnum,
+        ai_sentiment: Optional[str] = None,
+        conversation_phase: Optional[str] = None,
+    ) -> None:
+        """Track message analytics for conversation metrics."""
+        try:
+            # Record engagement event
+            event_type = "message_received" if direction == MessageDirectionEnum.IN else "message_sent"
+            event_description = f"Message {direction.name.lower()} with sentiment: {ai_sentiment or 'unknown'}"
+
+            record_engagement_event(
+                session=session,
+                people_id=people_id,
+                event_type=event_type,
+                event_description=event_description,
+                conversation_phase=conversation_phase,
+            )
+
+            # Update conversation metrics
+            update_conversation_metrics(
+                session=session,
+                people_id=people_id,
+                message_sent=(direction == MessageDirectionEnum.OUT),
+                message_received=(direction == MessageDirectionEnum.IN),
+                conversation_phase=conversation_phase,
+            )
+        except Exception as e:
+            logger.debug(f"Analytics tracking failed for people_id {people_id}: {e}")
+
     def _update_person_status_from_ai(
         self, ai_sentiment: Optional[str], people_id: int, person_updates: dict[int, PersonStatusEnum]
     ) -> None:
@@ -1611,6 +1645,14 @@ class InboxProcessor:
             ctx.conv_log_upserts_dicts.append(upsert_dict_in)
             logger.debug(f"Created IN message log entry for conversation {api_conv_id}")
 
+            # Track analytics for received message
+            self._track_message_analytics(
+                session=session,
+                people_id=people_id,
+                direction=MessageDirectionEnum.IN,
+                ai_sentiment=ai_sentiment_result,
+            )
+
             self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
         else:
             logger.debug(f"IN message for {api_conv_id} is not newer than DB (API: {ctx_ts_in_aware}, DB: {db_latest_ts_in_compare})")
@@ -1642,6 +1684,13 @@ class InboxProcessor:
             )
             ctx.conv_log_upserts_dicts.append(upsert_dict_out)
             logger.debug(f"Created OUT message log entry for conversation {api_conv_id}")
+
+            # Track analytics for sent message
+            self._track_message_analytics(
+                session=session,
+                people_id=people_id,
+                direction=MessageDirectionEnum.OUT,
+            )
         else:
             logger.debug(f"OUT message for {api_conv_id} is not newer than DB (API: {ctx_ts_out_aware}, DB: {db_latest_ts_out_compare})")
 
