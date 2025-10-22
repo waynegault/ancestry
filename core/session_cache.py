@@ -32,7 +32,7 @@ import threading
 import time
 import weakref
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
@@ -273,14 +273,14 @@ _session_cache = SessionComponentCache()
 # === CACHING DECORATORS USING EXISTING INFRASTRUCTURE ===
 
 
-def cached_session_component(component_type: str):
+def cached_session_component(component_type: str) -> Callable:
     """
     Decorator to cache expensive session components using existing cache infrastructure.
     Dramatically reduces session manager initialization time.
     """
 
-    def decorator(creation_func):
-        def wrapper(*args, **kwargs):
+    def decorator(creation_func: Callable) -> Callable:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Try to get from cache first
             cached_component = _session_cache.get_cached_component(component_type)
             if cached_component is not None:
@@ -307,22 +307,22 @@ def cached_session_component(component_type: str):
     return decorator
 
 
-def cached_database_manager():
+def cached_database_manager() -> Callable:
     """Decorator specifically for DatabaseManager caching"""
     return cached_session_component("database_manager")
 
 
-def cached_browser_manager():
+def cached_browser_manager() -> Callable:
     """Decorator specifically for BrowserManager caching"""
     return cached_session_component("browser_manager")
 
 
-def cached_api_manager():
+def cached_api_manager() -> Callable:
     """Decorator specifically for APIManager caching"""
     return cached_session_component("api_manager")
 
 
-def cached_session_validator():
+def cached_session_validator() -> Callable:
     """Decorator specifically for SessionValidator caching"""
     return cached_session_component("session_validator")
 
@@ -356,7 +356,7 @@ class OptimizedSessionState:
             logger.debug(f"Error retrieving session state for {session_id}: {e}")
             return None
 
-    def cache_session_state(self, session_id: str, state: dict):
+    def cache_session_state(self, session_id: str, state: dict) -> None:
         """Cache session state using existing infrastructure"""
         if not cache:
             return
@@ -394,7 +394,7 @@ def clear_session_cache() -> int:
     return 1 if success else 0
 
 
-def warm_session_cache():
+def warm_session_cache() -> bool:
     """Warm up session cache with frequently used components"""
     return _session_cache.warm()
 
@@ -453,7 +453,7 @@ def _test_component_caching_and_retrieval():
     assert retrieved is not None, "Component should be retrieved"
     assert retrieved == test_component, "Retrieved component should match original"
 
-    logger.info(f"✅ Component cached and retrieved successfully")
+    logger.info("✅ Component cached and retrieved successfully")
     return True
 
 
@@ -496,7 +496,7 @@ def _test_cached_session_component_decorator():
     call_count = {"count": 0}
 
     @cached_session_component("test_decorator_component")
-    def create_test_component():
+    def create_test_component() -> dict:
         # Sleep to make it "expensive" so it gets cached (>0.1s threshold)
         time.sleep(0.15)
         call_count["count"] += 1
@@ -562,13 +562,13 @@ def _test_warm_session_cache():
     return True
 
 
-def test_session_cache_performance():
+def test_session_cache_performance() -> None:
     """Test session cache performance improvements"""
     logger.info("🚀 Testing Session Cache Performance")
 
     # Test component caching
     @cached_session_component("test_component")
-    def create_expensive_component():
+    def create_expensive_component() -> dict:
         time.sleep(0.1)  # Simulate expensive operation
         return {"test": "data", "timestamp": time.time()}
 
