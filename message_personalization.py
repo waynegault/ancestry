@@ -1283,6 +1283,95 @@ def test_location_context_limit() -> bool:
     return ctx.strip().count(" ") <= 2 and "Edinburgh" not in ctx and "and" in ctx
 
 
+def _test_personalizer_initialization():
+    """Test MessagePersonalizer initialization."""
+    personalizer = MessagePersonalizer()
+
+    assert personalizer is not None, "Personalizer should be created"
+    assert hasattr(personalizer, 'templates'), "Should have templates"
+    assert hasattr(personalizer, 'personalization_config'), "Should have config"
+    assert hasattr(personalizer, 'effectiveness_tracker'), "Should have tracker"
+
+    logger.info("✓ MessagePersonalizer initialized correctly")
+    return True
+
+
+def _test_personalization_config():
+    """Test personalization configuration loading."""
+    personalizer = MessagePersonalizer()
+    config = personalizer.personalization_config
+
+    assert isinstance(config, dict), "Config should be dictionary"
+    assert 'max_ancestors_to_mention' in config, "Should have max_ancestors setting"
+    assert 'max_locations_to_mention' in config, "Should have max_locations setting"
+    assert 'max_research_questions' in config, "Should have max_questions setting"
+
+    logger.info("✓ Personalization config loaded correctly")
+    return True
+
+
+def _test_personalization_registry():
+    """Test personalization functions registry."""
+    personalizer = MessagePersonalizer()
+    registry = personalizer.personalization_functions_registry
+
+    assert isinstance(registry, dict), "Registry should be dictionary"
+    assert len(registry) > 0, "Registry should have functions"
+    assert 'shared_ancestors' in registry, "Should have shared_ancestors function"
+    assert 'geographic_context' in registry, "Should have geographic_context function"
+
+    logger.info("✓ Personalization registry built correctly")
+    return True
+
+
+def _test_effectiveness_tracker_initialization():
+    """Test MessageEffectivenessTracker initialization."""
+    tracker = MessageEffectivenessTracker()
+
+    assert tracker is not None, "Tracker should be created"
+    assert hasattr(tracker, 'effectiveness_data'), "Should have effectiveness_data"
+    assert hasattr(tracker, 'response_categories'), "Should have response_categories"
+
+    logger.info("✓ MessageEffectivenessTracker initialized correctly")
+    return True
+
+
+def _test_shared_ancestors_formatting_empty():
+    """Test shared ancestors formatting with empty data."""
+    personalizer = MessagePersonalizer()
+    formatted = personalizer._format_shared_ancestors({})
+
+    assert isinstance(formatted, str), "Should return string"
+    assert len(formatted) > 0, "Should return non-empty string"
+
+    logger.info("✓ Empty shared ancestors formatted correctly")
+    return True
+
+
+def _test_location_context_formatting_empty():
+    """Test location context formatting with empty data."""
+    personalizer = MessagePersonalizer()
+    formatted = personalizer._format_location_context({})
+
+    assert isinstance(formatted, str), "Should return string"
+    # Empty data returns empty string - this is expected behavior
+    assert formatted == "", "Should return empty string for empty data"
+
+    logger.info("✓ Empty location context formatted correctly")
+    return True
+
+
+def _test_dna_context_creation():
+    """Test DNA context creation."""
+    personalizer = MessagePersonalizer()
+    context = personalizer._create_dna_context({'shared_dna_cm': 212.0, 'relationship': '2nd cousin'})
+
+    assert isinstance(context, str), "Should return string"
+
+    logger.info("✓ DNA context created correctly")
+    return True
+
+
 def message_personalization_module_tests() -> bool:
     """
     Comprehensive test suite for message_personalization.py with real functionality testing.
@@ -1294,6 +1383,65 @@ def message_personalization_module_tests() -> bool:
     suite.start_suite()
 
     with suppress_logging():
+        # Initialization tests
+        suite.run_test(
+            "Personalizer initialization",
+            _test_personalizer_initialization,
+            "MessagePersonalizer initialized correctly",
+            "Test MessagePersonalizer initialization",
+            "Verify personalizer creates with all required attributes"
+        )
+
+        suite.run_test(
+            "Personalization config",
+            _test_personalization_config,
+            "Personalization config loaded correctly",
+            "Test personalization configuration loading",
+            "Verify config has all required settings"
+        )
+
+        suite.run_test(
+            "Personalization registry",
+            _test_personalization_registry,
+            "Personalization registry built correctly",
+            "Test personalization functions registry",
+            "Verify registry has all required functions"
+        )
+
+        suite.run_test(
+            "Effectiveness tracker initialization",
+            _test_effectiveness_tracker_initialization,
+            "MessageEffectivenessTracker initialized correctly",
+            "Test MessageEffectivenessTracker initialization",
+            "Verify tracker creates with required attributes"
+        )
+
+        # Edge case tests
+        suite.run_test(
+            "Shared ancestors formatting empty",
+            _test_shared_ancestors_formatting_empty,
+            "Empty shared ancestors formatted correctly",
+            "Test shared ancestors formatting with empty list",
+            "Verify graceful handling of empty ancestor list"
+        )
+
+        suite.run_test(
+            "Location context formatting empty",
+            _test_location_context_formatting_empty,
+            "Empty location context formatted correctly",
+            "Test location context formatting with empty list",
+            "Verify graceful handling of empty location list"
+        )
+
+        suite.run_test(
+            "DNA context creation",
+            _test_dna_context_creation,
+            "DNA context created correctly",
+            "Test DNA context creation",
+            "Verify DNA context formatting with sample data"
+        )
+
+        # Original tests
         suite.run_test(
             "Message personalization system",
             test_message_personalization,
