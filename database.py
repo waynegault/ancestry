@@ -77,6 +77,8 @@ from core.error_handling import (
     timeout_protection,
 )
 
+
+
 # === MODULE CONFIGURATION ===
 # Use global cached config instance
 # Note: SessionManager imported locally when needed to avoid circular imports
@@ -241,6 +243,259 @@ class ConversationLog(Base):
 
 
 # End of ConversationLog class
+
+
+# ----------------------------------------------------------------------
+# Analytics Models (Phase 6A)
+# ----------------------------------------------------------------------
+
+
+class ConversationMetrics(Base):
+    """
+    Aggregate metrics for each conversation.
+    Tracks overall conversation performance and effectiveness.
+    """
+
+    __tablename__ = "conversation_metrics"
+
+    # --- Columns ---
+    id = Column(
+        Integer, primary_key=True, comment="Unique identifier for the metrics record."
+    )
+    people_id = Column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Foreign key to people table (one metrics record per person).",
+    )
+
+    # Message counts
+    messages_sent = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Total number of messages sent to this person.",
+    )
+    messages_received = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Total number of messages received from this person.",
+    )
+
+    # Response tracking
+    first_response_received = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Whether we've received at least one response.",
+    )
+    first_response_date = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when first response was received.",
+    )
+    time_to_first_response_hours = Column(
+        Float,
+        nullable=True,
+        comment="Hours between first message sent and first response received.",
+    )
+
+    # Engagement metrics
+    current_engagement_score = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Current engagement score (0-100) from ConversationState.",
+    )
+    max_engagement_score = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Maximum engagement score achieved during conversation.",
+    )
+    avg_engagement_score = Column(
+        Float,
+        nullable=True,
+        comment="Average engagement score across all updates.",
+    )
+
+    # Conversation characteristics
+    conversation_phase = Column(
+        String,
+        nullable=False,
+        default="initial_outreach",
+        comment="Current conversation phase from ConversationState.",
+    )
+    conversation_duration_days = Column(
+        Float,
+        nullable=True,
+        comment="Days between first message and last message.",
+    )
+
+    # Template effectiveness
+    initial_template_used = Column(
+        String,
+        nullable=True,
+        comment="Template key used for initial outreach message.",
+    )
+    templates_used = Column(
+        Text,
+        nullable=True,
+        comment="JSON-encoded list of all template keys used in conversation.",
+    )
+
+    # Research outcomes
+    people_looked_up = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of people looked up during conversation.",
+    )
+    people_found = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of people successfully found in tree/API.",
+    )
+    research_tasks_created = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Number of research tasks created from conversation.",
+    )
+
+    # Tree impact
+    added_to_tree = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Whether this person was added to tree during conversation.",
+    )
+    added_to_tree_date = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when person was added to tree.",
+    )
+
+    # Timestamps
+    first_message_sent = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when first message was sent.",
+    )
+    last_message_sent = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when last message was sent.",
+    )
+    last_message_received = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when last message was received.",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when metrics record was created.",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when metrics record was last updated.",
+    )
+
+    # --- Relationships ---
+    person = relationship("Person", back_populates="conversation_metrics")  # type: ignore
+
+
+# End of ConversationMetrics class
+
+
+class EngagementTracking(Base):
+    """
+    Detailed tracking of engagement events.
+    Records specific events that contribute to engagement scoring.
+    """
+
+    __tablename__ = "engagement_tracking"
+
+    # --- Columns ---
+    id = Column(
+        Integer, primary_key=True, comment="Unique identifier for the engagement event."
+    )
+    people_id = Column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to people table.",
+    )
+
+    # Event details
+    event_type = Column(
+        String,
+        nullable=False,
+        comment="Type of engagement event: message_sent, message_received, person_lookup, research_task, phase_change, score_update.",
+    )
+    event_description = Column(
+        Text,
+        nullable=True,
+        comment="Detailed description of the event.",
+    )
+    event_data = Column(
+        Text,
+        nullable=True,
+        comment="JSON-encoded additional event data.",
+    )
+
+    # Engagement impact
+    engagement_score_before = Column(
+        Integer,
+        nullable=True,
+        comment="Engagement score before this event.",
+    )
+    engagement_score_after = Column(
+        Integer,
+        nullable=True,
+        comment="Engagement score after this event.",
+    )
+    engagement_score_delta = Column(
+        Integer,
+        nullable=True,
+        comment="Change in engagement score from this event.",
+    )
+
+    # Context
+    conversation_phase = Column(
+        String,
+        nullable=True,
+        comment="Conversation phase when event occurred.",
+    )
+    template_used = Column(
+        String,
+        nullable=True,
+        comment="Template key if event was a message.",
+    )
+
+    # Timestamp
+    event_timestamp = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when event occurred.",
+    )
+
+    # --- Relationships ---
+    person = relationship("Person", back_populates="engagement_events")  # type: ignore
+
+
+# End of EngagementTracking class
 
 
 # MessageType class removed - consolidated into MessageTemplate
