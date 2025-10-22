@@ -451,6 +451,48 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     return _extract_gemini_response_text(response)
 
 
+def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: Optional[str]) -> Optional[str]:
+    """
+    Call Local LLM model via LM Studio OpenAI-compatible API.
+
+    LM Studio provides an OpenAI-compatible API endpoint at http://localhost:1234/v1
+    This allows seamless integration with the existing OpenAI client.
+
+    Recommended models for Dell XPS 15 9520 (i9-12900HK, 64GB RAM, RTX 3050 Ti 4GB):
+    - Qwen2.5-14B-Instruct-Q4_K_M: Best quality, 2-4s response time
+    - Llama-3.2-11B-Vision-Instruct: Good quality, 1-3s response time
+    - Mistral-7B-Instruct-v0.3: Fast, <2s response time
+    """
+    if not openai_available or OpenAI is None:
+        logger.error("_call_local_llm_model: OpenAI library not available for Local LLM.")
+        return None
+
+    api_key = config_schema.api.local_llm_api_key
+    model_name = config_schema.api.local_llm_model
+    base_url = config_schema.api.local_llm_base_url
+
+    if not all([api_key, model_name, base_url]):
+        logger.error("_call_local_llm_model: Local LLM configuration incomplete.")
+        return None
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+        request_params = _build_deepseek_request_params(model_name, messages, max_tokens, temperature, response_format_type)
+
+        response = client.chat.completions.create(**request_params)
+        if response.choices and response.choices[0].message and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
+        logger.error("Local LLM returned an empty or invalid response structure.")
+        return None
+    except Exception as e:
+        logger.error(f"Local LLM API call failed: {e}")
+        return None
+
+
 def _handle_rate_limit_error(session_manager: SessionManager) -> None:
     """Handle rate limit error by increasing delay."""
     if session_manager and hasattr(session_manager, "rate_limiter"):
@@ -471,6 +513,8 @@ def _route_ai_provider_call(
         return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     if provider == "gemini":
         return _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
+    if provider == "local_llm":
+        return _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
     return None
 
@@ -1414,6 +1458,41 @@ def _validate_gemini_config() -> bool:
     return config_valid
 
 
+def _validate_local_llm_config() -> bool:
+    """Validate Local LLM-specific configuration."""
+    config_valid = True
+
+    if not openai_available:
+        logger.error("❌ OpenAI library not available for Local LLM")
+        config_valid = False
+    else:
+        logger.info("✅ OpenAI library available (for Local LLM)")
+
+    api_key = config_schema.api.local_llm_api_key
+    model_name = config_schema.api.local_llm_model
+    base_url = config_schema.api.local_llm_base_url
+
+    if not api_key:
+        logger.error("❌ LOCAL_LLM_API_KEY not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ LOCAL_LLM_API_KEY configured")
+
+    if not model_name:
+        logger.error("❌ LOCAL_LLM_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ LOCAL_LLM_MODEL: {model_name}")
+
+    if not base_url:
+        logger.error("❌ LOCAL_LLM_BASE_URL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ LOCAL_LLM_BASE_URL: {base_url}")
+
+    return config_valid
+
+
 def test_configuration() -> bool:
     """
     Tests AI configuration and dependencies.
@@ -1431,6 +1510,8 @@ def test_configuration() -> bool:
         return _validate_deepseek_config()
     if ai_provider == "gemini":
         return _validate_gemini_config()
+    if ai_provider == "local_llm":
+        return _validate_local_llm_config()
 
     return True
 
@@ -1783,6 +1864,8 @@ def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:
         return bool(config_schema.api.deepseek_api_key), openai_available
     if ai_provider == "gemini":
         return bool(config_schema.api.google_api_key), genai_available
+    if ai_provider == "local_llm":
+        return bool(config_schema.api.local_llm_api_key), openai_available
     return False, False
 
 

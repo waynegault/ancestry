@@ -403,6 +403,11 @@ class APIConfig:
     deepseek_ai_base_url: str = "https://api.deepseek.com"
     google_ai_model: str = "gemini-1.5-flash-latest"
 
+    # Local LLM Configuration (LM Studio)
+    local_llm_api_key: Optional[str] = None
+    local_llm_model: str = "qwen2.5-14b-instruct"
+    local_llm_base_url: str = "http://localhost:1234/v1"
+
     # Request settings
     request_timeout: int = 60  # Increased from 30 to 60 seconds for slower API responses during rate limiting
     max_retries: int = 5  # Increased from 3 to 5 for better resilience to transient rate limits
@@ -624,7 +629,7 @@ class ConfigSchema:
     enable_prompt_experiments: bool = False  # Guard flag for Phase 8.2 prompt A/B experimentation rollout
 
     # AI settings
-    ai_provider: str = ""  # "deepseek", "gemini", or ""
+    ai_provider: str = ""  # "deepseek", "gemini", "local_llm", or ""
     ai_context_messages_count: int = 5
     ai_context_message_max_words: int = 100
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message
