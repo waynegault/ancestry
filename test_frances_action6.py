@@ -10,6 +10,11 @@ This script:
 
 Usage:
     python test_frances_action6.py
+
+Prerequisites:
+    Set ANCESTRY_USERNAME and ANCESTRY_PASSWORD in .env to Frances's credentials:
+    ANCESTRY_USERNAME=francesmchardy@gmail.com
+    ANCESTRY_PASSWORD=<frances_password>
 """
 
 import sys
@@ -49,6 +54,12 @@ class FrancesAction6Tester:
     def validate_environment(self) -> bool:
         """Validate environment configuration."""
         self.log("Validating environment configuration...")
+
+        # Check that Frances's credentials are configured
+        if self.config.api.username != "francesmchardy@gmail.com":
+            self.log(f"ERROR: Wrong account configured. Expected francesmchardy@gmail.com, got {self.config.api.username}", "FAIL")
+            self.log("Please update .env: ANCESTRY_USERNAME=francesmchardy@gmail.com", "FAIL")
+            return False
 
         try:
             # Check config loaded
