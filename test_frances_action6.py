@@ -92,8 +92,7 @@ class FrancesAction6Tester:
             }
             self.db_manager.return_session(session)
 
-            self.log(f"Baseline: {stats['total_people']} people, {stats['total_matches']} matches, "
-                    f"{stats['people_with_ethnicity']} with ethnicity data")
+            self.log(f"Baseline: {stats['total_people']} people, {stats['total_matches']} matches")
             return stats
 
         except Exception as e:
