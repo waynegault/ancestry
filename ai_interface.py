@@ -303,26 +303,60 @@ def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int,
         logger.error("_call_ai_model: DeepSeek configuration incomplete.")
         return None
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-    request_params: dict[str, Any] = {
-        "model": model_name,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "stream": False,
-    }
-    if response_format_type == "json_object":
-        request_params["response_format"] = {"type": "json_object"}
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+        request_params: dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if response_format_type == "json_object":
+            request_params["response_format"] = {"type": "json_object"}
 
-    response = client.chat.completions.create(**request_params)
-    if response.choices and response.choices[0].message and response.choices[0].message.content:
-        return response.choices[0].message.content.strip()
-    logger.error("DeepSeek returned an empty or invalid response structure.")
-    return None
+        response = client.chat.completions.create(**request_params)
+
+        # Track usage
+        try:
+            from ai_credit_tracker import AIUsageTracker
+            tracker = AIUsageTracker()
+            usage = response.usage if hasattr(response, 'usage') else None
+            if usage:
+                tracker.log_api_call(
+                    provider="deepseek",
+                    model=model_name,
+                    prompt_tokens=usage.prompt_tokens if hasattr(usage, 'prompt_tokens') else 0,
+                    completion_tokens=usage.completion_tokens if hasattr(usage, 'completion_tokens') else 0,
+                    total_tokens=usage.total_tokens if hasattr(usage, 'total_tokens') else 0,
+                    success=True
+                )
+        except Exception:
+            pass  # Don't fail the call if tracking fails
+
+        if response.choices and response.choices[0].message and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
+        logger.error("DeepSeek returned an empty or invalid response structure.")
+        return None
+
+    except Exception as e:
+        # Track failed call
+        try:
+            from ai_credit_tracker import AIUsageTracker
+            tracker = AIUsageTracker()
+            tracker.log_api_call(
+                provider="deepseek",
+                model=model_name,
+                success=False,
+                error=str(e)
+            )
+        except Exception:
+            pass
+        raise
 
 
 # Helper functions for _call_gemini_model
@@ -428,15 +462,56 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     if not model:
         return None
 
-    # Prepare prompt and config
-    full_prompt = f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
-    generation_config = _create_gemini_generation_config(max_tokens, temperature)
+    try:
+        # Prepare prompt and config
+        full_prompt = f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
+        generation_config = _create_gemini_generation_config(max_tokens, temperature)
 
-    # Generate content
-    response = _generate_gemini_content(model, full_prompt, generation_config)
+        # Generate content
+        response = _generate_gemini_content(model, full_prompt, generation_config)
 
-    # Extract and return response text
-    return _extract_gemini_response_text(response)
+        # Track usage
+        try:
+            from ai_credit_tracker import AIUsageTracker
+            tracker = AIUsageTracker()
+            # Gemini response includes usage metadata
+            usage_metadata = getattr(response, 'usage_metadata', None) if response else None
+            if usage_metadata:
+                tracker.log_api_call(
+                    provider="gemini",
+                    model=model_name,
+                    prompt_tokens=getattr(usage_metadata, 'prompt_token_count', 0),
+                    completion_tokens=getattr(usage_metadata, 'candidates_token_count', 0),
+                    total_tokens=getattr(usage_metadata, 'total_token_count', 0),
+                    success=True
+                )
+            else:
+                # Log call even without usage data
+                tracker.log_api_call(
+                    provider="gemini",
+                    model=model_name,
+                    success=True
+                )
+        except Exception:
+            pass  # Don't fail the call if tracking fails
+
+        # Extract and return response text
+        return _extract_gemini_response_text(response)
+
+    except Exception as e:
+        # Track failed call
+        try:
+            from ai_credit_tracker import AIUsageTracker
+            tracker = AIUsageTracker()
+            tracker.log_api_call(
+                provider="gemini",
+                model=model_name,
+                success=False,
+                error=str(e)
+            )
+        except Exception:
+            pass
+        raise
 
 
 def _handle_rate_limit_error(session_manager: SessionManager) -> None:
