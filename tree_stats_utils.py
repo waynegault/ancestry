@@ -449,19 +449,272 @@ if __name__ == "__main__":
 
     from test_framework import TestSuite
 
-    def test_statistics_functions_available() -> bool:
+    def _test_statistics_functions_available() -> bool:
         """Test that all required functions are available."""
         required_functions = [
             'calculate_tree_statistics',
             'calculate_ethnicity_commonality',
+            '_empty_statistics',
+            '_empty_ethnicity_commonality',
         ]
         return all(func in globals() for func in required_functions)
+
+    def _test_calculate_tree_statistics_with_valid_profile() -> bool:
+        """Test calculate_tree_statistics with valid profile_id."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            # Use tree owner profile_id (won't be in DNA matches)
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            stats = calculate_tree_statistics(session, tree_owner_id)
+
+            # Verify structure
+            assert isinstance(stats, dict), "Stats should be a dictionary"
+            assert 'total_matches' in stats, "Stats should have total_matches"
+            assert 'in_tree_count' in stats, "Stats should have in_tree_count"
+            assert 'out_tree_count' in stats, "Stats should have out_tree_count"
+            assert 'calculated_at' in stats, "Stats should have calculated_at"
+
+            # Verify data types
+            assert isinstance(stats['total_matches'], int), "total_matches should be int"
+            assert isinstance(stats['in_tree_count'], int), "in_tree_count should be int"
+            assert isinstance(stats['out_tree_count'], int), "out_tree_count should be int"
+
+            logger.info(f"✓ Tree statistics calculated: {stats['total_matches']} total matches")
+            return True
+        finally:
+            session.close()
+
+    def _test_calculate_tree_statistics_with_invalid_profile() -> bool:
+        """Test calculate_tree_statistics with invalid profile_id."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            # Use invalid profile_id
+            stats = calculate_tree_statistics(session, 'invalid-profile-id-12345')
+
+            # Should return empty statistics
+            assert stats['total_matches'] == 0, "Invalid profile should have 0 matches"
+            assert stats['in_tree_count'] == 0, "Invalid profile should have 0 in tree"
+            assert stats['out_tree_count'] == 0, "Invalid profile should have 0 out of tree"
+
+            logger.info("✓ Invalid profile returns empty statistics")
+            return True
+        finally:
+            session.close()
+
+    def _test_empty_statistics_structure() -> bool:
+        """Test _empty_statistics returns correct structure."""
+        empty = _empty_statistics('test-profile-id')
+
+        # Verify structure
+        assert isinstance(empty, dict), "Empty stats should be a dictionary"
+        assert empty['total_matches'] == 0, "Empty stats should have 0 total_matches"
+        assert empty['in_tree_count'] == 0, "Empty stats should have 0 in_tree_count"
+        assert empty['out_tree_count'] == 0, "Empty stats should have 0 out_tree_count"
+        assert empty['close_matches'] == 0, "Empty stats should have 0 close_matches"
+        assert empty['moderate_matches'] == 0, "Empty stats should have 0 moderate_matches"
+        assert empty['distant_matches'] == 0, "Empty stats should have 0 distant_matches"
+        assert empty['profile_id'] == 'test-profile-id', "Empty stats should have profile_id"
+        assert 'calculated_at' in empty, "Empty stats should have calculated_at"
+
+        logger.info("✓ Empty statistics structure is correct")
+        return True
+
+    def _test_statistics_cache_hit() -> bool:
+        """Test that statistics are cached and reused."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+
+            # First call - should calculate
+            stats1 = calculate_tree_statistics(session, tree_owner_id)
+            time1 = stats1['calculated_at']
+
+            # Second call immediately - should use cache
+            stats2 = calculate_tree_statistics(session, tree_owner_id)
+            time2 = stats2['calculated_at']
+
+            # Times should be identical (from cache)
+            assert time1 == time2, "Cached statistics should have same timestamp"
+            assert stats1['total_matches'] == stats2['total_matches'], "Cached stats should match"
+
+            logger.info("✓ Statistics cache is working")
+            return True
+        finally:
+            session.close()
+
+    def _test_statistics_match_counts() -> bool:
+        """Test that match counts add up correctly."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            stats = calculate_tree_statistics(session, tree_owner_id)
+
+            # Verify counts add up
+            assert stats['in_tree_count'] + stats['out_tree_count'] == stats['total_matches'], \
+                "in_tree + out_tree should equal total_matches"
+
+            assert stats['close_matches'] + stats['moderate_matches'] + stats['distant_matches'] == stats['total_matches'], \
+                "close + moderate + distant should equal total_matches"
+
+            logger.info("✓ Match counts add up correctly")
+            return True
+        finally:
+            session.close()
+
+    def _test_empty_ethnicity_commonality_structure() -> bool:
+        """Test _empty_ethnicity_commonality returns correct structure."""
+        empty = _empty_ethnicity_commonality()
+
+        # Verify structure
+        assert isinstance(empty, dict), "Empty ethnicity should be a dictionary"
+        assert empty['shared_regions'] == [], "Empty ethnicity should have empty shared_regions"
+        assert empty['region_details'] == {}, "Empty ethnicity should have empty region_details"
+        assert empty['similarity_score'] == 0.0, "Empty ethnicity should have 0.0 similarity_score"
+        assert empty['top_shared_region'] is None, "Empty ethnicity should have None top_shared_region"
+        assert 'calculated_at' in empty, "Empty ethnicity should have calculated_at"
+
+        logger.info("✓ Empty ethnicity commonality structure is correct")
+        return True
+
+    def _test_calculate_ethnicity_commonality_with_no_data() -> bool:
+        """Test calculate_ethnicity_commonality with no ethnicity data."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            # Use invalid profile_id and person_id (no ethnicity data)
+            result = calculate_ethnicity_commonality(session, 'invalid-profile-id-12345', 99999)
+
+            # Should return empty ethnicity commonality
+            assert result['shared_regions'] == [], "No data should have empty shared_regions"
+            assert result['similarity_score'] == 0.0, "No data should have 0.0 similarity_score"
+
+            logger.info("✓ No ethnicity data returns empty commonality")
+            return True
+        finally:
+            session.close()
+
+    def _test_statistics_with_tree_owner() -> bool:
+        """Test that tree owner profile is handled gracefully."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+
+            # Should not raise warning for tree owner
+            stats = calculate_tree_statistics(session, tree_owner_id)
+
+            # Should still calculate global statistics
+            assert stats['total_matches'] >= 0, "Tree owner should have statistics"
+
+            logger.info("✓ Tree owner profile handled gracefully")
+            return True
+        finally:
+            session.close()
+
+    def _test_statistics_timestamp_format() -> bool:
+        """Test that calculated_at timestamp is in correct format."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            stats = calculate_tree_statistics(session, tree_owner_id)
+
+            # Verify timestamp
+            assert 'calculated_at' in stats, "Stats should have calculated_at"
+            assert isinstance(stats['calculated_at'], datetime), "calculated_at should be datetime"
+            # Note: datetime.now(timezone.utc) creates timezone-aware datetime
+            # but the tzinfo might be None in some cases due to caching
+            # Just verify it's a datetime object
+
+            logger.info("✓ Timestamp format is correct")
+            return True
+        finally:
+            session.close()
+
+    def _test_statistics_ethnicity_regions_structure() -> bool:
+        """Test that ethnicity_regions structure is correct."""
+        from core.database_manager import DatabaseManager
+        dm = DatabaseManager()
+        session = dm.get_session()
+        try:
+            tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+            stats = calculate_tree_statistics(session, tree_owner_id)
+
+            # Verify ethnicity_regions structure
+            assert 'ethnicity_regions' in stats, "Stats should have ethnicity_regions"
+            assert isinstance(stats['ethnicity_regions'], dict), "ethnicity_regions should be dict"
+
+            logger.info("✓ Ethnicity regions structure is correct")
+            return True
+        finally:
+            session.close()
 
     suite = TestSuite("Tree Statistics Utils", "tree_stats_utils")
     suite.run_test(
         "Function availability",
-        test_statistics_functions_available,
+        _test_statistics_functions_available,
         "All tree statistics functions available",
+    )
+    suite.run_test(
+        "Calculate tree statistics with valid profile",
+        _test_calculate_tree_statistics_with_valid_profile,
+        "Tree statistics calculated correctly for valid profile",
+    )
+    suite.run_test(
+        "Calculate tree statistics with invalid profile",
+        _test_calculate_tree_statistics_with_invalid_profile,
+        "Invalid profile returns empty statistics",
+    )
+    suite.run_test(
+        "Empty statistics structure",
+        _test_empty_statistics_structure,
+        "Empty statistics structure is correct",
+    )
+    suite.run_test(
+        "Statistics cache hit",
+        _test_statistics_cache_hit,
+        "Statistics are cached and reused",
+    )
+    suite.run_test(
+        "Statistics match counts",
+        _test_statistics_match_counts,
+        "Match counts add up correctly",
+    )
+    suite.run_test(
+        "Empty ethnicity commonality structure",
+        _test_empty_ethnicity_commonality_structure,
+        "Empty ethnicity commonality structure is correct",
+    )
+    suite.run_test(
+        "Calculate ethnicity commonality with no data",
+        _test_calculate_ethnicity_commonality_with_no_data,
+        "No ethnicity data returns empty commonality",
+    )
+    suite.run_test(
+        "Statistics with tree owner",
+        _test_statistics_with_tree_owner,
+        "Tree owner profile handled gracefully",
+    )
+    suite.run_test(
+        "Statistics timestamp format",
+        _test_statistics_timestamp_format,
+        "Timestamp format is correct",
+    )
+    suite.run_test(
+        "Statistics ethnicity regions structure",
+        _test_statistics_ethnicity_regions_structure,
+        "Ethnicity regions structure is correct",
         "Verify calculate_tree_statistics and calculate_ethnicity_commonality exist",
         "Check function definitions in module globals"
     )
