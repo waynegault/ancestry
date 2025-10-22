@@ -47,15 +47,6 @@ from config.config_manager import ConfigManager
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
-try:
-    from database import Base
-
-    HAS_DATABASE_BASE = True
-except ImportError:
-    Base = None  # Define Base as None to satisfy pylance
-    HAS_DATABASE_BASE = False
-    logger.warning("Could not import Base from database module")
-
 
 class DatabaseManager:
     """
@@ -556,13 +547,16 @@ class DatabaseManager:
             if existing_tables:
                 logger.debug(f"Database already exists with tables: {existing_tables}")
             # Create tables only if the database is empty
-            elif HAS_DATABASE_BASE and Base is not None:
-                Base.metadata.create_all(self.engine)
-                logger.debug("DB tables created successfully.")
             else:
-                logger.warning(
-                    "Cannot create tables - Base not available from database module"
-                )
+                # Import Base locally to avoid circular import issues
+                try:
+                    from database import Base
+                    Base.metadata.create_all(self.engine)
+                    logger.debug("DB tables created successfully.")
+                except ImportError as e:
+                    logger.warning(
+                        f"Cannot create tables - Base not available from database module: {e}"
+                    )
         except SQLAlchemyError as table_create_e:
             logger.warning(
                 f"Non-critical error during DB table check/creation: {table_create_e}"
