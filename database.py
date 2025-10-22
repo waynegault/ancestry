@@ -77,8 +77,6 @@ from core.error_handling import (
     timeout_protection,
 )
 
-
-
 # === MODULE CONFIGURATION ===
 # Use global cached config instance
 # Note: SessionManager imported locally when needed to avoid circular imports
@@ -3535,10 +3533,7 @@ def _test_database_model_definitions() -> None:
         instance_created = False
         try:
             # Provide required fields for models that need them
-            if model_class == Person:
-                instance = model_class(username="test_user")
-            else:
-                instance = model_class()
+            instance = model_class(username="test_user") if model_class == Person else model_class()
             instance_created = instance is not None
             _ = type(instance).__name__  # ensure attribute access is not useless
         except Exception as e:

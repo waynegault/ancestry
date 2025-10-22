@@ -27,8 +27,6 @@ from sqlalchemy.orm import Session
 from database import ConversationMetrics, EngagementTracking
 
 
-
-
 def record_engagement_event(
     session: Session,
     people_id: int,
@@ -79,6 +77,75 @@ def record_engagement_event(
     return event
 
 
+def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Optional[str]) -> None:
+    """Update metrics when a message is sent."""
+    setattr(metrics, 'messages_sent', getattr(metrics, 'messages_sent') + 1)
+    now = datetime.now(timezone.utc)
+    setattr(metrics, 'last_message_sent', now)
+    if getattr(metrics, 'first_message_sent') is None:
+        setattr(metrics, 'first_message_sent', now)
+
+    # Track initial template
+    if getattr(metrics, 'messages_sent') == 1 and template_used:
+        setattr(metrics, 'initial_template_used', template_used)
+
+    # Track all templates used
+    if template_used:
+        templates_json = getattr(metrics, 'templates_used')
+        templates = json.loads(templates_json) if templates_json else []
+        if template_used not in templates:
+            templates.append(template_used)
+        setattr(metrics, 'templates_used', json.dumps(templates))
+
+
+def _update_received_message_metrics(metrics: ConversationMetrics) -> None:
+    """Update metrics when a message is received."""
+    setattr(metrics, 'messages_received', getattr(metrics, 'messages_received') + 1)
+    now = datetime.now(timezone.utc)
+    setattr(metrics, 'last_message_received', now)
+
+    # Track first response
+    if getattr(metrics, 'first_response_received') is not True:
+        setattr(metrics, 'first_response_received', True)
+        setattr(metrics, 'first_response_date', now)
+
+        # Calculate time to first response
+        first_sent = getattr(metrics, 'first_message_sent')
+        if first_sent is not None:
+            time_diff = now - first_sent
+            setattr(metrics, 'time_to_first_response_hours', time_diff.total_seconds() / 3600)
+
+
+def _update_engagement_metrics(metrics: ConversationMetrics, engagement_score: int) -> None:
+    """Update engagement score metrics."""
+    setattr(metrics, 'current_engagement_score', engagement_score)
+    current_max = getattr(metrics, 'max_engagement_score')
+    setattr(metrics, 'max_engagement_score', max(engagement_score, current_max))
+
+    # Update average engagement score (weighted average)
+    current_avg = getattr(metrics, 'avg_engagement_score')
+    if current_avg is None:
+        setattr(metrics, 'avg_engagement_score', float(engagement_score))
+    else:
+        new_avg = (current_avg * 0.8) + (engagement_score * 0.2)
+        setattr(metrics, 'avg_engagement_score', new_avg)
+
+
+def _update_research_outcomes(
+    metrics: ConversationMetrics,
+    person_looked_up: bool,
+    person_found: bool,
+    research_task_created: bool
+) -> None:
+    """Update research outcome metrics."""
+    if person_looked_up:
+        setattr(metrics, 'people_looked_up', getattr(metrics, 'people_looked_up') + 1)
+    if person_found:
+        setattr(metrics, 'people_found', getattr(metrics, 'people_found') + 1)
+    if research_task_created:
+        setattr(metrics, 'research_tasks_created', getattr(metrics, 'research_tasks_created') + 1)
+
+
 def update_conversation_metrics(
     session: Session,
     people_id: int,
@@ -114,62 +181,19 @@ def update_conversation_metrics(
     """
     # Get or create metrics record
     metrics = session.query(ConversationMetrics).filter_by(people_id=people_id).first()
-
     if not metrics:
         metrics = ConversationMetrics(people_id=people_id)
         session.add(metrics)
 
     # Update message counts
     if message_sent:
-        setattr(metrics, 'messages_sent', getattr(metrics, 'messages_sent') + 1)
-        now = datetime.now(timezone.utc)
-        setattr(metrics, 'last_message_sent', now)
-        if getattr(metrics, 'first_message_sent') is None:
-            setattr(metrics, 'first_message_sent', now)
-
-        # Track initial template
-        if getattr(metrics, 'messages_sent') == 1 and template_used:
-            setattr(metrics, 'initial_template_used', template_used)
-
-        # Track all templates used
-        if template_used:
-            templates_json = getattr(metrics, 'templates_used')
-            templates = json.loads(templates_json) if templates_json else []
-            if template_used not in templates:
-                templates.append(template_used)
-            setattr(metrics, 'templates_used', json.dumps(templates))
-
+        _update_sent_message_metrics(metrics, template_used)
     if message_received:
-        setattr(metrics, 'messages_received', getattr(metrics, 'messages_received') + 1)
-        now = datetime.now(timezone.utc)
-        setattr(metrics, 'last_message_received', now)
-
-        # Track first response
-        if getattr(metrics, 'first_response_received') is not True:
-            setattr(metrics, 'first_response_received', True)
-            setattr(metrics, 'first_response_date', now)
-
-            # Calculate time to first response
-            first_sent = getattr(metrics, 'first_message_sent')
-            if first_sent is not None:
-                time_diff = now - first_sent
-                setattr(metrics, 'time_to_first_response_hours', time_diff.total_seconds() / 3600)
+        _update_received_message_metrics(metrics)
 
     # Update engagement metrics
     if engagement_score is not None:
-        setattr(metrics, 'current_engagement_score', engagement_score)
-        current_max = getattr(metrics, 'max_engagement_score')
-        setattr(metrics, 'max_engagement_score', max(engagement_score, current_max))
-
-        # Update average engagement score
-        # Simple moving average based on number of updates
-        current_avg = getattr(metrics, 'avg_engagement_score')
-        if current_avg is None:
-            setattr(metrics, 'avg_engagement_score', float(engagement_score))
-        else:
-            # Weighted average (give more weight to recent scores)
-            new_avg = (current_avg * 0.8) + (engagement_score * 0.2)
-            setattr(metrics, 'avg_engagement_score', new_avg)
+        _update_engagement_metrics(metrics, engagement_score)
 
     # Update conversation phase
     if conversation_phase:
@@ -183,12 +207,7 @@ def update_conversation_metrics(
         setattr(metrics, 'conversation_duration_days', time_diff.total_seconds() / 86400)
 
     # Update research outcomes
-    if person_looked_up:
-        setattr(metrics, 'people_looked_up', getattr(metrics, 'people_looked_up') + 1)
-    if person_found:
-        setattr(metrics, 'people_found', getattr(metrics, 'people_found') + 1)
-    if research_task_created:
-        setattr(metrics, 'research_tasks_created', getattr(metrics, 'research_tasks_created') + 1)
+    _update_research_outcomes(metrics, person_looked_up, person_found, research_task_created)
 
     # Update tree impact
     if added_to_tree and getattr(metrics, 'added_to_tree') is not True:
@@ -196,7 +215,6 @@ def update_conversation_metrics(
         setattr(metrics, 'added_to_tree_date', datetime.now(timezone.utc))
 
     session.commit()
-
     return metrics
 
 
