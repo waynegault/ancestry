@@ -62,6 +62,7 @@ __all__ = [
     "assert_valid_function",
     "clean_test_output",
     "create_mock_data",
+    "database_rollback_test",
     "format_score_breakdown_table",
     "format_search_criteria",
     "format_test_result",
@@ -961,3 +962,69 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
         assert available, f"Required function '{func_name}' is not available"
 
     return results
+
+
+# ============================================================================
+# Database Testing Utilities
+# ============================================================================
+
+@contextmanager
+def database_rollback_test(session: Any) -> Iterator[Any]:
+    """
+    Context manager for database tests that automatically rolls back changes.
+
+    This ensures tests clean up after themselves by rolling back all database
+    changes made during the test, regardless of whether the test passes or fails.
+
+    USER REQUIREMENT: "It's ok to add something to the database as long as this
+    is reversed once the test is completed."
+
+    Usage:
+        from test_framework import database_rollback_test
+
+        def test_database_operation():
+            sm = SessionManager()
+            sm.start_sess("Test")
+            db_session = sm.db_session
+
+            with database_rollback_test(db_session):
+                # Make database changes
+                person = Person(profile_id="test123", username="Test User")
+                db_session.add(person)
+                db_session.commit()
+
+                # Verify changes
+                assert db_session.query(Person).filter_by(profile_id="test123").first()
+
+            # Changes are automatically rolled back after the context exits
+            # The person with profile_id="test123" no longer exists
+
+    Args:
+        session: SQLAlchemy session to manage
+
+    Yields:
+        The session for use in the test
+
+    Note:
+        - All changes are rolled back, even if test passes
+        - Nested transactions are supported via savepoints
+        - Works with both SessionManager.db_session and standalone sessions
+    """
+    # Create a savepoint to rollback to
+    savepoint = session.begin_nested() if session.in_transaction() else session.begin()
+
+    try:
+        yield session
+    finally:
+        # Always rollback to the savepoint, regardless of test outcome
+        try:
+            if savepoint.is_active:
+                savepoint.rollback()
+            else:
+                # If savepoint is not active, rollback the entire session
+                session.rollback()
+        except Exception as rollback_error:
+            logger.warning(f"Error during test database rollback: {rollback_error}")
+            # Force rollback even if savepoint rollback fails
+            with suppress(Exception):
+                session.rollback()
