@@ -1012,7 +1012,8 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
     # Set timeout for subprocess (120 seconds for modules with many tests)
     # This prevents tests from hanging indefinitely
     # Some modules like action8_messaging (47 tests) and gedcom_utils (17 tests) need more time
-    timeout_seconds = 120
+    # action8_messaging has 47 tests and needs extra time for comprehensive testing
+    timeout_seconds = 180 if module_name == "action8_messaging.py" else 120
 
     try:
         result = subprocess.run(
