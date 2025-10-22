@@ -638,13 +638,41 @@ class PersonProcessor:
                 continue
 
             # If not found in GEDCOM, try API search (Action 11)
-            # TODO: Implement API search in future iteration
-            logger.debug(f"{person_name} not found in GEDCOM, API search not yet implemented")
+            logger.debug(f"{person_name} not found in GEDCOM, attempting API search")
+            api_result = self._search_api_for_person(person_name, person_data)
 
-            # Create not-found result
+            if api_result:
+                logger.info(f"Found {person_name} via API search (score: {api_result.match_score})")
+                lookup_results.append(api_result)
+                people_found_count += 1
+
+                # Track analytics for successful API lookup
+                try:
+                    if self.db_state.session:
+                        record_engagement_event(
+                            session=self.db_state.session,
+                            people_id=person.id,
+                            event_type="person_lookup",
+                            event_description=f"Found {person_name} via API (score: {api_result.match_score})",
+                            event_data={"person_name": person_name, "match_score": api_result.match_score, "source": "API"},
+                        )
+
+                        update_conversation_metrics(
+                            session=self.db_state.session,
+                            people_id=person.id,
+                            person_looked_up=True,
+                            person_found=True,
+                        )
+                except Exception as analytics_error:
+                    logger.debug(f"Analytics tracking failed for API person lookup: {analytics_error}")
+
+                continue
+
+            # Not found in GEDCOM or API
+            logger.debug(f"{person_name} not found in GEDCOM or API")
             not_found = create_not_found_result(
                 person_name,
-                reason="Person not found in GEDCOM file"
+                reason="Person not found in GEDCOM file or API"
             )
             lookup_results.append(not_found)
 
@@ -655,8 +683,8 @@ class PersonProcessor:
                         session=self.db_state.session,
                         people_id=person.id,
                         event_type="person_lookup",
-                        event_description=f"Person {person_name} not found",
-                        event_data={"person_name": person_name, "source": "GEDCOM"},
+                        event_description=f"Person {person_name} not found in GEDCOM or API",
+                        event_data={"person_name": person_name, "source": "GEDCOM+API"},
                     )
 
                     update_conversation_metrics(
@@ -770,6 +798,65 @@ class PersonProcessor:
 
         except Exception as e:
             logger.error(f"Error searching GEDCOM for person: {e}", exc_info=True)
+            return None
+
+    def _search_api_for_person(self, person_name: str, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
+        """
+        Search for a person using Ancestry API (Action 11).
+
+        Args:
+            person_name: Full name of the person
+            person_data: Dictionary with person details from AI extraction
+
+        Returns:
+            PersonLookupResult if found, None otherwise
+        """
+        try:
+            from action11 import search_ancestry_api_for_person
+
+            # Build search criteria from person_data
+            search_criteria = self._build_search_criteria_from_person_data(person_data)
+            if not search_criteria:
+                logger.debug(f"Insufficient search criteria for API search: {person_name}")
+                return None
+
+            # Perform API search
+            logger.debug(f"Searching Ancestry API for {person_name}")
+            api_results = search_ancestry_api_for_person(
+                session_manager=self.session_manager,
+                search_criteria=search_criteria,
+                max_results=5,
+            )
+
+            if not api_results:
+                logger.debug(f"No API results found for {person_name}")
+                return None
+
+            # Get top result
+            top_result = api_results[0]
+            score = top_result.get("total_score", 0)
+
+            if score < 50:
+                logger.debug(f"Top API result score too low ({score}), rejecting")
+                return None
+
+            # Create PersonLookupResult from API data
+            # Note: API results have different structure than GEDCOM results
+            return PersonLookupResult(
+                name=top_result.get("full_name", person_name),
+                birth_year=top_result.get("birth_year"),
+                birth_place=top_result.get("birth_place"),
+                death_year=top_result.get("death_year"),
+                death_place=top_result.get("death_place"),
+                relationship_path=top_result.get("relationship"),
+                match_score=score,
+                found=True,
+                source="API",
+                family_details=top_result.get("family_info", {}),
+            )
+
+        except Exception as e:
+            logger.error(f"Error searching API for person {person_name}: {e}", exc_info=True)
             return None
 
     def _determine_conversation_phase(self, context_logs: list[ConversationLog]) -> str:
