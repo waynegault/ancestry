@@ -77,7 +77,7 @@ class SessionComponentCache(BaseCacheModule):
     Extends the existing cache infrastructure with session-specific optimizations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._active_sessions = weakref.WeakSet()
         self._session_timestamps: dict[str, float] = {}
         self._lock = threading.Lock()

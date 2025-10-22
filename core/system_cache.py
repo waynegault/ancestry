@@ -402,7 +402,7 @@ _memory_optimizer = MemoryOptimizer()
 # === CACHING DECORATORS ===
 
 
-def cached_api_call(service: str, ttl: Optional[int] = None):
+def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable:
     """
     Decorator for caching API calls with intelligent TTL management.
 
@@ -412,9 +412,9 @@ def cached_api_call(service: str, ttl: Optional[int] = None):
         return ai_service.analyze(message_content)
     """
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Create cache key from function name and parameters
             method = func.__name__
             params = {"args": args, "kwargs": kwargs}
@@ -449,7 +449,7 @@ def cached_api_call(service: str, ttl: Optional[int] = None):
     return decorator
 
 
-def cached_database_query(ttl: Optional[int] = None):
+def cached_database_query(ttl: Optional[int] = None) -> Callable:
     """
     Decorator for caching database query results.
 
@@ -459,9 +459,9 @@ def cached_database_query(ttl: Optional[int] = None):
         return session.query(ConversationLog).filter_by(people_id=person_id).all()
     """
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Create cache key from function and parameters
             cache_key_data = f"{func.__name__}|{args}|{sorted(kwargs.items())}"
 
@@ -484,7 +484,7 @@ def cached_database_query(ttl: Optional[int] = None):
     return decorator
 
 
-def memory_optimized(gc_threshold: Optional[float] = None):
+def memory_optimized(gc_threshold: Optional[float] = None) -> Callable:
     """
     Decorator for functions that should trigger memory optimization.
 
@@ -495,9 +495,9 @@ def memory_optimized(gc_threshold: Optional[float] = None):
         return result
     """
 
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Check memory before execution
             _memory_optimizer.get_memory_usage_mb()
 
