@@ -1388,8 +1388,8 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in ["deepseek", "gemini"]:
-        logger.error(f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek' or 'gemini'")
+    if ai_provider not in ["deepseek", "gemini", "local_llm"]:
+        logger.error(f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek', 'gemini', or 'local_llm'")
         return False
     logger.info(f"✅ AI_PROVIDER: {ai_provider}")
     return True
@@ -1476,7 +1476,7 @@ def _validate_local_llm_config() -> bool:
         logger.error("❌ LOCAL_LLM_API_KEY not configured")
         config_valid = False
     else:
-        logger.info(f"✅ LOCAL_LLM_API_KEY configured")
+        logger.info("✅ LOCAL_LLM_API_KEY configured")
 
     if not model_name:
         logger.error("❌ LOCAL_LLM_MODEL not configured")

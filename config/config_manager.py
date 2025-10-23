@@ -740,6 +740,19 @@ class ConfigManager:
         if google_ai_model:
             api_config["google_ai_model"] = google_ai_model
 
+        # Local LLM API configuration
+        local_llm_api_key = os.getenv("LOCAL_LLM_API_KEY")
+        if local_llm_api_key:
+            api_config["local_llm_api_key"] = local_llm_api_key
+
+        local_llm_model = os.getenv("LOCAL_LLM_MODEL")
+        if local_llm_model:
+            api_config["local_llm_model"] = local_llm_model
+
+        local_llm_base_url = os.getenv("LOCAL_LLM_BASE_URL")
+        if local_llm_base_url:
+            api_config["local_llm_base_url"] = local_llm_base_url
+
         if api_config:
             config["api"] = api_config
 
