@@ -114,7 +114,7 @@ def run_action10_search(criteria: dict[str, Any]) -> Optional[list[dict[str, Any
         # Call Action 10's filter_and_score_individuals function
         from pathlib import Path
 
-        from gedcom_utils import load_gedcom_data  # type: ignore[import-not-found]
+        from action10 import load_gedcom_data  # type: ignore[import-not-found]
 
         gedcom_path = os.getenv("GEDCOM_FILE_PATH")
         if not gedcom_path:
@@ -467,28 +467,334 @@ def _test_action12_imports() -> None:
     assert hasattr(action11, 'search_ancestry_api_for_person'), "action11 should have search_ancestry_api_for_person"
 
 
-def action12_module_tests() -> bool:
-    """Run all Action 12 tests."""
-    from test_framework import TestSuite, suppress_logging
+def _test_print_functions() -> None:
+    """Test print helper functions don't crash."""
+    # Test _print_search_criteria
+    criteria = {"full_name": "John Smith", "birth_year": "1950", "birth_place": "London"}
+    _print_search_criteria(criteria)
 
-    suite = TestSuite("Action 12", "action12.py")
+    # Test with minimal criteria
+    _print_search_criteria({"full_name": "Jane Doe"})
 
-    tests = [
-        ("Search input structure", _test_search_input_structure, "Test search input returns proper structure"),
-        ("Search input optional fields", _test_search_input_optional_fields, "Test optional field handling"),
-        ("Action 10 search structure", _test_run_action10_search_structure, "Test Action 10 search criteria"),
-        ("Action 11 search structure", _test_run_action11_search_structure, "Test Action 11 search criteria"),
-        ("Compare results structure", _test_compare_results_structure, "Test result comparison"),
-        ("Compare results output", _test_compare_results_output, "Test result output formatting"),
-        ("Action 12 functions available", _test_action12_functions_available, "Test all functions exist"),
-        ("Action 12 imports", _test_action12_imports, "Test required imports"),
+    # Test _print_action10_results with results
+    action10_results = [
+        {
+            "full_name_disp": "John Smith",
+            "score": 95,
+            "birth_year": 1950,
+            "death_year": 2020
+        }
     ]
+    _print_action10_results(action10_results)
 
-    with suppress_logging():
-        for test_name, test_func, expected_behavior in tests:
-            suite.run_test(test_name, test_func, expected_behavior)
+    # Test with None
+    _print_action10_results(None)
+
+    # Test with empty list
+    _print_action10_results([])
+
+    # Test _print_action11_results with results
+    action11_results = [
+        {
+            "display_name": "John Smith",
+            "score": 92,
+            "birth_year": 1950,
+            "death_year": 2020
+        }
+    ]
+    _print_action11_results(action11_results)
+
+    # Test with None
+    _print_action11_results(None)
+
+    # Test with empty list
+    _print_action11_results([])
+
+
+def _test_score_comparison() -> None:
+    """Test score comparison logic."""
+    # Test with matching scores
+    action10_results = [{"score": 100}]
+    action11_results = [{"score": 100}]
+    _print_score_comparison(action10_results, action11_results)
+
+    # Test with minor difference
+    action10_results = [{"score": 100}]
+    action11_results = [{"score": 95}]
+    _print_score_comparison(action10_results, action11_results)
+
+    # Test with significant difference
+    action10_results = [{"score": 100}]
+    action11_results = [{"score": 50}]
+    _print_score_comparison(action10_results, action11_results)
+
+    # Test with None results
+    _print_score_comparison(None, None)
+    _print_score_comparison(action10_results, None)
+    _print_score_comparison(None, action11_results)
+
+    # Test with empty results
+    _print_score_comparison([], [])
+
+
+def _test_search_criteria_building() -> None:
+    """Test search criteria building for both actions."""
+    from unittest.mock import patch
+
+    # Test criteria with all fields
+    full_criteria = {
+        "first_name": "John",
+        "surname": "Smith",
+        "birth_year": "1950",
+        "birth_place": "London",
+        "death_year": "2020",
+        "death_place": "Manchester",
+        "gender": "M"
+    }
+
+    # Mock GEDCOM loading for Action 10 (import is inside the function)
+    from unittest.mock import MagicMock
+
+    # Create a mock module with config_schema attribute
+    mock_config_module = MagicMock()
+    mock_config = MagicMock()
+    mock_config.common_scoring_weights = {}
+    mock_config_module.config_schema = mock_config
+
+    # Mock the module import
+    import sys
+    sys.modules['config_schema'] = mock_config_module
+
+    try:
+        with patch('action10.load_gedcom_data') as mock_load, \
+             patch('action10.filter_and_score_individuals') as mock_filter, \
+             patch.dict('os.environ', {'GEDCOM_FILE_PATH': '/path/to/gedcom.ged'}):
+
+            mock_load.return_value = {"individuals": []}
+            mock_filter.return_value = []
+
+            # Run the search
+            _ = run_action10_search(full_criteria)
+
+            # Verify filter_and_score_individuals was called
+            assert mock_filter.called, "Should call filter_and_score_individuals"
+
+            # Verify search criteria was built correctly
+            call_args = mock_filter.call_args
+            search_criteria = call_args[0][1]  # Second argument
+
+            assert search_criteria["first_name"] == "john", "Should lowercase first name"
+            assert search_criteria["surname"] == "smith", "Should lowercase surname"
+            assert search_criteria["birth_year"] == 1950, "Should convert birth year to int"
+            assert search_criteria["gender"] == "m", "Should lowercase gender"
+    finally:
+        # Clean up the mock module
+        if 'config_schema' in sys.modules:
+            del sys.modules['config_schema']
+
+
+def _test_action10_error_handling() -> None:
+    """Test Action 10 error handling."""
+    from unittest.mock import patch
+
+    # Test with missing GEDCOM_FILE_PATH
+    with patch.dict('os.environ', {}, clear=True):
+        result = run_action10_search({"first_name": "John", "surname": "Smith"})
+        assert result is None, "Should return None when GEDCOM_FILE_PATH not set"
+
+    # Test with GEDCOM load failure (import is inside the function)
+    with patch('action10.load_gedcom_data', return_value=None), \
+         patch.dict('os.environ', {'GEDCOM_FILE_PATH': '/path/to/gedcom.ged'}):
+        result = run_action10_search({"first_name": "John", "surname": "Smith"})
+        assert result is None, "Should return None when GEDCOM load fails"
+
+    # Test with exception during search
+    with patch('action10.load_gedcom_data', side_effect=Exception("Test error")), \
+         patch.dict('os.environ', {'GEDCOM_FILE_PATH': '/path/to/gedcom.ged'}):
+        result = run_action10_search({"first_name": "John", "surname": "Smith"})
+        assert result is None, "Should return None when exception occurs"
+
+
+def _test_action11_error_handling() -> None:
+    """Test Action 11 error handling."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+
+    # Test with exception during search
+    with patch('action11.search_ancestry_api_for_person', side_effect=Exception("API error")):
+        result = run_action11_search(mock_sm, {"first_name": "John", "surname": "Smith"})
+        assert result is None, "Should return None when exception occurs"
+
+    # Test with None result from API
+    with patch('action11.search_ancestry_api_for_person', return_value=None):
+        result = run_action11_search(mock_sm, {"first_name": "John", "surname": "Smith"})
+        assert result is None, "Should return None when API returns None"
+
+    # Test with empty result from API
+    with patch('action11.search_ancestry_api_for_person', return_value=[]):
+        result = run_action11_search(mock_sm, {"first_name": "John", "surname": "Smith"})
+        assert result is None, "Should return None when API returns empty list"
+
+
+def _test_wrapper_function() -> None:
+    """Test run_action12_wrapper function."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+
+    # Test with missing name
+    with patch('builtins.input', side_effect=["", "", "", "", "", "", ""]):
+        result = run_action12_wrapper(mock_sm)
+        assert result is False, "Should return False when name is missing"
+
+    # Test with successful execution
+    with patch('builtins.input', side_effect=["John", "Smith", "", "", "", "", ""]), \
+         patch('action10.load_gedcom_data', return_value={"individuals": []}), \
+         patch('action10.filter_and_score_individuals', return_value=[{"score": 100}]), \
+         patch('action11.search_ancestry_api_for_person', return_value=[{"score": 95}]), \
+         patch.dict('os.environ', {'GEDCOM_FILE_PATH': '/path/to/gedcom.ged'}):
+        result = run_action12_wrapper(mock_sm)
+        assert result is True, "Should return True on successful execution"
+
+    # Test with exception during input
+    with patch('builtins.input', side_effect=Exception("Test error")):
+        result = run_action12_wrapper(mock_sm)
+        assert result is False, "Should return False when exception occurs"
+
+
+def action12_module_tests() -> bool:
+    """Comprehensive test suite for action12.py"""
+    from test_framework import TestSuite
+
+    suite = TestSuite("Action 12: GEDCOM vs API Comparison", "action12.py")
+    suite.start_suite()
+
+    # Category 1: Input Handling Tests
+    suite.run_test(
+        "Search input structure",
+        _test_search_input_structure,
+        "Returns proper structure with all fields",
+        "get_search_input()",
+        "Tests that search input collection returns complete criteria dictionary"
+    )
+
+    suite.run_test(
+        "Search input optional fields",
+        _test_search_input_optional_fields,
+        "Handles optional fields correctly",
+        "get_search_input()",
+        "Tests that optional fields are omitted when not provided"
+    )
+
+    # Category 2: Search Function Tests
+    suite.run_test(
+        "Action 10 search structure",
+        _test_run_action10_search_structure,
+        "Has proper function signature",
+        "run_action10_search()",
+        "Tests that Action 10 search has correct parameters and return type"
+    )
+
+    suite.run_test(
+        "Action 11 search structure",
+        _test_run_action11_search_structure,
+        "Has proper function signature",
+        "run_action11_search()",
+        "Tests that Action 11 search has correct parameters and return type"
+    )
+
+    suite.run_test(
+        "Search criteria building",
+        _test_search_criteria_building,
+        "Builds correct search criteria",
+        "run_action10_search()",
+        "Tests that search criteria is properly formatted for Action 10"
+    )
+
+    # Category 3: Error Handling Tests
+    suite.run_test(
+        "Action 10 error handling",
+        _test_action10_error_handling,
+        "Handles errors gracefully",
+        "run_action10_search()",
+        "Tests error handling for missing GEDCOM, load failures, and exceptions"
+    )
+
+    suite.run_test(
+        "Action 11 error handling",
+        _test_action11_error_handling,
+        "Handles API errors gracefully",
+        "run_action11_search()",
+        "Tests error handling for API failures and empty results"
+    )
+
+    # Category 4: Comparison and Output Tests
+    suite.run_test(
+        "Compare results structure",
+        _test_compare_results_structure,
+        "Handles different result scenarios",
+        "compare_results()",
+        "Tests comparison with None, empty, and mixed results"
+    )
+
+    suite.run_test(
+        "Compare results output",
+        _test_compare_results_output,
+        "Produces output for sample results",
+        "compare_results()",
+        "Tests output formatting with sample Action 10 and 11 results"
+    )
+
+    suite.run_test(
+        "Print helper functions",
+        _test_print_functions,
+        "Print functions don't crash",
+        "_print_search_criteria(), _print_action10_results(), _print_action11_results()",
+        "Tests all print helper functions with various inputs"
+    )
+
+    suite.run_test(
+        "Score comparison logic",
+        _test_score_comparison,
+        "Compares scores correctly",
+        "_print_score_comparison()",
+        "Tests score comparison with matching, minor, and significant differences"
+    )
+
+    # Category 5: Integration Tests
+    suite.run_test(
+        "Wrapper function",
+        _test_wrapper_function,
+        "Orchestrates full workflow",
+        "run_action12_wrapper()",
+        "Tests main wrapper function with various scenarios"
+    )
+
+    # Category 6: Function Availability Tests
+    suite.run_test(
+        "Action 12 functions available",
+        _test_action12_functions_available,
+        "All functions exist and callable",
+        "Module functions",
+        "Tests that all required functions are available"
+    )
+
+    suite.run_test(
+        "Action 12 imports",
+        _test_action12_imports,
+        "Required modules imported",
+        "Module imports",
+        "Tests that action10 and action11 are properly imported"
+    )
 
     return suite.finish_suite()
+
+
+# Create standard test runner
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(action12_module_tests)
 
 
 if __name__ == "__main__":
@@ -496,7 +802,7 @@ if __name__ == "__main__":
 
     # If run directly, execute tests
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        action12_module_tests()
+        run_comprehensive_tests()
     else:
         print("Action 12: Compare GEDCOM vs API Search Results")
         print("This action must be run from main.py")

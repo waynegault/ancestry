@@ -286,10 +286,11 @@ def _determine_browser_requirement(choice: str) -> bool:
         True if action requires browser, False otherwise
     """
     browserless_choices = [
+        "0",   # Action 0 - Delete all but first (database only)
+        "2",   # Action 2 - Reset database
+        "3",   # Action 3 - Backup database
+        "4",   # Action 4 - Restore database
         "10",  # Action 10 - GEDCOM analysis (no browser needed)
-        "reset",
-        "backup",
-        "restore",
     ]
     return choice not in browserless_choices
 
@@ -1731,6 +1732,9 @@ def main() -> None:
         # --- Instantiate SessionManager ---
         session_manager = SessionManager()  # No browser started by default
 
+        # Track if session has been pre-authenticated
+        session_pre_authenticated = False
+
         # --- Main menu loop ---
         while True:
             choice = menu()
@@ -1739,6 +1743,26 @@ def main() -> None:
             # --- Confirmation Check ---
             if not _check_action_confirmation(choice):
                 continue
+
+            # --- Pre-authenticate session for actions that need it ---
+            # This happens once before the first action that requires session_ready state
+            if not session_pre_authenticated and choice in ["1", "6", "7", "8", "9", "11"]:
+                logger.info("Pre-authenticating session for faster action execution...")
+                try:
+                    from session_utils import get_authenticated_session
+                    # This will create and cache the authenticated session
+                    # Subsequent actions will reuse it via SessionManager's caching
+                    _, _ = get_authenticated_session(
+                        action_name="Main Menu Pre-Authentication",
+                        reuse_cached=True,
+                        skip_csrf=True,
+                        timeout=120
+                    )
+                    session_pre_authenticated = True
+                    logger.info("✅ Session pre-authenticated successfully")
+                except Exception as e:
+                    logger.warning(f"Pre-authentication failed (will authenticate during action): {e}")
+                    # Don't fail - action will authenticate itself if needed
 
             # --- Action Dispatching ---
             if not _dispatch_menu_action(choice, session_manager, config):

@@ -1601,134 +1601,9 @@ def _test_error_handling() -> bool:
 # Functional API Tests (Require Live Session)
 # ==============================================
 
-# Global session manager for test reuse
-_test_session_manager: Optional[SessionManager] = None
-_test_session_uuid: Optional[str] = None
-
-
-def _check_cached_session(reuse_session: bool) -> tuple[Optional[SessionManager], Optional[str]]:
-    """Check if cached session is available and valid."""
-    global _test_session_manager, _test_session_uuid  # noqa: PLW0603  # noqa: PLW0603
-
-    if not reuse_session or _test_session_manager is None or _test_session_uuid is None:
-        return None, None
-
-    if _test_session_manager.is_sess_valid():
-        logger.info("♻️  Reusing existing authenticated session from previous test")
-        return _test_session_manager, _test_session_uuid
-
-    logger.info("⚠️  Cached session invalid, creating new session...")
-    _test_session_manager = None
-    _test_session_uuid = None
-    return None, None
-
-
-def _create_and_start_session() -> SessionManager:
-    """Create and start a new session manager."""
-    logger.info("Step 1: Creating SessionManager...")
-    sm = SessionManager()
-    logger.info("✅ SessionManager created")
-
-    logger.info("Step 2: Configuring browser requirement...")
-    sm.browser_manager.browser_needed = True
-    logger.info("✅ Browser marked as needed")
-
-    logger.info("Step 3: Starting session (database + browser)...")
-    started = sm.start_sess("Action 6 API Tests")
-    if not started:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Failed to start session - browser initialization failed")
-    logger.info("✅ Session started successfully")
-
-    return sm
-
-
-def _authenticate_session(sm: SessionManager) -> None:
-    """Authenticate the session using cookies or login."""
-    from utils import _load_login_cookies, log_in, login_status
-
-    logger.info("Step 4: Attempting to load saved cookies...")
-    cookies_loaded = _load_login_cookies(sm)
-    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
-
-    logger.info("Step 5: Checking login status...")
-    login_check = login_status(sm, disable_ui_fallback=True)
-
-    if login_check is True:
-        logger.info("✅ Already logged in")
-    elif login_check is False:
-        logger.info("⚠️  Not logged in - attempting login...")
-        login_result = log_in(sm)
-        if login_result != "LOGIN_SUCCEEDED":
-            sm.close_sess(keep_db=False)
-            raise AssertionError(f"Login failed: {login_result}")
-        logger.info("✅ Login successful")
-    else:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Login status check failed critically (returned None)")
-
-
-def _validate_session_ready(sm: SessionManager) -> None:
-    """Validate session is ready with all identifiers."""
-    logger.info("Step 6: Ensuring session is ready...")
-    ready = sm.ensure_session_ready("coord - API Tests", skip_csrf=True)
-    if not ready:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Session not ready - cookies/identifiers missing")
-    logger.info("✅ Session ready")
-
-    logger.info("Step 7: Verifying UUID is available...")
-    if not sm.my_uuid:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("UUID not available - session initialization incomplete")
-    logger.info(f"✅ UUID available: {sm.my_uuid}")
-
-
-def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionManager, str]:
-    """Ensure session is ready for API tests. Returns (session_manager, my_uuid).
-
-    This function establishes a valid Ancestry session by:
-    1. Creating and initializing a SessionManager (or reusing existing one)
-    2. Starting the session (database + browser)
-    3. Loading saved cookies from previous session (if available)
-    4. Checking login status and logging in if needed
-    5. Ensuring session is ready with all identifiers
-    6. Validating UUID is available
-
-    Args:
-        reuse_session: If True, reuse existing session from previous test (default: True)
-
-    Raises AssertionError if session cannot be established (tests will be skipped).
-    """
-    global _test_session_manager, _test_session_uuid  # noqa: PLW0603  # noqa: PLW0603
-
-    # Check for cached session
-    cached_sm, cached_uuid = _check_cached_session(reuse_session)
-    if cached_sm and cached_uuid:
-        return cached_sm, cached_uuid
-
-    logger.info("=" * 80)
-    logger.info("Setting up authenticated session for API tests...")
-    logger.info("=" * 80)
-
-    # Create and start new session
-    sm = _create_and_start_session()
-
-    # Authenticate the session
-    _authenticate_session(sm)
-
-    # Validate session is ready
-    _validate_session_ready(sm)
-
-    logger.info("=" * 80)
-    logger.info("✅ Valid authenticated session established for API tests")
-    logger.info("=" * 80)
-
-    # Cache session for reuse
-    _test_session_manager = sm
-    _test_session_uuid = sm.my_uuid
-
-    return sm, sm.my_uuid
+# === SESSION SETUP FOR TESTS ===
+# Migrated to use centralized session_utils.py (reduces 128 lines to 1 import!)
+from session_utils import ensure_session_for_tests as _ensure_session_for_api_tests
 
 
 def _test_match_list_api() -> bool:
@@ -2016,7 +1891,6 @@ def _test_parallel_fetch_match_details() -> bool:
 def action6_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py using standardized TestSuite framework."""
     import os
-    import warnings
 
     from test_framework import TestSuite
 
@@ -2133,30 +2007,13 @@ def action6_module_tests() -> bool:
 
     result = suite.finish_suite()
 
-    # Clean up test session if it exists
-    global _test_session_manager  # noqa: PLW0603  # noqa: PLW0603
-    if _test_session_manager is not None:
-        try:
-            # Suppress all warnings and errors during cleanup
-            import sys
-            from pathlib import Path
-
-            # Redirect stderr temporarily to suppress exception messages
-            original_stderr = sys.stderr
-            with Path('/dev/null' if sys.platform != 'win32' else 'nul').open('w') as devnull:
-                sys.stderr = devnull
-                try:
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore")
-                        _test_session_manager.close_sess(keep_db=False)
-                finally:
-                    # Restore stderr
-                    sys.stderr = original_stderr
-        except Exception:
-            # Silently ignore all cleanup errors
-            pass
-        finally:
-            _test_session_manager = None
+    # Clean up test session using centralized session_utils
+    try:
+        from session_utils import close_cached_session
+        close_cached_session(keep_db=False)
+    except Exception:
+        # Silently ignore cleanup errors
+        pass
 
     return result
 

@@ -411,6 +411,35 @@ class ConversationMetrics(Base):
     # --- Relationships ---
     person = relationship("Person", back_populates="conversation_metrics")  # type: ignore
 
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize ConversationMetrics with proper defaults."""
+        super().__init__(**kwargs)
+        # Initialize integer fields with 0 if not provided
+        self._initialize_integer_fields()
+        # Initialize boolean fields with False if not provided
+        self._initialize_boolean_fields()
+        # Initialize conversation_phase with default if not provided
+        if self.conversation_phase is None:
+            self.conversation_phase = "initial_outreach"
+
+    def _initialize_integer_fields(self) -> None:
+        """Initialize integer fields with 0 if not provided."""
+        integer_fields = [
+            'messages_sent', 'messages_received', 'current_engagement_score',
+            'max_engagement_score', 'people_looked_up', 'people_found',
+            'research_tasks_created'
+        ]
+        for field in integer_fields:
+            if getattr(self, field) is None:
+                setattr(self, field, 0)
+
+    def _initialize_boolean_fields(self) -> None:
+        """Initialize boolean fields with False if not provided."""
+        boolean_fields = ['first_response_received', 'added_to_tree']
+        for field in boolean_fields:
+            if getattr(self, field) is None:
+                setattr(self, field, False)
+
 
 # End of ConversationMetrics class
 

@@ -854,10 +854,12 @@ class InboxProcessor:
         try:
             # Step 1: Query for the entry with the maximum timestamp
             # Order by descending timestamp, handle NULLs last, take the first result
+            # EXCLUDE dry run conversations (they don't exist in the real API)
             latest_entry = (
                 session.query(
                     ConversationLog.conversation_id, ConversationLog.latest_timestamp
                 )
+                .filter(~ConversationLog.conversation_id.like('dryrun_%'))
                 .order_by(ConversationLog.latest_timestamp.desc().nullslast())
                 .first()
             )
@@ -2479,94 +2481,9 @@ class InboxProcessor:
 
 # --- Enhanced Test Framework Implementation ---
 
-# Global test session manager (reused across tests for efficiency)
-_test_session_manager: Optional[SessionManager] = None
-
-
-def _ensure_session_for_tests(reuse_session: bool = True) -> SessionManager:
-    """
-    Ensure session is ready for Action 7 tests.
-
-    This function establishes a valid Ancestry session by:
-    1. Creating and initializing a SessionManager (or reusing existing one)
-    2. Starting the session (database + browser)
-    3. Loading saved cookies from previous session (if available)
-    4. Checking login status and logging in if needed
-    5. Ensuring session is ready with all identifiers
-
-    Args:
-        reuse_session: If True, reuse existing session from previous test (default: True)
-
-    Returns:
-        SessionManager: Authenticated session manager
-    """
-    from utils import _load_login_cookies, log_in, login_status
-
-    global _test_session_manager  # noqa: PLW0603
-
-    # Reuse session if available and requested
-    if reuse_session and _test_session_manager:
-        logger.info("Reusing authenticated session from previous test")
-        return _test_session_manager
-
-    logger.info("=" * 80)
-    logger.info("Setting up authenticated session for Action 7 tests...")
-    logger.info("=" * 80)
-
-    # Create SessionManager
-    logger.info("Step 1: Creating SessionManager...")
-    sm = SessionManager()
-    logger.info("✅ SessionManager created")
-
-    # Configure browser requirement
-    logger.info("Step 2: Configuring browser requirement...")
-    sm.browser_manager.browser_needed = True
-    logger.info("✅ Browser marked as needed")
-
-    # Start session (database + browser)
-    logger.info("Step 3: Starting session (database + browser)...")
-    started = sm.start_sess("Action 7 Inbox Tests")
-    if not started:
-        raise AuthenticationError("Failed to start session - browser initialization failed")
-    logger.info("✅ Session started successfully")
-
-    # Load saved cookies
-    logger.info("Step 4: Attempting to load saved cookies...")
-    cookies_loaded = _load_login_cookies(sm)
-    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
-
-    # Check login status
-    logger.info("Step 5: Checking login status...")
-    login_check = login_status(sm, disable_ui_fallback=True)
-
-    if login_check is True:
-        logger.info("✅ Already logged in")
-    elif login_check is False:
-        logger.info("⚠️  Not logged in - attempting login...")
-        login_result = log_in(sm)
-        if login_result != "LOGIN_SUCCEEDED":
-            sm.close_sess(keep_db=False)
-            raise AuthenticationError(f"Login failed: {login_result}")
-        logger.info("✅ Login successful")
-    else:
-        sm.close_sess(keep_db=False)
-        raise AuthenticationError("Login status check failed critically (returned None)")
-
-    # Ensure session is ready
-    logger.info("Step 6: Ensuring session is ready...")
-    ready = sm.ensure_session_ready("Action 7 Inbox Tests", skip_csrf=True)
-    if not ready:
-        sm.close_sess(keep_db=False)
-        raise AuthenticationError("Session not ready - cookies/identifiers missing")
-    logger.info("✅ Session ready")
-
-    logger.info(f"✅ Session ready - User: {sm.tree_owner_name}")
-    logger.info("=" * 80)
-
-    # Cache for reuse
-    _test_session_manager = sm
-
-    return sm
+# === SESSION SETUP FOR TESTS ===
+# Migrated to use centralized session_utils.py (reduces 88 lines to 1 import!)
+from session_utils import ensure_session_for_tests_sm_only as _ensure_session_for_tests
 
 
 def _test_class_and_methods_available() -> None:

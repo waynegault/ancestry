@@ -21,6 +21,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from sqlalchemy import String as SQLString, cast
 from sqlalchemy.orm import Session
 
 # Import analytics models from database.py (they're defined there to avoid circular imports)
@@ -112,6 +113,9 @@ def _update_received_message_metrics(metrics: ConversationMetrics) -> None:
         # Calculate time to first response
         first_sent = getattr(metrics, 'first_message_sent')
         if first_sent is not None:
+            # Ensure first_sent is timezone-aware
+            if first_sent.tzinfo is None:
+                first_sent = first_sent.replace(tzinfo=timezone.utc)
             time_diff = now - first_sent
             setattr(metrics, 'time_to_first_response_hours', time_diff.total_seconds() / 3600)
 
@@ -180,42 +184,80 @@ def update_conversation_metrics(
         Updated ConversationMetrics record
     """
     # Get or create metrics record
-    metrics = session.query(ConversationMetrics).filter_by(people_id=people_id).first()
-    if not metrics:
-        metrics = ConversationMetrics(people_id=people_id)
-        session.add(metrics)
+    metrics = _get_or_create_metrics(session, people_id)
 
     # Update message counts
-    if message_sent:
-        _update_sent_message_metrics(metrics, template_used)
-    if message_received:
-        _update_received_message_metrics(metrics)
+    _update_message_metrics(metrics, message_sent, message_received, template_used)
 
-    # Update engagement metrics
-    if engagement_score is not None:
-        _update_engagement_metrics(metrics, engagement_score)
-
-    # Update conversation phase
-    if conversation_phase:
-        setattr(metrics, 'conversation_phase', conversation_phase)
+    # Update engagement and phase
+    _update_engagement_and_phase(metrics, engagement_score, conversation_phase)
 
     # Update conversation duration
-    first_sent = getattr(metrics, 'first_message_sent')
-    last_received = getattr(metrics, 'last_message_received')
-    if first_sent is not None and last_received is not None:
-        time_diff = last_received - first_sent
-        setattr(metrics, 'conversation_duration_days', time_diff.total_seconds() / 86400)
+    _update_conversation_duration(metrics)
 
     # Update research outcomes
     _update_research_outcomes(metrics, person_looked_up, person_found, research_task_created)
 
     # Update tree impact
-    if added_to_tree and getattr(metrics, 'added_to_tree') is not True:
-        setattr(metrics, 'added_to_tree', True)
-        setattr(metrics, 'added_to_tree_date', datetime.now(timezone.utc))
+    _update_tree_impact(metrics, added_to_tree)
 
     session.commit()
     return metrics
+
+
+def _get_or_create_metrics(session: Session, people_id: int) -> ConversationMetrics:
+    """Get or create metrics record for a person."""
+    metrics = session.query(ConversationMetrics).filter_by(people_id=people_id).first()
+    if not metrics:
+        metrics = ConversationMetrics(people_id=people_id)
+        session.add(metrics)
+    return metrics
+
+
+def _update_message_metrics(
+    metrics: ConversationMetrics,
+    message_sent: bool,
+    message_received: bool,
+    template_used: Optional[str]
+) -> None:
+    """Update message-related metrics."""
+    if message_sent:
+        _update_sent_message_metrics(metrics, template_used)
+    if message_received:
+        _update_received_message_metrics(metrics)
+
+
+def _update_engagement_and_phase(
+    metrics: ConversationMetrics,
+    engagement_score: Optional[int],
+    conversation_phase: Optional[str]
+) -> None:
+    """Update engagement score and conversation phase."""
+    if engagement_score is not None:
+        _update_engagement_metrics(metrics, engagement_score)
+    if conversation_phase:
+        setattr(metrics, 'conversation_phase', conversation_phase)
+
+
+def _update_conversation_duration(metrics: ConversationMetrics) -> None:
+    """Update conversation duration based on first and last message timestamps."""
+    first_sent = getattr(metrics, 'first_message_sent')
+    last_received = getattr(metrics, 'last_message_received')
+    if first_sent is not None and last_received is not None:
+        # Ensure both are timezone-aware
+        if first_sent.tzinfo is None:
+            first_sent = first_sent.replace(tzinfo=timezone.utc)
+        if last_received.tzinfo is None:
+            last_received = last_received.replace(tzinfo=timezone.utc)
+        time_diff = last_received - first_sent
+        setattr(metrics, 'conversation_duration_days', time_diff.total_seconds() / 86400)
+
+
+def _update_tree_impact(metrics: ConversationMetrics, added_to_tree: bool) -> None:
+    """Update tree impact metrics."""
+    if added_to_tree and getattr(metrics, 'added_to_tree') is not True:
+        setattr(metrics, 'added_to_tree', True)
+        setattr(metrics, 'added_to_tree_date', datetime.now(timezone.utc))
 
 
 def get_overall_analytics(session: Session) -> dict[str, Any]:
@@ -250,7 +292,7 @@ def get_overall_analytics(session: Session) -> dict[str, Any]:
     # Get conversation phase distribution
     phase_distribution = {}
     phases = session.query(
-        ConversationMetrics.conversation_phase,
+        cast(ConversationMetrics.conversation_phase, SQLString),
         func.count(ConversationMetrics.id)
     ).group_by(ConversationMetrics.conversation_phase).all()
 
@@ -353,68 +395,458 @@ def print_analytics_dashboard(session: Session) -> None:
 # ----------------------------------------------------------------------
 # Module Tests
 # ----------------------------------------------------------------------
+def _test_database_models_available() -> None:
+    """Test that database models are available."""
+    assert ConversationMetrics is not None, "ConversationMetrics should be available"
+    assert EngagementTracking is not None, "EngagementTracking should be available"
+
+
+def _test_record_engagement_event() -> None:
+    """Test recording an engagement event."""
+    from core.database_manager import DatabaseManager
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Create a test event
+        event = record_engagement_event(
+            session=session,
+            people_id=1,
+            event_type="test_event",
+            event_description="Test event description",
+            event_data={"key": "value"},
+            engagement_score_before=50,
+            engagement_score_after=60,
+            conversation_phase="initial",
+            template_used="test_template"
+        )
+
+        # Verify event was created
+        assert event is not None, "Event should be created"
+        assert getattr(event, 'people_id') == 1, "Event should have correct people_id"
+        assert getattr(event, 'event_type') == "test_event", "Event should have correct event_type"
+        assert getattr(event, 'engagement_score_delta') == 10, "Event should calculate delta correctly"
+
+        # Clean up
+        session.delete(event)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _test_update_conversation_metrics_new() -> None:
+    """Test updating conversation metrics for new conversation."""
+    from core.database_manager import DatabaseManager
+    from database import Person
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Get a valid person from the database
+        person = session.query(Person).first()
+        if not person:
+            # Skip test if no people in database
+            return
+
+        # Delete any existing metrics for this person
+        existing_metrics = session.query(ConversationMetrics).filter_by(people_id=person.id).first()
+        if existing_metrics:
+            session.delete(existing_metrics)
+            session.commit()
+
+        # Update metrics for a new conversation
+        metrics = update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            message_sent=True,
+            template_used="initial_contact",
+            engagement_score=50,
+            conversation_phase="initial"
+        )
+
+        # Verify metrics were created
+        assert metrics is not None, "Metrics should be created"
+        assert getattr(metrics, 'people_id') == person.id, "Metrics should have correct people_id"
+        assert getattr(metrics, 'messages_sent') == 1, "Metrics should have 1 message sent"
+        assert getattr(metrics, 'current_engagement_score') == 50, "Metrics should have correct engagement score"
+        assert getattr(metrics, 'initial_template_used') == "initial_contact", "Metrics should track initial template"
+
+        # Clean up
+        session.delete(metrics)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _test_update_conversation_metrics_existing() -> None:
+    """Test updating existing conversation metrics."""
+    from core.database_manager import DatabaseManager
+    from database import Person
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Get a valid person from the database
+        person = session.query(Person).first()
+        if not person:
+            # Skip test if no people in database
+            return
+
+        # Delete any existing metrics for this person
+        existing_metrics = session.query(ConversationMetrics).filter_by(people_id=person.id).first()
+        if existing_metrics:
+            session.delete(existing_metrics)
+            session.commit()
+
+        # Create initial metrics
+        update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            message_sent=True,
+            template_used="initial_contact",
+            engagement_score=50
+        )
+
+        # Update with a received message
+        metrics2 = update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            message_received=True,
+            engagement_score=60
+        )
+
+        # Verify metrics were updated
+        assert getattr(metrics2, 'messages_sent') == 1, "Should still have 1 message sent"
+        assert getattr(metrics2, 'messages_received') == 1, "Should have 1 message received"
+        assert getattr(metrics2, 'current_engagement_score') == 60, "Should have updated engagement score"
+        assert getattr(metrics2, 'first_response_received') is True, "Should mark first response received"
+
+        # Clean up
+        session.delete(metrics2)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _test_get_overall_analytics_empty() -> None:
+    """Test getting overall analytics with no data."""
+    from core.database_manager import DatabaseManager
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Get analytics (may have existing data, so just verify structure)
+        analytics = get_overall_analytics(session)
+
+        # Verify structure
+        assert isinstance(analytics, dict), "Analytics should be a dictionary"
+        assert 'total_conversations' in analytics, "Should have total_conversations"
+        assert 'response_rate_percent' in analytics, "Should have response_rate_percent"
+        assert 'avg_engagement_score' in analytics, "Should have avg_engagement_score"
+        assert 'template_effectiveness' in analytics, "Should have template_effectiveness"
+        assert 'research_outcomes' in analytics, "Should have research_outcomes"
+        assert 'tree_impact' in analytics, "Should have tree_impact"
+    finally:
+        session.close()
+
+
+def _test_print_analytics_dashboard() -> None:
+    """Test printing analytics dashboard."""
+    from core.database_manager import DatabaseManager
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Should not raise exception
+        print_analytics_dashboard(session)
+    finally:
+        session.close()
+
+
+def _test_engagement_score_delta_calculation() -> None:
+    """Test engagement score delta calculation."""
+    from core.database_manager import DatabaseManager
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Test with score increase
+        event1 = record_engagement_event(
+            session=session,
+            people_id=1,
+            event_type="test",
+            engagement_score_before=40,
+            engagement_score_after=60
+        )
+        assert getattr(event1, 'engagement_score_delta') == 20, "Should calculate positive delta"
+
+        # Test with score decrease
+        event2 = record_engagement_event(
+            session=session,
+            people_id=1,
+            event_type="test",
+            engagement_score_before=60,
+            engagement_score_after=40
+        )
+        assert getattr(event2, 'engagement_score_delta') == -20, "Should calculate negative delta"
+
+        # Test with no scores
+        event3 = record_engagement_event(
+            session=session,
+            people_id=1,
+            event_type="test"
+        )
+        assert getattr(event3, 'engagement_score_delta') is None, "Should have None delta when no scores"
+
+        # Clean up
+        session.delete(event1)
+        session.delete(event2)
+        session.delete(event3)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _test_template_tracking() -> None:
+    """Test template usage tracking."""
+    from core.database_manager import DatabaseManager
+    from database import Person
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Get a valid person from the database
+        person = session.query(Person).first()
+        if not person:
+            # Skip test if no people in database
+            return
+
+        # Delete any existing metrics for this person
+        existing_metrics = session.query(ConversationMetrics).filter_by(people_id=person.id).first()
+        if existing_metrics:
+            session.delete(existing_metrics)
+            session.commit()
+
+        # Send multiple messages with different templates
+        update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            message_sent=True,
+            template_used="template1"
+        )
+
+        metrics = update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            message_sent=True,
+            template_used="template2"
+        )
+
+        # Verify templates are tracked
+        templates_json = getattr(metrics, 'templates_used')
+        templates = json.loads(templates_json) if templates_json else []
+        assert "template1" in templates, "Should track template1"
+        assert "template2" in templates, "Should track template2"
+        assert getattr(metrics, 'initial_template_used') == "template1", "Should track initial template"
+
+        # Clean up
+        session.delete(metrics)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _test_research_outcomes_tracking() -> None:
+    """Test research outcomes tracking."""
+    from core.database_manager import DatabaseManager
+    from database import Person
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Get a valid person from the database
+        person = session.query(Person).first()
+        if not person:
+            # Skip test if no people in database
+            return
+
+        # Delete any existing metrics for this person
+        existing_metrics = session.query(ConversationMetrics).filter_by(people_id=person.id).first()
+        if existing_metrics:
+            session.delete(existing_metrics)
+            session.commit()
+
+        # Track research outcomes
+        metrics = update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            person_looked_up=True,
+            person_found=True,
+            research_task_created=True
+        )
+
+        # Verify tracking
+        assert getattr(metrics, 'people_looked_up') == 1, "Should track people looked up"
+        assert getattr(metrics, 'people_found') == 1, "Should track people found"
+        assert getattr(metrics, 'research_tasks_created') == 1, "Should track research tasks"
+
+        # Clean up
+        session.delete(metrics)
+        session.commit()
+    finally:
+        session.close()
+
+
+def _test_tree_impact_tracking() -> None:
+    """Test tree impact tracking."""
+    from core.database_manager import DatabaseManager
+    from database import Person
+    dm = DatabaseManager()
+    session = dm.get_session()
+    assert session is not None, "Session should not be None"
+
+    try:
+        # Get a valid person from the database
+        person = session.query(Person).first()
+        if not person:
+            # Skip test if no people in database
+            return
+
+        # Delete any existing metrics for this person
+        existing_metrics = session.query(ConversationMetrics).filter_by(people_id=person.id).first()
+        if existing_metrics:
+            session.delete(existing_metrics)
+            session.commit()
+
+        # Track tree addition
+        metrics = update_conversation_metrics(
+            session=session,
+            people_id=person.id,
+            added_to_tree=True
+        )
+
+        # Verify tracking
+        assert getattr(metrics, 'added_to_tree') is True, "Should mark added to tree"
+        assert getattr(metrics, 'added_to_tree_date') is not None, "Should record date added"
+
+        # Clean up
+        session.delete(metrics)
+        session.commit()
+    finally:
+        session.close()
 
 
 def conversation_analytics_module_tests() -> bool:
-    """
-    Comprehensive test suite for conversation_analytics.py.
-    Tests analytics tracking, metric collection, and reporting.
-    """
-    from test_framework import TestSuite, suppress_logging
+    """Comprehensive test suite for conversation_analytics.py"""
+    from test_framework import TestSuite
 
-    suite = TestSuite("conversation_analytics.py", "Conversation Analytics & Engagement Metrics")
+    suite = TestSuite("Conversation Analytics", "conversation_analytics.py")
+    suite.start_suite()
 
-    with suppress_logging():
-        # Test 1: Database models are defined
-        suite.run_test(
-            "Database models defined",
-            lambda: ConversationMetrics is not None and EngagementTracking is not None,
-        )
+    # Category 1: Module Availability Tests
+    suite.run_test(
+        "Database models available",
+        _test_database_models_available,
+        "ConversationMetrics and EngagementTracking models are available",
+        "ConversationMetrics, EngagementTracking",
+        "Verifies database models can be imported"
+    )
 
-        # Test 2: record_engagement_event function exists
-        suite.run_test(
-            "record_engagement_event function exists",
-            lambda: callable(record_engagement_event),
-        )
+    # Category 2: Engagement Event Tests
+    suite.run_test(
+        "Record engagement event",
+        _test_record_engagement_event,
+        "Engagement events are recorded correctly",
+        "record_engagement_event()",
+        "Tests event creation with all parameters"
+    )
 
-        # Test 3: update_conversation_metrics function exists
-        suite.run_test(
-            "update_conversation_metrics function exists",
-            lambda: callable(update_conversation_metrics),
-        )
+    suite.run_test(
+        "Engagement score delta calculation",
+        _test_engagement_score_delta_calculation,
+        "Engagement score deltas calculated correctly",
+        "record_engagement_event()",
+        "Tests positive, negative, and None delta calculations"
+    )
 
-        # Test 4: get_overall_analytics function exists
-        suite.run_test(
-            "get_overall_analytics function exists",
-            lambda: callable(get_overall_analytics),
-        )
+    # Category 3: Conversation Metrics Tests
+    suite.run_test(
+        "Update conversation metrics - new",
+        _test_update_conversation_metrics_new,
+        "New conversation metrics created correctly",
+        "update_conversation_metrics()",
+        "Tests creating metrics for new conversation"
+    )
 
-        # Test 5: print_analytics_dashboard function exists
-        suite.run_test(
-            "print_analytics_dashboard function exists",
-            lambda: callable(print_analytics_dashboard),
-        )
+    suite.run_test(
+        "Update conversation metrics - existing",
+        _test_update_conversation_metrics_existing,
+        "Existing conversation metrics updated correctly",
+        "update_conversation_metrics()",
+        "Tests updating existing metrics with new data"
+    )
 
-        # Test 6: ConversationMetrics has required fields
-        suite.run_test(
-            "ConversationMetrics has required fields",
-            lambda: hasattr(ConversationMetrics, "messages_sent") and
-                    hasattr(ConversationMetrics, "messages_received") and
-                    hasattr(ConversationMetrics, "current_engagement_score") and
-                    hasattr(ConversationMetrics, "first_response_received"),
-        )
+    suite.run_test(
+        "Template tracking",
+        _test_template_tracking,
+        "Template usage tracked correctly",
+        "update_conversation_metrics()",
+        "Tests initial template and templates list tracking"
+    )
 
-        # Test 7: EngagementTracking has required fields
-        suite.run_test(
-            "EngagementTracking has required fields",
-            lambda: hasattr(EngagementTracking, "event_type") and
-                    hasattr(EngagementTracking, "engagement_score_delta") and
-                    hasattr(EngagementTracking, "event_timestamp"),
-        )
+    # Category 4: Research Outcomes Tests
+    suite.run_test(
+        "Research outcomes tracking",
+        _test_research_outcomes_tracking,
+        "Research outcomes tracked correctly",
+        "update_conversation_metrics()",
+        "Tests people looked up, found, and research tasks"
+    )
+
+    # Category 5: Tree Impact Tests
+    suite.run_test(
+        "Tree impact tracking",
+        _test_tree_impact_tracking,
+        "Tree additions tracked correctly",
+        "update_conversation_metrics()",
+        "Tests added_to_tree flag and date"
+    )
+
+    # Category 6: Analytics Tests
+    suite.run_test(
+        "Get overall analytics",
+        _test_get_overall_analytics_empty,
+        "Overall analytics structure is correct",
+        "get_overall_analytics()",
+        "Verifies analytics dictionary structure"
+    )
+
+    suite.run_test(
+        "Print analytics dashboard",
+        _test_print_analytics_dashboard,
+        "Analytics dashboard prints without error",
+        "print_analytics_dashboard()",
+        "Tests dashboard printing function"
+    )
 
     return suite.finish_suite()
 
 
+# Create standard test runner
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(conversation_analytics_module_tests)
+
+
 if __name__ == "__main__":
-    conversation_analytics_module_tests()
+    import sys
+    sys.exit(0 if run_comprehensive_tests() else 1)
 

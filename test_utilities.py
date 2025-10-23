@@ -39,6 +39,9 @@ for professional genealogical automation development and quality assurance.
 """
 
 from typing import Any, Callable, Optional
+from unittest.mock import MagicMock
+
+from sqlalchemy.orm import Session
 
 
 class EmptyTestService:
@@ -518,6 +521,142 @@ def create_standard_test_runner(module_test_function):
 
 
 # ==============================================
+# Test Helper Functions
+# ==============================================
+
+
+def run_parameterized_tests(test_cases: list[tuple[str, Callable, Any, str]], suite: Any) -> None:
+    """
+    Run a list of parameterized test cases.
+
+    Consolidates the pattern of running multiple test cases with different parameters.
+    This implements DRY principles by providing a single function for parameterized testing.
+
+    Args:
+        test_cases: List of tuples (test_name, test_func, expected_result, description)
+        suite: TestSuite instance to run tests on
+
+    Example:
+        test_cases = [
+            ("Test case 1", lambda: my_func(1), 2, "Tests with input 1"),
+            ("Test case 2", lambda: my_func(2), 4, "Tests with input 2"),
+        ]
+        run_parameterized_tests(test_cases, suite)
+    """
+    for test_name, test_func, expected_result, description in test_cases:
+        suite.run_test(test_name, test_func, expected_result, description, "parameterized")
+
+
+def assert_function_behavior(func: Callable, args: tuple, expected_result: Any,
+                            error_message: Optional[str] = None) -> None:
+    """
+    Assert that a function behaves as expected with given arguments.
+
+    Consolidates the pattern of testing function behavior with specific inputs.
+    This implements DRY principles by providing a single assertion helper.
+
+    Args:
+        func: The function to test
+        args: Tuple of arguments to pass to the function
+        expected_result: The expected return value
+        error_message: Optional custom error message
+
+    Raises:
+        AssertionError: If the function doesn't return the expected result
+
+    Example:
+        assert_function_behavior(my_func, (1, 2), 3, "my_func(1, 2) should return 3")
+    """
+    result = func(*args)
+    if error_message is None:
+        error_message = f"{func.__name__}{args} should return {expected_result}, got {result}"
+    assert result == expected_result, error_message
+
+
+def create_test_session() -> Session:
+    """
+    Create a test database session.
+
+    Consolidates the pattern of creating database sessions for testing.
+    This implements DRY principles by providing a single function for session creation.
+
+    Returns:
+        Session: A database session for testing
+
+    Example:
+        session = create_test_session()
+        try:
+            # Run tests with session
+            pass
+        finally:
+            session.close()
+    """
+    from core.database_manager import DatabaseManager
+    dm = DatabaseManager()
+    return dm.get_session()
+
+
+def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
+                         expected_count: int, error_message: Optional[str] = None) -> None:
+    """
+    Assert that the database contains the expected number of records.
+
+    Consolidates the pattern of checking database state in tests.
+    This implements DRY principles by providing a single assertion helper.
+
+    Args:
+        session: Database session
+        model: SQLAlchemy model class
+        filters: Dictionary of filter criteria
+        expected_count: Expected number of records
+        error_message: Optional custom error message
+
+    Raises:
+        AssertionError: If the database doesn't contain the expected number of records
+
+    Example:
+        assert_database_state(session, Person, {"name": "John"}, 1, "Should have 1 John")
+    """
+    query = session.query(model)
+    for key, value in filters.items():
+        query = query.filter(getattr(model, key) == value)
+    count = query.count()
+    if error_message is None:
+        error_message = f"Expected {expected_count} records, found {count}"
+    assert count == expected_count, error_message
+
+
+def mock_api_response(status_code: int = 200, json_data: Optional[dict] = None,
+                     text: Optional[str] = None) -> MagicMock:
+    """
+    Create a mock API response object.
+
+    Consolidates the pattern of creating mock API responses for testing.
+    This implements DRY principles by providing a single function for mock responses.
+
+    Args:
+        status_code: HTTP status code (default: 200)
+        json_data: JSON response data (default: None)
+        text: Text response data (default: None)
+
+    Returns:
+        MagicMock: A mock response object
+
+    Example:
+        mock_response = mock_api_response(200, {"result": "success"})
+        assert mock_response.status_code == 200
+        assert mock_response.json() == {"result": "success"}
+    """
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    if json_data is not None:
+        mock_response.json.return_value = json_data
+    if text is not None:
+        mock_response.text = text
+    return mock_response
+
+
+# ==============================================
 # Module Tests
 # ==============================================
 
@@ -559,6 +698,28 @@ def _test_runner_factory() -> None:
     assert test_runner()
 
 
+def _test_assert_function_behavior() -> None:
+    """Test the assert_function_behavior helper."""
+    # Test successful assertion
+    assert_function_behavior(test_func_with_param, (5,), 10)
+
+    # Test with custom error message
+    assert_function_behavior(test_func, (), "test_result", "Custom error message")
+
+
+def _test_mock_api_response() -> None:
+    """Test the mock_api_response helper."""
+    # Test with JSON data
+    mock_response = mock_api_response(200, {"result": "success"})
+    assert mock_response.status_code == 200
+    assert mock_response.json() == {"result": "success"}
+
+    # Test with text data
+    mock_response = mock_api_response(404, text="Not found")
+    assert mock_response.status_code == 404
+    assert mock_response.text == "Not found"
+
+
 def test_utilities_module_tests() -> bool:
     """Test the test utilities module itself."""
     from test_framework import TestSuite, suppress_logging
@@ -570,6 +731,8 @@ def test_utilities_module_tests() -> bool:
         ("Factory functions", _test_factory_functions, "Test function factories", "direct", "Test function factories"),
         ("Function registry", _test_function_registry, "Test function registry", "direct", "Test function registry"),
         ("Test runner factory", _test_runner_factory, "Test runner creation", "direct", "Test runner creation"),
+        ("Assert function behavior", _test_assert_function_behavior, "Test assertion helper", "direct", "Test assertion helper"),
+        ("Mock API response", _test_mock_api_response, "Test mock response creation", "direct", "Test mock response creation"),
     ]
 
     with suppress_logging():

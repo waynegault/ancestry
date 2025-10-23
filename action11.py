@@ -313,7 +313,6 @@ def _calculate_candidate_score(
                 search_criteria,
                 candidate_data_dict,
                 scoring_weights,
-                name_flexibility=name_flex if isinstance(name_flex, dict) else None,
                 date_flexibility=date_flex if isinstance(date_flex, dict) else None,
             )
 
@@ -2033,24 +2032,24 @@ def _check_dependencies() -> tuple[bool, list[str]]:
     return len(missing) == 0, missing
 
 
-def _validate_browser_session() -> bool:
+def _validate_browser_session(sm: SessionManager) -> bool:
     """Validate that browser session is available, start if needed."""
     import threading
 
-    logger.debug(f"Checking browser session. Session manager ID: {id(session_manager)}")
-    logger.debug(f"Session manager driver: {getattr(session_manager, 'driver', None)}")
-    logger.debug(f"Session manager driver_live: {getattr(session_manager, 'driver_live', 'N/A')}")
+    logger.debug(f"Checking browser session. Session manager ID: {id(sm)}")
+    logger.debug(f"Session manager driver: {getattr(sm, 'driver', None)}")
+    logger.debug(f"Session manager driver_live: {getattr(sm, 'driver_live', 'N/A')}")
 
     result: dict[str, Any] = {"success": False, "error": None}
 
     def browser_check() -> None:
         try:
             # Check if driver exists - if not, try to start it
-            if not hasattr(session_manager, 'driver') or not session_manager.driver:
+            if not hasattr(sm, 'driver') or not sm.driver:
                 logger.warning("Browser session not available. Attempting to start browser...")
 
                 # Try to start the browser
-                if not session_manager.start_browser("Action 11 - Browser Init"):
+                if not sm.start_browser("Action 11 - Browser Init"):
                     logger.error("Failed to start browser session.")
                     result["error"] = "Failed to start browser session"
                     return
@@ -2480,7 +2479,7 @@ def handle_api_report(session_manager_param: Optional[Any] = None) -> bool:
         logger.critical(f"handle_api_report: Dependencies missing: {', '.join(missing)}.")
         print(f"\nCRITICAL ERROR: Dependencies unavailable ({', '.join(missing)}). Check logs.")
     # Browser Session Validation
-    elif not _validate_browser_session() or not _ensure_authenticated_session():
+    elif not _validate_browser_session(active_session_manager) or not _ensure_authenticated_session():
         pass  # result already False
     else:
         # Phase 1: Search...
@@ -2870,183 +2869,8 @@ def load_test_person_from_env():
 
 
 # === SESSION SETUP FOR TESTS ===
-_test_session_manager: Optional[SessionManager] = None
-_test_session_uuid: Optional[str] = None
-
-
-def _create_and_start_session() -> SessionManager:
-    """Create and start a new session manager."""
-    import threading
-
-    logger.info("Step 1: Creating SessionManager...")
-    sm = SessionManager()
-    logger.info("✅ SessionManager created")
-
-    logger.info("Step 2: Configuring browser requirement...")
-    sm.browser_manager.browser_needed = True
-    logger.info("✅ Browser marked as needed")
-
-    logger.info("Step 3: Starting session (database + browser)...")
-
-    result: dict[str, Any] = {"started": False, "error": None}
-
-    def start_session() -> None:
-        try:
-            result["started"] = sm.start_sess("Action 11 API Tests")
-        except Exception as e:
-            logger.error(f"Error starting session: {e}")
-            result["error"] = str(e)
-
-    # Run session start in a thread with 120-second timeout
-    thread = threading.Thread(target=start_session, daemon=True)
-    thread.start()
-    thread.join(timeout=120)
-
-    if thread.is_alive():
-        logger.error("Session start timed out after 120 seconds")
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Session start timed out - website may be down or network issue")
-
-    if result["error"]:
-        sm.close_sess(keep_db=False)
-        raise AssertionError(f"Session start failed: {result['error']}")
-
-    if not result["started"]:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Failed to start session - browser initialization failed")
-
-    logger.info("✅ Session started successfully")
-
-    return sm
-
-
-def _authenticate_session(sm: SessionManager) -> None:
-    """Authenticate the session using cookies or login."""
-    from utils import _load_login_cookies, log_in, login_status
-
-    logger.info("Step 4: Attempting to load saved cookies...")
-    cookies_loaded = _load_login_cookies(sm)
-    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
-
-    logger.info("Step 5: Checking login status...")
-    login_check = login_status(sm, disable_ui_fallback=True)
-
-    if login_check is True:
-        logger.info("✅ Already logged in")
-    elif login_check is False:
-        logger.info("⚠️  Not logged in - attempting login...")
-        login_result = log_in(sm)
-        if login_result != "LOGIN_SUCCEEDED":
-            sm.close_sess(keep_db=False)
-            raise AssertionError(f"Login failed: {login_result}")
-        logger.info("✅ Login successful")
-    else:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Login status check failed critically (returned None)")
-
-
-def _validate_session_ready(sm: SessionManager) -> None:
-    """Validate session is ready with all identifiers."""
-    logger.info("Step 6: Ensuring session is ready...")
-    # Use "api_report" in action name to match skip pattern in session_validator
-    ready = sm.ensure_session_ready("api_report - API Tests", skip_csrf=True)
-    if not ready:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Session not ready - cookies/identifiers missing")
-    logger.info("✅ Session ready")
-
-    logger.info("Step 7: Verifying UUID is available...")
-    if not sm.my_uuid:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("UUID not available - session initialization incomplete")
-    logger.info(f"✅ UUID available: {sm.my_uuid}")
-
-    logger.info("Step 8: Verifying Profile ID is available...")
-    if not sm.my_profile_id:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Profile ID not available - session initialization incomplete")
-    logger.info(f"✅ Profile ID available: {sm.my_profile_id}")
-
-    logger.info("Step 9: Verifying Tree ID is available...")
-    if not sm.my_tree_id:
-        sm.close_sess(keep_db=False)
-        raise AssertionError("Tree ID not available - check TREE_NAME in .env")
-    logger.info(f"✅ Tree ID available: {sm.my_tree_id}")
-
-
-def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionManager, str]:
-    """Ensure session is ready for API tests. Returns (session_manager, my_uuid).
-
-    This function establishes a valid Ancestry session by:
-    1. Creating and initializing a SessionManager (or reusing existing one)
-    2. Starting the session (database + browser)
-    3. Loading saved cookies from previous session (if available)
-    4. Checking login status and logging in if needed
-    5. Ensuring session is ready with all identifiers
-    6. Validating UUID is available
-
-    Args:
-        reuse_session: If True, reuse existing session from previous test (default: True)
-
-    Returns:
-        tuple: (SessionManager, UUID string)
-    """
-    import threading
-
-    global _test_session_manager, _test_session_uuid  # noqa: PLW0603
-
-    # Reuse session if available and requested
-    if reuse_session and _test_session_manager and _test_session_uuid:
-        logger.info("Reusing authenticated session from previous test")
-        return _test_session_manager, _test_session_uuid
-
-    logger.info("=" * 80)
-    logger.info("Setting up authenticated session for API tests...")
-    logger.info("=" * 80)
-
-    result: dict[str, Any] = {"sm": None, "error": None}
-
-    def setup_session() -> None:
-        try:
-            # Create and start new session
-            sm = _create_and_start_session()
-
-            # Authenticate the session
-            _authenticate_session(sm)
-
-            # Validate session is ready
-            _validate_session_ready(sm)
-
-            result["sm"] = sm
-        except Exception as e:
-            logger.error(f"Session setup failed: {e}")
-            result["error"] = str(e)
-
-    # Run session setup in a thread with 300-second timeout (5 minutes)
-    thread = threading.Thread(target=setup_session, daemon=True)
-    thread.start()
-    thread.join(timeout=300)
-
-    if thread.is_alive():
-        logger.error("Session setup timed out after 300 seconds")
-        raise AssertionError("Session setup timed out - website may be down or network issue")
-
-    if result["error"]:
-        raise AssertionError(f"Session setup failed: {result['error']}")
-
-    sm = result["sm"]
-    if not sm:
-        raise AssertionError("Session setup failed - no session manager returned")
-
-    logger.info("=" * 80)
-    logger.info("✅ Valid authenticated session established for API tests")
-    logger.info("=" * 80)
-
-    # Cache session for reuse
-    _test_session_manager = sm
-    _test_session_uuid = sm.my_uuid
-
-    return sm, sm.my_uuid
+# Migrated to use centralized session_utils.py (reduces 178 lines to 1 import!)
+from session_utils import ensure_session_for_tests as _ensure_session_for_api_tests
 
 
 def _build_search_criteria_from_test_person(tp: dict[str, Any]) -> dict[str, Any]:
@@ -3244,31 +3068,13 @@ def action11_module_tests() -> bool:
 
         result = suite.finish_suite()
 
-    # Clean up test session if it exists
-    global _test_session_manager  # noqa: PLW0603
-    if _test_session_manager is not None:
-        try:
-            # Suppress all warnings and errors during cleanup
-            import sys
-            import warnings
-            from pathlib import Path
-
-            # Redirect stderr temporarily to suppress exception messages
-            original_stderr = sys.stderr
-            with Path('/dev/null' if sys.platform != 'win32' else 'nul').open('w') as devnull:
-                sys.stderr = devnull
-                try:
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore")
-                        _test_session_manager.close_sess(keep_db=False)
-                finally:
-                    # Restore stderr
-                    sys.stderr = original_stderr
-        except Exception:
-            # Silently ignore all cleanup errors
-            pass
-        finally:
-            _test_session_manager = None
+    # Clean up test session using centralized session_utils
+    try:
+        from session_utils import close_cached_session
+        close_cached_session(keep_db=False)
+    except Exception:
+        # Silently ignore cleanup errors
+        pass
 
     return result
 

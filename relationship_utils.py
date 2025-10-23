@@ -1630,11 +1630,15 @@ def _test_gedcom_path_conversion() -> None:
         unified = convert_gedcom_path_to_unified_format(
             gedcom_path, reader, id_to_parents, id_to_children, indi_index
         )
+        # If it doesn't raise an exception, verify the result
         assert unified is not None, "Should convert GEDCOM path"
         assert isinstance(unified, list), "Should return list format"
-    except Exception:
-        # Function might require more complex setup, so pass if it fails gracefully
-        pass
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These specific exceptions are acceptable for mock data
+        logger.debug(f"Expected exception for mock data: {e}")
+    except Exception as e:
+        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def _test_discovery_api_conversion() -> None:
@@ -1644,14 +1648,24 @@ def _test_discovery_api_conversion() -> None:
         convert_discovery_api_path_to_unified_format
     ), "Function should be callable"
 
-    # Test with minimal valid data structure (if we can determine it)
+    # Verify function is not None
+    func = convert_discovery_api_path_to_unified_format
+    assert func is not None, "Function should be available"
+
+    # Test with minimal mock data to verify it handles input
     try:
-        # This function requires specific data format - test that it's available
-        func = convert_discovery_api_path_to_unified_format
-        assert func is not None, "Function should be available"
-    except Exception:
-        # Complex function - just verify it exists
-        pass
+        # Create minimal mock API response structure
+        mock_discovery_data = {"path": []}  # Empty path
+        mock_target_name = "Test Person"
+        result = func(mock_discovery_data, mock_target_name)
+        # If it doesn't raise an exception, verify result type
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These specific exceptions are acceptable for empty/mock data
+        logger.debug(f"Expected exception for mock data: {e}")
+    except Exception as e:
+        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def _test_general_api_conversion() -> None:
@@ -1661,13 +1675,24 @@ def _test_general_api_conversion() -> None:
         convert_api_path_to_unified_format
     ), "Function should be callable"
 
-    # Test basic availability
+    # Verify function is not None
+    func = convert_api_path_to_unified_format
+    assert func is not None, "Function should be available"
+
+    # Test with minimal mock data to verify it handles input
     try:
-        func = convert_api_path_to_unified_format
-        assert func is not None, "Function should be available"
-    except Exception:
-        # Complex function - just verify it exists
-        pass
+        # Create minimal mock API response structure
+        mock_api_data = []  # Empty relationship data list
+        mock_target_name = "Test Person"
+        result = func(mock_api_data, mock_target_name)
+        # If it doesn't raise an exception, verify result type
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These specific exceptions are acceptable for empty/mock data
+        logger.debug(f"Expected exception for mock data: {e}")
+    except Exception as e:
+        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def _test_unified_path_formatting() -> None:
@@ -1675,13 +1700,25 @@ def _test_unified_path_formatting() -> None:
     # Test function availability
     assert callable(format_relationship_path_unified), "Function should be callable"
 
-    # Test basic availability
+    # Verify function is not None
+    func = format_relationship_path_unified
+    assert func is not None, "Function should be available"
+
+    # Test with minimal mock data to verify it handles input
     try:
-        func = format_relationship_path_unified
-        assert func is not None, "Function should be available"
-    except Exception:
-        # Complex function - just verify it exists
-        pass
+        # Create minimal unified path structure
+        mock_path = []  # Empty path
+        mock_target_name = "Test Target"
+        mock_owner_name = "Test Owner"
+        result = func(mock_path, mock_target_name, mock_owner_name)
+        # If it doesn't raise an exception, verify result type
+        assert isinstance(result, str), f"Expected str, got {type(result)}"
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These specific exceptions are acceptable for empty/mock data
+        logger.debug(f"Expected exception for mock data: {e}")
+    except Exception as e:
+        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def _test_api_relationship_formatting() -> None:
@@ -1689,13 +1726,25 @@ def _test_api_relationship_formatting() -> None:
     # Test function availability
     assert callable(format_api_relationship_path), "Function should be callable"
 
-    # Test basic availability
+    # Verify function is not None
+    func = format_api_relationship_path
+    assert func is not None, "Function should be available"
+
+    # Test with minimal mock data to verify it handles input
     try:
-        func = format_api_relationship_path
-        assert func is not None, "Function should be available"
-    except Exception:
-        # Complex function - just verify it exists
-        pass
+        # Create minimal API relationship data
+        mock_api_response = None  # None response
+        mock_owner_name = "Test Owner"
+        mock_target_name = "Test Target"
+        result = func(mock_api_response, mock_owner_name, mock_target_name)
+        # If it doesn't raise an exception, verify result type
+        assert isinstance(result, str), f"Expected str, got {type(result)}"
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These specific exceptions are acceptable for None/mock data
+        logger.debug(f"Expected exception for mock data: {e}")
+    except Exception as e:
+        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def _run_conversion_tests(suite: "TestSuite") -> None:

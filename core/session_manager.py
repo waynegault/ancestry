@@ -2353,20 +2353,38 @@ class SessionManager:
             if response_data and isinstance(response_data, dict):
                 if "testId" in response_data:
                     my_uuid_val = str(response_data["testId"]).upper()
-                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
+                    logger.debug(f"Successfully retrieved UUID from API: {my_uuid_val}")
                     # Store in API manager
                     self.api_manager.my_uuid = my_uuid_val
                     if not self._uuid_logged:
                         logger.debug(f"My uuid: {my_uuid_val}")
                         self._uuid_logged = True
                     return my_uuid_val
-                logger.error("Could not retrieve UUID ('testId' missing in response).")
-                return None
-            logger.error("Failed to get header/dna data via _api_req.")
+                logger.warning("Could not retrieve UUID from API ('testId' missing in response).")
+            else:
+                logger.warning("Failed to get header/dna data via _api_req.")
+
+            # Fallback to config value if API fails
+            config_uuid = config_schema.api.my_uuid
+            if config_uuid:
+                logger.info(f"Using UUID from config (.env): {config_uuid}")
+                self.api_manager.my_uuid = config_uuid
+                if not self._uuid_logged:
+                    logger.debug(f"My uuid: {config_uuid}")
+                    self._uuid_logged = True
+                return config_uuid
+
+            logger.error("Could not retrieve UUID from API or config.")
             return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
+            # Fallback to config value on exception
+            config_uuid = config_schema.api.my_uuid
+            if config_uuid:
+                logger.info(f"Using UUID from config (.env) after API error: {config_uuid}")
+                self.api_manager.my_uuid = config_uuid
+                return config_uuid
             return None
 
     @retry_on_failure(max_attempts=3)
@@ -2393,22 +2411,41 @@ class SessionManager:
             return None
 
         logger.debug(f"Delegating tree ID fetch for TREE_NAME='{tree_name_config}' to api_utils...")
+
+        # Try to get tree ID from API, fallback to config on failure
+        tree_id = self._fetch_tree_id_from_api(local_api_utils, tree_name_config)
+        if tree_id:
+            return tree_id
+
+        # Final fallback to config
+        return self._get_tree_id_from_config()
+
+    def _fetch_tree_id_from_api(self, api_utils: Any, tree_name: str) -> Optional[str]:
+        """Fetch tree ID from API with error handling."""
         try:
-            my_tree_id_val = local_api_utils.call_header_trees_api_for_tree_id(
-                self, tree_name_config
-            )
+            my_tree_id_val = api_utils.call_header_trees_api_for_tree_id(self, tree_name)
             if my_tree_id_val:
-                # Store in API manager
-                self.api_manager.my_tree_id = my_tree_id_val
-                if not self._tree_id_logged:
-                    logger.debug(f"My tree id: {my_tree_id_val}")
-                    self._tree_id_logged = True
-                return my_tree_id_val
+                return self._store_and_log_tree_id(my_tree_id_val)
             logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
-            return None
         except Exception as e:
             logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
-            return None
+        return None
+
+    def _get_tree_id_from_config(self) -> Optional[str]:
+        """Get tree ID from config as fallback."""
+        config_tree_id = config_schema.api.tree_id
+        if config_tree_id:
+            logger.info(f"Using tree ID from config (.env): {config_tree_id}")
+            return self._store_and_log_tree_id(config_tree_id)
+        return None
+
+    def _store_and_log_tree_id(self, tree_id: str) -> str:
+        """Store tree ID in API manager and log it."""
+        self.api_manager.my_tree_id = tree_id
+        if not self._tree_id_logged:
+            logger.debug(f"My tree id: {tree_id}")
+            self._tree_id_logged = True
+        return tree_id
 
     @retry_on_failure(max_attempts=3)
     def get_tree_owner(self, tree_id: str) -> Optional[str]:

@@ -445,6 +445,7 @@ class APIConfig:
     tree_name: Optional[str] = None
     tree_id: Optional[str] = None
     my_user_id: Optional[str] = None  # User profile ID for API calls
+    my_uuid: Optional[str] = None  # User DNA test UUID (testId) for API calls
 
     # Fields with default_factory must come last
     # User agents list for rotation

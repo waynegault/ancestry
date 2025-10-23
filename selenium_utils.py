@@ -379,9 +379,15 @@ def selenium_utils_module_tests() -> bool:
     return suite.finish_suite()
 
 
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(selenium_utils_module_tests)
+
+
 if __name__ == "__main__":
     import sys
     print("🧪 Running Selenium Utils Comprehensive Tests...")
-    success = selenium_utils_module_tests()
+    success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
 

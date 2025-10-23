@@ -52,7 +52,6 @@ logger = setup_module(globals(), __name__)
 
 
 # === STANDARD LIBRARY IMPORTS ===
-import contextlib
 import logging
 import re
 import sys
@@ -2858,35 +2857,51 @@ def test_life_dates_formatting():
 def test_relationship_explanation():
     """Test relationship path explanation."""
     if "explain_relationship_path" in globals():
-        # Test with minimal valid parameters
+        # Test with minimal valid parameters - should return a string or raise specific exception
         try:
             result = explain_relationship_path([], None, {}, {}, {})
-            assert isinstance(result, str)
-        except Exception:
-            pass  # May fail with invalid parameters, which is acceptable
+            # If it doesn't raise an exception, it should return a string
+            assert isinstance(result, str), f"Expected str, got {type(result)}"
+        except (ValueError, KeyError, TypeError) as e:
+            # These specific exceptions are expected for invalid parameters
+            logger.debug(f"Expected exception for invalid parameters: {e}")
+        except Exception as e:
+            # Unexpected exceptions should fail the test
+            raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def test_bfs_pathfinding():
     """Test bidirectional BFS pathfinding."""
     if "fast_bidirectional_bfs" in globals():
-        # Test with empty graph
+        # Test with empty graph - should return empty list or raise specific exception
         try:
             graph_ctx = GraphContext(id_to_parents={}, id_to_children={}, start_id="start", end_id="end")
             result = fast_bidirectional_bfs(graph_ctx)
-            assert isinstance(result, list)
-        except Exception:
-            pass  # May fail with missing IDs, which is acceptable
+            # If it doesn't raise an exception, it should return a list
+            assert isinstance(result, list), f"Expected list, got {type(result)}"
+        except (ValueError, KeyError) as e:
+            # These specific exceptions are expected for missing IDs
+            logger.debug(f"Expected exception for missing IDs: {e}")
+        except Exception as e:
+            # Unexpected exceptions should fail the test
+            raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def test_sibling_detection():
     """Test sibling relationship detection."""
     if "_are_siblings" in globals():
-        # Test with valid string IDs
+        # Test with valid string IDs - should return False for empty family map
         try:
             result = _are_siblings("I1", "I2", {})
-            assert isinstance(result, bool)
-        except Exception:
-            pass  # May fail with missing data, which is acceptable
+            # With empty family map, should return False (not siblings)
+            assert isinstance(result, bool), f"Expected bool, got {type(result)}"
+            assert result is False, "Empty family map should return False (not siblings)"
+        except (ValueError, KeyError, TypeError) as e:
+            # These specific exceptions are expected for missing data
+            logger.debug(f"Expected exception for missing data: {e}")
+        except Exception as e:
+            # Unexpected exceptions should fail the test
+            raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def test_invalid_data_handling():
@@ -2895,13 +2910,20 @@ def test_invalid_data_handling():
     if "_normalize_id" in globals():
         try:
             result = _normalize_id(None)
-            assert result is None or isinstance(result, str)
-        except Exception:
-            pass  # Exception handling is acceptable
+            # Should return None for None input
+            assert result is None, f"Expected None for None input, got {result}"
+        except (ValueError, TypeError) as e:
+            # These specific exceptions are acceptable for None input
+            logger.debug(f"Expected exception for None input: {e}")
+        except Exception as e:
+            # Unexpected exceptions should fail the test
+            raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
     if "_is_individual" in globals():
         result = _is_individual("invalid")
-        assert isinstance(result, bool)
+        # Should return False for invalid string (not a dict with 'tag' key)
+        assert isinstance(result, bool), f"Expected bool, got {type(result)}"
+        assert result is False, "Invalid string should return False (not an individual)"
 
 
 def test_large_dataset_performance():
@@ -2919,9 +2941,25 @@ def test_memory_optimization():
     """Test memory usage optimization."""
     # Test that functions don't create excessive memory overhead
     if "_get_full_name" in globals():
+        # Test that calling function repeatedly doesn't accumulate memory
+        # Each call should handle None gracefully and return consistent result
+        results = []
         for _ in range(100):
-            with contextlib.suppress(Exception):
-                _get_full_name(None)  # Should not accumulate memory
+            try:
+                result = _get_full_name(None)
+                results.append(result)
+            except (ValueError, TypeError, AttributeError) as e:
+                # These specific exceptions are acceptable for None input
+                logger.debug(f"Expected exception for None input: {e}")
+                results.append(None)
+            except Exception as e:
+                # Unexpected exceptions should fail the test
+                raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+
+        # Verify consistent behavior across all calls
+        if results:
+            first_result = results[0]
+            assert all(r == first_result for r in results), "Function should return consistent results"
 
 
 def test_external_integration():
@@ -2931,22 +2969,47 @@ def test_external_integration():
 
     if "_is_individual" in globals():
         for data in test_data_structures:
-            with contextlib.suppress(Exception):
+            try:
                 result = _is_individual(data)
-                assert isinstance(result, bool)
+                # Should always return a boolean
+                assert isinstance(result, bool), f"Expected bool for {data}, got {type(result)}"
+                # None, empty dict, empty list, empty string, 0, False should all return False
+                # (not valid individual records)
+                assert result is False, f"Expected False for {data}, got {result}"
+            except (ValueError, TypeError, AttributeError) as e:
+                # These specific exceptions are acceptable for invalid data
+                logger.debug(f"Expected exception for {data}: {e}")
+            except Exception as e:
+                # Unexpected exceptions should fail the test
+                raise AssertionError(f"Unexpected exception for {data}: {type(e).__name__}: {e}") from e
 
 
 def test_error_recovery():
     """Test error handling and recovery."""
     # Test that functions handle errors gracefully
     if "_normalize_id" in globals():
-        with contextlib.suppress(Exception):
-            _normalize_id("invalid_format")  # Invalid format
+        try:
+            result = _normalize_id("invalid_format")
+            # Should either return the string as-is or None for invalid format
+            assert result is None or isinstance(result, str), f"Expected None or str, got {type(result)}"
+        except (ValueError, TypeError) as e:
+            # These specific exceptions are acceptable for invalid format
+            logger.debug(f"Expected exception for invalid format: {e}")
+        except Exception as e:
+            # Unexpected exceptions should fail the test
+            raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
     if "_get_full_name" in globals():
-        with contextlib.suppress(Exception):
+        try:
             result = _get_full_name(None)
-            assert result == "Unknown" or isinstance(result, str)
+            # Should return "Unknown" or a string for None input
+            assert result == "Unknown" or isinstance(result, str), f"Expected 'Unknown' or str, got {result}"
+        except (ValueError, TypeError, AttributeError) as e:
+            # These specific exceptions are acceptable for None input
+            logger.debug(f"Expected exception for None input: {e}")
+        except Exception as e:
+            # Unexpected exceptions should fail the test
+            raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
 def test_source_citation_extraction():
