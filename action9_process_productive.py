@@ -1675,7 +1675,7 @@ class PersonProcessor:
             "people_id": person_id_int,
             "latest_message_content": message_text[: config_schema.message_truncation_length],
             "latest_timestamp": datetime.now(timezone.utc),
-            "message_type_id": message_type_id,
+            "message_template_id": message_type_id,  # Fixed: was message_type_id
             "script_message_status": send_status,
             "ai_sentiment": None,
         }
@@ -1986,7 +1986,7 @@ def _query_candidates(
         )
         .filter(
             ConversationLog.direction == MessageDirectionEnum.OUT,
-            ConversationLog.message_type_id == msg_config.ack_msg_type_id,
+            ConversationLog.message_template_id == msg_config.ack_msg_type_id,  # Fixed: was message_type_id
         )
         .group_by(ConversationLog.people_id)
         .subquery("latest_ack_out_sub")

@@ -76,7 +76,7 @@ def _check_rate_limiting_settings(config: Any) -> None:
 
 def _log_configuration_summary(config: Any) -> None:
     """Log current configuration for transparency."""
-    # Clear screen for clean output
+    # Clear screen at startup
     import os
     os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -1732,6 +1732,11 @@ def main() -> None:
         # --- Instantiate SessionManager ---
         session_manager = SessionManager()  # No browser started by default
 
+        # Register this session as the global session for all actions and tests
+        from session_utils import set_global_session
+        set_global_session(session_manager)
+        logger.info("✅ SessionManager registered as global session")
+
         # Track if session has been pre-authenticated
         session_pre_authenticated = False
 
@@ -1746,17 +1751,20 @@ def main() -> None:
 
             # --- Pre-authenticate session for actions that need it ---
             # This happens once before the first action that requires session_ready state
-            if not session_pre_authenticated and choice in ["1", "6", "7", "8", "9", "11"]:
+            # Check if choice is one of the actions that needs authentication
+            # Note: choice.startswith("6") handles "6" or "6 800" (with start page)
+            needs_auth = (
+                choice in ["1", "7", "8", "9", "11"]
+                or choice.startswith("6")
+            )
+            if not session_pre_authenticated and needs_auth:
                 logger.info("Pre-authenticating session for faster action execution...")
                 try:
                     from session_utils import get_authenticated_session
-                    # This will create and cache the authenticated session
-                    # Subsequent actions will reuse it via SessionManager's caching
+                    # This will authenticate the global session that we registered earlier
                     _, _ = get_authenticated_session(
                         action_name="Main Menu Pre-Authentication",
-                        reuse_cached=True,
-                        skip_csrf=True,
-                        timeout=120
+                        skip_csrf=True
                     )
                     session_pre_authenticated = True
                     logger.info("✅ Session pre-authenticated successfully")

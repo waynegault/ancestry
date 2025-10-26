@@ -2334,58 +2334,20 @@ class SessionManager:
                 self._last_uuid_error_time = time.time()
             return None
 
-        from urllib.parse import urljoin
-        url = urljoin(config_schema.api.base_url, "api/uhome/secure/rest/header/dna")
-        logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
+        # Check if UUID is available in config first (skip deprecated API call)
+        config_uuid = config_schema.api.my_uuid
+        if config_uuid:
+            logger.debug(f"Using UUID from config (.env): {config_uuid}")
+            self.api_manager.my_uuid = config_uuid
+            if not self._uuid_logged:
+                logger.debug(f"My uuid: {config_uuid}")
+                self._uuid_logged = True
+            return config_uuid
 
-        try:
-            from utils import _api_req
-
-            response_data = _api_req(
-                url=url,
-                driver=self.driver,
-                session_manager=self,
-                method="GET",
-                use_csrf_token=False,
-                api_description="Get UUID API",
-            )
-
-            if response_data and isinstance(response_data, dict):
-                if "testId" in response_data:
-                    my_uuid_val = str(response_data["testId"]).upper()
-                    logger.debug(f"Successfully retrieved UUID from API: {my_uuid_val}")
-                    # Store in API manager
-                    self.api_manager.my_uuid = my_uuid_val
-                    if not self._uuid_logged:
-                        logger.debug(f"My uuid: {my_uuid_val}")
-                        self._uuid_logged = True
-                    return my_uuid_val
-                logger.warning("Could not retrieve UUID from API ('testId' missing in response).")
-            else:
-                logger.warning("Failed to get header/dna data via _api_req.")
-
-            # Fallback to config value if API fails
-            config_uuid = config_schema.api.my_uuid
-            if config_uuid:
-                logger.info(f"Using UUID from config (.env): {config_uuid}")
-                self.api_manager.my_uuid = config_uuid
-                if not self._uuid_logged:
-                    logger.debug(f"My uuid: {config_uuid}")
-                    self._uuid_logged = True
-                return config_uuid
-
-            logger.error("Could not retrieve UUID from API or config.")
-            return None
-
-        except Exception as e:
-            logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
-            # Fallback to config value on exception
-            config_uuid = config_schema.api.my_uuid
-            if config_uuid:
-                logger.info(f"Using UUID from config (.env) after API error: {config_uuid}")
-                self.api_manager.my_uuid = config_uuid
-                return config_uuid
-            return None
+        # If not in config, log error and return None
+        # Note: The /api/uhome/secure/rest/header/dna endpoint is deprecated and returns 404
+        logger.error("UUID not found in config (.env). Please set MY_UUID in .env file.")
+        return None
 
     @retry_on_failure(max_attempts=3)
     def get_my_tree_id(self) -> Optional[str]:
@@ -2395,12 +2357,6 @@ class SessionManager:
         Returns:
             str: Tree ID if successful, None otherwise
         """
-        try:
-            import api_utils as local_api_utils
-        except ImportError as e:
-            logger.error(f"get_my_tree_id: Failed to import api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}") from e
-
         tree_name_config = config_schema.api.tree_name
         if not tree_name_config:
             logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
@@ -2410,33 +2366,15 @@ class SessionManager:
             logger.error("get_my_tree_id: Session invalid.")
             return None
 
-        logger.debug(f"Delegating tree ID fetch for TREE_NAME='{tree_name_config}' to api_utils...")
-
-        # Try to get tree ID from API, fallback to config on failure
-        tree_id = self._fetch_tree_id_from_api(local_api_utils, tree_name_config)
-        if tree_id:
-            return tree_id
-
-        # Final fallback to config
-        return self._get_tree_id_from_config()
-
-    def _fetch_tree_id_from_api(self, api_utils: Any, tree_name: str) -> Optional[str]:
-        """Fetch tree ID from API with error handling."""
-        try:
-            my_tree_id_val = api_utils.call_header_trees_api_for_tree_id(self, tree_name)
-            if my_tree_id_val:
-                return self._store_and_log_tree_id(my_tree_id_val)
-            logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
-        except Exception as e:
-            logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
-        return None
-
-    def _get_tree_id_from_config(self) -> Optional[str]:
-        """Get tree ID from config as fallback."""
+        # Check if tree ID is available in config first (skip deprecated API call)
         config_tree_id = config_schema.api.tree_id
         if config_tree_id:
-            logger.info(f"Using tree ID from config (.env): {config_tree_id}")
+            logger.debug(f"Using tree ID from config (.env): {config_tree_id}")
             return self._store_and_log_tree_id(config_tree_id)
+
+        # If not in config, log error and return None
+        # Note: The /api/uhome/secure/rest/header/trees endpoint is deprecated and returns 404
+        logger.error(f"Tree ID not found in config (.env) for tree '{tree_name_config}'. Please set TREE_ID in .env file.")
         return None
 
     def _store_and_log_tree_id(self, tree_id: str) -> str:

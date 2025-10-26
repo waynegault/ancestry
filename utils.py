@@ -1690,10 +1690,16 @@ def _perform_cookie_sync(
     """
     # Only log on first attempt or if forced to reduce verbosity
     if attempt == 1 or force_sync:
-        logger.debug(
-            f"[{api_description}] Syncing cookies from browser "
-            f"(cache expired, last sync {time_since_last_sync:.1f}s ago)"
-        )
+        try:
+            if _cookie_sync_cache.get("last_sync_time", 0.0) == 0.0:
+                logger.debug(f"[{api_description}] Syncing cookies from browser (initial sync)")
+            else:
+                logger.debug(
+                    f"[{api_description}] Syncing cookies from browser "
+                    f"(age {time_since_last_sync:.1f}s; threshold {_cookie_sync_cache.get('sync_interval', 30.0):.0f}s)"
+                )
+        except Exception:
+            logger.debug(f"[{api_description}] Syncing cookies from browser")
 
     # Use the API manager's sync_cookies_from_browser method with session_manager for recovery
     sync_success = session_manager.api_manager.sync_cookies_from_browser(

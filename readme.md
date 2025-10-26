@@ -103,6 +103,16 @@ database.py             # SQLAlchemy ORM models
 ai_interface.py         # Multi-provider AI abstraction
 ```
 
+### Global Session Pattern (Single Source of Truth)
+
+- Only main.py creates SessionManager and registers it globally via session_utils.set_global_session(session_manager)
+- All actions/scripts must obtain the session via session_utils.get_global_session() and authenticate with session_utils.get_authenticated_session()
+- No module-level or ad-hoc SessionManager() creation anywhere else in the codebase
+- Recent refactor highlights:
+  - action11.py: removed module-level SessionManager creation; uses only the global session
+  - action8_messaging.py: template loading and helpers now rely on the global session
+  - scripts/test_editrelationships_shape.py: uses the global session (requires main.py to register it first)
+
 ### Rate Limiting (CRITICAL)
 
 **Single Rate Limiter Architecture:**
@@ -161,6 +171,17 @@ python action9_process_productive.py
 
 ### Action 10: GEDCOM Analysis
 Analyze GEDCOM files and score potential matches.
+
+#### Action 11 API sources and parsing notes
+
+- Primary family endpoint: /family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships
+  - Response shape: { cssBundleUrl, jsBundleUrl, data }, where data is a JSON STRING that must be json.loads(...) into { userId, treeId, personId, person, urls, res }
+  - The family arrays live under parsed_data.person: fathers[], mothers[], spouses[], children[] (children may be nested arrays per spouse)
+  - res contains UI/localization strings, not family data
+- Relationship ladder endpoint: /family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
+- Design decisions:
+  - Siblings are not displayed in Action 11 (per requirements); parents, spouses, and children are displayed
+  - Session authentication occurs once via session_utils.get_authenticated_session; no redundant re-login or cookie syncs
 
 ```bash
 python action10.py
@@ -315,35 +336,59 @@ For issues or questions:
 
 ## Appendices
 
-### Appendix A: Test Coverage Report
+### Appendix A: Chronology of Changes
 
-For a comprehensive analysis of test coverage across all Python modules, see [test_coverage_report.md](test_coverage_report.md).
+2025-10-24
+- Eliminated module-level SessionManager creation in action11.py; switched to global session usage only
+- Consolidated Action 11 authentication to a single path via session_utils.get_authenticated_session()
+- Removed redundant login/cookie helper functions from action11.py
+- Updated action8_messaging.py to load templates and get session via session_utils.get_global_session()
+- Updated scripts/test_editrelationships_shape.py to require/use the global session
+- Deferred Action 8 template loading to runtime (lazy initialization); eliminated import-time CRITICALs
+- Added de-duplication for gender inference DEBUG logs in relationship_utils
+- Reduced INFO banner noise in session_utils.get_authenticated_session; cache-hit now DEBUG
+- Enhanced API call logging with durations in api_utils.call_enhanced_api
+- Reworded cookie skip message in core/session_validator for clarity
+- Temporarily disabled startup clear-screen in main.py to expose early errors
+- Tests: run_all_tests.py passed (72/72 modules) after refactor
 
-**Summary:**
-- **Total Modules Analyzed:** 82
-- **Modules with Tests:** 80 (97.6%)
-- **Total Public Functions:** 1,048
-- **Total Test Functions:** 1,033
-- **Test Pass Rate:** 100%
+2025-10-26
+- INFO logging tidy-up: removed "UUID: Not yet set" banner; if MY_UUID exists in .env we log it as "UUID (from .env) — will verify"; otherwise keep at DEBUG only
+- Global session banner shows once on first auth; subsequent get_authenticated_session() calls reuse cache without re-printing banners
+- Cookie sync logging clarified: "initial sync" first time, else "age Xs; threshold Ys"; removed misleading "cache expired, last sync ..." phrasing
+- API Request Cookies logging compressed to count only (no full key dump)
+- Edit Relationships API response logging summarized (type + top keys) instead of full structure dump
+- Cookie-check message clarified: "Skipping essential cookies check (expected): …"
+- Action 11: added success/error summary with duration at completion
+- Action 8: lazy-load templates at runtime; no import-time CRITICALs
+- Relationship logs: de-duplicated repeated gender inference debug lines
+- Tests: run_all_tests.py passed (72/72 modules) in fast mode
+- Re-enabled startup clear-screen in main.py (now that early error review is complete)
 
-### Appendix B: Test Quality Analysis
+2025-10-23
+- Switched Action 11 family extraction to the Edit Relationships endpoint and parsed nested data['person'] correctly
+- Suppressed verbose raw path logging in Action 11; kept concise debug metrics
 
-For a detailed assessment of test quality, duplication analysis, and recommendations, see [test_quality_analysis.md](test_quality_analysis.md).
+### Appendix B: Technical Specifications
 
-**Key Findings:**
-- ✅ All tests validate real functionality (no smoke tests)
-- ✅ Tests use live authentication via `get_authenticated_session()`
-- ✅ Comprehensive coverage of core functionality, edge cases, and error handling
-- ✅ Excellent DRY adherence with centralized test utilities
-- ✅ Code quality: 100.0/100 across all modules
+- Session Architecture
+  - Exactly one SessionManager instance created by main.py
+  - Registered globally via session_utils.set_global_session()
+  - Consumers must call session_utils.get_authenticated_session(action_name=...) before API usage
 
-### Appendix C: Test Review Summary
+- Action 11 Endpoints
+  - Edit Relationships: /family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships
+    - Response: { cssBundleUrl, jsBundleUrl, data } where data is a JSON string; parse with json.loads
+    - Family arrays: parsed['person'] → fathers[], mothers[], spouses[], children[]
+  - Relationship Ladder: /family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
 
-For an executive summary of the comprehensive test review completed on 2025-10-23, see [TEST_REVIEW_SUMMARY.md](TEST_REVIEW_SUMMARY.md).
+- Display Rules
+  - Parents, spouses, children shown; siblings intentionally omitted in Action 11
 
-**Highlights:**
-- Fixed all linter issues (21 auto-fixed, 4 manual fixes)
-- Reduced complexity in 3 functions (database.py, conversation_analytics.py, core/session_manager.py)
-- Achieved 100% code quality score across all 82 modules
-- Confirmed minimal test duplication with excellent DRY principles
-- Overall Grade: A+
+- Logging
+  - Single header/footer, info-level friendly
+  - No raw HTML dumps; log length/count metrics instead
+
+- Testing
+  - run_all_tests.py is the canonical runner; tests should fail on genuine failures
+  - API-dependent tests assume live authentication through the global session

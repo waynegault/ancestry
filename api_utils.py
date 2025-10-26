@@ -2692,6 +2692,7 @@ def call_enhanced_api(
             logger.debug(f"Cookie sync failed: {e}")
 
         # Use enhanced _api_req with special parameters for enhanced headers
+        start_time = time.time()
         response = _api_req(
             url=url,
             driver=session_manager.driver,
@@ -2709,11 +2710,12 @@ def call_enhanced_api(
                 "_person_id": person_id
             }
         )
+        duration = time.time() - start_time
 
         if response:
-            logger.debug(f"{api_description} successful")
+            logger.debug(f"{api_description} successful in {duration:.2f}s")
             return response
-        logger.warning(f"{api_description} returned no data")
+        logger.warning(f"{api_description} returned no data (in {duration:.2f}s)")
         return None
 
     except Exception as e:

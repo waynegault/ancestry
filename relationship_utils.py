@@ -47,6 +47,23 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
+# Debug log de-duplication for gender inference
+_gender_log_once: set[str] = set()
+
+def _log_inferred_gender_once(name: str, source: str, message: str) -> None:
+    try:
+        key = f"{source}:{name.lower()}"
+        if key in _gender_log_once:
+            return
+        # Prevent unbounded growth in long sessions
+        if len(_gender_log_once) > 200:
+            _gender_log_once.clear()
+        _gender_log_once.add(key)
+        logger.debug(message)
+    except Exception:
+        # Never break control flow for logging
+        pass
+
 
 # === STANDARD LIBRARY IMPORTS ===
 import html
@@ -989,7 +1006,7 @@ def _infer_gender_from_name(name: str) -> Optional[str]:
         "michael", "george", "charles"
     ]
     if any(indicator in name_lower for indicator in male_indicators):
-        logger.debug(f"Inferred male gender for {name} based on name")
+        _log_inferred_gender_once(name, 'name:M', f'Inferred male gender for {name} based on name')
         return "M"
 
     # Female indicators
@@ -999,7 +1016,7 @@ def _infer_gender_from_name(name: str) -> Optional[str]:
         "charlotte", "victoria"
     ]
     if any(indicator in name_lower for indicator in female_indicators):
-        logger.debug(f"Inferred female gender for {name} based on name")
+        _log_inferred_gender_once(name, 'name:F', f'Inferred female gender for {name} based on name')
         return "F"
 
     return None
@@ -1012,13 +1029,13 @@ def _infer_gender_from_relationship(name: str, relationship_text: str) -> Option
     # Male relationship terms
     male_terms = ["son", "father", "brother", "husband", "uncle", "grandfather", "nephew"]
     if any(term in rel_lower for term in male_terms):
-        logger.debug(f"Inferred male gender for {name} from relationship text: {relationship_text}")
+        _log_inferred_gender_once(name, 'rel:M', f'Inferred male gender for {name} from relationship text: {relationship_text}')
         return "M"
 
     # Female relationship terms
     female_terms = ["daughter", "mother", "sister", "wife", "aunt", "grandmother", "niece"]
     if any(term in rel_lower for term in female_terms):
-        logger.debug(f"Inferred female gender for {name} from relationship text: {relationship_text}")
+        _log_inferred_gender_once(name, 'rel:F', f'Inferred female gender for {name} from relationship text: {relationship_text}')
         return "F"
 
     return None

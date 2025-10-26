@@ -637,9 +637,13 @@ MESSAGE_TYPES_ACTION8: dict[str, str] = {
 def load_message_templates() -> dict[str, str]:
     """Load message templates from database MessageTemplate table."""
     try:
-        from core.session_manager import SessionManager
+        from session_utils import get_global_session  # Use global session only
 
-        session_manager = SessionManager()
+        session_manager = get_global_session()
+        if session_manager is None:
+            logger.critical("No global session registered. main.py must register the global session before loading templates.")
+            return {}
+
         with session_manager.get_db_conn_context() as session:
             if not session:
                 logger.critical("Could not get database session for template loading")
@@ -679,18 +683,20 @@ def load_message_templates() -> dict[str, str]:
         return {}
 
 
-# Load templates into a global variable
-MESSAGE_TEMPLATES: dict[str, str] = load_message_templates()
+# Load templates lazily at runtime to avoid import-time errors
+MESSAGE_TEMPLATES: dict[str, str] = {}
 
-# Validate essential templates loaded
-core_required_check_keys = {
-    "In_Tree-Initial", "In_Tree-Follow_Up", "In_Tree-Final_Reminder",
-    "Out_Tree-Initial", "Out_Tree-Follow_Up", "Out_Tree-Final_Reminder",
-    "In_Tree-Initial_for_was_Out_Tree", "User_Requested_Desist",
-    "Productive_Reply_Acknowledgement"
-}
-if not MESSAGE_TEMPLATES or not all(key in MESSAGE_TEMPLATES for key in core_required_check_keys):
-    logger.critical("Essential message templates failed to load")
+def ensure_message_templates_loaded() -> None:
+    """Load message templates on first use; avoid import-time CRITICALs."""
+    global MESSAGE_TEMPLATES
+    if MESSAGE_TEMPLATES:
+        return
+    templates = load_message_templates()
+    if isinstance(templates, dict) and templates:
+        MESSAGE_TEMPLATES = templates
+        logger.debug(f"Message templates loaded lazily: {len(MESSAGE_TEMPLATES)} available")
+    else:
+        logger.debug("Message templates not available yet; will retry on first Action 8 use")
 
 # Initialize message personalizer
 from typing import Any as _Any
@@ -966,11 +972,18 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # ------------------------------------------------------------------------------
 
 def _get_session_manager(session_manager) -> Any:
-    """Get or create session manager."""
-    if not session_manager:
-        from core.session_manager import SessionManager
-        session_manager = SessionManager()
-    return session_manager
+    """Return provided session manager or the globally registered one (no local creation)."""
+    if session_manager:
+        return session_manager
+    try:
+        from session_utils import get_global_session  # type: ignore
+        sm = get_global_session()
+        if sm is None:
+            logger.critical("No global session registered. main.py must register the global session before calling messaging actions.")
+        return sm
+    except Exception as e:
+        logger.critical(f"Failed to obtain global session: {e}")
+        return None
 
 
 def _get_template_selections(session, cutoff_date) -> list:
@@ -1350,6 +1363,7 @@ def _validate_system_health(session_manager: SessionManager) -> bool:
             return False
 
         # Action 8-specific check: Essential message templates availability
+        ensure_message_templates_loaded()
         required_templates = set(MESSAGE_TYPES_ACTION8.keys())
         missing_templates = []
         for template_key in required_templates:
@@ -2881,11 +2895,13 @@ def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bo
         logger.warning("Action 8: Using test profile ID for debugging message progression logic")
 
     # Check message templates
+    ensure_message_templates_loaded()
     if not MESSAGE_TEMPLATES:
         logger.error("Action 8: Message templates not loaded.")
         return False, None
 
-    logger.warning("Action 8: Skipping login check for debugging message progression logic")
+    # Login check is already performed by _validate_system_health() above
+    # which calls session_manager.validate_system_health("Action 8")
     return True, profile_id
 
 
@@ -4760,10 +4776,11 @@ def _test_cancel_pending_messages_no_state() -> bool:
 def _test_status_change_template_exists() -> bool:
     """Test that In_Tree-Status_Change_Update template exists in database."""
     try:
-        from core.session_manager import SessionManager
         from database import MessageTemplate
+        from session_utils import get_global_session  # use global session in tests too
 
-        sm = SessionManager()
+        sm = get_global_session()
+        assert sm is not None, "Global session must be registered by main.py before running tests"
         db_session = sm.get_db_conn()
         if not db_session:
             raise RuntimeError("Failed to get database session")

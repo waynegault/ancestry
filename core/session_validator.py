@@ -347,7 +347,7 @@ class SessionValidator:
         action_lower = action_name.lower()
         for pattern, reason in skip_patterns.items():
             if pattern in action_lower:
-                logger.debug(f"Skipping essential cookies check for {reason}")
+                logger.debug(f"Skipping essential cookies check (expected) for action '{action_name}': {reason}")
                 return True, reason
 
         return False, None

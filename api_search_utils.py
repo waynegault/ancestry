@@ -660,27 +660,76 @@ def _get_facts_data_from_api(
     tree_id: str,
     owner_profile_id: str,
 ) -> Optional[dict[str, Any]]:
-    """Call facts API and return data."""
-    logger.info(f"Getting facts for person {person_id} in tree {tree_id}")
-    base_url = config_schema.api.base_url
+    """
+    Call Edit Relationships API and return family relationship data.
 
-    api_ids = ApiIdentifiers(
-        owner_profile_id=owner_profile_id,
-        api_person_id=person_id,
-        api_tree_id=tree_id,
-    )
+    This uses the /family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships
+    endpoint which returns fathers[], mothers[], spouses[], and children[][] arrays.
 
-    facts_data = call_facts_user_api(
+    Note: The API returns a 'data' field containing a JSON STRING (not an object) that must be parsed.
+    """
+    logger.info(f"Getting family relationship data for person {person_id} in tree {tree_id}")
+
+    # Import the API function and json module
+    import json
+
+    from api_utils import call_edit_relationships_api
+
+    # Call the Edit Relationships API
+    api_response = call_edit_relationships_api(
         session_manager=session_manager,
-        api_ids=api_ids,
-        base_url=base_url,
+        user_id=owner_profile_id,
+        tree_id=tree_id,
+        person_id=person_id,
     )
 
-    if not facts_data or not isinstance(facts_data, dict):
-        logger.warning(f"No facts data returned for person {person_id}")
+    if not api_response or not isinstance(api_response, dict):
+        logger.warning(f"No data returned from Edit Relationships API for person {person_id}")
         return None
 
-    return facts_data
+    # DEBUG: Summarize API response structure (concise)
+    try:
+        top_keys = list(api_response.keys())
+        logger.debug(
+            f"Edit Relationships API response summary for person {person_id}: type={type(api_response).__name__}, keys={top_keys}"
+        )
+        if isinstance(api_response.get("res"), dict):
+            logger.debug(f"'res' keys: {list(api_response['res'].keys())}")
+    except Exception:
+        logger.debug("Edit Relationships API response summary unavailable (logging error)")
+    # The API can return data in different formats:
+    # Format 1: {"data": "JSON_STRING_HERE"} - data is a JSON string
+    # Format 2: {"userId": "...", "treeId": "...", "res": {...}} - res contains the data
+    # Try both formats
+
+    data_str = api_response.get("data")
+    if data_str and isinstance(data_str, str):
+        # Format 1: Parse the JSON string
+        try:
+            family_data = json.loads(data_str)
+            logger.debug(f"Successfully parsed family data from 'data' field for person {person_id}")
+            logger.debug(f"Family data keys: {list(family_data.keys()) if isinstance(family_data, dict) else 'Not a dict'}")
+            return family_data
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from Edit Relationships API 'data' field: {e}")
+            logger.debug(f"Data string (first 200 chars): {data_str[:200]}")
+            return None
+
+    # Format 2: Check for 'res' field (THIS IS THE CORRECT FORMAT)
+    # The Edit Relationships API returns: {userId, treeId, personId, person, urls, res}
+    # The 'res' field contains the actual family data: {fathers[], mothers[], spouses[], children[][]}
+    res_data = api_response.get("res")
+    if res_data and isinstance(res_data, dict):
+        logger.debug(f"Using 'res' field from Edit Relationships API for person {person_id}")
+        logger.debug(f"Res data keys: {list(res_data.keys())}")
+        # IMPORTANT: Return ONLY the res field, not the whole response
+        # This is what the extraction logic expects
+        return res_data
+
+    # If neither format works, log the response structure and return None
+    logger.warning(f"Edit Relationships API returned unexpected format for person {person_id}")
+    logger.debug(f"API response keys: {list(api_response.keys())}")
+    return None
 
 
 def _initialize_family_result(person_id: str) -> dict[str, Any]:
@@ -702,6 +751,153 @@ def _initialize_family_result(person_id: str) -> dict[str, Any]:
         "children": [],
         "siblings": [],
     }
+
+
+def _extract_person_info_from_target(target_person: dict[str, Any], result: dict[str, Any]) -> None:
+    """
+    Extract person information from targetPerson object in edit relationships API response.
+
+    The targetPerson object has this structure:
+    {
+        "name": {"given": "Fraser", "surname": "Gault", "suffix": ""},
+        "gender": "Male",
+        "bDate": {"day": null, "month": null, "year": null},
+        "dDate": {},
+        "id": "102281560744",
+        "isLiving": false,
+        ...
+    }
+    """
+    # Extract name
+    name_obj = target_person.get("name", {})
+    given = name_obj.get("given", "")
+    surname = name_obj.get("surname", "")
+    suffix = name_obj.get("suffix", "")
+
+    result["first_name"] = given
+    result["surname"] = surname
+    result["name"] = f"{given} {surname}".strip()
+    if suffix:
+        result["name"] += f" {suffix}"
+
+    # Extract gender
+    result["gender"] = target_person.get("gender", "")
+
+    # Extract birth date
+    bdate = target_person.get("bDate", {})
+    if bdate and isinstance(bdate, dict):
+        year = bdate.get("year")
+        month = bdate.get("month")
+        day = bdate.get("day")
+        if year:
+            result["birth_year"] = year
+            result["birth_date"] = _format_date(day, month, year)
+
+    # Extract death date
+    ddate = target_person.get("dDate", {})
+    if ddate and isinstance(ddate, dict):
+        year = ddate.get("year")
+        month = ddate.get("month")
+        day = ddate.get("day")
+        if year:
+            result["death_year"] = year
+            result["death_date"] = _format_date(day, month, year)
+
+
+def _format_person_from_facts_api(person_obj: dict[str, Any]) -> dict[str, Any]:
+    """
+    Format a person object from the facts user API into a standardized dict.
+
+    The facts user API returns person objects with this structure:
+    {
+        "id": "...",
+        "name": "...",
+        "gender": "Male" or "Female",
+        "birth": {"date": {"normalized": "..."}, "place": {"normalized": "..."}},
+        "death": {"date": {"normalized": "..."}, "place": {"normalized": "..."}}
+    }
+
+    Returns:
+        Dict with keys: name, birth_year, death_year (matching display_family_members format)
+    """
+    # Extract name
+    name = person_obj.get("name", "Unknown")
+
+    # Extract birth year
+    birth_info = person_obj.get("birth", {})
+    birth_date = birth_info.get("date", {}).get("normalized", "") if isinstance(birth_info, dict) else ""
+    birth_year = _extract_year_from_date(birth_date)
+
+    # Extract death year
+    death_info = person_obj.get("death", {})
+    death_date = death_info.get("date", {}).get("normalized", "") if isinstance(death_info, dict) else ""
+    death_year = _extract_year_from_date(death_date)
+
+    # Return standardized dict format (matches display_family_members expectations)
+    return {
+        "name": name,
+        "birth_year": birth_year,
+        "death_year": death_year,
+    }
+
+
+def _format_person_from_relationship_data(person_obj: dict[str, Any]) -> dict[str, Any]:
+    """
+    Format a person object from the edit relationships API into a standardized dict.
+
+    Person objects have this structure:
+    {
+        "name": {"given": "James", "surname": "Gault", "suffix": ""},
+        "gender": "Male",
+        "bDate": {"day": 26, "month": 3, "year": 1906},
+        "dDate": {"day": 16, "month": 6, "year": 1988},
+        "id": "102281560741",
+        ...
+    }
+
+    Returns:
+        Dict with keys: name, birth_year, death_year (matching display_family_members format)
+    """
+    # Extract name
+    name_obj = person_obj.get("name", {})
+    given = name_obj.get("given", "")
+    surname = name_obj.get("surname", "")
+    suffix = name_obj.get("suffix", "")
+
+    name = f"{given} {surname}".strip()
+    if suffix:
+        name += f" {suffix}"
+
+    # Extract dates
+    bdate = person_obj.get("bDate", {})
+    ddate = person_obj.get("dDate", {})
+
+    birth_year = bdate.get("year") if isinstance(bdate, dict) else None
+    death_year = ddate.get("year") if isinstance(ddate, dict) else None
+
+    # Return standardized dict format (matches display_family_members expectations)
+    return {
+        "name": name,
+        "birth_year": birth_year,
+        "death_year": death_year,
+    }
+
+
+def _format_date(day: Optional[int], month: Optional[int], year: Optional[int]) -> str:
+    """Format a date from day/month/year components."""
+    if not year:
+        return "Unknown"
+
+    if month and day:
+        # Convert month number to name (1=Jan, 2=Feb, etc.)
+        month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        month_name = month_names[month] if 1 <= month <= 12 else str(month)
+        return f"{day} {month_name} {year}"
+    if month:
+        month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        month_name = month_names[month] if 1 <= month <= 12 else str(month)
+        return f"{month_name} {year}"
+    return str(year)
 
 
 def _extract_person_name_info(person_data: dict[str, Any], result: dict[str, Any]) -> None:
@@ -937,23 +1133,76 @@ def get_api_family_details(
     result = _initialize_family_result(person_id)
 
     try:
-        # Extract basic person information
-        person_data = facts_data.get("person", {})
-        _extract_person_name_info(person_data, result)
-        _extract_person_gender(person_data, result)
+        # Debug: Log the structure of family data to understand what we're working with
+        logger.debug(f"Family data keys: {list(facts_data.keys()) if isinstance(facts_data, dict) else 'Not a dict'}")
 
-        # Extract vital information
-        _extract_birth_info(facts_data, result)
-        _extract_death_info(facts_data, result)
+        # Log the first level of data to understand structure
+        for key in facts_data.keys():
+            value = facts_data[key]
+            if isinstance(value, dict):
+                logger.debug(f"  {key}: dict with keys {list(value.keys())[:10]}")
+            elif isinstance(value, list):
+                logger.debug(f"  {key}: list with {len(value)} items")
+            else:
+                logger.debug(f"  {key}: {type(value).__name__}")
 
-        # Extract family relationships
-        relationships = facts_data.get("relationships", [])
-        _process_parents(relationships, result)
-        _process_spouses(relationships, facts_data, result)
-        _process_children(relationships, result)
-        _process_siblings(relationships, result)
+        # The Edit Relationships API returns:
+        # - fathers: array of father objects
+        # - mothers: array of mother objects
+        # - spouses: array of spouse objects
+        # - children: array of arrays (one array per spouse, containing children)
+        # Each person object has: id, name, birthDate, deathDate, gender, etc.
+
+        # The actual relationship arrays are inside the 'person' section, not at the top level
+        person_section = facts_data.get("person") if isinstance(facts_data, dict) else None
+        data_section = person_section if isinstance(person_section, dict) else facts_data
+
+        # If present, extract target person's own info (name, gender, b/d dates)
+        try:
+            target_person = data_section.get("targetPerson") if isinstance(data_section, dict) else None
+            if isinstance(target_person, dict):
+                _extract_person_info_from_target(target_person, result)
+        except Exception:
+            pass
+
+        # Extract fathers
+        fathers = data_section.get("fathers", []) if isinstance(data_section, dict) else []
+        for father in fathers:
+            if isinstance(father, dict):
+                result["parents"].append(_format_person_from_relationship_data(father))
+
+        # Extract mothers
+        mothers = data_section.get("mothers", []) if isinstance(data_section, dict) else []
+        for mother in mothers:
+            if isinstance(mother, dict):
+                result["parents"].append(_format_person_from_relationship_data(mother))
+
+        # Extract spouses
+        spouses = data_section.get("spouses", []) if isinstance(data_section, dict) else []
+        for spouse in spouses:
+            if isinstance(spouse, dict):
+                result["spouses"].append(_format_person_from_relationship_data(spouse))
+
+        # Extract children (may be an array of arrays - one per spouse)
+        children_field = data_section.get("children", []) if isinstance(data_section, dict) else []
+        # Normalize to a flat list of child dicts
+        if isinstance(children_field, list):
+            for item in children_field:
+                if isinstance(item, list):
+                    for child in item:
+                        if isinstance(child, dict):
+                            result["children"].append(_format_person_from_relationship_data(child))
+                elif isinstance(item, dict):
+                    result["children"].append(_format_person_from_relationship_data(item))
+
+        # Note: The Edit Relationships API does NOT return siblings
+        # Siblings would need to be calculated by finding other children of the same parents
+        # For now, we'll leave siblings empty
+
+        # Debug: Log what we extracted
+        logger.debug(f"Extracted family: {len(result['parents'])} parents, {len(result['siblings'])} siblings, {len(result['spouses'])} spouses, {len(result['children'])} children")
     except Exception as e:
-        logger.error(f"Error extracting family details from facts data: {e}", exc_info=True)
+        logger.error(f"Error extracting family details from Edit Relationships API data: {e}", exc_info=True)
 
     return result
 
