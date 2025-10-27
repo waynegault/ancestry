@@ -1470,7 +1470,7 @@ def _print_final_results(
         print("   Check individual test outputs above for details.\n")
 
 
-def analyze_application_logs(log_path: str = "Logs/app.log") -> dict:
+def analyze_application_logs(log_path: str | None = None) -> dict:
     """
     Analyze application logs for performance metrics and errors.
     Integrated from monitor_performance.py for log analysis.
@@ -1481,6 +1481,8 @@ def analyze_application_logs(log_path: str = "Logs/app.log") -> dict:
     Returns:
         dict: Analysis results including timing stats, error counts, and warnings
     """
+    from os import getenv
+    log_path = log_path or getenv("LOG_FILE", "Logs/app.log")
     log_file = Path(log_path)
 
     if not log_file.exists():
@@ -1608,7 +1610,7 @@ def format_log_analysis(results: dict) -> str:
     return "\n".join(report)
 
 
-def print_log_analysis(log_path: str = "Logs/app.log") -> None:
+def print_log_analysis(log_path: str | None = None) -> None:
     """Analyze and print application log performance metrics."""
     results = analyze_application_logs(log_path)
     print("\n" + format_log_analysis(results))

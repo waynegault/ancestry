@@ -3346,17 +3346,8 @@ if __name__ == "__main__":
     try:
         from logging_config import setup_logging  # Local import
 
-        db_file_path = config_schema.database.database_file
-        if db_file_path is not None:
-            log_filename_only = db_file_path.with_suffix(".log").name
-            standalone_logger = setup_logging(
-                log_file=log_filename_only, log_level="DEBUG"
-            )
-        else:
-            # Fallback to default log name if DATABASE_FILE is not configured
-            standalone_logger = setup_logging(
-                log_file="database.log", log_level="DEBUG"
-            )
+        # Use unified logging configuration; LOG_FILE is taken from .env
+        standalone_logger = setup_logging(log_level="DEBUG")
         standalone_logger.info("--- Starting database.py standalone run ---")
     except Exception as log_err:
         # Fallback basic config if setup_logging fails

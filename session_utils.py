@@ -27,6 +27,7 @@ BENEFITS:
 """
 
 # === STANDARD LIBRARY IMPORTS ===
+import sys
 from typing import Optional
 
 # === LOCAL IMPORTS ===
@@ -157,7 +158,7 @@ def get_authenticated_session(
     # 2) Determine session state and pre-auth logging
     from config import config_schema
     env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
-    already_auth = bool(_cached_session_uuid and _cached_session_manager.my_uuid)
+    already_auth = bool(_cached_session_uuid and getattr(_cached_session_manager, "my_uuid", None))
     _pre_auth_logging(already_auth, env_uuid, action_name)
 
     # 3) Ensure session is ready (no-op if cached)
@@ -376,4 +377,4 @@ if __name__ == "__main__":
     else:
         print("\n❌ Some session_utils tests failed!")
 
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)

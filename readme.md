@@ -373,17 +373,18 @@ If you see thousands of errors or errors from `.git` files:
 
 ### Logs
 
-All logs are written to `Logs/app.log`:
+All logs are written to the file defined by `LOG_FILE` in your `.env` (default: `Logs/app.log`):
 
 ```bash
 # View recent errors
-tail -100 Logs/app.log | grep ERROR
+TAIL_TARGET="${LOG_FILE:-Logs/app.log}"
+tail -100 "$TAIL_TARGET" | grep ERROR
 
 # Monitor real-time
-tail -f Logs/app.log
+tail -f "$TAIL_TARGET"
 
 # Check rate limiter initialization
-grep "Thread-safe RateLimiter" Logs/app.log | tail -1
+grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 ```
 
 ## Contributing
@@ -473,6 +474,82 @@ For issues or questions:
   - ai_provider: one of ["deepseek", "gemini", "local_llm"]
   - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
   - Default base URL: http://localhost:1234/v1 (LM Studio)
+
+- LM Studio quick-start checklist (real use)
+  1) Install LM Studio and open it
+  2) Load an instruct model (e.g., qwen3-4b-2507)
+  3) Start the local server (Developer tab) and ensure it shows Running at http://localhost:1234/v1
+  4) In .env set:
+     - AI_PROVIDER=local_llm
+     - LOCAL_LLM_BASE_URL=http://localhost:1234/v1
+     - LOCAL_LLM_API_KEY=lm-studio
+     - LOCAL_LLM_MODEL=qwen3-4b-2507
+  5) Optional: enable JIT loading in LM Studio so the first inference auto-loads the model
+  6) Run: python test_local_llm.py
+
+- Programmatically triggering model load (Python)
+  - LM Studio follows the OpenAI-compatible API; the model is selected by the `model` field in your request.
+  - If JIT loading is enabled, the first request with that model name will load it automatically.
+
+### Appendix C: Test Review Summary (condensed)
+
+- Date: 2025-10-23; Reviewer: Augment Agent
+- Coverage and quality highlights:
+  - 82 modules analyzed; 80 with tests (97.6% coverage)
+  - 1,048 public functions; 1,033 test functions
+  - 100% test pass rate; average quality 100/100
+  - Tests use live sessions (no smoke tests) and are co-located with code
+- Notable improvements:
+  - Reduced complexity in database.py and conversation_analytics.py below thresholds
+  - Reduced returns in core/session_manager.py to ≤6
+  - Fixed deprecated imports and unused args; remaining globals in session_utils.py are intentional for caching
+
+### Appendix D: Test Quality Analysis (condensed)
+
+- Strengths: excellent coverage, genuine assertions, error-path tests, DRY utilities
+- AI components covered: ai_interface, ai_prompt_utils, universal_scoring
+- Utilities covered: logging_config, error_handling, test_framework
+- Modules without tests: `config/__init__.py` and `config/__main__.py` (acceptable)
+- Code quality metrics: now 100/100 across modules; 0 complexity warnings
+
+### Appendix E: Test Coverage Report (how to regenerate)
+
+- To regenerate full coverage tables in your environment:
+```bash
+python run_all_tests.py --emit-coverage
+```
+- Summary from last run:
+  - Total Modules: 82; With Tests: 80; Without: 2
+  - Total Public Functions: 1,048; Total Test Functions: 1,033
+- The detailed per-module table previously in test_coverage_report.md has been consolidated into this readme per single-file policy. Re-run the command above to produce a fresh, complete table locally.
+
+  - Example minimal call using requests:
+
+```python
+import os, requests
+base = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:1234/v1")
+api_key = os.getenv("LOCAL_LLM_API_KEY", "lm-studio")
+model = os.getenv("LOCAL_LLM_MODEL", "qwen3-4b-2507")
+
+r = requests.post(
+    f"{base}/chat/completions",
+    headers={"Authorization": f"Bearer {api_key}"},
+    json={
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Say hello and report your model name."},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 64,
+    },
+    timeout=60,
+)
+print(r.status_code)
+print(r.json())
+```
+
+  If the model isn’t loaded and JIT is disabled, start it in the LM Studio UI or via the `lms` CLI.
 
 - Conversation State Model (Phase 3)
   - Fields: ai_summary (text), engagement_score (int 0-100), last_topic (text), pending_questions (text/json), conversation_phase (enum)
