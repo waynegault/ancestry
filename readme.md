@@ -466,7 +466,8 @@ For issues or questions:
 
 - Action 0 (Delete all rows except one)
   - Set the .env variable TESTING_PROFILE_ID to the Profile ID you want to keep (e.g., your mother’s ucdmid)
-  - If the keeper is not found in the database, the tool will proceed to delete all rows (none can be preserved)
+  - Safety: If TESTING_PROFILE_ID is missing or equals MOCK_PROFILE_ID, the action aborts to prevent unintended deletion
+  - If the configured keeper is not found in the database, the action will abort with instructions to correct TESTING_PROFILE_ID
   - Requires explicit yes/no confirmation in the menu before executing
 
 - Session Architecture

@@ -409,10 +409,18 @@ def _test_record_engagement_event() -> None:
     assert session is not None, "Session should not be None"
 
     try:
+        # Ensure a valid person exists
+        from database import Person
+        person = session.query(Person).first()
+        if not person:
+            person = Person(username="Test Analytics User")
+            session.add(person)
+            session.commit()
+
         # Create a test event
         event = record_engagement_event(
             session=session,
-            people_id=1,
+            people_id=person.id,
             event_type="test_event",
             event_description="Test event description",
             event_data={"key": "value"},
@@ -424,7 +432,7 @@ def _test_record_engagement_event() -> None:
 
         # Verify event was created
         assert event is not None, "Event should be created"
-        assert getattr(event, 'people_id') == 1, "Event should have correct people_id"
+        assert getattr(event, 'people_id') == person.id, "Event should have correct people_id"
         assert getattr(event, 'event_type') == "test_event", "Event should have correct event_type"
         assert getattr(event, 'engagement_score_delta') == 10, "Event should calculate delta correctly"
 
@@ -576,10 +584,18 @@ def _test_engagement_score_delta_calculation() -> None:
     assert session is not None, "Session should not be None"
 
     try:
+        # Ensure a valid person exists
+        from database import Person
+        person = session.query(Person).first()
+        if not person:
+            person = Person(username="Test Analytics User 2")
+            session.add(person)
+            session.commit()
+
         # Test with score increase
         event1 = record_engagement_event(
             session=session,
-            people_id=1,
+            people_id=person.id,
             event_type="test",
             engagement_score_before=40,
             engagement_score_after=60
@@ -589,7 +605,7 @@ def _test_engagement_score_delta_calculation() -> None:
         # Test with score decrease
         event2 = record_engagement_event(
             session=session,
-            people_id=1,
+            people_id=person.id,
             event_type="test",
             engagement_score_before=60,
             engagement_score_after=40
@@ -599,7 +615,7 @@ def _test_engagement_score_delta_calculation() -> None:
         # Test with no scores
         event3 = record_engagement_event(
             session=session,
-            people_id=1,
+            people_id=person.id,
             event_type="test"
         )
         assert getattr(event3, 'engagement_score_delta') is None, "Should have None delta when no scores"

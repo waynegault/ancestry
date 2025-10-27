@@ -306,9 +306,9 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
     Returns:
         Required state: "db_ready", "driver_ready", or "session_ready"
     """
-    # Merged 10/11 require session for potential API fallback even if browserless
+    # Merged 10/11: do NOT require session upfront; wrapper will ensure session only if API fallback is needed
     if choice in ["10", "11"]:
-        return "session_ready"
+        return "db_ready"
     if not requires_browser:
         return "db_ready"
     if choice == "5":  # check_login_actn
@@ -565,8 +565,12 @@ def all_but_first_actn(session_manager: SessionManager, *_):
         or (getattr(config, "test", None).test_profile_id if getattr(config, "test", None) else None)
         or ""
     )
-    if not profile_id_to_keep:
-        logger.error("TESTING_PROFILE_ID is not configured in .env. Proceeding to delete all records (no keeper present).")
+    if not profile_id_to_keep or profile_id_to_keep.strip().upper() == "MOCK_PROFILE_ID":
+        logger.error(
+            "TESTING_PROFILE_ID is not configured in .env (or is MOCK_PROFILE_ID). Aborting to prevent unintended deletion.\n"
+            "Set TESTING_PROFILE_ID=<keeper_profile_id> in .env and retry."
+        )
+        return False
     profile_id_to_keep = profile_id_to_keep.upper()
 
     temp_manager = None  # Initialize
