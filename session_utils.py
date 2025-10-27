@@ -39,11 +39,12 @@ logger = setup_logging(log_level="INFO")
 
 # === GLOBAL SESSION CACHE ===
 # This is the SINGLE SOURCE OF TRUTH for session management
-_cached_session_manager: Optional[SessionManager] = None
-_cached_session_uuid: Optional[str] = None
+class _State:
+    session_manager: Optional[SessionManager] = None
+    session_uuid: Optional[str] = None
+    auth_banner_printed: bool = False
 
-# Print-once guard for authentication banner
-_auth_banner_printed: bool = False
+GLOBAL_SESSION = _State()
 
 
 # ==============================================
@@ -60,12 +61,11 @@ def set_global_session(session_manager: SessionManager) -> None:
     Args:
         session_manager: The SessionManager instance to register globally
     """
-    global _cached_session_manager, _cached_session_uuid
-    prev = _cached_session_manager
-    _cached_session_manager = session_manager
+    prev = GLOBAL_SESSION.session_manager
+    GLOBAL_SESSION.session_manager = session_manager
     # Don't try to get UUID yet - session hasn't been authenticated
     # UUID will be set when get_authenticated_session() is called
-    _cached_session_uuid = None
+    GLOBAL_SESSION.session_uuid = None
     if prev is session_manager:
         logger.debug("Global session already registered; skipping re-register")
     else:
@@ -79,7 +79,7 @@ def get_global_session() -> Optional[SessionManager]:
     Returns:
         Optional[SessionManager]: The cached session manager, or None if not set
     """
-    return _cached_session_manager
+    return GLOBAL_SESSION.session_manager
 
 
 def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
@@ -105,24 +105,22 @@ def _ensure_session_ready_or_raise(session_manager: SessionManager, action_name:
 
 def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: SessionManager) -> str:
     """On first-time auth, cache UUID and print success banner; return UUID."""
-    global _cached_session_uuid, _auth_banner_printed
     if not already_auth:
         if not session_manager.my_uuid:
             raise AssertionError("UUID not available - session initialization incomplete")
-        _cached_session_uuid = session_manager.my_uuid
-        if not _auth_banner_printed:
-            logger.info(f"✅ Global session now authenticated: UUID={_cached_session_uuid}")
-            _auth_banner_printed = True
+        GLOBAL_SESSION.session_uuid = session_manager.my_uuid
+        if not GLOBAL_SESSION.auth_banner_printed:
+            logger.info(f"✅ Global session now authenticated: UUID={GLOBAL_SESSION.session_uuid}")
+            GLOBAL_SESSION.auth_banner_printed = True
         else:
-            logger.debug(f"Global session ready (UUID={_cached_session_uuid})")
-    return _cached_session_uuid
+            logger.debug(f"Global session ready (UUID={GLOBAL_SESSION.session_uuid})")
+    return GLOBAL_SESSION.session_uuid
 
 
 
 def _assert_global_session_exists() -> None:
     """Raise if the global session has not been registered by main.py."""
-    global _cached_session_manager
-    if not _cached_session_manager:
+    if not GLOBAL_SESSION.session_manager:
         raise RuntimeError(
             "No global session available. main.py must call set_global_session() before any actions or tests can run. "
             "If running a script directly, ensure main.py has been run first to register the global session."
@@ -131,11 +129,10 @@ def _assert_global_session_exists() -> None:
 
 def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
     """Centralize pre-auth logging to reduce cyclomatic complexity."""
-    global _auth_banner_printed, _cached_session_uuid
-    if not already_auth and not _auth_banner_printed:
+    if not already_auth and not GLOBAL_SESSION.auth_banner_printed:
         _log_session_banner(already_auth, env_uuid, action_name)
     elif already_auth:
-        logger.debug(f"Using cached global session (UUID={_cached_session_uuid}) for {action_name}")
+        logger.debug(f"Using cached global session (UUID={GLOBAL_SESSION.session_uuid}) for {action_name}")
     else:
         logger.debug(f"Re-validating global session state for {action_name}")
 
@@ -149,27 +146,24 @@ def get_authenticated_session(
     - Requires main.py to have registered the global session via set_global_session().
     - Authenticates the session on first use, then reuses cached credentials.
     """
-    global _cached_session_manager, _cached_session_uuid
-    global _auth_banner_printed
-
     # 1) Validate that a global session exists
     _assert_global_session_exists()
 
     # 2) Determine session state and pre-auth logging
     from config import config_schema
     env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
-    already_auth = bool(_cached_session_uuid and getattr(_cached_session_manager, "my_uuid", None))
+    already_auth = bool(GLOBAL_SESSION.session_uuid and getattr(GLOBAL_SESSION.session_manager, "my_uuid", None))
     _pre_auth_logging(already_auth, env_uuid, action_name)
 
     # 3) Ensure session is ready (no-op if cached)
-    sm = _cached_session_manager
+    sm = GLOBAL_SESSION.session_manager
     assert sm is not None
     _ensure_session_ready_or_raise(sm, action_name, skip_csrf)
 
     # 4) Finalize first-time auth (cache UUID and print banner once)
-    _cached_session_uuid = _finalize_first_auth_and_get_uuid(already_auth, sm)
+    GLOBAL_SESSION.session_uuid = _finalize_first_auth_and_get_uuid(already_auth, sm)
 
-    return _cached_session_manager, _cached_session_uuid
+    return GLOBAL_SESSION.session_manager, GLOBAL_SESSION.session_uuid
 
 
 def clear_cached_session() -> None:
@@ -179,9 +173,8 @@ def clear_cached_session() -> None:
     This is useful for testing when you want to reset the cache
     without actually closing the session.
     """
-    global _cached_session_manager, _cached_session_uuid
-    _cached_session_manager = None
-    _cached_session_uuid = None
+    GLOBAL_SESSION.session_manager = None
+    GLOBAL_SESSION.session_uuid = None
     logger.info("Cached session cleared (not closed)")
 
 
@@ -192,13 +185,11 @@ def close_cached_session(keep_db: bool = True) -> None:
     Args:
         keep_db: Whether to keep database connections (default: True)
     """
-    global _cached_session_manager, _cached_session_uuid
-
-    if _cached_session_manager:
+    if GLOBAL_SESSION.session_manager:
         logger.info("Closing cached session")
-        _cached_session_manager.close_sess(keep_db=keep_db)
-        _cached_session_manager = None
-        _cached_session_uuid = None
+        GLOBAL_SESSION.session_manager.close_sess(keep_db=keep_db)
+        GLOBAL_SESSION.session_manager = None
+        GLOBAL_SESSION.session_uuid = None
 
 
 # ==============================================
@@ -280,12 +271,11 @@ def _test_global_session_set() -> bool:
     """Test that global session is returned when set."""
     from unittest.mock import MagicMock
 
-    # Setup global session
-    global _cached_session_manager, _cached_session_uuid
+    # Setup global session via API
     mock_sm = MagicMock()
     mock_sm.my_uuid = "test-uuid-12345"
-    _cached_session_manager = mock_sm
-    _cached_session_uuid = "test-uuid-12345"
+    mock_sm.ensure_session_ready.return_value = True
+    set_global_session(mock_sm)
 
     # Get global session
     sm, uuid = get_authenticated_session("Test Action")
@@ -305,12 +295,11 @@ def _test_ensure_session_for_tests_wrapper() -> bool:
     """Test ensure_session_for_tests wrapper."""
     from unittest.mock import MagicMock
 
-    # Setup global session
-    global _cached_session_manager, _cached_session_uuid
+    # Setup global session via API
     mock_sm = MagicMock()
     mock_sm.my_uuid = "wrapper-test-uuid"
-    _cached_session_manager = mock_sm
-    _cached_session_uuid = "wrapper-test-uuid"
+    mock_sm.ensure_session_ready.return_value = True
+    set_global_session(mock_sm)
 
     # Test wrapper
     sm, uuid = ensure_session_for_tests("Test Action")

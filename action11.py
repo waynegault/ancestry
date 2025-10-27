@@ -2540,10 +2540,10 @@ def get_ancestry_relationship_path(
     owner_profile_id = getattr(session_manager, "my_profile_id", None)
     owner_name = getattr(session_manager, "tree_owner_name", reference_name)
     # Proactively resolve owner_name to avoid 'Unknown' on first attempt
-    try:
+    # Use suppress() to intentionally ignore resolution errors (non-fatal here)
+    from contextlib import suppress
+    with suppress(Exception):
         owner_name = _resolve_owner_name(session_manager, owner_name, owner_profile_id)  # type: ignore[arg-type]
-    except Exception:
-        pass
 
     if not all([base_url, owner_tree_id, owner_profile_id]):
         logger.error("Missing required information for relationship path lookup")

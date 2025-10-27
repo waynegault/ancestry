@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportConstantRedefinition=false
 
 """
@@ -53,7 +55,7 @@ import json
 import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -102,7 +104,9 @@ import contextlib
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from cache_manager import cached_api_call
 from config.config_manager import ConfigManager
-from core.session_manager import SessionManager
+
+if TYPE_CHECKING:
+    from core.session_manager import SessionManager
 
 # === MODULE CONFIGURATION ===
 # Initialize config

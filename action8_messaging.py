@@ -688,12 +688,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {}
 
 def ensure_message_templates_loaded() -> None:
     """Load message templates on first use; avoid import-time CRITICALs."""
-    global MESSAGE_TEMPLATES
     if MESSAGE_TEMPLATES:
         return
     templates = load_message_templates()
     if isinstance(templates, dict) and templates:
-        MESSAGE_TEMPLATES = templates
+        MESSAGE_TEMPLATES.clear()
+        MESSAGE_TEMPLATES.update(templates)
         logger.debug(f"Message templates loaded lazily: {len(MESSAGE_TEMPLATES)} available")
     else:
         logger.debug("Message templates not available yet; will retry on first Action 8 use")
