@@ -376,13 +376,14 @@ def _should_close_session(action_result, action_exception, close_sess_after: boo
     return False
 
 
-def _log_performance_metrics(start_time: float, process, mem_before: float, choice: str, action_name: str):
-    """Log performance metrics for the action."""
+def _log_performance_metrics(start_time: float, process, mem_before: float, choice: str, action_name: str) -> tuple[float, float | None]:
+    """Log performance metrics for the action and return (duration_sec, mem_used_mb)."""
     duration = time.time() - start_time
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
     formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
 
+    mem_used: float | None = None
     try:
         mem_after = process.memory_info().rss / (1024 * 1024)
         mem_used = mem_after - mem_before
@@ -395,6 +396,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
     logger.info("------------------------------------------\n")
+    return duration, mem_used
 
 
 def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str):
@@ -483,7 +485,22 @@ def exec_actn(
         final_outcome = action_result is not False and action_exception is None
         logger.debug(f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n")
 
-        _log_performance_metrics(start_time, process, mem_before, choice, action_name)
+        duration_sec, mem_used_mb = _log_performance_metrics(start_time, process, mem_before, choice, action_name)
+
+        # Analytics rollup (non-fatal if missing)
+        try:
+            from analytics import log_event, pop_transient_extras
+            extras = pop_transient_extras()
+            log_event(
+                action_name=action_name,
+                choice=choice,
+                success=bool(final_outcome),
+                duration_sec=duration_sec,
+                mem_used_mb=mem_used_mb,
+                extras=extras,
+            )
+        except Exception as e:
+            logger.debug(f"Analytics logging skipped: {e}")
 
         # Perform cleanup
         _perform_session_cleanup(session_manager, should_close, action_name)
@@ -542,12 +559,14 @@ def all_but_first_actn(session_manager: SessionManager, *_):
     Closes the provided main session pool FIRST.
     Creates a temporary SessionManager for the delete operation.
     """
-    # Define the specific profile ID to keep from config (ensure it's uppercase for comparison)
-    profile_id_to_keep = config.test.test_profile_id
+    # Define the specific profile ID to keep from config (prefer .env TESTING_PROFILE_ID)
+    profile_id_to_keep = (
+        getattr(config, "testing_profile_id", None)
+        or (getattr(config, "test", None).test_profile_id if getattr(config, "test", None) else None)
+        or ""
+    )
     if not profile_id_to_keep:
-        logger.error(            "TESTING_PROFILE_ID is not configured. Cannot determine which profile to keep."
-        )
-        return False
+        logger.error("TESTING_PROFILE_ID is not configured in .env. Proceeding to delete all records (no keeper present).")
     profile_id_to_keep = profile_id_to_keep.upper()
 
     temp_manager = None  # Initialize
@@ -584,14 +603,14 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 
             if not person_to_keep:
                 logger.warning(
-                    f"Person with Profile ID {profile_id_to_keep} not found. No records will be deleted."
+                    f"Person with Profile ID {profile_id_to_keep} not found. Proceeding to delete all records."
                 )
-                return True  # Exit gracefully if the keeper doesn't exist
-
-            person_id_to_keep = person_to_keep.id
-            logger.debug(
-                f"Keeping Person ID: {person_id_to_keep} (ProfileID: {profile_id_to_keep}, User: {person_to_keep.username})"
-            )
+                person_id_to_keep = -1  # ensures '!= person_id_to_keep' matches all rows
+            else:
+                person_id_to_keep = person_to_keep.id
+                logger.debug(
+                    f"Keeping Person ID: {person_id_to_keep} (ProfileID: {profile_id_to_keep}, User: {person_to_keep.username})"
+                )
 
             # --- Perform Deletions ---
             _perform_deletions(sess, person_id_to_keep)
@@ -1383,6 +1402,14 @@ def run_merged_search_wrapper(session_manager: Any, *_: Any) -> bool:
                         reference_person_id_norm,
                         reference_person_name or "",
                     )
+                    try:
+                        from analytics import set_transient_extras
+                        set_transient_extras({
+                            "merged_10_11_branch": "gedcom",
+                            "gedcom_candidates": len(scored_matches),
+                        })
+                    except Exception:
+                        pass
                     return True
     except Exception as e:
         logger.info(f"GEDCOM-first search yielded no match or failed; will attempt API fallback: {e}")
@@ -1413,6 +1440,14 @@ def run_merged_search_wrapper(session_manager: Any, *_: Any) -> bool:
             print("\n=== API Top Matches ===")
             for cand in api_candidates[:5]:
                 print(f" - {cand.get('name', 'N/A')} (score={cand.get('score', 0)})")
+        try:
+            from analytics import set_transient_extras
+            set_transient_extras({
+                "merged_10_11_branch": "api_fallback",
+                "api_candidates": len(api_candidates),
+            })
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.error(f"API fallback failed: {e}", exc_info=True)

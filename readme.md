@@ -157,7 +157,7 @@ Phase status snapshot:
 - Phase 3 (Dialogue engine): Implemented core engagement assessment and conversation state fields
 - Phase 4 (Adaptive messaging): Partially implemented; follow-up adaptation queued
 - Phase 5 (Research assistant): Enrichment policy and formatting in place (Action 9)
-- Phase 6 (Monitoring & analytics): Planned
+- Phase 6 (Monitoring & analytics): In progress (per-action analytics.jsonl + weekly rollups)
 - Phase 7 (Local LLM): Provider and tests implemented; see Local LLM Integration
 
 ## Developer Instructions (Key Topics)
@@ -457,6 +457,17 @@ For issues or questions:
 - Suppressed verbose raw path logging in Action 11; kept concise debug metrics
 
 ### Appendix B: Technical Specifications
+
+- Monitoring & Analytics (Phase 6)
+  - Each action run writes a JSON line to Logs/analytics.jsonl with fields: ts, action_name, choice, success, duration_sec, mem_used_mb, extras
+  - Merged Actions 10/11 set extras.merged_10_11_branch to 'gedcom' or 'api_fallback' and include candidate counts
+  - Weekly summary generator: from analytics import print_weekly_summary; print_weekly_summary(7)
+  - Non-fatal by design: analytics never blocks action execution
+
+- Action 0 (Delete all rows except one)
+  - Set the .env variable TESTING_PROFILE_ID to the Profile ID you want to keep (e.g., your mother’s ucdmid)
+  - If the keeper is not found in the database, the tool will proceed to delete all rows (none can be preserved)
+  - Requires explicit yes/no confirmation in the menu before executing
 
 - Session Architecture
   - Exactly one SessionManager instance created by main.py
