@@ -445,6 +445,9 @@ For issues or questions:
 - Complexity reduction: action9_process_productive extracted `_formatting_fallback` to simplify exception path
 - Documentation: Consolidated vision into readme.md; added Local LLM integration steps; cleaned markdown lint issues
 - Policy: Removed messages.json earlier; VISION_INTELLIGENT_DNA_MESSAGING.md will be removed after verification (single-file docs policy)
+- Complexity reduction: action9_process_productive._build_enrichment_lines refactored into helpers; module now 100/100 quality
+- Documentation: Removed VISION_INTELLIGENT_DNA_MESSAGING.md (content consolidated here per single-doc policy)
+- Phase 7 Local LLM: Executed real tests via test_local_llm.py; configuration test passed; direct connection and genealogical prompt failed due to LM Studio not loading a model (404 model_not_found). Environment steps documented in Appendix B
 
 2025-10-23
 - Switched Action 11 family extraction to the Edit Relationships endpoint and parsed nested data['person'] correctly
