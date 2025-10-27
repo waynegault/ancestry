@@ -1480,6 +1480,97 @@ class InboxProcessor:
             "script_message_status": None,
         }
 
+    def _record_event_and_metrics(
+        self,
+        session: DbSession,
+        people_id: int,
+        direction: MessageDirectionEnum,
+        ai_sentiment: Optional[str],
+        conversation_phase: Optional[str],
+    ) -> None:
+        """Record an engagement event and update metrics."""
+        event_type = "message_received" if direction == MessageDirectionEnum.IN else "message_sent"
+        event_description = f"Message {direction.name.lower()} with sentiment: {ai_sentiment or 'unknown'}"
+        record_engagement_event(
+            session=session,
+            people_id=people_id,
+            event_type=event_type,
+            event_description=event_description,
+            conversation_phase=conversation_phase,
+        )
+        update_conversation_metrics(
+            session=session,
+            people_id=people_id,
+            message_sent=(direction == MessageDirectionEnum.OUT),
+            message_received=(direction == MessageDirectionEnum.IN),
+            conversation_phase=conversation_phase,
+        )
+
+    def _build_recent_context(self, session: DbSession, people_id: int) -> str:
+        """Build a compact recent conversation context for AI engagement assessment."""
+        recent_logs = (
+            session.query(ConversationLog)
+            .filter(ConversationLog.people_id == people_id)
+            .order_by(ConversationLog.timestamp.asc())
+            .all()
+        )
+        if not recent_logs:
+            return ""
+        max_msgs = getattr(config_schema, "ai_context_window_messages", 6)
+        logs_window = recent_logs[-max_msgs:]
+        lines: list[str] = []
+        for log in logs_window:
+            role = "USER" if log.direction == MessageDirectionEnum.IN else "SCRIPT"
+            content = (log.message_content or "").strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines)
+
+    def _upsert_conversation_state(
+        self,
+        session: DbSession,
+        people_id: int,
+        direction: MessageDirectionEnum,
+        result: dict[str, Any],
+    ) -> None:
+        """Upsert conversation state from AI engagement result."""
+        state: Optional[ConversationState] = (
+            session.query(ConversationState)
+            .filter(ConversationState.people_id == people_id)
+            .one_or_none()
+        )
+        if not state:
+            state = ConversationState(people_id=people_id)
+            session.add(state)
+
+        # Extract fields with safe defaults
+        state.engagement_score = int(result.get("engagement_score", 0))
+        state.ai_summary = result.get("ai_summary") or None
+        state.last_topic = result.get("last_topic") or None
+        new_questions = result.get("pending_questions")
+        if isinstance(new_questions, list):
+            state.pending_questions = json.dumps(new_questions)
+
+        # Phase heuristic
+        if direction == MessageDirectionEnum.IN:
+            state.conversation_phase = "active_dialogue"
+
+        session.commit()
+
+
+    def _assess_and_upsert(self, session: DbSession, people_id: int, direction: MessageDirectionEnum) -> None:
+        """Build context, assess engagement, and upsert state if result present."""
+        formatted_context = self._build_recent_context(session, people_id)
+        if not formatted_context:
+            return
+        result = assess_engagement(
+            conversation_history=formatted_context,
+            session_manager=self.session_manager,
+            log_prefix="Action7",
+        )
+        if result:
+            self._upsert_conversation_state(session, people_id, direction, result)
+
     def _track_message_analytics(
         self,
         session: DbSession,
@@ -1490,85 +1581,11 @@ class InboxProcessor:
     ) -> None:
         """Track message analytics for conversation metrics and update conversation state (Phase 3)."""
         try:
-            # 1) Record engagement event
-            event_type = "message_received" if direction == MessageDirectionEnum.IN else "message_sent"
-            event_description = f"Message {direction.name.lower()} with sentiment: {ai_sentiment or 'unknown'}"
+            # 1) Record event and metrics
+            self._record_event_and_metrics(session, people_id, direction, ai_sentiment, conversation_phase)
 
-            record_engagement_event(
-                session=session,
-                people_id=people_id,
-                event_type=event_type,
-                event_description=event_description,
-                conversation_phase=conversation_phase,
-            )
-
-            # 2) Update conversation metrics
-            update_conversation_metrics(
-                session=session,
-                people_id=people_id,
-                message_sent=(direction == MessageDirectionEnum.OUT),
-                message_received=(direction == MessageDirectionEnum.IN),
-                conversation_phase=conversation_phase,
-            )
-
-            # 3) AI engagement assessment and state update (only when we have enough context)
-            try:
-                # Build recent conversation context
-                recent_logs = (
-                    session.query(ConversationLog)
-                    .filter(ConversationLog.people_id == people_id)
-                    .order_by(ConversationLog.timestamp.asc())
-                    .all()
-                )
-                if recent_logs:
-                    # Sliding window of recent messages
-                    max_msgs = getattr(config_schema, "ai_context_window_messages", 6)
-                    logs_window = recent_logs[-max_msgs:]
-                    lines: list[str] = []
-                    for log in logs_window:
-                        role = "USER" if log.direction == MessageDirectionEnum.IN else "SCRIPT"
-                        content = (log.message_content or "").strip()
-                        if content:
-                            lines.append(f"{role}: {content}")
-                    formatted_context = "\n".join(lines)
-
-                    # Call AI assessment
-                    result = assess_engagement(
-                        conversation_history=formatted_context,
-                        session_manager=self.session_manager,
-                        log_prefix="Action7"
-                    )
-
-                    if result:
-                        # Upsert conversation state
-                        state: Optional[ConversationState] = (
-                            session.query(ConversationState)
-                            .filter(ConversationState.people_id == people_id)
-                            .one_or_none()
-                        )
-                        if not state:
-                            state = ConversationState(people_id=people_id)
-                            session.add(state)
-
-                        # Extract fields with defaults
-                        new_score = int(result.get("engagement_score", 0))
-                        new_summary = result.get("ai_summary") or None
-                        new_topic = result.get("last_topic") or None
-                        new_questions = result.get("pending_questions")
-
-                        state.engagement_score = new_score
-                        state.ai_summary = new_summary
-                        state.last_topic = new_topic
-                        if isinstance(new_questions, list):
-                            state.pending_questions = json.dumps(new_questions)
-
-                        # Phase management heuristic: if incoming message, consider active_dialogue
-                        if direction == MessageDirectionEnum.IN:
-                            state.conversation_phase = "active_dialogue"
-
-                        session.commit()
-            except Exception as inner:
-                logger.debug(f"Engagement assessment/state update skipped: {inner}")
+            # 2) AI engagement assessment
+            self._assess_and_upsert(session, people_id, direction)
         except Exception as e:
             logger.debug(f"Analytics tracking failed for people_id {people_id}: {e}")
 

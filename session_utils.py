@@ -81,78 +81,92 @@ def get_global_session() -> Optional[SessionManager]:
     return _cached_session_manager
 
 
-def get_authenticated_session(
-    action_name: str = "Session Setup",
-    skip_csrf: bool = True
-) -> tuple[SessionManager, str]:
-    """
-    Get the global authenticated session manager.
-
-    This is the ONLY way to get a session. It returns the global session that was
-    registered by main.py. If no global session exists, it raises an error.
-
-    If the global session exists but hasn't been authenticated yet, this function
-    will authenticate it (start browser, login, get cookies, validate UUID).
-
-    Args:
-        action_name: Name of the action for logging
-        skip_csrf: Whether to skip CSRF token check (default: True)
-
-    Returns:
-        tuple[SessionManager, str]: (session_manager, uuid)
-
-    Raises:
-        RuntimeError: If no global session has been registered
-        AssertionError: If session authentication/validation fails
-    """
-    global _cached_session_manager, _cached_session_uuid
-    global _auth_banner_printed
-
-
-    # Enforce that global session must exist
-    if not _cached_session_manager:
-        raise RuntimeError(
-            "No global session available. "
-            "main.py must call set_global_session() before any actions or tests can run. "
-            "If running a script directly, ensure main.py has been run first to register the global session."
-        )
-
-    from config import config_schema
-    env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
-
-    # Determine if session is already authenticated to avoid repeating banners
-    already_auth = bool(_cached_session_uuid and _cached_session_manager.my_uuid)
-
-    if not already_auth and not _auth_banner_printed:
+def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
+    """Log the session banner once per authentication attempt (pre-auth)."""
+    if not already_auth:
         logger.info("=" * 80)
         logger.info(f"Using global authenticated session (Action: {action_name})")
-        # Prefer .env UUID if available; otherwise, omit at INFO to avoid confusing messages
         if env_uuid:
             logger.info(f"UUID (from .env): {env_uuid} — will verify during authentication")
         else:
             logger.debug("UUID: Not yet set (will be discovered during authentication)")
         logger.info("=" * 80)
-    elif not already_auth and _auth_banner_printed:
-        logger.debug(f"Re-validating global session state for {action_name}")
     else:
-        logger.debug(f"Using cached global session (UUID={_cached_session_uuid}) for {action_name}")
+        logger.debug("Reusing authenticated global session; banner suppressed")
 
-    # Ensure session is ready (fast no-op when cached)
-    ready = _cached_session_manager.ensure_session_ready(action_name, skip_csrf=skip_csrf)
+
+def _ensure_session_ready_or_raise(session_manager: SessionManager, action_name: str, skip_csrf: bool) -> None:
+    """Ensure the session is ready; raise AssertionError if not."""
+    ready = session_manager.ensure_session_ready(action_name, skip_csrf=skip_csrf)
     if not ready:
         raise AssertionError("Session not ready - cookies/identifiers missing")
 
-    # If this was the first-time authentication, record and announce once
-    if not already_auth:
-        if not _cached_session_manager.my_uuid:
-            raise AssertionError("UUID not available - session initialization incomplete")
-        _cached_session_uuid = _cached_session_manager.my_uuid
 
+def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: SessionManager) -> str:
+    """On first-time auth, cache UUID and print success banner; return UUID."""
+    global _cached_session_uuid, _auth_banner_printed
+    if not already_auth:
+        if not session_manager.my_uuid:
+            raise AssertionError("UUID not available - session initialization incomplete")
+        _cached_session_uuid = session_manager.my_uuid
         if not _auth_banner_printed:
             logger.info(f"✅ Global session now authenticated: UUID={_cached_session_uuid}")
             _auth_banner_printed = True
         else:
             logger.debug(f"Global session ready (UUID={_cached_session_uuid})")
+    return _cached_session_uuid
+
+
+
+def _assert_global_session_exists() -> None:
+    """Raise if the global session has not been registered by main.py."""
+    global _cached_session_manager
+    if not _cached_session_manager:
+        raise RuntimeError(
+            "No global session available. main.py must call set_global_session() before any actions or tests can run. "
+            "If running a script directly, ensure main.py has been run first to register the global session."
+        )
+
+
+def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
+    """Centralize pre-auth logging to reduce cyclomatic complexity."""
+    global _auth_banner_printed, _cached_session_uuid
+    if not already_auth and not _auth_banner_printed:
+        _log_session_banner(already_auth, env_uuid, action_name)
+    elif already_auth:
+        logger.debug(f"Using cached global session (UUID={_cached_session_uuid}) for {action_name}")
+    else:
+        logger.debug(f"Re-validating global session state for {action_name}")
+
+def get_authenticated_session(
+    action_name: str = "Session Setup",
+    skip_csrf: bool = True
+) -> tuple[SessionManager, str]:
+    """
+    Get the global authenticated session manager (single source of truth).
+
+    - Requires main.py to have registered the global session via set_global_session().
+    - Authenticates the session on first use, then reuses cached credentials.
+    """
+    global _cached_session_manager, _cached_session_uuid
+    global _auth_banner_printed
+
+    # 1) Validate that a global session exists
+    _assert_global_session_exists()
+
+    # 2) Determine session state and pre-auth logging
+    from config import config_schema
+    env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
+    already_auth = bool(_cached_session_uuid and _cached_session_manager.my_uuid)
+    _pre_auth_logging(already_auth, env_uuid, action_name)
+
+    # 3) Ensure session is ready (no-op if cached)
+    sm = _cached_session_manager
+    assert sm is not None
+    _ensure_session_ready_or_raise(sm, action_name, skip_csrf)
+
+    # 4) Finalize first-time auth (cache UUID and print banner once)
+    _cached_session_uuid = _finalize_first_auth_and_get_uuid(already_auth, sm)
 
     return _cached_session_manager, _cached_session_uuid
 

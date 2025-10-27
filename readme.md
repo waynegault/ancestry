@@ -139,6 +139,78 @@ SQLite database (`Data/ancestry.db`) with tables:
 - `dna_matches`: DNA match data
 - `research_logs`: Research activity tracking
 
+## Vision and Roadmap (Consolidated)
+
+Create an AI-powered genealogical research assistant that conducts intelligent, contextually-aware conversations with DNA matches, automatically researching family connections and providing substantive genealogical insights while respecting user preferences and managing conversation lifecycle.
+
+Core capabilities to deliver incrementally:
+- Intelligent initial outreach: in-tree messages include relationship path; out-of-tree messages include tree statistics and DNA commonality
+- Conversational dialogue engine: detect people mentioned in messages; look them up via Action 10 (GEDCOM) and Action 11 (API); generate contextual replies
+- Adaptive sequencing: follow-up timing adapts to engagement and status changes (out_tree -> in_tree)
+- Do-not-contact management: detect and honor desist immediately; cancel scheduled messages
+- Research assistant features: source citations, research suggestions, relationship diagrams, record sharing
+- Conversation state management: track engagement_score, last_topic, pending_questions, ai_summary
+
+Phase status snapshot:
+- Phase 1 (Enhanced content): Complete foundations; relationship path and stats support available
+- Phase 2 (Person lookup integration): Partially implemented in Action 11; needs Action 9 dialogue glue
+- Phase 3 (Dialogue engine): Implemented core engagement assessment and conversation state fields
+- Phase 4 (Adaptive messaging): Partially implemented; follow-up adaptation queued
+- Phase 5 (Research assistant): Enrichment policy and formatting in place (Action 9)
+- Phase 6 (Monitoring & analytics): Planned
+- Phase 7 (Local LLM): Provider and tests implemented; see Local LLM Integration
+
+## Developer Instructions (Key Topics)
+
+- Architecture and global session pattern: see sections above
+- Actions 6–11: see per-action sections below
+- Testing and quality: run_all_tests.py is authoritative; tests must fail on genuine failures
+- Pylance/linters: fix errors, do not suppress; reduce function complexity (target <10) and keep functions short
+- Technical specs: see Appendix B (Action 11 endpoints, display rules, logging, AI provider config)
+
+## Local LLM Integration (Phase 7 – Real Use)
+
+Local models are supported via LM Studio (OpenAI-compatible server). Configure and validate as follows:
+
+1. .env settings
+```bash
+AI_PROVIDER="local_llm"
+LOCAL_LLM_API_KEY="lm-studio"        # LM Studio default
+LOCAL_LLM_MODEL="qwen3-4b-2507"      # Or any model you load in LM Studio
+LOCAL_LLM_BASE_URL="http://localhost:1234/v1"
+```
+
+1. Start LM Studio (GUI)
+- Open LM Studio
+- Load your chosen instruct model (e.g., qwen3-4b-2507 or Llama/Mistral)
+- Click "Start Server"; ensure it shows Running at http://localhost:1234/v1
+
+1. Validate with the real tests
+```bash
+python test_local_llm.py
+```
+- Test 1 (Direct connection) should PASS in <5s typical
+- Test 2 (Configuration) should PASS with AI_PROVIDER=local_llm
+- Test 3 (Genealogical prompt) should PASS and mention at least 3 of: census, birth, marriage, death, record, search, scotland
+
+1. Use in normal actions
+- Keep LM Studio running
+- Run Action 8 or 9 normally; AI calls will route to the local model
+
+Troubleshooting
+- Ensure the server status is Running and the model is loaded
+- Verify .env AI_PROVIDER/local LLM vars are set exactly
+- Restart LM Studio and re-run tests if connection errors persist
+
+## Future Developer Ideas
+
+- Engagement-based follow-up scheduler with activity heuristics
+- Conversation analytics dashboard with trends and funnel metrics
+- A/B testing for template variants and enrichment choices
+- Automatic fallback to DeepSeek on local model failures
+- Prompt variant optimization for local models to improve speed/quality
+- Relationship diagram inline images using lightweight SVG rendering
+
 ## Actions
 
 ### Action 6: Page Gathering
@@ -366,6 +438,14 @@ For issues or questions:
 - Re-enabled startup clear-screen in main.py (now that early error review is complete)
 - Restored VISION_INTELLIGENT_DNA_MESSAGING.md to repository root from commit 2aee7d6 (temporary for implementation reference; will consolidate back into readme.md at completion per single-doc rule)
 
+2025-10-27
+- Complexity reduction: session_utils.get_authenticated_session split into `_assert_global_session_exists` and `_pre_auth_logging`; type-safety improvements
+- Complexity reduction: api_search_utils.get_api_family_details decomposed into helpers for structure logging, section extraction, and per-relationship parsing
+- Complexity reduction: action7_inbox extracted `_assess_and_upsert`; reduced analytics method branching
+- Complexity reduction: action9_process_productive extracted `_formatting_fallback` to simplify exception path
+- Documentation: Consolidated vision into readme.md; added Local LLM integration steps; cleaned markdown lint issues
+- Policy: Removed messages.json earlier; VISION_INTELLIGENT_DNA_MESSAGING.md will be removed after verification (single-file docs policy)
+
 2025-10-23
 - Switched Action 11 family extraction to the Edit Relationships endpoint and parsed nested data['person'] correctly
 - Suppressed verbose raw path logging in Action 11; kept concise debug metrics
@@ -385,6 +465,19 @@ For issues or questions:
 
 - Display Rules
   - Parents, spouses, children shown; siblings intentionally omitted in Action 11
+
+- AI Providers and Local LLM
+  - ai_provider: one of ["deepseek", "gemini", "local_llm"]
+  - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
+  - Default base URL: http://localhost:1234/v1 (LM Studio)
+
+- Conversation State Model (Phase 3)
+  - Fields: ai_summary (text), engagement_score (int 0-100), last_topic (text), pending_questions (text/json), conversation_phase (enum)
+  - Updated via Action 7 analytics pipeline and assess_engagement()
+
+- Enrichment Policy (Phase 5)
+  - Flag: enable_task_enrichment (bool)
+  - When enabled, Action 9 appends enrichment lines (to-do links, research prompts, record sharing hints)
 
 - Logging
   - Single header/footer, info-level friendly

@@ -1096,6 +1096,78 @@ def _process_siblings(relationships: list[dict[str, Any]], result: dict[str, Any
             result["siblings"].append(sibling_info)
 
 
+
+
+def _debug_log_facts_structure(facts_data: Any) -> None:
+    """Log top-level structure of the facts data for debugging."""
+    if not isinstance(facts_data, dict):
+        logger.debug("Family data is not a dict; skipping structure log")
+        return
+    logger.debug(f"Family data keys: {list(facts_data.keys())}")
+    for key, value in facts_data.items():
+        if isinstance(value, dict):
+            logger.debug(f"  {key}: dict with keys {list(value.keys())[:10]}")
+        elif isinstance(value, list):
+            logger.debug(f"  {key}: list with {len(value)} items")
+        else:
+            logger.debug(f"  {key}: {type(value).__name__}")
+
+
+def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:
+    """Return the primary data section containing relationship arrays."""
+    if isinstance(facts_data, dict):
+        person_section = facts_data.get("person")
+        if isinstance(person_section, dict):
+            return person_section
+        return facts_data
+    return {}
+
+
+def _extract_target_person_info_if_available(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+    """Extract target person's own info if present."""
+    try:
+        target_person = data_section.get("targetPerson") if isinstance(data_section, dict) else None
+        if isinstance(target_person, dict):
+            _extract_person_info_from_target(target_person, result)
+    except Exception:
+        # Best-effort extraction; safe to ignore errors
+        pass
+
+
+def _extract_parents_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+    """Append parents (fathers/mothers) to result['parents']."""
+    fathers = data_section.get("fathers", []) if isinstance(data_section, dict) else []
+    for father in fathers:
+        if isinstance(father, dict):
+            result["parents"].append(_format_person_from_relationship_data(father))
+
+    mothers = data_section.get("mothers", []) if isinstance(data_section, dict) else []
+    for mother in mothers:
+        if isinstance(mother, dict):
+            result["parents"].append(_format_person_from_relationship_data(mother))
+
+
+def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+    """Append spouses to result['spouses']."""
+    spouses = data_section.get("spouses", []) if isinstance(data_section, dict) else []
+    for spouse in spouses:
+        if isinstance(spouse, dict):
+            result["spouses"].append(_format_person_from_relationship_data(spouse))
+
+
+def _extract_children_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+    """Append children (flattened) to result['children']."""
+    children_field = data_section.get("children", []) if isinstance(data_section, dict) else []
+    if not isinstance(children_field, list):
+        return
+    for item in children_field:
+        if isinstance(item, list):
+            for child in item:
+                if isinstance(child, dict):
+                    result["children"].append(_format_person_from_relationship_data(child))
+        elif isinstance(item, dict):
+            result["children"].append(_format_person_from_relationship_data(item))
+
 def get_api_family_details(
     session_manager: SessionManager,
     person_id: str,
@@ -1104,105 +1176,38 @@ def get_api_family_details(
     """
     Get family details for a specific individual from Ancestry API.
 
-    Args:
-        session_manager: SessionManager instance with active session
-        person_id: Ancestry API person ID
-        tree_id: Optional tree ID (default: from session_manager or config)
-
-    Returns:
-        Dictionary containing family details (parents, spouses, children, siblings)
+    Returns a dict with keys: parents, spouses, children, siblings (siblings empty per requirements).
     """
-    # Validate session
+    # 1) Validate session and resolve identifiers
     if not _validate_api_session(session_manager):
         return {}
-
-    # Resolve tree ID
     tree_id = _resolve_tree_id(session_manager, tree_id)
     if not tree_id:
         return {}
-
-    # Resolve owner profile ID
     owner_profile_id = _resolve_owner_profile_id(session_manager)
 
-    # Get facts data from API
+    # 2) Fetch and validate source data
     facts_data = _get_facts_data_from_api(session_manager, person_id, tree_id, owner_profile_id)
     if not facts_data:
         return {}
 
-    # Initialize result structure
+    # 3) Initialize result and extract family members via helpers
     result = _initialize_family_result(person_id)
-
     try:
-        # Debug: Log the structure of family data to understand what we're working with
-        logger.debug(f"Family data keys: {list(facts_data.keys()) if isinstance(facts_data, dict) else 'Not a dict'}")
-
-        # Log the first level of data to understand structure
-        for key in facts_data.keys():
-            value = facts_data[key]
-            if isinstance(value, dict):
-                logger.debug(f"  {key}: dict with keys {list(value.keys())[:10]}")
-            elif isinstance(value, list):
-                logger.debug(f"  {key}: list with {len(value)} items")
-            else:
-                logger.debug(f"  {key}: {type(value).__name__}")
-
-        # The Edit Relationships API returns:
-        # - fathers: array of father objects
-        # - mothers: array of mother objects
-        # - spouses: array of spouse objects
-        # - children: array of arrays (one array per spouse, containing children)
-        # Each person object has: id, name, birthDate, deathDate, gender, etc.
-
-        # The actual relationship arrays are inside the 'person' section, not at the top level
-        person_section = facts_data.get("person") if isinstance(facts_data, dict) else None
-        data_section = person_section if isinstance(person_section, dict) else facts_data
-
-        # If present, extract target person's own info (name, gender, b/d dates)
-        try:
-            target_person = data_section.get("targetPerson") if isinstance(data_section, dict) else None
-            if isinstance(target_person, dict):
-                _extract_person_info_from_target(target_person, result)
-        except Exception:
-            pass
-
-        # Extract fathers
-        fathers = data_section.get("fathers", []) if isinstance(data_section, dict) else []
-        for father in fathers:
-            if isinstance(father, dict):
-                result["parents"].append(_format_person_from_relationship_data(father))
-
-        # Extract mothers
-        mothers = data_section.get("mothers", []) if isinstance(data_section, dict) else []
-        for mother in mothers:
-            if isinstance(mother, dict):
-                result["parents"].append(_format_person_from_relationship_data(mother))
-
-        # Extract spouses
-        spouses = data_section.get("spouses", []) if isinstance(data_section, dict) else []
-        for spouse in spouses:
-            if isinstance(spouse, dict):
-                result["spouses"].append(_format_person_from_relationship_data(spouse))
-
-        # Extract children (may be an array of arrays - one per spouse)
-        children_field = data_section.get("children", []) if isinstance(data_section, dict) else []
-        # Normalize to a flat list of child dicts
-        if isinstance(children_field, list):
-            for item in children_field:
-                if isinstance(item, list):
-                    for child in item:
-                        if isinstance(child, dict):
-                            result["children"].append(_format_person_from_relationship_data(child))
-                elif isinstance(item, dict):
-                    result["children"].append(_format_person_from_relationship_data(item))
-
-        # Note: The Edit Relationships API does NOT return siblings
-        # Siblings would need to be calculated by finding other children of the same parents
-        # For now, we'll leave siblings empty
-
-        # Debug: Log what we extracted
-        logger.debug(f"Extracted family: {len(result['parents'])} parents, {len(result['siblings'])} siblings, {len(result['spouses'])} spouses, {len(result['children'])} children")
+        _debug_log_facts_structure(facts_data)
+        data_section = _get_data_section_from_facts(facts_data)
+        _extract_target_person_info_if_available(data_section, result)
+        _extract_parents_from_data_section(data_section, result)
+        _extract_spouses_from_data_section(data_section, result)
+        _extract_children_from_data_section(data_section, result)
+        logger.debug(
+            f"Extracted family: {len(result['parents'])} parents, "
+            f"{len(result['siblings'])} siblings, {len(result['spouses'])} spouses, {len(result['children'])} children"
+        )
     except Exception as e:
-        logger.error(f"Error extracting family details from Edit Relationships API data: {e}", exc_info=True)
+        logger.error(
+            f"Error extracting family details from Edit Relationships API data: {e}", exc_info=True
+        )
 
     return result
 
