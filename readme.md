@@ -364,6 +364,7 @@ For issues or questions:
 - Relationship logs: de-duplicated repeated gender inference debug lines
 - Tests: run_all_tests.py passed (72/72 modules) in fast mode
 - Re-enabled startup clear-screen in main.py (now that early error review is complete)
+- Restored VISION_INTELLIGENT_DNA_MESSAGING.md to repository root from commit 2aee7d6 (temporary for implementation reference; will consolidate back into readme.md at completion per single-doc rule)
 
 2025-10-23
 - Switched Action 11 family extraction to the Edit Relationships endpoint and parsed nested data['person'] correctly

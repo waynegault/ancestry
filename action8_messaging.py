@@ -298,10 +298,10 @@ def _is_tree_creation_recent(created_at: datetime, person: Person) -> bool:
 
 def _has_message_after_tree_creation(person: Person, created_at: datetime) -> bool:
     """Check if any outgoing message was sent after FamilyTree creation."""
-    if not person.conversation_logs:
+    if not person.conversation_log_entries:
         return False
 
-    for log in person.conversation_logs:
+    for log in person.conversation_log_entries:
         if log.direction == "OUT" and log.latest_timestamp:
             log_timestamp = log.latest_timestamp
             if log_timestamp.tzinfo is None:
@@ -4628,7 +4628,7 @@ def _test_status_change_recent_addition() -> bool:
     person.id = 123
     person.username = "Test User"
     person.in_my_tree = True
-    person.conversation_logs = []
+    person.conversation_log_entries = []
 
     # Mock FamilyTree created 3 days ago
     family_tree = Mock(spec=FamilyTree)
@@ -4653,7 +4653,7 @@ def _test_status_change_old_addition() -> bool:
     person.id = 123
     person.username = "Test User"
     person.in_my_tree = True
-    person.conversation_logs = []
+    person.conversation_log_entries = []
 
     # Mock FamilyTree created 30 days ago (beyond threshold)
     family_tree = Mock(spec=FamilyTree)
@@ -4679,7 +4679,7 @@ def _test_status_change_not_in_tree() -> bool:
     person.username = "Test User"
     person.in_my_tree = False
     person.family_tree = None
-    person.conversation_logs = []
+    person.conversation_log_entries = []
 
     # Should NOT detect status change
     result = detect_status_change_to_in_tree(person)
@@ -4710,7 +4710,7 @@ def _test_status_change_already_messaged() -> bool:
     conv_log = Mock(spec=ConversationLog)
     conv_log.direction = "OUT"
     conv_log.latest_timestamp = tree_created + timedelta(days=1)  # 1 day after tree creation
-    person.conversation_logs = [conv_log]
+    person.conversation_log_entries = [conv_log]
 
     # Should NOT detect as new status change (already handled)
     result = detect_status_change_to_in_tree(person)

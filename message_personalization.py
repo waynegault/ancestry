@@ -75,10 +75,14 @@ class MessagePersonalizer:
     def _load_message_templates(self) -> dict[str, str]:
         """Load message templates from database MessageTemplate table."""
         try:
-            from core.session_manager import SessionManager
             from database import MessageTemplate
+            from session_utils import get_global_session
 
-            session_manager = SessionManager()
+            session_manager = get_global_session()
+            if not session_manager:
+                logger.error("Global session not available. main.py must register it before loading templates.")
+                return {}
+
             with session_manager.get_db_conn_context() as session:
                 if not session:
                     logger.error("Could not get database session for template loading")

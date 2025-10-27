@@ -706,6 +706,12 @@ class ConversationState(Base):
         nullable=True,
         comment="JSON-encoded list of pending questions to ask.",
     )
+    ai_summary = Column(
+        Text,
+        nullable=True,
+        comment="AI-generated engagement summary and intent notes.",
+    )
+
     mentioned_people = Column(
         Text,
         nullable=True,

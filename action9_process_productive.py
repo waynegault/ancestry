@@ -1506,53 +1506,83 @@ class PersonProcessor:
         custom_reply: Optional[str],
         log_prefix: str,
     ) -> tuple[str, int]:
-        """Format the message text and determine message type ID."""
+        """Format the message text and determine message type ID, with Phase 5 enrichments."""
 
         try:
+            # 1) Base message
             if custom_reply:
-                # Add signature to custom reply
                 user_name = getattr(config_schema, "user_name", "Tree Owner")
                 user_location = getattr(config_schema, "user_location", "")
                 location_part = f"\n{user_location}" if user_location else ""
                 signature = f"\n\nBest regards,\n{user_name}{location_part}"
                 message_text = custom_reply + signature
                 message_type_id = self.msg_config.custom_reply_msg_type_id
-                logger.info(
-                    f"{log_prefix}: Using custom genealogical reply with signature."
-                )
+                logger.info(f"{log_prefix}: Using custom genealogical reply with signature.")
             else:
-                # Use standard acknowledgement template
-                # Get person name
                 first_name = safe_column_value(person, "first_name", "")
                 username = safe_column_value(person, "username", "")
                 name_to_use = format_name(first_name or username)
-                # Generate summary
                 summary_for_ack = _generate_ack_summary(extracted_data)
-
-                # Format message using template
-                if (
-                    self.msg_config.templates
-                    and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates
-                ):
-                    message_text = self.msg_config.templates[
-                        ACKNOWLEDGEMENT_MESSAGE_TYPE
-                    ].format(name=name_to_use, summary=summary_for_ack)
+                if self.msg_config.templates and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates:
+                    message_text = self.msg_config.templates[ACKNOWLEDGEMENT_MESSAGE_TYPE].format(name=name_to_use, summary=summary_for_ack)
                 else:
                     user_name = getattr(config_schema, "user_name", "Tree Owner")
                     message_text = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
                 message_type_id = self.msg_config.ack_msg_type_id
                 logger.info(f"{log_prefix}: Using standard acknowledgement template.")
 
-            return message_text, message_type_id or 1  # Provide default
+            # 2) Conditional enrichments (Phase 5 policy)
+            try:
+                if getattr(config_schema, "enable_task_enrichment", False):
+                    enrich_lines: list[str] = []
+
+                    # Relationship annotation: if we know a simple relationship string
+                    rel_str = ""
+                    try:
+                        if person.dna_match and person.dna_match.relationship:
+                            rel_str = person.dna_match.relationship
+                    except Exception:
+                        rel_str = ""
+                    if rel_str:
+                        enrich_lines.append(f"\nOur relationship appears to be: {rel_str}.")
+
+                    # If we ever have a structured relationship path available in extracted_data, include diagram
+                    rel_path = extracted_data.get("relationship_path")
+                    if isinstance(rel_path, list) and rel_path:
+                        try:
+                            from_name = getattr(config_schema, "user_name", "Me")
+                            to_name = format_name(safe_column_value(person, "first_name", "") or safe_column_value(person, "username", ""))
+                            diagram_text = format_response_with_relationship_diagram(from_name, to_name, rel_path)
+                            if diagram_text:
+                                enrich_lines.append("\n" + diagram_text)
+                        except Exception as e:
+                            logger.debug(f"{log_prefix}: Relationship diagram enrichment skipped: {e}")
+
+                    # Record sharing enrichment if records present
+                    records = extracted_data.get("records") or extracted_data.get("vital_records")
+                    if isinstance(records, list) and records:
+                        try:
+                            to_name = format_name(safe_column_value(person, "first_name", "") or safe_column_value(person, "username", ""))
+                            records_text = format_response_with_records(to_name, records)
+                            if records_text:
+                                enrich_lines.append("\n" + records_text)
+                        except Exception as e:
+                            logger.debug(f"{log_prefix}: Record sharing enrichment skipped: {e}")
+
+                    if enrich_lines:
+                        message_text = message_text + "\n".join(enrich_lines)
+            except Exception as enrich_err:
+                logger.debug(f"{log_prefix}: Enrichment policy error: {enrich_err}")
+
+            # 3) Return
+            return message_text, message_type_id or 1
 
         except Exception as e:
-            logger.error(
-                f"{log_prefix}: Message formatting error: {e}. Using fallback."
-            )  # Simple fallback
+            logger.error(f"{log_prefix}: Message formatting error: {e}. Using fallback.")
             safe_username = safe_column_value(person, "username", "User")
             user_name = getattr(config_schema, "user_name", "Tree Owner")
             message_text = f"Dear {format_name(safe_username)},\n\nThank you for your message!\n\n{user_name}"
-            message_type_id = self.msg_config.ack_msg_type_id or 1  # Provide default
+            message_type_id = self.msg_config.ack_msg_type_id or 1
             return message_text, message_type_id
 
     def _send_message(

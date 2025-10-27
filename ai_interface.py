@@ -1079,6 +1079,53 @@ def generate_contextual_response(
 # End of generate_contextual_response
 
 
+def assess_engagement(
+    conversation_history: str,
+    session_manager: SessionManager,
+    log_prefix: str = "",
+) -> Optional[dict[str, Any]]:
+    """
+    Assess engagement and summarize conversation using the Phase 3 engagement_assessment prompt.
+
+    Returns a dict such as:
+      {"engagement_score": int, "ai_summary": str, "last_topic": str, "pending_questions": list[str]}
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error(f"{log_prefix}: AI_PROVIDER not configured.")
+        return None
+
+    prompt = get_prompt("engagement_assessment") if USE_JSON_PROMPTS else None
+    if not prompt:
+        logger.error(f"{log_prefix}: engagement_assessment prompt not available.")
+        return None
+
+    start_time = time.time()
+    ai_response_str = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=prompt,
+        user_content=conversation_history,
+        session_manager=session_manager,
+        max_tokens=800,
+        temperature=0.2,
+        response_format_type="json_object",
+    )
+    duration = time.time() - start_time
+
+    if not ai_response_str:
+        logger.error(f"{log_prefix}: Engagement assessment failed. (Took {duration:.2f}s)")
+        return None
+
+    try:
+        result = json.loads(ai_response_str)
+        logger.info(f"{log_prefix}: Engagement assessment OK. (Took {duration:.2f}s)")
+        return result if isinstance(result, dict) else None
+    except Exception as e:
+        logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
+        return None
+
+
+
 def extract_with_custom_prompt(
     context_history: str, custom_prompt: str, session_manager: SessionManager
 ) -> Optional[dict[str, Any]]:

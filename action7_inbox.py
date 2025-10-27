@@ -25,6 +25,7 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 1 OPTIMIZATIONS ===
 # === STANDARD LIBRARY IMPORTS ===
+import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -39,7 +40,7 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === LOCAL IMPORTS ===
-from ai_interface import classify_message_intent
+from ai_interface import assess_engagement, classify_message_intent
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from cache_manager import (
@@ -60,6 +61,7 @@ from core.progress_indicators import create_progress_indicator
 from core.session_manager import SessionManager
 from database import (
     ConversationLog,
+    ConversationState,
     MessageDirectionEnum,
     Person,
     PersonStatusEnum,
@@ -1486,9 +1488,9 @@ class InboxProcessor:
         ai_sentiment: Optional[str] = None,
         conversation_phase: Optional[str] = None,
     ) -> None:
-        """Track message analytics for conversation metrics."""
+        """Track message analytics for conversation metrics and update conversation state (Phase 3)."""
         try:
-            # Record engagement event
+            # 1) Record engagement event
             event_type = "message_received" if direction == MessageDirectionEnum.IN else "message_sent"
             event_description = f"Message {direction.name.lower()} with sentiment: {ai_sentiment or 'unknown'}"
 
@@ -1500,7 +1502,7 @@ class InboxProcessor:
                 conversation_phase=conversation_phase,
             )
 
-            # Update conversation metrics
+            # 2) Update conversation metrics
             update_conversation_metrics(
                 session=session,
                 people_id=people_id,
@@ -1508,6 +1510,65 @@ class InboxProcessor:
                 message_received=(direction == MessageDirectionEnum.IN),
                 conversation_phase=conversation_phase,
             )
+
+            # 3) AI engagement assessment and state update (only when we have enough context)
+            try:
+                # Build recent conversation context
+                recent_logs = (
+                    session.query(ConversationLog)
+                    .filter(ConversationLog.people_id == people_id)
+                    .order_by(ConversationLog.timestamp.asc())
+                    .all()
+                )
+                if recent_logs:
+                    # Sliding window of recent messages
+                    max_msgs = getattr(config_schema, "ai_context_window_messages", 6)
+                    logs_window = recent_logs[-max_msgs:]
+                    lines: list[str] = []
+                    for log in logs_window:
+                        role = "USER" if log.direction == MessageDirectionEnum.IN else "SCRIPT"
+                        content = (log.message_content or "").strip()
+                        if content:
+                            lines.append(f"{role}: {content}")
+                    formatted_context = "\n".join(lines)
+
+                    # Call AI assessment
+                    result = assess_engagement(
+                        conversation_history=formatted_context,
+                        session_manager=self.session_manager,
+                        log_prefix="Action7"
+                    )
+
+                    if result:
+                        # Upsert conversation state
+                        state: Optional[ConversationState] = (
+                            session.query(ConversationState)
+                            .filter(ConversationState.people_id == people_id)
+                            .one_or_none()
+                        )
+                        if not state:
+                            state = ConversationState(people_id=people_id)
+                            session.add(state)
+
+                        # Extract fields with defaults
+                        new_score = int(result.get("engagement_score", 0))
+                        new_summary = result.get("ai_summary") or None
+                        new_topic = result.get("last_topic") or None
+                        new_questions = result.get("pending_questions")
+
+                        state.engagement_score = new_score
+                        state.ai_summary = new_summary
+                        state.last_topic = new_topic
+                        if isinstance(new_questions, list):
+                            state.pending_questions = json.dumps(new_questions)
+
+                        # Phase management heuristic: if incoming message, consider active_dialogue
+                        if direction == MessageDirectionEnum.IN:
+                            state.conversation_phase = "active_dialogue"
+
+                        session.commit()
+            except Exception as inner:
+                logger.debug(f"Engagement assessment/state update skipped: {inner}")
         except Exception as e:
             logger.debug(f"Analytics tracking failed for people_id {people_id}: {e}")
 

@@ -829,40 +829,33 @@ def _reinitialize_database_schema(temp_manager: SessionManager) -> bool:
 
 
 def _seed_message_templates(recreation_session: Any) -> bool:
-    """Seed message templates from messages.json."""
-    logger.debug("Seeding message_types table...")
-    script_dir = Path(__file__).resolve().parent
-    messages_file = script_dir / "messages.json"
-
-    if not messages_file.exists():
-        logger.warning("'messages.json' not found. Cannot seed MessageTypes.")
-        return False
-
+    """Seed message templates from database defaults (single source of truth)."""
+    logger.debug("Seeding message_templates table from database defaults...")
     try:
-        with messages_file.open("r", encoding="utf-8") as f:
-            messages_data = json.load(f)
-
-        if not isinstance(messages_data, dict):
-            logger.error("'messages.json' has incorrect format. Cannot seed.")
-            return False
+        # Import inside function to avoid circular imports at module import time
+        from database import MessageTemplate, _get_default_message_templates  # type: ignore
 
         with db_transn(recreation_session) as sess:
-            # First check if there are any existing message templates
             existing_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
 
             if existing_count > 0:
-                logger.debug(f"Found {existing_count} existing message templates. Skipping seeding.")
+                logger.debug(
+                    f"Found {existing_count} existing message templates. Skipping seeding."
+                )
             else:
-                # Only add message templates if none exist
-                templates_to_add = [MessageTemplate(template_name=name) for name in messages_data]
-                if templates_to_add:
-                    sess.add_all(templates_to_add)
-                    logger.debug(f"Added {len(templates_to_add)} message templates.")
+                templates_data = _get_default_message_templates()
+                if not isinstance(templates_data, list) or not templates_data:
+                    logger.warning("Default message templates list is empty. Nothing to seed.")
                 else:
-                    logger.warning("No message templates found in messages.json to seed.")
+                    for template in templates_data:
+                        # Template dict from database helper already contains all fields
+                        sess.add(MessageTemplate(**template))
+                    logger.debug(f"Added {len(templates_data)} message templates from defaults.")
 
         count = recreation_session.query(func.count(MessageTemplate.id)).scalar() or 0
-        logger.debug(f"MessageTemplate seeding complete. Total templates in DB: {count}")
+        logger.debug(
+            f"MessageTemplate seeding complete. Total templates in DB: {count}"
+        )
         return True
     except Exception as e:
         logger.error(f"Error seeding message templates: {e}", exc_info=True)

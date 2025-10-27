@@ -25,6 +25,7 @@ from urllib.parse import urljoin
 # === LOCAL IMPORTS ===
 from config import config_schema
 from core.session_manager import SessionManager
+from session_utils import ensure_session_for_tests_sm_only
 from utils import _api_req
 
 # === CONSTANTS ===
@@ -390,7 +391,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
         logger.warning("MY_UUID not found in .env - skipping live API test")
         return True
 
-    sm = SessionManager()
+    sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
         # Validate prerequisites
         valid, message = _validate_test_prerequisites(sm)
@@ -419,7 +420,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
 
 def _test_region_names_fetch() -> bool:
     """Test fetching region name mappings from API."""
-    sm = SessionManager()
+    sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
         if not _setup_test_session(sm):
             logger.warning("Could not set up test session - skipping live API test")
@@ -461,7 +462,7 @@ def _test_ethnicity_comparison() -> bool:
         return True
 
     match_uuid = "B509B1EB-EE8B-4D28-89A4-6E9B93C4A727"
-    sm = SessionManager()
+    sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
 
     try:
         # Validate prerequisites
