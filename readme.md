@@ -164,6 +164,8 @@ Phase status snapshot:
 
 - Architecture and global session pattern: see sections above
 - Actions 6–11: see per-action sections below
+- Actions 10 and 11 are merged at runtime: we collect criteria once, try GEDCOM (Action 10) first, and only if no suitable candidates are found do we call the API (Action 11). Both use identical prompts and nearly identical display output.
+
 - Testing and quality: run_all_tests.py is authoritative; tests must fail on genuine failures
 - Pylance/linters: fix errors, do not suppress; reduce function complexity (target <10) and keep functions short
 - Technical specs: see Appendix B (Action 11 endpoints, display rules, logging, AI provider config)

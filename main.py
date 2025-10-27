@@ -76,9 +76,9 @@ def _check_rate_limiting_settings(config: Any) -> None:
 
 def _log_configuration_summary(config: Any) -> None:
     """Log current configuration for transparency."""
-    # Clear screen at startup
-    import os
-    os.system('cls' if os.name == 'nt' else 'clear')
+    # Clear screen at startup (temporarily disabled for debugging global session complaints)
+    # import os
+    # os.system('cls' if os.name == 'nt' else 'clear')
 
     logger.info("=== ACTION CONFIGURATION VALIDATION ===")
     logger.info(f"MAX_PAGES: {config.api.max_pages}")
@@ -306,6 +306,9 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
     Returns:
         Required state: "db_ready", "driver_ready", or "session_ready"
     """
+    # Merged 10/11 require session for potential API fallback even if browserless
+    if choice in ["10", "11"]:
+        return "session_ready"
     if not requires_browser:
         return "db_ready"
     if choice == "5":  # check_login_actn
@@ -320,8 +323,8 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     if required_state == "driver_ready":
         return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
     if required_state == "session_ready":
-        # Skip CSRF check for Action 11 (cookies available after navigation)
-        skip_csrf = (choice in ["11"])
+        # Skip CSRF check for Actions 10 and 11 (cookies available after navigation)
+        skip_csrf = (choice in ["10", "11"])
         return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
     return True
 
@@ -1323,6 +1326,99 @@ def run_action11_wrapper(session_manager: Any, *_: Any) -> bool:
         logger.error(f"Error during API Report: {e}", exc_info=True)
         return False
 
+# Merged Action 10/11 wrapper: GEDCOM-first then API fallback
+def run_merged_search_wrapper(session_manager: Any, *_: Any) -> bool:
+    """Unified search: collect criteria once, try GEDCOM (Action 10), fallback to API (Action 11) if no matches."""
+    try:
+        from action10 import (
+            _build_filter_criteria,  # type: ignore
+            analyze_top_match,
+            display_top_matches,
+            filter_and_score_individuals,
+            load_gedcom_data,
+            validate_config,
+        )
+        from action11 import search_ancestry_api_for_person
+        from gedcom_utils import _normalize_id  # type: ignore
+        from search_criteria_utils import get_unified_search_criteria
+    except Exception as e:
+        logger.error(f"Merged search setup failed: {e}", exc_info=True)
+        return False
+
+    # 1) Collect unified criteria (identical prompts for both actions)
+    criteria = get_unified_search_criteria()
+    if not criteria:
+        return False
+
+    # 2) Try GEDCOM first (Action 10)
+    try:
+        (
+            gedcom_path,
+            reference_person_id_raw,
+            reference_person_name,
+            date_flex,
+            scoring_weights,
+            max_display_results,
+        ) = validate_config()
+
+        if gedcom_path:
+            gedcom_data = load_gedcom_data(gedcom_path)
+            filter_criteria = _build_filter_criteria(criteria)
+            scored_matches = filter_and_score_individuals(
+                gedcom_data,
+                filter_criteria,
+                criteria,
+                scoring_weights,
+                date_flex,
+            )
+            if scored_matches:
+                top_match = display_top_matches(scored_matches, max_display_results)
+                if top_match:
+                    reference_person_id_norm = (
+                        _normalize_id(reference_person_id_raw) if reference_person_id_raw else None
+                    )
+                    analyze_top_match(
+                        gedcom_data,
+                        top_match,
+                        reference_person_id_norm,
+                        reference_person_name or "",
+                    )
+                    return True
+    except Exception as e:
+        logger.info(f"GEDCOM-first search yielded no match or failed; will attempt API fallback: {e}")
+
+    # 3) Fallback to API (Action 11)
+    try:
+        # Ensure session is ready in case this was triggered via Action 10 menu
+        session_ok = session_manager.ensure_session_ready(
+            action_name="Merged Search - API Fallback",
+            skip_csrf=True,
+        )
+        if not session_ok:
+            logger.error("Could not establish session for API fallback")
+            return False
+
+        api_candidates = search_ancestry_api_for_person(session_manager, criteria)
+        if not api_candidates:
+            print("\nNo suitable candidates found in GEDCOM or API.")
+            return False
+
+        # Reuse Action 11 display to match Action 10 output style
+        try:
+            from action11 import _display_search_results  # type: ignore
+            max_disp = getattr(config, "max_candidates_to_display", 5) if config else 5
+            _display_search_results(api_candidates, max_disp)
+        except Exception:
+            # Fallback minimal display
+            print("\n=== API Top Matches ===")
+            for cand in api_candidates[:5]:
+                print(f" - {cand.get('name', 'N/A')} (score={cand.get('score', 0)})")
+        return True
+    except Exception as e:
+        logger.error(f"API fallback failed: {e}", exc_info=True)
+        return False
+
+
 
 # End of run_action11_wrapper
 
@@ -1624,13 +1720,9 @@ def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> b
         ensure_caching_initialized()
         exec_actn(process_productive_messages_action, session_manager, choice)
         result = True
-    elif choice == "10":
+    elif choice == "10" or choice == "11":
         ensure_caching_initialized()
-        exec_actn(run_action10, session_manager, choice)
-        result = True
-    elif choice == "11":
-        ensure_caching_initialized()
-        exec_actn(run_action11_wrapper, session_manager, choice)
+        exec_actn(run_merged_search_wrapper, session_manager, choice)
         result = True
 
     return result

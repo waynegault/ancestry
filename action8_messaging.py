@@ -701,15 +701,30 @@ def ensure_message_templates_loaded() -> None:
 # Initialize message personalizer
 from typing import Any as _Any
 
-_message_personalizer: Optional[_Any] = None
-if MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
-    try:
-        _message_personalizer = MessagePersonalizer()
-    except Exception as e:
-        logger.warning(f"Failed to initialize message personalizer: {e}")
-        _message_personalizer = None
 
-MESSAGE_PERSONALIZER = _message_personalizer
+class _MPState:
+    personalizer: Optional[_Any] = None
+
+_MESSAGE_STATE = _MPState()
+
+
+def ensure_message_personalizer() -> Optional[_Any]:
+    """Lazily initialize and return the MessagePersonalizer when session is ready."""
+    if _MESSAGE_STATE.personalizer is None and MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
+        try:
+            from session_utils import get_global_session  # Local import to avoid import-time session access
+            session_mgr = get_global_session()
+            if session_mgr:
+                _MESSAGE_STATE.personalizer = MessagePersonalizer()
+            else:
+                logger.debug("Global session not yet available; deferring MessagePersonalizer init")
+        except Exception as e:
+            logger.warning(f"Failed to initialize message personalizer: {e}")
+            _MESSAGE_STATE.personalizer = None
+    return _MESSAGE_STATE.personalizer
+
+# Do not instantiate at import time to avoid global-session errors
+MESSAGE_PERSONALIZER = None
 
 
 # ------------------------------------------------------------------------------
@@ -2539,8 +2554,9 @@ def _format_message_text(message_to_send_key: str, person: Person, format_data: 
     message_template = MESSAGE_TEMPLATES[message_to_send_key]
     message_text = None
 
-    # Try enhanced personalized message formatting first
-    if MESSAGE_PERSONALIZER and hasattr(person, 'extracted_genealogical_data'):
+    # Try enhanced personalized message formatting first (lazy-init personalizer)
+    mpr = ensure_message_personalizer()
+    if mpr and hasattr(person, 'extracted_genealogical_data'):
         try:
             enhanced_template_key = f"Enhanced_{message_to_send_key}"
             if enhanced_template_key in MESSAGE_TEMPLATES:
@@ -2549,7 +2565,7 @@ def _format_message_text(message_to_send_key: str, person: Person, format_data: 
                 extracted_data = getattr(person, 'extracted_genealogical_data', {})
                 person_data = {"username": getattr(person, "username", "Unknown")}
 
-                message_text, _ = MESSAGE_PERSONALIZER.create_personalized_message(
+                message_text, _ = mpr.create_personalized_message(
                     enhanced_template_key,
                     person_data,
                     extracted_data,

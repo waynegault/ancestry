@@ -992,11 +992,14 @@ class CircuitBreaker:
 # End of CircuitBreaker
 
 # Global RateLimiter singleton instance
-_global_rate_limiter: Optional['RateLimiter'] = None
+class _RLState:
+    instance: Optional['RateLimiter'] = None
+
+_RATE_LIMITER_STATE = _RLState()
 
 def get_rate_limiter() -> 'RateLimiter':
     """
-    Get or create the global RateLimiter singleton instance.
+    Get or create the RateLimiter singleton instance without using 'global'.
 
     This ensures rate limiting state (delay, metrics, circuit breaker) is preserved
     across multiple SessionManager instances, preventing redundant initialization
@@ -1005,11 +1008,10 @@ def get_rate_limiter() -> 'RateLimiter':
     Returns:
         RateLimiter: The global singleton instance
     """
-    global _global_rate_limiter  # noqa: PLW0603  # noqa: PLW0603
-    if _global_rate_limiter is None:
-        _global_rate_limiter = RateLimiter()
-        logger.debug("Global RateLimiter singleton created")
-    return _global_rate_limiter
+    if _RATE_LIMITER_STATE.instance is None:
+        _RATE_LIMITER_STATE.instance = RateLimiter()
+        logger.debug("RateLimiter singleton created")
+    return _RATE_LIMITER_STATE.instance
 
 # ------------------------------
 # Rate Limiting (Remains in utils.py)
