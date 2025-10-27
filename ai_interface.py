@@ -88,7 +88,7 @@ try:
     if not google_exceptions:  # type: ignore
         genai_available = False
         logging.warning("Google API Core exceptions not found.")
-except ImportError:
+except Exception:
     genai = None  # type: ignore
     google_exceptions = None  # type: ignore
     genai_available = False
