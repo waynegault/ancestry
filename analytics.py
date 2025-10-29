@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 """
-Lightweight Monitoring & Analytics (Phase 6)
+Lightweight Monitoring & Analytics Intelligence Engine
 
-- Records per-action metrics to Logs/analytics.jsonl
-- Allows actions to attach transient extras (e.g., merged 10/11 branch: gedcom/api_fallback)
-- Provides a simple weekly summary generator and printer
+Records per-action metrics to Logs/analytics.jsonl, allows actions to attach transient
+extras (e.g., merged 10/11 branch: gedcom/api_fallback), and provides simple weekly
+summary generation and reporting.
 
 Design goals:
 - Zero external dependencies
