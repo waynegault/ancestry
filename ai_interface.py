@@ -467,6 +467,7 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
     - Llama-3.2-11B-Vision-Instruct: Good quality, 1-3s response time
     - Mistral-7B-Instruct-v0.3: Fast, <2s response time
     """
+    # Validate prerequisites
     if not openai_available or OpenAI is None:
         logger.error("_call_local_llm_model: OpenAI library not available for Local LLM.")
         return None
@@ -482,20 +483,13 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
     try:
         client = OpenAI(api_key=api_key, base_url=base_url)
 
-        # Check if model is loaded by listing available models
-        try:
-            models = client.models.list()
-            available_models = [model.id for model in models.data]
-            if not available_models:
-                logger.error("Local LLM: No models loaded. Please load a model in LM Studio.")
-                return None
-            if model_name not in available_models:
-                logger.error(f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}")
-                return None
-        except Exception as e:
-            logger.error(f"Local LLM: Failed to check loaded models: {e}")
+        # Validate model is loaded
+        error_msg = _validate_local_llm_model_loaded(client, model_name)
+        if error_msg:
+            logger.error(error_msg)
             return None
 
+        # Make API call
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
@@ -505,11 +499,34 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
         response = client.chat.completions.create(**request_params)
         if response.choices and response.choices[0].message and response.choices[0].message.content:
             return response.choices[0].message.content.strip()
+
         logger.error("Local LLM returned an empty or invalid response structure.")
         return None
     except Exception as e:
         logger.error(f"Local LLM API call failed: {e}")
         return None
+
+
+def _validate_local_llm_model_loaded(client, model_name: str) -> Optional[str]:
+    """
+    Validate that the requested model is loaded in LM Studio.
+
+    Returns:
+        Error message if validation fails, None if successful
+    """
+    try:
+        models = client.models.list()
+        available_models = [model.id for model in models.data]
+
+        if not available_models:
+            return "Local LLM: No models loaded. Please load a model in LM Studio."
+
+        if model_name not in available_models:
+            return f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}"
+
+        return None  # Success
+    except Exception as e:
+        return f"Local LLM: Failed to check loaded models: {e}"
 
 
 def _handle_rate_limit_error(session_manager: SessionManager) -> None:

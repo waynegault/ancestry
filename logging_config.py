@@ -61,6 +61,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # --- Third-party imports ---
 from dotenv import load_dotenv
@@ -174,7 +175,7 @@ class AlignedMessageFormatter(logging.Formatter):
     Leading whitespace from subsequent lines of the original message is removed.
     """
 
-    def __init__(self, *args, use_colors: bool = False, **kwargs):
+    def __init__(self, *args: Any, use_colors: bool = False, **kwargs: Any) -> None:
         """Initialize formatter with optional color support."""
         super().__init__(*args, **kwargs)
         self.use_colors = use_colors

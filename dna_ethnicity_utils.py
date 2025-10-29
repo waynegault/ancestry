@@ -384,19 +384,18 @@ def _log_ethnicity_results(ethnicity_data: dict) -> None:
 
 def _test_tree_owner_ethnicity_fetch() -> bool:
     """Test fetching tree owner's ethnicity regions from API."""
-    import os
-
-    my_uuid = os.getenv("MY_UUID")
-    if not my_uuid:
-        logger.warning("MY_UUID not found in .env - skipping live API test")
-        return True
-
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
         # Validate prerequisites
         valid, message = _validate_test_prerequisites(sm)
         if not valid:
             logger.warning(message)
+            return True
+
+        # Get MY_UUID from session manager
+        my_uuid = sm.my_uuid
+        if not my_uuid:
+            logger.warning("MY_UUID not available from session manager - skipping live API test")
             return True
 
         # Fetch and validate ethnicity data
@@ -454,15 +453,16 @@ def _test_region_names_fetch() -> bool:
 
 def _test_ethnicity_comparison() -> bool:
     """Test fetching ethnicity comparison for a match."""
-    import os
+    sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
 
-    my_uuid = os.getenv("MY_UUID")
+    # Get MY_UUID from session manager
+    my_uuid = sm.my_uuid
     if not my_uuid:
-        logger.warning("MY_UUID not found in .env - skipping live API test")
+        logger.warning("MY_UUID not available from session manager - skipping live API test")
+        sm.close_sess(keep_db=False)
         return True
 
     match_uuid = "B509B1EB-EE8B-4D28-89A4-6E9B93C4A727"
-    sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
 
     try:
         # Validate prerequisites

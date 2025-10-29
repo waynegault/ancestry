@@ -2442,8 +2442,7 @@ def _get_owner_profile_id() -> Optional[str]:
             return owner_profile_id
 
     # Fallback to config for testing
-    owner_profile_id = getattr(config_schema, 'testing_profile_id', None)
-    return owner_profile_id
+    return getattr(config_schema, 'testing_profile_id', None)
 
 
 def _format_ethnicity_text(shared_regions: list[str]) -> str:
