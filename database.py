@@ -2814,7 +2814,7 @@ def backup_database() -> bool:
 
         backup_time = time.time() - backup_start
         backup_size = backup_path.stat().st_size
-        logger.info(f"Database backup completed successfully in {backup_time:.2f}s: '{backup_path.name}' ({backup_size / 1024 / 1024:.1f}MB)")
+        logger.debug(f"Database backup completed successfully in {backup_time:.2f}s: '{backup_path.name}' ({backup_size / 1024 / 1024:.1f}MB)")
         return True
 
     except AncestryError:

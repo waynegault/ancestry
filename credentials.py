@@ -1264,7 +1264,6 @@ def credentials_module_tests() -> bool:
     import json
     import tempfile
     from pathlib import Path
-    from unittest.mock import patch
 
     from test_framework import TestSuite, suppress_logging
 

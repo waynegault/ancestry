@@ -69,7 +69,7 @@ def set_global_session(session_manager: SessionManager) -> None:
     if prev is session_manager:
         logger.debug("Global session already registered; skipping re-register")
     else:
-        logger.info("✅ Global session registered (not yet authenticated)")
+        logger.debug("✅ Global session registered (not yet authenticated)")
 
 
 def get_global_session() -> Optional[SessionManager]:

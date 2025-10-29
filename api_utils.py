@@ -141,8 +141,12 @@ API_PATH_PERSON_FACTS_USER = (
 API_PATH_PERSON_GETLADDER = (
     "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
 )
+API_PATH_RELATION_LADDER_WITH_LABELS = (
+    "family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"
+)
 API_PATH_DISCOVERY_RELATIONSHIP = "discoveryui-matchingservice/api/relationship"
-API_PATH_TREESUI_LIST = "trees/{tree_id}/persons"
+API_PATH_TREESUI_LIST = "api/treesui-list/trees/{tree_id}/persons"
+API_PATH_NEW_FAMILY_VIEW = "api/treeviewer/tree/newfamilyview/{tree_id}"
 
 # Message API keys
 KEY_CONVERSATION_ID = "conversation_id"
@@ -1979,24 +1983,221 @@ def call_discovery_relationship_api(
 
 def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> Optional[str]:
     """Build TreesUI List API URL with search parameters."""
-    first_name_raw = search_criteria.get("first_name_raw", "")
-    surname_raw = search_criteria.get("surname_raw", "")
-    birth_year = search_criteria.get("birth_year")
+    # Try both key formats for compatibility (first_name/surname from unified criteria, first_name_raw/surname_raw from legacy)
+    first_name = search_criteria.get("first_name") or search_criteria.get("first_name_raw", "")
+    surname = search_criteria.get("surname") or search_criteria.get("surname_raw", "")
 
-    if not birth_year:
-        logger.warning("Cannot call TreesUI List API: 'birth_year' is missing in search criteria.")
+    # Combine first and last name for the 'name' parameter
+    name_parts = []
+    if first_name:
+        name_parts.append(first_name)
+    if surname:
+        name_parts.append(surname)
+    full_name = " ".join(name_parts)
+
+    if not full_name:
+        logger.warning("Cannot call TreesUI List API: both first_name and surname are missing.")
         return None
 
-    treesui_params_list = ["limit=100", "fields=NAMES,BIRTH_DEATH"]
-    if first_name_raw:
-        treesui_params_list.append(f"fn={quote(first_name_raw)}")
-    if surname_raw:
-        treesui_params_list.append(f"ln={quote(surname_raw)}")
-    treesui_params_list.append(f"by={birth_year}")
+    # Build parameters: name, limit, fields, isGetFullPersonObject
+    treesui_params_list = [
+        f"name={quote(full_name)}",
+        "limit=100",
+        "fields=EVENTS,GENDERS,NAMES",
+        "isGetFullPersonObject=true"
+    ]
 
     treesui_params = "&".join(treesui_params_list)
     formatted_path = API_PATH_TREESUI_LIST.format(tree_id=owner_tree_id)
     return urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{treesui_params}"
+
+
+def _extract_gid_parts(person_raw: dict, idx: int) -> tuple[str, str] | None:
+    """Extract person_id and tree_id from gid field."""
+    gid_data = person_raw.get("gid", {}).get("v", "")
+    if not isinstance(gid_data, str) or ":" not in gid_data:
+        logger.warning(f"Item {idx}: Missing or invalid gid data: {gid_data}")
+        return None
+
+    parts = gid_data.split(":")
+    if len(parts) < 3:
+        logger.warning(f"Item {idx}: Invalid gid format: {gid_data}")
+        return None
+
+    return parts[0], parts[2]
+
+
+def _extract_name_parts(person_raw: dict) -> tuple[str, str, str]:
+    """Extract first name, surname, and full name from Names field."""
+    first_name_part = ""
+    surname_part = ""
+    full_name = "Unknown"
+
+    names_list = person_raw.get("Names", [])
+    if isinstance(names_list, list) and names_list:
+        name_obj = names_list[0]
+        if isinstance(name_obj, dict):
+            first_name_part = name_obj.get("g", "").strip()
+            surname_part = name_obj.get("s", "").strip()
+
+            if first_name_part and surname_part:
+                full_name = f"{first_name_part} {surname_part}"
+            elif first_name_part:
+                full_name = first_name_part
+            elif surname_part:
+                full_name = surname_part
+
+    return first_name_part, surname_part, full_name
+
+
+def _extract_year_from_normalized_date(nd: str) -> int | None:
+    """Extract year from normalized date string (YYYY-MM-DD format)."""
+    if nd and isinstance(nd, str):
+        parts = nd.split("-")
+        if parts and parts[0].isdigit():
+            return int(parts[0])
+    return None
+
+
+def _extract_date_string_from_dict(date_obj: dict) -> tuple[int | None, str | None]:
+    """Extract year and date string from old format date object."""
+    year = date_obj.get("y")
+    month = date_obj.get("m")
+    day = date_obj.get("d")
+
+    if not year:
+        return None, None
+
+    date_str = str(year)
+    if month and day:
+        date_str = f"{day}/{month}/{year}"
+    elif month:
+        date_str = f"{month}/{year}"
+
+    return year, date_str
+
+
+def _extract_birth_event(event: dict) -> tuple[int | None, str | None, str | None]:
+    """Extract birth year, date string, and place from birth event."""
+    # Try new format first (isGetFullPersonObject=true response)
+    # New format: d = "15 November 1893" (string), nd = "1893-11-15" (normalized), p = "Fyvie, Aberdeenshire" (string)
+    if "nd" in event:
+        birth_year = _extract_year_from_normalized_date(event.get("nd", ""))
+        birth_date_str = event.get("d", "")  # Formatted date string
+        birth_place = event.get("p", "")  # Place string
+    else:
+        # Old format: d = {y: 1893, m: 11, d: 15}, p = {n: "Fyvie"}
+        date_obj = event.get("d", {})
+        if isinstance(date_obj, dict):
+            birth_year, birth_date_str = _extract_date_string_from_dict(date_obj)
+        else:
+            birth_year, birth_date_str = None, None
+
+        place_obj = event.get("p", {})
+        birth_place = place_obj.get("n", "") if isinstance(place_obj, dict) else None
+
+    return birth_year, birth_date_str, birth_place
+
+
+def _extract_death_event(event: dict) -> tuple[int | None, str | None, str | None]:
+    """Extract death year, date string, and place from death event."""
+    # Try new format first (isGetFullPersonObject=true response)
+    # New format: d = "18 Mar 1915" (string), nd = "1915-03-18" (normalized), p = "France and Flanders" (string)
+    if "nd" in event:
+        death_year = _extract_year_from_normalized_date(event.get("nd", ""))
+        death_date_str = event.get("d", "")  # Formatted date string
+        death_place = event.get("p", "")  # Place string
+    else:
+        # Old format: d = {y: 1915, m: 3, d: 18}, p = {n: "France"}
+        date_obj = event.get("d", {})
+        if isinstance(date_obj, dict):
+            death_year, death_date_str = _extract_date_string_from_dict(date_obj)
+        else:
+            death_year, death_date_str = None, None
+
+        place_obj = event.get("p", {})
+        death_place = place_obj.get("n", "") if isinstance(place_obj, dict) else None
+
+    return death_year, death_date_str, death_place
+
+
+def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Parse TreesUI List API response to extract standardized person data.
+
+    Converts raw API response with Names, Events, gid fields into standardized format
+    with FullName, GivenName, Surname, PersonId, etc.
+    """
+    parsed_results = []
+    logger.debug(f"Parsing {len(treesui_response)} items from TreesUI List API response.")
+
+    for idx, person_raw in enumerate(treesui_response):
+        if not isinstance(person_raw, dict):
+            logger.warning(f"Skipping item {idx}: Not dict")
+            continue
+
+        try:
+            # Extract GID parts
+            gid_result = _extract_gid_parts(person_raw, idx)
+            if not gid_result:
+                continue
+            person_id, tree_id = gid_result
+
+            # Extract name parts
+            first_name_part, surname_part, full_name = _extract_name_parts(person_raw)
+
+            # Extract gender
+            gender = person_raw.get("Gender", "")
+
+            # Extract events (birth and death)
+            birth_year = None
+            birth_date_str = None
+            birth_place = None
+            death_year = None
+            death_date_str = None
+            death_place = None
+            is_living = True
+
+            events_list = person_raw.get("Events", [])
+            if isinstance(events_list, list):
+                for event in events_list:
+                    if not isinstance(event, dict):
+                        continue
+
+                    event_type = event.get("t", "")
+
+                    # Handle both old format ("B", "D") and new format ("Birth", "Death")
+                    if event_type in ("B", "Birth"):
+                        birth_year, birth_date_str, birth_place = _extract_birth_event(event)
+                    elif event_type in ("D", "Death"):
+                        is_living = False
+                        death_year, death_date_str, death_place = _extract_death_event(event)
+
+            # Construct standardized suggestion dict
+            suggestion = {
+                "PersonId": person_id,
+                "TreeId": tree_id,
+                "FullName": full_name,
+                "GivenName": first_name_part,
+                "Surname": surname_part,
+                "BirthYear": birth_year,
+                "BirthDate": birth_date_str,
+                "BirthPlace": birth_place,
+                "DeathYear": death_year,
+                "DeathDate": death_date_str,
+                "DeathPlace": death_place,
+                "Gender": gender,
+                "IsLiving": is_living,
+            }
+            parsed_results.append(suggestion)
+            logger.debug(f"Parsed {idx}: {full_name} (b. {birth_year} in {birth_place})")
+
+        except Exception as e:
+            logger.error(f"Error parsing item {idx}: {e}", exc_info=True)
+            continue
+
+    logger.debug(f"Parsed {len(parsed_results)} valid results from TreesUI API response")
+    return parsed_results
 
 
 def call_treesui_list_api(
@@ -2023,7 +2224,7 @@ def call_treesui_list_api(
     owner_facts_referer = _get_owner_referer(session_manager, base_url)
     timeouts_used = timeouts if timeouts else [15, 25, 35]
     max_attempts = len(timeouts_used)
-    logger.info(f"Attempting {api_description} search using _api_req: {treesui_url}")
+    logger.debug(f"Attempting {api_description} search using _api_req: {treesui_url}")
 
     treesui_response = None
     for attempt, timeout in enumerate(timeouts_used, 1):
@@ -2050,10 +2251,11 @@ def call_treesui_list_api(
                 use_csrf_token=False,
             )
             if isinstance(treesui_response, list):
-                logger.info(
+                logger.debug(
                     f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}), found {len(treesui_response)} results."
                 )
-                return treesui_response
+                # Parse the raw response into standardized format
+                return _parse_treesui_list_response(treesui_response)
             if treesui_response is None:
                 logger.warning(
                     f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
@@ -2084,6 +2286,115 @@ def call_treesui_list_api(
 
 
 # End of call_treesui_list_api
+
+
+def call_newfamilyview_api(
+    session_manager: "SessionManager",
+    tree_id: str,
+    person_id: str,
+    base_url: str,
+    timeout: Optional[int] = None,
+) -> Optional[dict]:
+    """
+    Call the New Family View API to get complete family data including siblings.
+
+    Args:
+        session_manager: Active session manager
+        tree_id: Tree ID
+        person_id: Person ID to get family for
+        base_url: Base URL for API
+        timeout: Optional timeout in seconds
+
+    Returns:
+        Dict with 'Persons' array containing family members, or None if failed
+    """
+    api_description = "New Family View API"
+    api_timeout_val = timeout if timeout is not None else 30
+
+    # Build URL with query parameters
+    formatted_path = API_PATH_NEW_FAMILY_VIEW.format(tree_id=tree_id)
+    params = f"focusPersonId={person_id}&isFocus=true&view=family&genup=1&gendown=1"
+    newfamilyview_url = urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{params}"
+
+    logger.debug(f"Attempting {api_description} call: {newfamilyview_url}")
+
+    try:
+        response = _api_req(
+            url=newfamilyview_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            api_description=api_description,
+            referer_url=urljoin(base_url, f"/family-tree/tree/{tree_id}/person/{person_id}"),
+            use_csrf_token=False,
+            timeout=api_timeout_val,
+        )
+
+        if isinstance(response, dict):
+            logger.debug(f"{api_description} call successful")
+            return response
+        logger.error(f"{api_description} returned unexpected format: {type(response)}")
+        return None
+
+    except Exception as e:
+        logger.error(f"{api_description} call failed: {e}", exc_info=True)
+        return None
+
+
+def call_relation_ladder_with_labels_api(
+    session_manager: "SessionManager",
+    user_id: str,
+    tree_id: str,
+    person_id: str,
+    base_url: str,
+    timeout: Optional[int] = None,
+) -> Optional[dict]:
+    """
+    Call the Relation Ladder With Labels API to get relationship path with names and dates.
+
+    Args:
+        session_manager: Active session manager
+        user_id: User ID (owner profile ID)
+        tree_id: Tree ID
+        person_id: Person ID to get relationship path for
+        base_url: Base URL for API
+        timeout: Optional timeout in seconds
+
+    Returns:
+        Dict with 'kinshipPersons' array containing relationship path, or None if failed
+    """
+    api_description = "Relation Ladder With Labels API"
+    api_timeout_val = timeout if timeout is not None else 30
+
+    # Build URL
+    formatted_path = API_PATH_RELATION_LADDER_WITH_LABELS.format(
+        user_id=user_id, tree_id=tree_id, person_id=person_id
+    )
+    relation_ladder_url = urljoin(base_url.rstrip("/") + "/", formatted_path)
+
+    logger.debug(f"Attempting {api_description} call: {relation_ladder_url}")
+
+    try:
+        response = _api_req(
+            url=relation_ladder_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            api_description=api_description,
+            referer_url=urljoin(base_url, f"/family-tree/tree/{tree_id}/person/{person_id}"),
+            use_csrf_token=False,
+            timeout=api_timeout_val,
+        )
+
+        if isinstance(response, dict) and "kinshipPersons" in response:
+            logger.debug(f"{api_description} call successful, found {len(response.get('kinshipPersons', []))} persons in path")
+            return response
+        logger.error(f"{api_description} returned unexpected format: {type(response)}")
+        return None
+
+    except Exception as e:
+        logger.error(f"{api_description} call failed: {e}", exc_info=True)
+        return None
 
 
 def _validate_message_response(

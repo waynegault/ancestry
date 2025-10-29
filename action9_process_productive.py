@@ -837,7 +837,7 @@ class PersonProcessor:
             PersonLookupResult if found, None otherwise
         """
         try:
-            from action11 import search_ancestry_api_for_person
+            from api_search_core import search_ancestry_api_for_person
 
             # Build search criteria from person_data
             search_criteria = self._build_search_criteria_from_person_data(person_data)

@@ -11,7 +11,6 @@ Extends the existing cache.py infrastructure rather than duplicating functionali
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
@@ -38,18 +37,9 @@ from typing import Any, Callable, Optional
 from cache import (
     BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
-    cache_result,  # Existing cache decorator
-    clear_cache,  # Cache clearing
     get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
     warm_cache_with_data,  # Cache warming
-)
-from error_handling import (
-    circuit_breaker,
-    error_context,
-    graceful_degradation,
-    retry_on_failure,
-    timeout_protection,
 )
 
 # === SESSION CACHE CONFIGURATION ===
@@ -684,6 +674,11 @@ def session_cache_module_tests() -> bool:
     return suite.finish_suite()
 
 
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+
+run_comprehensive_tests = create_standard_test_runner(session_cache_module_tests)
+
+
 if __name__ == "__main__":
-    # Run comprehensive test suite
-    session_cache_module_tests()
+    run_comprehensive_tests()

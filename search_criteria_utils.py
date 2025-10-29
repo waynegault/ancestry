@@ -6,11 +6,10 @@ Provides consistent user interaction for both Action 10 (GEDCOM) and Action 11 (
 to ensure identical search criteria collection and validation.
 """
 
-import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger(__name__)
+from logging_config import logger
 
 
 def get_unified_search_criteria(
@@ -32,7 +31,6 @@ def get_unified_search_criteria(
     if get_input_func is None:
         get_input_func = input
 
-    print("--- Search Criteria ---\n")
 
     # Collect basic criteria
     first_name = _sanitize_input(get_input_func("  First Name Contains: "))
@@ -44,9 +42,6 @@ def get_unified_search_criteria(
         print("\nSearch requires First Name or Surname. Search cancelled.")
         return None
 
-    # Gender
-    gender_input = _sanitize_input(get_input_func("  Gender (M/F): "))
-    gender = _parse_gender_input(gender_input) if gender_input else None
 
     # Birth year
     birth_year = _parse_year_input(get_input_func("  Birth Year (YYYY): "))
@@ -55,10 +50,10 @@ def get_unified_search_criteria(
     birth_place = _sanitize_input(get_input_func("  Birth Place Contains: "))
 
     # Death year (optional)
-    death_year = _parse_year_input(get_input_func("  Death Year (YYYY) [Optional]: "))
+    death_year = _parse_year_input(get_input_func("  Death Year (YYYY): "))
 
     # Death place (optional)
-    death_place = _sanitize_input(get_input_func("  Death Place Contains [Optional]: "))
+    death_place = _sanitize_input(get_input_func("  Death Place Contains: "))
 
     # Create date objects
     birth_date_obj = _create_date_object(birth_year, "birth")
@@ -68,7 +63,6 @@ def get_unified_search_criteria(
     criteria = {
         "first_name": first_name,
         "surname": surname,
-        "gender": gender,
         "birth_year": birth_year,
         "birth_date_obj": birth_date_obj,
         "birth_place": birth_place,
@@ -77,11 +71,8 @@ def get_unified_search_criteria(
         "death_place": death_place,
     }
 
-    # Log criteria
-    logger.debug("\n--- Search Criteria Collected ---")
-    for key, value in criteria.items():
-        if value is not None and key not in ["birth_date_obj", "death_date_obj"]:
-            logger.debug(f"  {key.replace('_', ' ').title()}: {value}")
+    _debug_log_criteria(criteria)
+    _print_criteria_summary(criteria)
 
     return criteria
 
@@ -109,77 +100,75 @@ def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetim
         logger.warning(f"Cannot create date object for {date_type} year {year}.")
         return None
 
-
-def _parse_gender_input(gender_input: str) -> Optional[str]:
-    """Parse gender input to standardized format."""
-    if gender_input and gender_input[0].lower() in ["m", "f"]:
-        return gender_input[0].lower()
-    return None
+# Re-export unified presenter functions from genealogy_presenter (single source of truth)
+from genealogy_presenter import display_family_members, present_post_selection  # type: ignore[import-not-found]
 
 
-def _format_years_display(birth_year: Optional[int], death_year: Optional[int]) -> str:
-    """Format birth and death years for display."""
-    if birth_year and death_year:
-        return f" ({birth_year}-{death_year})"
-    if birth_year:
-        return f" (b. {birth_year})"
-    if death_year:
-        return f" (d. {death_year})"
-    return ""
+def _debug_log_criteria(criteria: dict[str, Any]) -> None:
+    """Log collected criteria at DEBUG level, excluding date objects."""
+    logger.debug("--- Search Criteria Collected ---")
+    for key, value in criteria.items():
+        if value is not None and key not in ["birth_date_obj", "death_date_obj"]:
+            logger.debug(f"  {key.replace('_', ' ').title()}: {value}")
 
 
-def _print_section_header(label: str, is_first: bool) -> None:
-    """Print section header with appropriate spacing."""
-    if is_first:
-        print(f"{label}:")
-    else:
-        print(f"\n{label}:")
+def _print_criteria_summary(criteria: dict[str, Any]) -> None:
+    """Print a clean, INFO-level summary of only the provided criteria."""
+    print("\n--- Search Criteria Used ---\n")
+    label_map = [
+        ("first_name", "First Name Contains"),
+        ("surname", "Surname Contains"),
+        ("birth_year", "Birth Year (YYYY)"),
+        ("birth_place", "Birth Place Contains"),
+        ("death_year", "Death Year (YYYY)"),
+        ("death_place", "Death Place Contains"),
+    ]
+    for key, label in label_map:
+        value = criteria.get(key)
+        if value not in (None, ""):
+            print(f"  {label}: {value}")
+    print("")
+
+# (moved) presentation helpers are provided by genealogy_presenter module
 
 
-def _print_family_member(member: dict) -> None:
-    """Print a single family member's information."""
-    name = member.get("name", "Unknown")
-    birth_year = member.get("birth_year")
-    death_year = member.get("death_year")
-    years_display = _format_years_display(birth_year, death_year)
-    print(f"   - {name}{years_display}")
 
 
-def display_family_members(
-    family_data: dict[str, list],
-    relation_labels: Optional[dict[str, str]] = None
-) -> None:
-    """
-    Display family members in a consistent format for both Action 10 and Action 11.
+# (moved) present_post_selection is provided by genealogy_presenter module
 
-    Args:
-        family_data: Dictionary with keys like 'parents', 'siblings', 'spouses', 'children'
-                    and values as lists of family member dictionaries
-        relation_labels: Optional custom labels for each relation type
-    """
-    if relation_labels is None:
-        relation_labels = {
-            "parents": "📋 Parents",
-            "siblings": "📋 Siblings",
-            "spouses": "💕 Spouses",
-            "children": "👶 Children",
-        }
 
-    first_section = True
-    for relation_key, label in relation_labels.items():
-        members = family_data.get(relation_key, [])
+# === Additional Tests for presenter ===
 
-        _print_section_header(label, first_section)
-        first_section = False
+def _test_present_post_selection_minimal() -> None:
+    """Test unified presenter with minimal data."""
+    import io
+    import sys
 
-        if not members:
-            print("   - None found")
-            continue
+    # Capture output
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
 
-        for member in members:
-            if member:
-                _print_family_member(member)
+    try:
+        family = {"parents": [], "spouses": [], "children": []}
+        present_post_selection(
+            display_name="Jane Doe",
+            birth_year=1970,
+            death_year=None,
+            family_data=family,
+            owner_name="Owner Name",
+            formatted_path="Relationship to Owner Name:\n  - Jane Doe is related (example)"
+        )
 
+        # Restore stdout
+        sys.stdout = sys.__stdout__
+        output = captured_output.getvalue()
+
+        # Validate output contains expected elements
+        assert "=== Jane Doe (b. 1970) ===" in output, "Header should show name with birth year"
+        assert "Relationship to Owner Name:" in output, "Should show relationship header"
+        assert "Jane Doe is related (example)" in output, "Should show relationship path"
+    finally:
+        sys.stdout = sys.__stdout__
 
 # === TESTS ===
 def _test_sanitize_input() -> None:
@@ -214,19 +203,6 @@ def _test_parse_year_input() -> None:
     assert _parse_year_input("19.50") is None, "Should return None for decimal"
 
 
-def _test_parse_gender_input() -> None:
-    """Test gender parsing."""
-    # Test valid inputs
-    assert _parse_gender_input("M") == "m", "Should parse M to m"
-    assert _parse_gender_input("F") == "f", "Should parse F to f"
-    assert _parse_gender_input("m") == "m", "Should parse lowercase m"
-    assert _parse_gender_input("f") == "f", "Should parse lowercase f"
-    assert _parse_gender_input("Male") == "m", "Should parse Male to m"
-    assert _parse_gender_input("Female") == "f", "Should parse Female to f"
-
-    # Test invalid inputs
-    assert _parse_gender_input("X") is None, "Should return None for invalid"
-    assert _parse_gender_input("") is None, "Should return None for empty"
 
 
 def _test_create_date_object() -> None:
@@ -245,25 +221,13 @@ def _test_create_date_object() -> None:
     assert _create_date_object(99999, "birth") is None, "Should return None for invalid year"
 
 
-def _test_format_years_display() -> None:
-    """Test years display formatting."""
-    # Test both years
-    assert _format_years_display(1950, 2020) == " (1950-2020)", "Should format both years"
-
-    # Test birth year only
-    assert _format_years_display(1950, None) == " (b. 1950)", "Should format birth year"
-
-    # Test death year only
-    assert _format_years_display(None, 2020) == " (d. 2020)", "Should format death year"
-
-    # Test no years
-    assert _format_years_display(None, None) == "", "Should return empty for no years"
+# (moved) years display formatting is covered in genealogy_presenter tests
 
 
 def _test_get_unified_search_criteria_valid() -> None:
     """Test unified search criteria collection with valid input."""
     # Mock input function
-    inputs = ["John", "Smith", "M", "1950", "London", "2020", "Manchester"]
+    inputs = ["John", "Smith", "1950", "London", "2020", "Manchester"]
     input_iter = iter(inputs)
 
     def mock_input(prompt: str) -> str:
@@ -275,7 +239,6 @@ def _test_get_unified_search_criteria_valid() -> None:
     assert criteria is not None, "Should return criteria"
     assert criteria["first_name"] == "John", "Should have first name"
     assert criteria["surname"] == "Smith", "Should have surname"
-    assert criteria["gender"] == "m", "Should have gender"
     assert criteria["birth_year"] == 1950, "Should have birth year"
     assert criteria["birth_place"] == "London", "Should have birth place"
     assert criteria["death_year"] == 2020, "Should have death year"
@@ -287,7 +250,7 @@ def _test_get_unified_search_criteria_valid() -> None:
 def _test_get_unified_search_criteria_minimal() -> None:
     """Test unified search criteria with minimal input."""
     # Only provide first name
-    inputs = ["John", "", "", "", "", "", ""]
+    inputs = ["John", "", "", "", "", ""]
     input_iter = iter(inputs)
 
     def mock_input(prompt: str) -> str:
@@ -299,14 +262,13 @@ def _test_get_unified_search_criteria_minimal() -> None:
     assert criteria is not None, "Should return criteria"
     assert criteria["first_name"] == "John", "Should have first name"
     assert criteria["surname"] is None, "Should have None surname"
-    assert criteria["gender"] is None, "Should have None gender"
     assert criteria["birth_year"] is None, "Should have None birth year"
 
 
 def _test_get_unified_search_criteria_cancelled() -> None:
     """Test unified search criteria when cancelled (no name provided)."""
     # Provide no name
-    inputs = ["", "", "", "", "", "", ""]
+    inputs = ["", "", "", "", "", ""]
     input_iter = iter(inputs)
 
     def mock_input(prompt: str) -> str:
@@ -319,7 +281,10 @@ def _test_get_unified_search_criteria_cancelled() -> None:
 
 
 def _test_display_family_members() -> None:
-    """Test family members display."""
+    """Test family members display with output validation."""
+    import io
+    import sys
+
     # Test with full family data
     family_data = {
         "parents": [
@@ -338,39 +303,55 @@ def _test_display_family_members() -> None:
         ]
     }
 
-    # Should not raise exception
-    display_family_members(family_data)
+    # Capture output
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+
+    try:
+        display_family_members(family_data)
+
+        # Restore stdout
+        sys.stdout = sys.__stdout__
+        output = captured_output.getvalue()
+
+        # Validate output contains expected family members
+        assert "John Smith (1920-1990)" in output, "Should show parent with years"
+        assert "Bob Smith (b. 1950)" in output, "Should show living sibling"
+        assert "Parents:" in output, "Should show Parents section"
+        assert "Siblings:" in output, "Should show Siblings section"
+    finally:
+        sys.stdout = sys.__stdout__
 
     # Test with empty family data
-    display_family_members({})
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+    try:
+        display_family_members({})
+        sys.stdout = sys.__stdout__
+        output = captured_output.getvalue()
+        # Should handle empty data gracefully
+        assert "Parents:" in output or output == "", "Should handle empty data"
+    finally:
+        sys.stdout = sys.__stdout__
 
-    # Test with custom labels
-    custom_labels = {
-        "parents": "Parents",
-        "siblings": "Siblings",
-        "spouses": "Spouses",
-        "children": "Children"
+    # Test with None values in family members
+    family_with_nones = {
+        "parents": [
+            {"name": "Unknown Parent", "birth_year": None, "death_year": None}
+        ]
     }
-    display_family_members(family_data, custom_labels)
+    captured_output = io.StringIO()
+    sys.stdout = captured_output
+    try:
+        display_family_members(family_with_nones)
+        sys.stdout = sys.__stdout__
+        output = captured_output.getvalue()
+        assert "Unknown Parent" in output, "Should handle None years gracefully"
+    finally:
+        sys.stdout = sys.__stdout__
 
 
-def _test_print_functions() -> None:
-    """Test print helper functions."""
-    # Test section header
-    _print_section_header("Test Section", True)
-    _print_section_header("Test Section", False)
-
-    # Test family member printing
-    member = {"name": "John Smith", "birth_year": 1950, "death_year": 2020}
-    _print_family_member(member)
-
-    # Test with minimal data
-    member = {"name": "Jane Doe"}
-    _print_family_member(member)
-
-    # Test with birth year only
-    member = {"name": "Bob Jones", "birth_year": 1960}
-    _print_family_member(member)
+# (moved) print helper tests removed; functionality covered by genealogy_presenter
 
 
 def search_criteria_utils_module_tests() -> bool:
@@ -398,12 +379,13 @@ def search_criteria_utils_module_tests() -> bool:
     )
 
     suite.run_test(
-        "Gender parsing",
-        _test_parse_gender_input,
-        "Parses gender input correctly",
-        "_parse_gender_input()",
-        "Tests M/F parsing and invalid inputs"
+        "Unified presenter",
+        _test_present_post_selection_minimal,
+        "Presents header, family, and relationship correctly",
+        "present_post_selection()",
+        "Smoke test with preformatted relationship text"
     )
+
 
     # Category 2: Date Handling Tests
     suite.run_test(
@@ -414,13 +396,7 @@ def search_criteria_utils_module_tests() -> bool:
         "Tests valid years, None, and invalid years"
     )
 
-    suite.run_test(
-        "Years display formatting",
-        _test_format_years_display,
-        "Formats years for display",
-        "_format_years_display()",
-        "Tests birth/death year combinations"
-    )
+    # Years display formatting covered by genealogy_presenter tests
 
     # Category 3: Search Criteria Collection Tests
     suite.run_test(
@@ -456,14 +432,6 @@ def search_criteria_utils_module_tests() -> bool:
         "Tests display with full data, empty data, and custom labels"
     )
 
-    suite.run_test(
-        "Print helper functions",
-        _test_print_functions,
-        "Print functions don't crash",
-        "_print_section_header(), _print_family_member()",
-        "Tests all print helper functions"
-    )
-
     return suite.finish_suite()
 
 
@@ -471,4 +439,8 @@ def search_criteria_utils_module_tests() -> bool:
 from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(search_criteria_utils_module_tests)
+
+
+if __name__ == "__main__":
+    run_comprehensive_tests()
 

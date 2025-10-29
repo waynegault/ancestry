@@ -174,8 +174,17 @@ class AlignedMessageFormatter(logging.Formatter):
     Leading whitespace from subsequent lines of the original message is removed.
     """
 
+    def __init__(self, *args, use_colors: bool = False, **kwargs):
+        """Initialize formatter with optional color support."""
+        super().__init__(*args, **kwargs)
+        self.use_colors = use_colors
+
     def _apply_level_color(self, message: str, level: int) -> str:
         """Apply color based on log level if not already colored."""
+        # Skip if colors disabled
+        if not self.use_colors:
+            return message
+
         # Skip if already has ANSI codes
         if '\033[' in message:
             return message
@@ -302,19 +311,20 @@ def setup_logging(log_file: str = "", log_level: str = "INFO") -> logging.Logger
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
-    # Create formatter
-    formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
+    # Create formatters (file without colors, console with colors)
+    file_formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT, use_colors=False)
+    console_formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT, use_colors=True)
 
     # Configure File Handler
     Path(log_file_for_handler).parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file_for_handler, mode="a", encoding="utf-8")
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(file_formatter)
     file_handler.setLevel(numeric_log_level)
     logger.addHandler(file_handler)
 
     # Configure Console Handler
     console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(console_formatter)
     console_handler.setLevel(numeric_log_level)
 
     # Add filters to console handler

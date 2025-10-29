@@ -99,10 +99,13 @@ def _handle_session_health_check(session_manager: SessionManager) -> tuple[bool,
 
 def _handle_api_failure(session_manager: SessionManager, page_num: int, max_pages: int) -> tuple[bool, int, int, str, bool]:
     """Handle API failure and recovery. Returns (should_continue, deaths, recoveries, reason, should_break)."""
+    # If session is healthy and there are no more pages, stop gracefully
+    if session_manager.check_session_health() and max_pages == 0:
+        logger.info("No more pages available. Stopping.")
+        return False, 0, 0, "", True
+
+    # If session is healthy and pages remain, continue
     if session_manager.check_session_health():
-        if max_pages == 0:
-            logger.info("No more pages available. Stopping.")
-            return False, 0, 0, "", True
         return True, 0, 0, "", False
 
     logger.error("🚨 Session appears dead - API failure likely due to invalid session")

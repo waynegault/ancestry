@@ -44,13 +44,6 @@ and test coverage. Implements genealogical best practices with performance
 optimization and detailed logging.
 """
 
-# === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module  # type: ignore[import-not-found]
-
-# === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
 import argparse
 import logging
@@ -62,6 +55,12 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+# === CORE INFRASTRUCTURE ===
+from standard_imports import setup_module  # type: ignore[import-not-found]
+
+# === MODULE SETUP ===
+logger = setup_module(globals(), __name__)
 
 from core.error_handling import (  # type: ignore[import-not-found]
     circuit_breaker,
@@ -93,16 +92,16 @@ from gedcom_utils import (  # type: ignore[import-not-found]
     calculate_match_score,
     format_relative_info,
 )
+from genealogy_presenter import display_family_members, present_post_selection  # type: ignore[import-not-found]
 
 # Import relationship utilities
 from relationship_utils import (  # type: ignore[import-not-found]
     convert_gedcom_path_to_unified_format,
     fast_bidirectional_bfs,
-    format_relationship_path_unified,
 )
 
 # Import unified search criteria and display functions
-from search_criteria_utils import display_family_members, get_unified_search_criteria  # type: ignore[import-not-found]
+from search_criteria_utils import get_unified_search_criteria  # type: ignore[import-not-found]
 from test_framework import mock_logger_context  # type: ignore[import-not-found]
 
 # Import universal scoring utilities
@@ -245,8 +244,7 @@ def _format_test_person_analysis(field_scores: dict[str, int], total_score: floa
     expected_field_scores = {
         "givn": 25.0,  # Contains first name (Fraser)
         "surn": 25.0,  # Contains surname (Gault)
-        "gender": 15.0,  # Gender match (M)
-        "byear": 20.0,  # Birth year match (1941)
+        "byear": 25.0,  # Birth year match (1941)
         "bplace": 20.0,  # Birth place contains (Banff)
         "bbonus": 15.0,  # Bonus birth info (year + place)
         "ddate": 15.0,  # Death dates both absent
@@ -404,8 +402,7 @@ def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
             "name_match": 50,
             "birth_year_match": 30,
             "birth_place_match": 20,
-            "gender_match": 10,
-            "death_year_match": 25,
+                "death_year_match": 25,
             "death_place_match": 15,
         }
     )
@@ -460,7 +457,7 @@ def _check_memory_cache(gedcom_path: Path) -> Optional[GedcomData]:
     if _GedcomCacheState.cache is not None:
         cached_path = getattr(_GedcomCacheState.cache, 'path', None)
         if cached_path and Path(cached_path) == gedcom_path:
-            print(f"\n✅ Using GEDCOM from: MEMORY CACHE ({len(_GedcomCacheState.cache.indi_index)} individuals)")
+            logger.debug(f"Using GEDCOM from MEMORY CACHE ({len(_GedcomCacheState.cache.indi_index)} individuals)")
             return _GedcomCacheState.cache
     return None
 
@@ -470,14 +467,13 @@ def _display_cache_source_message(gedcom_data: GedcomData) -> None:
     cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
 
     if cache_source in ("memory", "disk"):
-        print("\n✅ Using GEDCOM cache")
+        logger.debug("Using GEDCOM cache")
     elif cache_source == "file":
-        print("\n✅ Using GEDCOM file")
-        print("✅ Cache saved")
+        logger.debug("Using GEDCOM file; cache saved")
     else:
-        print("\n⚠️  GEDCOM loaded from UNKNOWN SOURCE")
+        logger.debug("GEDCOM loaded from UNKNOWN SOURCE")
 
-    print(f"   📊 {len(gedcom_data.indi_index):,} individuals indexed")
+    logger.debug(f"{len(gedcom_data.indi_index):,} individuals indexed")
 
 
 def _load_with_aggressive_caching(gedcom_path: Path) -> GedcomData:
@@ -567,31 +563,23 @@ def _create_input_getter(args: Optional[argparse.Namespace]) -> Callable[[str], 
 
 
 def _collect_basic_criteria(get_input: Callable[[str], str]) -> dict[str, Any]:
-    """Collect basic search criteria from user input."""
+    """Collect basic search criteria from user input (gender removed as a criterion)."""
     input_fname = sanitize_input(get_input("  First Name Contains:"))
     input_sname = sanitize_input(get_input("  Surname Contains:"))
-
-    input_gender = sanitize_input(get_input("  Gender (M/F):"))
-    gender_crit = (
-        input_gender[0].lower()
-        if input_gender and input_gender[0].lower() in ["m", "f"]
-        else None
-    )
 
     input_byear_str = get_input("  Birth Year (YYYY):")
     birth_year_crit = int(input_byear_str) if input_byear_str.isdigit() else None
 
     input_bplace = sanitize_input(get_input("  Birth Place Contains:"))
 
-    input_dyear_str = get_input("  Death Year (YYYY) [Optional]:")
+    input_dyear_str = get_input("  Death Year (YYYY):")
     death_year_crit = int(input_dyear_str) if input_dyear_str.isdigit() else None
 
-    input_dplace = sanitize_input(get_input("  Death Place Contains [Optional]:"))
+    input_dplace = sanitize_input(get_input("  Death Place Contains:"))
 
     return {
         "first_name": input_fname,
         "surname": input_sname,
-        "gender": gender_crit,
         "birth_year": birth_year_crit,
         "birth_place": input_bplace,
         "death_year": death_year_crit,
@@ -627,13 +615,17 @@ def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_filter_criteria(scoring_criteria: dict[str, Any]) -> dict[str, Any]:
-    """Build filter criteria from scoring criteria."""
+    """Build filter criteria from scoring criteria (case-insensitive for strings)."""
+    fn = scoring_criteria.get("first_name")
+    sn = scoring_criteria.get("surname")
+    bp = scoring_criteria.get("birth_place")
+    dp = scoring_criteria.get("death_place")
     return {
-        "first_name": scoring_criteria.get("first_name"),
-        "surname": scoring_criteria.get("surname"),
-        "gender": scoring_criteria.get("gender"),
+        "first_name": fn.lower() if isinstance(fn, str) else fn,
+        "surname": sn.lower() if isinstance(sn, str) else sn,
         "birth_year": scoring_criteria.get("birth_year"),
-        "birth_place": scoring_criteria.get("birth_place"),
+        "birth_place": bp.lower() if isinstance(bp, str) else bp,
+        "death_place": dp.lower() if isinstance(dp, str) else dp,
     }
 
 
@@ -670,8 +662,10 @@ def log_criteria_summary(
 def matches_criterion(
     criterion_name: str, filter_criteria: dict[str, Any], candidate_value: Any
 ) -> bool:
-    """Check if a candidate value matches a criterion."""
+    """Check if a candidate value matches a criterion (case-insensitive for strings)."""
     criterion = filter_criteria.get(criterion_name)
+    if isinstance(criterion, str):
+        criterion = criterion.lower()
     return bool(criterion and candidate_value and criterion in candidate_value)
 
 
@@ -736,6 +730,11 @@ def _extract_individual_data(indi_data: dict[str, Any]) -> dict[str, Any]:
             if indi_data.get("birth_place_disp")
             else None
         ),
+        "death_place_lower": (
+            indi_data.get("death_place_disp", "").lower()
+            if indi_data.get("death_place_disp")
+            else None
+        ),
         "death_date_obj": indi_data.get("death_date_obj"),
     }
 
@@ -745,34 +744,45 @@ def _evaluate_filter_criteria(
     filter_criteria: dict[str, Any],
     year_range: int
 ) -> bool:
-    """Evaluate if individual passes OR filter criteria."""
-    fn_match_filter = matches_criterion(
-        "first_name", filter_criteria, extracted_data["givn_lower"]
-    )
-    sn_match_filter = matches_criterion(
-        "surname", filter_criteria, extracted_data["surn_lower"]
-    )
-    gender_match_filter = bool(
-        filter_criteria.get("gender")
-        and extracted_data["sex_lower"]
-        and filter_criteria["gender"] == extracted_data["sex_lower"]
-    )
-    bp_match_filter = matches_criterion(
-        "birth_place", filter_criteria, extracted_data["birth_place_lower"]
-    )
-    by_match_filter = matches_year_criterion(
-        "birth_year", filter_criteria, extracted_data["birth_year"], year_range
-    )
+    """Evaluate if individual passes filter criteria.
+
+    Policy:
+    - If birth_place and/or death_place values are provided (non-empty), they are mandatory.
+    - If first_name and/or surname are provided (non-empty), they are mandatory.
+    - If no names provided, use a broader OR across other criteria.
+    """
+    # Precompute simple matches
+    fn_match_filter = matches_criterion("first_name", filter_criteria, extracted_data["givn_lower"])
+    sn_match_filter = matches_criterion("surname", filter_criteria, extracted_data["surn_lower"])
+    bp_match_filter = matches_criterion("birth_place", filter_criteria, extracted_data.get("birth_place_lower"))
+    dp_match_filter = matches_criterion("death_place", filter_criteria, extracted_data.get("death_place_lower"))
+    by_match_filter = matches_year_criterion("birth_year", filter_criteria, extracted_data["birth_year"], year_range)
     alive_match = extracted_data["death_date_obj"] is None
 
-    return (
-        fn_match_filter
-        or sn_match_filter
-        or gender_match_filter
-        or bp_match_filter
-        or by_match_filter
-        or alive_match
-    )
+    # Enforce mandatory place presence/match only when a non-empty criterion value is provided
+    place_checks = []
+    bp_crit = filter_criteria.get("birth_place")
+    dp_crit = filter_criteria.get("death_place")
+    if bp_crit:
+        place_checks.append(bp_match_filter)
+    if dp_crit:
+        place_checks.append(dp_match_filter)
+    if place_checks and not all(place_checks):
+        return False
+
+    # Enforce mandatory names when provided (non-empty)
+    has_fn = bool(filter_criteria.get("first_name"))
+    has_sn = bool(filter_criteria.get("surname"))
+    if has_fn or has_sn:
+        checks = []
+        if has_fn:
+            checks.append(fn_match_filter)
+        if has_sn:
+            checks.append(sn_match_filter)
+        return all(checks) if checks else True
+
+    # No names provided: broader OR filter (birth/death place, birth year, or alive)
+    return any((bp_match_filter, dp_match_filter, by_match_filter, alive_match))
 
 
 def _create_match_data(
@@ -847,7 +857,7 @@ def filter_and_score_individuals(
 ) -> list[dict[str, Any]]:
     """Filter and score individuals based on criteria using universal scoring."""
     logger.debug(
-        "\n--- Filtering and Scoring Individuals (using universal scoring) ---"
+        "--- Filtering and Scoring Individuals (using universal scoring) ---"
     )
     processing_start_time = time.time()
 
@@ -975,13 +985,6 @@ def _format_name_display(candidate: dict[str, Any], scores: dict[str, int]) -> s
     return f"{name_disp_short} {name_score_str}"
 
 
-def _format_gender_display(candidate: dict[str, Any], scores: dict[str, int]) -> str:
-    """Format gender with score for display."""
-    gender_disp_val = candidate.get("gender", "N/A")
-    gender_disp_str = (
-        str(gender_disp_val).upper() if gender_disp_val is not None else "N/A"
-    )
-    return f"{gender_disp_str} [{scores['gender_s']}]"
 
 
 def _format_birth_displays(candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
@@ -1030,21 +1033,21 @@ def _create_table_row(candidate: dict[str, Any]) -> list[str]:
     bonuses = _calculate_display_bonuses(scores)
 
     name_with_score = _format_name_display(candidate, scores)
-    gender_with_score = _format_gender_display(candidate, scores)
     bdate_with_score, bplace_with_score = _format_birth_displays(candidate, scores, bonuses)
     ddate_with_score, dplace_with_score = _format_death_displays(candidate, scores, bonuses)
 
     total_display_score = int(candidate.get("total_score", 0))
+    alive_pen = int(candidate.get("field_scores", {}).get("alive_penalty", 0))
+    total_cell = f"{total_display_score}{f' [{alive_pen}]' if alive_pen < 0 else ''}"
 
     return [
         str(candidate.get("display_id", "N/A")),
         name_with_score,
-        gender_with_score,
         bdate_with_score,
         bplace_with_score,
         ddate_with_score,
         dplace_with_score,
-        str(total_display_score),
+        total_cell,
     ]
 
 
@@ -1082,7 +1085,6 @@ def display_top_matches(
     headers = [
         "ID",
         "Name",
-        "Gender",
         "Birth",
         "Birth Place",
         "Death",
@@ -1209,56 +1211,76 @@ def _convert_gedcom_relatives_to_standard_format(relatives: list) -> list[dict]:
     return standardized
 
 
-def _get_match_display_info(top_match: dict[str, Any]) -> tuple[str, float, str]:
-    """Extract display information from top match."""
-    display_name = top_match.get("full_name_disp", "Unknown")
-    score = top_match.get("total_score", 0)
 
-    # Get birth and death years for display
+
+
+
+def _extract_years_from_name_if_missing(
+    display_name: str, birth_year: Optional[int], death_year: Optional[int]
+) -> tuple[str, Optional[int], Optional[int]]:
+    """Extract years from name if both birth and death years are missing."""
+    if birth_year is None and death_year is None:
+        clean_name, by, dy = _extract_years_from_name(display_name)
+        return clean_name, by, dy
+    return display_name, birth_year, death_year
+
+
+def _supplement_years_from_gedcom(
+    gedcom_data: GedcomData,
+    top_match_norm_id: Optional[str],
+    birth_year: Optional[int],
+    death_year: Optional[int],
+) -> tuple[Optional[int], Optional[int]]:
+    """Supplement missing years from GEDCOM processed data."""
+    if (birth_year is None or death_year is None) and isinstance(top_match_norm_id, str):
+        try:
+            processed = gedcom_data.get_processed_indi_data(top_match_norm_id)
+            if processed:
+                if birth_year is None:
+                    birth_year = processed.get("birth_year")
+                if death_year is None:
+                    death_year = processed.get("death_year")
+        except Exception:
+            pass
+    return birth_year, death_year
+
+
+def _derive_display_fields(
+    gedcom_data: GedcomData,
+    top_match: dict[str, Any],
+    top_match_norm_id: Optional[str],
+) -> tuple[str, Optional[int], Optional[int]]:
+    """Return (display_name, birth_year, death_year) using layered fallbacks."""
+    display_name = top_match.get("full_name_disp", "Unknown")
     birth_year = top_match.get("raw_data", {}).get("birth_year")
     death_year = top_match.get("raw_data", {}).get("death_year")
-
-    # Format years display
-    years_display = ""
-    if birth_year and death_year:
-        years_display = f" ({birth_year}-{death_year})"
-    elif birth_year:
-        years_display = f" (b. {birth_year})"
-    elif death_year:
-        years_display = f" (d. {death_year})"
-
-    return display_name, score, years_display
+    # Try extracting from name if both years missing
+    if isinstance(display_name, str):
+        display_name, birth_year, death_year = _extract_years_from_name_if_missing(display_name, birth_year, death_year)
+    # Supplement from GEDCOM if still missing
+    birth_year, death_year = _supplement_years_from_gedcom(gedcom_data, top_match_norm_id, birth_year, death_year)
+    return display_name, birth_year, death_year
 
 
-def _display_match_header(display_name: str, years_display: str, score: float) -> None:
-    """Display the match analysis header."""
-    print(f"\n==={display_name}{years_display} (score: {score:.0f}) ===\n")
+def _build_family_data_dict(gedcom_data: GedcomData, indi: Any) -> dict[str, list]:
+    parents = gedcom_data.get_related_individuals(indi, "parents")
+    siblings = gedcom_data.get_related_individuals(indi, "siblings")
+    spouses = gedcom_data.get_related_individuals(indi, "spouses")
+    children = gedcom_data.get_related_individuals(indi, "children")
+    return {
+        "parents": _convert_gedcom_relatives_to_standard_format(parents),
+        "siblings": _convert_gedcom_relatives_to_standard_format(siblings),
+        "spouses": _convert_gedcom_relatives_to_standard_format(spouses),
+        "children": _convert_gedcom_relatives_to_standard_format(children),
+    }
 
 
-def _handle_same_person_case(display_name: str, reference_person_name: str) -> None:
-    """Handle case where top match is the reference person."""
-    print(f"\n📋 {display_name} is the reference person ({reference_person_name}).")
-
-
-def _calculate_relationship_path(
+def _compute_unified_path_if_possible(
     gedcom_data: GedcomData,
-    top_match_norm_id: str,
-    reference_person_id_norm: str,
-    display_name: str,
-    reference_person_name: str,
-) -> None:
-    """Calculate and display relationship path between two individuals."""
-    # Log the API URL for debugging purposes
-    tree_id = (
-        getattr(config_schema, "TESTING_PERSON_TREE_ID", "unknown_tree_id")
-        if config_schema
-        else "unknown_tree_id"
-    )
-    api_url = f"/family-tree/person/tree/{tree_id}/person/{top_match_norm_id}/getladder?callback=no"
-    logger.debug(f"API URL: {api_url}")
-
+    top_match_norm_id: Optional[str],
+    reference_person_id_norm: Optional[str],
+) -> Optional[list]:
     if isinstance(top_match_norm_id, str) and isinstance(reference_person_id_norm, str):
-        # Find the relationship path using the consolidated function
         path_ids = fast_bidirectional_bfs(
             top_match_norm_id,
             reference_person_id_norm,
@@ -1268,26 +1290,14 @@ def _calculate_relationship_path(
             node_limit=150000,
             timeout_sec=45,
         )
-
-        # Convert the GEDCOM path to the unified format
-        unified_path = convert_gedcom_path_to_unified_format(
+        return convert_gedcom_path_to_unified_format(
             path_ids,
             gedcom_data.reader,
             gedcom_data.id_to_parents,
             gedcom_data.id_to_children,
             gedcom_data.indi_index,
         )
-
-        if unified_path:
-            # Format the path using the unified formatter
-            relationship_explanation = format_relationship_path_unified(
-                unified_path, display_name, reference_person_name, None
-            )
-            # Print the formatted relationship path (use print to avoid logging preamble)
-            print(relationship_explanation)
-        else:
-            # Just print an error message if conversion failed
-            print(f"\n(Error: Could not determine relationship path for {display_name})")
+    return None
 
 
 def analyze_top_match(
@@ -1296,37 +1306,31 @@ def analyze_top_match(
     reference_person_id_norm: Optional[str],
     reference_person_name: str,
 ) -> None:
-    """Analyze top match and find relationship path with comprehensive error handling."""
+    """Analyze top match and present results with minimal branching."""
     top_match_norm_id = top_match.get("id")
     top_match_indi = gedcom_data.find_individual_by_id(top_match_norm_id)
-
     if not top_match_indi:
         logger.error(
             f"Could not retrieve Individual record for top match ID: {top_match_norm_id}"
         )
         return
 
-    display_name, score, years_display = _get_match_display_info(top_match)
-    _display_match_header(display_name, years_display, score)
+    display_name, birth_year, death_year = _derive_display_fields(
+        gedcom_data, top_match, top_match_norm_id
+    )
+    family_data = _build_family_data_dict(gedcom_data, top_match_indi)
+    unified_path = _compute_unified_path_if_possible(
+        gedcom_data, top_match_norm_id, reference_person_id_norm
+    )
 
-    # Display relatives
-    display_relatives(gedcom_data, top_match_indi)
-
-    # Check for relationship path
-    if not reference_person_id_norm:
-        logger.warning(
-            "REFERENCE_PERSON_ID not configured. Cannot calculate relationship path."
-        )
-        return
-
-    # Display relationship path
-    if top_match_norm_id == reference_person_id_norm:
-        _handle_same_person_case(display_name, reference_person_name)
-    elif reference_person_id_norm:
-        _calculate_relationship_path(
-            gedcom_data, top_match_norm_id, reference_person_id_norm,  # type: ignore[arg-type]
-            display_name, reference_person_name
-        )
+    present_post_selection(
+        display_name=display_name,
+        birth_year=birth_year,
+        death_year=death_year,
+        family_data=family_data,
+        owner_name=reference_person_name,
+        unified_path=unified_path,
+    )
 
 
 def _initialize_analysis() -> tuple[argparse.Namespace, tuple[Any, ...]]:
@@ -1533,6 +1537,17 @@ def _register_relationship_tests(suite: Any, debug_wrapper: Callable, test_famil
     )
 
 
+def _register_api_search_tests(suite: Any, debug_wrapper: Callable, test_api_search_peter_fraser: Callable) -> None:
+    """Register API search tests."""
+    suite.run_test(
+        "API Search - Peter Fraser 1893",
+        debug_wrapper(test_api_search_peter_fraser),
+        "Tests API search for Peter Fraser born 1893 in Fyvie using TreesUI List API.",
+        "Test API search with real person data to validate parsing and scoring.",
+        "Search for Peter Fraser (b. 1893, Fyvie) via API and verify results are properly parsed and scored.",
+    )
+
+
 # === REMOVED: _get_gedcom_data_or_skip - tests now fail when GEDCOM is not available ===
 
 
@@ -1542,7 +1557,6 @@ def _create_search_criteria(test_data: dict[str, Any]) -> dict[str, Any]:
         "first_name": test_data["first_name"].lower(),
         "surname": test_data["last_name"].lower(),
         "birth_year": test_data["birth_year"],
-        "gender": test_data.get("gender", "m").lower(),
         "birth_place": test_data.get("birth_place", ""),
     }
 
@@ -1826,7 +1840,7 @@ def test_fraser_gault_scoring_algorithm() -> None:
 
     if not field_scores:
         # Fallback to default scoring pattern
-        field_scores = {'givn': 25, 'surn': 25, 'gender': 15, 'byear': 20, 'bdate': 0, 'bplace': 25, 'bbonus': 25, 'dyear': 0, 'ddate': 25, 'dplace': 25, 'dbonus': 25, 'bonus': 25}
+        field_scores = {'givn': 25, 'surn': 25, 'byear': 25, 'bdate': 0, 'bplace': 25, 'bbonus': 25, 'dyear': 0, 'ddate': 25, 'dplace': 25, 'dbonus': 25, 'bonus': 25}
 
     print(format_score_breakdown_table(field_scores, int(score)))
     print(f"   Has field scores: {Colors.GREEN if field_scores else Colors.RED}{bool(field_scores)}{Colors.RESET}")
@@ -2017,7 +2031,6 @@ def _print_search_criteria(config: dict) -> None:
     print(f"   • First Name contains: {config['first_name'].lower()}")
     print(f"   • Surname contains: {config['last_name'].lower()}")
     print(f"   • Birth Year: {config['birth_year']}")
-    print(f"   • Gender: {config['gender'].upper()}")
     print(f"   • Birth Place contains: {config.get('birth_place', 'N/A')}")
     print("   • Death Year: null")
     print("   • Death Place contains: null")
@@ -2081,7 +2094,6 @@ def test_real_search_performance_and_accuracy() -> None:
         "first_name": config['first_name'].lower(),
         "surname": config['last_name'].lower(),
         "birth_year": config['birth_year'],
-        "gender": config['gender'].lower(),
         "birth_place": config['birth_place'],
         "death_year": None,
         "death_place": None
@@ -2117,7 +2129,6 @@ def test_family_relationship_analysis() -> None:
     test_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
     test_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
     test_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-    test_gender = os.getenv("TEST_PERSON_GENDER", "m")
     test_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
 
     # Use cached GEDCOM data (already loaded in Test 3)
@@ -2133,7 +2144,6 @@ def test_family_relationship_analysis() -> None:
         "first_name": test_first_name.lower(),
         "surname": test_last_name.lower(),
         "birth_year": test_birth_year,
-        "gender": test_gender,  # Add gender for consistency
         "birth_place": test_birth_place  # Add birth place for consistent scoring
     }
 
@@ -2180,6 +2190,76 @@ def test_family_relationship_analysis() -> None:
         return False
 
 
+def test_api_search_peter_fraser() -> None:
+    """Test API search for Peter Fraser born 1893 in Fyvie"""
+    import os
+
+    from test_framework import Colors
+
+    # Skip if live API tests are disabled
+    skip_live_api = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
+    if skip_live_api:
+        print(f"{Colors.YELLOW}⏭️  Skipping live API test (SKIP_LIVE_API_TESTS=true){Colors.RESET}")
+        return True
+
+    print(f"\n{Colors.CYAN}🔍 Testing API Search:{Colors.RESET}")
+    print("   Person: Peter Fraser")
+    print("   Birth Year: 1893")
+    print("   Birth Place: Fyvie")
+
+    try:
+        # Import API search function
+        from api_search_core import search_ancestry_api_for_person
+        from session_utils import get_global_session
+
+        # Get global session (must be initialized by main.py)
+        session_manager = get_global_session()
+
+        # Create search criteria
+        search_criteria = {
+            "first_name": "peter",
+            "surname": "fraser",
+            "birth_year": 1893,
+            "birth_place": "fyvie",
+        }
+
+        # Perform API search
+        print(f"\n{Colors.CYAN}📡 Calling API...{Colors.RESET}")
+        results = search_ancestry_api_for_person(session_manager, search_criteria, max_results=20)
+
+        # Validate results
+        print(f"\n{Colors.CYAN}📊 Results:{Colors.RESET}")
+        print(f"   Total matches: {len(results)}")
+
+        if results:
+            top_result = results[0]
+            print(f"   Top match: {top_result.get('name', 'Unknown')}")
+            print(f"   Person ID: {top_result.get('id', 'Unknown')}")
+            print(f"   Birth: {top_result.get('birth_date', 'N/A')} in {top_result.get('birth_place', 'N/A')}")
+            print(f"   Death: {top_result.get('death_date', 'N/A')} in {top_result.get('death_place', 'N/A')}")
+            print(f"   Score: {top_result.get('score', 0)}")
+
+            # Validate that we got proper data (not "Unknown_0")
+            assert top_result.get('name') != "Unknown", "Name should be parsed correctly, not 'Unknown'"
+            assert top_result.get('id') != "Unknown_0", "Person ID should be parsed correctly, not 'Unknown_0'"
+            assert top_result.get('score', 0) > 0, "Score should be greater than 0"
+
+            print(f"\n{Colors.GREEN}✅ API search test passed{Colors.RESET}")
+            print(f"   • Name parsed correctly: {top_result.get('name')}")
+            print(f"   • Person ID extracted: {top_result.get('id')}")
+            print(f"   • Results scored properly: {top_result.get('score')} points")
+        else:
+            print(f"{Colors.YELLOW}⚠️ No matches found (API may have returned empty results){Colors.RESET}")
+
+        return True
+
+    except Exception as e:
+        print(f"{Colors.RED}❌ API search test failed: {e}{Colors.RESET}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def test_relationship_path_calculation() -> None:
     """Test relationship path calculation from test person to tree owner"""
     from relationship_utils import (  # type: ignore[import-not-found]
@@ -2207,7 +2287,6 @@ def test_relationship_path_calculation() -> None:
             "first_name": config['first_name'].lower(),
             "surname": config['last_name'].lower(),
             "birth_year": config['birth_year'],
-            "gender": config['gender'],
             "birth_place": config['birth_place']
         }
 
@@ -2326,6 +2405,7 @@ def action10_module_tests() -> bool:
     if not skip_slow_tests:
         _register_scoring_tests(suite, debug_wrapper, test_fraser_gault_scoring_algorithm)
         _register_relationship_tests(suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation)
+        _register_api_search_tests(suite, debug_wrapper, test_api_search_peter_fraser)
     else:
         logger.info("⏭️  Skipping GEDCOM-dependent tests (SKIP_SLOW_TESTS=true) - running in parallel mode")
 

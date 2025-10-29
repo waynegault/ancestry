@@ -369,7 +369,7 @@ class CredentialManager:
 
 def _test_initialization() -> None:
     """Test CredentialManager initialization with detailed verification."""
-    import os
+
 
     from test_framework import suppress_logging  # type: ignore
 

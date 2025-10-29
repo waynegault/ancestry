@@ -204,6 +204,54 @@ class APIManager:
             logger.error(f"Error syncing cookies from browser to API: {e}", exc_info=True)
             return False
 
+
+    def load_cookies_from_file(self, path: Optional[Union[str, Path]] = None) -> bool:
+        """Load cookies from a JSON file into the requests session (browserless).
+
+        Args:
+            path: Optional path to the cookies JSON file. Defaults to 'ancestry_cookies.json' in repo root.
+
+        Returns:
+            bool: True if one or more cookies were loaded, False otherwise
+        """
+        try:
+            cookies_file = Path(path) if path else Path("ancestry_cookies.json")
+            if not cookies_file.exists():
+                logger.debug(f"Cookie file not found: {cookies_file}")
+                return False
+
+            import json
+            with cookies_file.open("r", encoding="utf-8") as f:
+                cookies = json.load(f)
+
+            if not isinstance(cookies, list) or not cookies:
+                logger.debug("Cookie file is empty or invalid format (expected list)")
+                return False
+
+            # Clear existing cookies before loading
+            self._requests_session.cookies.clear()
+
+            loaded = 0
+            for cookie in cookies:
+                try:
+                    if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
+                        self._requests_session.cookies.set(
+                            cookie["name"],
+                            cookie["value"],
+                            domain=cookie.get("domain"),
+                            path=cookie.get("path", "/"),
+                        )
+                        loaded += 1
+                except Exception:
+                    # Skip invalid cookie entries silently
+                    continue
+
+            logger.info(f"🍪 Loaded {loaded} cookie(s) from {cookies_file} into API requests session")
+            return loaded > 0
+        except Exception as e:
+            logger.warning(f"Failed to load cookies from file into requests session: {e}")
+            return False
+
     def _prepare_api_headers(
         self, headers: Optional[dict[str, str]], use_csrf_token: bool, api_description: str
     ) -> dict[str, str]:
@@ -377,31 +425,64 @@ class APIManager:
 
     def get_uuid(self) -> Optional[str]:
         """
-        Retrieve user UUID from the API.
+        Retrieve user UUID (DNA test GUID).
 
-        Returns:
-            str: UUID or None if failed
+        Prefer configuration (.env MY_UUID). The legacy API endpoint used previously
+        is deprecated and returns 404, so we no longer attempt a network call here.
         """
-        logger.debug("Retrieving UUID...")
+        logger.debug("Retrieving UUID (preferring config)...")
+        config_uuid = config_schema.api.my_uuid
+        if config_uuid:
+            self.my_uuid = str(config_uuid)
+            if not self._uuid_logged:
+                logger.debug(f"My UUID (from .env): {config_uuid}")
+                self._uuid_logged = True
+            return self.my_uuid
 
-        url = urljoin(config_schema.api.base_url, API_PATH_UUID)
-        response_data = self.make_api_request(
-            url=url, method="GET", use_csrf_token=False, api_description="Get UUID"
-        )
-
-        if response_data and isinstance(response_data, dict):
-            uuid_value = response_data.get(KEY_TEST_ID)
-            if uuid_value:
-                self.my_uuid = uuid_value
-                if not self._uuid_logged:
-                    logger.info(f"My UUID: {uuid_value}")
-                    self._uuid_logged = True
-                return uuid_value
-            logger.debug("UUID not found in response (likely not logged in)")
-        else:
-            logger.debug("Failed to retrieve UUID (likely not logged in)")
-
+        logger.error("UUID not found in config (.env). Please set MY_UUID in .env file.")
         return None
+
+    def _ensure_profile_id(self) -> bool:
+        """Ensure my_profile_id is set, preferring config; returns True on success."""
+        if self.my_profile_id:
+            return True
+        profile_id_cfg = config_schema.api.my_user_id
+        if profile_id_cfg:
+            self.my_profile_id = str(profile_id_cfg)
+            if not self._profile_id_logged:
+                logger.debug(f"My profile ID (from .env): {self.my_profile_id}")
+                self._profile_id_logged = True
+            return True
+        profile_id = self.get_profile_id()
+        if not profile_id:
+            logger.error("Failed to retrieve profile ID")
+            return False
+        return True
+
+    def _ensure_uuid(self) -> bool:
+        """Ensure my_uuid is set, preferring config; returns True on success."""
+        if self.my_uuid:
+            return True
+        uuid_cfg = config_schema.api.my_uuid
+        if uuid_cfg:
+            self.my_uuid = str(uuid_cfg)
+            if not self._uuid_logged:
+                logger.debug(f"My UUID (from .env): {self.my_uuid}")
+                self._uuid_logged = True
+            return True
+        uuid_value = self.get_uuid()
+        if not uuid_value:
+            logger.error("Failed to retrieve UUID")
+            return False
+        return True
+
+    def _ensure_csrf(self) -> None:
+        """Best-effort CSRF retrieval; logs warning on failure but does not fail."""
+        if self.csrf_token:
+            return
+        csrf_token = self.get_csrf_token()
+        if not csrf_token:
+            logger.warning("Failed to retrieve CSRF token")
 
     def retrieve_all_identifiers(self) -> bool:
         """
@@ -411,44 +492,22 @@ class APIManager:
             bool: True if all essential identifiers retrieved, False otherwise
         """
         logger.debug("Retrieving all user identifiers...")
-        all_ok = True
+        # Break into helpers to reduce branching complexity
+        ok_profile = self._ensure_profile_id()
+        ok_uuid = self._ensure_uuid()
+        self._ensure_csrf()
 
-        # Get Profile ID
-        if not self.my_profile_id:
-            profile_id = self.get_profile_id()
-            if not profile_id:
-                logger.error("Failed to retrieve profile ID")
-                all_ok = False
-
-        # Get UUID
-        if not self.my_uuid:
-            uuid_value = self.get_uuid()
-            if not uuid_value:
-                logger.error("Failed to retrieve UUID")
-                all_ok = False
-
-        # Get CSRF token
-        if not self.csrf_token:
-            csrf_token = self.get_csrf_token()
-            if not csrf_token:
-                logger.warning("Failed to retrieve CSRF token")
-                # Don't mark as failure since some operations might work without it
-
+        all_ok = ok_profile and ok_uuid
         if all_ok:
             logger.debug("All essential identifiers retrieved successfully")
         else:
             logger.warning("Some essential identifiers could not be retrieved")
-
         return all_ok
 
-    def verify_api_login_status(self, _session_manager=None) -> Optional[bool]:
+    def verify_api_login_status(self) -> Optional[bool]:
         """
         Verify login status via API using comprehensive verification with fallbacks.
         Based on the original working implementation from git history.
-        Includes cookie syncing if session_manager is provided.
-
-        Args:
-            session_manager: Optional SessionManager for cookie syncing
 
         Returns:
             bool: True if logged in, False if not, None if unable to determine
@@ -459,20 +518,16 @@ class APIManager:
         # Cookies should already be synced from previous operations
         logger.debug("Skipping cookie sync during API verification to prevent recursion")
 
-        # Primary check: Try to get profile ID
+        # Primary check: Try to get profile ID (requires valid auth cookies)
         profile_response = self.get_profile_id()
         if profile_response:
             logger.debug("API login verification successful (profile ID method)")
             return True
 
-        # Fallback check: Try to get UUID as alternative verification
-        logger.debug("Profile ID check failed. Trying UUID endpoint as fallback...")
-        uuid_response = self.get_uuid()
-        if uuid_response:
-            logger.debug("API login verification successful (UUID fallback method)")
-            return True
+        # Do NOT treat UUID presence (from config) as proof of authentication
+        logger.debug("Profile ID check failed. UUID from config is not sufficient for auth.")
 
-        # Both primary and fallback checks failed (expected when not logged in)
+        # Consider user not logged in if profile ID retrieval fails
         logger.debug("API login verification failed - user not logged in")
         return False
 

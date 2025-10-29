@@ -15,7 +15,6 @@ Building on Phase 5.1 success (1,281x session manager improvement), Phase 5.2 ta
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 
 # Add parent directory to path for standard_imports
@@ -45,7 +44,6 @@ from typing import Any, Callable, Optional, Union
 from cache import (
     BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
-    cache_result,  # Existing cache decorator
     clear_cache,  # Cache clearing
     get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
@@ -54,21 +52,7 @@ from cache import (
 
 # === SESSION CACHE INTEGRATION ===
 from core.session_cache import (
-    SessionCacheConfig,
-    _session_cache,
     get_session_cache_stats,
-)
-from error_handling import (
-    AncestryException,
-    APIRateLimitError,
-    ErrorContext,
-    NetworkTimeoutError,
-    RetryableError,
-    circuit_breaker,
-    error_context,
-    graceful_degradation,
-    retry_on_failure,
-    timeout_protection,
 )
 
 # === PHASE 5.2 CONFIGURATION ===
@@ -1115,6 +1099,11 @@ def system_cache_module_tests() -> bool:
     return suite.finish_suite()
 
 
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+
+run_comprehensive_tests = create_standard_test_runner(system_cache_module_tests)
+
+
 if __name__ == "__main__":
-    # Run comprehensive test suite
-    system_cache_module_tests()
+    run_comprehensive_tests()

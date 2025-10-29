@@ -345,7 +345,7 @@ def _prepare_search_criteria(search_criteria: dict[str, Any]) -> tuple[dict[str,
             scoring_criteria[key] = search_criteria[key]
 
     # Create filter criteria (subset of scoring criteria)
-    filter_keys = ["first_name", "surname", "gender", "birth_year", "birth_place"]
+    filter_keys = ["first_name", "surname", "gender", "birth_year", "birth_place", "death_place"]
     for key in filter_keys:
         if key in scoring_criteria:
             filter_criteria[key] = scoring_criteria[key]
@@ -399,8 +399,35 @@ def _extract_individual_filter_values(indi_data: dict[str, Any]) -> dict[str, An
             if indi_data.get("birth_place_disp")
             else None
         ),
+        "death_place_lower": (
+            indi_data.get("death_place_disp", "").lower()
+            if indi_data.get("death_place_disp")
+            else None
+        ),
         "death_date_obj": indi_data.get("death_date_obj"),
     }
+
+
+def _names_mandatory_satisfied(
+    filter_criteria: dict[str, Any],
+    filter_values: dict[str, Any]
+) -> Optional[bool]:
+    """Return True/False if name gating applies; None if no name provided.
+
+    - If first_name and/or surname provided, both provided names must match (contains).
+    - Returns:
+        * True  -> name requirements satisfied
+        * False -> name requirements not satisfied
+        * None  -> no name requirements (no first_name nor surname provided)
+    """
+    has_fn = bool(filter_criteria.get("first_name"))
+    has_sn = bool(filter_criteria.get("surname"))
+    if not (has_fn or has_sn):
+        return None
+
+    fn_ok = (not has_fn) or matches_criterion("first_name", filter_criteria, filter_values["givn_lower"])
+    sn_ok = (not has_sn) or matches_criterion("surname", filter_criteria, filter_values["surn_lower"])
+    return fn_ok and sn_ok
 
 
 def _evaluate_or_filter(
@@ -408,19 +435,39 @@ def _evaluate_or_filter(
     filter_values: dict[str, Any],
     year_range: int,
 ) -> bool:
-    """Evaluate OR filter for an individual."""
+    """Evaluate filter for an individual.
+
+    Policy:
+    - If user provided first_name and/or surname, those are mandatory.
+    - Additionally, if birth_place and/or death_place are provided, they are mandatory
+      (candidate must have the field present and matching via 'contains').
+    - If no names provided, use a broader OR across other criteria, but still enforce
+      the place mandatories when provided.
+    """
+    # Enforce place gates if user provided them
+    if "birth_place" in filter_criteria and not matches_criterion(
+        "birth_place", filter_criteria, filter_values.get("birth_place_lower")
+    ):
+        return False
+    if "death_place" in filter_criteria and not matches_criterion(
+        "death_place", filter_criteria, filter_values.get("death_place_lower")
+    ):
+        return False
+
+    # Names mandatory if provided
+    name_gate = _names_mandatory_satisfied(filter_criteria, filter_values)
+    if name_gate is not None:
+        return bool(name_gate)
+
+    # No names provided: broader OR filter (gender removed per policy)
     fn_match = matches_criterion("first_name", filter_criteria, filter_values["givn_lower"])
     sn_match = matches_criterion("surname", filter_criteria, filter_values["surn_lower"])
-    gender_match = bool(
-        filter_criteria.get("gender")
-        and filter_values["sex_lower"]
-        and filter_criteria["gender"] == filter_values["sex_lower"]
-    )
-    bp_match = matches_criterion("birth_place", filter_criteria, filter_values["birth_place_lower"])
+    bp_match = matches_criterion("birth_place", filter_criteria, filter_values.get("birth_place_lower"))
+    dp_match = matches_criterion("death_place", filter_criteria, filter_values.get("death_place_lower"))
     by_match = matches_year_criterion("birth_year", filter_criteria, filter_values["birth_year"], year_range)
     alive_match = filter_values["death_date_obj"] is None
 
-    return fn_match or sn_match or gender_match or bp_match or by_match or alive_match
+    return fn_match or sn_match or bp_match or dp_match or by_match or alive_match
 
 
 def _calculate_cached_score(

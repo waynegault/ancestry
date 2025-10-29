@@ -349,7 +349,7 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
 
         # Check key files for quality
         key_files = [
-            "action10.py", "action11.py", "utils.py", "main.py",
+            "action10.py", "utils.py", "main.py",
             "python_best_practices.py", "code_quality_checker.py"
         ]
 
@@ -787,6 +787,31 @@ def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
     return "Unknown"
 
 
+
+def _try_pattern_passed_failed_counts_any(stdout_lines: list[str]) -> str:
+    """Pattern 9: Fallback - sum any 'Passed:' and 'Failed:' counts anywhere in output."""
+    import re
+    passed = None
+    failed = None
+    for line in stdout_lines:
+        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        if passed is None and "Passed:" in clean_line:
+            try:
+                passed = int(clean_line.split("Passed:")[1].split()[0])
+            except (ValueError, IndexError):
+                continue
+        if failed is None and "Failed:" in clean_line:
+            try:
+                failed = int(clean_line.split("Failed:")[1].split()[0])
+            except (ValueError, IndexError):
+                continue
+    if passed is not None or failed is not None:
+        total = (passed or 0) + (failed or 0)
+        if total >= 0:
+            return f"{total} tests"
+    return "Unknown"
+
+
 def _extract_test_count_from_output(all_output_lines: list[str]) -> str:
     """Extract test count from output using multiple patterns."""
     if not all_output_lines:
@@ -802,6 +827,7 @@ def _extract_test_count_from_output(all_output_lines: list[str]) -> str:
         _try_pattern_number_followed_by_test,
         _try_pattern_all_tests_completed,
         _try_pattern_all_tests_passed_with_counts,
+        _try_pattern_passed_failed_counts_any,
     ]
 
     for pattern_func in patterns:
@@ -1133,8 +1159,7 @@ def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_
         }
 
         # Process results as they complete
-        for i, future in enumerate(concurrent.futures.as_completed(future_to_module), 1):
-            module, desc = future_to_module[future]
+        for future in concurrent.futures.as_completed(future_to_module):
             try:
                 success, test_count, metrics = future.result()
                 if success:
@@ -1143,14 +1168,9 @@ def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_
 
                 if metrics:
                     all_metrics.append(metrics)
-
-                print(f"🧪 [{i:2d}/{len(modules_with_descriptions)}] Testing: {module}")
-                if desc:
-                    print(f"   📝 {desc}")
-
             except Exception as e:
-                print(f"🧪 [{i:2d}/{len(modules_with_descriptions)}] Testing: {module}")
-                print(f"   ❌ FAILED | Error: {e}")
+                module = future_to_module[future][0]
+                print(f"   ❌ FAILED | {module} | Error: {e}")
 
     return all_metrics, passed_count, total_test_count
 
@@ -1286,6 +1306,8 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
     """
     # Auto-discover all test modules with the standardized test function
     discovered_modules = discover_test_modules()
+    # De-duplicate while preserving order
+    discovered_modules = list(dict.fromkeys(discovered_modules))
 
     # Extract descriptions from module docstrings for enhanced reporting
     module_descriptions = {}

@@ -603,6 +603,116 @@ class SessionManager:
         logger.debug(f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}")
         return self.session_ready
 
+
+    @graceful_degradation(fallback_value=False)
+    @error_context("ensure_api_ready_browserless")
+    def ensure_api_ready_browserless(self, action_name: Optional[str] = None, prefer_cookie_file: bool = True) -> bool:
+        """
+        Ensure the session is ready for API-only operations without starting a browser.
+
+        - Respects current browser_needed flag (does not force browser startup)
+        - Ensures DB is ready
+        - Ensures requests session exists
+        - Attempts to retrieve identifiers using existing cookies
+        - Optionally loads cookies from ancestry_cookies.json if needed and retries
+        """
+        start_time = time.time()
+        if action_name:
+            logger.debug(f"ensure_api_ready_browserless invoked for '{action_name}'")
+
+        # 1) Ensure database ready
+        if not self.ensure_db_ready():
+            logger.error("Database not ready for API operations")
+            return False
+
+        # 2) Fast-path: identifiers already present
+        if self.api_manager.has_essential_identifiers:
+            logger.debug("API identifiers already available (fast-path)")
+            return True
+
+        # 3) Ensure requests session exists
+        if not hasattr(self.api_manager, "_requests_session") or self.api_manager._requests_session is None:
+            logger.error("Requests session not available for API operations")
+            return False
+
+        # 4) Try to retrieve identifiers using existing requests session
+        if self.api_manager.retrieve_all_identifiers():
+            logger.debug("Identifiers retrieved via existing requests session")
+            return True
+
+        # 5) Optionally load cookies from file and retry identifier retrieval
+        if prefer_cookie_file and self.api_manager.load_cookies_from_file() and self.api_manager.retrieve_all_identifiers():
+            logger.debug("Identifiers retrieved after loading cookies from file")
+            return True
+
+        logger.error("Unable to retrieve essential identifiers for API operations (browserless)")
+        logger.debug(f"ensure_api_ready_browserless completed in {time.time() - start_time:.3f}s")
+        return False
+
+    @graceful_degradation(fallback_value=False)
+    @error_context("ensure_api_ready_with_browser_fallback")
+    def ensure_api_ready_with_browser_fallback(self, action_name: Optional[str] = None, prefer_cookie_file: bool = True) -> bool:
+        """
+        Ensure API session is ready. Try browserless first; if that fails, fall back to
+        starting the browser, syncing cookies, and retrying identifier retrieval.
+
+        This removes the need to run Action 5 beforehand: Action 10 can self-initialize
+        a valid API session by syncing cookies from a just-initialized browser session.
+
+        Note: This method now requires a browser session to be active for reliable API access.
+        Browserless mode with cookie files is attempted first but often fails with 404 errors
+        due to missing authentication state that can only be obtained through browser login.
+        """
+        success = False
+        browserless_attempted = False
+
+        # 1) Try browserless path first (cookie file)
+        if prefer_cookie_file:
+            try:
+                browserless_attempted = True
+                if self.ensure_api_ready_browserless(action_name=action_name, prefer_cookie_file=True):
+                    if self.api_manager.verify_api_login_status() is True:
+                        _ = self.api_manager.retrieve_all_identifiers()
+                        logger.debug("Browserless API session appears ready (profile ID retrieved)")
+                        success = True
+                    else:
+                        logger.debug("Browserless session has cookies but login verification failed")
+            except Exception as e:
+                logger.debug(f"Browserless initialization failed: {e}")
+                success = False
+
+        # 2) Browser fallback (required for reliable API access)
+        if not success:
+            if browserless_attempted:
+                logger.info("Browserless API session not reliable; starting browser to establish authenticated session…")
+            else:
+                logger.info("Starting browser to establish authenticated API session…")
+
+            if self.ensure_session_ready(action_name=action_name or "API Browser Fallback", skip_csrf=False):
+                try:
+                    synced = self.api_manager.sync_cookies_from_browser(self.browser_manager, session_manager=self)
+                except Exception as e:
+                    logger.error(f"Cookie sync from browser to API session failed: {e}")
+                    synced = False
+
+                if synced:
+                    # Verify the synced cookies work
+                    if self.api_manager.verify_api_login_status() is True:
+                        _ = self.api_manager.retrieve_all_identifiers()
+                        logger.debug("Identifiers retrieved after browser cookie sync")
+                        success = True
+                    else:
+                        logger.error("Browser cookie sync completed but login verification failed")
+                else:
+                    logger.error("Browser cookie sync unsuccessful")
+            else:
+                logger.error("Browser fallback failed: could not establish interactive session")
+
+        if not success:
+            logger.error("Unable to establish authenticated API session")
+        return success
+
+
     def verify_sess(self) -> bool:
         """
         Verify session status using login_status function.

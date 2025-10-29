@@ -418,12 +418,22 @@ def calculate_ethnicity_commonality(
     )
 
     try:
+        # Check if owner_profile_id is the tree owner (not in Person table)
+        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        if owner_profile_id == tree_owner_id:
+            # Tree owner is not in Person/DnaMatch tables
+            # Their ethnicity data is stored in ethnicity_regions.json
+            # For now, return empty commonality since we need to implement
+            # a different approach to compare tree owner's ethnicity
+            logger.debug(f"Owner {owner_profile_id} is tree owner (not in DNA matches) - ethnicity comparison not yet implemented")
+            return _empty_ethnicity_commonality()
+
         # Get owner's DNA match record (to get their ethnicity data)
         owner_person = session.query(Person).filter(
             Person.profile_id == owner_profile_id
         ).first()
         if not owner_person:
-            logger.warning(f"Owner person not found: {owner_profile_id}")
+            logger.error(f"Owner person not found in database: {owner_profile_id}")
             return _empty_ethnicity_commonality()
 
         owner_dna = session.query(DnaMatch).filter(

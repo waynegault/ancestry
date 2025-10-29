@@ -17,7 +17,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import gc
 import inspect
-import json
 import logging
 import os
 import shutil
@@ -39,7 +38,6 @@ from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
-from action11 import run_action11
 
 
 def _load_and_validate_config_schema() -> Optional[Any]:
@@ -144,7 +142,7 @@ config = config_manager.get_config()
 
 def menu() -> str:
     """Display the main menu and return the user's choice."""
-    print("Main Menu")
+    print("\nMain Menu")
     print("=" * 17)
     level_name = "UNKNOWN"  # Default
 
@@ -175,8 +173,7 @@ def menu() -> str:
     print("7. Search Inbox")
     print("8. Send Messages")
     print("9. Process Productive Messages")
-    print("10. GEDCOM Report (Local File)")
-    print("11. API Report (Ancestry Online)")
+    print("10. Compare: GEDCOM vs API (Side-by-side)")
     print("")
     print("analytics. View Conversation Analytics Dashboard")
     print("")
@@ -306,8 +303,8 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
     Returns:
         Required state: "db_ready", "driver_ready", or "session_ready"
     """
-    # Merged 10/11: do NOT require session upfront; wrapper will ensure session only if API fallback is needed
-    if choice in ["10", "11"]:
+    # Action 10: do NOT require session upfront; wrapper will ensure session only if API is needed
+    if choice in ["10"]:
         return "db_ready"
     if not requires_browser:
         return "db_ready"
@@ -323,8 +320,8 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     if required_state == "driver_ready":
         return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
     if required_state == "session_ready":
-        # Skip CSRF check for Actions 10 and 11 (cookies available after navigation)
-        skip_csrf = (choice in ["10", "11"])
+        # Skip CSRF check for Action 10 (cookies available after navigation)
+        skip_csrf = (choice in ["10"])
         return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
     return True
 
@@ -395,7 +392,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
     logger.info(f"Action {choice} ({action_name}) finished.")
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
-    logger.info("------------------------------------------\n")
+    logger.info("------------------------------------------")
     return duration, mem_used
 
 
@@ -445,7 +442,7 @@ def exec_actn(
 
     logger.info("------------------------------------------")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("------------------------------------------")
+    logger.info("------------------------------------------\n")
 
     action_result = None
     action_exception = None
@@ -483,7 +480,7 @@ def exec_actn(
             logger.debug(f"Action {choice} ({action_name}) failed due to exception: {type(action_exception).__name__}.")
 
         final_outcome = action_result is not False and action_exception is None
-        logger.debug(f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n\n")
+        logger.debug(f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n")
 
         duration_sec, mem_used_mb = _log_performance_metrics(start_time, process, mem_before, choice, action_name)
 
@@ -562,7 +559,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
     # Define the specific profile ID to keep from config (prefer .env TESTING_PROFILE_ID)
     profile_id_to_keep = (
         getattr(config, "testing_profile_id", None)
-        or (getattr(config, "test", None).test_profile_id if getattr(config, "test", None) else None)
+        or getattr(getattr(config, "test", None), "test_profile_id", None)
         or ""
     )
     if not profile_id_to_keep or profile_id_to_keep.strip().upper() == "MOCK_PROFILE_ID":
@@ -1113,7 +1110,7 @@ def check_login_actn(session_manager: SessionManager, *_) -> bool:
         )
         return False
 
-    print("\nChecking login status...")
+    print("Checking login status...")
 
     # Call login_status directly to check initial status
     try:
@@ -1333,129 +1330,183 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 # End of process_productive_messages_action
 
 
-# Action 11 (run_action11_wrapper)
-def run_action11_wrapper(session_manager: Any, *_: Any) -> bool:
-    """Action to run API Report. Relies on exec_actn for consistent logging and error handling."""
-    logger.debug("Starting API Report...")
-    try:
-        # Call the actual API Report function, passing the session_manager
-        result = run_action11(session_manager)
-        if result is False:
-            logger.error("API Report reported failure.")
-            return False
-        logger.debug("API Report OK.")
-        return True
-    except Exception as e:
-        logger.error(f"Error during API Report: {e}", exc_info=True)
-        return False
 
 # Merged Action 10/11 wrapper: GEDCOM-first then API fallback
-def run_merged_search_wrapper(session_manager: Any, *_: Any) -> bool:
-    """Unified search: collect criteria once, try GEDCOM (Action 10), fallback to API (Action 11) if no matches."""
+def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
+    """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
     try:
         from action10 import (
             _build_filter_criteria,  # type: ignore
-            analyze_top_match,
-            display_top_matches,
+            _create_table_row as _create_row_gedcom,  # type: ignore
+            _normalize_id,  # type: ignore
+            analyze_top_match,  # type: ignore
             filter_and_score_individuals,
             load_gedcom_data,
             validate_config,
         )
-        from action11 import search_ancestry_api_for_person
-        from gedcom_utils import _normalize_id  # type: ignore
+        from api_search_core import (
+            _create_table_row_for_candidate as _create_row_api,  # type: ignore
+            _handle_supplementary_info_phase,  # type: ignore
+            search_ancestry_api_for_person,
+        )
         from search_criteria_utils import get_unified_search_criteria
     except Exception as e:
-        logger.error(f"Merged search setup failed: {e}", exc_info=True)
+        logger.error(f"Side-by-side setup failed: {e}", exc_info=True)
         return False
 
-    # 1) Collect unified criteria (identical prompts for both actions)
+    # Collect unified criteria (identical prompts)
     criteria = get_unified_search_criteria()
     if not criteria:
         return False
 
-    # 2) Try GEDCOM first (Action 10)
-    try:
-        (
-            gedcom_path,
-            reference_person_id_raw,
-            reference_person_name,
-            date_flex,
-            scoring_weights,
-            max_display_results,
-        ) = validate_config()
+    # Validate configuration and load GEDCOM
+    (
+        gedcom_path,
+        _reference_person_id_raw,
+        _reference_person_name,
+        date_flex,
+        scoring_weights,
+        max_display_results,
+    ) = validate_config()
 
-        if gedcom_path:
+    gedcom_data = None  # Will hold loaded GEDCOM data if available
+    gedcom_matches: list[dict] = []
+    if gedcom_path:
+        try:
             gedcom_data = load_gedcom_data(gedcom_path)
             filter_criteria = _build_filter_criteria(criteria)
-            scored_matches = filter_and_score_individuals(
+            gedcom_matches = filter_and_score_individuals(
                 gedcom_data,
                 filter_criteria,
                 criteria,
                 scoring_weights,
                 date_flex,
             )
-            if scored_matches:
-                top_match = display_top_matches(scored_matches, max_display_results)
-                if top_match:
-                    reference_person_id_norm = (
-                        _normalize_id(reference_person_id_raw) if reference_person_id_raw else None
-                    )
-                    analyze_top_match(
-                        gedcom_data,
-                        top_match,
-                        reference_person_id_norm,
-                        reference_person_name or "",
-                    )
-                    try:
-                        from analytics import set_transient_extras
-                        set_transient_extras({
-                            "merged_10_11_branch": "gedcom",
-                            "gedcom_candidates": len(scored_matches),
-                        })
-                    except Exception:
-                        pass
-                    return True
-    except Exception as e:
-        logger.info(f"GEDCOM-first search yielded no match or failed; will attempt API fallback: {e}")
+        except Exception as e:
+            logger.error(f"GEDCOM search failed: {e}")
 
-    # 3) Fallback to API (Action 11)
-    try:
-        # Ensure session is ready in case this was triggered via Action 10 menu
-        session_ok = session_manager.ensure_session_ready(
-            action_name="Merged Search - API Fallback",
-            skip_csrf=True,
-        )
-        if not session_ok:
-            logger.error("Could not establish session for API fallback")
-            return False
-
-        api_candidates = search_ancestry_api_for_person(session_manager, criteria)
-        if not api_candidates:
-            print("\nNo suitable candidates found in GEDCOM or API.")
-            return False
-
-        # Reuse Action 11 display to match Action 10 output style
+    # Ensure session for API search (only if GEDCOM empty)
+    api_matches: list[dict] = []
+    if not gedcom_matches:
         try:
-            from action11 import _display_search_results  # type: ignore
-            max_disp = getattr(config, "max_candidates_to_display", 5) if config else 5
-            _display_search_results(api_candidates, max_disp)
-        except Exception:
-            # Fallback minimal display
-            print("\n=== API Top Matches ===")
-            for cand in api_candidates[:5]:
-                print(f" - {cand.get('name', 'N/A')} (score={cand.get('score', 0)})")
-        try:
-            from analytics import set_transient_extras
-            set_transient_extras({
-                "merged_10_11_branch": "api_fallback",
-                "api_candidates": len(api_candidates),
-            })
-        except Exception:
-            pass
+            # Always use browser for API search to ensure reliable authentication
+            # Browserless mode often fails with 404 errors due to missing auth state
+            session_ok = session_manager.ensure_session_ready(
+                action_name="GEDCOM/API Search - API Fallback",
+                skip_csrf=False,
+            )
+            if session_ok:
+                # Sync cookies from browser to API session
+                try:
+                    synced = session_manager.api_manager.sync_cookies_from_browser(
+                        session_manager.browser_manager, session_manager=session_manager
+                    )
+                    if not synced:
+                        logger.warning("Cookie sync from browser failed, but attempting API search anyway")
+                except Exception as sync_err:
+                    logger.warning(f"Cookie sync error: {sync_err}, but attempting API search anyway")
+
+                api_matches = search_ancestry_api_for_person(session_manager, criteria, max_results=max_display_results)
+            else:
+                logger.error("Could not establish browser session for API search")
+        except Exception as e:
+            logger.error(f"API search failed: {e}", exc_info=True)
+    else:
+        logger.debug("Skipping API search because GEDCOM returned matches.")
+
+    # Prepare display (show only highest-scoring result from each source)
+    max_to_show = 1
+    headers = ["ID", "Name", "Birth", "Birth Place", "Death", "Death Place", "Total"]
+    left_rows = [_create_row_gedcom(m) for m in gedcom_matches[:max_to_show]]
+    right_rows = [_create_row_api(m) for m in api_matches[:max_to_show]]
+
+    # If no matches at all, print a clean message and return success (no warning)
+    if not left_rows and not right_rows:
+        print("")
+        print("No matches found.")
         return True
+
+    # Helpers for printing tables
+    def _pad_row(row: list[str], widths: list[int]) -> str:
+        return " | ".join((str(c) if c is not None else "").ljust(w) for c, w in zip(row, widths))
+
+    def _compute_widths(rows: list[list[str]], headers_local: list[str]) -> list[int]:
+        widths = [len(h) for h in headers_local]
+        for r in rows:
+            for i, c in enumerate(r):
+                widths[i] = max(widths[i], len(str(c)))
+        return widths
+
+    # Compute widths per section
+    lw = _compute_widths(left_rows, headers)
+    rw = _compute_widths(right_rows, headers)
+
+    # Print tables and summary only at DEBUG level (use logger.debug instead of print)
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("")
+
+        # GEDCOM section
+        logger.debug(f"=== GEDCOM Results (Top {len(left_rows)} of {len(gedcom_matches)}) ===")
+        left_header = _pad_row(headers, lw)
+        sep_left = "-" * len(left_header)
+        logger.debug(left_header)
+        logger.debug(sep_left)
+        for r in left_rows:
+            logger.debug(_pad_row(r, lw))
+        if not left_rows:
+            logger.debug("(no matches)")
+
+        # API section
+        logger.debug("")
+        logger.debug(f"=== API Results (Top {len(right_rows)} of {len(api_matches)}) ===")
+        right_header = _pad_row(headers, rw)
+        sep_right = "-" * len(right_header)
+        logger.debug(right_header)
+        logger.debug(sep_right)
+        for r in right_rows:
+            logger.debug(_pad_row(r, rw))
+        if not right_rows:
+            logger.debug("(no matches)")
+
+        # Summary line
+        logger.debug("")
+        logger.debug(f"Summary: GEDCOM — showing top {len(left_rows)} of {len(gedcom_matches)} total | API — showing top {len(right_rows)} of {len(api_matches)} total")
+
+    # Show GEDCOM top result: family & relationship to reference person
+    try:
+        if gedcom_matches and gedcom_data is not None:
+            ref_norm = _normalize_id(_reference_person_id_raw) if _reference_person_id_raw else None  # type: ignore[name-defined]
+            analyze_top_match(  # type: ignore[name-defined]
+                gedcom_data,  # type: ignore[arg-type]
+                gedcom_matches[0],
+                ref_norm,
+                _reference_person_name or "Reference Person",  # type: ignore[name-defined]
+            )
     except Exception as e:
-        logger.error(f"API fallback failed: {e}", exc_info=True)
-        return False
+        logger.error(f"GEDCOM family/relationship display failed: {e}")
+
+    # Show API top result: family & relationship to tree owner
+    try:
+        if api_matches and not gedcom_matches:
+            _handle_supplementary_info_phase(  # type: ignore[name-defined]
+                api_matches[0],
+                session_manager,
+            )
+    except Exception as e:
+        logger.error(f"API family/relationship display failed: {e}")
+
+    # Analytics context
+    try:
+        from analytics import set_transient_extras
+        set_transient_extras({
+            "comparison_mode": True,
+            "gedcom_candidates": len(gedcom_matches),
+            "api_candidates": len(api_matches),
+        })
+    except Exception:
+        pass
+
+    return bool(gedcom_matches or api_matches)
 
 
 
@@ -1759,9 +1810,9 @@ def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> b
         ensure_caching_initialized()
         exec_actn(process_productive_messages_action, session_manager, choice)
         result = True
-    elif choice == "10" or choice == "11":
+    elif choice == "10":
         ensure_caching_initialized()
-        exec_actn(run_merged_search_wrapper, session_manager, choice)
+        exec_actn(run_gedcom_then_api_fallback, session_manager, choice)
         result = True
 
     return result
@@ -1812,7 +1863,7 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
         return _handle_database_actions(choice, session_manager)
 
     # --- Browser-required actions ---
-    if choice in ["1", "5", "7", "8", "9", "10", "11"] or choice.startswith("6"):
+    if choice in ["1", "5", "7", "8", "9", "10"] or choice.startswith("6"):
         result = _handle_browser_actions(choice, session_manager, config)
         if result:
             return True
@@ -1859,7 +1910,7 @@ def main() -> None:
         # Register this session as the global session for all actions and tests
         from session_utils import set_global_session
         set_global_session(session_manager)
-        logger.info("✅ SessionManager registered as global session")
+        logger.debug("✅ SessionManager registered as global session")
 
         # Track if session has been pre-authenticated
         session_pre_authenticated = False
@@ -1878,7 +1929,7 @@ def main() -> None:
             # Check if choice is one of the actions that needs authentication
             # Note: choice.startswith("6") handles "6" or "6 800" (with start page)
             needs_auth = (
-                choice in ["1", "7", "8", "9", "11"]
+                choice in ["1", "7", "8", "9"]
                 or choice.startswith("6")
             )
             if not session_pre_authenticated and needs_auth:
@@ -1950,7 +2001,6 @@ def _test_module_initialization():
             process_productive_messages is not None
         ), "process_productive_messages should be imported"
         assert run_action10 is not None, "run_action10 should be imported"
-        assert run_action11 is not None, "run_action11 should be imported"
 
 
 def _test_configuration_availability():
@@ -2015,7 +2065,6 @@ def _test_menu_system_components():
             "process_productive_messages" in menu_globals
         ), "menu should have access to process_productive_messages"
         assert "run_action10" in menu_globals, "menu should have access to run_action10"
-        assert "run_action11" in menu_globals, "menu should have access to run_action11"
 
 
 def _test_action_function_availability():
@@ -2039,8 +2088,6 @@ def _test_action_function_availability():
     # Test action10
     assert callable(run_action10), "run_action10 should be callable"
 
-    # Test action11
-    assert callable(run_action11), "run_action11 should be callable"
 
 
 def _test_database_operations():
@@ -2096,7 +2143,7 @@ def _test_edge_case_handling():
             "action9_process_productive" in sys.modules
         ), "action9_process_productive should be imported"
         assert "action10" in sys.modules, "action10 should be imported"
-        assert "action11" in sys.modules, "action11 should be imported"
+        # api_search_core is imported lazily inside run_gedcom_then_api_fallback, not at module level
 
 
 def _test_import_error_handling():
@@ -2109,7 +2156,7 @@ def _test_import_error_handling():
         "send_messages_to_matches",
         "process_productive_messages",
         "run_action10",
-        "run_action11",
+        # search_ancestry_api_for_person is imported lazily inside run_gedcom_then_api_fallback
         "config",
         "logger",
         "SessionManager",
@@ -2191,7 +2238,6 @@ def _test_action_integration():
             ("send_messages_to_matches", send_messages_to_matches),
             ("process_productive_messages", process_productive_messages),
             ("run_action10", run_action10),
-            ("run_action11", run_action11),
         ]
 
         for action_name, action_func in actions_to_test:

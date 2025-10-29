@@ -339,8 +339,14 @@ class SessionValidator:
             "process_productive": "Action 9 - API login verification is sufficient",
             "main": "Action 10 - Local file operation",
             "gedcom": "Action 10 - Local file operation",
-            "run_action11": "Action 11 - API-based operation",
-            "api_report": "Action 11 - API-based operation",
+            # Action 10 side-by-side compare (GEDCOM vs API): do not require 'trees' cookie
+            "side-by-side": "Action 10 compare - cookie check skipped (no 'trees' required)",
+            "side_by_side": "Action 10 compare - cookie check skipped (no 'trees' required)",
+            "run_side_by_side_search_wrapper": "Action 10 compare - cookie check skipped (no 'trees' required)",
+            "run_merged_search_wrapper": "Action 10 compare - cookie check skipped (no 'trees' required)",
+            "run_gedcom_then_api_fallback": "Action 10 compare - cookie check skipped (no 'trees' required)",
+            "run_action11": "API-based operation",
+            "api_report": "API-based operation",
             "refresh": "Browser refresh verification - deferring to later checks",
         }
 
@@ -727,15 +733,15 @@ def _test_should_skip_cookie_check_case_insensitive() -> bool:
     validator = SessionValidator()
 
     # Test uppercase
-    should_skip, reason = validator._should_skip_cookie_check("GATHER_DNA_MATCHES")
+    should_skip, _ = validator._should_skip_cookie_check("GATHER_DNA_MATCHES")
     assert should_skip is True, "Should skip cookie check for uppercase action name"
 
     # Test mixed case
-    should_skip, reason = validator._should_skip_cookie_check("Gather_dna_Matches")
+    should_skip, _ = validator._should_skip_cookie_check("Gather_dna_Matches")
     assert should_skip is True, "Should skip cookie check for mixed case action name"
 
     # Test with setup suffix (as seen in logs)
-    should_skip, reason = validator._should_skip_cookie_check("gather_dna_matches - Setup")
+    should_skip, _ = validator._should_skip_cookie_check("gather_dna_matches - Setup")
     assert should_skip is True, "Should skip cookie check for action name with suffix"
 
     return True

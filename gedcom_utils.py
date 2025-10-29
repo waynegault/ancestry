@@ -240,9 +240,7 @@ def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Opt
         return None
 
     try:
-        formatted_name = name_rec.format()
-        logger.debug(f"Name for {indi_id_log} from indi.name.format(): '{formatted_name}'")
-        return formatted_name
+        return name_rec.format()
     except Exception as fmt_err:
         logger.warning(f"Error calling indi.name.format() for {indi_id_log}: {fmt_err}")
         return None
@@ -258,9 +256,7 @@ def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> 
         return None
 
     try:
-        formatted_name = name_tag.format()  # type: ignore
-        logger.debug(f"Name for {indi_id_log} from indi.sub_tag(TAG_NAME).format(): '{formatted_name}'")
-        return formatted_name
+        return name_tag.format()  # type: ignore
     except Exception as fmt_err:
         logger.warning(f"Error calling indi.sub_tag(TAG_NAME).format() for {indi_id_log}: {fmt_err}")
         return None
@@ -268,6 +264,7 @@ def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> 
 
 def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
     """Try to manually combine GIVN and SURN tags."""
+    _ = indi_id_log  # Unused but kept for API consistency
     if not indi or not hasattr(indi, "sub_tag"):
         return None
 
@@ -288,12 +285,12 @@ def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -
     else:
         return None
 
-    logger.debug(f"Name for {indi_id_log} from manual GIVN/SURN combination: '{formatted_name}'")
     return formatted_name
 
 
 def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
     """Try to get name using indi.sub_tag_value(TAG_NAME) as last resort."""
+    _ = indi_id_log  # Unused but kept for API consistency
     if not indi or not hasattr(indi, "sub_tag_value"):
         return None
 
@@ -301,7 +298,6 @@ def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> O
     if not isinstance(name_val, str) or not name_val.strip() or name_val == "/":
         return None
 
-    logger.debug(f"Name for {indi_id_log} from indi.sub_tag_value(TAG_NAME): '{name_val}'")
     return name_val
 
 
@@ -427,7 +423,6 @@ def _clean_date_string(date_str: str) -> Optional[str]:
         logger.debug("Date string empty after cleaning")
         return None
 
-    logger.debug(f"Cleaned date string for parsing: '{cleaned_str}'")
     return cleaned_str
 
 
@@ -441,7 +436,7 @@ def _try_dateparser(cleaned_str: str) -> Optional[datetime]:
         parsed_dt = dateparser.parse(cleaned_str, settings=settings)  # type: ignore
 
         if parsed_dt:
-            logger.debug(f"dateparser succeeded for '{cleaned_str}'")
+            pass
         else:
             logger.debug(f"dateparser returned None for '{cleaned_str}'")
 
@@ -520,7 +515,6 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
     V13 - Corrected range splitting regex.
     """
     original_date_str = date_str or ""
-    logger.debug(f"Attempting to parse date: '{original_date_str}'")
 
     # Validate and normalize
     date_str = _validate_and_normalize_date_string(date_str)
@@ -1625,7 +1619,6 @@ def _prepare_search_data(search_criteria: dict) -> dict[str, Any]:
         "b_date": search_criteria.get("birth_date_obj"),
         "d_year": search_criteria.get("death_year"),
         "d_date": search_criteria.get("death_date_obj"),
-        "gender": search_criteria.get("gender"),
     }
 
 
@@ -1641,7 +1634,6 @@ def _prepare_candidate_data(candidate_processed_data: dict[str, Any]) -> dict[st
         "b_date": candidate_processed_data.get("birth_date_obj"),
         "d_year": candidate_processed_data.get("death_year"),
         "d_date": candidate_processed_data.get("death_date_obj"),
-        "gender": candidate_processed_data.get("gender_norm"),
     }
 
 
@@ -1656,7 +1648,6 @@ def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dic
             field_scores["givn"] = int(points_givn)
             match_reasons.append(f"Contains First Name ({points_givn}pts)")
             first_name_matched = True
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched contains_first_name. Set field_scores['givn'] = {points_givn}")
 
     if t_data["sname"] and c_data["sname"] and t_data["sname"] in c_data["sname"]:
         points_surn = weights.get("contains_surname", 0)
@@ -1664,14 +1655,12 @@ def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dic
             field_scores["surn"] = int(points_surn)
             match_reasons.append(f"Contains Surname ({points_surn}pts)")
             surname_matched = True
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched contains_surname. Set field_scores['surn'] = {points_surn}")
 
     if t_data["fname"] and t_data["sname"] and first_name_matched and surname_matched:
         bonus_points = weights.get("bonus_both_names_contain", 0)
         if bonus_points != 0:
             field_scores["bonus"] = int(bonus_points)
             match_reasons.append(f"Bonus Both Names ({bonus_points}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Applied bonus_both_names_contain. Set field_scores['bonus'] = {bonus_points}")
 
 
 def _check_year_match(t_year: Any, c_year: Any, year_score_range: int) -> tuple[bool, bool]:
@@ -1723,7 +1712,6 @@ def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
         if points_bdate != 0:
             field_scores["bdate"] = int(points_bdate)
             match_reasons.append(f"Exact Birth Date ({points_bdate}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched exact_birth_date. Set field_scores['bdate'] = {points_bdate}")
             return
 
     if date_flags["birth_year_match"]:
@@ -1731,7 +1719,6 @@ def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
         if points_byear != 0:
             field_scores["byear"] = int(points_byear)
             match_reasons.append(f"Exact Birth Year ({c_data['b_year']}) ({points_byear}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched year_birth. Set field_scores['byear'] = {points_byear}")
             return
 
     if date_flags["birth_year_approx_match"]:
@@ -1739,7 +1726,6 @@ def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
         if points_byear_approx != 0:
             field_scores["byear"] = int(points_byear_approx)
             match_reasons.append(f"Approx Birth Year ({c_data['b_year']} vs {t_data['b_year']}) ({points_byear_approx}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched birth_year_close. Set field_scores['byear'] = {points_byear_approx}")
 
 
 def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
@@ -1749,7 +1735,6 @@ def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
         if points_ddate != 0:
             field_scores["ddate"] = int(points_ddate)
             match_reasons.append(f"Exact Death Date ({points_ddate}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched exact_death_date. Set field_scores['ddate'] = {points_ddate}")
             return
 
     if date_flags["death_year_match"]:
@@ -1757,7 +1742,6 @@ def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
         if points_dyear != 0:
             field_scores["dyear"] = int(points_dyear)
             match_reasons.append(f"Exact Death Year ({c_data['d_year']}) ({points_dyear}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched year_death. Set field_scores['dyear'] = {points_dyear}")
             return
 
     if date_flags["death_year_approx_match"]:
@@ -1765,7 +1749,6 @@ def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
         if points_dyear_approx != 0:
             field_scores["dyear"] = int(points_dyear_approx)
             match_reasons.append(f"Approx Death Year ({c_data['d_year']} vs {t_data['d_year']}) ({points_dyear_approx}pts)")
-            logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched approx_year_death. Set field_scores['dyear'] = {points_dyear_approx}")
             return
 
     # Do not award points for both death dates absent when the user did not specify death criteria.
@@ -1785,7 +1768,6 @@ def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_score
     if points_pob != 0:
         field_scores["bplace"] = int(points_pob)
         match_reasons.append(f"Birth Place Contains ({points_pob}pts)")
-        logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched birth_place_match. Set field_scores['bplace'] = {points_pob}")
 
 
 def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
@@ -1797,28 +1779,15 @@ def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_score
     if points_pod != 0:
         field_scores["dplace"] = int(points_pod)
         match_reasons.append(f"Death Place Contains ({points_pod}pts)")
-        logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched Death Place Contains. Set field_scores['dplace'] = {points_pod}")
 
 
-def _score_gender(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
-    """Score gender match."""
-    if not (t_data["gender"] and c_data["gender"] and t_data["gender"] == c_data["gender"]):
-        return
-    points_gender = weights.get("gender_match", 0)
-    if points_gender != 0:
-        field_scores["gender"] = int(points_gender)
-        match_reasons.append(f"Gender Match ({t_data['gender'].upper()}) ({points_gender}pts)")
-        logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Matched gender_match. Set field_scores['gender'] = {points_gender}")
-
-
-def _score_places_and_gender(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
-    """Score birth place, death place, and gender matches."""
+def _score_places(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Score birth place and death place matches (gender removed from scoring)."""
     _score_birth_place(t_data, c_data, weights, field_scores, match_reasons)
     _score_death_place(t_data, c_data, weights, field_scores, match_reasons)
-    _score_gender(t_data, c_data, weights, field_scores, match_reasons)
 
 
-def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list, c_id_debug: str) -> None:
+def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list) -> None:
     """Score birth bonus (if both birth year and birth place matched)."""
     if not (field_scores["byear"] > 0 and field_scores["bplace"] > 0):
         return
@@ -1826,10 +1795,9 @@ def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list
     if birth_bonus_points != 0:
         field_scores["bbonus"] = int(birth_bonus_points)
         match_reasons.append(f"Bonus Birth Info ({birth_bonus_points}pts)")
-        logger.debug(f"SCORE DEBUG ({c_id_debug}): Applied bonus_birth_date_and_place. Set field_scores['bbonus'] = {birth_bonus_points}")
 
 
-def _score_death_bonus(date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list, c_id_debug: str) -> None:
+def _score_death_bonus(weights: Mapping, field_scores: dict, match_reasons: list) -> None:
     """Score death bonus (only when BOTH death date and place matched)."""
     death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
     if not death_info_matched:
@@ -1838,13 +1806,33 @@ def _score_death_bonus(date_flags: dict, weights: Mapping, field_scores: dict, m
     if death_bonus_points != 0:
         field_scores["dbonus"] = int(death_bonus_points)
         match_reasons.append(f"Bonus Death Info ({death_bonus_points}pts)")
-        logger.debug(f"SCORE DEBUG ({c_id_debug}): Applied death bonus (matched). Set field_scores['dbonus'] = {death_bonus_points}")
 
 
-def _score_bonuses(date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list, c_id_debug: str) -> None:
+def _score_bonuses(weights: Mapping, field_scores: dict, match_reasons: list) -> None:
     """Score birth and death bonuses."""
-    _score_birth_bonus(weights, field_scores, match_reasons, c_id_debug)
-    _score_death_bonus(date_flags, weights, field_scores, match_reasons, c_id_debug)
+    _score_birth_bonus(weights, field_scores, match_reasons)
+    _score_death_bonus(weights, field_scores, match_reasons)
+
+
+
+def _apply_alive_conflict_penalty(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+    """Apply a small negative score when query implies 'alive' but candidate has death info.
+
+    Alive-mode heuristic: if the user provided no death year, no death date, and no death place,
+    we assume they are searching for a living person. In that case, a candidate that contains
+    death information (date/year/place) receives a configurable penalty.
+    """
+    try:
+        alive_query = not (t_data.get("d_date") or t_data.get("d_year") or t_data.get("pod"))
+        candidate_has_death = bool(c_data.get("d_date") or c_data.get("d_year") or c_data.get("dplace"))
+        if alive_query and candidate_has_death:
+            penalty = int(weights.get("alive_conflict_penalty", 0))
+            if penalty != 0:
+                field_scores["alive_penalty"] = penalty
+                match_reasons.append(f"Alive Assumed; Candidate Has Death Info ({penalty}pts)")
+    except Exception:
+        # Non-fatal; scoring should not break due to penalty logic
+        pass
 
 
 # Scoring Function (V18 - Corrected Syntax)
@@ -1863,8 +1851,10 @@ def calculate_match_score(
     """
     match_reasons: list[str] = []
     field_scores = {
-        "givn": 0, "surn": 0, "gender": 0, "byear": 0, "bdate": 0, "bplace": 0,
+        "givn": 0, "surn": 0, "byear": 0, "bdate": 0, "bplace": 0,
         "bbonus": 0, "dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0, "bonus": 0,
+        # Negative adjustments (policy-based)
+        "alive_penalty": 0,
     }
     weights = scoring_weights if scoring_weights is not None else config.common_scoring_weights
     date_flex = date_flexibility if date_flexibility is not None else {"year_match_range": config.date_flexibility}
@@ -1883,20 +1873,22 @@ def calculate_match_score(
     # Date Scoring
     _score_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
 
-    # Place and Gender Scoring
-    _score_places_and_gender(t_data, c_data, weights, field_scores, match_reasons)
+    # Place Scoring
+    _score_places(t_data, c_data, weights, field_scores, match_reasons)
 
     # Bonus Scoring
-    _score_bonuses(date_flags, weights, field_scores, match_reasons, c_data["id_debug"])
+    _score_bonuses(weights, field_scores, match_reasons)
+
+
+    # Policy-based negative adjustments
+    _apply_alive_conflict_penalty(t_data, c_data, weights, field_scores, match_reasons)
 
     # Calculate Final Total Score
     final_total_score = sum(field_scores.values())
     final_total_score = max(0.0, round(final_total_score))
     unique_reasons = sorted(set(match_reasons))
 
-    # Final Debug Logs
-    logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Final Field Scores Dict before return: {field_scores}")
-    logger.debug(f"SCORE DEBUG ({c_data['id_debug']}): Calculated Total Score from dict: {final_total_score}")
+    # Final score calculated
 
     # Return a COPY of the dictionary
     return final_total_score, field_scores.copy(), unique_reasons
@@ -2598,45 +2590,10 @@ def gedcom_module_tests() -> bool:
             "Verify _normalize_id() handles @I123@→normalized, I123→normalized, @F456@→family format, empty→None, None→None input processing.",
         )
 
-        suite.run_test(
-            "Individual record detection",
-            test_individual_detection,
-            "Test _is_individual correctly identifies individual records",
-            "Individual detection enables proper record type classification",
-            "_is_individual accurately identifies individual vs family/other records",
-        )
-
-        suite.run_test(
-            "Full name extraction functionality",
-            test_name_extraction,
-            "Test _get_full_name extracts names from GEDCOM individual records",
-            "Name extraction provides standardized person identification",
-            "_get_full_name correctly extracts and formats names from GEDCOM data",
-        )
-
-        suite.run_test(
-            "Date parsing and formatting",
-            test_date_parsing,
-            "Test _parse_date and _clean_display_date handle various date formats",
-            "Date parsing ensures consistent temporal data handling",
-            "Date functions correctly parse and format GEDCOM date specifications",
-        )
-
-        suite.run_test(
-            "Event information extraction",
-            test_event_extraction,
-            "Test _get_event_info extracts birth, death, and other life events",
-            "Event extraction provides comprehensive life event data",
-            "_get_event_info correctly extracts dates, places, and event details",
-        )
-
-        suite.run_test(
-            "Life dates formatting functionality",
-            test_life_dates_formatting,
-            "Test format_life_dates creates properly formatted date ranges",
-            "Life dates formatting provides consistent biographical display",
-            "format_life_dates produces readable birth-death date ranges",
-        )
+        # Note: Removed redundant smoke tests (test_individual_detection, test_name_extraction,
+        # test_date_parsing, test_event_extraction, test_life_dates_formatting) as they only
+        # checked function existence/types. Function availability is already verified by
+        # test_function_availability() above, and actual functionality is tested by other tests.
 
         suite.run_test(
             "Relationship path explanation",
@@ -2794,55 +2751,6 @@ def test_id_normalization():
             results.append(True)  # Some formats may be invalid, which is acceptable
 
     print(f"📊 Results: {sum(results)}/{len(results)} ID normalization tests passed")
-
-
-def test_individual_detection():
-    """Test individual record detection."""
-    if "_is_individual" in globals():
-        # Test with None
-        result = _is_individual(None)
-        assert isinstance(result, bool)
-
-        # Test with empty dict
-        result = _is_individual({})
-        assert isinstance(result, bool)
-
-
-def test_name_extraction():
-    """Test name extraction from GEDCOM records."""
-    if "_get_full_name" in globals():
-        # Test with None
-        result = _get_full_name(None)
-        assert result == "Unknown" or isinstance(result, str)
-
-
-def test_date_parsing():
-    """Test date parsing and formatting."""
-    if "_parse_date" in globals():
-        # Test with various date formats
-        test_dates = ["1 JAN 1900", "ABT 1850", "BEF 1800", ""]
-        for date_str in test_dates:
-            try:
-                result = _parse_date(date_str)
-                assert result is None or isinstance(result, str)
-            except Exception:
-                pass  # Some formats may be invalid
-
-
-def test_event_extraction():
-    """Test event information extraction."""
-    if "_get_event_info" in globals():
-        # Test with None
-        result = _get_event_info(None, "BIRT")
-        assert isinstance(result, tuple) and len(result) == 3
-
-
-def test_life_dates_formatting():
-    """Test life dates formatting."""
-    if "format_life_dates" in globals():
-        # Test with None values
-        result = format_life_dates(None)
-        assert isinstance(result, str)
 
 
 def test_relationship_explanation():

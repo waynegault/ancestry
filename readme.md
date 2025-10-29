@@ -9,8 +9,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 7**: Inbox message processing and analysis
 - **Action 8**: Intelligent messaging with AI-powered responses
 - **Action 9**: Productive conversation management
-- **Action 10**: GEDCOM file analysis and scoring
-- **Action 11**: API-based genealogical research and relationship discovery
+- **Action 10**: GEDCOM-first search with API fallback (unified presentation)
+- **API search core**: api_search_core.py (helpers used by Action 10 and 9)
 
 ## Quick Start
 
@@ -76,11 +76,14 @@ python main.py
 
 # Run specific action directly
 python action6_gather.py
-python action11.py
 
 # Run all tests
 python run_all_tests.py
 ```
+
+Note on API fallback (Action 10):
+- The API route runs browserless and relies on an authenticated cookie set.
+- If you see "API login not verified" or 401 errors, refresh cookies once by logging in via the main menu (Action 0/Login) or any browser-required action; this writes ancestry_cookies.json, which the API fallback uses without launching a browser.
 
 ## Architecture
 
@@ -109,7 +112,7 @@ ai_interface.py         # Multi-provider AI abstraction
 - All actions/scripts must obtain the session via session_utils.get_global_session() and authenticate with session_utils.get_authenticated_session()
 - No module-level or ad-hoc SessionManager() creation anywhere else in the codebase
 - Recent refactor highlights:
-  - action11.py: removed module-level SessionManager creation; uses only the global session
+  - Action 11 removed; API search core uses only the global SessionManager via the global session pattern
   - action8_messaging.py: template loading and helpers now rely on the global session
   - scripts/test_editrelationships_shape.py: uses the global session (requires main.py to register it first)
 
@@ -145,7 +148,7 @@ Create an AI-powered genealogical research assistant that conducts intelligent, 
 
 Core capabilities to deliver incrementally:
 - Intelligent initial outreach: in-tree messages include relationship path; out-of-tree messages include tree statistics and DNA commonality
-- Conversational dialogue engine: detect people mentioned in messages; look them up via Action 10 (GEDCOM) and Action 11 (API); generate contextual replies
+- Conversational dialogue engine: detect people mentioned in messages; look them up via Action 10 (GEDCOM) and the API search core; generate contextual replies
 - Adaptive sequencing: follow-up timing adapts to engagement and status changes (out_tree -> in_tree)
 - Do-not-contact management: detect and honor desist immediately; cancel scheduled messages
 - Research assistant features: source citations, research suggestions, relationship diagrams, record sharing
@@ -153,7 +156,7 @@ Core capabilities to deliver incrementally:
 
 Phase status snapshot:
 - Phase 1 (Enhanced content): Complete foundations; relationship path and stats support available
-- Phase 2 (Person lookup integration): Partially implemented in Action 11; needs Action 9 dialogue glue
+- Phase 2 (Person lookup integration): Implemented in the API search core; needs Action 9 dialogue glue
 - Phase 3 (Dialogue engine): Implemented core engagement assessment and conversation state fields
 - Phase 4 (Adaptive messaging): Partially implemented; follow-up adaptation queued
 - Phase 5 (Research assistant): Enrichment policy and formatting in place (Action 9)
@@ -163,12 +166,12 @@ Phase status snapshot:
 ## Developer Instructions (Key Topics)
 
 - Architecture and global session pattern: see sections above
-- Actions 6–11: see per-action sections below
-- Actions 10 and 11 are merged at runtime: we collect criteria once, try GEDCOM (Action 10) first, and only if no suitable candidates are found do we call the API (Action 11). Both use identical prompts and nearly identical display output.
+- Actions 6–10: see per-action sections below
+- Action 10 performs GEDCOM-first; if GEDCOM returns no matches, it falls back to the API via api_search_core, with identical input prompts and output formatting across sources.
 
 - Testing and quality: run_all_tests.py is authoritative; tests must fail on genuine failures
 - Pylance/linters: fix errors, do not suppress; reduce function complexity (target <10) and keep functions short
-- Technical specs: see Appendix B (Action 11 endpoints, display rules, logging, AI provider config)
+- Technical specs: see Appendix B (API endpoints, display rules, logging, AI provider config)
 
 ## Local LLM Integration (Phase 7 – Real Use)
 
@@ -246,7 +249,17 @@ python action9_process_productive.py
 ### Action 10: GEDCOM Analysis
 Analyze GEDCOM files and score potential matches.
 
-#### Action 11 API sources and parsing notes
+#### Current display and filtering policy
+- Display: Show only the highest-scoring result. We search GEDCOM first; only if GEDCOM returns no matches do we call the API. Immediately after the top row is printed for the chosen source, the system displays that person's family members and the relationship path to the tree owner. The detailed results tables and the summary line are shown only when logging is set to DEBUG.
+- Name containment (mandatory when provided):
+  - If first_name is provided, candidate must contain it (case-insensitive contains)
+  - If surname is provided, candidate must contain it (case-insensitive contains)
+  - If both are provided, both must be contained
+  - If neither name is provided, a broader OR filter is used on birth_year, birth_place, and alive-state
+- Gender: Removed as a search and scoring criterion and removed from result displays; it is no longer collected as input and does not influence filtering or scoring.
+- Alive-mode policy: When no death criteria are provided, candidates with death information receive a small penalty; missing death info is neutral.
+
+#### API search sources and parsing notes
 
 - Primary family endpoint: /family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships
   - Response shape: { cssBundleUrl, jsBundleUrl, data }, where data is a JSON STRING that must be json.loads(...) into { userId, treeId, personId, person, urls, res }
@@ -254,18 +267,11 @@ Analyze GEDCOM files and score potential matches.
   - res contains UI/localization strings, not family data
 - Relationship ladder endpoint: /family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
 - Design decisions:
-  - Siblings are not displayed in Action 11 (per requirements); parents, spouses, and children are displayed
+  - Siblings are not displayed in the API path (per requirements); parents, spouses, and children are displayed
   - Session authentication occurs once via session_utils.get_authenticated_session; no redundant re-login or cookie syncs
 
 ```bash
 python action10.py
-```
-
-### Action 11: API Research
-API-based genealogical research with relationship discovery.
-
-```bash
-python action11.py
 ```
 
 ## Testing
@@ -282,7 +288,6 @@ python run_all_tests.py --analyze-logs
 
 # Run specific module tests
 python -m action6_gather
-python -m action11
 ```
 
 ## Pylance Configuration
@@ -413,6 +418,123 @@ For issues or questions:
 
 ### Appendix A: Chronology of Changes
 
+2025-10-28
+- Unified presenter: fixed header spacing ("=== Name (years) ==="), ensured empty sections print "None recorded", and normalized relationship header text
+- GEDCOM/API: birth/death years now shown when available; GEDCOM path falls back to parsing years from display name if missing
+- Owner name: now resolved from REFERENCE_PERSON_NAME, then USER_NAME, then stable fallback; eliminates "Unknown" in relationship header
+- API utils: lowered family-relationship fetch log to DEBUG to avoid INFO-level noise
+- API search: fixed urlencode type issue by removing custom quote_via; cleaned unused import
+- Tests: Fast suite passed locally after changes; no new failing tests introduced
+- GEDCOM header years: now also sourced from GedcomData.processed_data_cache when candidate.raw_data lacks years; ensures headers like "=== Name (YYYY-YYYY) ===" render when data exists
+- API header years: Added robust fallback in action11 to derive birth/death years from parsed_suggestion and normalized date strings; fixes missing years like "=== Peter Fraser ===" without (YYYY-YYYY)
+
+- Action 10: API fallback now self-initializes session by auto-attempting browser-based cookie sync when browserless cookies are missing/invalid; no need to run Action 5 first.
+2025-10-29
+- Fully removed action11.py. All API search, display, and post-selection logic is now provided by api_search_core.py and existing shared modules (api_search_utils, relationship_utils, genealogy_presenter, universal_scoring).
+- Updated main.py and action9_process_productive.py to import from api_search_core.
+- Session: ensure_api_ready_with_browser_fallback refactored to reduce returns and collapse nested conditionals; now a single return path with a success flag (fixes PLR0911 and SIM102).
+- Linter cleanup:
+  - Removed useless import aliases (PLC0414) by replacing the shim with a concrete api_search_core implementation.
+  - Collapsed nested ifs in core/session_manager.py (SIM102).
+  - Removed unused function argument warning in API presenter by prefixing with underscore (ARG001) and using parameter naming convention.
+- Documentation: Updated Overview, Developer Instructions, Actions, Testing, and Appendix B to reflect api_search_core ownership of API endpoints and the retirement of action11.py.
+
+- Hardened Action 10 API fallback: now requires real API login verification (profile ID retrieval) rather than accepting .env IDs; if browserless fails, it auto-launches the browser, attempts re-login, syncs cookies, re-verifies, and only then proceeds. This restores prior Action 11 behavior without requiring Action 5 first.
+
+- Cleanup: Removed final references to Action 11 across code; consolidated API search into api_search_core and updated main.py import expectations
+- Linter: Resolved all E702 (multiple statements on one line) in api_search_core; repository E702 count now 0
+- Pylance: Fixed import path in api_search_core (from config import config_schema); removed broken **all** block and restored proper exports
+- Complexity: Reduced action10.analyze_top_match complexity from 15 to under 11 by extracting helpers (_derive_display_fields,_build_family_data_dict,_compute_unified_path_if_possible)
+- Tests: Added in-module tests for api_search_core and genealogy_presenter following the standard pattern; run_all_tests.py --fast now 100% pass (610 tests)
+
+- API Relationship Path: Replaced getladder HTML parsing with relationladderwithlabels JSON API endpoint for clean, reliable relationship path data
+- API Family Data: Replaced Edit Relationships API with New Family View API which includes siblings and complete family structure
+- Complexity Reduction: Refactored get_api_family_details (29→<11),_parse_person_from_newfamilyview (15→<11),_extract_birth_event (<11), _extract_death_event (<11) by extracting helper functions
+- Linter: Fixed global-statement warnings by using unittest.mock.patch instead of modifying globals
+- Logging: Fixed inconsistent logging in api_search_core.py and search_criteria_utils.py by using centralized logger from logging_config
+- Test Infrastructure: Added missing **main** blocks to api_search_core.py, search_criteria_utils.py, and updated core/session_cache.py and core/system_cache.py to use standard test runner pattern
+- Import Order: Fixed E402 errors in action10.py by moving standard library imports before setup_module call
+- Test Quality: Removed 5 redundant smoke tests from gedcom_utils.py (test_individual_detection, test_name_extraction, test_date_parsing, test_event_extraction, test_life_dates_formatting) as they only checked function existence/types; function availability already verified by test_function_availability()
+- Final Results: All 74 modules pass with 100.0/100 quality scores, 643 tests passing at 100% success rate
+
+2025-10-29
+- API Fallback Fix: Updated api_search_core._resolve_base_and_tree to fall back to config.api.tree_id when session_manager.my_tree_id is None (browserless mode); fixes 404 errors in Action 10 API search
+- Main.py Tests: Updated _test_edge_case_handling and _test_import_error_handling to remove assertions for api_search_core module (imported lazily inside run_gedcom_then_api_fallback)
+- Type Hints: Added type annotations to fake_list_api test stub in api_search_core (resolved quality issue)
+- Complexity Reductions:
+  - api_search_core._handle_supplementary_info_phase: 14→<11 by extracting _extract_year_from_candidate and _get_relationship_paths helpers
+  - action10._derive_display_fields: 13→<11 by extracting_extract_years_from_name_if_missing and_supplement_years_from_gedcom helpers
+  - genealogy_presenter.display_family_members: 11→<11 by extracting_deduplicate_members and_filter_valid_members helpers
+- Quality: All 72 modules now pass with 100.0/100 quality scores (610 tests, 100% success rate)
+- Action 10 API Fallback: Changed from browserless-first to browser-required approach; browserless mode with cookie files consistently fails with 404 errors due to missing authentication state that can only be obtained through active browser login (matches original Action 11 behavior)
+- TreesUI List API URL Fix: Corrected API_PATH_TREESUI_LIST from "trees/{tree_id}/persons" to "api/treesui-list/trees/{tree_id}/persons"; updated_build_treesui_url to use correct parameters: name (combined first+last), limit=100, fields=EVENTS,GENDERS,NAMES, isGetFullPersonObject=true (matches expected Ancestry API format)
+- Search Criteria Mapping: Fixed _build_treesui_url to accept both first_name/surname (from get_unified_search_criteria) and first_name_raw/surname_raw (legacy) for compatibility
+- TreesUI Response Parsing: Added _parse_treesui_list_response() function to api_utils.py to convert raw API response (Names, Events, gid fields) into standardized format (FullName, GivenName, Surname, PersonId, etc.) - this parsing function was lost when Action 11 was removed; refactored into helper functions (_extract_gid_parts, _extract_name_parts,_extract_birth_event, _extract_death_event) to reduce complexity from 31 to <11; updated to handle both old format (Events[].t="B"/"D", d={y,m,d}, p={n}) and new format (Events[].t="Birth"/"Death", d="formatted string", nd="YYYY-MM-DD", p="place string") returned by isGetFullPersonObject=true parameter; further refactored_extract_birth_event and _extract_death_event into smaller helpers (_extract_year_from_normalized_date, _extract_date_string_from_dict) to reduce complexity from 12 to <11
+- Action 10 Tests: Added test_api_search_peter_fraser() test to validate API search functionality with real person data (Peter Fraser b. 1893 in Fyvie) - verifies URL building, API call, response parsing, and scoring all work correctly
+- API Search Debug Logging: Added debug logging to _process_and_score_suggestions() to show scoring details for each result and top 3 matches - helps diagnose scoring/ranking issues
+- Code Quality: Fixed 2 PLW0603 global-statement linter warnings in api_search_core.py by replacing global statement with unittest.mock.patch for test mocking
+- New Family View API: Replaced get_api_family_details() to use newfamilyview API (api/treeviewer/tree/newfamilyview/{tree_id}) instead of editrelationships API; new API returns complete family data including siblings in cleaner JSON format with Persons array and Family relationships; added call_newfamilyview_api() to api_utils.py and_parse_person_from_newfamilyview() to api_search_utils.py; siblings now properly extracted by finding parents and getting their children (excluding target person); refactored get_api_family_details() into helper functions (_find_target_person_in_list,_create_persons_lookup, _extract_direct_family,_extract_siblings) to reduce complexity from 29 to <11; refactored_parse_person_from_newfamilyview() into helper functions (_extract_person_id_from_gid, _extract_full_name_from_names,_extract_year_from_event_type) to reduce complexity from 15 to <11
+- Relation Ladder With Labels API: Replaced getladder HTML parsing with relationladderwithlabels API (family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels) for relationship paths; new API returns clean JSON with kinshipPersons array containing name, lifeSpan, and relationship for each person in path; added call_relation_ladder_with_labels_api() to api_utils.py and_format_kinship_persons_path() to api_search_core.py; relationship paths now display proper names and dates instead of "Unknown"
+- genealogy_presenter.py: Added **main** block to run internal tests when module is executed directly (python genealogy_presenter.py)
+- Quality: All 72 modules now pass with 100.0/100 quality scores (611 tests, 100% success rate) - no complexity issues remaining
+
+2025-10-28
+- Main menu: Removed Action 11; Action 10 now runs a side-by-side comparison (GEDCOM vs API)
+- Scoring: Added alive-mode penalty when no death criteria are provided and candidate has death info; no reward for missing death fields
+- Output: Removed the “Scoring Policy” line from results; behavior remains unchanged
+- Display: Always show top 5 results for each (GEDCOM and API) while tuning; summary line updated to “Summary: GEDCOM — showing top N of M total | API — showing top K of L total”
+- Scoring: Increased birth/death year match weights to 25 (exact year); approximate year weights unchanged
+- Scoring: Increased bonuses to 50 for: both names matched, both birth info matched (year+place), both death info matched (year/date + place)
+- Display: Show only the top result. GEDCOM is preferred; API is called only when GEDCOM has no matches. Zero-results message simplified to "No matches found."; API no-results log demoted to DEBUG
+- Display: For the chosen source's top result, show family members and a relationship path to the tree owner immediately after the (debug-only) result table
+
+- Filtering: Name containment is now mandatory when provided (first and/or surname)
+- Policy: Gender removed as a search and scoring criterion and removed from result displays
+- UI: Removed Gender column from GEDCOM and API results; removed Gender input prompt; updated prompts to "Death Year (YYYY):" and "Death Place Contains:" (removed [Optional])
+- Filtering: Enforced mandatory name containment when provided (case-insensitive). If both first and surname are provided, both must match. Fixed case normalization to prevent false non-matches
+
+- Linter: Fixed SIM103 and SIM108 across relevant modules
+- Docs: Updated Overview and Action 10 policy section to reflect these changes
+- Tests: run_all_tests.py passed (72/72 modules)
+
+- Filtering: Enforced mandatory place matching only when non-empty search values are provided; fixed a bug where empty birth/death place keys inadvertently excluded GEDCOM candidates.
+- Action 10: Reduced complexity of _evaluate_filter_criteria using early returns and any/all helpers; module now at 100/100 quality (no complexity warnings).
+- Family Display: De-duplicated family member lists in display_family_members() by name + year tuple; resolves duplicate Children lines from API family data.
+- Behavior: API search remains gated to run only when GEDCOM returns zero matches (now correctly triggered when place criteria are unmet in GEDCOM).
+
+- Logging: Converted DEBUG-only result tables and summary in main.py to logger.debug() (no prints). INFO level now shows only criteria, top match header, family, and relationship path
+- Linter: Resolved 4 SIM102 (collapsible-if) occurrences in api_search_utils.py and gedcom_search_utils.py
+
+- Search Criteria: Summary now prints only provided fields (omits empty Birth/Death fields) for a cleaner UI
+- Spacing: Added a blank line between Children and Relationship sections for readability
+- Relationship: Header standardized to "Relationship to {owner_name}:" (no emoji)
+- API Layout: Top API match header now prints before family details, matching GEDCOM format
+- Family headers: Removed emojis; sections are now "Parents", "Siblings", "Spouses", "Children"
+
+- Consolidation: Action 11 wrappers removed in favor of shared helpers; Action 11 now calls api_search_utils.get_api_family_details and search_criteria_utils.display_family_members directly
+
+- Test Runner: Parallel output synchronized (no out-of-order numbering), duplicate module headings removed, and discovered modules de-duplicated; improved test-count extraction significantly reduces prior "Unknown" counts (one remaining outlier to fix).
+- Search Criteria UX: Added a blank line between the action header and the first input prompt; extracted summary/log helpers to reduce complexity and keep INFO output clean.
+- Relationship Header: Verified fully dynamic header uses tree owner’s name everywhere (no hard-coded fallback); ensured consistent header in both Action 10 and 11 paths.
+
+- Consolidation: Phase 3–4 complete — introduced a unified post-selection presenter (present_post_selection) in search_criteria_utils; Action 10 (GEDCOM) and Action 11 (API) now both call this to render header → family → relationship. Eliminated duplicated display code in action11 and refactored action10’s analyze_top_match to use the presenter. Outputs are now identical across sources and spacing/order is consistent; no hard-coded owner names.
+- Wrapper rename: main wrapper renamed to run_gedcom_then_api_fallback (was run_side_by_side_search_wrapper); logs now reflect the new, accurate purpose
+- API fallback display: removed legacy header print before presenter, fixing duplicate/Unknown headers; presenter now owns header → family → relationship exclusively
+- Family sections: when no data, sections show "   - None recorded" (instead of a bare dash)
+- Linter: removed 4 unused variables (F841) across action11 and relationship_utils; repo diagnostics now clean
+- Complexity: simplified action11._handle_supplementary_info_phase by extracting logic and removing nested branches; quality back to 100/100
+
+- API browserless: Added SessionManager.ensure_api_ready_browserless and switched Action 10 API fallback to use it; prevents unintended browser startup and fixes the minimize-window crash
+- APIManager: Added load_cookies_from_file() to hydrate requests.Session cookies from ancestry_cookies.json for browserless operation
+- Main: Switched imports to api_search_core shim with fallback to action11 for IDE/path resilience during migration
+- Pylance: Removed unreachable checks and driver-coupling in api_search_utils; prefer identifier readiness; resolved unresolved-import warning for api_search_core via guarded import
+- Refactor: Introduced api_search_core shim to re-export Action 11 helpers; prepares full retirement of action11.py name
+- APIManager: Changed verify_api_login_status() to require profile ID retrieval (auth-only); UUID from .env is not treated as proof of login, preventing false positives and later 401s
+- Presenter: Created genealogy_presenter.py with present_post_selection and display_family_members used identically by GEDCOM and API paths
+- Main: Action 10 API fallback now uses browserless readiness; unchanged UX, identical output format across GEDCOM/API
+- Pylance: Fixed unused-arg warning in ensure_api_ready_browserless by consuming action_name for debug; removed unreachable session-manager check in API search; general dead-import cleanup
+- Migration (Phase 2 prep): api_search_core is now the public import point; action11 retains implementation for now; next step reverses the dependency with lazy wrappers
+
 2025-10-24
 - Eliminated module-level SessionManager creation in action11.py; switched to global session usage only
 - Consolidated Action 11 authentication to a single path via session_utils.get_authenticated_session()
@@ -475,14 +597,14 @@ For issues or questions:
   - Registered globally via session_utils.set_global_session()
   - Consumers must call session_utils.get_authenticated_session(action_name=...) before API usage
 
-- Action 11 Endpoints
+- API Endpoints (used by api_search_core)
   - Edit Relationships: /family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships
     - Response: { cssBundleUrl, jsBundleUrl, data } where data is a JSON string; parse with json.loads
     - Family arrays: parsed['person'] → fathers[], mothers[], spouses[], children[]
   - Relationship Ladder: /family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
 
 - Display Rules
-  - Parents, spouses, children shown; siblings intentionally omitted in Action 11
+  - Parents, spouses, children shown; siblings intentionally omitted in API path
 
 - AI Providers and Local LLM
   - ai_provider: one of ["deepseek", "gemini", "local_llm"]

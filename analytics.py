@@ -13,39 +13,39 @@ Design goals:
 - Robust to errors (analytics never breaks the main flow)
 """
 
+from __future__ import annotations
+
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-from __future__ import annotations
-
 import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+
 # Module-level transient extras storage (cleared after use)
-_EXTRAS: Optional[dict[str, Any]] = None
+class _State:
+    extras: Optional[dict[str, Any]] = None
 
 
 def set_transient_extras(extras: dict[str, Any]) -> None:
     """Attach transient extras for the current action; consumed by exec_actn()."""
-    global _EXTRAS
     try:
-        _EXTRAS = dict(extras) if extras is not None else None
+        _State.extras = dict(extras) if extras is not None else None
     except Exception as e:
         logger.debug(f"analytics.set_transient_extras failed: {e}")
-        _EXTRAS = None
+        _State.extras = None
 
 
 def pop_transient_extras() -> Optional[dict[str, Any]]:
     """Return and clear previously attached extras."""
-    global _EXTRAS
-    extras = _EXTRAS
-    _EXTRAS = None
+    extras = _State.extras
+    _State.extras = None
     return extras
 
 
@@ -104,11 +104,11 @@ def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with path.open("r", encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
+                line_s = line.strip()
+                if not line_s:
                     continue
                 try:
-                    obj = json.loads(line)
+                    obj = json.loads(line_s)
                 except Exception:
                     continue
                 ts_str = obj.get("ts")
@@ -141,7 +141,7 @@ def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
                     ent["mem_samples"] += 1
 
         # finalize averages
-        for action, ent in summary.items():
+        for _action, ent in summary.items():
             runs = max(1, ent["runs"])  # avoid div by zero
             ent["success_rate"] = ent["success"] / runs
             ent["avg_duration_sec"] = ent["duration_total"] / runs
@@ -163,7 +163,7 @@ def print_weekly_summary(days: int = 7) -> None:
     """Print a human-friendly weekly summary to stdout."""
     try:
         summary = generate_weekly_summary(days)
-        print("\n=== Weekly Action Summary (last %d days) ===" % days)
+        print(f"\n=== Weekly Action Summary (last {days} days) ===")
         if not summary:
             print("No analytics data yet.")
             return
@@ -173,7 +173,7 @@ def print_weekly_summary(days: int = 7) -> None:
             avg_mem = ent.get("avg_mem_mb")
             print(
                 f"- {action}: runs={ent.get('runs',0)}, success={sr*100:.1f}%, "
-                f"avg_dur={avg_dur:.2f}s, avg_mem={'%.1f MB'%avg_mem if isinstance(avg_mem,(int,float)) else 'n/a'}"
+                f"avg_dur={avg_dur:.2f}s, avg_mem={(f'{avg_mem:.1f} MB' if isinstance(avg_mem,(int,float)) else 'n/a')}"
             )
     except Exception as e:
         logger.debug(f"analytics.print_weekly_summary failed: {e}")

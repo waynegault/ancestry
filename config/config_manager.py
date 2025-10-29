@@ -1141,7 +1141,6 @@ def _test_config_file_integration():
 
 def _test_environment_integration():
     """Test environment variable integration."""
-    import os
     # Test environment handling
     manager = ConfigManager(auto_load=False)
     assert hasattr(manager, "environment")
@@ -1217,8 +1216,6 @@ def config_manager_module_tests() -> bool:
     Comprehensive test suite for config_manager.py with proper TestSuite framework.
     Tests configuration management, validation, and loading functionality.
     """
-    import tempfile
-    import time
 
     from test_framework import TestSuite
 

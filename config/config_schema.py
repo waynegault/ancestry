@@ -615,7 +615,7 @@ class ConfigSchema:
     # Timeout for Action 6 coord (seconds) — extend to avoid mid-run timeout/auto-retry
     action6_coord_timeout_seconds: int = 14400  # 4 hours
 
-    # Action 11 (API Report) settings
+    # API search settings
     name_flexibility: float = 0.8
     date_flexibility: float = 5.0  # years
     max_suggestions_to_score: int = 50
@@ -676,9 +676,9 @@ class ConfigSchema:
     score_weight_first_name: int = 25
     score_weight_surname: int = 25
     score_weight_gender: int = 10
-    score_weight_birth_year: int = 20
+    score_weight_birth_year: int = 25
     score_weight_birth_place: int = 15
-    score_weight_death_year: int = 15
+    score_weight_death_year: int = 25
     score_weight_death_place: int = 10
     year_flexibility: int = 2
     exact_date_bonus: int = 25
@@ -693,14 +693,14 @@ class ConfigSchema:
             # --- Name Weights ---
             "contains_first_name": 25.0,  # if the input first name is in the candidate first name
             "contains_surname": 25.0,  # if the input surname is in the candidate surname
-            "bonus_both_names_contain": 25.0,  # additional bonus if both first and last name achieved a score
+            "bonus_both_names_contain": 50.0,  # additional bonus if both first and last name achieved a score
             # --- Date Weights ---
             "exact_birth_date": 25.0,  # if input date of birth is exact with candidate date of birth
             "exact_death_date": 25.0,  # if input date of death is exact with candidate date of death
-            "birth_year_match": 20.0,  # if input birth year matches candidate birth year (Action 11 key)
-            "year_birth": 20.0,  # if input birth year matches candidate birth year (GEDCOM utils key)
-            "death_year_match": 20.0,  # if input death year matches candidate death year (Action 11 key)
-            "year_death": 20.0,  # if input death year matches candidate death year (GEDCOM utils key)
+            "birth_year_match": 25.0,  # if input birth year matches candidate birth year (API path key)
+            "year_birth": 25.0,  # if input birth year matches candidate birth year (GEDCOM utils key)
+            "death_year_match": 25.0,  # if input death year matches candidate death year (API path key)
+            "year_death": 25.0,  # if input death year matches candidate death year (GEDCOM utils key)
             "birth_year_close": 10.0,  # if input birth year is within range of candidate birth year
             "death_year_close": 10.0,  # if input death year is within range of candidate death year
             # --- Special Death Weights ---
@@ -711,8 +711,12 @@ class ConfigSchema:
             # --- Gender Weight ---
             "gender_match": 15.0,  # if input gender matches candidate gender
             # --- Bonus Weights ---
-            "bonus_birth_date_and_place": 25.0,  # bonus if both birth date and place match - UPDATED
-            "bonus_death_date_and_place": 25.0,  # bonus if both death date and place match - UPDATED
+            "bonus_birth_date_and_place": 50.0,  # bonus if both birth date and place match - UPDATED
+            "bonus_death_date_and_place": 50.0,  # bonus if both death date and place match - UPDATED
+            # --- Alive Policy Weights ---
+            # Apply a small penalty if the query assumes "alive" (no death criteria provided)
+            # but the candidate record contains death information.
+            "alive_conflict_penalty": -10.0,
         }
     )
 

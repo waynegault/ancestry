@@ -1335,6 +1335,54 @@ def _determine_relationship_type_from_path(path_data: list[dict]) -> Optional[st
     return None
 
 
+def _convert_you_are_relationship(relationship: str, current_name: str, next_name: str, next_years: str) -> str:
+    """Convert 'You are...' relationship to inverse form."""
+    # Extract the relationship type (e.g., "son", "daughter")
+    rel_type = relationship.replace("You are the ", "").replace(f" of {current_name}", "").strip()
+    # Convert to inverse relationship
+    inverse_rel = {
+        "son": "father",
+        "daughter": "mother",
+        "grandson": "grandfather",
+        "granddaughter": "grandmother",
+    }.get(rel_type, "parent")
+    return f"   - {current_name} is the {inverse_rel} of {next_name}{next_years}"
+
+
+def _format_path_step(
+    current_person: dict,
+    next_person: dict,
+    seen_names: set,
+) -> tuple[str, set]:
+    """Format a single step in the relationship path."""
+    # Get names and clean them
+    current_name = current_person.get("name", "Unknown")
+    current_name_clean = _clean_name_format(str(current_name))
+    next_name = next_person.get("name", "Unknown")
+    next_name_clean = _clean_name_format(str(next_name))
+
+    # Get relationship
+    relationship = next_person.get("relationship", "relative") or "relative"
+
+    # Format years for next person - only if we haven't seen this name before
+    next_years = ""
+    if next_name_clean.lower() not in seen_names:
+        next_years = _format_years_display(
+            next_person.get("birth_year"),
+            next_person.get("death_year")
+        )
+        seen_names.add(next_name_clean.lower())
+
+    # Handle "You are..." relationships specially (convert to inverse relationship)
+    if isinstance(relationship, str) and relationship.startswith("You are the "):
+        line = _convert_you_are_relationship(relationship, current_name_clean, next_name_clean, next_years)
+    else:
+        # Normal relationship format
+        line = f"   - {relationship} is {next_name_clean}{next_years}"
+
+    return line, seen_names
+
+
 def format_relationship_path_unified(
     path_data: list[dict[str, Optional[str]]],  # Value type changed to Optional[str]
     target_name: str,
@@ -1357,62 +1405,35 @@ def format_relationship_path_unified(
     if not path_data or len(path_data) < 2:
         return f"(No relationship path data available for {target_name})"
 
-    # Format the target person with birth/death years
-    first_person = path_data[0]
-    target_display = target_name
-
-    # Add birth/death years if available
-    years_display = _format_years_display(
-        first_person.get("birth_year"),
-        first_person.get("death_year")
-    )
-
+    # The first person in the path (target)
     # Determine the specific relationship type if not provided
     if relationship_type is None or relationship_type == "relative":
         relationship_type = _determine_relationship_type_from_path(path_data) or "relative"
 
-    # Format the header with emoji
-    header = f"\n📋 {target_display}{years_display} is {owner_name}'s {relationship_type}:"
+    # Relationship header (no emojis, simplified wording)
+    header = f"Relationship to {owner_name}:"
 
     # Format each step in the path with indentation
     path_lines = []
 
     # Keep track of names we've already seen to avoid adding years multiple times
     seen_names = set()
-    seen_names.add(target_display.lower())  # Add the first person to seen names
 
+    # Add first person (target) as a standalone line with years
+    first_person = path_data[0]
+    first_name = _clean_name_format(str(first_person.get("name", target_name)))
+    first_years = _format_years_display(
+        first_person.get("birth_year"),
+        first_person.get("death_year")
+    )
+    path_lines.append(f"   - {first_name}{first_years}")
+    seen_names.add(first_name.lower())
+
+    # Process remaining path steps without repeating the person's name at the start
     for i in range(len(path_data) - 1):
-        current = path_data[i]
+        current_person = path_data[i]
         next_person = path_data[i + 1]
-
-        # Get names and clean them
-        current_name = current.get("name", "Unknown")
-        next_name = next_person.get("name", "Unknown")
-        current_name_clean = _clean_name_format(str(current_name))
-        next_name_clean = _clean_name_format(str(next_name))
-
-        # Get relationship
-        relationship = next_person.get("relationship", "relative")
-
-        # Format years for current person - only if we haven't seen this name before
-        current_years = ""
-        if current_name_clean.lower() not in seen_names:
-            current_years = _format_years_display(
-                current.get("birth_year"),
-                current.get("death_year")
-            )
-            seen_names.add(current_name_clean.lower())
-
-        # Format years for next person - only if we haven't seen this name before
-        next_years = ""
-        if next_name_clean.lower() not in seen_names:
-            next_years = _format_years_display(
-                next_person.get("birth_year"),
-                next_person.get("death_year")
-            )
-            seen_names.add(next_name_clean.lower())
-
-        line = f"   - {current_name_clean}{current_years}'s {relationship} is {next_name_clean}{next_years}"
+        line, seen_names = _format_path_step(current_person, next_person, seen_names)
         path_lines.append(line)
 
     # Combine all parts

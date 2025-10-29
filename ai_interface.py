@@ -120,7 +120,7 @@ try:
     from ai_prompt_utils import get_prompt, load_prompts
 
     USE_JSON_PROMPTS = True
-    logger.info("AI prompt utilities loaded successfully - will use JSON prompts")
+    logger.debug("AI prompt utilities loaded successfully - will use JSON prompts")
 except ImportError:
     logger.warning("ai_prompt_utils module not available, using fallback prompts")
     USE_JSON_PROMPTS = False

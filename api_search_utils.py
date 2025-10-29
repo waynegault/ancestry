@@ -33,12 +33,10 @@ from typing import Any, Optional, Union
 # (none currently needed)
 # === LOCAL IMPORTS ===
 from api_utils import (
-    call_facts_user_api,
     call_getladder_api,
     call_suggest_api,
     call_treesui_list_api,
 )
-from common_params import ApiIdentifiers
 from config import config_schema
 from relationship_utils import format_api_relationship_path
 from utils import SessionManager
@@ -90,7 +88,6 @@ def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
     return {
         "first_name": clean_param(search_criteria.get("first_name")),
         "surname": clean_param(search_criteria.get("surname")),
-        "gender": clean_param(search_criteria.get("gender")),
         "birth_year": search_criteria.get("birth_year"),
         "birth_place": clean_param(search_criteria.get("birth_place")),
         "death_year": search_criteria.get("death_year"),
@@ -105,12 +102,31 @@ def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     return {
         "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),
         "surname": clean_param(candidate.get("surname", candidate.get("lastName", candidate.get("Surname")))),
-        "gender": clean_param(candidate.get("gender", candidate.get("Gender"))),
         "birth_year": candidate.get("birth_year", candidate.get("birthYear", candidate.get("Birth Year"))),
         "birth_place": clean_param(candidate.get("birth_place", candidate.get("birthPlace", candidate.get("Birth Place")))),
         "death_year": candidate.get("death_year", candidate.get("deathYear", candidate.get("Death Year"))),
         "death_place": clean_param(candidate.get("death_place", candidate.get("deathPlace", candidate.get("Death Place")))),
     }
+
+
+
+def _places_requirements_satisfied(search_criteria: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    """Require birth/death place presence and match if provided in search criteria.
+
+    - If search includes birth_place, candidate must have a birth_place and it must contain the search value (case-insensitive).
+    - If search includes death_place, candidate must have a death_place and it must contain the search value (case-insensitive).
+    """
+    search = _extract_search_criteria(search_criteria)
+    cand = _extract_candidate_data(candidate)
+
+    # Evaluate violations for birth/death place when provided
+    violates_birth = bool(search.get("birth_place")) and (
+        not cand.get("birth_place") or search["birth_place"] not in cand["birth_place"]
+    )
+    violates_death = bool(search.get("death_place")) and (
+        not cand.get("death_place") or search["death_place"] not in cand["death_place"]
+    )
+    return not (violates_birth or violates_death)
 
 
 def _score_name_match(search_name: Optional[str], cand_name: Optional[str], field_name: str, score_value: Union[int, float], total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
@@ -123,14 +139,6 @@ def _score_name_match(search_name: Optional[str], cand_name: Optional[str], fiel
     return total_score
 
 
-def _score_gender_match(search_gender: Optional[str], cand_gender: Optional[str], score_value: Union[int, float], total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
-    """Score gender matching."""
-    if search_gender and cand_gender and search_gender == cand_gender:
-        score_int = int(score_value)
-        total_score += score_int
-        field_scores["gender"] = score_int
-        reasons.append(f"Gender '{search_gender}' matched")
-    return total_score
 
 
 def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: Union[int, float], close_score: Union[int, float], year_range: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
@@ -227,9 +235,6 @@ def _run_simple_suggestion_scoring(
     # Score name matches
     total_score = _score_name_match(search["first_name"], cand["first_name"], "first_name", weights.get("contains_first_name", 25), total_score, field_scores, reasons)
     total_score = _score_name_match(search["surname"], cand["surname"], "surname", weights.get("contains_surname", 25), total_score, field_scores, reasons)
-
-    # Score gender
-    total_score = _score_gender_match(search["gender"], cand["gender"], weights.get("gender_match", 15), total_score, field_scores, reasons)
 
     # Score birth year and place
     total_score = _score_year_match(search["birth_year"], cand["birth_year"], "birth_year", weights.get("birth_year_match", 20), weights.get("birth_year_close", 10), year_range, total_score, field_scores, reasons)
@@ -360,8 +365,9 @@ def _process_suggest_result(suggestion: dict[str, Any], search_criteria: dict[st
             search_criteria, candidate, scoring_weights, date_flex
         )
 
-        # Only include if score is above threshold
-        if total_score > 0:
+        # Only include if score is above threshold and place requirements satisfied when provided
+        allowed = _places_requirements_satisfied(search_criteria, candidate)
+        if total_score > 0 and allowed:
             return {
                 "id": person_id,
                 "display_id": person_id,
@@ -421,7 +427,6 @@ def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, A
             "death_year": death_year,
             "birth_place": birth_place,
             "death_place": death_place,
-            "gender": gender,
         }
 
         # Score the candidate
@@ -429,14 +434,14 @@ def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, A
             search_criteria, candidate, scoring_weights, date_flex
         )
 
-        # Only include if score is above threshold and not duplicate
-        if total_score > 0 and not any(match["id"] == person_id for match in scored_matches):
+        # Only include if score is above threshold, place requirements satisfied, and not duplicate
+        allowed = _places_requirements_satisfied(search_criteria, candidate)
+        if total_score > 0 and allowed and not any(match["id"] == person_id for match in scored_matches):
             return {
                 "id": person_id,
                 "display_id": person_id,
                 "first_name": first_name,
                 "surname": surname,
-                "gender": gender,
                 "birth_year": birth_year,
                 "birth_place": birth_place,
                 "death_year": death_year,
@@ -455,10 +460,11 @@ def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, A
 # Helper functions for search_api_for_criteria
 
 def _validate_session(session_manager: SessionManager) -> bool:
-    """Validate session manager is active."""
+    """Validate session manager state for API access (browserless capable)."""
     try:
-        if not session_manager or not session_manager.is_sess_valid():
-            logger.error("Session manager is not valid or not logged in")
+        # Prefer API identifiers readiness over browser session validity
+        if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
+            logger.error("Essential API identifiers not available (not logged in)")
             return False
         return True
     except Exception as e:
@@ -511,7 +517,6 @@ def _build_treesui_search_params(search_criteria: dict[str, Any]) -> dict[str, A
     field_mapping = {
         "first_name": "firstName",
         "surname": "lastName",
-        "gender": "gender",
         "birth_year": "birthYear",
         "birth_place": "birthLocation",
         "death_year": "deathYear",
@@ -617,9 +622,9 @@ def search_api_for_criteria(
 # Helper functions for get_api_family_details
 
 def _validate_api_session(session_manager: SessionManager) -> bool:
-    """Validate that session manager is active and valid."""
-    if not session_manager or not session_manager.is_sess_valid():
-        logger.error("Session manager is not valid or not logged in")
+    """Validate that session manager is active and valid (browserless capable)."""
+    if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
+        logger.error("Essential API identifiers not available (not logged in)")
         return False
     return True
 
@@ -668,7 +673,7 @@ def _get_facts_data_from_api(
 
     Note: The API returns a 'data' field containing a JSON STRING (not an object) that must be parsed.
     """
-    logger.info(f"Getting family relationship data for person {person_id} in tree {tree_id}")
+    logger.debug(f"Getting family relationship data for person {person_id} in tree {tree_id}")
 
     # Import the API function and json module
     import json
@@ -804,41 +809,6 @@ def _extract_person_info_from_target(target_person: dict[str, Any], result: dict
             result["death_date"] = _format_date(day, month, year)
 
 
-def _format_person_from_facts_api(person_obj: dict[str, Any]) -> dict[str, Any]:
-    """
-    Format a person object from the facts user API into a standardized dict.
-
-    The facts user API returns person objects with this structure:
-    {
-        "id": "...",
-        "name": "...",
-        "gender": "Male" or "Female",
-        "birth": {"date": {"normalized": "..."}, "place": {"normalized": "..."}},
-        "death": {"date": {"normalized": "..."}, "place": {"normalized": "..."}}
-    }
-
-    Returns:
-        Dict with keys: name, birth_year, death_year (matching display_family_members format)
-    """
-    # Extract name
-    name = person_obj.get("name", "Unknown")
-
-    # Extract birth year
-    birth_info = person_obj.get("birth", {})
-    birth_date = birth_info.get("date", {}).get("normalized", "") if isinstance(birth_info, dict) else ""
-    birth_year = _extract_year_from_date(birth_date)
-
-    # Extract death year
-    death_info = person_obj.get("death", {})
-    death_date = death_info.get("date", {}).get("normalized", "") if isinstance(death_info, dict) else ""
-    death_year = _extract_year_from_date(death_date)
-
-    # Return standardized dict format (matches display_family_members expectations)
-    return {
-        "name": name,
-        "birth_year": birth_year,
-        "death_year": death_year,
-    }
 
 
 def _format_person_from_relationship_data(person_obj: dict[str, Any]) -> dict[str, Any]:
@@ -900,200 +870,35 @@ def _format_date(day: Optional[int], month: Optional[int], year: Optional[int]) 
     return str(year)
 
 
-def _extract_person_name_info(person_data: dict[str, Any], result: dict[str, Any]) -> None:
-    """Extract and parse person name information."""
-    result["name"] = person_data.get("personName", "Unknown")
-
-    name_parts = result["name"].split()
-    if name_parts:
-        result["first_name"] = name_parts[0]
-        if len(name_parts) > 1:
-            result["surname"] = name_parts[-1]
-
-
-def _extract_person_gender(person_data: dict[str, Any], result: dict[str, Any]) -> None:
-    """Extract and normalize person gender."""
-    gender_raw = person_data.get("gender", "").lower()
-    if gender_raw == "male":
-        result["gender"] = "M"
-    elif gender_raw == "female":
-        result["gender"] = "F"
-
-
-def _extract_birth_info(facts_data: dict[str, Any], result: dict[str, Any]) -> None:
-    """Extract birth information from facts data."""
-    birth_facts = [f for f in facts_data.get("facts", []) if f.get("type") == "Birth"]
-    if not birth_facts:
-        return
-
-    birth_fact = birth_facts[0]
-    birth_date = birth_fact.get("date", {}).get("normalized", "Unknown")
-    birth_place = birth_fact.get("place", {}).get("normalized", "Unknown")
-    result["birth_date"] = birth_date
-    result["birth_place"] = birth_place
-
-    if birth_date and birth_date != "Unknown":
-        birth_year = _extract_year_from_date(birth_date)
-        if birth_year:
-            result["birth_year"] = birth_year
-
-
-def _extract_death_info(facts_data: dict[str, Any], result: dict[str, Any]) -> None:
-    """Extract death information from facts data."""
-    death_facts = [f for f in facts_data.get("facts", []) if f.get("type") == "Death"]
-    if not death_facts:
-        return
-
-    death_fact = death_facts[0]
-    death_date = death_fact.get("date", {}).get("normalized", "Unknown")
-    death_place = death_fact.get("place", {}).get("normalized", "Unknown")
-    result["death_date"] = death_date
-    result["death_place"] = death_place
-
-    if death_date and death_date != "Unknown":
-        death_year = _extract_year_from_date(death_date)
-        if death_year:
-            result["death_year"] = death_year
-
-
-def _extract_year_from_relationship(relationship: dict[str, Any], year_key: str) -> Optional[int]:
-    """Extract and parse year from relationship data."""
-    year_str = relationship.get(year_key)
-    if not year_str:
-        return None
-
-    try:
-        return int(year_str)
-    except (ValueError, TypeError):
-        return None
-
-
-def _process_parent_relationship(parent: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Process a single parent relationship."""
-    parent_id = parent.get("personId")
-    if not parent_id:
-        return None
-
-    relationship_type = parent.get("relationshipType", "")
-    return {
-        "id": parent_id,
-        "name": parent.get("personName", "Unknown"),
-        "birth_year": _extract_year_from_relationship(parent, "birthYear"),
-        "birth_place": "Unknown",
-        "death_year": _extract_year_from_relationship(parent, "deathYear"),
-        "death_place": "Unknown",
-        "relationship": relationship_type.lower() if relationship_type else "parent",
-    }
 
 
 
-def _process_parents(relationships: list[dict[str, Any]], result: dict[str, Any]) -> None:
-    """Process all parent relationships."""
-    parents = [r for r in relationships if r.get("relationshipType") in ["Father", "Mother"]]
-    for parent in parents:
-        parent_info = _process_parent_relationship(parent)
-        if parent_info:
-            result["parents"].append(parent_info)
-
-
-def _extract_marriage_info(facts_data: dict[str, Any], spouse_id: str) -> dict[str, str]:
-    """Extract marriage information for a specific spouse."""
-    marriage_facts = [
-        f for f in facts_data.get("facts", [])
-        if f.get("type") == "Marriage" and spouse_id in f.get("otherPersonIds", [])
-    ]
-
-    if not marriage_facts:
-        return {"marriage_date": "Unknown", "marriage_place": "Unknown"}
-
-    marriage_fact = marriage_facts[0]
-    return {
-        "marriage_date": marriage_fact.get("date", {}).get("normalized", "Unknown"),
-        "marriage_place": marriage_fact.get("place", {}).get("normalized", "Unknown"),
-    }
-
-
-def _process_spouse_relationship(spouse: dict[str, Any], facts_data: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Process a single spouse relationship."""
-    spouse_id = spouse.get("personId")
-    if not spouse_id:
-        return None
-
-    spouse_info = {
-        "id": spouse_id,
-        "name": spouse.get("personName", "Unknown"),
-        "birth_year": _extract_year_from_relationship(spouse, "birthYear"),
-        "birth_place": "Unknown",
-        "death_year": _extract_year_from_relationship(spouse, "deathYear"),
-        "death_place": "Unknown",
-    }
-
-    # Add marriage information
-    marriage_info = _extract_marriage_info(facts_data, spouse_id)
-    spouse_info.update(marriage_info)
-
-    return spouse_info
-
-
-def _process_spouses(relationships: list[dict[str, Any]], facts_data: dict[str, Any], result: dict[str, Any]) -> None:
-    """Process all spouse relationships."""
-    spouses = [r for r in relationships if r.get("relationshipType") in ["Spouse"]]
-    for spouse in spouses:
-        spouse_info = _process_spouse_relationship(spouse, facts_data)
-        if spouse_info:
-            result["spouses"].append(spouse_info)
-
-
-def _process_child_relationship(child: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Process a single child relationship."""
-    child_id = child.get("personId")
-    if not child_id:
-        return None
-
-    return {
-        "id": child_id,
-        "name": child.get("personName", "Unknown"),
-        "birth_year": _extract_year_from_relationship(child, "birthYear"),
-        "birth_place": "Unknown",
-        "death_year": _extract_year_from_relationship(child, "deathYear"),
-        "death_place": "Unknown",
-    }
 
 
 
-def _process_children(relationships: list[dict[str, Any]], result: dict[str, Any]) -> None:
-    """Process all child relationships."""
-    children = [r for r in relationships if r.get("relationshipType") in ["Child"]]
-    for child in children:
-        child_info = _process_child_relationship(child)
-        if child_info:
-            result["children"].append(child_info)
-
-
-def _process_sibling_relationship(sibling: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Process a single sibling relationship."""
-    sibling_id = sibling.get("personId")
-    if not sibling_id:
-        return None
-
-    return {
-        "id": sibling_id,
-        "name": sibling.get("personName", "Unknown"),
-        "birth_year": _extract_year_from_relationship(sibling, "birthYear"),
-        "birth_place": "Unknown",
-        "death_year": _extract_year_from_relationship(sibling, "deathYear"),
-        "death_place": "Unknown",
-    }
 
 
 
-def _process_siblings(relationships: list[dict[str, Any]], result: dict[str, Any]) -> None:
-    """Process all sibling relationships."""
-    siblings = [r for r in relationships if r.get("relationshipType") in ["Sibling"]]
-    for sibling in siblings:
-        sibling_info = _process_sibling_relationship(sibling)
-        if sibling_info:
-            result["siblings"].append(sibling_info)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1168,48 +973,192 @@ def _extract_children_from_data_section(data_section: dict[str, Any], result: di
         elif isinstance(item, dict):
             result["children"].append(_format_person_from_relationship_data(item))
 
+def _find_target_person_in_list(persons: list, person_id: str) -> Optional[dict]:
+    """Find target person in persons list by matching person_id in gid."""
+    for person in persons:
+        person_gid = person.get("gid", {}).get("v", "")
+        if person_gid.startswith(f"{person_id}:"):
+            return person
+    return None
+
+
+def _create_persons_lookup(persons: list) -> dict[str, dict]:
+    """Create lookup dictionary mapping gid to person dict."""
+    persons_by_gid = {}
+    for person in persons:
+        gid = person.get("gid", {}).get("v", "")
+        if gid:
+            persons_by_gid[gid] = person
+    return persons_by_gid
+
+
+def _extract_direct_family(
+    family_relationships: list,
+    persons_by_gid: dict[str, dict],
+    result: dict[str, list],
+) -> None:
+    """Extract parents, spouses, and children from family relationships."""
+    for rel in family_relationships:
+        rel_type = rel.get("t", "")
+        target_gid = rel.get("tgid", {}).get("v", "")
+
+        if not target_gid or target_gid not in persons_by_gid:
+            continue
+
+        related_person = persons_by_gid[target_gid]
+        person_dict = _parse_person_from_newfamilyview(related_person)
+
+        if rel_type in ["F", "M"]:  # Father or Mother
+            result["parents"].append(person_dict)
+        elif rel_type in ["W", "H"]:  # Wife or Husband
+            result["spouses"].append(person_dict)
+        elif rel_type == "C":  # Child
+            result["children"].append(person_dict)
+
+
+def _extract_siblings(
+    family_relationships: list,
+    persons_by_gid: dict[str, dict],
+    target_person_gid: str,
+    result: dict[str, list],
+) -> None:
+    """Extract siblings by finding parents and getting their children."""
+    parent_gids = [
+        rel.get("tgid", {}).get("v", "")
+        for rel in family_relationships
+        if rel.get("t") in ["F", "M"]
+    ]
+
+    for parent_gid in parent_gids:
+        if not parent_gid or parent_gid not in persons_by_gid:
+            continue
+
+        parent = persons_by_gid[parent_gid]
+        parent_family = parent.get("Family", [])
+
+        for parent_rel in parent_family:
+            if parent_rel.get("t") != "C":  # Not a child
+                continue
+
+            sibling_gid = parent_rel.get("tgid", {}).get("v", "")
+            if not sibling_gid or sibling_gid == target_person_gid:
+                continue
+
+            if sibling_gid not in persons_by_gid:
+                continue
+
+            sibling_dict = _parse_person_from_newfamilyview(persons_by_gid[sibling_gid])
+
+            # Avoid duplicates
+            if not any(s.get("id") == sibling_dict.get("id") for s in result["siblings"]):
+                result["siblings"].append(sibling_dict)
+
+
 def get_api_family_details(
     session_manager: SessionManager,
     person_id: str,
     tree_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """
-    Get family details for a specific individual from Ancestry API.
+    Get family details for a specific individual from Ancestry New Family View API.
 
-    Returns a dict with keys: parents, spouses, children, siblings (siblings empty per requirements).
+    Returns a dict with keys: parents, spouses, children, siblings.
     """
-    # 1) Validate session and resolve identifiers
-    if not _validate_api_session(session_manager):
-        return {}
-    tree_id = _resolve_tree_id(session_manager, tree_id)
+    from api_utils import call_newfamilyview_api
+
+    # Validate session and resolve identifiers
+    if not session_manager or not hasattr(session_manager, "driver"):
+        logger.error("Invalid session manager provided")
+        return _initialize_family_result(person_id)
+
+    tree_id = tree_id or getattr(session_manager, "my_tree_id", None)
     if not tree_id:
-        return {}
-    owner_profile_id = _resolve_owner_profile_id(session_manager)
+        logger.error("No tree_id available for family details")
+        return _initialize_family_result(person_id)
 
-    # 2) Fetch and validate source data
-    facts_data = _get_facts_data_from_api(session_manager, person_id, tree_id, owner_profile_id)
-    if not facts_data:
-        return {}
+    base_url = getattr(config_schema.api, "base_url", "https://www.ancestry.co.uk")
 
-    # 3) Initialize result and extract family members via helpers
+    # Call New Family View API
+    family_data = call_newfamilyview_api(session_manager, tree_id, person_id, base_url, timeout=20)
+    if not family_data or "Persons" not in family_data:
+        logger.warning(f"No family data returned from New Family View API for person {person_id}")
+        return _initialize_family_result(person_id)
+
+    # Parse the response
     result = _initialize_family_result(person_id)
     try:
-        _debug_log_facts_structure(facts_data)
-        data_section = _get_data_section_from_facts(facts_data)
-        _extract_target_person_info_if_available(data_section, result)
-        _extract_parents_from_data_section(data_section, result)
-        _extract_spouses_from_data_section(data_section, result)
-        _extract_children_from_data_section(data_section, result)
+        persons = family_data.get("Persons", [])
+        logger.debug(f"New Family View API returned {len(persons)} persons")
+
+        target_person = _find_target_person_in_list(persons, person_id)
+        if not target_person:
+            logger.warning(f"Target person {person_id} not found in New Family View response")
+            return result
+
+        family_relationships = target_person.get("Family", [])
+        persons_by_gid = _create_persons_lookup(persons)
+
+        # Extract direct family (parents, spouses, children)
+        _extract_direct_family(family_relationships, persons_by_gid, result)
+
+        # Extract siblings
+        target_person_gid = target_person.get("gid", {}).get("v", "")
+        _extract_siblings(family_relationships, persons_by_gid, target_person_gid, result)
+
         logger.debug(
             f"Extracted family: {len(result['parents'])} parents, "
             f"{len(result['siblings'])} siblings, {len(result['spouses'])} spouses, {len(result['children'])} children"
         )
     except Exception as e:
         logger.error(
-            f"Error extracting family details from Edit Relationships API data: {e}", exc_info=True
+            f"Error extracting family details from New Family View API data: {e}", exc_info=True
         )
 
     return result
+
+
+def _extract_person_id_from_gid(gid_dict: dict) -> str:
+    """Extract person ID from gid dictionary."""
+    gid = gid_dict.get("v", "")
+    return gid.split(":")[0] if ":" in gid else "Unknown"
+
+
+def _extract_full_name_from_names(names_list: list) -> str:
+    """Extract full name from Names array."""
+    if not names_list:
+        return "Unknown"
+    given_name = names_list[0].get("g", "")
+    surname = names_list[0].get("s", "")
+    return f"{given_name} {surname}".strip() if given_name or surname else "Unknown"
+
+
+def _extract_year_from_event_type(events: list, event_type: str) -> Optional[int]:
+    """Extract year from specific event type (Birth or Death)."""
+    for event in events:
+        if event.get("t") == event_type:
+            nd = event.get("nd", "")
+            if nd and isinstance(nd, str):
+                parts = nd.split("-")
+                if parts and parts[0].isdigit():
+                    return int(parts[0])
+            break
+    return None
+
+
+def _parse_person_from_newfamilyview(person: dict) -> dict[str, Any]:
+    """Parse a person dict from New Family View API response into standard format."""
+    person_id = _extract_person_id_from_gid(person.get("gid", {}))
+    full_name = _extract_full_name_from_names(person.get("Names", []))
+    events = person.get("Events", [])
+    birth_year = _extract_year_from_event_type(events, "Birth")
+    death_year = _extract_year_from_event_type(events, "Death")
+
+    return {
+        "id": person_id,
+        "name": full_name,
+        "birth_year": birth_year,
+        "death_year": death_year,
+    }
 
 
 def _get_tree_id_for_relationship(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:
@@ -1254,9 +1203,9 @@ def get_api_relationship_path(
     Returns:
         Formatted relationship path string
     """
-    # Step 1: Check if session is active
-    if not session_manager or not session_manager.is_sess_valid():
-        logger.error("Session manager is not valid or not logged in")
+    # Step 1: Check if session has identifiers (browserless capable)
+    if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
+        logger.error("Essential API identifiers not available (not logged in)")
         return "(Session not valid)"
 
     # Step 2: Get tree ID
