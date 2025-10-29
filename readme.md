@@ -597,11 +597,31 @@ For issues or questions:
   - Registered globally via session_utils.set_global_session()
   - Consumers must call session_utils.get_authenticated_session(action_name=...) before API usage
 
-- API Endpoints (used by api_search_core)
-  - Edit Relationships: /family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships
-    - Response: { cssBundleUrl, jsBundleUrl, data } where data is a JSON string; parse with json.loads
-    - Family arrays: parsed['person'] → fathers[], mothers[], spouses[], children[]
-  - Relationship Ladder: /family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
+- API Endpoints
+
+  **User Identity Endpoints** (used by session_manager)
+  - Profile ID: `app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid`
+    - Response: `{"data": {"ucdmid": "07bdd45e-0006-0000-0000-000000000000"}, "message": "OK", "status": 200}`
+    - Returns: User's profile ID (ucdmid field)
+
+  - UUID (DNA Test ID): `api/navheaderdata/v1/header/data/dna`
+    - Response: `{"results": {"testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7"}}`
+    - Returns: User's DNA test UUID (testId field)
+
+  - Tree List: `api/treesui-list/trees?rights=own`
+    - Response: `{"trees": [{"id": "175946702", "name": "Gault Family", "ownerUserId": "...", ...}], "count": 2}`
+    - Returns: List of user's trees; match TREE_NAME from .env to get tree ID
+
+  - Tree Owner Info: `api/uhome/secure/rest/user/tree-info?tree_id={tree_id}`
+    - Response: `{"id": 175946702, "owner": {"userId": "...", "displayName": "Wayne Gault"}, "mePersonId": 102281560836, ...}`
+    - Returns: Tree owner display name and mePersonId
+
+  **Genealogical Data Endpoints** (used by api_search_core)
+  - Edit Relationships: `/family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships`
+    - Response: `{ cssBundleUrl, jsBundleUrl, data }` where data is a JSON string; parse with json.loads
+    - Family arrays: `parsed['person']` → fathers[], mothers[], spouses[], children[]
+
+  - Relationship Ladder: `/family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels`
 
 - Display Rules
   - Parents, spouses, children shown; siblings intentionally omitted in API path
