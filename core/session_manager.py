@@ -2474,9 +2474,29 @@ class SessionManager:
                         logger.debug(f"My uuid: {my_uuid_val}")
                         self._uuid_logged = True
                     return my_uuid_val
+                logger.debug(f"UUID API response 'results' dict: {results_dict}")
                 logger.error("Could not find 'testId' in 'results' dict of UUID API response.")
+                # Fall back to .env
+                config_uuid = config_schema.api.my_uuid
+                if config_uuid:
+                    logger.warning(f"API failed, using UUID from config (.env): {config_uuid}")
+                    self.api_manager.my_uuid = config_uuid
+                    if not self._uuid_logged:
+                        logger.debug(f"My uuid: {config_uuid}")
+                        self._uuid_logged = True
+                    return config_uuid
                 return None
+            logger.debug(f"UUID API response: {response_data}")
             logger.error(f"Unexpected response format for UUID API: {type(response_data)}")
+            # Fall back to .env
+            config_uuid = config_schema.api.my_uuid
+            if config_uuid:
+                logger.warning(f"API failed, using UUID from config (.env): {config_uuid}")
+                self.api_manager.my_uuid = config_uuid
+                if not self._uuid_logged:
+                    logger.debug(f"My uuid: {config_uuid}")
+                    self._uuid_logged = True
+                return config_uuid
             return None
 
         except Exception as e:
