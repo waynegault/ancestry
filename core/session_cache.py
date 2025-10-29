@@ -117,7 +117,12 @@ class SessionComponentCache(BaseCacheModule):
 
                 if age < CACHE_CONFIG.component_ttl_seconds:
                     logger.debug(f"Cache HIT for {component_type} (age: {age:.1f}s)")
-                    return cached_data.get("component")
+                    component = cached_data.get("component")
+                    # Return deep copy for mutable objects to prevent cache corruption
+                    if isinstance(component, (dict, list)):
+                        import copy
+                        return copy.deepcopy(component)
+                    return component
                 logger.debug(
                     f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
                 )
