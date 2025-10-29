@@ -2431,10 +2431,18 @@ def _format_predicted_relationship(rel_str: str) -> str:
 
 
 def _get_owner_profile_id() -> Optional[str]:
-    """Get tree owner's profile ID from environment or config."""
-    owner_profile_id = os.getenv('MY_PROFILE_ID')
-    if not owner_profile_id:
-        owner_profile_id = getattr(config_schema, 'testing_profile_id', None)
+    """Get tree owner's profile ID from session manager or config."""
+    from session_utils import get_global_session
+
+    # Try to get from session manager first
+    session_manager = get_global_session()
+    if session_manager:
+        owner_profile_id = session_manager.my_profile_id
+        if owner_profile_id:
+            return owner_profile_id
+
+    # Fallback to config for testing
+    owner_profile_id = getattr(config_schema, 'testing_profile_id', None)
     return owner_profile_id
 
 

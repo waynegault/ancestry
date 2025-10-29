@@ -481,6 +481,21 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
 
     try:
         client = OpenAI(api_key=api_key, base_url=base_url)
+
+        # Check if model is loaded by listing available models
+        try:
+            models = client.models.list()
+            available_models = [model.id for model in models.data]
+            if not available_models:
+                logger.error("Local LLM: No models loaded. Please load a model in LM Studio.")
+                return None
+            if model_name not in available_models:
+                logger.error(f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}")
+                return None
+        except Exception as e:
+            logger.error(f"Local LLM: Failed to check loaded models: {e}")
+            return None
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},

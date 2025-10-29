@@ -40,7 +40,14 @@ def _validate_profile_owner(session: Session, profile_id: str) -> bool:
         return True
 
     # Check if this is the tree owner (not a DNA match)
-    tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+    from session_utils import get_global_session
+    session_manager = get_global_session()
+    tree_owner_id = session_manager.my_profile_id if session_manager else None
+
+    # Fallback to .env if session manager not available
+    if not tree_owner_id:
+        tree_owner_id = os.getenv('MY_PROFILE_ID')
+
     if profile_id == tree_owner_id:
         logger.debug(f"Profile {profile_id} is tree owner (not in DNA matches) - calculating global statistics")
         return True
@@ -419,7 +426,14 @@ def calculate_ethnicity_commonality(
 
     try:
         # Check if owner_profile_id is the tree owner (not in Person table)
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        from session_utils import get_global_session
+        session_manager = get_global_session()
+        tree_owner_id = session_manager.my_profile_id if session_manager else None
+
+        # Fallback to .env if session manager not available
+        if not tree_owner_id:
+            tree_owner_id = os.getenv('MY_PROFILE_ID')
+
         if owner_profile_id == tree_owner_id:
             # Tree owner is not in Person/DnaMatch tables
             # Their ethnicity data is stored in ethnicity_regions.json
