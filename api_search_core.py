@@ -156,14 +156,14 @@ def _resolve_base_and_tree(session_manager: Any) -> tuple[str, Optional[str]]:
     Resolve base_url and tree_id for API calls.
 
     In browserless mode, session_manager.my_tree_id may be None because get_my_tree_id()
-    requires a browser driver. So we fall back to config values directly.
+    requires a browser driver. So we fall back to test config for testing.
     """
     base_url = getattr(config_schema.api, "base_url", "") or ""
     # Try session_manager first (works when browser is active)
     tree_id = getattr(session_manager, "my_tree_id", None)
-    # Fall back to config (works in browserless mode)
+    # Fall back to test config for testing
     if not tree_id:
-        tree_id = getattr(config_schema.api, "tree_id", None) or getattr(config_schema.api, "my_tree_id", None) or getattr(config_schema.test, "test_tree_id", None)
+        tree_id = getattr(config_schema.test, "test_tree_id", None)
     return base_url, str(tree_id) if tree_id else None
 
 

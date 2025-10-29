@@ -556,18 +556,16 @@ def all_but_first_actn(session_manager: SessionManager, *_):
     Closes the provided main session pool FIRST.
     Creates a temporary SessionManager for the delete operation.
     """
-    # Define the specific profile ID to keep from config (prefer .env TESTING_PROFILE_ID)
-    profile_id_to_keep = (
-        getattr(config, "testing_profile_id", None)
-        or getattr(getattr(config, "test", None), "test_profile_id", None)
-        or ""
-    )
-    if not profile_id_to_keep or profile_id_to_keep.strip().upper() == "MOCK_PROFILE_ID":
+    # Get profile ID from session manager
+    profile_id_to_keep = session_manager.my_profile_id if session_manager else None
+
+    if not profile_id_to_keep:
         logger.error(
-            "TESTING_PROFILE_ID is not configured in .env (or is MOCK_PROFILE_ID). Aborting to prevent unintended deletion.\n"
-            "Set TESTING_PROFILE_ID=<keeper_profile_id> in .env and retry."
+            "Profile ID not available from session manager. Cannot determine which profile to keep.\n"
+            "Please ensure session is authenticated before running this action."
         )
         return False
+
     profile_id_to_keep = profile_id_to_keep.upper()
 
     temp_manager = None  # Initialize

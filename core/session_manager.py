@@ -2429,6 +2429,14 @@ class SessionManager:
             logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
             return None
 
+    def _store_and_log_uuid(self, uuid_val: str) -> str:
+        """Helper to store UUID in API manager and log it once."""
+        self.api_manager.my_uuid = uuid_val
+        if not self._uuid_logged:
+            logger.debug(f"My uuid: {uuid_val}")
+            self._uuid_logged = True
+        return uuid_val
+
     @retry_on_failure(max_attempts=3)
     def get_my_uuid(self) -> Optional[str]:
         """
@@ -2450,7 +2458,10 @@ class SessionManager:
         # Try to fetch from API first
         from urllib.parse import urljoin
         url = urljoin(config_schema.api.base_url, "api/navheaderdata/v1/header/data/dna")
-        logger.debug("Attempting to fetch UUID (testId) from API...")
+        logger.debug(f"Fetching UUID from API: {url}")
+
+        my_uuid_val = None
+        error_msg = None
 
         try:
             import api_utils as local_api_utils
@@ -2467,50 +2478,22 @@ class SessionManager:
                 results_dict = response_data["results"]
                 if isinstance(results_dict, dict) and "testId" in results_dict:
                     my_uuid_val = str(results_dict["testId"]).upper()
-                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
-                    # Store in API manager
-                    self.api_manager.my_uuid = my_uuid_val
-                    if not self._uuid_logged:
-                        logger.debug(f"My uuid: {my_uuid_val}")
-                        self._uuid_logged = True
-                    return my_uuid_val
+                    logger.debug(f"Successfully retrieved UUID from API: {my_uuid_val}")
+                    return self._store_and_log_uuid(my_uuid_val)
                 logger.debug(f"UUID API response 'results' dict: {results_dict}")
-                logger.error("Could not find 'testId' in 'results' dict of UUID API response.")
-                # Fall back to .env
-                config_uuid = config_schema.api.my_uuid
-                if config_uuid:
-                    logger.warning(f"API failed, using UUID from config (.env): {config_uuid}")
-                    self.api_manager.my_uuid = config_uuid
-                    if not self._uuid_logged:
-                        logger.debug(f"My uuid: {config_uuid}")
-                        self._uuid_logged = True
-                    return config_uuid
-                return None
-            logger.debug(f"UUID API response: {response_data}")
-            logger.error(f"Unexpected response format for UUID API: {type(response_data)}")
-            # Fall back to .env
-            config_uuid = config_schema.api.my_uuid
-            if config_uuid:
-                logger.warning(f"API failed, using UUID from config (.env): {config_uuid}")
-                self.api_manager.my_uuid = config_uuid
-                if not self._uuid_logged:
-                    logger.debug(f"My uuid: {config_uuid}")
-                    self._uuid_logged = True
-                return config_uuid
-            return None
+                error_msg = "Could not find 'testId' in 'results' dict"
+            else:
+                logger.debug(f"UUID API response: {response_data}")
+                error_msg = f"Unexpected response format: {type(response_data)}"
 
         except Exception as e:
-            logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
-            # Fall back to config if API fails
-            config_uuid = config_schema.api.my_uuid
-            if config_uuid:
-                logger.warning(f"API failed, using UUID from config (.env): {config_uuid}")
-                self.api_manager.my_uuid = config_uuid
-                if not self._uuid_logged:
-                    logger.debug(f"My uuid: {config_uuid}")
-                    self._uuid_logged = True
-                return config_uuid
-            return None
+            error_msg = f"Exception: {e}"
+            logger.error(f"Error fetching UUID from API: {e}", exc_info=True)
+
+        # API failed - no fallback, return None
+        if error_msg:
+            logger.error(f"Failed to retrieve UUID from API: {error_msg}")
+        return None
 
     @retry_on_failure(max_attempts=3)
     def get_my_tree_id(self) -> Optional[str]:
@@ -2532,10 +2515,12 @@ class SessionManager:
             logger.error("get_my_tree_id: Session invalid.")
             return None
 
-        # Try to fetch from API first
+        # Try to fetch from API
         from urllib.parse import urljoin
         url = urljoin(config_schema.api.base_url, "api/treesui-list/trees?rights=own")
-        logger.debug(f"Attempting to fetch tree ID for TREE_NAME='{tree_name_config}' from API...")
+        logger.debug(f"Fetching tree ID from API: {url} (matching TREE_NAME='{tree_name_config}')")
+
+        error_msg = None
 
         try:
             import api_utils as local_api_utils
@@ -2556,23 +2541,23 @@ class SessionManager:
                         if isinstance(tree, dict) and tree.get("name") == tree_name_config:
                             tree_id = str(tree.get("id", ""))
                             if tree_id:
-                                logger.debug(f"Successfully retrieved tree ID: {tree_id} for tree '{tree_name_config}'")
+                                logger.debug(f"Successfully retrieved tree ID from API: {tree_id}")
                                 return self._store_and_log_tree_id(tree_id)
-                    logger.error(f"Tree '{tree_name_config}' not found in user's tree list. Available trees: {[t.get('name') for t in trees_list if isinstance(t, dict)]}")
-                    return None
-                logger.error("'trees' field is not a list in tree list API response.")
-                return None
-            logger.error(f"Unexpected response format for tree list API: {type(response_data)}")
-            return None
+                    available_trees = [t.get('name') for t in trees_list if isinstance(t, dict)]
+                    error_msg = f"Tree '{tree_name_config}' not found. Available: {available_trees}"
+                else:
+                    error_msg = "'trees' field is not a list"
+            else:
+                error_msg = f"Unexpected response format: {type(response_data)}"
 
         except Exception as e:
-            logger.error(f"Unexpected error in get_my_tree_id: {e}", exc_info=True)
-            # Fall back to config if API fails
-            config_tree_id = config_schema.api.tree_id
-            if config_tree_id:
-                logger.warning(f"API failed, using tree ID from config (.env): {config_tree_id}")
-                return self._store_and_log_tree_id(config_tree_id)
-            return None
+            error_msg = f"Exception: {e}"
+            logger.error(f"Error fetching tree ID from API: {e}", exc_info=True)
+
+        # API failed - no fallback, return None
+        if error_msg:
+            logger.error(f"Failed to retrieve tree ID from API: {error_msg}")
+        return None
 
     def _store_and_log_tree_id(self, tree_id: str) -> str:
         """Store tree ID in API manager and log it."""

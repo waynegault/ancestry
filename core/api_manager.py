@@ -427,31 +427,15 @@ class APIManager:
         """
         Retrieve user UUID (DNA test GUID).
 
-        Prefer configuration (.env MY_UUID). The legacy API endpoint used previously
-        is deprecated and returns 404, so we no longer attempt a network call here.
+        Note: UUID is now fetched from API by session_manager.get_my_uuid().
+        This method is deprecated and returns None.
         """
-        logger.debug("Retrieving UUID (preferring config)...")
-        config_uuid = config_schema.api.my_uuid
-        if config_uuid:
-            self.my_uuid = str(config_uuid)
-            if not self._uuid_logged:
-                logger.debug(f"My UUID (from .env): {config_uuid}")
-                self._uuid_logged = True
-            return self.my_uuid
-
-        logger.error("UUID not found in config (.env). Please set MY_UUID in .env file.")
+        logger.debug("get_uuid() called - UUID should be fetched via session_manager.get_my_uuid()")
         return None
 
     def _ensure_profile_id(self) -> bool:
-        """Ensure my_profile_id is set, preferring config; returns True on success."""
+        """Ensure my_profile_id is set; returns True on success."""
         if self.my_profile_id:
-            return True
-        profile_id_cfg = config_schema.api.my_user_id
-        if profile_id_cfg:
-            self.my_profile_id = str(profile_id_cfg)
-            if not self._profile_id_logged:
-                logger.debug(f"My profile ID (from .env): {self.my_profile_id}")
-                self._profile_id_logged = True
             return True
         profile_id = self.get_profile_id()
         if not profile_id:
@@ -460,21 +444,12 @@ class APIManager:
         return True
 
     def _ensure_uuid(self) -> bool:
-        """Ensure my_uuid is set, preferring config; returns True on success."""
+        """Ensure my_uuid is set; returns True on success."""
         if self.my_uuid:
             return True
-        uuid_cfg = config_schema.api.my_uuid
-        if uuid_cfg:
-            self.my_uuid = str(uuid_cfg)
-            if not self._uuid_logged:
-                logger.debug(f"My UUID (from .env): {self.my_uuid}")
-                self._uuid_logged = True
-            return True
-        uuid_value = self.get_uuid()
-        if not uuid_value:
-            logger.error("Failed to retrieve UUID")
-            return False
-        return True
+        # UUID should be set by session_manager.get_my_uuid()
+        logger.error("UUID not set - should be fetched via session_manager.get_my_uuid()")
+        return False
 
     def _ensure_csrf(self) -> None:
         """Best-effort CSRF retrieval; logs warning on failure but does not fail."""

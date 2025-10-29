@@ -1353,9 +1353,9 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
         return {}
 
     try:
-        my_user_id = config_schema.api.my_user_id
+        my_user_id = session_manager.my_profile_id
         if not my_user_id:
-            logger.debug(f"No user_id configured, cannot fetch ladder for CFPID {cfpid}")
+            logger.debug(f"No user_id available, cannot fetch ladder for CFPID {cfpid}")
             return {}
 
         url = urljoin(
