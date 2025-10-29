@@ -1,11 +1,9 @@
 """
-api_search_core
+API Search Core Intelligence & Advanced Genealogical Discovery Engine
 
-Lightweight API search core used by Action 10 and Action 9.
-- Performs TreesUI list search
-- Scores results using universal GEDCOM scorer
-- Provides table-row formatting compatible with Action 10
-- Presents post-selection details (family + relationship path)
+Lightweight API search core used by Action 10 and Action 9. Performs TreesUI list search,
+scores results using universal GEDCOM scorer, provides table-row formatting compatible with
+Action 10, and presents post-selection details (family + relationship path).
 """
 from __future__ import annotations
 
