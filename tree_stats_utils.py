@@ -523,8 +523,12 @@ def _test_calculate_tree_statistics_with_valid_profile() -> None:
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
-        # Use tree owner profile_id (won't be in DNA matches)
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        # Use tree owner profile_id from session manager or .env fallback
+        import os
+
+        from session_utils import get_global_session
+        sm = get_global_session()
+        tree_owner_id = sm.my_profile_id if sm else os.getenv('MY_PROFILE_ID')
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
 
@@ -584,7 +588,12 @@ def _test_statistics_cache_hit() -> None:
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        # Use tree owner profile_id from session manager or .env fallback
+        import os
+
+        from session_utils import get_global_session
+        sm = get_global_session()
+        tree_owner_id = sm.my_profile_id if sm else os.getenv('MY_PROFILE_ID')
         assert tree_owner_id is not None, "Tree owner ID should not be None"
 
         # First call - should calculate
@@ -609,7 +618,12 @@ def _test_statistics_match_counts() -> None:
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        # Use tree owner profile_id from session manager or .env fallback
+        import os
+
+        from session_utils import get_global_session
+        sm = get_global_session()
+        tree_owner_id = sm.my_profile_id if sm else os.getenv('MY_PROFILE_ID')
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
 
@@ -660,7 +674,12 @@ def _test_statistics_with_tree_owner() -> None:
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        # Use tree owner profile_id from session manager or .env fallback
+        import os
+
+        from session_utils import get_global_session
+        sm = get_global_session()
+        tree_owner_id = sm.my_profile_id if sm else os.getenv('MY_PROFILE_ID')
         assert tree_owner_id is not None, "Tree owner ID should not be None"
 
         # Should not raise warning for tree owner
@@ -679,7 +698,12 @@ def _test_statistics_timestamp_format() -> None:
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        # Use tree owner profile_id from session manager or .env fallback
+        import os
+
+        from session_utils import get_global_session
+        sm = get_global_session()
+        tree_owner_id = sm.my_profile_id if sm else os.getenv('MY_PROFILE_ID')
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
 
@@ -697,7 +721,12 @@ def _test_statistics_ethnicity_regions_structure() -> None:
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
-        tree_owner_id = os.getenv('TREE_OWNER_PROFILE_ID') or os.getenv('MY_PROFILE_ID')
+        # Use tree owner profile_id from session manager or .env fallback
+        import os
+
+        from session_utils import get_global_session
+        sm = get_global_session()
+        tree_owner_id = sm.my_profile_id if sm else os.getenv('MY_PROFILE_ID')
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
 

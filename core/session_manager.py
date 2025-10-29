@@ -2432,7 +2432,10 @@ class SessionManager:
     @retry_on_failure(max_attempts=3)
     def get_my_uuid(self) -> Optional[str]:
         """
-        Retrieve user's UUID (testId).
+        Retrieve user's UUID (testId) from API.
+
+        Uses: https://www.ancestry.co.uk/api/navheaderdata/v1/header/data/dna
+        Returns: {"results": {"testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7"}}
 
         Returns:
             str: UUID if successful, None otherwise
@@ -2444,25 +2447,58 @@ class SessionManager:
                 self._last_uuid_error_time = time.time()
             return None
 
-        # Check if UUID is available in config first (skip deprecated API call)
-        config_uuid = config_schema.api.my_uuid
-        if config_uuid:
-            logger.debug(f"Using UUID from config (.env): {config_uuid}")
-            self.api_manager.my_uuid = config_uuid
-            if not self._uuid_logged:
-                logger.debug(f"My uuid: {config_uuid}")
-                self._uuid_logged = True
-            return config_uuid
+        # Try to fetch from API first
+        from urllib.parse import urljoin
+        url = urljoin(config_schema.api.base_url, "api/navheaderdata/v1/header/data/dna")
+        logger.debug("Attempting to fetch UUID (testId) from API...")
 
-        # If not in config, log error and return None
-        # Note: The /api/uhome/secure/rest/header/dna endpoint is deprecated and returns 404
-        logger.error("UUID not found in config (.env). Please set MY_UUID in .env file.")
-        return None
+        try:
+            import api_utils as local_api_utils
+            response_data = local_api_utils._api_req(
+                url=url,
+                driver=self.driver,
+                session_manager=self,
+                method="GET",
+                use_csrf_token=False,
+                api_description="Get UUID (testId)",
+            )
+
+            if isinstance(response_data, dict) and "results" in response_data:
+                results_dict = response_data["results"]
+                if isinstance(results_dict, dict) and "testId" in results_dict:
+                    my_uuid_val = str(results_dict["testId"]).upper()
+                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
+                    # Store in API manager
+                    self.api_manager.my_uuid = my_uuid_val
+                    if not self._uuid_logged:
+                        logger.debug(f"My uuid: {my_uuid_val}")
+                        self._uuid_logged = True
+                    return my_uuid_val
+                logger.error("Could not find 'testId' in 'results' dict of UUID API response.")
+                return None
+            logger.error(f"Unexpected response format for UUID API: {type(response_data)}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
+            # Fall back to config if API fails
+            config_uuid = config_schema.api.my_uuid
+            if config_uuid:
+                logger.warning(f"API failed, using UUID from config (.env): {config_uuid}")
+                self.api_manager.my_uuid = config_uuid
+                if not self._uuid_logged:
+                    logger.debug(f"My uuid: {config_uuid}")
+                    self._uuid_logged = True
+                return config_uuid
+            return None
 
     @retry_on_failure(max_attempts=3)
     def get_my_tree_id(self) -> Optional[str]:
         """
-        Retrieve user's tree ID.
+        Retrieve user's tree ID from API by matching TREE_NAME.
+
+        Uses: https://www.ancestry.co.uk/api/treesui-list/trees?rights=own
+        Returns: {"trees": [{"id": "175946702", "name": "Gault Family", ...}], "count": 2}
 
         Returns:
             str: Tree ID if successful, None otherwise
@@ -2476,16 +2512,47 @@ class SessionManager:
             logger.error("get_my_tree_id: Session invalid.")
             return None
 
-        # Check if tree ID is available in config first (skip deprecated API call)
-        config_tree_id = config_schema.api.tree_id
-        if config_tree_id:
-            logger.debug(f"Using tree ID from config (.env): {config_tree_id}")
-            return self._store_and_log_tree_id(config_tree_id)
+        # Try to fetch from API first
+        from urllib.parse import urljoin
+        url = urljoin(config_schema.api.base_url, "api/treesui-list/trees?rights=own")
+        logger.debug(f"Attempting to fetch tree ID for TREE_NAME='{tree_name_config}' from API...")
 
-        # If not in config, log error and return None
-        # Note: The /api/uhome/secure/rest/header/trees endpoint is deprecated and returns 404
-        logger.error(f"Tree ID not found in config (.env) for tree '{tree_name_config}'. Please set TREE_ID in .env file.")
-        return None
+        try:
+            import api_utils as local_api_utils
+            response_data = local_api_utils._api_req(
+                url=url,
+                driver=self.driver,
+                session_manager=self,
+                method="GET",
+                use_csrf_token=False,
+                api_description="Get Tree List",
+            )
+
+            if isinstance(response_data, dict) and "trees" in response_data:
+                trees_list = response_data["trees"]
+                if isinstance(trees_list, list):
+                    # Find tree matching TREE_NAME
+                    for tree in trees_list:
+                        if isinstance(tree, dict) and tree.get("name") == tree_name_config:
+                            tree_id = str(tree.get("id", ""))
+                            if tree_id:
+                                logger.debug(f"Successfully retrieved tree ID: {tree_id} for tree '{tree_name_config}'")
+                                return self._store_and_log_tree_id(tree_id)
+                    logger.error(f"Tree '{tree_name_config}' not found in user's tree list. Available trees: {[t.get('name') for t in trees_list if isinstance(t, dict)]}")
+                    return None
+                logger.error("'trees' field is not a list in tree list API response.")
+                return None
+            logger.error(f"Unexpected response format for tree list API: {type(response_data)}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error in get_my_tree_id: {e}", exc_info=True)
+            # Fall back to config if API fails
+            config_tree_id = config_schema.api.tree_id
+            if config_tree_id:
+                logger.warning(f"API failed, using tree ID from config (.env): {config_tree_id}")
+                return self._store_and_log_tree_id(config_tree_id)
+            return None
 
     def _store_and_log_tree_id(self, tree_id: str) -> str:
         """Store tree ID in API manager and log it."""
