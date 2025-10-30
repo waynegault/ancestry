@@ -2080,6 +2080,69 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
     return True
 
 
+def _validate_ai_provider_on_startup() -> None:
+    """
+    Validate AI provider configuration on startup.
+
+    For local_llm: Checks if model is loaded in LM Studio
+    For cloud providers: Just logs the configuration
+    """
+    from config import config_schema
+
+    ai_provider = config_schema.ai_provider.lower() if config_schema.ai_provider else ""
+
+    if not ai_provider:
+        logger.debug("No AI provider configured - AI features will be disabled")
+        return
+
+    logger.info(f"Validating AI provider: {ai_provider}")
+
+    if ai_provider == "local_llm":
+        # Validate local LLM is accessible
+        try:
+            from openai import OpenAI
+            api_key = config_schema.api.local_llm_api_key
+            model_name = config_schema.api.local_llm_model
+            base_url = config_schema.api.local_llm_base_url
+
+            if not all([api_key, model_name, base_url]):
+                logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
+                return
+
+            # Try to connect and check if model is loaded
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            from ai_interface import _validate_local_llm_model_loaded
+            actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
+
+            if error_msg:
+                logger.warning(f"⚠️ {error_msg}")
+                logger.warning("   Please load the model in LM Studio before using AI features")
+            else:
+                logger.info(f"✅ Local LLM ready: {actual_model_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not validate Local LLM: {e}")
+            logger.warning("   AI features may not work until LM Studio is running")
+
+    elif ai_provider == "deepseek":
+        api_key = config_schema.api.deepseek_api_key
+        model = config_schema.api.deepseek_ai_model
+        if api_key and model:
+            logger.info(f"✅ DeepSeek configured: {model}")
+        else:
+            logger.warning("⚠️ DeepSeek configuration incomplete")
+
+    elif ai_provider == "gemini":
+        api_key = config_schema.api.google_api_key
+        model = config_schema.api.google_ai_model
+        if api_key and model:
+            logger.info(f"✅ Gemini configured: {model}")
+        else:
+            logger.warning("⚠️ Gemini configuration incomplete")
+
+    else:
+        logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
+
+
 def main() -> None:
     # Initialize session_manager as local variable
     session_manager = None
@@ -2121,6 +2184,9 @@ def main() -> None:
         except Exception as e:
             logger.warning(f"Session authentication failed (will authenticate during action): {e}")
             # Don't fail - action will authenticate itself if needed
+
+        # Validate AI provider configuration if configured
+        _validate_ai_provider_on_startup()
 
         # --- Main menu loop ---
         while True:
