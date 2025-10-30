@@ -1448,6 +1448,12 @@ def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref
     validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side", False))
     validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side", False))
 
+    # Include ethnicity columns (dynamically added columns starting with 'ethnicity_')
+    for key, value in match_data.items():
+        if key.startswith("ethnicity_") and key not in validated_data:
+            # Validate ethnicity percentage (should be integer 0-100)
+            validated_data[key] = _validate_optional_numeric(value)
+
     return validated_data
 
 
