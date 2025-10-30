@@ -376,9 +376,12 @@ def _validate_and_normalize_date_string(date_str: Optional[str]) -> Optional[str
 
 def _clean_date_string(date_str: str) -> Optional[str]:
     """Clean date string by removing keywords and normalizing format."""
+    # Remove multi-word phrases first (before single keywords)
+    phrases_to_remove = r"\b(?:ON\s+OR\s+BEFORE|ON\s+OR\s+AFTER|ON\s+OR\s+ABOUT)\b\.?\s*"
+    cleaned_str = re.sub(phrases_to_remove, "", date_str, flags=re.IGNORECASE).strip()
+
     # Remove keywords
     keywords_to_remove = r"\b(?:MAYBE|PRIOR|CALCULATED|AROUND|BAPTISED|WFT|BTWN|BFR|SP|QTR\.?\d?|CIRCA|ABOUT:|AFTER|BEFORE)\b\.?\s*|\b(?:AGE:?\s*\d+)\b|\b(?:WIFE\s+OF.*)\b|\b(?:HUSBAND\s+OF.*)\b"
-    cleaned_str = date_str
     previous_len = -1
 
     while len(cleaned_str) != previous_len:

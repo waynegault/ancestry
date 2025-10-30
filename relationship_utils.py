@@ -1354,7 +1354,7 @@ def _format_path_step(
     next_person: dict,
     seen_names: set,
 ) -> tuple[str, set]:
-    """Format a single step in the relationship path."""
+    """Format a single step in the relationship path using possessive format."""
     # Get names and clean them
     current_name = current_person.get("name", "Unknown")
     current_name_clean = _clean_name_format(str(current_name))
@@ -1373,12 +1373,16 @@ def _format_path_step(
         )
         seen_names.add(next_name_clean.lower())
 
+    # Get first name for possessive form
+    first_name = current_name_clean.split()[0] if current_name_clean else "Unknown"
+    possessive = f"{first_name}'s" if not first_name.endswith('s') else f"{first_name}'"
+
     # Handle "You are..." relationships specially (convert to inverse relationship)
     if isinstance(relationship, str) and relationship.startswith("You are the "):
         line = _convert_you_are_relationship(relationship, current_name_clean, next_name_clean, next_years)
     else:
-        # Normal relationship format
-        line = f"   - {relationship} is {next_name_clean}{next_years}"
+        # Possessive relationship format: "Peter's father is William Fraser (1818-1898)"
+        line = f"  - {possessive} {relationship} is {next_name_clean}{next_years}"
 
     return line, seen_names
 
@@ -1391,6 +1395,12 @@ def format_relationship_path_unified(
 ) -> str:
     """
     Format a relationship path using the unified format for both GEDCOM and API data.
+
+    Uses narrative format with possessive relationships:
+    "Relationship between Peter Fraser (1893-1915) and Wayne Gordon Gault (1969-).
+    Peter is Wayne's 1st cousin 4x removed:
+      - Peter's father is William Fraser (1818-1898)
+      - William's father is John Fraser (1791-1840)"
 
     Args:
         path_data: List of dictionaries with keys 'name', 'birth_year', 'death_year', 'relationship', 'gender'
@@ -1405,31 +1415,35 @@ def format_relationship_path_unified(
     if not path_data or len(path_data) < 2:
         return f"(No relationship path data available for {target_name})"
 
-    # The first person in the path (target)
-    # Determine the specific relationship type if not provided
-    if relationship_type is None or relationship_type == "relative":
-        relationship_type = _determine_relationship_type_from_path(path_data) or "relative"
-
-    # Relationship header (no emojis, simplified wording)
-    header = f"Relationship to {owner_name}:"
-
-    # Format each step in the path with indentation
-    path_lines = []
-
-    # Keep track of names we've already seen to avoid adding years multiple times
-    seen_names = set()
-
-    # Add first person (target) as a standalone line with years
+    # Get first and last person details
     first_person = path_data[0]
     first_name = _clean_name_format(str(first_person.get("name", target_name)))
     first_years = _format_years_display(
         first_person.get("birth_year"),
         first_person.get("death_year")
     )
-    path_lines.append(f"   - {first_name}{first_years}")
-    seen_names.add(first_name.lower())
 
-    # Process remaining path steps without repeating the person's name at the start
+    # Get owner's first name for possessive
+    owner_first_name = owner_name.split()[0] if owner_name else "Owner"
+    owner_possessive = f"{owner_first_name}'s" if not owner_first_name.endswith('s') else f"{owner_first_name}'"
+
+    # Get target's first name for subject
+    target_first_name = first_name.split()[0] if first_name else "Person"
+
+    # Determine the specific relationship type if not provided
+    if relationship_type is None or relationship_type == "relative":
+        relationship_type = _determine_relationship_type_from_path(path_data) or "relative"
+
+    # Narrative header showing both people and their relationship
+    header = f"Relationship between {first_name}{first_years} and {owner_name}.\n{target_first_name} is {owner_possessive} {relationship_type}:"
+
+    # Format each step in the path with indentation
+    path_lines = []
+
+    # Keep track of names we've already seen to avoid adding years multiple times
+    seen_names = {first_name.lower()}
+
+    # Process path steps using possessive format
     for i in range(len(path_data) - 1):
         current_person = path_data[i]
         next_person = path_data[i + 1]
