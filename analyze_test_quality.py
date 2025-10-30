@@ -124,13 +124,16 @@ class TestQualityAnalyzer:
         source = test_func["source"]
         name = test_func["name"]
 
+        # Check for assertions first (we'll use this later)
+        has_assertions = self._has_assertions(source)
+
         # Check for smoke tests (just returns True)
         if self._is_smoke_test(source):
             issues.append(f"{name}: Smoke test - just returns True")
             self.stats["smoke_tests"] += 1
 
         # Check for no assertions
-        if not self._has_assertions(source):
+        if not has_assertions:
             issues.append(f"{name}: No assertions found")
             self.stats["no_assertions"] += 1
 
@@ -144,9 +147,10 @@ class TestQualityAnalyzer:
             issues.append(f"{name}: Likely needs authentication")
             self.stats["needs_auth"] += 1
 
-        # Check for minimal test logic
-        if self._is_minimal_test(source):
-            issues.append(f"{name}: Minimal test logic")
+        # Only flag minimal test logic if it ALSO lacks assertions
+        # Short tests with assertions are perfectly valid unit tests
+        if self._is_minimal_test(source) and not has_assertions:
+            issues.append(f"{name}: Minimal test logic AND no assertions")
 
         return issues
 
