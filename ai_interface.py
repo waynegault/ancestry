@@ -455,12 +455,16 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     return _extract_gemini_response_text(response)
 
 
-def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: Optional[str]) -> Optional[str]:
+def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: Optional[str]) -> Optional[str]:  # noqa: ARG001
     """
     Call Local LLM model via LM Studio OpenAI-compatible API.
 
     LM Studio provides an OpenAI-compatible API endpoint at http://localhost:1234/v1
     This allows seamless integration with the existing OpenAI client.
+
+    Note: response_format_type parameter is kept for API compatibility but not used
+    because LM Studio doesn't support the response_format parameter. JSON output
+    is controlled via system prompt instructions instead.
 
     Recommended models for Dell XPS 15 9520 (i9-12900HK, 64GB RAM, RTX 3050 Ti 4GB):
     - Qwen2.5-14B-Instruct-Q4_K_M: Best quality, 2-4s response time
@@ -494,7 +498,17 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ]
-        request_params = _build_deepseek_request_params(actual_model_name, messages, max_tokens, temperature, response_format_type)
+
+        # Build request params - LM Studio doesn't support response_format, so omit it
+        request_params: dict[str, Any] = {
+            "model": actual_model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
+        }
+        # Note: LM Studio doesn't support response_format parameter
+        # JSON output is controlled via system prompt instructions instead
 
         response = client.chat.completions.create(**request_params)
         if response.choices and response.choices[0].message and response.choices[0].message.content:
@@ -840,13 +854,15 @@ def extract_genealogical_entities(
 
     system_prompt = _get_extraction_prompt(session_manager)
 
+    # Log AI call start for visibility (helps user understand why processing is slow)
+    logger.info(f"Calling AI ({ai_provider}) for entity extraction...")
     start_time = time.time()
     ai_response_str = _call_ai_model(
         provider=ai_provider,
         system_prompt=system_prompt,
         user_content=context_history,
         session_manager=session_manager,
-        max_tokens=1500,  # Increased for potentially larger JSON
+        max_tokens=3000,  # Increased to prevent truncation of complex JSON responses
         temperature=0.2,
         response_format_type="json_object",  # For DeepSeek
     )
@@ -1104,6 +1120,7 @@ def generate_contextual_response(
         return None
 
     # Call AI model
+    logger.info(f"{log_prefix}: Calling AI ({ai_provider}) for contextual response generation...")
     start_time = time.time()
     response_text = _call_ai_model(
         provider=ai_provider,

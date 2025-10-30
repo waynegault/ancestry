@@ -1688,8 +1688,7 @@ class ResourceManager:
                 logger.warning(f"Failed to cleanup resource {resource_name}: {cleanup_err}")
 
         self.allocated_resources.clear()
-        logger.info(f"🧹 Resource cleanup completed: {cleaned_count} resources cleaned")
-
+       
     def periodic_maintenance(self) -> None:
         """Perform periodic maintenance operations."""
         self.operation_count += 1
@@ -2960,15 +2959,14 @@ def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) 
 # Helper functions for send_messages_to_matches
 
 def _setup_progress_bar(total_candidates: int) -> dict:
-    """Setup progress bar configuration for message processing."""
+    """Setup progress bar configuration for message processing - simplified to match Action 6/7."""
     import sys
     return {
         "total": total_candidates,
-        "desc": "Processing",
-        "unit": " person",
-        "dynamic_ncols": True,
+        "desc": "Processing candidates",
+        "unit": "it",
         "leave": True,
-        "bar_format": "{desc} |{bar}| {percentage:3.0f}% ({n_fmt}/{total_fmt})",
+        "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}]",  # rate_fmt shows it/s instead of s/it
         "file": sys.stderr,
     }
 
@@ -3152,13 +3150,15 @@ def _calculate_batch_memory(db_logs_to_add_dicts: list, person_updates: dict) ->
 
 
 def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates: dict,
-                          batch_num: int, session_manager: SessionManager) -> tuple[bool, int]:
+                          batch_num: int, session_manager: SessionManager,
+                          sent_count: int = 0, acked_count: int = 0,
+                          skipped_count: int = 0, error_count: int = 0) -> tuple[bool, int]:
     """Perform batch commit and return success status and updated batch number."""
     batch_num += 1
     current_batch_size, memory_usage_mb = _calculate_batch_memory(db_logs_to_add_dicts, person_updates)
     logger.debug(f"Committing batch {batch_num}: {current_batch_size} items, {memory_usage_mb:.1f}MB")
 
-    commit_success, logs_committed_count, persons_updated_count = _safe_commit_with_rollback(
+    commit_success, _, _ = _safe_commit_with_rollback(
         session=db_session,
         log_upserts=db_logs_to_add_dicts,
         person_updates=person_updates,
@@ -3169,7 +3169,12 @@ def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates
     if commit_success:
         db_logs_to_add_dicts.clear()
         person_updates.clear()
-        logger.debug(f"Batch {batch_num} committed successfully: {logs_committed_count} logs, {persons_updated_count} persons")
+        # Log batch completion at INFO level (matching Action 6/7 format)
+        print()  # Newline before batch complete log
+        logger.info(
+            f"Batch {batch_num} complete: "
+            f"Sent={sent_count}, ACK={acked_count}, Skip={skipped_count}, Err={error_count}"
+        )
     else:
         logger.critical(f"Batch {batch_num} commit failed - halting processing")
 
@@ -3213,6 +3218,7 @@ def _handle_batch_commit_if_needed(
     db_session: Session,
     batch_data: 'MessagingBatchData',
     state: 'ProcessingState',
+    counters: 'BatchCounters',
     session_manager: SessionManager,
     batch_config: 'BatchConfig'
 ) -> tuple[bool, int, bool]:
@@ -3222,7 +3228,8 @@ def _handle_batch_commit_if_needed(
     if _should_commit_batch(current_batch_size, memory_usage_mb,
                            batch_config.commit_batch_size, batch_config.max_memory_mb, batch_config.max_items):
         commit_success, batch_num = _perform_batch_commit(
-            db_session, batch_data.db_logs_to_add_dicts, batch_data.person_updates, state.batch_num, session_manager
+            db_session, batch_data.db_logs_to_add_dicts, batch_data.person_updates, state.batch_num, session_manager,
+            counters.sent, counters.acked, counters.skipped, counters.errors
         )
         state.batch_num = batch_num
 
@@ -3302,16 +3309,13 @@ def _process_single_candidate_iteration(
         error_categorizer, person, True
     )
 
-    # Update progress bar
+    # Update progress bar (simple increment only, stats logged periodically)
     if state.progress_bar:
-        state.progress_bar.set_description(
-            f"Processing: Sent={counters.sent} ACK={counters.acked} Skip={counters.skipped} Err={counters.errors}"
-        )
         state.progress_bar.update(1)
 
     # Handle batch commit if needed
     critical_db_error, state.batch_num, overall_success = _handle_batch_commit_if_needed(
-        db_session, batch_data, state, session_manager, batch_config
+        db_session, batch_data, state, counters, session_manager, batch_config
     )
 
     return _create_result_dict(counters, state, critical_db_error, overall_success, not critical_db_error)
@@ -3349,8 +3353,7 @@ def _log_final_summary(
 
         error_summary = error_categorizer.get_error_summary()
         if error_summary['total_technical_errors'] > 0 or error_summary['total_business_skips'] > 0:
-            logger.info("")
-            logger.info("DETAILED ERROR ANALYSIS")
+            print("")
             logger.info(f"Technical Errors:                   {error_summary['total_technical_errors']}")
             logger.info(f"Business Logic Skips:               {error_summary['total_business_skips']}")
             logger.info(f"Error Rate:                         {error_summary['error_rate']:.1%}")
@@ -3358,8 +3361,6 @@ def _log_final_summary(
             if error_summary['most_common_error']:
                 logger.info(f"Most Common Issue:                  {error_summary['most_common_error']}")
 
-            logger.info("")
-            logger.info("ERROR BREAKDOWN")
             for error_type, count in error_summary['error_breakdown'].items():
                 if count > 0:
                     logger.info(f"  {error_type.replace('_', ' ').title()}: {count}")
@@ -3423,7 +3424,11 @@ def _perform_final_commit(
     db_logs_to_add_dicts: list[dict[str, Any]],
     person_updates: dict[int, PersonStatusEnum],
     batch_num: int,
-    session_manager: SessionManager
+    session_manager: SessionManager,
+    sent_count: int = 0,
+    acked_count: int = 0,
+    skipped_count: int = 0,
+    error_count: int = 0
 ) -> tuple[bool, int]:
     """
     Perform final commit of remaining data.
@@ -3440,7 +3445,7 @@ def _perform_final_commit(
         )
 
         # Use safe commit for final batch
-        final_commit_success, final_logs_saved, final_persons_updated = _safe_commit_with_rollback(
+        final_commit_success, _, _ = _safe_commit_with_rollback(
             session=db_session,
             log_upserts=db_logs_to_add_dicts,
             person_updates=person_updates,
@@ -3452,8 +3457,11 @@ def _perform_final_commit(
             # Final commit successful
             db_logs_to_add_dicts.clear()
             person_updates.clear()
-            logger.debug(
-                f"Action 8 Final commit executed (Logs Processed: {final_logs_saved}, Persons Updated: {final_persons_updated})."
+            # Log final batch completion at INFO level (matching Action 6/7 format)
+            print()  # Newline before final batch complete log
+            logger.info(
+                f"Batch {batch_num} complete (final): "
+                f"Sent={sent_count}, ACK={acked_count}, Skip={skipped_count}, Err={error_count}"
             )
         else:
             logger.critical("Final commit failed - some data may be lost")
@@ -3577,6 +3585,9 @@ def _process_all_candidates(
     # Setup progress bar
     tqdm_args = _setup_progress_bar(total_candidates)
     logger.debug("Processing candidates...")
+
+    # Add newline before progress bar to prevent log bleeding into progress bar
+    print()
 
     with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
         state.progress_bar = progress_bar
@@ -3774,7 +3785,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         # --- Step 4: Final Commit ---
         overall_success, batch_num = _perform_final_commit(
             db_session, critical_db_error_occurred, db_logs_to_add_dicts,
-            person_updates, batch_num, session_manager
+            person_updates, batch_num, session_manager,
+            sent_count, acked_count, skipped_count, error_count
         )
 
     # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---

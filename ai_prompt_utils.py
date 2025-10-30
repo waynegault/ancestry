@@ -66,7 +66,7 @@ def load_prompts() -> dict[str, Any]:
                     # Try to create backup before returning default
                     backup_prompts_file()
                 else:
-                    logger.info(f"Loaded AI prompts from {PROMPTS_FILE}")
+                    logger.debug(f"Loaded AI prompts from {PROMPTS_FILE}")  # Changed to DEBUG to prevent bleeding into progress bars
                     result = prompts_data
 
     except json.JSONDecodeError as e:

@@ -27,8 +27,6 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession, joinedload
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 import ms_graph_utils
 from ai_interface import (
@@ -191,6 +189,12 @@ class Location(BaseModel):
     place: str
     context: str = ""
     time_period: str = ""
+
+    @field_validator("context", "time_period", mode="before")
+    @classmethod
+    def convert_none_to_empty_string(cls, v: Any) -> str:
+        """Convert None to empty string for optional fields."""
+        return "" if v is None else str(v)
 
 
 class Occupation(BaseModel):
@@ -414,7 +418,7 @@ class PersonProcessor:
             else ""
         )
 
-    def process_person(self, person: Person, progress_bar=None) -> tuple[bool, str]:
+    def process_person(self, person: Person) -> tuple[bool, str]:
         """
         Process a single person and return (success, status_message).
 
@@ -438,7 +442,7 @@ class PersonProcessor:
                 return False, "skipped"
 
             # Process with AI
-            ai_results = self._process_with_ai(person, context_logs, progress_bar)
+            ai_results = self._process_with_ai(person, context_logs)
             if not ai_results:
                 return False, "ai_error"
 
@@ -448,11 +452,11 @@ class PersonProcessor:
             lookup_results = self._lookup_mentioned_people(extracted_data, person)
 
             # Create MS Graph tasks
-            self._create_ms_tasks(person, suggested_tasks, log_prefix, progress_bar)
+            self._create_ms_tasks(person, suggested_tasks, log_prefix)
 
             # Generate and send response
             success = self._handle_message_response(
-                person, context_logs, extracted_data, lookup_results, log_prefix, progress_bar
+                person, context_logs, extracted_data, lookup_results, log_prefix
             )
             if not success:
                 return False, "send_error"
@@ -536,13 +540,9 @@ class PersonProcessor:
         return None
 
     def _process_with_ai(
-        self, person: Person, context_logs: list[ConversationLog], progress_bar=None
+        self, person: Person, context_logs: list[ConversationLog]
     ) -> Optional[tuple[dict[str, Any], list[str]]]:
         """Process message content with AI and return extracted data and tasks."""
-        if progress_bar:
-            progress_bar.set_description(
-                f"Processing {person.username}: Analyzing content"
-            )
 
         # Check session validity
         if not self.session_manager.is_sess_valid():
@@ -1191,13 +1191,8 @@ class PersonProcessor:
         person: Person,
         suggested_tasks: list[str],
         log_prefix: str,
-        progress_bar=None,
     ):
         """Create MS Graph tasks if configured and available."""
-        if progress_bar:
-            progress_bar.set_description(
-                f"Processing {person.username}: Creating {len(suggested_tasks)} tasks"
-            )
 
         # Check if we should skip task creation
         if self._should_skip_ms_task_creation(log_prefix, suggested_tasks):
@@ -1212,23 +1207,25 @@ class PersonProcessor:
 
     def _initialize_ms_graph(self) -> None:
         """Initialize MS Graph authentication and list ID if needed."""
+        # MS Graph authentication now happens at main.py startup and is cached
+        # Just retrieve the token from cache here
         if not self.ms_state.token and not self.ms_state.auth_attempted:
-            logger.info("Attempting MS Graph authentication (device flow)...")
+            logger.debug("Retrieving MS Graph token from cache (authenticated at startup)...")
             self.ms_state.token = ms_graph_utils.acquire_token_device_flow()
             self.ms_state.auth_attempted = True
             if not self.ms_state.token:
-                logger.error("MS Graph authentication failed.")
+                logger.warning("MS Graph token not available (authentication may have been skipped at startup).")
 
         if self.ms_state.token and not self.ms_state.list_id:
-            logger.info(
+            logger.debug(
                 f"Looking up MS To-Do List ID for '{self.ms_state.list_name}'..."
             )
             self.ms_state.list_id = ms_graph_utils.get_todo_list_id(
                 self.ms_state.token, self.ms_state.list_name
             )
             if not self.ms_state.list_id:
-                logger.error(
-                    f"Failed find/get MS List ID for '{self.ms_state.list_name}'."
+                logger.warning(
+                    f"Failed to find MS To-Do list '{self.ms_state.list_name}'. Tasks will not be created."
                 )
 
     def _handle_message_response(
@@ -1238,7 +1235,6 @@ class PersonProcessor:
         extracted_data: dict[str, Any],
         lookup_results: list[PersonLookupResult],
         log_prefix: str,
-        progress_bar=None,
     ) -> bool:
         """Handle generating and sending the appropriate response message."""
 
@@ -1264,7 +1260,6 @@ class PersonProcessor:
             latest_message,
             lookup_results,
             log_prefix,
-            progress_bar,
         )
 
         # Format message (custom or standard acknowledgment)
@@ -1280,7 +1275,6 @@ class PersonProcessor:
             custom_reply,
             latest_message,
             log_prefix,
-            progress_bar,
         )
 
     def _mark_message_processed(self, message: ConversationLog):
@@ -1408,14 +1402,8 @@ class PersonProcessor:
         latest_message: ConversationLog,
         lookup_results: list[PersonLookupResult],
         log_prefix: str,
-        progress_bar=None,
     ) -> Optional[str]:
         """Generate a custom genealogical reply if appropriate."""
-
-        if progress_bar:
-            progress_bar.set_description(
-                f"Processing {person.username}: Identifying person"
-            )
 
         # Phase 3: Use contextual dialogue engine with lookup results
         if lookup_results:
@@ -1426,11 +1414,6 @@ class PersonProcessor:
                     f"{log_prefix}: Custom replies disabled via config. Using standard."
                 )
                 return None
-
-            if progress_bar:
-                progress_bar.set_description(
-                    f"Processing {person.username}: Generating contextual reply"
-                )
 
             # Generate contextual reply using Phase 3 dialogue engine
             custom_reply = self._generate_contextual_reply_with_lookup(
@@ -1462,11 +1445,6 @@ class PersonProcessor:
                 f"{log_prefix}: Custom replies disabled via config. Using standard."
             )
             return None
-
-        if progress_bar:
-            progress_bar.set_description(
-                f"Processing {person.username}: Generating custom reply"
-            )
 
         # Format genealogical data
         genealogical_data_str = _format_genealogical_data_for_ai(
@@ -1631,22 +1609,11 @@ class PersonProcessor:
         custom_reply: Optional[str],
         latest_message: ConversationLog,
         log_prefix: str,
-        progress_bar=None,
     ) -> bool:
         """Send the message and handle database updates."""
 
         # Apply mode/recipient filtering
         send_flag, skip_reason = self._should_send_message(person)
-
-        if progress_bar:
-            if custom_reply:
-                progress_bar.set_description(
-                    f"Processing {person.username}: Sending custom reply"
-                )
-            else:
-                progress_bar.set_description(
-                    f"Processing {person.username}: Sending acknowledgement"
-                )
 
         # Get conversation ID
         conv_id = self._get_conversation_id(context_logs, log_prefix)
@@ -1946,6 +1913,14 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         state.total_candidates = len(candidates)
         logger.info(f"Action 9: Found {state.total_candidates} candidates to process.")
 
+        # Log configuration (matching Action 8 format)
+        logger.info(
+            f"Configuration: APP_MODE={config_schema.app_mode}, "
+            f"MAX_PRODUCTIVE={config_schema.max_productive_to_process}, "
+            f"BATCH_SIZE={config_schema.batch_size}, "
+            f"AI_PROVIDER={config_schema.ai_provider}"
+        )
+
         # Step 3: Process candidates
         success = _process_candidates(
             session_manager, candidates, state, ms_state, db_state, msg_config
@@ -2107,74 +2082,69 @@ def _process_candidates(
     db_state: DatabaseState,
     msg_config: MessageConfig,
 ) -> bool:
-    """Process all candidate persons with progress tracking and batch commits."""
+    """Process all candidate persons with batch-level reporting (no progress bar)."""
 
     # Initialize processors
     person_processor = PersonProcessor(session_manager, db_state, msg_config, ms_state)
     commit_manager = BatchCommitManager(db_state)
 
-    # Setup progress tracking
-    tqdm_args = {
-        "total": state.total_candidates,
-        "desc": "Processing",
-        "unit": " person",
-        "dynamic_ncols": True,
-        "leave": True,
-        "bar_format": "{desc} |{bar}| {percentage:3.0f}% ({n_fmt}/{total_fmt})",
-        "file": sys.stderr,
-    }
-
     logger.info(f"Processing {state.total_candidates} candidates...")
+    print()  # Blank line before processing starts
 
-    with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-        for person in candidates:
-            if state.critical_db_error_occurred:
-                # Skip remaining candidates if critical DB error occurred
-                remaining = state.total_candidates - state.processed_count
-                state.skipped_count += remaining
-                logger.warning(
-                    f"Skipping remaining {remaining} candidates due to DB error."
-                )
-                break
+    for idx, person in enumerate(candidates, start=1):
+        if state.critical_db_error_occurred:
+            # Skip remaining candidates if critical DB error occurred
+            remaining = state.total_candidates - state.processed_count
+            state.skipped_count += remaining
+            logger.warning(
+                f"Skipping remaining {remaining} candidates due to DB error."
+            )
+            break
 
-            state.processed_count += 1
+        state.processed_count += 1
 
-            # Process individual person
-            success, status = person_processor.process_person(person, progress_bar)
+        # Log candidate being processed (matching Action 6 batch format)
+        logger.info(f"Candidate {idx}/{state.total_candidates}: {person.username}")
 
-            # Update counters based on result
-            if success:
-                if status == "success":
-                    state.acks_sent_count += 1
-                    state.archived_count += 1
-                    # Note: tasks_created_count is updated in the person processor
-                else:
-                    state.skipped_count += 1
-            elif status.startswith("error"):
-                state.error_count += 1
-                state.overall_success = False
+        # Process individual person
+        success, status = person_processor.process_person(person)
+
+        # Update counters based on result
+        if success:
+            if status == "success":
+                state.acks_sent_count += 1
+                state.archived_count += 1
+                # Note: tasks_created_count is updated in the person processor
             else:
                 state.skipped_count += 1
+        elif status.startswith("error"):
+            state.error_count += 1
+            state.overall_success = False
+        else:
+            state.skipped_count += 1
 
-            # Check for batch commit
-            if commit_manager.should_commit():
-                state.batch_num += 1
-                commit_success, _, _ = (
-                    commit_manager.commit_batch(state.batch_num)
-                )
-
-                if not commit_success:
-                    logger.critical(f"Critical: Batch {state.batch_num} commit failed!")
-                    state.critical_db_error_occurred = True
-                    state.overall_success = False
-                    break
-
-            # Update progress bar
-            progress_bar.set_description(
-                f"Processing: Tasks={state.tasks_created_count} Acks={state.acks_sent_count} "
-                f"Skip={state.skipped_count} Err={state.error_count}"
+        # Check for batch commit
+        if commit_manager.should_commit():
+            state.batch_num += 1
+            commit_success, _, _ = (
+                commit_manager.commit_batch(state.batch_num)
             )
-            progress_bar.update(1)
+
+            if not commit_success:
+                logger.critical(f"Critical: Batch {state.batch_num} commit failed!")
+                state.critical_db_error_occurred = True
+                state.overall_success = False
+                break
+
+            # Log batch complete (matching Action 6 format)
+            print()  # Blank line before batch summary
+            logger.info(
+                f"Batch {state.batch_num} complete | "
+                f"Processed: {state.processed_count}/{state.total_candidates}, "
+                f"Acks: {state.acks_sent_count}, "
+                f"Skipped: {state.skipped_count}, "
+                f"Errors: {state.error_count}"
+            )
 
     return state.overall_success
 

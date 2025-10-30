@@ -73,4 +73,5 @@ Data/ancestry.db-shm
 Data/ancestry.db-wal
 Data/ancestry_backup.db
 Data/ancestry.db
+Data/ms_graph_cache.bin
 ancestry_cookies.json

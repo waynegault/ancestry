@@ -2169,6 +2169,19 @@ def main() -> None:
             logger.warning(f"Session authentication failed (will authenticate during action): {e}")
             # Don't fail - action will authenticate itself if needed
 
+        # Pre-authenticate MS Graph (for MS To-Do integration)
+        try:
+            from ms_graph_utils import acquire_token_device_flow
+            logger.debug("Attempting MS Graph authentication at startup...")
+            ms_token = acquire_token_device_flow()
+            if ms_token:
+                logger.info("✅ MS Graph authenticated successfully")
+            else:
+                logger.debug("MS Graph authentication skipped or failed (will retry during Action 9 if needed)")
+        except Exception as e:
+            logger.debug(f"MS Graph authentication failed at startup: {e}")
+            # Don't fail - Action 9 will authenticate itself if needed
+
         # Validate AI provider configuration if configured
         _validate_ai_provider_on_startup()
 

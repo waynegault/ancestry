@@ -643,6 +643,12 @@ class ConfigManager:
         if user_location_value:
             config["user_location"] = user_location_value
 
+    def _load_ms_graph_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load Microsoft Graph / To-Do configuration from environment variables."""
+        ms_todo_list_name_value = os.getenv("MS_TODO_LIST_NAME")
+        if ms_todo_list_name_value:
+            config["ms_todo_list_name"] = ms_todo_list_name_value
+
     def _load_testing_config_from_env(self, config: dict[str, Any]) -> None:
         """Load testing configuration from environment variables."""
         # Load test profile configuration
@@ -980,6 +986,7 @@ class ConfigManager:
         self._load_main_config_from_env(config)
         self._load_reference_person_config_from_env(config)
         self._load_user_config_from_env(config)
+        self._load_ms_graph_config_from_env(config)
         self._load_testing_config_from_env(config)
         self._load_app_mode_from_env(config)
         self._load_ai_config_from_env(config)

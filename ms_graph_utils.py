@@ -228,7 +228,7 @@ def _try_silent_token_acquisition(app: Any) -> Optional[str]:
 
 def _initiate_device_flow(app: Any) -> Optional[dict]:
     """Initiate device flow and return flow object."""
-    logger.info("Initiating interactive device flow...")
+    logger.debug("Initiating interactive device flow...")
     try:
         flow = app.initiate_device_flow(scopes=SCOPES)
     except Exception as flow_init_e:
@@ -254,7 +254,7 @@ def _display_device_flow_instructions(flow: dict) -> None:
     print("   (Waiting for authentication in browser...)")
     print("=" * 40 + "\n")
     timeout_seconds = flow.get("expires_in", 900)
-    logger.info(f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout).")
+    logger.debug(f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout).")
 
 
 def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
@@ -268,9 +268,15 @@ def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
         user_info = result.get("id_token_claims", {}).get("preferred_username") or result.get("id_token_claims", {}).get("name", "Unknown User")
         logger.info(f"Authenticated as: {user_info}")
 
-        if persistent_cache:
-            persistent_cache.has_state_changed = True
-        logger.debug("Marked persistent token cache as changed.")
+        # Save cache immediately after successful authentication
+        if persistent_cache and CACHE_FILEPATH:
+            try:
+                cache_data = persistent_cache.serialize()
+                CACHE_FILEPATH.write_text(cache_data, encoding="utf-8")
+                logger.info(f"MS Graph token cache saved to: {CACHE_FILEPATH}")
+            except Exception as e:
+                logger.error(f"Failed to save MS Graph token cache: {e}")
+
         return result["access_token"]
 
     if "error_description" in result:

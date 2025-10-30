@@ -274,6 +274,9 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
         minimal_options = uc.ChromeOptions()
         minimal_options.add_argument("--no-sandbox")
         minimal_options.add_argument("--disable-dev-shm-usage")
+        # Start minimized to avoid window closing issues
+        if not config_schema.selenium.headless_mode:
+            minimal_options.add_argument("--start-minimized")
         driver = uc.Chrome(options=minimal_options)
 
         # Verify driver is valid before proceeding
@@ -298,22 +301,8 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
                 driver.quit()
             return None
 
-        # Minimize window immediately after creation
-        try:
-            driver.minimize_window()
-            logger.debug("Browser window minimized after initialization")
-        except Exception as min_err:
-            # Check if window is still open
-            try:
-                _ = driver.current_url
-                logger.debug(f"Could not minimize window (non-critical): {min_err}")
-            except Exception:
-                logger.error(f"Browser window closed during minimize attempt: {min_err}")
-                logger.error("Run 'python diagnose_chrome.py' for detailed diagnostics")
-                from contextlib import suppress
-                with suppress(Exception):
-                    driver.quit()
-                return None
+        # Browser starts minimized via --start-minimized flag (no manual minimize needed)
+        logger.debug("[init_webdvr] Browser started minimized (via --start-minimized flag)")
 
         elapsed = time.time() - start_time
         logger.debug(f"Chrome WebDriver initialization succeeded in {elapsed:.2f}s (attempt {attempt_num})")

@@ -1048,6 +1048,9 @@ class InboxProcessor:
         """
         tqdm_args = self._setup_progress_tracking()
 
+        # Add newline before progress bar to prevent log bleeding into progress bar
+        print()
+
         # Simplified progress tracking - single tqdm progress bar like Action 6
         with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
             result = self._process_inbox_loop(
@@ -1232,10 +1235,7 @@ class InboxProcessor:
         if not api_conv_id or profile_id_upper == "UNKNOWN":
             if progress_bar is not None:
                 progress_bar.update(1)
-                progress_bar.set_description("Processing (skipped invalid)")
-                _ep = getattr(progress_bar, '_enhanced_progress', None)
-                if _ep is not None:
-                    _ep.update(increment=1, warnings=1, custom_status="Skipped invalid")
+                # Removed set_description to prevent duplicate progress bars (matching Action 6/8)
             return True
         return False
 
@@ -1356,23 +1356,15 @@ class InboxProcessor:
         """Update progress bar for skipped up-to-date conversation."""
         if progress_bar is not None:
             progress_bar.update(1)
-            progress_bar.set_description("Processing (up-to-date)")
-            _ep = getattr(progress_bar, '_enhanced_progress', None)
-            if _ep is not None:
-                _ep.update(increment=1, cache_hits=1, custom_status="Up-to-date")
+            # Removed set_description to prevent duplicate progress bars (matching Action 6/8)
 
     def _update_progress_processing(
-        self, progress_bar: Optional[tqdm], api_conv_id: str
+        self, progress_bar: Optional[tqdm], api_conv_id: str  # noqa: ARG002
     ) -> None:
         """Update progress bar for conversation being processed."""
         if progress_bar is not None:
             progress_bar.update(1)
-            progress_bar.set_description(f"Processing conversation {api_conv_id}")
-            _ep = getattr(progress_bar, '_enhanced_progress', None)
-            if _ep is not None:
-                _ep.update(
-                    increment=1, api_calls=2, custom_status=f"Processing {api_conv_id[:8]}"
-                )
+            # Removed set_description to prevent duplicate progress bars (matching Action 6/8)
 
     def _find_latest_messages(
         self, context_messages: list[dict], my_pid_lower: str
@@ -2127,11 +2119,7 @@ class InboxProcessor:
         state["ai_classified_count"] = ai_classified_count
         state["conversations_needing_processing"] += len(conversations_needing_fetch)
 
-        # Update progress bar with final stats
-        self._update_progress_bar_stats(
-            progress_bar, state["ai_classified_count"], state["status_updated_count"],
-            state["skipped_count_this_loop"], state["error_count_this_loop"],
-        )
+        # Progress bar updates removed - simple increment only at main loop level (matching Action 6/7/8/9)
 
         logger.debug(f"Batch complete: {len(conversations_needing_fetch)} processed, {len(skip_map)} skipped, {error_count} errors")
         return False, None
@@ -2242,12 +2230,13 @@ class InboxProcessor:
         state["current_batch_num"] += 1
 
         # Log batch completion at INFO level for every batch (simplified format matching Action 6)
+        print()  # Newline before batch complete log
         logger.info(
             f"Batch {state['current_batch_num']} complete: "
             f"Processed={state['total_processed_api_items']}, "
             f"AI={state['ai_classified_count']}, "
             f"Updates={state['status_updated_count']}, "
-            f"Errors={state['error_count_this_loop']}\n"
+            f"Errors={state['error_count_this_loop']}"
         )
 
         return False, None, all_conversations_batch, next_cursor_from_api

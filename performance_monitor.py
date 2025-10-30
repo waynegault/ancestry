@@ -579,7 +579,7 @@ class AdvancedPerformanceMonitor:
     def start_advanced_monitoring(self) -> bool:
         """Start advanced performance monitoring with predictive analysis."""
         if self.monitoring_active:
-            logger.info("Advanced monitoring already active")
+            logger.debug("Advanced monitoring already active")
             return True
 
         try:
@@ -590,7 +590,7 @@ class AdvancedPerformanceMonitor:
                 name="AdvancedPerformanceMonitor"
             )
             self._monitor_thread.start()
-            logger.info("🚀 Advanced performance monitoring started")
+            logger.debug("🚀 Advanced performance monitoring started")
             return True
 
         except Exception as e:
