@@ -1790,13 +1790,122 @@ def _show_analytics_dashboard() -> None:
 
 
 def _show_cache_statistics() -> None:
-    """Show cache statistics."""
+    """Show comprehensive cache statistics from all cache subsystems."""
     try:
-        logger.info("Cache statistics feature currently unavailable")
-        print("Cache statistics feature currently unavailable.")
+        os.system("cls" if os.name == "nt" else "clear")
+        print("\n" + "="*70)
+        print("CACHE STATISTICS")
+        print("="*70 + "\n")
+
+        # Get statistics from all cache systems
+        stats_collected = False
+
+        # 1. Base disk cache statistics
+        try:
+            from cache import get_cache_stats
+            base_stats = get_cache_stats()
+            if base_stats:
+                print("📁 DISK CACHE (Base System)")
+                print("-" * 70)
+                print(f"  Hits: {base_stats.get('hits', 0):,}")
+                print(f"  Misses: {base_stats.get('misses', 0):,}")
+                print(f"  Hit Rate: {base_stats.get('hit_rate', 0):.1f}%")
+                print(f"  Entries: {base_stats.get('entries', 0):,} / {base_stats.get('max_entries', 'N/A')}")
+                print(f"  Volume: {base_stats.get('volume', 0):,} bytes")
+                print(f"  Cache Dir: {base_stats.get('cache_dir', 'N/A')}")
+                print()
+                stats_collected = True
+        except Exception as e:
+            logger.debug(f"Could not get base cache stats: {e}")
+
+        # 2. Unified cache manager statistics
+        try:
+            from cache_manager import get_unified_cache_manager
+            unified_mgr = get_unified_cache_manager()
+            comprehensive_stats = unified_mgr.get_comprehensive_stats()
+
+            # Session cache
+            session_stats = comprehensive_stats.get('session_cache', {})
+            if session_stats:
+                print("🔐 SESSION CACHE")
+                print("-" * 70)
+                print(f"  Active Sessions: {session_stats.get('active_sessions', 0)}")
+                print(f"  Tracked Sessions: {session_stats.get('tracked_sessions', 0)}")
+                print(f"  Component TTL: {session_stats.get('component_ttl', 0)}s")
+                print(f"  Session TTL: {session_stats.get('session_ttl', 0)}s")
+                print()
+                stats_collected = True
+
+            # API cache
+            api_stats = comprehensive_stats.get('api_cache', {})
+            if api_stats:
+                print("🌐 API CACHE")
+                print("-" * 70)
+                print(f"  Active Sessions: {api_stats.get('active_sessions', 0)}")
+                print(f"  Cache Available: {api_stats.get('cache_available', False)}")
+                print()
+                stats_collected = True
+
+            # System cache
+            system_stats = comprehensive_stats.get('system_cache', {})
+            if system_stats:
+                print("⚙️  SYSTEM CACHE")
+                print("-" * 70)
+                print(f"  GC Collections: {system_stats.get('gc_collections', 0)}")
+                print(f"  Memory Freed: {system_stats.get('memory_freed_mb', 0):.2f} MB")
+                print(f"  Peak Memory: {system_stats.get('peak_memory_mb', 0):.2f} MB")
+                print(f"  Current Memory: {system_stats.get('current_memory_mb', 0):.2f} MB")
+                print()
+                stats_collected = True
+        except Exception as e:
+            logger.debug(f"Could not get unified cache stats: {e}")
+
+        # 3. Tree statistics cache
+        try:
+            from database import TreeStatisticsCache
+            from core.database_manager import DatabaseManager
+            db_mgr = DatabaseManager()
+            session = db_mgr.get_session()
+            if session:
+                cache_count = session.query(TreeStatisticsCache).count()
+                print("🌳 TREE STATISTICS CACHE (Database)")
+                print("-" * 70)
+                print(f"  Cached Profiles: {cache_count}")
+                print(f"  Cache Expiration: 24 hours")
+                print()
+                db_mgr.return_session(session)
+                stats_collected = True
+        except Exception as e:
+            logger.debug(f"Could not get tree statistics cache: {e}")
+
+        # 4. Performance cache (GEDCOM)
+        try:
+            from performance_cache import get_cache_stats as get_perf_stats
+            perf_stats = get_perf_stats()
+            if perf_stats:
+                print("📊 PERFORMANCE CACHE (GEDCOM)")
+                print("-" * 70)
+                print(f"  Memory Entries: {perf_stats.get('memory_entries', 0)}")
+                print(f"  Memory Usage: {perf_stats.get('memory_usage_mb', 0):.2f} MB")
+                print(f"  Memory Pressure: {perf_stats.get('memory_pressure', 0):.1f}%")
+                print(f"  Disk Cache Dir: {perf_stats.get('disk_cache_dir', 'N/A')}")
+                print()
+                stats_collected = True
+        except Exception as e:
+            logger.debug(f"Could not get performance cache stats: {e}")
+
+        if not stats_collected:
+            print("No cache statistics available.")
+            print("Caches may not be initialized yet.")
+
+        print("="*70)
+        logger.info("Cache statistics displayed")
+
     except Exception as e:
-        logger.error(f"Error displaying cache statistics: {e}")
+        logger.error(f"Error displaying cache statistics: {e}", exc_info=True)
         print("Error displaying cache statistics. Check logs for details.")
+
+    input("\nPress Enter to continue...")
 
 
 def _toggle_log_level() -> None:
