@@ -1066,7 +1066,8 @@ class InboxProcessor:
     def get_statistics(self) -> dict[str, Any]:
         """Return processing statistics for monitoring and debugging."""
         stats = self.stats.copy()
-        if stats["start_time"] and stats["end_time"]:
+        # Only calculate duration if both timestamps are not None
+        if stats.get("start_time") is not None and stats.get("end_time") is not None:
             stats["duration_seconds"] = (
                 stats["end_time"] - stats["start_time"]
             ).total_seconds()
@@ -2499,9 +2500,9 @@ class InboxProcessor:
         session_recoveries: int = 0,
     ) -> None:
         """Logs a unified summary of the inbox search process."""
-        # Calculate run time
+        # Calculate run time - use 'or' to handle None values properly
         start_time = self.stats.get("start_time")
-        end_time = self.stats.get("end_time", datetime.now(timezone.utc))
+        end_time = self.stats.get("end_time") or datetime.now(timezone.utc)
         total_run_time = (end_time - start_time).total_seconds() if start_time else 0.0
 
         # Step 1: Print header
