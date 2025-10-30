@@ -108,6 +108,7 @@ def check_chrome_profile() -> bool:
     from dotenv import load_dotenv
     load_dotenv()
 
+    # Validate user data directory
     user_data_dir = os.getenv("CHROME_USER_DATA_DIR")
     if not user_data_dir:
         print("⚠ CHROME_USER_DATA_DIR not set in .env")
@@ -120,25 +121,28 @@ def check_chrome_profile() -> bool:
 
     print(f"✓ Chrome user data directory exists: {user_data_dir}")
 
-    # Check Default profile
+    # Validate Default profile and Preferences file
     default_profile = user_data_path / "Default"
+    prefs_file = default_profile / "Preferences"
+
     if not default_profile.exists():
         print("⚠ Default profile not found")
         return False
-
     print(f"✓ Default profile exists: {default_profile}")
 
-    # Check Preferences file
-    prefs_file = default_profile / "Preferences"
     if not prefs_file.exists():
         print("⚠ Preferences file not found")
         return False
-
     print(f"✓ Preferences file exists: {prefs_file}")
 
-    # Try to read Preferences file
+    # Validate Preferences file content
+    return _validate_preferences_file(prefs_file)
+
+
+def _validate_preferences_file(prefs_file: Path) -> bool:
+    """Validate Chrome Preferences file content."""
     try:
-        with open(prefs_file, encoding='utf-8') as f:
+        with prefs_file.open(encoding='utf-8') as f:
             prefs = json.load(f)
 
         # Check for corruption indicators

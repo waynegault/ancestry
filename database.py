@@ -1544,7 +1544,18 @@ def create_or_update_dna_match(
         else:
             # Create new record
             logger.debug(f"Creating new DnaMatch record for {log_ref}.")
-            new_dna_match = DnaMatch(**validated_data)
+
+            # Separate ethnicity columns from core data
+            core_data = {k: v for k, v in validated_data.items() if not k.startswith("ethnicity_")}
+            ethnicity_data = {k: v for k, v in validated_data.items() if k.startswith("ethnicity_")}
+
+            # Create record with core data
+            new_dna_match = DnaMatch(**core_data)
+
+            # Set ethnicity columns dynamically
+            for column_name, value in ethnicity_data.items():
+                setattr(new_dna_match, column_name, value)
+
             session.add(new_dna_match)
             logger.debug(f"DnaMatch record added to session for {log_ref}.")
             result = "created"

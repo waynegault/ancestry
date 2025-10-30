@@ -619,11 +619,20 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             )
 
             if not person_to_keep:
-                logger.error(
-                    f"Person with Profile ID {profile_id_to_keep} not found in database.\n"
-                    f"Please verify TEST_PROFILE_ID in .env matches a person in the database."
-                )
-                return False
+                print("\n" + "="*60)
+                print("⚠️  TEST PROFILE NOT FOUND")
+                print("="*60)
+                print("\nThe database does not contain the test profile:")
+                print(f"  Profile ID: {profile_id_to_keep}")
+                print("\nThis could mean:")
+                print("  1. The database is empty or doesn't have this profile")
+                print("  2. TEST_PROFILE_ID in .env doesn't match any person")
+                print("\nPlease run Action 2 (Reset Database) to initialize")
+                print("the database with the test profile.")
+                print("="*60 + "\n")
+                logger.info("Action 0 aborted: Test profile not found in database.")
+                success = True  # Don't treat as error - just inform user
+                return True  # Return True to avoid closing session
 
             person_id_to_keep = person_to_keep.id
             logger.debug(
@@ -1093,6 +1102,10 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
 
         shutil.copy2(backup_path, db_path)
         logger.info("Db restored from backup OK.")
+
+        # Display table statistics
+        _display_table_statistics()
+
         success = True
     except FileNotFoundError:
         logger.error(f"Backup not found during copy: {backup_path}")
@@ -1103,6 +1116,40 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
     finally:
         logger.debug("DB restore action finished.")
     return success
+
+
+def _display_table_statistics():
+    """Display statistics for all tables in the database."""
+    from sqlalchemy import create_engine, inspect, text
+
+    db_path = config.database.database_file
+    if not db_path:
+        logger.warning("Cannot display table statistics: DATABASE_FILE not configured")
+        return
+
+    try:
+        engine = create_engine(f"sqlite:///{db_path}")
+        inspector = inspect(engine)
+        table_names = inspector.get_table_names()
+
+        if not table_names:
+            logger.info("Database contains no tables")
+            return
+
+        logger.info("")
+        logger.info("Database Table Statistics:")
+        logger.info("-" * 60)
+
+        with engine.connect() as conn:
+            for table_name in sorted(table_names):
+                result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
+                count = result.scalar()
+                logger.info(f"  {table_name:30s} {count:>10,} records")
+
+        logger.info("-" * 60)
+
+    except Exception as e:
+        logger.warning(f"Could not display table statistics: {e}")
 
 
 # end of Action 4
@@ -2213,12 +2260,17 @@ def main() -> None:
 
         if session_manager is not None:
             try:
-                session_manager.close_sess(keep_db=False)
+                # Suppress stderr during cleanup to hide undetected_chromedriver errors
+                import contextlib
+                import io
+
+                # Redirect stderr to suppress cleanup errors
+                with contextlib.redirect_stderr(io.StringIO()):
+                    session_manager.close_sess(keep_db=False)
                 logger.debug("Session Manager closed in final cleanup.")
             except Exception as final_close_e:
-                logger.error(
-                    f"Error during final Session Manager cleanup: {final_close_e}"
-                )
+                # Silently ignore cleanup errors - they're not critical
+                logger.debug(f"Cleanup error (non-critical): {final_close_e}")
 
         # Log program finish
         logger.info("--- Main program execution finished ---")
