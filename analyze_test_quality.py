@@ -173,9 +173,39 @@ class TestQualityAnalyzer:
             r"assertIn",
             r"assertNotIn",
             r"assertRaises",
+            r"raise AssertionError",  # Pattern used in action10.py and others
         ]
 
-        return any(re.search(pattern, source) for pattern in assertion_patterns)
+        # Check for explicit assertion patterns
+        if any(re.search(pattern, source) for pattern in assertion_patterns):
+            return True
+
+        # Check for return True/False pattern (used in ai_interface.py and others)
+        # This is valid when the test function returns bool and is called by test framework
+        if re.search(r"return\s+(True|False)", source):
+            # Make sure it's not just "return True" at the end (smoke test)
+            # Look for conditional returns or multiple return statements
+            return_statements = re.findall(r"return\s+(True|False)", source)
+            if len(return_statements) > 1:  # Multiple returns = conditional logic
+                return True
+            # Single return False is also valid (failure case)
+            if "return False" in source:
+                return True
+
+        # Check for boolean expressions in return statements (message_personalization.py pattern)
+        # Examples: return x > 5, return "text" in msg, return count == 2
+        if re.search(r"return\s+.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source):
+            return True
+
+        # Check for result/success variable pattern (database.py, message_personalization.py pattern)
+        # Pattern: result = True/False ... return result
+        # Pattern: success = len(x) > 5 and "text" in x ... return success
+        if re.search(r"(result|success)\s*=\s*(True|False)", source) and re.search(r"return\s+(result|success)", source):
+            return True
+        if re.search(r"(result|success)\s*=\s*.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source) and re.search(r"return\s+(result|success)", source):
+            return True
+
+        return False
 
     def _always_returns_true(self, source: str) -> bool:
         """Check if test always returns True without real validation."""

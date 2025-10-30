@@ -48,7 +48,6 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
-import contextlib
 import json
 import re
 import sys
@@ -3331,8 +3330,15 @@ def _run_edge_case_tests(suite: "TestSuite") -> None:
         ]
 
         for invalid_json in invalid_json_strings:
-            with contextlib.suppress(json.JSONDecodeError, TypeError):
-                json.loads(invalid_json)  # Expected to fail for invalid JSON
+            # Verify that invalid JSON raises appropriate exceptions
+            try:
+                json.loads(invalid_json)
+                # If we get here, the JSON was valid (shouldn't happen for our test cases)
+                if invalid_json:  # Empty string is valid JSON in some contexts
+                    raise AssertionError(f"Expected JSONDecodeError for: {invalid_json}")
+            except (json.JSONDecodeError, TypeError):
+                # Expected - invalid JSON should raise an exception
+                pass
 
     def test_empty_data_handling():
         """Test handling of empty or missing data."""

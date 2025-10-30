@@ -1505,7 +1505,8 @@ def relationship_module_tests() -> None:
         ]
 
         from test_framework import test_function_availability
-        return test_function_availability(required_functions, globals(), "Relationship Utils")
+        results = test_function_availability(required_functions, globals(), "Relationship Utils")
+        return all(results)
 
     tests.append(("Function Availability", test_function_availability))
 
@@ -1938,7 +1939,8 @@ def _run_validation_tests(suite: "TestSuite") -> None:
         ]
 
         from test_framework import test_function_availability
-        test_function_availability(required_functions, globals(), "Relationship Utils")
+        results = test_function_availability(required_functions, globals(), "Relationship Utils")
+        assert all(results), "Some required functions are missing"
 
     suite.run_test(
         "Error handling and edge cases",

@@ -1167,7 +1167,8 @@ def test_function_availability():
     ]
 
     from test_framework import test_function_availability
-    test_function_availability(required_functions, globals(), "GEDCOM Search Utils")
+    results = test_function_availability(required_functions, globals(), "GEDCOM Search Utils")
+    assert all(results), f"Some required functions are missing: {[f for f, r in zip(required_functions, results) if not r]}"
 
 
 def test_criterion_matching():

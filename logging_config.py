@@ -754,21 +754,32 @@ def test_handler_performance():
 
 def test_invalid_file_path():
     """Test handling of invalid file paths."""
-    from contextlib import suppress
-    with suppress(Exception):
-        # Try with an invalid path - should handle gracefully
-        setup_logging("/invalid/path/test.log", "INFO")
-        # If it doesn't raise an exception, that's fine too
+    # Test that setup_logging handles invalid paths gracefully
+    # It should either succeed (creating parent dirs) or fail gracefully
+    try:
+        result = setup_logging("/invalid/path/test.log", "INFO")
+        # If it succeeds, verify we got a logger back
+        assert result is not None, "setup_logging should return a logger"
+        assert hasattr(result, "handlers"), "Returned object should be a logger"
+    except (OSError, PermissionError, FileNotFoundError):
+        # These exceptions are acceptable for invalid paths
+        pass
+    # Test passes if we get here without crashing
 
 
 def test_permission_errors():
     """Test handling of permission errors."""
-    # This test is platform-specific and may not always be testable
-    # Just verify the function doesn't crash with edge cases
-    from contextlib import suppress
-    with suppress(Exception):
-        setup_logging("test.log", "INFO")
-    # Permission errors are acceptable in some environments
+    # Test that setup_logging doesn't crash with edge cases
+    # This is platform-specific, so we accept both success and permission errors
+    try:
+        result = setup_logging("test.log", "INFO")
+        # If it succeeds, verify we got a logger back
+        assert result is not None, "setup_logging should return a logger"
+        assert hasattr(result, "handlers"), "Returned object should be a logger"
+    except (OSError, PermissionError):
+        # Permission errors are acceptable in some environments
+        pass
+    # Test passes if we get here without crashing
 
 
 # ==============================================
