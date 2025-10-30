@@ -181,7 +181,7 @@ def menu() -> str:
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
     print("")
-    print("sec. Credential Manager (Setup/View/Update/Import from .env)")
+    print("sec. Credential Manager (Optional: Encrypted storage alternative to .env)")
     print("s. Show Cache Statistics")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
@@ -1714,13 +1714,20 @@ def _run_all_tests() -> None:
 
 
 def _run_credential_manager() -> None:
-    """Setup Security (Encrypt Credentials)."""
+    """
+    Optional encrypted credential storage manager.
+
+    Note: Most users should use .env file for credentials (simpler, no dependencies).
+    This manager provides encrypted storage as an alternative for enhanced security.
+    """
     try:
         from credentials import UnifiedCredentialManager
 
-        print("\n" + "=" * 50)
-        print("CREDENTIAL MANAGEMENT")
-        print("=" * 50)
+        print("\n" + "=" * 70)
+        print("CREDENTIAL MANAGEMENT (Optional Encrypted Storage)")
+        print("=" * 70)
+        print("\nNote: Most users should use .env file for credentials.")
+        print("This manager provides encrypted storage as an alternative.\n")
         manager = UnifiedCredentialManager()
         manager.run()
     except ImportError as e:
@@ -1862,8 +1869,8 @@ def _show_cache_statistics() -> None:
 
         # 3. Tree statistics cache
         try:
-            from database import TreeStatisticsCache
             from core.database_manager import DatabaseManager
+            from database import TreeStatisticsCache
             db_mgr = DatabaseManager()
             session = db_mgr.get_session()
             if session:
@@ -1871,7 +1878,7 @@ def _show_cache_statistics() -> None:
                 print("🌳 TREE STATISTICS CACHE (Database)")
                 print("-" * 70)
                 print(f"  Cached Profiles: {cache_count}")
-                print(f"  Cache Expiration: 24 hours")
+                print("  Cache Expiration: 24 hours")
                 print()
                 db_mgr.return_session(session)
                 stats_collected = True
