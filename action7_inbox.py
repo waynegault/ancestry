@@ -951,7 +951,7 @@ class InboxProcessor:
             "total": None,  # Start with unknown total
             "desc": desc,
             "unit": "it",
-            "leave": False,
+            "leave": True,  # Keep progress bar visible after completion for proper line breaks
             "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]",
             "file": sys.stderr,
         }
