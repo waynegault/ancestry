@@ -232,7 +232,7 @@ def main() -> int:
     chrome_ok = check_chrome_installation()
     processes = check_running_processes()
     profile_ok = check_chrome_profile()
-    chromedriver_ok = check_chromedriver()
+    check_chromedriver()  # Check chromedriver but don't use result
 
     provide_recommendations(processes, profile_ok)
 

@@ -1905,8 +1905,9 @@ def _show_cache_statistics() -> None:
             print("No cache statistics available.")
             print("Caches may not be initialized yet.")
 
+
+        logger.debug("Cache statistics displayed")
         print("="*70)
-        logger.info("Cache statistics displayed")
 
     except Exception as e:
         logger.error(f"Error displaying cache statistics: {e}", exc_info=True)
@@ -2095,7 +2096,7 @@ def _validate_ai_provider_on_startup() -> None:
         logger.debug("No AI provider configured - AI features will be disabled")
         return
 
-    logger.info(f"Validating AI provider: {ai_provider}")
+    logger.debug(f"Validating AI provider: {ai_provider}")
 
     if ai_provider == "local_llm":
         # Validate local LLM is accessible

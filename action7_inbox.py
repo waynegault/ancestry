@@ -2523,10 +2523,7 @@ class InboxProcessor:
         # Calculate run time
         start_time = self.stats.get("start_time")
         end_time = self.stats.get("end_time", datetime.now(timezone.utc))
-        if start_time:
-            total_run_time = (end_time - start_time).total_seconds()
-        else:
-            total_run_time = 0.0
+        total_run_time = (end_time - start_time).total_seconds() if start_time else 0.0
 
         # Step 1: Print header
         print("")  # Blank line before summary

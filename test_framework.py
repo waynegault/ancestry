@@ -595,6 +595,41 @@ def _test_standardized_data_factory(test_data: Any) -> None:
     return True
 
 
+def _test_function_behavior_utility() -> None:
+    """Test the test_function_behavior utility function."""
+    # Define a simple test function
+    def sample_add(a: int, b: int) -> int:
+        return a + b
+
+    def sample_divide(a: int, b: int) -> float:
+        if b == 0:
+            raise ValueError("Cannot divide by zero")
+        return a / b
+
+    # Add to globals for testing
+    test_globals = {
+        "sample_add": sample_add,
+        "sample_divide": sample_divide
+    }
+
+    # Test 1: Basic behavior testing
+    test_function_behavior(
+        "sample_add",
+        [((2, 3), 5), ((10, 20), 30), ((0, 0), 0)],
+        test_globals
+    )
+
+    # Test 2: Testing with allowed exceptions
+    test_function_behavior(
+        "sample_divide",
+        [((10, 2), 5.0), ((10, 0), None)],  # Second case will raise ValueError
+        test_globals,
+        allow_exceptions=(ValueError,)
+    )
+
+    return True
+
+
 def _test_test_suite_creation() -> None:
     """Test that TestSuite can be created and initialized properly."""
     test_suite = TestSuite("Test Suite", "test_module.py")
@@ -649,6 +684,11 @@ def test_framework_module_tests() -> bool:
         "Context managers",
         _test_context_managers,
         "Should provide working context managers",
+    )
+    suite.run_test(
+        "Function behavior testing utility",
+        _test_function_behavior_utility,
+        "Should test function behavior with test cases and allowed exceptions",
     )
 
     return suite.finish_suite()
@@ -918,6 +958,9 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     Universal function availability testing pattern.
     Consolidates identical testing code from multiple modules.
 
+    This function only tests that functions exist and are callable.
+    For behavior validation, use test_function_behavior() or module-specific tests.
+
     Args:
         required_functions: List of function names to test
         globals_dict: globals() dictionary from the calling module
@@ -958,10 +1001,66 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     print(f"\n📊 Function Availability Summary: {passed}/{total} functions available")
 
     # Assert all functions are available
-    for _i, (func_name, available) in enumerate(zip(required_functions, results)):
+    for func_name, available in zip(required_functions, results):
         assert available, f"Required function '{func_name}' is not available"
 
     return results
+
+
+def test_function_behavior(
+    func_name: str,
+    test_cases: list[tuple[tuple[Any, ...], Any]],
+    globals_dict: dict[str, Any],
+    allow_exceptions: tuple[type[Exception], ...] = ()
+) -> bool:
+    """
+    Test basic function behavior with provided test cases.
+
+    This extends function availability testing by actually calling functions
+    with test inputs and verifying outputs.
+
+    Args:
+        func_name: Name of the function to test
+        test_cases: List of (args_tuple, expected_result) pairs
+        globals_dict: globals() dictionary from the calling module
+        allow_exceptions: Tuple of exception types that are acceptable
+
+    Returns:
+        bool: True if all test cases pass
+
+    Example:
+        test_function_behavior(
+            "add_numbers",
+            [((2, 3), 5), ((10, 20), 30)],
+            globals(),
+            allow_exceptions=(ValueError,)
+        )
+    """
+    if func_name not in globals_dict:
+        raise AssertionError(f"Function '{func_name}' not found in globals")
+
+    func = globals_dict[func_name]
+    if not callable(func):
+        raise AssertionError(f"'{func_name}' is not callable")
+
+    print(f"\n🧪 Testing {func_name} behavior with {len(test_cases)} test cases:")
+
+    for i, (args, expected) in enumerate(test_cases, 1):
+        try:
+            result = func(*args)
+            if result == expected:
+                print(f"   ✅ Test {i}: {func_name}{args} = {result}")
+            else:
+                print(f"   ❌ Test {i}: {func_name}{args} = {result}, expected {expected}")
+                raise AssertionError(f"Test {i} failed: got {result}, expected {expected}")
+        except allow_exceptions as e:
+            print(f"   ⚠️  Test {i}: {func_name}{args} raised {type(e).__name__} (allowed)")
+        except Exception as e:
+            print(f"   ❌ Test {i}: {func_name}{args} raised unexpected {type(e).__name__}: {e}")
+            raise
+
+    print(f"   ✅ All {len(test_cases)} test cases passed")
+    return True
 
 
 # ============================================================================

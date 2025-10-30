@@ -832,71 +832,83 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
 
 def test_gedcom_cache_initialization():
     """Test GEDCOM cache module initialization."""
-    try:
-        # Test module instance
-        module_name = _gedcom_cache_module.get_module_name()
-        assert module_name == "gedcom_cache"  # Test basic cache functionality
-        if is_function_available("GedcomCache"):
-            cache_class = get_function("GedcomCache")
-            if cache_class:
-                assert hasattr(cache_class, "get")
-                assert hasattr(cache_class, "set")
-                assert hasattr(cache_class, "invalidate")
-        return True
-    except Exception:
-        return False
+    # Test module instance
+    module_name = _gedcom_cache_module.get_module_name()
+    assert module_name == "gedcom_cache", f"Expected 'gedcom_cache', got '{module_name}'"
+
+    if is_function_available("GedcomCache"):
+        cache_class = get_function("GedcomCache")
+        if cache_class:
+            assert hasattr(cache_class, "get"), "GedcomCache should have 'get' method"
+            assert hasattr(cache_class, "set"), "GedcomCache should have 'set' method"
+            assert hasattr(cache_class, "invalidate"), "GedcomCache should have 'invalidate' method"
+    return True
 
 
 def test_memory_cache_operations():
     """Test basic memory cache operations."""
-    try:
-        test_key = "test_operation_key"
-        test_data = {"test": "data", "timestamp": time.time()}
+    test_key = "test_operation_key"
+    test_data = {"test": "data", "timestamp": time.time()}
 
-        # Store in memory cache
-        _store_in_memory_cache(test_key, test_data)
+    # Store in memory cache
+    _store_in_memory_cache(test_key, test_data)
 
-        # Retrieve from memory cache
-        retrieved = _get_from_memory_cache(test_key)
+    # Retrieve from memory cache
+    retrieved = _get_from_memory_cache(test_key)
 
-        # Clean up
-        _MEMORY_CACHE.pop(test_key, None)
+    # Clean up
+    _MEMORY_CACHE.pop(test_key, None)
 
-        return retrieved == test_data
-    except Exception:
-        return False
+    assert retrieved == test_data, f"Retrieved data doesn't match. Expected {test_data}, got {retrieved}"
+    return True
 
 
 def test_gedcom_parsing_caching():
     """Test GEDCOM file parsing and caching."""
-    try:
-        if is_function_available("cache_gedcom_data"):
-            cache_func = get_function("cache_gedcom_data")
-            # Test with mock data
-            mock_file_path = "/path/to/test.ged"
-            mock_data = {"individuals": [], "families": []}
+    # Test that cache_gedcom_processed_data function exists in this module
+    assert "cache_gedcom_processed_data" in globals(), \
+        "cache_gedcom_processed_data function should exist"
+    assert callable(cache_gedcom_processed_data), \
+        "cache_gedcom_processed_data should be callable"
 
-            if cache_func:
-                result = cache_func(mock_file_path, mock_data)
-                return isinstance(result, bool) or result is None
-        return True  # Pass if function doesn't exist
-    except Exception:
-        return False
+    # Test with mock cache key and data (avoid file access)
+    test_key = "test_gedcom_parse_key"
+    mock_data = {"test": "gedcom_data"}
+
+    # Store in memory cache (simulating caching)
+    _store_in_memory_cache(test_key, mock_data)
+
+    # Verify it was cached
+    cached = _get_from_memory_cache(test_key)
+    assert cached == mock_data, "Cached data should match original"
+
+    # Clean up
+    _MEMORY_CACHE.pop(test_key, None)
+    return True
 
 
 def test_cached_data_retrieval():
     """Test cached GEDCOM data retrieval."""
-    try:
-        if is_function_available("get_cached_gedcom_data"):
-            retriever = get_function("get_cached_gedcom_data")
-            test_file_path = "/path/to/test.ged"
-            if retriever:
-                cached_data = retriever(test_file_path)
-                # May return None if no cache exists, which is valid
-                return cached_data is None or isinstance(cached_data, dict)
-        return True  # Pass if function doesn't exist
-    except Exception:
-        return False
+    # Test that load_gedcom_with_aggressive_caching function exists in this module
+    assert "load_gedcom_with_aggressive_caching" in globals(), \
+        "load_gedcom_with_aggressive_caching function should exist"
+    assert callable(load_gedcom_with_aggressive_caching), \
+        "load_gedcom_with_aggressive_caching should be callable"
+
+    # Test memory cache retrieval
+    test_key = "test_retrieval_key"
+    test_data = {"test": "data"}
+
+    # Store in memory cache
+    _store_in_memory_cache(test_key, test_data)
+
+    # Retrieve from memory cache
+    result = _get_from_memory_cache(test_key)
+    assert result == test_data, "Retrieved data should match stored data"
+
+    # Clean up
+    _MEMORY_CACHE.pop(test_key, None)
+    return True
 
 
 def test_cache_key_generation():
@@ -939,98 +951,98 @@ def test_memory_cache_expiration():
 
 def test_cache_invalidation_file_modification():
     """Test cache invalidation on file modification."""
-    try:
-        if is_function_available("is_cache_valid_for_file"):
-            validator = get_function("is_cache_valid_for_file")
-            # Test with mock file path
-            mock_file_path = "/path/to/nonexistent.ged"
-            if validator:
-                result = validator(mock_file_path)
-                return isinstance(result, bool)
-        return True  # Pass if function doesn't exist
-    except Exception:
-        return False
+    # Test that memory cache validation works
+    test_key = "test_invalidation_key"
+    test_data = {"test": "data"}
+
+    # Store in memory cache
+    _store_in_memory_cache(test_key, test_data)
+
+    # Verify it's valid
+    is_valid = _is_memory_cache_valid(test_key)
+    assert isinstance(is_valid, bool), "_is_memory_cache_valid should return bool"
+
+    # Clean up
+    _MEMORY_CACHE.pop(test_key, None)
+    return True
 
 
 def test_cache_statistics_collection():
     """Test cache statistics collection."""
-    try:
-        stats = _gedcom_cache_module.get_stats()
-        required_fields = [
-            "module_name",
-            "memory_cache_entries",
-            "cache_max_age_seconds",
-        ]
-        return all(field in stats for field in required_fields)
-    except Exception:
-        return False
+    stats = _gedcom_cache_module.get_stats()
+    required_fields = [
+        "module_name",
+        "memory_cache_entries",
+        "cache_max_age_seconds",
+    ]
+    assert all(field in stats for field in required_fields), \
+        f"Stats missing required fields. Got: {list(stats.keys())}"
+    return True
 
 
 def test_cache_health_status():
     """Test cache health status check."""
-    try:
-        health = _gedcom_cache_module.get_health_status()
-        required_fields = [
-            "overall_health",
-            "memory_cache_health",
-            "gedcom_file_health",
-        ]
-        return all(field in health for field in required_fields)
-    except Exception:
-        return False
+    health = _gedcom_cache_module.get_health_status()
+    required_fields = [
+        "overall_health",
+        "memory_cache_health",
+        "gedcom_file_health",
+    ]
+    assert all(field in health for field in required_fields), \
+        f"Health status missing required fields. Got: {list(health.keys())}"
+    return True
 
 
 def test_cache_performance_metrics():
     """Test cache performance metrics collection."""
-    try:
-        stats = _gedcom_cache_module.get_stats()
-        # Check for performance-related metrics
-        performance_indicators = ["memory_cache_entries", "cache_max_age_seconds"]
-        return all(indicator in stats for indicator in performance_indicators)
-    except Exception:
-        return False
+    stats = _gedcom_cache_module.get_stats()
+    # Check for performance-related metrics
+    performance_indicators = ["memory_cache_entries", "cache_max_age_seconds"]
+    assert all(indicator in stats for indicator in performance_indicators), \
+        f"Stats missing performance indicators. Got: {list(stats.keys())}"
+    return True
 
 
 def test_multifile_cache_management():
     """Test multi-file cache management."""
-    try:
-        # Test cache can handle multiple file paths
-        test_files = ["/path/test1.ged", "/path/test2.ged"]
-        test_data = {"test": "data"}
+    # Test cache can handle multiple cache keys (simulating multiple files)
+    test_keys = ["test_file_1_key", "test_file_2_key"]
+    test_data_1 = {"file": "test1", "data": "data1"}
+    test_data_2 = {"file": "test2", "data": "data2"}
+    test_data_list = [test_data_1, test_data_2]
 
-        for file_path in test_files:
-            test_key = _get_memory_cache_key(file_path, "test_operation")
-            _store_in_memory_cache(test_key, test_data)
+    # Store multiple items in cache
+    for test_key, test_data in zip(test_keys, test_data_list):
+        _store_in_memory_cache(test_key, test_data)
 
-        # Clean up
-        for file_path in test_files:
-            test_key = _get_memory_cache_key(file_path, "test_operation")
-            _MEMORY_CACHE.pop(test_key, None)
+    # Verify both were cached correctly
+    for test_key, expected_data in zip(test_keys, test_data_list):
+        cached = _get_from_memory_cache(test_key)
+        assert cached == expected_data, f"Cached data for {test_key} should match original"
 
-        return True
-    except Exception:
-        return False
+    # Clean up
+    for test_key in test_keys:
+        _MEMORY_CACHE.pop(test_key, None)
+
+    return True
 
 
 def test_memory_management_cleanup():
     """Test memory management and cleanup."""
-    try:
-        # Test cache clearing
-        clear_result = _gedcom_cache_module.clear()
-        # Clear should either succeed or fail gracefully
-        return isinstance(clear_result, bool)
-    except Exception:
-        return False
+    # Test cache clearing
+    clear_result = _gedcom_cache_module.clear()
+    # Clear should either succeed or fail gracefully
+    assert isinstance(clear_result, bool), f"clear() should return bool, got {type(clear_result)}"
+    return True
 
 
 def test_cache_validation_integrity():
     """Test cache validation and integrity checking."""
-    try:
-        # Test that health check detects cache state
-        health = _gedcom_cache_module.get_health_status()
-        return isinstance(health, dict) and "overall_health" in health
-    except Exception:
-        return False
+    # Test that health check detects cache state
+    health = _gedcom_cache_module.get_health_status()
+    assert isinstance(health, dict), f"get_health_status() should return dict, got {type(health)}"
+    assert "overall_health" in health, "Health status should contain 'overall_health' field"
+    return True
 
 
 def gedcom_cache_module_tests() -> bool:

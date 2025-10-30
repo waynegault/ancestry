@@ -1651,7 +1651,7 @@ def test_module_initialization() -> None:
         return True
     except (NameError, AssertionError) as e:
         print(f"❌ Module initialization failed: {e}")
-        return True  # Skip if config is missing in test env
+        raise  # Fail the test if functions are missing
 
 
 def test_config_defaults() -> None:
@@ -2005,7 +2005,7 @@ def test_analyze_top_match_fraser() -> None:
 
     except Exception as e:
         print(f"❌ Test person analyze test failed: {e}")
-        return True  # Don't fail the test suite
+        raise  # Fail the test if analysis doesn't work
 
 
 def _get_test_person_config() -> dict[str, Any]:

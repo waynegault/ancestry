@@ -1690,19 +1690,35 @@ def _test_discovery_api_conversion() -> None:
     func = convert_discovery_api_path_to_unified_format
     assert func is not None, "Function should be available"
 
-    # Test with minimal mock data to verify it handles input
+    # Test 1: Empty path (edge case)
     try:
-        # Create minimal mock API response structure
         mock_discovery_data = {"path": []}  # Empty path
         mock_target_name = "Test Person"
         result = func(mock_discovery_data, mock_target_name)
-        # If it doesn't raise an exception, verify result type
         assert isinstance(result, list), f"Expected list, got {type(result)}"
     except (ValueError, KeyError, TypeError, AttributeError) as e:
         # These specific exceptions are acceptable for empty/mock data
-        logger.debug(f"Expected exception for mock data: {e}")
+        logger.debug(f"Expected exception for empty path: {e}")
     except Exception as e:
-        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+
+    # Test 2: Valid path with relationship data
+    try:
+        mock_discovery_data = {
+            "path": [
+                {"name": "Person A", "relationship": "self"},
+                {"name": "Person B", "relationship": "parent"}
+            ]
+        }
+        mock_target_name = "Person B"
+        result = func(mock_discovery_data, mock_target_name)
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+        if result:  # If conversion succeeded
+            assert len(result) > 0, "Should have at least one relationship step"
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These exceptions are acceptable if the mock data structure doesn't match expected format
+        logger.debug(f"Expected exception for mock data structure: {e}")
+    except Exception as e:
         raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
@@ -1717,19 +1733,33 @@ def _test_general_api_conversion() -> None:
     func = convert_api_path_to_unified_format
     assert func is not None, "Function should be available"
 
-    # Test with minimal mock data to verify it handles input
+    # Test 1: Empty relationship data (edge case)
     try:
-        # Create minimal mock API response structure
         mock_api_data = []  # Empty relationship data list
         mock_target_name = "Test Person"
         result = func(mock_api_data, mock_target_name)
-        # If it doesn't raise an exception, verify result type
         assert isinstance(result, list), f"Expected list, got {type(result)}"
     except (ValueError, KeyError, TypeError, AttributeError) as e:
         # These specific exceptions are acceptable for empty/mock data
-        logger.debug(f"Expected exception for mock data: {e}")
+        logger.debug(f"Expected exception for empty data: {e}")
     except Exception as e:
-        # Unexpected exceptions should fail the test
+        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+
+    # Test 2: Valid relationship data
+    try:
+        mock_api_data = [
+            {"name": "Person A", "relation": "self"},
+            {"name": "Person B", "relation": "parent"}
+        ]
+        mock_target_name = "Person B"
+        result = func(mock_api_data, mock_target_name)
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+        if result:  # If conversion succeeded
+            assert len(result) > 0, "Should have at least one relationship step"
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        # These exceptions are acceptable if the mock data structure doesn't match expected format
+        logger.debug(f"Expected exception for mock data structure: {e}")
+    except Exception as e:
         raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
