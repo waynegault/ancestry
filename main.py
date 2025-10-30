@@ -838,7 +838,7 @@ def _truncate_all_tables(temp_manager: SessionManager) -> bool:
 
 
 def _reinitialize_database_schema(temp_manager: SessionManager) -> bool:
-    """Re-initialize database schema."""
+    """Re-initialize database schema by dropping and recreating all tables."""
     logger.debug("Re-initializing database schema...")
     try:
         # This will create a new engine and session factory pointing to the file path
@@ -846,7 +846,13 @@ def _reinitialize_database_schema(temp_manager: SessionManager) -> bool:
         if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
             raise SQLAlchemyError("Failed to initialize DB engine/session for recreation!")
 
-        # This will recreate the tables in the existing file
+        # Drop all existing tables first to ensure clean schema
+        logger.debug("Dropping all existing tables...")
+        Base.metadata.drop_all(temp_manager.db_manager.engine)
+        logger.debug("All tables dropped successfully.")
+
+        # Recreate all tables with current schema definitions
+        logger.debug("Creating tables with current schema...")
         Base.metadata.create_all(temp_manager.db_manager.engine)
         logger.debug("Database schema recreated successfully.")
         return True
@@ -886,6 +892,29 @@ def _seed_message_templates(recreation_session: Any) -> bool:
         return True
     except Exception as e:
         logger.error(f"Error seeding message templates: {e}", exc_info=True)
+        return False
+
+
+def _initialize_ethnicity_system(session_manager: SessionManager, db_manager: SessionManager) -> bool:
+    """
+    Initialize the ethnicity tracking system by fetching tree owner's ethnicity
+    and creating the necessary database columns.
+
+    Args:
+        session_manager: SessionManager for API access (has browser/credentials)
+        db_manager: SessionManager with active database connection
+
+    Returns:
+        True if initialization successful, False otherwise
+    """
+    try:
+        from dna_ethnicity_utils import initialize_ethnicity_system
+
+        logger.debug("Calling ethnicity system initialization...")
+        return initialize_ethnicity_system(session_manager, db_manager)
+
+    except Exception as e:
+        logger.error(f"Error initializing ethnicity system: {e}", exc_info=True)
         return False
 
 
@@ -940,6 +969,12 @@ def reset_db_actn(session_manager: SessionManager, *_):
                 raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
 
             _seed_message_templates(recreation_session)
+
+            # Step 4: Initialize ethnicity tracking system
+            # Use the global session manager for API access (it's already authenticated)
+            logger.debug("Initializing ethnicity tracking system...")
+            if not _initialize_ethnicity_system(session_manager, temp_manager):
+                logger.warning("Failed to initialize ethnicity tracking system - continuing anyway")
 
             reset_successful = True
             logger.info("Database reset completed successfully.")
@@ -1177,7 +1212,6 @@ def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[
     try:
         # Call the imported function from action6
         result = coord(session_manager, start=start)
-        print("")
         if result is False:
             logger.error("⚠️  WARNING: Match gathering incomplete or failed. Check logs for details.")
             return False

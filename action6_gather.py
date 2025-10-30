@@ -300,6 +300,7 @@ def _handle_page_fetch_result(
 
 def _log_page_complete(new: int, updated: int, skipped: int, errors: int, page_num: int) -> None:
     """Log page completion summary."""
+    print("")  # Blank line before page complete summary
     if new == 0 and updated == 0 and errors == 0 and skipped > 0:
         logger.info(f"Page {page_num} complete: All {skipped} matches already in database")
     else:
@@ -431,7 +432,7 @@ def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int,
     if run_incomplete:
         logger.warning(f"⚠️  RUN INCOMPLETE: {incomplete_reason}")
     else:
-        logger.info("✅ Run completed successfully")
+        logger.info("Run completed successfully")
 
     if session_deaths > 0:
         logger.warning(f"⚠️  Session Deaths: {session_deaths}")
@@ -448,7 +449,12 @@ def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int,
     logger.info(f"Updated: {total_updated}")
     logger.info(f"Skipped: {total_skipped}")
     logger.info(f"Errors: {total_errors}")
-    logger.info(f"Total Run Time: {total_run_time/3600:.2f} hours ({total_run_time/60:.1f} minutes)")
+
+    # Format run time as "X hr Y min Z.ZZ sec"
+    hours = int(total_run_time // 3600)
+    minutes = int((total_run_time % 3600) // 60)
+    seconds = total_run_time % 60
+    logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
     logger.info(f"{'='*80}")
     print("")
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
@@ -469,7 +475,10 @@ def coord(session_manager: SessionManager, start: int = 1):
     parallel_workers = getattr(config_schema, 'parallel_workers', 1)
     start_page = start
 
-    logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}")
+    # Get initial rate limiting delay
+    initial_delay = session_manager.rate_limiter.initial_delay if session_manager.rate_limiter else 0.0
+
+    logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}, RATE_LIMIT_DELAY={initial_delay:.2f}s")
 
     _setup_rate_limiting(session_manager, parallel_workers)
 
@@ -699,7 +708,11 @@ def _fetch_details_parallel(matches_needing_details: list[dict], session_manager
             for match in matches_needing_details
         }
 
-        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching data", leave=False):
+        # Get current rate limiting delay for progress bar
+        current_delay = session_manager.rate_limiter.current_delay if session_manager.rate_limiter else 0.0
+        desc = f"Fetching data (rate limit: {current_delay:.2f}s)"
+
+        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc=desc, leave=False, unit="it/s", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}]'):
             match = future_to_match[future]
             try:
                 details = future.result()
@@ -800,7 +813,7 @@ def _second_pass_process_matches(batch: list[dict], session: Any, skip_map: dict
     skipped_count = 0
     error_count = 0
 
-    for match in tqdm(batch, desc="Saving to database", leave=False):
+    for match in tqdm(batch, desc="Saving to database", leave=False, unit="it/s", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}]'):
         try:
             status, success = _process_single_match(
                 match, skip_map, match_details_map, session, session_manager, my_uuid, my_tree_id, parallel_workers

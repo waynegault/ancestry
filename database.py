@@ -144,65 +144,70 @@ class ConversationLog(Base):
     __tablename__ = "conversation_log"
 
     # --- Columns ---
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
         autoincrement=True,
         comment="Auto-incrementing primary key for message history.",
     )
-    people_id = Column(
+    people_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("people.id"),
         nullable=False,
         index=True,
         comment="Foreign key linking to the Person involved in the conversation.",
     )
-    direction = Column(
+    direction: Mapped[MessageDirectionEnum] = mapped_column(
         SQLEnum(MessageDirectionEnum),
         nullable=False,
         index=True,
         comment="Direction of the message (IN or OUT).",
     )
-    script_message_status = Column(
+    script_message_status: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Status of OUT messages sent by the script (e.g., delivered OK, typed (dry_run)).",
     )
-    latest_message_content = Column(
+    latest_message_content: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="Truncated content of the message.",
     )
-    conversation_id = Column(
+    conversation_id: Mapped[str] = mapped_column(
         String,
         nullable=False,
         index=True,
         comment="Unique identifier for the conversation thread.",
     )
-    latest_timestamp = Column(
+    latest_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         index=True,
         comment="Timestamp (UTC) of the message.",
     )
-    ai_sentiment = Column(
+    ai_sentiment: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         index=True,
         comment="AI-determined sentiment/intent (e.g., PRODUCTIVE, DESIST) for IN messages.",
     )
-    message_template_id = Column(
+    message_template_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("message_templates.id"),
         nullable=True,
         comment="Foreign key linking to the template used for OUT messages sent by the script.",
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),  # Default to current UTC time
         onupdate=lambda: datetime.now(timezone.utc),  # Update timestamp on modification
         nullable=False,
         comment="Timestamp of the last update to this log entry.",
+    )
+    custom_reply_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when an automated genealogical custom reply was sent for this IN message.",
     )
 
     # --- Relationships ---
@@ -210,13 +215,6 @@ class ConversationLog(Base):
     person = relationship("Person", back_populates="conversation_log_entries")  # type: ignore
     # Defines the link to the MessageTemplate object for outgoing messages.
     message_template = relationship("MessageTemplate")  # type: ignore
-
-    # New column for tracking custom genealogical replies
-    custom_reply_sent_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="Timestamp (UTC) when an automated genealogical custom reply was sent for this IN message.",
-    )
 
     # --- Table Arguments (Indexes) ---
     __table_args__ = (
@@ -257,10 +255,10 @@ class ConversationMetrics(Base):
     __tablename__ = "conversation_metrics"
 
     # --- Columns ---
-    id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the metrics record."
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the metrics record."
     )
-    people_id = Column(
+    people_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("people.id", ondelete="CASCADE"),
         nullable=False,
@@ -270,13 +268,13 @@ class ConversationMetrics(Base):
     )
 
     # Message counts
-    messages_sent = Column(
+    messages_sent: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Total number of messages sent to this person.",
     )
-    messages_received = Column(
+    messages_received: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
@@ -284,81 +282,81 @@ class ConversationMetrics(Base):
     )
 
     # Response tracking
-    first_response_received = Column(
+    first_response_received: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         comment="Whether we've received at least one response.",
     )
-    first_response_date = Column(
+    first_response_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when first response was received.",
     )
-    time_to_first_response_hours = Column(
+    time_to_first_response_hours: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
         comment="Hours between first message sent and first response received.",
     )
 
     # Engagement metrics
-    current_engagement_score = Column(
+    current_engagement_score: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Current engagement score (0-100) from ConversationState.",
     )
-    max_engagement_score = Column(
+    max_engagement_score: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Maximum engagement score achieved during conversation.",
     )
-    avg_engagement_score = Column(
+    avg_engagement_score: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
         comment="Average engagement score across all updates.",
     )
 
     # Conversation characteristics
-    conversation_phase = Column(
+    conversation_phase: Mapped[str] = mapped_column(
         String,
         nullable=False,
         default="initial_outreach",
         comment="Current conversation phase from ConversationState.",
     )
-    conversation_duration_days = Column(
+    conversation_duration_days: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
         comment="Days between first message and last message.",
     )
 
     # Template effectiveness
-    initial_template_used = Column(
+    initial_template_used: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Template key used for initial outreach message.",
     )
-    templates_used = Column(
+    templates_used: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of all template keys used in conversation.",
     )
 
     # Research outcomes
-    people_looked_up = Column(
+    people_looked_up: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Number of people looked up during conversation.",
     )
-    people_found = Column(
+    people_found: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Number of people successfully found in tree/API.",
     )
-    research_tasks_created = Column(
+    research_tasks_created: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
@@ -366,41 +364,41 @@ class ConversationMetrics(Base):
     )
 
     # Tree impact
-    added_to_tree = Column(
+    added_to_tree: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         comment="Whether this person was added to tree during conversation.",
     )
-    added_to_tree_date = Column(
+    added_to_tree_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when person was added to tree.",
     )
 
     # Timestamps
-    first_message_sent = Column(
+    first_message_sent: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when first message was sent.",
     )
-    last_message_sent = Column(
+    last_message_sent: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when last message was sent.",
     )
-    last_message_received = Column(
+    last_message_received: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when last message was received.",
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         comment="Timestamp (UTC) when metrics record was created.",
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
@@ -453,10 +451,10 @@ class EngagementTracking(Base):
     __tablename__ = "engagement_tracking"
 
     # --- Columns ---
-    id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the engagement event."
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the engagement event."
     )
-    people_id = Column(
+    people_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("people.id", ondelete="CASCADE"),
         nullable=False,
@@ -465,53 +463,53 @@ class EngagementTracking(Base):
     )
 
     # Event details
-    event_type = Column(
+    event_type: Mapped[str] = mapped_column(
         String,
         nullable=False,
         comment="Type of engagement event: message_sent, message_received, person_lookup, research_task, phase_change, score_update.",
     )
-    event_description = Column(
+    event_description: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="Detailed description of the event.",
     )
-    event_data = Column(
+    event_data: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded additional event data.",
     )
 
     # Engagement impact
-    engagement_score_before = Column(
+    engagement_score_before: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Engagement score before this event.",
     )
-    engagement_score_after = Column(
+    engagement_score_after: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Engagement score after this event.",
     )
-    engagement_score_delta = Column(
+    engagement_score_delta: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Change in engagement score from this event.",
     )
 
     # Context
-    conversation_phase = Column(
+    conversation_phase: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Conversation phase when event occurred.",
     )
-    template_used = Column(
+    template_used: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Template key if event was a message.",
     )
 
     # Timestamp
-    event_timestamp = Column(
+    event_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
@@ -537,10 +535,10 @@ class MessageTemplate(Base):
     __tablename__ = "message_templates"
 
     # --- Columns ---
-    id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the message template."
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the message template."
     )
-    template_key = Column(
+    template_key: Mapped[str] = mapped_column(
         String,
         unique=True,
         nullable=False,
@@ -548,48 +546,48 @@ class MessageTemplate(Base):
         comment="Unique key identifying the template (e.g., 'In_Tree-Initial').",
     )
 # template_name removed - can be generated from template_key as needed
-    subject_line = Column(
+    subject_line: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Email subject line extracted from template content.",
     )
-    message_content = Column(
+    message_content: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         comment="Full message template content with placeholders.",
     )
-    template_category = Column(
+    template_category: Mapped[str] = mapped_column(
         String,
         nullable=False,
         index=True,
         comment="Category: 'initial', 'follow_up', 'reminder', 'acknowledgement', etc.",
     )
-    tree_status = Column(
+    tree_status: Mapped[str] = mapped_column(
         String,
         nullable=False,
         index=True,
         comment="Tree status: 'in_tree', 'out_tree', 'universal', etc.",
     )
-    is_active = Column(
+    is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         nullable=False,
         index=True,
         comment="Whether this template is currently active for use.",
     )
-    version = Column(
+    version: Mapped[int] = mapped_column(
         Integer,
         default=1,
         nullable=False,
         comment="Template version for tracking changes.",
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),
         nullable=False,
         comment="Timestamp when template was created.",
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),
         onupdate=func.now(),
@@ -610,49 +608,49 @@ class TreeStatisticsCache(Base):
     __tablename__ = "tree_statistics_cache"
 
     # --- Columns ---
-    id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the cache entry."
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the cache entry."
     )
-    profile_id = Column(
+    profile_id: Mapped[str] = mapped_column(
         String,
         nullable=False,
         unique=True,
         index=True,
         comment="Profile ID of the tree owner (unique per owner).",
     )
-    total_matches = Column(
+    total_matches: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Total number of DNA matches."
     )
-    in_tree_count = Column(
+    in_tree_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of matches in the tree."
     )
-    out_tree_count = Column(
+    out_tree_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of matches out of the tree."
     )
-    close_matches = Column(
+    close_matches: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of close matches (>100 cM)."
     )
-    moderate_matches = Column(
+    moderate_matches: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Number of moderate matches (20-100 cM).",
     )
-    distant_matches = Column(
+    distant_matches: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of distant matches (<20 cM)."
     )
-    ethnicity_regions = Column(
+    ethnicity_regions: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded dictionary of ethnicity regions and counts.",
     )
-    calculated_at = Column(
+    calculated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         comment="Timestamp (UTC) when statistics were calculated.",
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
@@ -673,10 +671,10 @@ class ConversationState(Base):
     __tablename__ = "conversation_state"
 
     # --- Columns ---
-    id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the conversation state."
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the conversation state."
     )
-    people_id = Column(
+    people_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("people.id", ondelete="CASCADE"),
         nullable=False,
@@ -684,61 +682,60 @@ class ConversationState(Base):
         index=True,
         comment="Foreign key to people table (one state per person).",
     )
-    conversation_phase = Column(
+    conversation_phase: Mapped[str] = mapped_column(
         String,
         nullable=False,
         default="initial_outreach",
         comment="Current conversation phase: initial_outreach, active_dialogue, research_exchange, concluded.",
     )
-    engagement_score = Column(
+    engagement_score: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Engagement score (0-100) based on message quality and frequency.",
     )
-    last_topic = Column(
+    last_topic: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="Last topic discussed in the conversation.",
     )
-    pending_questions = Column(
+    pending_questions: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of pending questions to ask.",
     )
-    ai_summary = Column(
+    ai_summary: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="AI-generated engagement summary and intent notes.",
     )
-
-    mentioned_people = Column(
+    mentioned_people: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of people mentioned in conversation.",
     )
-    shared_ancestors = Column(
+    shared_ancestors: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of shared ancestors discovered.",
     )
-    next_action = Column(
+    next_action: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Next action to take: await_reply, send_follow_up, research_needed, no_action.",
     )
-    next_action_date = Column(
+    next_action_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when next action should be taken.",
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         comment="Timestamp (UTC) when conversation state was created.",
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
@@ -762,10 +759,10 @@ class DnaMatch(Base):
     __tablename__ = "dna_match"
 
     # --- Columns ---
-    id = Column(
-        Integer, primary_key=True, comment="Unique identifier for the DNA match record."
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the DNA match record."
     )
-    people_id = Column(
+    people_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("people.id"),
         unique=True,
@@ -773,38 +770,38 @@ class DnaMatch(Base):
         index=True,
         comment="Foreign key linking to the Person record (one-to-one).",
     )
-    compare_link = Column(
+    compare_link: Mapped[str] = mapped_column(
         String,
         nullable=False,
         comment="Direct URL to the Ancestry DNA comparison page.",
     )
-    cm_dna = Column(
+    cm_dna: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         index=True,  # Added index
         comment="Shared DNA in centimorgans.",
     )
-    predicted_relationship = Column(
+    predicted_relationship: Mapped[str] = mapped_column(
         String,
         nullable=False,
         comment="Relationship prediction provided by Ancestry (e.g., '1st-2nd cousin').",
     )
-    shared_segments = Column(
+    shared_segments: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, comment="Number of shared DNA segments."
     )
-    longest_shared_segment = Column(
+    longest_shared_segment: Mapped[Optional[float]] = mapped_column(
         Float, nullable=True, comment="Length of the longest shared segment in cM."
     )
-    meiosis = Column(
+    meiosis: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, comment="Meiosis count (if provided by Ancestry)."
     )
-    from_my_fathers_side = Column(
+    from_my_fathers_side: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
         comment="Flag indicating if match is likely paternal (via Ancestry tools).",
     )
-    from_my_mothers_side = Column(
+    from_my_mothers_side: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
@@ -845,12 +842,13 @@ class FamilyTree(Base):
     __tablename__ = "family_tree"
 
     # --- Columns ---
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
+        autoincrement=True,
         comment="Unique identifier for the family tree link record.",
     )
-    people_id = Column(
+    people_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("people.id"),
         unique=True,
@@ -858,35 +856,35 @@ class FamilyTree(Base):
         index=True,
         comment="Foreign key linking to the Person record (one-to-one).",
     )
-    cfpid = Column(
+    cfpid: Mapped[Optional[str]] = mapped_column(
         String,
         unique=True,
         nullable=True,
         index=True,  # Added index
         comment="Ancestry's internal Person ID (CFPID) within the script user's tree.",
     )
-    person_name_in_tree = Column(
+    person_name_in_tree: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Name of the person as recorded in the script user's tree.",
     )
-    facts_link = Column(
+    facts_link: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Direct URL to the person's 'Facts' page in the script user's tree.",
     )
-    view_in_tree_link = Column(
+    view_in_tree_link: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         comment="Direct URL to view the person within the script user's family tree structure.",
     )
-    actual_relationship = Column(
+    actual_relationship: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
         index=True,  # Added index
         comment="Relationship determined via tree analysis (e.g., '1st cousin 1x removed').",
     )
-    relationship_path = Column(
+    relationship_path: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,  # Changed to Text for potentially long paths
         comment="Textual representation of the relationship path back to a common ancestor.",

@@ -100,7 +100,7 @@ def fetch_tree_owner_ethnicity_regions(
         logger.error("Ethnicity response missing 'regions' field")
         return None
 
-    logger.info(f"Successfully fetched {len(response['regions'])} ethnicity regions for tree owner")
+    logger.debug(f"Successfully fetched {len(response['regions'])} ethnicity regions for tree owner")
     return response
 
 
@@ -245,6 +245,171 @@ def sanitize_column_name(region_name: str) -> str:
 
     # Prefix with 'ethnicity_' to avoid conflicts
     return f"ethnicity_{sanitized}"
+
+
+def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Optional[SessionManager] = None) -> bool:
+    """
+    Initialize the ethnicity tracking system by:
+    1. Fetching tree owner's ethnicity regions from API
+    2. Fetching region names
+    3. Creating ethnicity_regions.json file
+    4. Adding ethnicity columns to dna_match table
+
+    This should be called when creating a new database (Action 2).
+
+    Args:
+        session_manager: SessionManager for API access (has browser/credentials)
+        db_manager: Optional SessionManager with active database connection (for adding columns)
+
+    Returns:
+        True if initialization successful, False otherwise
+    """
+    try:
+        # Get tree owner's UUID
+        my_uuid = session_manager.my_uuid
+        if not my_uuid:
+            logger.error("Cannot initialize ethnicity system: MY_UUID not available")
+            return False
+
+        logger.debug("Initializing ethnicity tracking system...")
+
+        # Step 1: Fetch tree owner's ethnicity regions
+        logger.debug(f"Fetching tree owner ethnicity for UUID: {my_uuid}")
+        ethnicity_data = fetch_tree_owner_ethnicity_regions(session_manager, my_uuid)
+        if not ethnicity_data or "regions" not in ethnicity_data:
+            logger.error("Failed to fetch tree owner ethnicity regions")
+            return False
+
+        regions = ethnicity_data["regions"]
+        logger.debug(f"Found {len(regions)} ethnicity regions for tree owner")
+
+        # Step 2: Fetch region names
+        region_keys = [region["key"] for region in regions]
+        logger.debug(f"Fetching region names for {len(region_keys)} regions")
+        region_names = fetch_ethnicity_region_names(session_manager, region_keys)
+        if not region_names:
+            logger.error("Failed to fetch ethnicity region names")
+            return False
+
+        # Step 3: Build metadata structure
+        tree_owner_regions = []
+        for region in regions:
+            region_key = region["key"]
+            region_name = region_names.get(region_key, f"Unknown Region {region_key}")
+            percentage = region.get("percentage", 0)
+            column_name = sanitize_column_name(region_name)
+
+            tree_owner_regions.append({
+                "key": region_key,
+                "name": region_name,
+                "percentage": percentage,
+                "column_name": column_name
+            })
+
+        # Step 4: Save to ethnicity_regions.json
+        metadata = {"tree_owner_regions": tree_owner_regions}
+        metadata_path = Path(ETHNICITY_METADATA_FILE)
+
+        logger.debug(f"Saving ethnicity metadata to {metadata_path}")
+        metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.debug(f"✅ Created {ETHNICITY_METADATA_FILE} with {len(tree_owner_regions)} regions")
+
+        # Step 5: Add ethnicity columns to dna_match table
+        logger.debug("Adding ethnicity columns to dna_match table")
+        if not _add_ethnicity_columns_to_database(tree_owner_regions, db_manager):
+            logger.error("Failed to add ethnicity columns to database")
+            return False
+
+        logger.debug("✅ Ethnicity tracking system initialized successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error initializing ethnicity system: {e}", exc_info=True)
+        return False
+
+
+def _get_database_engine(db_manager: Optional[SessionManager]) -> Optional[Any]:
+    """Get database engine from SessionManager or create new one."""
+    if db_manager and hasattr(db_manager, 'db_manager') and db_manager.db_manager:
+        return db_manager.db_manager.engine
+
+    # Fallback to creating new DatabaseManager
+    from core.database_manager import DatabaseManager
+    db_mgr = DatabaseManager()
+    return db_mgr.engine
+
+
+def _add_single_ethnicity_column(connection: Any, column_name: str, existing_columns: set[str]) -> bool:
+    """Add a single ethnicity column if it doesn't exist."""
+    from sqlalchemy import text
+
+    if column_name in existing_columns:
+        return True  # Already exists, skip
+
+    try:
+        alter_sql = text(f"ALTER TABLE dna_match ADD COLUMN {column_name} INTEGER")
+        connection.execute(alter_sql)
+        connection.commit()
+        logger.debug(f"Added ethnicity column: {column_name}")
+        return True
+    except Exception as col_err:
+        logger.error(f"Failed to add column {column_name}: {col_err}")
+        return False
+
+
+def _add_ethnicity_columns_to_database(tree_owner_regions: list[dict[str, Any]], db_manager: Optional[SessionManager] = None) -> bool:
+    """
+    Add ethnicity columns to dna_match table using ALTER TABLE.
+
+    Args:
+        tree_owner_regions: List of region dicts with column_name field
+        db_manager: Optional SessionManager with active database connection
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        from sqlalchemy import inspect as sqlalchemy_inspect
+
+        engine = _get_database_engine(db_manager)
+        if not engine:
+            logger.error("Cannot add ethnicity columns: Database engine not available")
+            return False
+
+        with engine.connect() as connection:
+            # Check if dna_match table exists
+            inspector = sqlalchemy_inspect(connection)
+            if "dna_match" not in inspector.get_table_names():
+                logger.error("dna_match table not found")
+                return False
+
+            # Get existing columns
+            existing_columns = {col["name"] for col in inspector.get_columns("dna_match")}
+
+            # Add ethnicity columns if they don't exist
+            columns_added = 0
+            for region in tree_owner_regions:
+                column_name = region.get("column_name")
+                if not column_name:
+                    logger.warning(f"Region {region.get('name')} missing column_name - skipping")
+                    continue
+
+                if _add_single_ethnicity_column(connection, column_name, existing_columns):
+                    if column_name not in existing_columns:
+                        columns_added += 1
+                else:
+                    return False
+
+            if columns_added > 0:
+                logger.debug(f"Added {columns_added} ethnicity columns to dna_match table")
+            else:
+                logger.debug("All ethnicity columns already exist in dna_match table")
+
+            return True
+
+    except Exception as e:
+        logger.error(f"Error adding ethnicity columns to database: {e}", exc_info=True)
+        return False
 
 
 def extract_match_ethnicity_percentages(
