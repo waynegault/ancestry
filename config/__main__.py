@@ -16,14 +16,12 @@ if __name__ == "__main__":
         # Import the config package modules (for availability check)
         # import config.config_manager  # Available but not used in demo
         # import config.config_schema  # Available but not used in demo
-        # import config.credential_manager  # Available but not used in demo
 
-        print("Configuration Package - Enhanced Credential and Config Management")
+        print("Configuration Package - Enhanced Config Management")
         print("Version: 2.0.0")
-        print("Available modules: config_manager, credential_manager, config_schema")
+        print("Available modules: config_manager, config_schema")
         print("Note: This is a package init file. Import individual modules as needed.")
         print("\nExample usage:")
-        print("  from config.credential_manager import CredentialManager")
         print("  from config.config_manager import ConfigManager")
 
     except ImportError as e:

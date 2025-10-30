@@ -212,6 +212,8 @@ class InboxProcessor:
             if self.max_inbox_limit > 0
             else default_batch
         )
+        # AI Provider setting
+        self.ai_provider = getattr(config_schema, "ai_provider", "")
         # AI Context settings
         self.ai_context_msg_count = getattr(
             config_schema, "ai_context_messages_count", 5

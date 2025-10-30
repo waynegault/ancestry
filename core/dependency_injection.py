@@ -462,17 +462,6 @@ def configure_dependencies() -> None:
     except ImportError as e:
         logger.warning(f"Could not register configuration services: {e}")
 
-    try:
-        # Register security services
-        from security_manager import SecurityManager
-
-        container.register_singleton(SecurityManager, SecurityManager)
-
-        logger.info("Security services registered in DI container")
-
-    except ImportError as e:
-        logger.warning(f"Could not register security services: {e}")
-
     logger.info("Dependency injection configuration completed")
 
 

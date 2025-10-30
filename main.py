@@ -181,7 +181,6 @@ def menu() -> str:
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
     print("")
-    print("sec. Credential Manager (Optional: Encrypted storage alternative to .env)")
     print("s. Show Cache Statistics")
     print("t. Toggle Console Log Level (INFO/DEBUG)")
     print("c. Clear Screen")
@@ -598,7 +597,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
 
             if total_people == 0:
                 print("\n" + "="*60)
-                print("⚠️  DATABASE IS EMPTY")
+                print("INFO: DATABASE IS EMPTY")
                 print("="*60)
                 print("\nThe database contains no records.")
                 print("Please run Action 2 (Reset Database) first to initialize")
@@ -606,8 +605,9 @@ def all_but_first_actn(session_manager: SessionManager, *_):
                 print("\nAction 0 is used to delete all records EXCEPT the test")
                 print("profile, but there are currently no records to delete.")
                 print("="*60 + "\n")
-                logger.info("Action 0 aborted: Database is empty. User should run Action 2 first.")
-                return False
+                logger.info("Action 0: Database is empty. No records to delete.")
+                success = True  # Not an error - just nothing to do
+                return True  # Return to menu without closing session
 
             # 1. Find the person to keep by profile_id
             person_to_keep = (
@@ -1205,14 +1205,13 @@ def _attempt_login(session_manager: SessionManager) -> bool:
             print("✓ Login successful!")
             return _verify_login_success(session_manager)
 
-        print("✗ Login failed. Please check your credentials.")
-        print("  You can update credentials using the 'sec' option in the main menu.")
+        print("✗ Login failed. Please check your credentials in .env file.")
         return False
 
     except Exception as login_e:
         logger.error(f"Exception during login attempt: {login_e}", exc_info=True)
         print(f"✗ Login failed with error: {login_e}")
-        print("  You can update credentials using the 'sec' option in the main menu.")
+        print("  Please check your credentials in .env file.")
         return False
 
 
@@ -1662,25 +1661,12 @@ def _print_config_error_message() -> None:
     print("   Critical configuration validation failed.")
     print("   This usually means missing credentials or configuration files.")
     print("")
-    print("💡 SOLUTIONS:")
-    print("\n🔒 Recommended: Use the secure credential manager")
-    print("   python credentials.py")
-
-    print("\n📋 Alternative options:")
-    print(
-        "   1. Run 'sec. Setup Security (Encrypt Credentials)' from main menu"
-    )
-    print("   2. Copy .env.example to .env and add your credentials")
-    print("   3. Ensure the required security dependencies are installed:")
-    print("      pip install cryptography keyring")
+    print("💡 SOLUTION:")
+    print("   1. Copy .env.example to .env and add your credentials")
+    print("   2. Ensure all required environment variables are set")
 
     print("\n📚 For detailed instructions:")
-    print("   See ENV_IMPORT_GUIDE.md")
-
-    print("\n⚠️ Security Note:")
-    print("   The secure credential manager requires:")
-    print("   - cryptography package (for encryption)")
-    print("   - keyring package (for secure key storage)")
+    print("   See ENV_IMPORT_GUIDE.md or readme.md")
 
     print("\nExiting application...")
     sys.exit(1)
@@ -1760,57 +1746,7 @@ def _run_all_tests() -> None:
     input("Press Enter to continue...")
 
 
-def _run_credential_manager() -> None:
-    """
-    Optional encrypted credential storage manager.
 
-    Note: Most users should use .env file for credentials (simpler, no dependencies).
-    This manager provides encrypted storage as an alternative for enhanced security.
-    """
-    try:
-        from credentials import UnifiedCredentialManager
-
-        print("\n" + "=" * 70)
-        print("CREDENTIAL MANAGEMENT (Optional Encrypted Storage)")
-        print("=" * 70)
-        print("\nNote: Most users should use .env file for credentials.")
-        print("This manager provides encrypted storage as an alternative.\n")
-        manager = UnifiedCredentialManager()
-        manager.run()
-    except ImportError as e:
-        logger.error(f"Error importing credentials manager: {e}")
-        print("\n❌ Error: Unable to use the credential manager.")
-
-        if "No module named 'cryptography'" in str(e) or "No module named 'keyring'" in str(e):
-            print("\n" + "=" * 60)
-            print("       SECURITY DEPENDENCIES MISSING")
-            print("=" * 60)
-            print("\nRequired security packages are not installed:")
-            print("  - cryptography: For secure encryption/decryption")
-            print("  - keyring: For secure storage of master keys")
-
-            print("\n📋 Installation Instructions:")
-            print("  1. Install required packages:")
-            print("     pip install cryptography keyring")
-            print("     - OR -")
-            print("     pip install -r requirements.txt")
-
-            print("\n📚 For more information, see:")
-            print("  - ENV_IMPORT_GUIDE.md")
-            print("  - SECURITY_STREAMLINED.md")
-        else:
-            print(
-                "Error: credentials.py not found or has other import issues."
-            )
-            print(f"Details: {e}")
-            print(
-                "\nPlease check that all files are in the correct location."
-            )
-    except Exception as e:
-        logger.error(f"Error running credential manager: {e}")
-        print(f"Error running credential manager: {e}")
-    print("\nReturning to main menu...")
-    input("Press Enter to continue...")
 
 
 def _show_analytics_dashboard() -> None:
@@ -2078,7 +2014,6 @@ def _handle_meta_options(choice: str) -> bool | None:
     """
     meta_actions = {
         "analytics": _show_analytics_dashboard,
-        "sec": _run_credential_manager,
         "s": _show_cache_statistics,
         "t": _toggle_log_level,
         "c": lambda: os.system("cls" if os.name == "nt" else "clear"),
@@ -2704,7 +2639,7 @@ def main_module_tests() -> bool:
         )
 
         suite.run_test(
-            test_name="coord(), InboxProcessor(), send_messages_to_matches(), process_productive_messages(), run_action10(), run_action11()",
+            test_name="coord(), InboxProcessor(), send_messages_to_matches(), process_productive_messages(), run_action10()",
             test_func=_test_action_function_availability,
             test_summary="All action functions are properly imported and callable",
             method_description="Testing callable status of all action module functions",

@@ -712,7 +712,7 @@ def _fetch_details_parallel(matches_needing_details: list[dict], session_manager
         current_delay = session_manager.rate_limiter.current_delay if session_manager.rate_limiter else 0.0
         desc = f"Fetching data (rate limit: {current_delay:.2f}s)"
 
-        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc=desc, leave=False, unit="it", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}]'):
+        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc=desc, leave=False, unit="it", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]'):
             match = future_to_match[future]
             try:
                 details = future.result()
@@ -813,7 +813,7 @@ def _second_pass_process_matches(batch: list[dict], session: Any, skip_map: dict
     skipped_count = 0
     error_count = 0
 
-    for match in tqdm(batch, desc="Saving to database", leave=False, unit="it", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}]'):
+    for match in tqdm(batch, desc="Saving to database", leave=False, unit="it", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]'):
         try:
             status, success = _process_single_match(
                 match, skip_map, match_details_map, session, session_manager, my_uuid, my_tree_id, parallel_workers
