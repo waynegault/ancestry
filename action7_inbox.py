@@ -926,6 +926,13 @@ class InboxProcessor:
         except Exception:
             pass
 
+    def _log_configuration(self) -> None:
+        """Log Action 7 configuration settings."""
+        # Get initial rate limiting delay
+        initial_delay = self.session_manager.rate_limiter.initial_delay if self.session_manager.rate_limiter else 0.0
+
+        logger.info(f"Configuration: MAX_INBOX={self.max_inbox_limit}, AI_PROVIDER={self.ai_provider}, RATE_LIMIT_DELAY={initial_delay:.2f}s")
+
     def _validate_session_state(self) -> Optional[str]:
         """Validate session manager state and return profile ID."""
         if not self.session_manager or not self.session_manager.my_profile_id:
@@ -957,6 +964,9 @@ class InboxProcessor:
         """
         # Initialize statistics and state
         self._initialize_search_stats()
+
+        # Log configuration
+        self._log_configuration()
 
         # Validate session manager state
         my_pid_lower = self._validate_session_state()
@@ -2510,13 +2520,23 @@ class InboxProcessor:
         session_recoveries: int = 0,
     ) -> None:
         """Logs a unified summary of the inbox search process."""
+        # Calculate run time
+        start_time = self.stats.get("start_time")
+        end_time = self.stats.get("end_time", datetime.now(timezone.utc))
+        if start_time:
+            total_run_time = (end_time - start_time).total_seconds()
+        else:
+            total_run_time = 0.0
+
         # Step 1: Print header
-        # Log summary without ANSI color codes for better log file readability
-        logger.info("\n" + "=" * 50)
-        logger.info("INBOX SEARCH SUMMARY")
-        logger.info("=" * 50)
+        print("")  # Blank line before summary
+        logger.info("=" * 80)
+        logger.info("FINAL SUMMARY")
+        logger.info("=" * 80)
+
         # Mark unused parameters to satisfy linter without changing signature
         _ = new_logs
+
         # Step 2: Log key metrics
         logger.info(f"API Conversations Fetched:    {total_api_items}")
         logger.info(f"Conversations Processed:      {items_processed}")
@@ -2538,8 +2558,20 @@ class InboxProcessor:
             else:
                 final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
         logger.info(f"Processing Stopped Due To:    {final_reason}")
-        # Step 4: Print footer
-        logger.info("=" * 50)
+
+        # Step 4: Log run time in consistent format
+        hours = int(total_run_time // 3600)
+        minutes = int((total_run_time % 3600) // 60)
+        seconds = total_run_time % 60
+        logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
+
+        # Step 5: Print footer
+        logger.info("=" * 80)
+        print("")  # Blank line after summary
+
+        # Print rate limiter metrics if available
+        if hasattr(self.session_manager, 'rate_limiter') and self.session_manager.rate_limiter:
+            self.session_manager.rate_limiter.print_metrics_summary()
 
         # Update statistics
         self.stats.update(
