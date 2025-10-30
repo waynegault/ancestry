@@ -3322,35 +3322,52 @@ def _log_final_summary(
     state: 'ProcessingState',
     counters: 'BatchCounters',
     overall_success: bool,
-    error_categorizer
+    error_categorizer,
+    start_time: float
 ) -> None:
     """Log final summary of message sending action."""
     try:
-        logger.info("--- Action 8: Message Sending Summary ---")
-        logger.info(f"  Candidates Considered:              {total_candidates}")
-        logger.info(f"  Candidates Processed in Loop:       {state.processed_in_loop}")
-        logger.info(f"  Template Messages Sent/Simulated:   {counters.sent}")
-        logger.info(f"  Desist ACKs Sent/Simulated:         {counters.acked}")
-        logger.info(f"  Skipped (Rules/Filter/Limit/Error): {counters.skipped}")
-        logger.info(f"  Errors during processing/sending:   {counters.errors}")
-        logger.info(f"  Overall Action Success:             {overall_success}")
+        # Calculate run time
+        total_run_time = time.time() - start_time
+        hours = int(total_run_time // 3600)
+        minutes = int((total_run_time % 3600) // 60)
+        seconds = total_run_time % 60
+
+        # Print header
+        print("")  # Blank line before summary
+        logger.info("=" * 80)
+        logger.info("FINAL SUMMARY")
+        logger.info("=" * 80)
+
+        logger.info(f"Candidates Considered:              {total_candidates}")
+        logger.info(f"Candidates Processed in Loop:       {state.processed_in_loop}")
+        logger.info(f"Template Messages Sent/Simulated:   {counters.sent}")
+        logger.info(f"Desist ACKs Sent/Simulated:         {counters.acked}")
+        logger.info(f"Skipped (Rules/Filter/Limit/Error): {counters.skipped}")
+        logger.info(f"Errors during processing/sending:   {counters.errors}")
+        logger.info(f"Overall Action Success:             {overall_success}")
 
         error_summary = error_categorizer.get_error_summary()
         if error_summary['total_technical_errors'] > 0 or error_summary['total_business_skips'] > 0:
-            logger.info("--- Detailed Error Analysis ---")
-            logger.info(f"  Technical Errors:                   {error_summary['total_technical_errors']}")
-            logger.info(f"  Business Logic Skips:               {error_summary['total_business_skips']}")
-            logger.info(f"  Error Rate:                         {error_summary['error_rate']:.1%}")
+            logger.info("")
+            logger.info("DETAILED ERROR ANALYSIS")
+            logger.info(f"Technical Errors:                   {error_summary['total_technical_errors']}")
+            logger.info(f"Business Logic Skips:               {error_summary['total_business_skips']}")
+            logger.info(f"Error Rate:                         {error_summary['error_rate']:.1%}")
 
             if error_summary['most_common_error']:
-                logger.info(f"  Most Common Issue:                  {error_summary['most_common_error']}")
+                logger.info(f"Most Common Issue:                  {error_summary['most_common_error']}")
 
-            logger.info("--- Error Breakdown ---")
+            logger.info("")
+            logger.info("ERROR BREAKDOWN")
             for error_type, count in error_summary['error_breakdown'].items():
                 if count > 0:
-                    logger.info(f"    {error_type.replace('_', ' ').title()}: {count}")
+                    logger.info(f"  {error_type.replace('_', ' ').title()}: {count}")
 
-        logger.info("-----------------------------------------")
+        # Log run time
+        logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
+        logger.info("=" * 80)
+        print("")  # Blank line after summary
     except Exception as summary_err:
         logger.warning(f"Failed to log final summary: {summary_err}")
 
@@ -3453,7 +3470,8 @@ def _perform_final_cleanup(
     state: 'ProcessingState',
     counters: 'BatchCounters',
     overall_success: bool,
-    error_categorizer: Any
+    error_categorizer: Any,
+    start_time: float
 ) -> int:
     """
     Perform final cleanup and logging.
@@ -3473,7 +3491,7 @@ def _perform_final_cleanup(
         counters.skipped += unprocessed_count
 
     # Log final summary
-    _log_final_summary(total_candidates, state, counters, overall_success, error_categorizer)
+    _log_final_summary(total_candidates, state, counters, overall_success, error_categorizer, start_time)
 
     return counters.skipped
 
@@ -3691,11 +3709,16 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
     # --- Step 1: Initialization and System Health Check ---
     logger.debug("--- Starting Action 8: Send Standard Messages ---")
+    start_time = time.time()
     start_advanced_monitoring()
 
-    from contextlib import suppress
-    with suppress(Exception):
-        logger.info(f"Action 8: APP_MODE={getattr(config_schema, 'app_mode', 'production')}, MIN_MESSAGE_INTERVAL={MIN_MESSAGE_INTERVAL}")
+    # Log configuration
+    app_mode = getattr(config_schema, 'app_mode', 'production')
+    initial_delay = session_manager.rate_limiter.initial_delay if session_manager.rate_limiter else 0.0
+    max_messages = config_schema.max_inbox
+    batch_size = max(1, config_schema.batch_size)
+
+    logger.info(f"Configuration: APP_MODE={app_mode}, MAX_MESSAGES={max_messages}, BATCH_SIZE={batch_size}, MIN_INTERVAL={MIN_MESSAGE_INTERVAL}, RATE_LIMIT_DELAY={initial_delay:.2f}s")
 
     # Validate prerequisites
     prerequisites_valid, _ = _validate_action8_prerequisites(session_manager)
@@ -3705,8 +3728,8 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     # Initialize counters and configuration
     sent_count, acked_count, skipped_count, error_count, processed_in_loop, total_candidates, batch_num, critical_db_error_occurred = _initialize_action8_counters_and_config()
 
-    db_commit_batch_size = max(1, config_schema.batch_size)
-    max_messages_to_send_this_run = config_schema.max_inbox
+    db_commit_batch_size = batch_size
+    max_messages_to_send_this_run = max_messages
     overall_success = True
 
     # Initialize resource management
@@ -3767,7 +3790,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         skipped_count = _perform_final_cleanup(
             db_session, session_manager, critical_db_error_occurred,
             total_candidates, state_final, counters_final, overall_success,
-            error_categorizer
+            error_categorizer, start_time
         )
 
     # Step 7: Final resource cleanup
