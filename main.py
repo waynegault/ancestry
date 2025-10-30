@@ -593,6 +593,22 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             raise Exception("Failed to get DB session via temporary manager.")
 
         with db_transn(session) as sess:
+            # Check if database is empty
+            total_people = sess.query(Person).filter(Person.deleted_at.is_(None)).count()
+
+            if total_people == 0:
+                print("\n" + "="*60)
+                print("⚠️  DATABASE IS EMPTY")
+                print("="*60)
+                print("\nThe database contains no records.")
+                print("Please run Action 2 (Reset Database) first to initialize")
+                print("the database with test data.")
+                print("\nAction 0 is used to delete all records EXCEPT the test")
+                print("profile, but there are currently no records to delete.")
+                print("="*60 + "\n")
+                logger.info("Action 0 aborted: Database is empty. User should run Action 2 first.")
+                return False
+
             # 1. Find the person to keep by profile_id
             person_to_keep = (
                 sess.query(Person.id, Person.username, Person.first_name, Person.profile_id)
