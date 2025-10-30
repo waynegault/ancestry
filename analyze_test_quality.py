@@ -186,10 +186,7 @@ class TestQualityAnalyzer:
             # Make sure it's not just "return True" at the end (smoke test)
             # Look for conditional returns or multiple return statements
             return_statements = re.findall(r"return\s+(True|False)", source)
-            if len(return_statements) > 1:  # Multiple returns = conditional logic
-                return True
-            # Single return False is also valid (failure case)
-            if "return False" in source:
+            if len(return_statements) > 1 or "return False" in source:
                 return True
 
         # Check for boolean expressions in return statements (message_personalization.py pattern)
@@ -200,12 +197,19 @@ class TestQualityAnalyzer:
         # Check for result/success variable pattern (database.py, message_personalization.py pattern)
         # Pattern: result = True/False ... return result
         # Pattern: success = len(x) > 5 and "text" in x ... return success
-        if re.search(r"(result|success)\s*=\s*(True|False)", source) and re.search(r"return\s+(result|success)", source):
-            return True
-        if re.search(r"(result|success)\s*=\s*.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source) and re.search(r"return\s+(result|success)", source):
+        has_result_var = re.search(r"(result|success)\s*=\s*(True|False)", source) or \
+                         re.search(r"(result|success)\s*=\s*.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source)
+        if has_result_var and re.search(r"return\s+(result|success)", source):
             return True
 
-        return False
+        # Check for all() pattern (system_cache.py pattern)
+        # Pattern: all_passed = all(results.values()) ... return all_passed
+        if re.search(r"all\(", source) and re.search(r"return\s+\w+", source):
+            return True
+
+        # Check for suite.finish_suite() pattern (test_framework.py pattern)
+        # Pattern: return suite.finish_suite()
+        return bool(re.search(r"return\s+\w+\.finish_suite\(\)", source))
 
     def _always_returns_true(self, source: str) -> bool:
         """Check if test always returns True without real validation."""
