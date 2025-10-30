@@ -57,7 +57,6 @@ from core.error_handling import (
     AuthenticationError,
     BrowserError,
 )
-from core.progress_indicators import create_progress_indicator
 from core.session_manager import SessionManager
 from database import (
     ConversationLog,
@@ -943,14 +942,17 @@ class InboxProcessor:
         return self.session_manager.my_profile_id.lower()
 
     def _setup_progress_tracking(self) -> dict[str, Any]:
-        """Setup progress tracking configuration."""
+        """Setup progress tracking configuration - simplified to match Action 6."""
+        # Get current rate limiting delay for progress bar
+        current_delay = self.rate_limiter.current_delay if self.rate_limiter else 0.0
+        desc = f"Processing conversations (rate limit: {current_delay:.2f}s)"
+
         return {
             "total": None,  # Start with unknown total
-            "desc": "Processing",
-            "unit": " conv",
-            "dynamic_ncols": True,
-            "leave": True,
-            "bar_format": "{desc} |{bar}| {n_fmt} conversations processed",
+            "desc": desc,
+            "unit": "it",
+            "leave": False,
+            "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]",
             "file": sys.stderr,
         }
 
@@ -1046,44 +1048,20 @@ class InboxProcessor:
         """
         tqdm_args = self._setup_progress_tracking()
 
-        # PHASE 1 OPTIMIZATION: Enhanced progress tracking for inbox processing
-        dynamic_total = self.max_inbox_limit if self.max_inbox_limit > 0 else 0
-        with create_progress_indicator(
-            description="Inbox Message Processing",
-            total=dynamic_total if dynamic_total > 0 else None,
-            unit="conversations",
-            show_memory=True,
-            show_rate=True,
-            log_finish=False,
-            leave=False,
-        ) as enhanced_progress:
+        # Simplified progress tracking - single tqdm progress bar like Action 6
+        with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
+            result = self._process_inbox_loop(
+                session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+            )
 
-            with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-                # Link enhanced progress to tqdm for updates (avoid pylance attr warnings)
-                from contextlib import suppress
-                with suppress(Exception):
-                    progress_bar._enhanced_progress = enhanced_progress
+            # Ensure a newline after the progress bar completes to avoid inline log overlap
+            try:
+                progress_bar.close()
+            finally:
+                sys.stderr.write("\n")
+                sys.stderr.flush()
 
-                result = self._process_inbox_loop(
-                    session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
-                )
-
-                # Ensure a newline after the progress bar completes to avoid inline log overlap
-                try:
-                    progress_bar.close()
-                finally:
-                    sys.stderr.write("\n")
-                    sys.stderr.flush()
-
-            # Update the progress bar to show completion - only set total if needed
-            if progress_bar.total is None:
-                progress_bar.total = max(result[4], 1)  # items_processed_before_stop
-                progress_bar.refresh()
-            # Don't manually set progress_bar.n here since it's already updated in the loop
-            progress_bar.set_description("Completed")
-            progress_bar.refresh()
-
-            return result
+        return result
 
     def get_statistics(self) -> dict[str, Any]:
         """Return processing statistics for monitoring and debugging."""
@@ -1119,13 +1097,13 @@ class InboxProcessor:
     def _check_browser_health(self, current_batch_num: int, state: dict[str, Any]) -> Optional[str]:
         """Check browser health and attempt recovery if needed. Updates state with death/recovery counts."""
         if current_batch_num % 5 == 0 and not self.session_manager.check_browser_health():
-            logger.warning(f"🚨 Browser health check failed at batch {current_batch_num}")
+            logger.warning(f"Browser health check failed at batch {current_batch_num}")
             state["session_deaths"] += 1
             if self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
-                logger.info("✅ Session recovered successfully")
+                logger.info("Session recovered successfully")
                 state["session_recoveries"] += 1
                 return None
-            logger.critical(f"❌ Browser recovery failed at batch {current_batch_num} - halting inbox processing")
+            logger.critical(f"Browser recovery failed at batch {current_batch_num} - halting inbox processing")
             return "Browser Recovery Failed"
         return None
 
@@ -1654,7 +1632,7 @@ class InboxProcessor:
         except ConnectionError as conn_err:
             if "Session death cascade detected" in str(conn_err):
                 logger.critical(
-                    f"🚨 SESSION DEATH CASCADE in Action 7 {exception_type} save: {conn_err}"
+                    f"SESSION DEATH CASCADE in Action 7 {exception_type} save: {conn_err}"
                 )
                 raise MaxApiFailuresExceededError(
                     f"Session death cascade detected in Action 7 {exception_type} save"
@@ -2262,13 +2240,13 @@ class InboxProcessor:
         state["total_processed_api_items"] += batch_api_item_count
         state["current_batch_num"] += 1
 
-        # Log batch completion at INFO level for every batch (simplified format for readability)
+        # Log batch completion at INFO level for every batch (simplified format matching Action 6)
         logger.info(
-            f"✅ Batch {state['current_batch_num']} | "
-            f"Processed: {state['total_processed_api_items']} | "
-            f"AI: {state['ai_classified_count']} | "
-            f"Updates: {state['status_updated_count']} | "
-            f"Errors: {state['error_count_this_loop']}\n"
+            f"Batch {state['current_batch_num']} complete: "
+            f"Processed={state['total_processed_api_items']}, "
+            f"AI={state['ai_classified_count']}, "
+            f"Updates={state['status_updated_count']}, "
+            f"Errors={state['error_count_this_loop']}\n"
         )
 
         return False, None, all_conversations_batch, next_cursor_from_api
@@ -2352,8 +2330,7 @@ class InboxProcessor:
         batch_num = state['current_batch_num'] + 1
         logger.debug(f"[Batch {batch_num}] Starting batch iteration")
 
-        # Log batch start at INFO level for every batch
-        logger.info(f"\n🔄 Batch {batch_num} starting...")
+        # Log batch start removed - will only log batch completion like Action 6
 
         # Fetch and process batch
         should_stop, stop_reason, all_conversations_batch, next_cursor_from_api = (
@@ -2649,7 +2626,7 @@ def _test_fetch_first_page_conversations() -> None:
     assert "conversations_processed" in result, "Result should have conversations_processed"
     assert result["conversations_processed"] >= 0, "Should process 0 or more conversations"
 
-    logger.info(f"✅ Fetched {result['conversations_processed']} conversations from first page")
+    logger.info(f"Fetched {result['conversations_processed']} conversations from first page")
 
     return True
 
@@ -2678,7 +2655,7 @@ def _test_conversation_database_storage() -> None:
     # Verify conversations were stored (or already existed)
     assert count_after >= count_before, "Conversation count should not decrease"
 
-    logger.info(f"✅ Database has {count_after} conversations (added {count_after - count_before})")
+    logger.info(f"Database has {count_after} conversations (added {count_after - count_before})")
 
     return True
 
@@ -2707,9 +2684,9 @@ def _test_conversation_parsing() -> None:
         assert conv.direction is not None, "Conversation should have direction"
         assert conv.updated_at is not None, "Conversation should have timestamp"
 
-        logger.info(f"✅ Parsed conversation {conv.conversation_id} with direction {conv.direction}")
+        logger.info(f"Parsed conversation {conv.conversation_id} with direction {conv.direction}")
     else:
-        logger.info("⚠️ No conversations in database (inbox may be empty)")
+        logger.info("No conversations in database (inbox may be empty)")
 
     return True
 
@@ -2734,7 +2711,7 @@ def _test_ai_classification() -> None:
     # AI classification may be 0 if no new messages or if messages already classified
     assert ai_classified >= 0, "AI classifications should be non-negative"
 
-    logger.info(f"✅ AI classified {ai_classified} messages")
+    logger.info(f"AI classified {ai_classified} messages")
 
     return True
 
@@ -2759,7 +2736,7 @@ def _test_person_status_updates() -> None:
     # Status updates may be 0 if no new conversations or if statuses already set
     assert status_updates >= 0, "Person status updates should be non-negative"
 
-    logger.info(f"✅ Made {status_updates} person status updates")
+    logger.info(f"Made {status_updates} person status updates")
 
     return True
 
@@ -2789,8 +2766,8 @@ def _test_stop_on_unchanged_conversation() -> None:
     assert processed2 <= processed1, \
         f"Second run should process <= conversations (got {processed2} vs {processed1})"
 
-    logger.info(f"✅ First run: {processed1} conversations, Second run: {processed2} conversations")
-    logger.info("✅ Comparator logic working (stops on unchanged conversations)")
+    logger.info(f"First run: {processed1} conversations, Second run: {processed2} conversations")
+    logger.info("Comparator logic working (stops on unchanged conversations)")
 
     return True
 
@@ -2813,7 +2790,7 @@ def _test_summary_logging() -> None:
     assert "conversations_processed" in result, "Result should have conversations_processed"
     assert "conversations_fetched" in result, "Result should have conversations_fetched"
 
-    logger.info(f"✅ Summary: {result['conversations_processed']} processed, "
+    logger.info(f"Summary: {result['conversations_processed']} processed, "
                f"{result['conversations_fetched']} fetched")
 
     return True
@@ -2834,7 +2811,7 @@ def _test_error_recovery() -> None:
     assert state["session_deaths"] == 0, "Should start with 0 session deaths"
     assert state["session_recoveries"] == 0, "Should start with 0 session recoveries"
 
-    logger.info("✅ Error recovery state initialized correctly")
+    logger.info("Error recovery state initialized correctly")
 
     return True
 
@@ -2941,7 +2918,7 @@ run_comprehensive_tests = create_standard_test_runner(action7_inbox_module_tests
 
 if __name__ == "__main__":
     import sys
-    print("🔄 Running Action 7 (Inbox Processor) comprehensive test suite...")
+    print("Running Action 7 (Inbox Processor) comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
 

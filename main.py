@@ -363,10 +363,11 @@ def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict):
 
 
 def _should_close_session(action_result, action_exception, close_sess_after: bool, action_name: str) -> bool:
-    """Determine if session should be closed."""
+    """Determine if session should be closed. Only close when explicitly requested via close_sess_after flag."""
+    # Never close session on failure - let user decide when to quit
     if action_result is False or action_exception is not None:
-        logger.warning(f"Action '{action_name}' failed or raised exception. Closing session.")
-        return True
+        logger.debug(f"Action '{action_name}' failed or raised exception. Keeping session open.")
+        return False
     if close_sess_after:
         logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
         return True
