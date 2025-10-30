@@ -78,13 +78,14 @@ def _log_configuration_summary(config: Any) -> None:
     # import os
     # os.system('cls' if os.name == 'nt' else 'clear')
 
-    logger.info("=== ACTION CONFIGURATION VALIDATION ===")
-    logger.info(f"MAX_PAGES: {config.api.max_pages}")
-    logger.info(f"BATCH_SIZE: {config.batch_size}")
-    logger.info(f"MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
-    logger.info(f"MAX_INBOX: {config.max_inbox}")
-    logger.info(f"Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
-    logger.info("========================================")
+    logger.info(" CONFIGURATION ".center(80, "="))
+    logger.info(f"  MAX_PAGES: {config.api.max_pages}")
+    logger.info(f"  BATCH_SIZE: {config.batch_size}")
+    logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+    logger.info(f"  MAX_INBOX: {config.max_inbox}")
+    logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+    logger.info("=" * 80)
+    print("")  # Blank line after configuration
 
 
 # Configuration validation
@@ -163,12 +164,12 @@ def menu() -> str:
         level_name = config.logging.log_level.upper()
 
     print(f"(Log Level: {level_name})\n")
-    print("0. Delete all rows except the first")
+    print("0. Delete all rows except first person (test profile)")
     print("1. Run Full Workflow (7, 9, 8)")
     print("2. Reset Database")
     print("3. Backup Database")
     print("4. Restore Database")
-    print("5. Check Login Status")
+    print("5. Check Login Status & Display Identifiers")
     print("6. Gather DNA Matches [start page]")
     print("7. Search Inbox")
     print("8. Send Messages")
@@ -283,7 +284,7 @@ def _determine_browser_requirement(choice: str) -> bool:
         True if action requires browser, False otherwise
     """
     browserless_choices = [
-        "0",   # Action 0 - Delete all but first (database only)
+        "0",   # Action 0 - Delete all except first person (database only)
         "2",   # Action 2 - Reset database
         "3",   # Action 3 - Backup database
         "4",   # Action 4 - Restore database
@@ -392,7 +393,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
     logger.info(f"Action {choice} ({action_name}) finished.")
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
-    logger.info("------------------------------------------")
+    logger.info("------------------------------------------\n")
     return duration, mem_used
 
 
@@ -550,23 +551,24 @@ def _perform_deletions(sess, person_id_to_keep: int) -> dict:
 
 def all_but_first_actn(session_manager: SessionManager, *_):
     """
-    V1.2: Modified to delete records from people, conversation_log,
-          dna_match, and family_tree, except for the person with a
-          specific profile_id. Leaves message_types untouched. Browserless.
+    V1.5: Delete all records except for the test profile (Frances Milne).
+    Uses TEST_PROFILE_ID from .env to identify which profile to keep.
+    Browserless database-only action.
     Closes the provided main session pool FIRST.
     Creates a temporary SessionManager for the delete operation.
     """
-    # Get profile ID from session manager
-    profile_id_to_keep = session_manager.my_profile_id if session_manager else None
+    # Get profile ID from config (TEST_PROFILE_ID from .env)
+    profile_id_to_keep = config.testing_profile_id if config else None
 
     if not profile_id_to_keep:
         logger.error(
-            "Profile ID not available from session manager. Cannot determine which profile to keep.\n"
-            "Please ensure session is authenticated before running this action."
+            "Profile ID not available from config. Cannot determine which profile to keep.\n"
+            "Please ensure TEST_PROFILE_ID is set in .env file."
         )
         return False
 
     profile_id_to_keep = profile_id_to_keep.upper()
+    logger.info(f"Deleting all records except test profile: {profile_id_to_keep}")
 
     temp_manager = None  # Initialize
     session = None
@@ -591,9 +593,9 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             raise Exception("Failed to get DB session via temporary manager.")
 
         with db_transn(session) as sess:
-            # 1. Find the ID of the person to keep
+            # 1. Find the person to keep by profile_id
             person_to_keep = (
-                sess.query(Person.id, Person.username)
+                sess.query(Person.id, Person.username, Person.first_name, Person.profile_id)
                 .filter(
                     Person.profile_id == profile_id_to_keep, Person.deleted_at.is_(None)
                 )
@@ -601,15 +603,19 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             )
 
             if not person_to_keep:
-                logger.warning(
-                    f"Person with Profile ID {profile_id_to_keep} not found. Proceeding to delete all records."
+                logger.error(
+                    f"Person with Profile ID {profile_id_to_keep} not found in database.\n"
+                    f"Please verify TEST_PROFILE_ID in .env matches a person in the database."
                 )
-                person_id_to_keep = -1  # ensures '!= person_id_to_keep' matches all rows
-            else:
-                person_id_to_keep = person_to_keep.id
-                logger.debug(
-                    f"Keeping Person ID: {person_id_to_keep} (ProfileID: {profile_id_to_keep}, User: {person_to_keep.username})"
-                )
+                return False
+
+            person_id_to_keep = person_to_keep.id
+            logger.info(
+                f"Keeping test profile: ID={person_id_to_keep}, "
+                f"Username='{person_to_keep.username}', "
+                f"First Name='{person_to_keep.first_name}', "
+                f"Profile ID='{person_to_keep.profile_id}'"
+            )
 
             # --- Perform Deletions ---
             _perform_deletions(sess, person_id_to_keep)
@@ -1042,16 +1048,28 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
 
 
 def _display_session_info(session_manager: SessionManager) -> None:
-    """Display session information if available."""
-    if session_manager.my_profile_id:
-        print(f"  Profile ID: {session_manager.my_profile_id}")
+    """Display session information and all key identifiers from the global session."""
+    # Display all identifiers (should already be available from global session authentication)
     if session_manager.tree_owner_name:
-        print(f"  Account: {session_manager.tree_owner_name}")
+        print(f"Account Name:    {session_manager.tree_owner_name}")
+
+    if session_manager.my_profile_id:
+        print(f"Profile ID:      {session_manager.my_profile_id}")
+
+    if session_manager.my_uuid:
+        print(f"UUID:            {session_manager.my_uuid}")
+
+    if session_manager.my_tree_id:
+        print(f"Tree ID:         {session_manager.my_tree_id}")
+
+    if hasattr(session_manager, 'api_manager') and session_manager.api_manager.csrf_token:
+        csrf_preview = session_manager.api_manager.csrf_token[:20] + "..." if len(session_manager.api_manager.csrf_token) > 20 else session_manager.api_manager.csrf_token
+        print(f"CSRF Token:      {csrf_preview}")
 
 
 def _handle_logged_in_status(session_manager: SessionManager) -> bool:
     """Handle the case when user is already logged in."""
-    print("\n✓ You are currently logged in to Ancestry.")
+    print("\n✓ You are currently logged in to Ancestry.\n")
     _display_session_info(session_manager)
     return True
 
@@ -1093,9 +1111,10 @@ def _attempt_login(session_manager: SessionManager) -> bool:
 # Action 5 (check_login_actn)
 def check_login_actn(session_manager: SessionManager, *_) -> bool:
     """
-    REVISED V12: Checks login status and attempts login if needed.
+    REVISED V13: Checks login status, attempts login if needed, and displays all identifiers.
     This action starts a browser session and checks login status.
     If not logged in, it attempts to log in using stored credentials.
+    Displays all key identifiers: Profile ID, UUID, Tree ID, CSRF Token.
     Provides clear user feedback about the final login state.
     """
     # Phase 1 (Driver Start) is handled by exec_actn if needed.
@@ -1153,22 +1172,20 @@ def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[
     # Guard clause now checks session_ready
     if not session_manager or not session_manager.session_ready:
         logger.error("Cannot gather matches: Session not ready.")
-        print("ERROR: Session not ready. Cannot gather matches.")
         return False
 
     try:
         # Call the imported function from action6
         result = coord(session_manager, start=start)
+        print("")
         if result is False:
-            logger.error("Match gathering reported failure or incomplete run.")
-            print("⚠️  WARNING: Match gathering incomplete or failed. Check logs for details.")
+            logger.error("⚠️  WARNING: Match gathering incomplete or failed. Check logs for details.")
             return False
-        logger.info("Gathering matches completed successfully.")
-        print("✓ Match gathering completed successfully.")
+        logger.info("✓ Match gathering completed successfully.")
+
         return True
     except Exception as e:
         logger.error(f"Error during gather_dna_matches: {e}", exc_info=True)
-        print(f"ERROR: Exception during match gathering: {e}")
         return False
 
 
@@ -1570,7 +1587,7 @@ def _check_action_confirmation(choice: str) -> bool:
         True if action should proceed, False if cancelled
     """
     confirm_actions = {
-        "0": "Delete all people except specific profile ID",
+        "0": "Delete all people except first person (test profile)",
         "2": "COMPLETELY reset the database (deletes data)",
         "4": "Restore database from backup (overwrites data)",
     }
@@ -1910,8 +1927,18 @@ def main() -> None:
         set_global_session(session_manager)
         logger.debug("✅ SessionManager registered as global session")
 
-        # Track if session has been pre-authenticated
-        session_pre_authenticated = False
+        # Pre-authenticate the global session immediately
+        try:
+            from session_utils import get_authenticated_session
+            # This will authenticate the global session that we registered earlier
+            _, _ = get_authenticated_session(
+                action_name="Main Menu Initialization",
+                skip_csrf=False  # Get CSRF token too
+            )
+            logger.info("✅ Session authenticated successfully")
+        except Exception as e:
+            logger.warning(f"Session authentication failed (will authenticate during action): {e}")
+            # Don't fail - action will authenticate itself if needed
 
         # --- Main menu loop ---
         while True:
@@ -1921,29 +1948,6 @@ def main() -> None:
             # --- Confirmation Check ---
             if not _check_action_confirmation(choice):
                 continue
-
-            # --- Pre-authenticate session for actions that need it ---
-            # This happens once before the first action that requires session_ready state
-            # Check if choice is one of the actions that needs authentication
-            # Note: choice.startswith("6") handles "6" or "6 800" (with start page)
-            needs_auth = (
-                choice in ["1", "7", "8", "9"]
-                or choice.startswith("6")
-            )
-            if not session_pre_authenticated and needs_auth:
-                logger.info("Pre-authenticating session for faster action execution...")
-                try:
-                    from session_utils import get_authenticated_session
-                    # This will authenticate the global session that we registered earlier
-                    _, _ = get_authenticated_session(
-                        action_name="Main Menu Pre-Authentication",
-                        skip_csrf=True
-                    )
-                    session_pre_authenticated = True
-                    logger.info("✅ Session pre-authenticated successfully")
-                except Exception as e:
-                    logger.warning(f"Pre-authentication failed (will authenticate during action): {e}")
-                    # Don't fail - action will authenticate itself if needed
 
             # --- Action Dispatching ---
             if not _dispatch_menu_action(choice, session_manager, config):

@@ -359,9 +359,9 @@ class APIManager:
         Returns:
             str: CSRF token or None if failed
         """
-        logger.debug("Retrieving CSRF token...")
-
         url = urljoin(config_schema.api.base_url, API_PATH_CSRF_TOKEN)
+        logger.debug(f"🔍 Fetching CSRF Token from API endpoint: {url}")
+
         response_data = self.make_api_request(
             url=url,
             method="GET",

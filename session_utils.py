@@ -85,13 +85,11 @@ def get_global_session() -> Optional[SessionManager]:
 def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
     """Log the session banner once per authentication attempt (pre-auth)."""
     if not already_auth:
-        logger.info("=" * 80)
-        logger.info(f"Using global authenticated session (Action: {action_name})")
+        logger.debug(f"Authenticating session for: {action_name}")
         if env_uuid:
-            logger.info(f"UUID (from .env): {env_uuid} — will verify during authentication")
+            logger.debug(f"UUID (from .env): {env_uuid} — will verify during authentication")
         else:
             logger.debug("UUID: Not yet set (will be discovered during authentication)")
-        logger.info("=" * 80)
     else:
         logger.debug("Reusing authenticated global session; banner suppressed")
 
@@ -110,7 +108,7 @@ def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: Sessi
             raise AssertionError("UUID not available - session initialization incomplete")
         GLOBAL_SESSION.session_uuid = session_manager.my_uuid
         if not GLOBAL_SESSION.auth_banner_printed:
-            logger.info(f"✅ Global session now authenticated: UUID={GLOBAL_SESSION.session_uuid}")
+            logger.debug(f"✅ Global session now authenticated: UUID={GLOBAL_SESSION.session_uuid}")
             GLOBAL_SESSION.auth_banner_printed = True
         else:
             logger.debug(f"Global session ready (UUID={GLOBAL_SESSION.session_uuid})")

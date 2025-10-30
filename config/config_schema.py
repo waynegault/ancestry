@@ -683,6 +683,8 @@ class ConfigSchema:
 
     # Optional fields (must come after fields with default values)
     testing_profile_id: Optional[str] = None
+    testing_uuid: Optional[str] = None
+    testing_username: Optional[str] = None
     reference_person_id: Optional[str] = (
         None  # Fields with complex defaults (must come last)
     )

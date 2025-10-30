@@ -645,9 +645,18 @@ class ConfigManager:
 
     def _load_testing_config_from_env(self, config: dict[str, Any]) -> None:
         """Load testing configuration from environment variables."""
-        testing_profile_id_value = os.getenv("TESTING_PROFILE_ID")
+        # Load test profile configuration
+        testing_profile_id_value = os.getenv("TEST_PROFILE_ID")
         if testing_profile_id_value:
             config["testing_profile_id"] = testing_profile_id_value
+
+        testing_uuid_value = os.getenv("TEST_UUID")
+        if testing_uuid_value:
+            config["testing_uuid"] = testing_uuid_value
+
+        testing_username_value = os.getenv("TEST_USERNAME")
+        if testing_username_value:
+            config["testing_username"] = testing_username_value
 
     def _load_app_mode_from_env(self, config: dict[str, Any]) -> None:
         """Load application mode from environment variables."""

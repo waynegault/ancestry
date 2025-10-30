@@ -2391,7 +2391,7 @@ class SessionManager:
 
         from urllib.parse import urljoin
         url = urljoin(config_schema.api.base_url, "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid")
-        logger.debug("Attempting to fetch own profile ID (ucdmid)...")
+        logger.debug(f"🔍 Fetching Profile ID from API endpoint: {url}")
 
         try:
             from utils import _api_req
@@ -2406,23 +2406,27 @@ class SessionManager:
             )
 
             if not response_data:
-                logger.warning("Failed to get profile_id response via _api_req.")
+                logger.error("❌ Failed to get profile_id response via _api_req.")
                 return None
 
+            # Log the full response for debugging
+            logger.debug(f"✅ Profile ID API response received: {response_data}")
+
+            # Expected format: {"data": {"ucdmid": "07bdd45e-0006-0000-0000-000000000000"}, "message": "OK", "status": 200}
             if isinstance(response_data, dict) and "data" in response_data:
                 data_dict = response_data["data"]
                 if isinstance(data_dict, dict) and "ucdmid" in data_dict:
                     my_profile_id_val = str(data_dict["ucdmid"]).upper()
-                    logger.debug(f"Successfully retrieved profile_id: {my_profile_id_val}")
+                    logger.debug(f"✅ Successfully retrieved profile_id: {my_profile_id_val}")
                     # Store in API manager
                     self.api_manager.my_profile_id = my_profile_id_val
                     if not self._profile_id_logged:
                         logger.info(f"My profile id: {my_profile_id_val}")
                         self._profile_id_logged = True
                     return my_profile_id_val
-                logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
+                logger.error(f"❌ Profile ID API 'data' dict missing 'ucdmid'. Keys found: {list(data_dict.keys()) if isinstance(data_dict, dict) else 'N/A'}")
                 return None
-            logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
+            logger.error(f"❌ Profile ID API response missing 'data' key. Keys found: {list(response_data.keys()) if isinstance(response_data, dict) else 'N/A'}")
             return None
 
         except Exception as e:
@@ -2443,7 +2447,8 @@ class SessionManager:
         Retrieve user's UUID (testId) from API.
 
         Uses: https://www.ancestry.co.uk/api/navheaderdata/v1/header/data/dna
-        Returns: {"results": {"testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7"}}
+        Returns: {"results": {"menuitems": [...]}, "testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7", ...}
+        Note: testId is at root level, not inside results dict
 
         Returns:
             str: UUID if successful, None otherwise
@@ -2458,7 +2463,7 @@ class SessionManager:
         # Try to fetch from API first
         from urllib.parse import urljoin
         url = urljoin(config_schema.api.base_url, "api/navheaderdata/v1/header/data/dna")
-        logger.debug(f"Fetching UUID from API: {url}")
+        logger.debug(f"🔍 Fetching UUID from API endpoint: {url}")
 
         my_uuid_val = None
         error_msg = None
@@ -2474,16 +2479,22 @@ class SessionManager:
                 api_description="Get UUID (testId)",
             )
 
-            if isinstance(response_data, dict) and "results" in response_data:
-                results_dict = response_data["results"]
-                if isinstance(results_dict, dict) and "testId" in results_dict:
-                    my_uuid_val = str(results_dict["testId"]).upper()
-                    logger.debug(f"Successfully retrieved UUID from API: {my_uuid_val}")
-                    return self._store_and_log_uuid(my_uuid_val)
-                logger.debug(f"UUID API response 'results' dict: {results_dict}")
-                error_msg = "Could not find 'testId' in 'results' dict"
+            # Log the full response for debugging
+            logger.debug(f"✅ UUID API response received: {response_data}")
+
+            # Expected format: {"results": {"menuitems": [...]}, "testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7", ...}
+            # Note: testId is at ROOT level, not inside results dict
+            if isinstance(response_data, dict) and "testId" in response_data:
+                my_uuid_val = str(response_data["testId"]).upper()
+                logger.debug(f"✅ Successfully retrieved UUID from API: {my_uuid_val}")
+                return self._store_and_log_uuid(my_uuid_val)
+
+            # Log detailed error information
+            if isinstance(response_data, dict):
+                logger.error(f"❌ UUID API response missing 'testId' key. Keys found: {list(response_data.keys())}")
+                error_msg = f"Could not find 'testId' in response. Keys: {list(response_data.keys())}"
             else:
-                logger.debug(f"UUID API response: {response_data}")
+                logger.error(f"❌ UUID API response type: {type(response_data)}")
                 error_msg = f"Unexpected response format: {type(response_data)}"
 
         except Exception as e:
@@ -2518,7 +2529,7 @@ class SessionManager:
         # Try to fetch from API
         from urllib.parse import urljoin
         url = urljoin(config_schema.api.base_url, "api/treesui-list/trees?rights=own")
-        logger.debug(f"Fetching tree ID from API: {url} (matching TREE_NAME='{tree_name_config}')")
+        logger.debug(f"🔍 Fetching Tree ID from API endpoint: {url} (matching TREE_NAME='{tree_name_config}')")
 
         error_msg = None
 
@@ -2533,6 +2544,10 @@ class SessionManager:
                 api_description="Get Tree List",
             )
 
+            # Log the full response for debugging
+            logger.debug(f"✅ Tree List API response received: {response_data}")
+
+            # Expected format: {"trees": [{"id": "175946702", "name": "Gault Family", ...}], "count": 2}
             if isinstance(response_data, dict) and "trees" in response_data:
                 trees_list = response_data["trees"]
                 if isinstance(trees_list, list):
@@ -2541,13 +2556,14 @@ class SessionManager:
                         if isinstance(tree, dict) and tree.get("name") == tree_name_config:
                             tree_id = str(tree.get("id", ""))
                             if tree_id:
-                                logger.debug(f"Successfully retrieved tree ID from API: {tree_id}")
+                                logger.debug(f"✅ Successfully retrieved tree ID from API: {tree_id}")
                                 return self._store_and_log_tree_id(tree_id)
                     available_trees = [t.get('name') for t in trees_list if isinstance(t, dict)]
                     error_msg = f"Tree '{tree_name_config}' not found. Available: {available_trees}"
                 else:
                     error_msg = "'trees' field is not a list"
             else:
+                logger.error(f"❌ Tree List API response missing 'trees' key. Keys found: {list(response_data.keys()) if isinstance(response_data, dict) else 'N/A'}")
                 error_msg = f"Unexpected response format: {type(response_data)}"
 
         except Exception as e:

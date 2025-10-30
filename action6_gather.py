@@ -63,7 +63,7 @@ def _setup_rate_limiting(session_manager: SessionManager, parallel_workers: int)
     session_manager.rate_limiter.initial_delay = adaptive_delay
     session_manager.rate_limiter.current_delay = adaptive_delay
     logger.debug(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
-    logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
+    logger.debug(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
     logger.debug("   Rate limiter is thread-safe and will prevent 429 errors")
 
 
@@ -76,8 +76,8 @@ def _initialize_coord_session(session_manager: SessionManager) -> tuple[str, Opt
         logger.error("Cannot proceed: my_uuid is not set")
         raise ValueError("my_uuid is not set")
 
-    logger.info(f"My UUID: {my_uuid}")
-    logger.info(f"My Tree ID: {my_tree_id}")
+    logger.debug(f"My UUID: {my_uuid}")
+    logger.debug(f"My Tree ID: {my_tree_id}")
 
     db_manager = DatabaseManager()
     return my_uuid, my_tree_id, db_manager
@@ -204,7 +204,7 @@ def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, 
 def _log_page_header(page_num: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:
     """Log page processing header."""
     # Add blank line before separator for readability
-    logger.info("")
+    print("")
     logger.info(f"{'='*80}")
 
     # Format page info - prioritize API total pages, then max_pages setting
@@ -423,7 +423,8 @@ def _process_pages_loop(
 
 def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int, total_errors: int, total_run_time: float, run_incomplete: bool, incomplete_reason: str, session_deaths: int, session_recoveries: int, start_page: int, max_pages: int, session_manager: SessionManager) -> None:
     """Print final summary for coord function."""
-    logger.info(f"\n{'='*80}")
+    print("")
+    logger.info(f"{'='*80}")
     logger.info("FINAL SUMMARY")
     logger.info(f"{'='*80}")
 
@@ -447,13 +448,9 @@ def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int,
     logger.info(f"Updated: {total_updated}")
     logger.info(f"Skipped: {total_skipped}")
     logger.info(f"Errors: {total_errors}")
-
-    logger.info("")
     logger.info(f"Total Run Time: {total_run_time/3600:.2f} hours ({total_run_time/60:.1f} minutes)")
-
     logger.info(f"{'='*80}")
-
-    logger.info("")
+    print("")
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         session_manager.rate_limiter.print_metrics_summary()
 

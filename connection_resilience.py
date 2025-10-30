@@ -39,16 +39,16 @@ class ConnectionResilienceManager:
 
     def start_resilience_mode(self) -> None:
         """Start resilience mode: prevent sleep and enable monitoring."""
-        logger.info("🛡️  Starting connection resilience mode...")
+        logger.debug("Starting connection resilience mode...")
         self.sleep_state = prevent_system_sleep()
         self.recovery_attempts = 0
-        logger.info("✅ Sleep prevention enabled, connection monitoring active")
+        logger.debug("Sleep prevention enabled, connection monitoring active")
 
     def stop_resilience_mode(self) -> None:
         """Stop resilience mode: restore normal sleep behavior."""
-        logger.info("🛡️  Stopping connection resilience mode...")
+        logger.debug("Stopping connection resilience mode...")
         restore_system_sleep(self.sleep_state)
-        logger.info("✅ Sleep prevention disabled, normal power management restored")
+        logger.debug("Sleep prevention disabled, normal power management restored")
 
     def handle_connection_loss(
         self,
@@ -132,13 +132,13 @@ def with_connection_resilience(
             _resilience_manager.start_resilience_mode()
 
             try:
-                logger.info(f"🚀 Starting {operation_name}")
+                logger.debug(f"Starting {operation_name}...")
                 result = func(*args, **kwargs)
-                logger.info(f"✅ {operation_name} completed successfully")
+                logger.debug(f"{operation_name} completed successfully")
                 return result
 
             except Exception as e:
-                logger.error(f"❌ {operation_name} failed: {e}", exc_info=True)
+                logger.debug(f"{operation_name} failed: {e}", exc_info=True)
 
                 # Check if it's a connection error
                 error_str = str(e).lower()

@@ -586,10 +586,10 @@ For issues or questions:
   - Weekly summary generator: from analytics import print_weekly_summary; print_weekly_summary(7)
   - Non-fatal by design: analytics never blocks action execution
 
-- Action 0 (Delete all rows except one)
-  - Set the .env variable TESTING_PROFILE_ID to the Profile ID you want to keep (e.g., your mother’s ucdmid)
-  - Safety: If TESTING_PROFILE_ID is missing or equals MOCK_PROFILE_ID, the action aborts to prevent unintended deletion
-  - If the configured keeper is not found in the database, the action will abort with instructions to correct TESTING_PROFILE_ID
+- Action 0 (Delete all rows except test profile)
+  - Set the .env variable TEST_PROFILE_ID to the Profile ID you want to keep (e.g., your mother’s ucdmid)
+  - Safety: If TEST_PROFILE_ID is missing or equals MOCK_PROFILE_ID, the action aborts to prevent unintended deletion
+  - If the configured keeper is not found in the database, the action will abort with instructions to correct TEST_PROFILE_ID
   - Requires explicit yes/no confirmation in the menu before executing
 
 - Session Architecture
@@ -597,7 +597,7 @@ For issues or questions:
   - Registered globally via session_utils.set_global_session()
   - Consumers must call session_utils.get_authenticated_session(action_name=...) before API usage
 
-- API Endpoints
+- API Endpoints (do not change these - they work!)
 
   **User Identity Endpoints** (used by session_manager)
   - Profile ID: `app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid`
@@ -605,8 +605,8 @@ For issues or questions:
     - Returns: User's profile ID (ucdmid field)
 
   - UUID (DNA Test ID): `api/navheaderdata/v1/header/data/dna`
-    - Response: `{"results": {"testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7"}}`
-    - Returns: User's DNA test UUID (testId field)
+    - Response: `{"results": {"menuitems": [...]}, "testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7", "testComplete": true, ...}`
+    - Returns: User's DNA test UUID (testId field at ROOT level, not inside results dict)
 
   - Tree List: `api/treesui-list/trees?rights=own`
     - Response: `{"trees": [{"id": "175946702", "name": "Gault Family", "ownerUserId": "...", ...}], "count": 2}`
