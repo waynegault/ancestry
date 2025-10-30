@@ -483,18 +483,18 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
     try:
         client = OpenAI(api_key=api_key, base_url=base_url)
 
-        # Validate model is loaded
-        error_msg = _validate_local_llm_model_loaded(client, model_name)
+        # Validate model is loaded and get the actual model name
+        actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
         if error_msg:
             logger.error(error_msg)
             return None
 
-        # Make API call
+        # Make API call using the actual model name from LM Studio
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ]
-        request_params = _build_deepseek_request_params(model_name, messages, max_tokens, temperature, response_format_type)
+        request_params = _build_deepseek_request_params(actual_model_name, messages, max_tokens, temperature, response_format_type)
 
         response = client.chat.completions.create(**request_params)
         if response.choices and response.choices[0].message and response.choices[0].message.content:
@@ -507,26 +507,41 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
         return None
 
 
-def _validate_local_llm_model_loaded(client, model_name: str) -> Optional[str]:
+def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[Optional[str], Optional[str]]:
     """
     Validate that the requested model is loaded in LM Studio.
 
+    Supports flexible model name matching:
+    - Exact match: "qwen/qwen3-4b-2507" == "qwen/qwen3-4b-2507"
+    - Partial match: "qwen3-4b-2507" matches "qwen/qwen3-4b-2507"
+
     Returns:
-        Error message if validation fails, None if successful
+        Tuple of (actual_model_name, error_message)
+        - If successful: (actual_model_name, None)
+        - If failed: (None, error_message)
     """
     try:
         models = client.models.list()
         available_models = [model.id for model in models.data]
 
         if not available_models:
-            return "Local LLM: No models loaded. Please load a model in LM Studio."
+            return None, "Local LLM: No models loaded. Please load a model in LM Studio."
 
-        if model_name not in available_models:
-            return f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}"
+        # Try exact match first
+        if model_name in available_models:
+            return model_name, None  # Success with exact match
 
-        return None  # Success
+        # Try partial match (model_name matches end of available model)
+        for available_model in available_models:
+            if available_model.endswith(model_name) or available_model.endswith(f"/{model_name}"):
+                logger.debug(f"Local LLM: Matched '{model_name}' to '{available_model}'")
+                return available_model, None  # Success with matched model name
+
+        # No match found
+        return None, f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}"
+
     except Exception as e:
-        return f"Local LLM: Failed to check loaded models: {e}"
+        return None, f"Local LLM: Failed to check loaded models: {e}"
 
 
 def _handle_rate_limit_error(session_manager: SessionManager) -> None:
