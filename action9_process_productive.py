@@ -1915,7 +1915,6 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
     Returns:
         True if processing completed successfully, False otherwise.
     """
-    logger.info("--- Starting Action 9: Process Productive Messages (Streamlined) ---")
 
     # Initialize state objects
     state = ProcessingState()

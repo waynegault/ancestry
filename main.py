@@ -583,7 +583,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
             logger.debug("Main DB pool closed.")
         # --- End closing main pool ---
 
-        logger.info(
+        logger.debug(
             f"Deleting data for all people except Profile ID: {profile_id_to_keep}..."
         )
         # Create a temporary SessionManager for this specific operation
@@ -610,7 +610,7 @@ def all_but_first_actn(session_manager: SessionManager, *_):
                 return False
 
             person_id_to_keep = person_to_keep.id
-            logger.info(
+            logger.debug(
                 f"Keeping test profile: ID={person_id_to_keep}, "
                 f"Username='{person_to_keep.username}', "
                 f"First Name='{person_to_keep.first_name}', "
@@ -1878,8 +1878,14 @@ def _handle_test_options(choice: str) -> bool:
     return False
 
 
-def _handle_meta_options(choice: str) -> bool:
-    """Handle meta options (analytics, sec, s, t, c, q)."""
+def _handle_meta_options(choice: str) -> bool | None:
+    """Handle meta options (analytics, sec, s, t, c, q).
+
+    Returns:
+        True to continue menu loop
+        False to exit
+        None if choice not handled
+    """
     meta_actions = {
         "analytics": _show_analytics_dashboard,
         "sec": _run_credential_manager,
@@ -1897,7 +1903,7 @@ def _handle_meta_options(choice: str) -> bool:
         print("Exiting.")
         return False
 
-    return False
+    return None
 
 
 def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> bool:
@@ -1924,7 +1930,7 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
 
     # --- Meta Options ---
     result = _handle_meta_options(choice)
-    if result is not False:
+    if result is not None:
         return result
 
     # Handle invalid choices

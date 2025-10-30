@@ -137,7 +137,10 @@ def calculate_tree_statistics(
 
         # Validate profile owner
         if not _validate_profile_owner(session, profile_id):
-            return _empty_statistics(profile_id)
+            empty_stats = _empty_statistics(profile_id)
+            # Cache empty statistics too to avoid recalculating
+            _save_to_cache(session, profile_id, empty_stats)
+            return empty_stats
 
         # Calculate match counts
         total_matches, in_tree_count, out_tree_count = _calculate_match_counts(session)

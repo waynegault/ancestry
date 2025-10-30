@@ -2805,7 +2805,7 @@ def backup_database() -> bool:
         # Prepare backup directory and check space
         _prepare_backup_directory(backup_dir, db_path)
 
-        logger.info(f"Starting database backup: '{db_path.name}' -> '{backup_path}' (Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB)")
+        logger.debug(f"Starting database backup: '{db_path.name}' -> '{backup_path}' (Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB)")
 
         # Perform backup
         _perform_backup_copy(db_path, backup_path)
