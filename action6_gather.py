@@ -210,13 +210,13 @@ def _log_page_header(page_num: int, max_pages: int, total_new: int, total_update
     # Format page info - prioritize API total pages, then max_pages setting
     if api_total_pages is not None:
         # Use total pages from API response (most accurate)
-        page_info = f"Processing page {page_num} of {api_total_pages} pages"
+        page_info = f"Getting page {page_num} of {api_total_pages}"
     elif max_pages == 0:
         # When MAX_PAGES=0 and we don't have API total yet, show current page only
-        page_info = f"Processing page {page_num}"
+        page_info = f"Getting page {page_num}"
     else:
         # When MAX_PAGES is set, show progress based on configured limit
-        page_info = f"Processing page {page_num} of {max_pages} pages"
+        page_info = f"Getting page {page_num} of {max_pages}"
 
     cumulative_info = f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}"
     logger.info(f"{page_info} | {cumulative_info}")
@@ -475,10 +475,10 @@ def coord(session_manager: SessionManager, start: int = 1):
     parallel_workers = getattr(config_schema, 'parallel_workers', 1)
     start_page = start
 
-    # Get initial rate limiting delay
-    initial_delay = session_manager.rate_limiter.initial_delay if session_manager.rate_limiter else 0.0
+    # Get current rate limiting delay (adjusted by dynamic rate limiting)
+    current_delay = session_manager.rate_limiter.current_delay if session_manager.rate_limiter else 0.0
 
-    logger.info(f"Config: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}, RATE_LIMIT_DELAY={initial_delay:.2f}s")
+    logger.info(f"Config: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}, RATE_LIMIT_DELAY={current_delay:.2f}s")
 
     _setup_rate_limiting(session_manager, parallel_workers)
 
@@ -1413,11 +1413,37 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
 
 
 def _dna_match_exists(session, person_id: int) -> bool:
-    """Check if a DnaMatch record already exists for this person."""
+    """
+    Check if a DnaMatch record already exists for this person with complete ethnicity data.
+
+    Returns True only if the record exists AND has ethnicity data populated.
+    Returns False if the record doesn't exist OR if ethnicity data is missing.
+    """
     from database import DnaMatch
+    from dna_ethnicity_utils import load_ethnicity_metadata
 
     existing = session.query(DnaMatch).filter_by(people_id=person_id).first()
-    return existing is not None
+    if not existing:
+        return False
+
+    # Check if ethnicity data is populated
+    ethnicity_metadata = load_ethnicity_metadata()
+    if ethnicity_metadata and ethnicity_metadata.get("tree_owner_regions"):
+        # Check if any ethnicity column has data
+        for region in ethnicity_metadata["tree_owner_regions"]:
+            column_name = region.get("column_name")
+            if column_name and hasattr(existing, column_name):
+                value = getattr(existing, column_name)
+                if value is not None:
+                    # At least one ethnicity column has data, consider it complete
+                    return True
+
+        # No ethnicity data found, need to re-fetch
+        logger.debug(f"DnaMatch exists for person_id={person_id} but missing ethnicity data - will re-fetch")
+        return False
+
+    # No ethnicity metadata configured, consider existing record complete
+    return True
 
 
 def _save_dna_match(session, person_id: int, match: dict, match_details: dict, predicted_relationship: Optional[str] = None, ethnicity_data: Optional[dict] = None) -> str:

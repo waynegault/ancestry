@@ -1283,7 +1283,8 @@ def _get_simple_messaging_data(
         if is_mock_mode:
             candidate_persons = []
         else:
-            candidate_persons = (
+            # Build query for candidate persons
+            query = (
                 db_session.query(Person)
                 .options(
                     joinedload(Person.dna_match),
@@ -1297,9 +1298,18 @@ def _get_simple_messaging_data(
                     Person.deleted_at.is_(None),
                 )
                 .order_by(Person.id)
-                .limit(10)
-                .all()
             )
+
+            # Apply limit only if max_inbox > 0 (0 means unlimited)
+            from config import config_schema
+            max_inbox = getattr(config_schema, 'max_inbox', 0)
+            if max_inbox > 0:
+                query = query.limit(max_inbox)
+                logger.debug(f"Limiting candidate fetch to {max_inbox} persons (MAX_INBOX setting)")
+            else:
+                logger.debug("No limit on candidate fetch (MAX_INBOX=0 means unlimited)")
+
+            candidate_persons = query.all()
 
         logger.debug(f"Found {len(candidate_persons)} potential candidates.")
         return message_type_map, candidate_persons

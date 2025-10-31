@@ -214,12 +214,12 @@ def _try_silent_token_acquisition(app: Any) -> Optional[str]:
     if not accounts:
         return None
 
-    logger.info(f"Account(s) found in cache ({len(accounts)}). Attempting silent token acquisition...")
+    logger.debug(f"Account(s) found in cache ({len(accounts)}). Attempting silent token acquisition...")
     account = accounts[0]
     result = app.acquire_token_silent(SCOPES, account=account)
 
     if result and "access_token" in result:
-        logger.info("Access token acquired silently from cache.")
+        logger.debug("Access token acquired silently from cache.")
         return result["access_token"]
 
     logger.info("Silent token acquisition failed (likely expired or needs refresh).")

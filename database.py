@@ -1055,7 +1055,7 @@ CREATE_VIEW_SQL = text(
         cl.latest_timestamp,
         p.username AS person_username,
         cl.direction,
-        mt.type_name AS message_type_name,
+        mt.template_key AS message_template_key,
         cl.ai_sentiment,
         cl.latest_message_content,
         cl.script_message_status,
@@ -2410,6 +2410,22 @@ def commit_bulk_data(
                     sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)  # type: ignore[arg-type]
                     processed_logs_count = len(log_inserts_mappings)
                     logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
+
+                    # Update conversation_metrics for each person with a new log entry
+                    from conversation_analytics import update_conversation_metrics
+                    for log_data in log_inserts_mappings:
+                        people_id = log_data.get("people_id")
+                        direction = log_data.get("direction")
+                        if people_id and direction:
+                            try:
+                                update_conversation_metrics(
+                                    session=sess,
+                                    people_id=people_id,
+                                    message_sent=(direction == MessageDirectionEnum.OUT),
+                                    message_received=(direction == MessageDirectionEnum.IN),
+                                )
+                            except Exception as metrics_err:
+                                logger.warning(f"{log_prefix}Failed to update conversation_metrics for person {people_id}: {metrics_err}")
 
             # Prepare and update persons
             if person_updates:

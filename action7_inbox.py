@@ -36,8 +36,6 @@ from selenium.common.exceptions import WebDriverException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === LOCAL IMPORTS ===
 from ai_interface import assess_engagement, classify_message_intent
@@ -929,10 +927,10 @@ class InboxProcessor:
 
     def _log_configuration(self) -> None:
         """Log Action 7 configuration settings."""
-        # Get initial rate limiting delay
-        initial_delay = self.session_manager.rate_limiter.initial_delay if self.session_manager.rate_limiter else 0.0
+        # Get current rate limiting delay (adjusted by dynamic rate limiting)
+        current_delay = self.session_manager.rate_limiter.current_delay if self.session_manager.rate_limiter else 0.0
 
-        logger.info(f"Configuration: MAX_INBOX={self.max_inbox_limit}, AI_PROVIDER={self.ai_provider}, RATE_LIMIT_DELAY={initial_delay:.2f}s")
+        logger.info(f"Configuration: MAX_INBOX={self.max_inbox_limit}, AI_PROVIDER={self.ai_provider}, RATE_LIMIT_DELAY={current_delay:.2f}s")
 
     def _validate_session_state(self) -> Optional[str]:
         """Validate session manager state and return profile ID."""
@@ -941,22 +939,7 @@ class InboxProcessor:
             return None
         return self.session_manager.my_profile_id.lower()
 
-    def _setup_progress_tracking(self) -> dict[str, Any]:
-        """Setup progress tracking configuration - simplified to match Action 6."""
-        # Get current rate limiting delay for progress bar
-        current_delay = self.rate_limiter.current_delay if self.rate_limiter else 0.0
-        desc = f"Processing conversations (rate limit: {current_delay:.2f}s)"
 
-        return {
-            "total": None,  # Start with unknown total
-            "desc": desc,
-            "unit": "it",
-            "leave": True,  # Keep progress bar visible after completion for proper line breaks
-            "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]",
-            "file": sys.stderr,
-        }
-
-        # Removed redundant "Processing inbox items" message - already logged by main.py and connection_resilience.py
 
     @with_connection_resilience("Action 7: Inbox Processing", max_recovery_attempts=3)
     def search_inbox(self) -> bool:
@@ -1042,27 +1025,17 @@ class InboxProcessor:
         comp_ts: Optional[datetime],
         my_pid_lower: str
     ) -> tuple[Optional[str], int, int, int, int, int, int]:
-        """Run the main inbox processing loop with progress tracking.
+        """Run the main inbox processing loop.
 
         Returns: (stop_reason, total_api_items, ai_classified, status_updated, items_processed, session_deaths, session_recoveries)
         """
-        tqdm_args = self._setup_progress_tracking()
-
-        # Add newline before progress bar to prevent log bleeding into progress bar
+        # Add newline before processing starts
         print()
 
-        # Simplified progress tracking - single tqdm progress bar like Action 6
-        with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-            result = self._process_inbox_loop(
-                session, comp_conv_id, comp_ts, my_pid_lower, progress_bar
-            )
-
-            # Ensure a newline after the progress bar completes to avoid inline log overlap
-            try:
-                progress_bar.close()
-            finally:
-                sys.stderr.write("\n")
-                sys.stderr.flush()
+        # Process inbox without progress bar (batch-level logging only, like Action 6)
+        result = self._process_inbox_loop(
+            session, comp_conv_id, comp_ts, my_pid_lower
+        )
 
         return result
 
@@ -1134,16 +1107,7 @@ class InboxProcessor:
         logger.debug("API returned empty batch but provided cursor. Continuing fetch.")
         return False, None
 
-    def _update_progress_bar_initial(
-        self, progress_bar: Optional[tqdm], batch_api_item_count: int
-    ) -> None:
-        """Update progress bar total on first batch."""
-        if progress_bar is not None and progress_bar.total is None:
-            if self.max_inbox_limit > 0:
-                progress_bar.total = self.max_inbox_limit
-            else:
-                progress_bar.total = batch_api_item_count * 10
-            progress_bar.refresh()
+
 
     def _prefetch_batch_data(
         self, session: DbSession, all_conversations_batch: list[dict], current_batch_num: int
@@ -1229,13 +1193,10 @@ class InboxProcessor:
         return profile_id_upper, api_conv_id, api_latest_ts_aware
 
     def _should_skip_invalid(
-        self, api_conv_id: Optional[str], profile_id_upper: str, progress_bar: Optional[tqdm]
+        self, api_conv_id: Optional[str], profile_id_upper: str
     ) -> bool:
         """Check if conversation should be skipped due to invalid data."""
         if not api_conv_id or profile_id_upper == "UNKNOWN":
-            if progress_bar is not None:
-                progress_bar.update(1)
-                # Removed set_description to prevent duplicate progress bars (matching Action 6/8)
             return True
         return False
 
@@ -1352,19 +1313,7 @@ class InboxProcessor:
 
         return needs_fetch, False, None
 
-    def _update_progress_skip(self, progress_bar: Optional[tqdm]) -> None:
-        """Update progress bar for skipped up-to-date conversation."""
-        if progress_bar is not None:
-            progress_bar.update(1)
-            # Removed set_description to prevent duplicate progress bars (matching Action 6/8)
 
-    def _update_progress_processing(
-        self, progress_bar: Optional[tqdm], api_conv_id: str  # noqa: ARG002
-    ) -> None:
-        """Update progress bar for conversation being processed."""
-        if progress_bar is not None:
-            progress_bar.update(1)
-            # Removed set_description to prevent duplicate progress bars (matching Action 6/8)
 
     def _find_latest_messages(
         self, context_messages: list[dict], my_pid_lower: str
@@ -1641,20 +1590,7 @@ class InboxProcessor:
         except Exception:
             return False
 
-    def _update_progress_bar_stats(
-        self,
-        progress_bar: Optional[tqdm],
-        ai_classified_count: int,
-        status_updated_count: int,
-        skipped_count: int,
-        error_count: int,
-    ) -> None:
-        """Update progress bar with current statistics."""
-        if progress_bar is not None:
-            progress_bar.set_description(
-                f"Processing: AI={ai_classified_count} Updates={status_updated_count} "
-                f"Skip={skipped_count} Err={error_count}"
-            )
+
 
     def _get_db_timestamp_for_comparison(
         self,
@@ -1919,7 +1855,6 @@ class InboxProcessor:
         conversations_needing_fetch: list[dict],
         context_map: dict[str, Optional[list[dict]]],
         ctx: ConversationProcessingContext,
-        progress_bar: Optional[tqdm],
         ai_classified_count: int,
     ) -> tuple[int, int]:
         """Second pass: Process all conversations with their fetched contexts.
@@ -1937,9 +1872,6 @@ class InboxProcessor:
                 logger.error(f"No context available for {api_conv_id}, skipping")
                 error_count += 1
                 continue
-
-            # Update progress
-            self._update_progress_processing(progress_bar, api_conv_id)
 
             # Lookup or create person
             person, person_status = self._lookup_or_create_person(
@@ -1981,7 +1913,6 @@ class InboxProcessor:
         session: DbSession,
         conversation_info: dict,
         ctx: ConversationProcessingContext,
-        progress_bar: Optional[tqdm],
         ai_classified_count: int,
     ) -> tuple[bool, Optional[str], int, int]:
         """Process single conversation. Returns (should_stop, stop_reason, error_count_delta, ai_count)."""
@@ -1995,7 +1926,7 @@ class InboxProcessor:
         logger.debug(f"Processing conversation {api_conv_id} for profile {profile_id_upper}")
 
         # Skip invalid conversations
-        if self._should_skip_invalid(api_conv_id, profile_id_upper, progress_bar):
+        if self._should_skip_invalid(api_conv_id, profile_id_upper):
             logger.debug(f"Skipping invalid conversation: conv_id={api_conv_id}, profile={profile_id_upper}")
             return False, None, 0, ai_classified_count
 
@@ -2012,14 +1943,10 @@ class InboxProcessor:
         # Skip if no fetch needed
         if not needs_fetch:
             logger.debug(f"Conversation {api_conv_id} is up-to-date, skipping fetch")
-            self._update_progress_skip(progress_bar)
             return False, None, 0, ai_classified_count
 
         # Validate session before fetch
         self._validate_session()
-
-        # Update progress for processing
-        self._update_progress_processing(progress_bar, api_conv_id)
 
         logger.debug(f"Fetching context for conversation {api_conv_id}")
 
@@ -2065,7 +1992,6 @@ class InboxProcessor:
         session: DbSession,
         all_conversations_batch: list[dict],
         ctx: ConversationProcessingContext,
-        progress_bar: Optional[tqdm],
         state: dict[str, Any],
     ) -> tuple[bool, Optional[str]]:
         """Process all conversations in a batch using two-pass approach.
@@ -2088,9 +2014,7 @@ class InboxProcessor:
         state["items_processed_before_stop"] += len(all_conversations_batch)
         state["skipped_count_this_loop"] += len(skip_map)
 
-        # Update progress for skipped items
-        for _ in range(len(skip_map)):
-            self._update_progress_skip(progress_bar)
+        # Skipped items already counted in skip_map
 
         if should_stop:
             logger.debug(f"First pass indicated stop: {stop_reason}")
@@ -2111,7 +2035,7 @@ class InboxProcessor:
         # SECOND PASS: Process all conversations with fetched contexts
         logger.debug(f"[Second Pass] Processing {len(conversations_needing_fetch)} conversations with fetched contexts")
         error_count, ai_classified_count = self._second_pass_process_conversations(
-            session, conversations_needing_fetch, context_map, ctx, progress_bar, state["ai_classified_count"]
+            session, conversations_needing_fetch, context_map, ctx, state["ai_classified_count"]
         )
 
         # Update state
@@ -2249,11 +2173,8 @@ class InboxProcessor:
         comp_conv_id: Optional[str],
         comp_ts: Optional[datetime],
         my_pid_lower: str,
-        progress_bar: Optional[tqdm],
     ) -> tuple[bool, Optional[str]]:
         """Handle batch processing and commit. Returns (should_stop, stop_reason)."""
-        # Update progress bar
-        self._update_progress_bar_initial(progress_bar, len(all_conversations_batch))
 
         # Prefetch batch data
         existing_persons_map, existing_conv_logs, prefetch_error = (
@@ -2274,7 +2195,7 @@ class InboxProcessor:
             min_aware_dt=state["min_aware_dt"]
         )
         batch_stop, batch_stop_reason = self._process_conversations_in_batch(
-            session, all_conversations_batch, ctx, progress_bar, state
+            session, all_conversations_batch, ctx, state
         )
 
         # Commit batch updates
@@ -2314,7 +2235,6 @@ class InboxProcessor:
         comp_conv_id: Optional[str],
         comp_ts: Optional[datetime],
         my_pid_lower: str,
-        progress_bar: Optional[tqdm],
     ) -> tuple[bool, Optional[str]]:
         """Process a single batch iteration. Returns (should_stop, stop_reason)."""
         batch_num = state['current_batch_num'] + 1
@@ -2342,7 +2262,7 @@ class InboxProcessor:
 
         # Handle batch and commit
         should_stop, stop_reason = self._handle_batch_and_commit(
-            session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+            session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower
         )
         if should_stop:
             return True, stop_reason
@@ -2355,9 +2275,6 @@ class InboxProcessor:
         result_stop_reason = None
 
         if not next_cursor_from_api:
-            if progress_bar is not None:
-                progress_bar.total = state["items_processed_before_stop"]
-                progress_bar.refresh()
             result_should_stop = True
             result_stop_reason = "End of Inbox Reached (No Next Cursor)"
         elif self._check_cancellation_requested():
@@ -2392,7 +2309,7 @@ class InboxProcessor:
         comp_conv_id: Optional[str],
         comp_ts: Optional[datetime],  # Aware datetime
         my_pid_lower: str,
-        progress_bar: Optional[tqdm],  # Accept progress bar instance
+         # Accept progress bar instance
     ) -> tuple[Optional[str], int, int, int, int, int, int]:
         """
         Internal helper: Contains the main loop for fetching and processing inbox batches.
@@ -2407,7 +2324,7 @@ class InboxProcessor:
             try:
                 # Process single batch iteration
                 should_stop, batch_stop_reason = self._process_single_batch_iteration(
-                    session, state, comp_conv_id, comp_ts, my_pid_lower, progress_bar
+                    session, state, comp_conv_id, comp_ts, my_pid_lower
                 )
 
                 if should_stop:
