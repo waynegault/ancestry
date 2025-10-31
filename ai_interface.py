@@ -1941,31 +1941,38 @@ def ai_interface_module_tests() -> bool:
         )
 
         # === INTEGRATION TESTS (Require Live Session) ===
-        try:
-            sm = SessionManager()
-            # Mark browser as NOT needed for AI-only tests
-            sm.browser_manager.browser_needed = False
-            sm.start_sess("AI Interface Tests")
+        # Skip live tests if SKIP_LIVE_API_TESTS is set (parallel test mode)
+        import os
+        skip_live = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
+        
+        if not skip_live:
+            try:
+                sm = SessionManager()
+                # Mark browser as NOT needed for AI-only tests
+                sm.browser_manager.browser_needed = False
+                sm.start_sess("AI Interface Tests")
 
-            suite.run_test(
-                "Health Check",
-                lambda: quick_health_check(sm)["overall_health"] in ["healthy", "degraded"],
-                "AI interface health check completes successfully",
-                "Test health check functionality",
-                "Verify health check returns valid status",
-            )
+                suite.run_test(
+                    "Health Check",
+                    lambda: quick_health_check(sm)["overall_health"] in ["healthy", "degraded"],
+                    "AI interface health check completes successfully",
+                    "Test health check functionality",
+                    "Verify health check returns valid status",
+                )
 
-            suite.run_test(
-                "Intent Classification",
-                lambda: test_ai_functionality(sm),
-                "AI intent classification and extraction work correctly",
-                "Test AI functionality with live session",
-                "Verify classify_message_intent and extract_genealogical_entities work",
-            )
+                suite.run_test(
+                    "Intent Classification",
+                    lambda: test_ai_functionality(sm),
+                    "AI intent classification and extraction work correctly",
+                    "Test AI functionality with live session",
+                    "Verify classify_message_intent and extract_genealogical_entities work",
+                )
 
-            sm.close_sess(keep_db=False)
-        except Exception as e:
-            logger.warning(f"Could not run live session tests: {e}")
+                sm.close_sess(keep_db=False)
+            except Exception as e:
+                logger.warning(f"Could not run live session tests: {e}")
+        else:
+            logger.info("⏭️  Skipping live AI tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
     return suite.finish_suite()
 

@@ -2370,7 +2370,7 @@ def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]],
     """Process and insert conversation logs with metrics updates."""
     if not log_upserts:
         return 0
-    
+
     logger.debug(f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for insert...")
     log_inserts_mappings = _prepare_conversation_log_data(log_upserts, log_prefix)
 
@@ -2397,7 +2397,7 @@ def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]],
                 )
             except Exception as metrics_err:
                 logger.warning(f"{log_prefix}Failed to update conversation_metrics for person {people_id}: {metrics_err}")
-    
+
     return processed_logs_count
 
 
@@ -2405,7 +2405,7 @@ def _process_person_updates(sess: Session, person_updates: dict[int, PersonStatu
     """Process and update person status records."""
     if not person_updates:
         return 0
-    
+
     logger.debug(f"{log_prefix}Preparing {len(person_updates)} Person status updates...")
     person_update_mappings = _prepare_person_update_data(person_updates)
 
@@ -2456,11 +2456,11 @@ def commit_bulk_data(
     try:
         with db_transn(session) as sess:
             logger.debug(f"{log_prefix}Entered transaction block.")
-            
+
             # Process conversation logs and person updates
             processed_logs_count = _process_conversation_logs(sess, log_upserts, log_prefix)
             updated_person_count = _process_person_updates(sess, person_updates, log_prefix)
-            
+
             logger.debug(f"{log_prefix}Exiting transaction block (commit follows).")
 
         logger.debug(f"{log_prefix}Transaction committed successfully via db_transn.")

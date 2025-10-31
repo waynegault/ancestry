@@ -595,13 +595,13 @@ def _determine_skip_logic(person_status: str, existing_dna_match: Any, needs_eth
     if person_status != "created" and existing_dna_match and not needs_ethnicity_refresh:
         logger.debug(f"Skipping detail fetch for person_id={person_id} - DnaMatch already exists")
         return True, "dna_match_exists"
-    
+
     if person_status != "created" and not needs_ethnicity_refresh and _should_skip_person_refresh(session, person_id):
         return True, "recently_updated"
-    
+
     if existing_dna_match and needs_ethnicity_refresh:
         logger.debug(f"Existing DnaMatch for person_id={person_id} missing ethnicity data - forcing detail refresh")
-    
+
     return False, None
 
 
@@ -1553,11 +1553,11 @@ def _check_cached_session(reuse_session: bool) -> Optional[tuple[SessionManager,
     """Check if cached session is valid and can be reused."""
     if not reuse_session or _test_session_cache.session_manager is None or _test_session_cache.uuid is None:
         return None
-    
+
     if _test_session_cache.session_manager.is_sess_valid():
         logger.info("♻️  Reusing existing authenticated session from previous test")
         return _test_session_cache.session_manager, _test_session_cache.uuid
-    
+
     logger.info("⚠️  Cached session invalid, creating new session...")
     _test_session_cache.session_manager = None
     _test_session_cache.uuid = None
@@ -1569,11 +1569,11 @@ def _initialize_session_manager() -> SessionManager:
     logger.info("Step 1: Creating SessionManager...")
     sm = SessionManager()
     logger.info("✅ SessionManager created")
-    
+
     logger.info("Step 2: Configuring browser requirement...")
     sm.browser_manager.browser_needed = True
     logger.info("✅ Browser marked as needed")
-    
+
     logger.info("Step 3: Starting session (database + browser)...")
     started = sm.start_sess("Action 6 API Tests")
     if not started:
@@ -1586,10 +1586,10 @@ def _initialize_session_manager() -> SessionManager:
 def _perform_login_if_needed(sm: SessionManager) -> None:
     """Check login status and log in if necessary."""
     from utils import log_in, login_status
-    
+
     logger.info("Step 5: Checking login status...")
     login_check = login_status(sm, disable_ui_fallback=True)
-    
+
     if login_check is True:
         logger.info("✅ Already logged in")
     elif login_check is False:
