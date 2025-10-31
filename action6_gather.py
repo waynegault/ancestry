@@ -3,7 +3,7 @@
 """
 Action 6: DNA Match Gatherer
 
-Comprehensive DNA match gathering and enrichment system that follows proven patterns:
+This version follows Action 6's exact data flow:
 1. Fetch Match List API → get core data (username, cm, segments, profile_id)
 2. Optionally fetch Match Details API → get additional DNA data (longest segment, meiosis, sides)
 3. Optionally fetch Profile Details API → get last_logged_in, contactable
@@ -23,6 +23,7 @@ import time
 # === THIRD-PARTY IMPORTS ===
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Optional
 from urllib.parse import unquote, urljoin
 
@@ -63,7 +64,7 @@ def _setup_rate_limiting(session_manager: SessionManager, parallel_workers: int)
     session_manager.rate_limiter.initial_delay = adaptive_delay
     session_manager.rate_limiter.current_delay = adaptive_delay
     logger.debug(f"⚡ Parallel processing ENABLED with {parallel_workers} workers")
-    logger.debug(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
+    logger.info(f"   Adaptive rate limiting: base delay increased from {original_delay:.2f}s to {adaptive_delay:.2f}s")
     logger.debug("   Rate limiter is thread-safe and will prevent 429 errors")
 
 
@@ -78,6 +79,7 @@ def _initialize_coord_session(session_manager: SessionManager) -> tuple[str, Opt
 
     logger.debug(f"My UUID: {my_uuid}")
     logger.debug(f"My Tree ID: {my_tree_id}")
+    print("")
 
     db_manager = DatabaseManager()
     return my_uuid, my_tree_id, db_manager
@@ -99,13 +101,10 @@ def _handle_session_health_check(session_manager: SessionManager) -> tuple[bool,
 
 def _handle_api_failure(session_manager: SessionManager, page_num: int, max_pages: int) -> tuple[bool, int, int, str, bool]:
     """Handle API failure and recovery. Returns (should_continue, deaths, recoveries, reason, should_break)."""
-    # If session is healthy and there are no more pages, stop gracefully
-    if session_manager.check_session_health() and max_pages == 0:
-        logger.info("No more pages available. Stopping.")
-        return False, 0, 0, "", True
-
-    # If session is healthy and pages remain, continue
     if session_manager.check_session_health():
+        if max_pages == 0:
+            logger.info("No more pages available. Stopping.")
+            return False, 0, 0, "", True
         return True, 0, 0, "", False
 
     logger.error("🚨 Session appears dead - API failure likely due to invalid session")
@@ -147,7 +146,7 @@ def _process_page_batches(matches: list[dict], batch_size: int, session_manager:
         batch_num = (batch_start // batch_size) + 1
         total_batches_on_page = (len(matches) + batch_size - 1) // batch_size
 
-        logger.info(f"Batch {batch_num}/{total_batches_on_page} (matches {batch_start+1}-{batch_end})")
+        logger.info(f"Batch {batch_num}/{total_batches_on_page}: Getting DNA matches {batch_start+1}-{batch_end}")
 
         new, updated, skipped, errors = _process_batch(batch, session_manager, db_manager, my_uuid, my_tree_id)
 
@@ -156,220 +155,53 @@ def _process_page_batches(matches: list[dict], batch_size: int, session_manager:
         total_skipped += skipped
         total_errors += errors
 
-        # Use compact logging for batches with only skips, detailed for batches with changes
-        if new == 0 and updated == 0 and errors == 0 and skipped > 0:
-            logger.info(f"Batch {batch_num} complete: All {skipped} skipped (already in database)")
-        else:
-            logger.info(f"Batch {batch_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
+        logger.info(f"Got: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
 
     return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
 
 
-def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, my_uuid: str, page_num: int, csrf_token: str, max_pages: int) -> tuple[Optional[list[dict]], int, int, bool, str, Optional[int], bool]:
-    """Fetch and validate page data. Returns (matches, deaths, recoveries, should_break, reason, total_pages, is_last_page)."""
+def _fetch_and_validate_page_data(driver: Any, session_manager: SessionManager, my_uuid: str, page_num: int, csrf_token: str, max_pages: int) -> tuple[Optional[list[dict]], int, int, bool, str]:
+    """Fetch and validate page data. Returns (matches, deaths, recoveries, should_break, reason)."""
     api_response = fetch_match_list_page(driver, session_manager, my_uuid, page_num, csrf_token)
     if not api_response or not isinstance(api_response, dict):
         logger.warning(f"No API response for page {page_num}")
-        _, deaths, recoveries, reason, should_break = _handle_api_failure(session_manager, page_num, max_pages)
-        return None, deaths, recoveries, should_break, reason, None, False
-
-    # Extract total pages and last page flag from API response
-    total_pages = api_response.get("totalPages")
-    is_last_page = api_response.get("isLastPage", False)
+        should_continue, deaths, recoveries, reason, should_break = _handle_api_failure(session_manager, page_num, max_pages)
+        return None, deaths, recoveries, should_break, reason
 
     match_list = api_response.get("matchList", [])
     if not match_list:
         logger.warning(f"No matches in API response for page {page_num}")
-        if max_pages == 0 or is_last_page:
+        if max_pages == 0:
             logger.info("No more matches available. Stopping.")
-            return None, 0, 0, True, "", total_pages, is_last_page
-        return None, 0, 0, False, "", total_pages, is_last_page
+            return None, 0, 0, True, ""
+        return None, 0, 0, False, ""
 
     sample_ids = [m.get("sampleId", "").upper() for m in match_list if m.get("sampleId")]
     if not sample_ids:
         logger.warning(f"No sample IDs found on page {page_num}")
-        return None, 0, 0, False, "", total_pages, is_last_page
+        return None, 0, 0, False, ""
 
     in_tree_ids = fetch_in_tree_status(driver, session_manager, my_uuid, sample_ids, csrf_token, page_num)
     matches = _refine_match_list(match_list, my_uuid, in_tree_ids)
 
     if not matches:
         logger.warning(f"No matches found on page {page_num}")
-        return None, 0, 0, False, "", total_pages, is_last_page
+        return None, 0, 0, False, ""
 
-    logger.info(f"Found {len(matches)} matches on page {page_num}")
-    return matches, 0, 0, False, "", total_pages, is_last_page
-
-
-def _log_page_header(page_num: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int, api_total_pages: Optional[int] = None) -> None:
-    """Log page processing header."""
-    # Add blank line before separator for readability
+    logger.info(f"{len(matches)} DNA matches on page {page_num}")
+    logger.info(f"{'-'*45}")
     print("")
-    logger.info(f"{'='*80}")
+    return matches, 0, 0, False, ""
 
-    # Format page info - prioritize API total pages, then max_pages setting
-    if api_total_pages is not None:
-        # Use total pages from API response (most accurate)
-        page_info = f"Getting page {page_num} of {api_total_pages}"
-    elif max_pages == 0:
-        # When MAX_PAGES=0 and we don't have API total yet, show current page only
-        page_info = f"Getting page {page_num}"
+
+def _log_page_header(page_num: int, pages_processed: int, max_pages: int, total_new: int, total_updated: int, total_skipped: int, total_errors: int) -> None:
+    """Log page processing header."""
+    logger.info(f"{'-'*45}")
+    if max_pages == 0:
+        logger.info(f"Processing page {page_num} (page {pages_processed + 1} of all pages)")
     else:
-        # When MAX_PAGES is set, show progress based on configured limit
-        page_info = f"Getting page {page_num} of {max_pages}"
-
-    cumulative_info = f"Cumulative: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}"
-    logger.info(f"{page_info} | {cumulative_info}")
-    logger.info(f"{'='*80}")
-
-
-def _should_stop_processing(
-    page_num: int,
-    end_page: float,
-    max_pages: int,
-    is_last_page: bool,
-    matches: Optional[list],
-) -> tuple[bool, str]:
-    """Check if we should stop processing pages."""
-    if max_pages > 0 and page_num > end_page:
-        return True, "Reached max pages limit"
-
-    if not matches and is_last_page:
-        return True, "Reached last page (isLastPage=true)"
-
-    if is_last_page:
-        return True, "Reached last page according to API"
-
-    return False, ""
-
-
-def _update_page_totals(
-    total_new: int,
-    total_updated: int,
-    total_skipped: int,
-    total_errors: int,
-    session_deaths: int,
-    session_recoveries: int,
-    new: int,
-    updated: int,
-    skipped: int,
-    errors: int,
-    deaths: int,
-    recoveries: int,
-) -> tuple[int, int, int, int, int, int]:
-    """Update running totals with page results."""
-    return (
-        total_new + new,
-        total_updated + updated,
-        total_skipped + skipped,
-        total_errors + errors,
-        session_deaths + deaths,
-        session_recoveries + recoveries,
-    )
-
-
-def _handle_page_fetch_result(
-    should_break: bool,
-    reason: str,
-    matches: Optional[list],
-    is_last_page: bool,
-    page_num: int,
-    end_page: float,
-    max_pages: int,
-) -> tuple[bool, bool, str]:
-    """
-    Handle the result of fetching page data.
-
-    Returns:
-        (should_break_loop, should_continue_to_next, incomplete_reason)
-    """
-    if should_break:
-        return True, False, reason if reason else ""
-
-    should_stop, stop_msg = _should_stop_processing(page_num, end_page, max_pages, is_last_page, matches)
-    if should_stop:
-        if stop_msg and "last page" in stop_msg.lower():
-            logger.info(stop_msg)
-        return True, False, ""
-
-    if not matches:
-        return False, True, ""  # Continue to next page
-
-    return False, False, ""  # Process matches
-
-
-def _log_page_complete(new: int, updated: int, skipped: int, errors: int, page_num: int) -> None:
-    """Log page completion summary."""
-    print("")  # Blank line before page complete summary
-    if new == 0 and updated == 0 and errors == 0 and skipped > 0:
-        logger.info(f"Page {page_num} complete: All {skipped} matches already in database")
-    else:
-        logger.info(f"Page {page_num} complete: New={new}, Updated={updated}, Skipped={skipped}, Errors={errors}")
-
-
-def _update_api_total_pages(page_total_pages: Optional[int], api_total_pages: Optional[int], max_pages: int) -> Optional[int]:
-    """Update API total pages if available."""
-    if page_total_pages is not None and api_total_pages is None:
-        if max_pages == 0:
-            logger.info(f"API reports {page_total_pages} total pages available")
-        return page_total_pages
-    return api_total_pages
-
-
-def _process_single_page(
-    page_num: int,
-    session_manager: SessionManager,
-    driver: Any,
-    db_manager: DatabaseManager,
-    my_uuid: str,
-    my_tree_id: Optional[str],
-    csrf_token: str,
-    max_pages: int,
-    batch_size: int,
-    end_page: float,
-    api_total_pages: Optional[int],
-    total_new: int,
-    total_updated: int,
-    total_skipped: int,
-    total_errors: int,
-) -> tuple[int, int, int, int, int, int, bool, str, Optional[int]]:
-    """
-    Process a single page and return updated statistics.
-
-    Returns:
-        (new, updated, skipped, errors, deaths, recoveries, should_break, break_reason, updated_api_total_pages)
-    """
-    _log_page_header(page_num, max_pages, total_new, total_updated, total_skipped, total_errors, api_total_pages)
-
-    matches, deaths, recoveries, should_break, reason, page_total_pages, is_last_page = _fetch_and_validate_page_data(
-        driver, session_manager, my_uuid, page_num, csrf_token, max_pages
-    )
-
-    api_total_pages = _update_api_total_pages(page_total_pages, api_total_pages, max_pages)
-
-    should_break_loop, should_skip_to_next, break_reason = _handle_page_fetch_result(
-        should_break, reason, matches, is_last_page, page_num, end_page, max_pages
-    )
-
-    if should_break_loop:
-        return 0, 0, 0, 0, deaths, recoveries, True, break_reason, api_total_pages
-
-    if should_skip_to_next:
-        return 0, 0, 0, 0, deaths, recoveries, False, "", api_total_pages
-
-    # Type guard: matches cannot be None here due to _handle_page_fetch_result logic
-    assert matches is not None, "matches should not be None when processing batches"
-
-    new, updated, skipped, errors, page_deaths, page_recoveries, page_incomplete, page_reason = _process_page_batches(
-        matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
-    )
-
-    _log_page_complete(new, updated, skipped, errors, page_num)
-
-    if page_incomplete:
-        return new, updated, skipped, errors, deaths + page_deaths, recoveries + page_recoveries, True, page_reason, api_total_pages
-
-    return new, updated, skipped, errors, deaths + page_deaths, recoveries + page_recoveries, False, "", api_total_pages
+        logger.info(f"Processing page {page_num} of {max_pages})")
+    logger.info(f"Cum: New={total_new}, Updated={total_updated}, Skipped={total_skipped}, Errors={total_errors}")
 
 
 def _process_pages_loop(
@@ -384,55 +216,86 @@ def _process_pages_loop(
     batch_size: int
 ) -> tuple[int, int, int, int, int, int, bool, str]:
     """Process all pages and return statistics."""
-    total_new = total_updated = total_skipped = total_errors = 0
-    session_deaths = session_recoveries = 0
-    api_total_pages: Optional[int] = None
+    total_new = 0
+    total_updated = 0
+    total_skipped = 0
+    total_errors = 0
+    session_deaths = 0
+    session_recoveries = 0
+    run_incomplete = False
+    incomplete_reason = ""
 
-    end_page = float('inf') if max_pages == 0 else start_page + max_pages - 1
     if max_pages == 0:
         logger.info("MAX_PAGES=0: Will process all pages until no more matches found")
+        end_page = float('inf')
+    else:
+        end_page = start_page + max_pages - 1
 
     page_num = start_page
+    pages_processed = 0
 
-    while max_pages == 0 or page_num <= end_page:
+    while True:
+        if max_pages > 0 and page_num > end_page:
+            break
+
         should_continue, deaths, recoveries, reason = _handle_session_health_check(session_manager)
         session_deaths += deaths
         session_recoveries += recoveries
         if not should_continue:
-            return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, True, reason
+            run_incomplete = True
+            incomplete_reason = reason
+            break
 
-        new, updated, skipped, errors, deaths, recoveries, should_break, break_reason, api_total_pages = _process_single_page(
-            page_num, session_manager, driver, db_manager, my_uuid, my_tree_id, csrf_token,
-            max_pages, batch_size, end_page, api_total_pages, total_new, total_updated, total_skipped, total_errors
+        _log_page_header(page_num, pages_processed, max_pages, total_new, total_updated, total_skipped, total_errors)
+
+        matches, deaths, recoveries, should_break, reason = _fetch_and_validate_page_data(
+            driver, session_manager, my_uuid, page_num, csrf_token, max_pages
         )
-
         session_deaths += deaths
         session_recoveries += recoveries
 
         if should_break:
-            return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, bool(break_reason), break_reason
+            if reason:
+                run_incomplete = True
+                incomplete_reason = reason
+            break
 
-        total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries = _update_page_totals(
-            total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries,
-            new, updated, skipped, errors, 0, 0
+        if not matches:
+            logger.info(f"No matches returned for page {page_num}. Stopping further page fetches.")
+            break
+
+        new, updated, skipped, errors, deaths, recoveries, page_incomplete, page_reason = _process_page_batches(
+            matches, batch_size, session_manager, db_manager, my_uuid, my_tree_id, page_num
         )
+        print("")
+        total_new += new
+        total_updated += updated
+        total_skipped += skipped
+        total_errors += errors
+        session_deaths += deaths
+        session_recoveries += recoveries
+
+        if page_incomplete:
+            run_incomplete = True
+            incomplete_reason = page_reason
+            break
 
         page_num += 1
+        pages_processed += 1
 
-    return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, False, ""
+    return total_new, total_updated, total_skipped, total_errors, session_deaths, session_recoveries, run_incomplete, incomplete_reason
 
 
 def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int, total_errors: int, total_run_time: float, run_incomplete: bool, incomplete_reason: str, session_deaths: int, session_recoveries: int, start_page: int, max_pages: int, session_manager: SessionManager) -> None:
     """Print final summary for coord function."""
-    print("")
-    logger.info(f"{'='*80}")
-    logger.info("FINAL SUMMARY")
-    logger.info(f"{'='*80}")
+    logger.info(f"{'-'*45}")
+    logger.info("Final Summary")
+    logger.info(f"{'-'*45}\n")
 
     if run_incomplete:
         logger.warning(f"⚠️  RUN INCOMPLETE: {incomplete_reason}")
     else:
-        logger.info("Run completed successfully")
+        logger.info("✅ Run completed successfully")
 
     if session_deaths > 0:
         logger.warning(f"⚠️  Session Deaths: {session_deaths}")
@@ -441,30 +304,108 @@ def _print_coord_summary(total_new: int, total_updated: int, total_skipped: int,
             logger.error(f"❌ {session_deaths - session_recoveries} session death(s) could not be recovered")
 
     if max_pages == 0:
-        logger.info(f"Page Range: Started at page {start_page}")
+        logger.info(f"Started at page {start_page}")
     else:
-        logger.info(f"Page Range: {start_page}-{start_page + max_pages - 1} ({max_pages} pages)")
+        logger.info(f"Collected {max_pages} pages from page {start_page}-{start_page + max_pages - 1}")
 
-    logger.info(f"New Added: {total_new}")
-    logger.info(f"Updated: {total_updated}")
-    logger.info(f"Skipped: {total_skipped}")
-    logger.info(f"Errors: {total_errors}")
+    logger.info(f"New: {total_new}, Updated: {total_updated}, Skipped: {total_skipped}, Errors: {total_errors}")
+    logger.info(f"Total Run Time: {total_run_time/3600:.2f} hours ({total_run_time/60:.1f} minutes)\n")
 
-    # Format run time as "X hr Y min Z.ZZ sec"
-    hours = int(total_run_time // 3600)
-    minutes = int((total_run_time % 3600) // 60)
-    seconds = total_run_time % 60
-    logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
-    logger.info(f"{'='*80}")
-    print("")
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         session_manager.rate_limiter.print_metrics_summary()
+
+
+@lru_cache(maxsize=1)
+def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
+    """Load ethnicity metadata and return (region_keys, key->column mapping)."""
+    metadata = load_ethnicity_metadata()
+    if not isinstance(metadata, dict):
+        logger.debug("Ethnicity metadata unavailable or invalid; skipping ethnicity enrichment")
+        return [], {}
+
+    regions = metadata.get("tree_owner_regions", [])
+    if not isinstance(regions, list) or not regions:
+        logger.debug("No ethnicity regions configured; skipping ethnicity enrichment")
+        return [], {}
+
+    region_keys: list[str] = []
+    column_map: dict[str, str] = {}
+    for region in regions:
+        if not isinstance(region, dict):
+            continue
+        key = region.get("key")
+        column_name = region.get("column_name")
+        if key and column_name:
+            region_keys.append(str(key))
+            column_map[str(key)] = str(column_name)
+
+    if not region_keys:
+        logger.debug("Ethnicity metadata contained no valid regions; skipping ethnicity enrichment")
+
+    return region_keys, column_map
+
+
+def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
+    """Fetch ethnicity comparison data and map it to database column names."""
+    if not my_uuid or not match_uuid:
+        return {}
+
+    region_keys, column_map = _get_ethnicity_config()
+    if not region_keys or not column_map:
+        return {}
+
+    match_guid = str(match_uuid).upper()
+    comparison_data = fetch_ethnicity_comparison(session_manager, my_uuid, match_guid)
+    if not comparison_data:
+        logger.debug(f"No ethnicity comparison data for match {match_uuid}")
+        return {}
+
+    percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
+    payload: dict[str, Optional[int]] = {}
+    for region_key, percentage in percentages.items():
+        column_name = column_map.get(str(region_key))
+        if not column_name:
+            continue
+        try:
+            payload[column_name] = int(percentage) if percentage is not None else None
+        except (TypeError, ValueError):
+            logger.debug(f"Invalid ethnicity percentage '{percentage}' for region {region_key} (match {match_uuid})")
+
+    return payload
+
+
+def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
+    """Return True if the existing DNA match record is missing ethnicity data."""
+    if not existing_dna_match:
+        return False
+
+    _, column_map = _get_ethnicity_config()
+    if not column_map:
+        return False
+
+    for column_name in column_map.values():
+        if not hasattr(existing_dna_match, column_name):
+            return True
+        if getattr(existing_dna_match, column_name) is None:
+            return True
+
+    return False
+
+
+def _get_existing_dna_match_record(session, person_id: int) -> Optional[Any]:
+    """Fetch existing DnaMatch record for a person if it exists."""
+    from database import DnaMatch
+
+    try:
+        return session.query(DnaMatch).filter_by(people_id=person_id).first()
+    except Exception as exc:
+        logger.error(f"Error retrieving DnaMatch for person_id={person_id}: {exc}")
+        return None
 
 
 @with_connection_resilience("Action 6: DNA Match Gatherer", max_recovery_attempts=3)
 def coord(session_manager: SessionManager, start: int = 1):
     """Main entry point for Action 6: DNA Match Gatherer."""
-    # Note: Connection resilience wrapper already logs action name, so we don't duplicate it here
 
     if session_manager.rate_limiter:
         session_manager.rate_limiter.reset_metrics()
@@ -475,10 +416,7 @@ def coord(session_manager: SessionManager, start: int = 1):
     parallel_workers = getattr(config_schema, 'parallel_workers', 1)
     start_page = start
 
-    # Get current rate limiting delay (adjusted by dynamic rate limiting)
-    current_delay = session_manager.rate_limiter.current_delay if session_manager.rate_limiter else 0.0
-
-    logger.info(f"Config: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}, RATE_LIMIT_DELAY={current_delay:.2f}s")
+    logger.info(f"Configuration: START_PAGE={start_page}, MAX_PAGES={max_pages}, BATCH_SIZE={batch_size}, PARALLEL_WORKERS={parallel_workers}")
 
     _setup_rate_limiting(session_manager, parallel_workers)
 
@@ -609,7 +547,6 @@ def _fetch_match_details_parallel(
         'profile_details': {},
         'badge_details': {},
         'predicted_rel': None,
-        'ethnicity_data': {},
         'uuid': match.get("uuid"),  # Include UUID for error tracking
     }
 
@@ -619,15 +556,12 @@ def _fetch_match_details_parallel(
         result['match_details'] = _fetch_match_details(session_manager, my_uuid, match["uuid"])
 
         if match.get("profile_id"):
-            result['profile_details'] = _fetch_profile_details(session_manager, match["profile_id"])
+            result['profile_details'] = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"])
 
         if match.get("in_tree", False):
             result['badge_details'] = _fetch_badge_details(session_manager, my_uuid, match["uuid"])
 
         result['predicted_rel'] = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
-
-        # Fetch ethnicity comparison data
-        result['ethnicity_data'] = fetch_ethnicity_comparison(session_manager, my_uuid, match["uuid"]) or {}
 
     except Exception as e:
         logger.error(f"Error fetching details for match {match.get('uuid', 'UNKNOWN')}: {e}")
@@ -656,6 +590,21 @@ def _get_person_id_by_uuid(session, uuid: str) -> Optional[int]:
         return None
 
 
+def _determine_skip_logic(person_status: str, existing_dna_match: Any, needs_ethnicity_refresh: bool, session, person_id: int) -> tuple[bool, Optional[str]]:
+    """Determine if details should be skipped and the reason."""
+    if person_status != "created" and existing_dna_match and not needs_ethnicity_refresh:
+        logger.debug(f"Skipping detail fetch for person_id={person_id} - DnaMatch already exists")
+        return True, "dna_match_exists"
+    
+    if person_status != "created" and not needs_ethnicity_refresh and _should_skip_person_refresh(session, person_id):
+        return True, "recently_updated"
+    
+    if existing_dna_match and needs_ethnicity_refresh:
+        logger.debug(f"Existing DnaMatch for person_id={person_id} missing ethnicity data - forcing detail refresh")
+    
+    return False, None
+
+
 def _first_pass_identify_matches(batch: list[dict], session) -> tuple[list[dict], dict]:
     """
     First pass: Identify which matches need detail fetching.
@@ -672,16 +621,17 @@ def _first_pass_identify_matches(batch: list[dict], session) -> tuple[list[dict]
             skip_map[match["uuid"]] = {"skip": True, "reason": "no_person_id", "person_id": None, "person_status": None}
             continue
 
-        skip_details = False
-        skip_reason = None
+        # Check if match needs ethnicity refresh
+        existing_dna_match = None
+        needs_ethnicity_refresh = False
+        if person_status != "created":
+            existing_dna_match = _get_existing_dna_match_record(session, person_id)
+            needs_ethnicity_refresh = _needs_ethnicity_refresh(existing_dna_match)
 
-        if person_status != "created" and _dna_match_exists(session, person_id):
-            skip_details = True
-            skip_reason = "dna_match_exists"
-            logger.debug(f"Skipping detail fetch for person_id={person_id} - DnaMatch already exists")
-        elif person_status != "created" and _should_skip_person_refresh(session, person_id):
-            skip_details = True
-            skip_reason = "recently_updated"
+        # Determine skip logic
+        skip_details, skip_reason = _determine_skip_logic(
+            person_status, existing_dna_match, needs_ethnicity_refresh, session, person_id
+        )
 
         if skip_details:
             skip_map[match["uuid"]] = {"skip": True, "reason": skip_reason, "person_id": person_id, "person_status": person_status}
@@ -708,11 +658,7 @@ def _fetch_details_parallel(matches_needing_details: list[dict], session_manager
             for match in matches_needing_details
         }
 
-        # Get current rate limiting delay for progress bar
-        current_delay = session_manager.rate_limiter.current_delay if session_manager.rate_limiter else 0.0
-        desc = f"Fetching data (rate limit: {current_delay:.2f}s)"
-
-        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc=desc, leave=False, unit="it", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]'):
+        for future in tqdm(as_completed(future_to_match), total=len(matches_needing_details), desc="Fetching data", leave=False):
             match = future_to_match[future]
             try:
                 details = future.result()
@@ -730,10 +676,10 @@ def _fetch_details_parallel(matches_needing_details: list[dict], session_manager
     return match_details_map
 
 
-def _get_match_details(match: dict, skip_details: bool, match_details_map: dict, session_manager: SessionManager, my_uuid: str, parallel_workers: int) -> tuple[dict, dict, dict, Any, dict]:
+def _get_match_details(match: dict, skip_details: bool, match_details_map: dict, session_manager: SessionManager, my_uuid: str, parallel_workers: int) -> tuple[dict, dict, dict, Any]:
     """Get match details from cache or fetch them."""
     if skip_details:
-        return {}, {}, {}, None, {}
+        return {}, {}, {}, None
 
     if parallel_workers > 1:
         details = match_details_map.get(match["uuid"], {})
@@ -741,24 +687,22 @@ def _get_match_details(match: dict, skip_details: bool, match_details_map: dict,
             details.get('match_details', {}),
             details.get('profile_details', {}),
             details.get('badge_details', {}),
-            details.get('predicted_rel'),
-            details.get('ethnicity_data', {})
+            details.get('predicted_rel')
         )
 
     # Sequential processing: fetch details now
     match_details = _fetch_match_details(session_manager, my_uuid, match["uuid"])
-    profile_details = _fetch_profile_details(session_manager, match["profile_id"]) if match["profile_id"] else {}
+    profile_details = _fetch_profile_details(session_manager, match["profile_id"], match["uuid"]) if match["profile_id"] else {}
     badge_details = _fetch_badge_details(session_manager, my_uuid, match["uuid"]) if match["in_tree"] else {}
     predicted_rel = _fetch_relationship_probability(session_manager, my_uuid, match["uuid"])
-    ethnicity_data = fetch_ethnicity_comparison(session_manager, my_uuid, match["uuid"]) or {}
 
-    return match_details, profile_details, badge_details, predicted_rel, ethnicity_data
+    return match_details, profile_details, badge_details, predicted_rel
 
 
-def _save_match_records(match: dict, person_id: int, match_details: dict, badge_details: dict, predicted_rel: Any, ethnicity_data: dict, skip_details: bool, my_tree_id: Optional[str], session: Any, session_manager: SessionManager) -> None:
+def _save_match_records(match: dict, person_id: int, match_details: dict, badge_details: dict, predicted_rel: Any, skip_details: bool, my_tree_id: Optional[str], session: Any, session_manager: SessionManager, my_uuid: str) -> None:
     """Save DnaMatch and FamilyTree records."""
     if not skip_details:
-        _save_dna_match(session, person_id, match, match_details, predicted_rel, ethnicity_data)
+        _save_dna_match(session, person_id, match, match_details, predicted_rel, session_manager, my_uuid)
 
     if match["in_tree"] and badge_details:
         _save_family_tree(session, person_id, badge_details, my_tree_id, session_manager)
@@ -787,7 +731,7 @@ def _process_single_match(match: dict, skip_map: dict, match_details_map: dict, 
     if not person_id:
         return "error", False
 
-    match_details, profile_details, badge_details, predicted_rel, ethnicity_data = _get_match_details(
+    match_details, profile_details, badge_details, predicted_rel = _get_match_details(
         match, skip_details, match_details_map, session_manager, my_uuid, parallel_workers
     )
 
@@ -800,7 +744,7 @@ def _process_single_match(match: dict, skip_map: dict, match_details_map: dict, 
 
     logger.debug(f"Match {match['uuid']}: person_status={person_status}, additional_updates={additional_updates}, skip_details={skip_details}")
 
-    _save_match_records(match, person_id, match_details, badge_details, predicted_rel, ethnicity_data, skip_details, my_tree_id, session, session_manager)
+    _save_match_records(match, person_id, match_details, badge_details, predicted_rel, skip_details, my_tree_id, session, session_manager, my_uuid)
 
     status = _determine_match_status(skip_details, person_status, additional_updates)
     return status, True
@@ -813,7 +757,7 @@ def _second_pass_process_matches(batch: list[dict], session: Any, skip_map: dict
     skipped_count = 0
     error_count = 0
 
-    for match in tqdm(batch, desc="Saving to database", leave=False, unit="it", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_inv_fmt}]'):
+    for match in tqdm(batch, desc="Saving to database", leave=False):
         try:
             status, success = _process_single_match(
                 match, skip_map, match_details_map, session, session_manager, my_uuid, my_tree_id, parallel_workers
@@ -1075,7 +1019,7 @@ def _fetch_match_details(session_manager: SessionManager, my_uuid: str, match_uu
     }
 
 
-def _fetch_profile_details(session_manager: SessionManager, profile_id: str) -> dict:  # type: ignore[unused-function]
+def _fetch_profile_details(session_manager: SessionManager, profile_id: str, match_uuid: str) -> dict:  # type: ignore[unused-function] # noqa: ARG001
     """Fetch profile details from Profile Details API."""
     url = urljoin(
         config_schema.api.base_url,
@@ -1365,7 +1309,7 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
     try:
         my_user_id = session_manager.my_profile_id
         if not my_user_id:
-            logger.debug(f"No user_id available, cannot fetch ladder for CFPID {cfpid}")
+            logger.debug(f"No user_id configured, cannot fetch ladder for CFPID {cfpid}")
             return {}
 
         url = urljoin(
@@ -1413,46 +1357,13 @@ def _fetch_ladder_details(session_manager: SessionManager, cfpid: str, tree_id: 
 
 
 def _dna_match_exists(session, person_id: int) -> bool:
-    """
-    Check if a DnaMatch record already exists for this person with complete ethnicity data.
-
-    Returns True only if the record exists AND has ethnicity data populated.
-    Returns False if the record doesn't exist OR if ethnicity data is missing.
-    """
-    from database import DnaMatch
-    from dna_ethnicity_utils import load_ethnicity_metadata
-
-    existing = session.query(DnaMatch).filter_by(people_id=person_id).first()
-    if not existing:
-        return False
-
-    # Check if ethnicity data is populated
-    ethnicity_metadata = load_ethnicity_metadata()
-    if ethnicity_metadata and ethnicity_metadata.get("tree_owner_regions"):
-        # Check if any ethnicity column has data
-        for region in ethnicity_metadata["tree_owner_regions"]:
-            column_name = region.get("column_name")
-            if column_name and hasattr(existing, column_name):
-                value = getattr(existing, column_name)
-                if value is not None:
-                    # At least one ethnicity column has data, consider it complete
-                    return True
-
-        # No ethnicity data found, need to re-fetch
-        logger.debug(f"DnaMatch exists for person_id={person_id} but missing ethnicity data - will re-fetch")
-        return False
-
-    # No ethnicity metadata configured, consider existing record complete
-    return True
+    """Check if a DnaMatch record already exists for this person."""
+    existing = _get_existing_dna_match_record(session, person_id)
+    return existing is not None
 
 
-def _save_dna_match(session, person_id: int, match: dict, match_details: dict, predicted_relationship: Optional[str] = None, ethnicity_data: Optional[dict] = None) -> str:
-    """
-    Save DnaMatch record to database.
-
-    Skip logic: If a DnaMatch record already exists for this person, skip populating it.
-    This prevents unnecessary updates and preserves existing DNA data.
-    """
+def _save_dna_match(session, person_id: int, match: dict, match_details: dict, predicted_relationship: Optional[str], session_manager: SessionManager, my_uuid: str) -> str:
+    """Save DnaMatch record to database and enrich with ethnicity information when available."""
     # Use predicted_relationship from API call, fallback to match_details, then "Unknown"
     predicted_rel = predicted_relationship or match_details.get("predicted_relationship", "Unknown")
 
@@ -1468,26 +1379,14 @@ def _save_dna_match(session, person_id: int, match: dict, match_details: dict, p
         "from_my_mothers_side": match_details.get("from_my_mothers_side", False),
     }
 
-    # Add ethnicity data if available
-    if ethnicity_data:
-        ethnicity_metadata = load_ethnicity_metadata()
-        if ethnicity_metadata and ethnicity_metadata.get("tree_owner_regions"):
-            region_keys = [region["key"] for region in ethnicity_metadata["tree_owner_regions"]]
-            column_mapping = {region["key"]: region["column_name"] for region in ethnicity_metadata["tree_owner_regions"]}
+    existing_dna_match = _get_existing_dna_match_record(session, person_id)
 
-            # Extract percentages for tree owner's regions
-            ethnicity_percentages = extract_match_ethnicity_percentages(ethnicity_data, region_keys)
-
-            # Add ethnicity percentages to dna_data using column names
-            for region_key, percentage in ethnicity_percentages.items():
-                column_name = column_mapping.get(region_key)
-                if column_name:
-                    dna_data[column_name] = percentage
-
-    # Check if DnaMatch record already exists
-    if _dna_match_exists(session, person_id):
-        logger.debug(f"DnaMatch record already exists for person_id={person_id} - skipping (would save: cm={dna_data['cm_dna']}, rel={dna_data['predicted_relationship']})")
-        return "skipped"
+    if existing_dna_match is None or _needs_ethnicity_refresh(existing_dna_match):
+        ethnicity_payload = _build_ethnicity_payload(session_manager, my_uuid, match.get("uuid"))
+        if ethnicity_payload:
+            dna_data.update(ethnicity_payload)
+        elif _get_ethnicity_config()[0]:
+            logger.debug(f"No ethnicity payload generated for person_id={person_id}")
 
     result = create_or_update_dna_match(session, dna_data)
     logger.debug(f"DnaMatch result for person_id={person_id}: {result}")
@@ -1640,9 +1539,133 @@ def _test_error_handling() -> bool:
 # Functional API Tests (Require Live Session)
 # ==============================================
 
-# === SESSION SETUP FOR TESTS ===
-# Migrated to use centralized session_utils.py (reduces 128 lines to 1 import!)
-from session_utils import ensure_session_for_tests as _ensure_session_for_api_tests
+
+class _TestSessionCache:
+    """Container for test session state to avoid global statement warnings."""
+    session_manager: Optional[SessionManager] = None
+    uuid: Optional[str] = None
+
+
+_test_session_cache = _TestSessionCache()
+
+
+def _check_cached_session(reuse_session: bool) -> Optional[tuple[SessionManager, str]]:
+    """Check if cached session is valid and can be reused."""
+    if not reuse_session or _test_session_cache.session_manager is None or _test_session_cache.uuid is None:
+        return None
+    
+    if _test_session_cache.session_manager.is_sess_valid():
+        logger.info("♻️  Reusing existing authenticated session from previous test")
+        return _test_session_cache.session_manager, _test_session_cache.uuid
+    
+    logger.info("⚠️  Cached session invalid, creating new session...")
+    _test_session_cache.session_manager = None
+    _test_session_cache.uuid = None
+    return None
+
+
+def _initialize_session_manager() -> SessionManager:
+    """Create and initialize SessionManager with browser."""
+    logger.info("Step 1: Creating SessionManager...")
+    sm = SessionManager()
+    logger.info("✅ SessionManager created")
+    
+    logger.info("Step 2: Configuring browser requirement...")
+    sm.browser_manager.browser_needed = True
+    logger.info("✅ Browser marked as needed")
+    
+    logger.info("Step 3: Starting session (database + browser)...")
+    started = sm.start_sess("Action 6 API Tests")
+    if not started:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Failed to start session - browser initialization failed")
+    logger.info("✅ Session started successfully")
+    return sm
+
+
+def _perform_login_if_needed(sm: SessionManager) -> None:
+    """Check login status and log in if necessary."""
+    from utils import log_in, login_status
+    
+    logger.info("Step 5: Checking login status...")
+    login_check = login_status(sm, disable_ui_fallback=True)
+    
+    if login_check is True:
+        logger.info("✅ Already logged in")
+    elif login_check is False:
+        logger.info("⚠️  Not logged in - attempting login...")
+        login_result = log_in(sm)
+        if login_result != "LOGIN_SUCCEEDED":
+            sm.close_sess(keep_db=False)
+            raise AssertionError(f"Login failed: {login_result}")
+        logger.info("✅ Login successful")
+    else:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Login status check failed critically (returned None)")
+
+
+def _ensure_session_for_api_tests(reuse_session: bool = True) -> tuple[SessionManager, str]:
+    """Ensure session is ready for API tests. Returns (session_manager, my_uuid).
+
+    This function establishes a valid Ancestry session by:
+    1. Creating and initializing a SessionManager (or reusing existing one)
+    2. Starting the session (database + browser)
+    3. Loading saved cookies from previous session (if available)
+    4. Checking login status and logging in if needed
+    5. Ensuring session is ready with all identifiers
+    6. Validating UUID is available
+
+    Args:
+        reuse_session: If True, reuse existing session from previous test (default: True)
+
+    Raises AssertionError if session cannot be established (tests will be skipped).
+    """
+    # Check if cached session can be reused
+    cached = _check_cached_session(reuse_session)
+    if cached:
+        return cached
+
+    from utils import _load_login_cookies
+
+    logger.info("=" * 80)
+    logger.info("Setting up authenticated session for API tests...")
+    logger.info("=" * 80)
+
+    # Create and initialize session manager
+    sm = _initialize_session_manager()
+
+    # Step 4: Try to load saved cookies
+    logger.info("Step 4: Attempting to load saved cookies...")
+    cookies_loaded = _load_login_cookies(sm)
+    logger.info("✅ Loaded saved cookies from previous session" if cookies_loaded else "⚠️  No saved cookies found")
+
+    # Perform login if needed
+    _perform_login_if_needed(sm)
+
+    # Step 6: Ensure session is ready
+    logger.info("Step 6: Ensuring session is ready...")
+    ready = sm.ensure_session_ready("coord - API Tests", skip_csrf=True)
+    if not ready:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("Session not ready - cookies/identifiers missing")
+    logger.info("✅ Session ready")
+
+    # Step 7: Verify UUID is available
+    logger.info("Step 7: Verifying UUID is available...")
+    if not sm.my_uuid:
+        sm.close_sess(keep_db=False)
+        raise AssertionError("UUID not available - session initialization incomplete")
+    logger.info(f"✅ UUID available: {sm.my_uuid}")
+
+    logger.info("=" * 80)
+    logger.info("✅ Valid authenticated session established for API tests")
+    logger.info("=" * 80)
+
+    # Cache session for reuse
+    _test_session_cache.session_manager = sm
+    _test_session_cache.uuid = sm.my_uuid
+
+    return sm, sm.my_uuid
 
 
 def _test_match_list_api() -> bool:
@@ -1767,11 +1790,11 @@ def _test_profile_details_api() -> bool:
 
         match_profile = match_with_profile.get("matchProfile", {})
         profile_id = match_profile["userId"]
-        # match_uuid = match_with_profile["sampleId"]  # Not used in this test
+        match_uuid = match_with_profile["sampleId"]
         logger.info(f"Testing Profile Details API with profile: {profile_id}")
 
         # Fetch profile details
-        details = _fetch_profile_details(sm, profile_id)
+        details = _fetch_profile_details(sm, profile_id, match_uuid)
         assert isinstance(details, dict), "Profile details should be a dictionary"
 
         # Validate key fields
@@ -1929,130 +1952,123 @@ def _test_parallel_fetch_match_details() -> bool:
 
 def action6_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py using standardized TestSuite framework."""
-    import os
+    import warnings
 
-    from test_framework import TestSuite
-
-    # Check if we should skip live API tests (set by run_all_tests.py when running in parallel)
-    skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
+    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Action 6 - DNA Match Gatherer", "action6_gather.py")
     suite.start_suite()
 
     # === CODE QUALITY & STRUCTURE TESTS ===
-    suite.run_test(
-        "Database Schema Validation",
-        _test_database_schema,
-        test_summary="Validates database schema uses correct attribute names for primary and foreign keys",
-        functions_tested="Person, DnaMatch, FamilyTree (database models)",
-        method_description="Check that Person model has 'id' attribute (not 'people_id'), and DnaMatch/FamilyTree have 'people_id' foreign keys using hasattr()",
-        expected_outcome="Person.id exists, Person.people_id does not exist, DnaMatch.people_id and FamilyTree.people_id exist",
-    )
+    with suppress_logging():
+        suite.run_test(
+            "Database Schema Validation",
+            _test_database_schema,
+            "Validates Person model has 'id' attribute and DnaMatch/FamilyTree have 'people_id' foreign keys.",
+            "Check database model attributes for correct naming conventions.",
+            "Person model uses 'id', DnaMatch and FamilyTree use 'people_id' foreign key.",
+        )
 
-    suite.run_test(
-        "Person ID Attribute Fix",
-        _test_person_id_attribute_fix,
-        test_summary="Validates function returns person.id instead of deprecated person.people_id",
-        functions_tested="_get_person_id_by_uuid()",
-        method_description="Inspect function source code using inspect.getsource() to verify it returns 'person.id if person else None'",
-        expected_outcome="Source contains 'return person.id' and does not contain buggy 'return person.people_id'",
-    )
+        suite.run_test(
+            "Person ID Attribute Fix",
+            _test_person_id_attribute_fix,
+            "Validates _get_person_id_by_uuid returns person.id, not person.people_id.",
+            "Inspect function source code for correct attribute access.",
+            "Function returns person.id and old buggy code is not present.",
+        )
 
-    suite.run_test(
-        "Thread-Safe Parallel Processing",
-        _test_parallel_function_thread_safety,
-        test_summary="Validates parallel processing function is thread-safe and doesn't use database session",
-        functions_tested="_fetch_match_details_parallel()",
-        method_description="Check function signature has no 'session' parameter using inspect.signature() and verify thread-safety documentation exists",
-        expected_outcome="Parameters are ['match', 'session_manager', 'my_uuid'] and source mentions concurrency/threads",
-    )
+        suite.run_test(
+            "Thread-Safe Parallel Processing",
+            _test_parallel_function_thread_safety,
+            "Validates _fetch_match_details_parallel has no database session parameter.",
+            "Check function signature and thread-safety documentation.",
+            "Function signature is correct and thread-safety is documented.",
+        )
 
-    suite.run_test(
-        "Bounds Checking for Index Errors",
-        _test_bounds_checking,
-        test_summary="Validates bounds checking prevents IndexError when accessing lists/tuples",
-        functions_tested="_sync_cookies_and_get_csrf(), _build_relationship_path(), various string operations",
-        method_description="Search file content for safe access patterns like 'parts[0] if parts else None' using conditional expressions",
-        expected_outcome="CSRF token extraction, kinship persons access, and string operations all use bounds checking",
-    )
+        suite.run_test(
+            "Bounds Checking for Index Errors",
+            _test_bounds_checking,
+            "Validates bounds checking is in place for list/tuple access.",
+            "Search for safe access patterns in CSRF token, kinship persons, and string operations.",
+            "All bounds checking patterns are present in the code.",
+        )
 
-    suite.run_test(
-        "Error Handling Coverage",
-        _test_error_handling,
-        test_summary="Validates comprehensive error handling with try/except blocks in critical functions",
-        functions_tested="_get_person_id_by_uuid(), _fetch_match_details_parallel(), _process_batch()",
-        method_description="Inspect source code using inspect.getsource() to verify try/except/finally blocks exist",
-        expected_outcome="All critical functions have appropriate error handling (try/except, some with finally)",
-    )
+        suite.run_test(
+            "Error Handling Coverage",
+            _test_error_handling,
+            "Validates comprehensive error handling in critical functions.",
+            "Check for try/except blocks in _get_person_id_by_uuid, _fetch_match_details_parallel, and _process_batch.",
+            "All functions have appropriate error handling in place.",
+        )
 
     # === FUNCTIONAL API TESTS (Require Live Session) ===
-    # Skip API tests if running in parallel mode (set by run_all_tests.py)
-    if not skip_live_api_tests:
+    # Note: These tests use live authentication and API calls, so logging is visible
+    with suppress_logging():
         suite.run_test(
             "Match List API",
             _test_match_list_api,
-            test_summary="Validates Match List API returns paginated DNA match data with correct structure",
-            functions_tested="fetch_match_list_page(), nav_to_dna_matches_page(), get_csrf_token_for_dna_matches()",
-            method_description="Navigate to DNA matches page, get CSRF token, call API, validate response contains matchList with sampleId/displayName/sharedCentimorgans/numSharedSegments",
-            expected_outcome="API returns dict with 'matchList' array containing 20+ matches, each with required fields (sampleId, matchProfile, relationship)",
+            "Tests fetching match list from Ancestry API with pagination support.",
+            "Call fetch_match_list_page and validate response structure and match data.",
+            "Match List API returns valid matches with uuid, username, cm, and segments.",
         )
 
         suite.run_test(
             "Match Details API",
             _test_match_details_api,
-            test_summary="Validates Match Details API returns additional DNA data for specific match",
-            functions_tested="_fetch_match_details()",
-            method_description="Get match UUID from Match List, call Match Details API, validate response contains shared_segments/longest_shared_segment/predicted_relationship",
-            expected_outcome="API returns dict with DNA details including segment counts, longest segment, meiosis, and relationship prediction",
+            "Tests fetching detailed match information including relationship predictions.",
+            "Call _fetch_match_details and validate shared segments and relationship data.",
+            "Match Details API returns shared_segments, longest_shared_segment, and predicted_relationship.",
         )
 
         suite.run_test(
             "Profile Details API",
             _test_profile_details_api,
-            test_summary="Validates Profile Details API returns user profile information for matches with public profiles",
-            functions_tested="_fetch_profile_details()",
-            method_description="Find match with userId, call Profile Details API, validate response contains last_logged_in and contactable fields",
-            expected_outcome="API returns dict with LastLoginDate (parsed to datetime) and IsContactable (boolean) fields",
+            "Tests fetching profile details for matches with public profiles.",
+            "Call _fetch_profile_details and validate last_logged_in and contactable fields.",
+            "Profile Details API returns last_logged_in and contactable status when available.",
         )
 
         suite.run_test(
             "Badge Details API",
             _test_badge_details_api,
-            test_summary="Validates Badge Details API returns family tree data for matches in user's tree",
-            functions_tested="_fetch_badge_details(), fetch_in_tree_status()",
-            method_description="Check in-tree status for matches, find match in tree, call Badge Details API, validate response contains cfpid/person_name_in_tree/birth_year",
-            expected_outcome="API returns dict with personBadged object containing tree-specific data (personId, firstName, birthYear)",
+            "Tests fetching tree badge details for matches in user's tree.",
+            "Call _fetch_badge_details and validate response structure.",
+            "Badge Details API returns tree data for matches in user's family tree.",
         )
 
         suite.run_test(
             "Relationship Probability API",
             _test_relationship_probability_api,
-            test_summary="Validates Relationship Probability API returns predicted relationship with confidence percentage",
-            functions_tested="_fetch_relationship_probability()",
-            method_description="Get match UUID, call Relationship Probability API using cloudscraper, validate response format",
-            expected_outcome="API returns formatted string like 'mother [99.0%]' or None if data unavailable",
+            "Tests fetching predicted relationship from Relationship Probability API.",
+            "Call _fetch_relationship_probability and validate relationship string format.",
+            "Relationship Probability API returns formatted relationship or None if unavailable.",
         )
 
         suite.run_test(
             "Parallel Match Details Fetching",
             _test_parallel_fetch_match_details,
-            test_summary="Validates parallel processing of match details using ThreadPoolExecutor with 2 workers",
-            functions_tested="_fetch_match_details_parallel(), _refine_match_list()",
-            method_description="Refine match list, submit 3 matches to ThreadPoolExecutor, collect results, validate all complete successfully",
-            expected_outcome="All 3 parallel fetch operations complete and return dict results with match_details/profile_details/badge_details/predicted_rel",
+            "Tests parallel fetching of match details using ThreadPoolExecutor.",
+            "Fetch details for multiple matches in parallel and validate all results.",
+            "Parallel fetching completes successfully with all match details retrieved.",
         )
-    else:
-        logger.info("⏭️  Skipping live API tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
     result = suite.finish_suite()
 
-    # Clean up test session using centralized session_utils
-    try:
-        from session_utils import close_cached_session
-        close_cached_session(keep_db=False)
-    except Exception:
-        # Silently ignore cleanup errors
-        pass
+    # Clean up test session if it exists
+    if _test_session_cache.session_manager is not None:
+        try:
+            logger.info("Cleaning up test session...")
+            # Suppress browser cleanup warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ResourceWarning)
+                warnings.filterwarnings("ignore", message=".*WinError.*")
+                _test_session_cache.session_manager.close_sess(keep_db=False)
+            logger.info("✅ Test session cleaned up successfully")
+        except Exception:
+            # Silently ignore cleanup errors - they're not critical
+            pass
+        finally:
+            _test_session_cache.session_manager = None
 
     return result
 
@@ -2064,28 +2080,8 @@ def run_comprehensive_tests() -> bool:
 
 if __name__ == "__main__":
     import sys
-    import warnings
 
-    # Suppress browser cleanup warnings globally
-    warnings.filterwarnings("ignore", category=ResourceWarning)
-    warnings.filterwarnings("ignore", message=".*WinError.*")
-
-    # Suppress stderr for undetected_chromedriver cleanup exceptions
-    # This prevents the "OSError: [WinError 6] The handle is invalid" message
-    original_stderr = sys.stderr
-
-    try:
-        print("🧪 Running Action 6 comprehensive test suite...")
-        success = run_comprehensive_tests()
-
-        # Redirect stderr to devnull before exit to suppress Chrome destructor exceptions
-        from pathlib import Path
-        devnull_path = Path('/dev/null' if sys.platform != 'win32' else 'nul')
-        sys.stderr = devnull_path.open('w')
-        sys.exit(0 if success else 1)
-    except Exception as e:
-        # Restore stderr for any unexpected errors
-        sys.stderr = original_stderr
-        print(f"Unexpected error: {e}")
-        sys.exit(1)
+    print("🧪 Running Action 6 comprehensive test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 

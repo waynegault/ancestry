@@ -1943,6 +1943,8 @@ def ai_interface_module_tests() -> bool:
         # === INTEGRATION TESTS (Require Live Session) ===
         try:
             sm = SessionManager()
+            # Mark browser as NOT needed for AI-only tests
+            sm.browser_manager.browser_needed = False
             sm.start_sess("AI Interface Tests")
 
             suite.run_test(

@@ -64,6 +64,61 @@ class BrowserManager:
 
         logger.debug("BrowserManager initialized")
 
+    def _log_browser_initialization_error(self) -> None:
+        """Log detailed browser initialization error message."""
+        logger.error("WebDriver initialization failed (init_webdvr returned None).")
+        logger.error("=" * 80)
+        logger.error("BROWSER INITIALIZATION FAILED")
+        logger.error("=" * 80)
+        logger.error("Possible causes:")
+        logger.error("  1. Chrome is already running - close all Chrome instances")
+        logger.error("  2. Chrome profile is corrupted - delete/rename profile")
+        logger.error("  3. Chrome/ChromeDriver version mismatch")
+        logger.error("  4. Security software blocking Chrome")
+        logger.error("")
+        logger.error("Run diagnostics: python diagnose_chrome.py")
+        logger.error("=" * 80)
+
+    def _verify_browser_window(self) -> bool:
+        """Verify browser window is actually open."""
+        if not self.driver:
+            return False
+        try:
+            _ = self.driver.current_url
+            return True
+        except Exception as verify_err:
+            logger.error(f"Browser window closed immediately after initialization: {verify_err}")
+            logger.error("This indicates a critical Chrome/ChromeDriver issue")
+            logger.error("Run diagnostics: python diagnose_chrome.py")
+            self.close_browser()
+            return False
+
+    def _load_saved_cookies(self) -> None:
+        """Try to load saved cookies after navigating to base URL."""
+        try:
+            from utils import _load_login_cookies
+            # Create a minimal session manager-like object for cookie loading
+            class CookieLoader:
+                def __init__(self, driver: Any) -> None:
+                    self.driver = driver
+
+            cookie_loader = CookieLoader(self.driver)
+            if _load_login_cookies(cookie_loader):  # type: ignore[arg-type] - CookieLoader has compatible .driver attribute
+                logger.debug("Saved login cookies loaded successfully")
+            else:
+                logger.debug("No saved cookies to load or loading failed")
+        except Exception as e:
+            logger.warning(f"Error loading saved cookies: {e}")
+
+    def _minimize_browser_window(self) -> None:
+        """Minimize browser window after launch."""
+        try:
+            if self.driver:
+                self.driver.minimize_window()
+                logger.debug("Browser window minimized immediately after launch")
+        except Exception as e:
+            logger.debug(f"Unable to minimize browser window: {e}")
+
     def start_browser(self, action_name: Optional[str] = None) -> bool:
         """
         Start the browser session.
@@ -83,60 +138,24 @@ class BrowserManager:
             self.driver = init_webdvr()
 
             if not self.driver:
-                logger.error(
-                    "WebDriver initialization failed (init_webdvr returned None)."
-                )
-                logger.error("=" * 80)
-                logger.error("BROWSER INITIALIZATION FAILED")
-                logger.error("=" * 80)
-                logger.error("Possible causes:")
-                logger.error("  1. Chrome is already running - close all Chrome instances")
-                logger.error("  2. Chrome profile is corrupted - delete/rename profile")
-                logger.error("  3. Chrome/ChromeDriver version mismatch")
-                logger.error("  4. Security software blocking Chrome")
-                logger.error("")
-                logger.error("Run diagnostics: python diagnose_chrome.py")
-                logger.error("=" * 80)
+                self._log_browser_initialization_error()
                 return False
 
             # Verify browser is actually open
-            try:
-                _ = self.driver.current_url
-            except Exception as verify_err:
-                logger.error(f"Browser window closed immediately after initialization: {verify_err}")
-                logger.error("This indicates a critical Chrome/ChromeDriver issue")
-                logger.error("Run diagnostics: python diagnose_chrome.py")
-                self.close_browser()
+            if not self._verify_browser_window():
                 return False
 
             # Navigate to base URL to stabilize
-            logger.debug(
-                f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize..."
-            )
-
+            logger.debug(f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize...")
             if not nav_to_page(self.driver, config_schema.api.base_url):
-                logger.error(
-                    f"Failed to navigate to base URL: {config_schema.api.base_url}"
-                )
+                logger.error(f"Failed to navigate to base URL: {config_schema.api.base_url}")
                 logger.error("Browser may have closed during navigation")
                 self.close_browser()
                 return False
 
-            # Try to load saved cookies after navigating to base URL
-            try:
-                from utils import _load_login_cookies
-                # Create a minimal session manager-like object for cookie loading
-                class CookieLoader:
-                    def __init__(self, driver: Any) -> None:
-                        self.driver = driver
-
-                cookie_loader = CookieLoader(self.driver)
-                if _load_login_cookies(cookie_loader):  # type: ignore[arg-type] - CookieLoader has compatible .driver attribute
-                    logger.debug("Saved login cookies loaded successfully")
-                else:
-                    logger.debug("No saved cookies to load or loading failed")
-            except Exception as e:
-                logger.warning(f"Error loading saved cookies: {e}")
+            # Load saved cookies and minimize window
+            self._load_saved_cookies()
+            self._minimize_browser_window()
 
             # Mark as live and set timing
             self.driver_live = True

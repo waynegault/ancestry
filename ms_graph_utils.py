@@ -140,7 +140,7 @@ if CACHE_FILEPATH:
         if CACHE_FILEPATH.exists():
             logger.debug(f"Loading MSAL cache from: {CACHE_FILEPATH}")
             persistent_cache.deserialize(CACHE_FILEPATH.read_text(encoding="utf-8"))
-            logger.info("MSAL token cache loaded successfully.")
+            logger.debug("MSAL token cache loaded successfully.")
         else:
             logger.debug("MSAL cache file not found. Starting with empty cache.")
     except Exception as e:
@@ -608,8 +608,8 @@ def test_edge_cases():
 
         # Test handling of None device flow
         result = acquire_token_device_flow()
-        # Should handle gracefully
-        assert result is None or isinstance(result, dict)
+        # Should handle gracefully - returns None or str (access token)
+        assert result is None or isinstance(result, str)
 
     # Test file operations error handling
     with patch("builtins.open", side_effect=PermissionError("Test permission error")):

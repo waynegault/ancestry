@@ -113,7 +113,7 @@ class DatabaseManager:
         self._max_pool_size = 50
         self._current_pool_size = self._base_pool_size
 
-        logger.debug(f"Enhanced DatabaseManager initialized with path: {self.db_path} (Phase 7.3.2)")
+        logger.debug(f"Enhanced DatabaseManager initialized with path: {self.db_path}")
 
     def _calculate_optimal_pool_size(self, base_size: int) -> int:
         """Calculate optimal pool size based on performance metrics."""

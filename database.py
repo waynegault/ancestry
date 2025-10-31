@@ -2366,6 +2366,65 @@ def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum]) -> 
     return person_update_mappings
 
 
+def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]], log_prefix: str) -> int:
+    """Process and insert conversation logs with metrics updates."""
+    if not log_upserts:
+        return 0
+    
+    logger.debug(f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for insert...")
+    log_inserts_mappings = _prepare_conversation_log_data(log_upserts, log_prefix)
+
+    if not log_inserts_mappings:
+        return 0
+
+    logger.debug(f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries...")
+    sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)  # type: ignore[arg-type]
+    processed_logs_count = len(log_inserts_mappings)
+    logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
+
+    # Update conversation_metrics for each person with a new log entry
+    from conversation_analytics import update_conversation_metrics
+    for log_data in log_inserts_mappings:
+        people_id = log_data.get("people_id")
+        direction = log_data.get("direction")
+        if people_id and direction:
+            try:
+                update_conversation_metrics(
+                    session=sess,
+                    people_id=people_id,
+                    message_sent=(direction == MessageDirectionEnum.OUT),
+                    message_received=(direction == MessageDirectionEnum.IN),
+                )
+            except Exception as metrics_err:
+                logger.warning(f"{log_prefix}Failed to update conversation_metrics for person {people_id}: {metrics_err}")
+    
+    return processed_logs_count
+
+
+def _process_person_updates(sess: Session, person_updates: dict[int, PersonStatusEnum], log_prefix: str) -> int:
+    """Process and update person status records."""
+    if not person_updates:
+        return 0
+    
+    logger.debug(f"{log_prefix}Preparing {len(person_updates)} Person status updates...")
+    person_update_mappings = _prepare_person_update_data(person_updates)
+
+    if not person_update_mappings:
+        logger.warning(f"{log_prefix}No valid Person updates prepared for bulk operation.")
+        return 0
+
+    logger.debug(f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons...")
+    try:
+        from sqlalchemy import inspect
+        sess.bulk_update_mappings(inspect(Person), person_update_mappings)
+        updated_person_count = len(person_update_mappings)
+        logger.debug(f"{log_prefix}Bulk update successful for {updated_person_count} persons.")
+        return updated_person_count
+    except Exception as bulk_person_err:
+        logger.error(f"{log_prefix}Error during Person bulk update: {bulk_person_err}", exc_info=True)
+        raise
+
+
 def commit_bulk_data(
     session: Session,
     log_upserts: list[dict[str, Any]],
@@ -2397,54 +2456,11 @@ def commit_bulk_data(
     try:
         with db_transn(session) as sess:
             logger.debug(f"{log_prefix}Entered transaction block.")
-            processed_logs_count = 0
-            updated_person_count = 0
-
-            # Prepare and insert conversation logs
-            if log_upserts:
-                logger.debug(f"{log_prefix}Preparing {len(log_upserts)} ConversationLog entries for insert...")
-                log_inserts_mappings = _prepare_conversation_log_data(log_upserts, log_prefix)
-
-                if log_inserts_mappings:
-                    logger.debug(f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries...")
-                    sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)  # type: ignore[arg-type]
-                    processed_logs_count = len(log_inserts_mappings)
-                    logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
-
-                    # Update conversation_metrics for each person with a new log entry
-                    from conversation_analytics import update_conversation_metrics
-                    for log_data in log_inserts_mappings:
-                        people_id = log_data.get("people_id")
-                        direction = log_data.get("direction")
-                        if people_id and direction:
-                            try:
-                                update_conversation_metrics(
-                                    session=sess,
-                                    people_id=people_id,
-                                    message_sent=(direction == MessageDirectionEnum.OUT),
-                                    message_received=(direction == MessageDirectionEnum.IN),
-                                )
-                            except Exception as metrics_err:
-                                logger.warning(f"{log_prefix}Failed to update conversation_metrics for person {people_id}: {metrics_err}")
-
-            # Prepare and update persons
-            if person_updates:
-                logger.debug(f"{log_prefix}Preparing {len(person_updates)} Person status updates...")
-                person_update_mappings = _prepare_person_update_data(person_updates)
-
-                if person_update_mappings:
-                    logger.debug(f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons...")
-                    try:
-                        from sqlalchemy import inspect
-                        sess.bulk_update_mappings(inspect(Person), person_update_mappings)
-                        updated_person_count = len(person_update_mappings)
-                        logger.debug(f"{log_prefix}Bulk update successful for {updated_person_count} persons.")
-                    except Exception as bulk_person_err:
-                        logger.error(f"{log_prefix}Error during Person bulk update: {bulk_person_err}", exc_info=True)
-                        raise
-                else:
-                    logger.warning(f"{log_prefix}No valid Person updates prepared for bulk operation.")
-
+            
+            # Process conversation logs and person updates
+            processed_logs_count = _process_conversation_logs(sess, log_upserts, log_prefix)
+            updated_person_count = _process_person_updates(sess, person_updates, log_prefix)
+            
             logger.debug(f"{log_prefix}Exiting transaction block (commit follows).")
 
         logger.debug(f"{log_prefix}Transaction committed successfully via db_transn.")

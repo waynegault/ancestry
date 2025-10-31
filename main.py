@@ -389,11 +389,11 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
     except Exception as mem_err:
         mem_log = f"Memory usage unavailable: {mem_err}"
 
-    logger.info("------------------------------------------")
+    logger.info(f"{'='*45}")
     logger.info(f"Action {choice} ({action_name}) finished.")
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
-    logger.info("------------------------------------------\n")
+    logger.info(f"{'='*45}\n")
     return duration, mem_used
 
 
@@ -441,9 +441,9 @@ def exec_actn(
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
 
-    logger.info("------------------------------------------")
+    logger.info(f"{'='*45}")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info("------------------------------------------\n")
+    logger.info(f"{'='*45}\n")
 
     action_result = None
     action_exception = None

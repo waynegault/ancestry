@@ -30,6 +30,10 @@ else:
     # Runtime import to avoid circular dependency issues
     SessionManager = None
 
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+
+logger = setup_module(globals(), __name__)
+
 # === STANDARD LIBRARY IMPORTS ===
 import base64  # For make_ube
 import binascii  # For make_ube
@@ -86,8 +90,8 @@ class ApiRequestConfig:
     # HTTP method and data
     method: str = "GET"
     data: Optional[dict] = None
-    json_data: Optional[Union[dict, list]] = None
-    json: Optional[Union[dict, list]] = None
+    json_data: Optional[dict] = None
+    json: Optional[dict] = None
 
     # Headers and authentication
     headers: Optional[dict[str, str]] = None
@@ -992,14 +996,11 @@ class CircuitBreaker:
 # End of CircuitBreaker
 
 # Global RateLimiter singleton instance
-class _RLState:
-    instance: Optional['RateLimiter'] = None
-
-_RATE_LIMITER_STATE = _RLState()
+_global_rate_limiter: Optional['RateLimiter'] = None
 
 def get_rate_limiter() -> 'RateLimiter':
     """
-    Get or create the RateLimiter singleton instance without using 'global'.
+    Get or create the global RateLimiter singleton instance.
 
     This ensures rate limiting state (delay, metrics, circuit breaker) is preserved
     across multiple SessionManager instances, preventing redundant initialization
@@ -1008,10 +1009,11 @@ def get_rate_limiter() -> 'RateLimiter':
     Returns:
         RateLimiter: The global singleton instance
     """
-    if _RATE_LIMITER_STATE.instance is None:
-        _RATE_LIMITER_STATE.instance = RateLimiter()
-        logger.debug("RateLimiter singleton created")
-    return _RATE_LIMITER_STATE.instance
+    global _global_rate_limiter  # noqa: PLW0603
+    if _global_rate_limiter is None:
+        _global_rate_limiter = RateLimiter()
+        logger.debug("Global RateLimiter singleton created")
+    return _global_rate_limiter
 
 # ------------------------------
 # Rate Limiting (Remains in utils.py)
@@ -1384,38 +1386,37 @@ class RateLimiter:
         """Print a formatted summary of rate limiter metrics."""
         metrics = self.get_metrics()
         cb_metrics = self.circuit_breaker.get_metrics()
+        logger.info("-" * 45)
+        logger.info("Rate Limiter Metrics")
+        logger.info("-" * 45)
+        logger.info(f"Total Requests:        {metrics['total_requests']}")
+        logger.info(f"Successful Requests:   {metrics['successful_requests']}")
+        logger.info(f"Failed Requests:       {metrics['failed_requests']}")
+        logger.info(f"429 Errors:            {metrics['error_429_count']}")
 
-        logger.debug("=" * 80)
-        logger.debug("RATE LIMITER METRICS SUMMARY")
-        logger.debug("=" * 80)
-        logger.debug(f"Total Requests:        {metrics['total_requests']}")
-        logger.debug(f"Successful Requests:   {metrics['successful_requests']}")
-        logger.debug(f"Failed Requests:       {metrics['failed_requests']}")
-        logger.debug(f"429 Errors:            {metrics['error_429_count']}")
-        logger.debug("")
-        logger.debug(f"Total Wait Time:       {metrics['total_wait_time']:.2f}s")
-        logger.debug(f"Average Wait Time:     {metrics['avg_wait_time']:.3f}s")
-        logger.debug(f"Max Wait Time:         {metrics['max_wait_time']:.3f}s")
-        logger.debug(f"Min Wait Time:         {metrics['min_wait_time']:.3f}s")
-        logger.debug("")
-        logger.debug(f"Token Bucket Empty:    {metrics['token_bucket_empty_count']} times")
-        logger.debug(f"Delay Increases:       {metrics['delay_increases']}")
-        logger.debug(f"Delay Decreases:       {metrics['delay_decreases']}")
-        logger.debug("")
-        logger.debug(f"Configured RPS:        {metrics['requests_per_second']:.2f}/s")
-        logger.debug(f"Effective RPS:         {metrics['effective_rps']:.2f}/s")
-        logger.debug(f"Current Delay:         {metrics['current_delay']:.3f}s")
-        logger.debug("")
-        logger.debug("CIRCUIT BREAKER METRICS")
-        logger.debug(f"Current State:         {self.circuit_breaker.get_state()}")
-        logger.debug(f"Total Requests:        {cb_metrics['total_requests']}")
-        logger.debug(f"Blocked Requests:      {cb_metrics['blocked_requests']}")
-        logger.debug(f"Circuit Opens:         {cb_metrics['circuit_opens']}")
-        logger.debug(f"Circuit Closes:        {cb_metrics['circuit_closes']}")
-        logger.debug(f"Half-Open Successes:   {cb_metrics['half_open_successes']}")
-        logger.debug(f"Half-Open Failures:    {cb_metrics['half_open_failures']}")
-        logger.debug(f"Uptime:                {metrics['uptime_seconds']:.1f}s")
-        logger.debug("=" * 80)
+        logger.info(f"Total Wait Time:       {metrics['total_wait_time']:.2f}s")
+        logger.info(f"Average Wait Time:     {metrics['avg_wait_time']:.3f}s")
+        logger.info(f"Max Wait Time:         {metrics['max_wait_time']:.3f}s")
+        logger.info(f"Min Wait Time:         {metrics['min_wait_time']:.3f}s")
+
+        logger.info(f"Token Bucket Empty:    {metrics['token_bucket_empty_count']} times")
+        logger.info(f"Delay Increases:       {metrics['delay_increases']}")
+        logger.info(f"Delay Decreases:       {metrics['delay_decreases']}")
+
+        logger.info(f"Configured RPS:        {metrics['requests_per_second']:.2f}/s")
+        logger.info(f"Effective RPS:         {metrics['effective_rps']:.2f}/s")
+        logger.info(f"Current Delay:         {metrics['current_delay']:.3f}s")
+        logger.info("-" * 45)
+        logger.info("Circuit Breaker Metrics")
+        logger.info("-" * 45)
+        logger.info(f"Current State:         {self.circuit_breaker.get_state()}")
+        logger.info(f"Total Requests:        {cb_metrics['total_requests']}")
+        logger.info(f"Blocked Requests:      {cb_metrics['blocked_requests']}")
+        logger.info(f"Circuit Opens:         {cb_metrics['circuit_opens']}")
+        logger.info(f"Circuit Closes:        {cb_metrics['circuit_closes']}")
+        logger.info(f"Half-Open Successes:   {cb_metrics['half_open_successes']}")
+        logger.info(f"Half-Open Failures:    {cb_metrics['half_open_failures']}")
+        logger.info(f"Uptime:                {metrics['uptime_seconds']:.1f}s")
 
     # End of print_metrics_summary
 
@@ -1692,16 +1693,10 @@ def _perform_cookie_sync(
     """
     # Only log on first attempt or if forced to reduce verbosity
     if attempt == 1 or force_sync:
-        try:
-            if _cookie_sync_cache.get("last_sync_time", 0.0) == 0.0:
-                logger.debug(f"[{api_description}] Syncing cookies from browser (initial sync)")
-            else:
-                logger.debug(
-                    f"[{api_description}] Syncing cookies from browser "
-                    f"(age {time_since_last_sync:.1f}s; threshold {_cookie_sync_cache.get('sync_interval', 30.0):.0f}s)"
-                )
-        except Exception:
-            logger.debug(f"[{api_description}] Syncing cookies from browser")
+        logger.debug(
+            f"[{api_description}] Syncing cookies from browser "
+            f"(cache expired, last sync {time_since_last_sync:.1f}s ago)"
+        )
 
     # Use the API manager's sync_cookies_from_browser method with session_manager for recovery
     sync_success = session_manager.api_manager.sync_cookies_from_browser(
@@ -2375,8 +2370,8 @@ def _api_req(
     session_manager: SessionManager,  # type: ignore
     method: str = "GET",
     data: Optional[dict] = None,
-    json_data: Optional[Union[dict, list]] = None,
-    json: Optional[Union[dict, list]] = None,
+    json_data: Optional[dict] = None,
+    json: Optional[dict] = None,
     use_csrf_token: bool = True,
     headers: Optional[dict[str, str]] = None,
     referer_url: Optional[str] = None,
@@ -4115,7 +4110,7 @@ def prevent_system_sleep() -> Optional[Any]:
             ctypes.windll.kernel32.SetThreadExecutionState(
                 ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
             )
-            logger.debug("Sleep prevention enabled (Windows) - system will stay awake")
+            logger.debug("💤 Sleep prevention enabled (Windows) - system will stay awake")
             return True
         except Exception as e:
             logger.warning(f"Could not prevent sleep on Windows: {e}")
@@ -4126,7 +4121,7 @@ def prevent_system_sleep() -> Optional[Any]:
             import subprocess
             # Use caffeinate to prevent sleep
             process = subprocess.Popen(['caffeinate', '-d'])
-            logger.info("💤 Sleep prevention enabled (macOS) - caffeinate running")
+            logger.debug("💤 Sleep prevention enabled (macOS) - caffeinate running")
             return process
         except Exception as e:
             logger.warning(f"Could not prevent sleep on macOS: {e}")
@@ -4169,14 +4164,14 @@ def restore_system_sleep(previous_state: Any) -> None:
                 ES_CONTINUOUS = 0x80000000
                 # Reset to normal
                 ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
-                logger.debug("Sleep prevention disabled - normal power management restored")
+                logger.debug("💤 Sleep prevention disabled - normal power management restored")
         except Exception as e:
             logger.warning(f"Could not restore sleep settings on Windows: {e}")
 
     elif system == "Darwin" and previous_state:  # macOS
         try:
             previous_state.terminate()
-            logger.info("💤 Sleep prevention disabled (macOS) - caffeinate terminated")
+            logger.debug("💤 Sleep prevention disabled (macOS) - caffeinate terminated")
         except Exception as e:
             logger.warning(f"Could not restore sleep settings on macOS: {e}")
     # Linux and other platforms don't need cleanup

@@ -1698,7 +1698,7 @@ class ResourceManager:
                 logger.warning(f"Failed to cleanup resource {resource_name}: {cleanup_err}")
 
         self.allocated_resources.clear()
-       
+
     def periodic_maintenance(self) -> None:
         """Perform periodic maintenance operations."""
         self.operation_count += 1

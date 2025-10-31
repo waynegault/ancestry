@@ -1033,11 +1033,9 @@ class InboxProcessor:
         print()
 
         # Process inbox without progress bar (batch-level logging only, like Action 6)
-        result = self._process_inbox_loop(
+        return self._process_inbox_loop(
             session, comp_conv_id, comp_ts, my_pid_lower
         )
-
-        return result
 
     def get_statistics(self) -> dict[str, Any]:
         """Return processing statistics for monitoring and debugging."""
@@ -1196,9 +1194,7 @@ class InboxProcessor:
         self, api_conv_id: Optional[str], profile_id_upper: str
     ) -> bool:
         """Check if conversation should be skipped due to invalid data."""
-        if not api_conv_id or profile_id_upper == "UNKNOWN":
-            return True
-        return False
+        return not api_conv_id or profile_id_upper == "UNKNOWN"
 
     def _check_comparator_match(
         self,
