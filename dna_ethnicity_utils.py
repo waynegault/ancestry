@@ -149,7 +149,12 @@ def fetch_ethnicity_region_names(
     )
 
     if not response or not isinstance(response, dict):
-        logger.error(f"Failed to fetch ethnicity region names. Response type: {type(response)}, Response: {response}")
+        error_msg = f"Failed to fetch ethnicity region names. Response type: {type(response)}"
+        if response and hasattr(response, 'status_code'):
+            error_msg += f", Status: {response.status_code}"  # type: ignore[union-attr]
+        if response and hasattr(response, 'text'):
+            error_msg += f", Body: {response.text[:200]}"  # type: ignore[union-attr]
+        logger.error(error_msg)
         return None
 
     logger.info(f"Successfully fetched {len(response)} ethnicity region names")

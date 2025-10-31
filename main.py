@@ -997,17 +997,20 @@ def reset_db_actn(session_manager: SessionManager, *_):
             _seed_message_templates(recreation_session)
 
             # Step 4: Initialize ethnicity tracking system
-            # Use the main session_manager (which has browser/auth) for API calls
+            # Ensure session is authenticated before calling ethnicity initialization
             logger.debug("Initializing ethnicity tracking system...")
             try:
-                # Ensure browser session is ready for API calls
-                if not session_manager.ensure_session_ready("Database Reset - Ethnicity Initialization", skip_csrf=True):
-                    logger.warning("Session not ready for ethnicity initialization - skipping")
-                elif not _initialize_ethnicity_system(session_manager, temp_manager):
+                from session_utils import get_authenticated_session
+                # Authenticate the session if not already authenticated
+                authenticated_sm, _ = get_authenticated_session(
+                    action_name="Database Reset - Ethnicity Initialization",
+                    skip_csrf=True
+                )
+                if not _initialize_ethnicity_system(authenticated_sm, temp_manager):
                     logger.warning("Failed to initialize ethnicity tracking system - continuing anyway")
-            except Exception as ethnicity_error:
-                logger.warning(f"Could not initialize ethnicity system: {ethnicity_error}")
-                logger.info("Ethnicity data will be collected during first Action 6 run")
+            except Exception as auth_error:
+                logger.warning(f"Could not authenticate session for ethnicity initialization: {auth_error}")
+                logger.warning("Skipping ethnicity system initialization - you can run Action 6 to initialize it later")
 
             reset_successful = True
             logger.info("Database reset completed successfully.")
