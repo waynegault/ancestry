@@ -111,13 +111,40 @@ class BrowserManager:
             logger.warning(f"Error loading saved cookies: {e}")
 
     def _minimize_browser_window(self) -> None:
-        """Minimize browser window after launch."""
+        """
+        Minimize browser window after launch.
+        
+        Note: Small delay added to ensure Chrome is fully initialized before minimizing.
+        This prevents Chrome 142+ from closing immediately on some Windows configurations.
+        """
+        if not self.driver:
+            logger.warning("Cannot minimize browser: driver not initialized")
+            return
+
+        # Small delay to let Chrome stabilize (prevents immediate closure on Chrome 142+)
+        import time
+        time.sleep(0.5)
+
         try:
-            if self.driver:
-                self.driver.minimize_window()
-                logger.debug("Browser window minimized immediately after launch")
-        except Exception as e:
-            logger.debug(f"Unable to minimize browser window: {e}")
+            # Primary method: use WebDriver's minimize_window()
+            self.driver.minimize_window()
+            logger.info("✅ Browser window minimized successfully")
+            return
+        except Exception as primary_error:
+            logger.warning(f"Primary minimize method failed: {primary_error}")
+            
+            # Fallback: try setting window position off-screen
+            try:
+                logger.debug("Attempting fallback: moving window off-screen")
+                self.driver.set_window_position(-2000, -2000)
+                logger.info("⚠️ Browser minimized using fallback method (off-screen positioning)")
+                return
+            except Exception as fallback_error:
+                logger.error(
+                    f"❌ Failed to minimize browser window (tried 2 methods). "
+                    f"Primary: {primary_error}, Fallback: {fallback_error}"
+                )
+                logger.error("Browser will remain visible - this may be a WebDriver/platform limitation")
 
     def start_browser(self, action_name: Optional[str] = None) -> bool:
         """

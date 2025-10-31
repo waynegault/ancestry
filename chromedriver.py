@@ -243,9 +243,8 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-infobars")
-    # Start minimized in non-headless mode
-    if not config.headless_mode:
-        options.add_argument("--start-minimized")
+    # Note: --start-minimized removed due to Chrome 142 compatibility issues
+    # Browser will be minimized programmatically after initialization instead
 
     # User agent
     user_agent = random.choice(
@@ -330,9 +329,9 @@ def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str,
     except Exception as cdp_exc:
         logger.warning(f"CDP command failed: {cdp_exc}")
 
-    # Window starts minimized via --start-minimized option
+    # Window will be minimized programmatically after browser stabilizes
     if not config.headless_mode:
-        logger.debug("Browser configured to start minimized.")
+        logger.debug("Browser will be minimized programmatically after initialization.")
 
     # Set timeouts
     driver.set_page_load_timeout(config.page_load_timeout)

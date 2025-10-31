@@ -1944,7 +1944,7 @@ def ai_interface_module_tests() -> bool:
         # Skip live tests if SKIP_LIVE_API_TESTS is set (parallel test mode)
         import os
         skip_live = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
-        
+
         if not skip_live:
             try:
                 sm = SessionManager()
