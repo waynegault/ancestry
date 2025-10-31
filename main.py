@@ -996,21 +996,18 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
             _seed_message_templates(recreation_session)
 
-            # Step 4: Initialize ethnicity tracking system (OPTIONAL)
-            # Note: This requires API authentication and may fail if session is not ready
-            logger.debug("Attempting to initialize ethnicity tracking system (optional)...")
+            # Step 4: Initialize ethnicity tracking system
+            # Use the main session_manager (which has browser/auth) for API calls
+            logger.debug("Initializing ethnicity tracking system...")
             try:
-                from session_utils import get_authenticated_session
-                # Authenticate the session if not already authenticated
-                authenticated_sm, _ = get_authenticated_session(
-                    action_name="Database Reset - Ethnicity Initialization",
-                    skip_csrf=True
-                )
-                if not _initialize_ethnicity_system(authenticated_sm, temp_manager):
-                    logger.info("⚠️ Ethnicity system not initialized (will be initialized on first Action 6 run)")
-            except Exception as auth_error:
-                logger.info(f"⚠️ Ethnicity system not initialized: {auth_error}")
-                logger.info("This is optional - ethnicity data will be collected during Action 6")
+                # Ensure browser session is ready for API calls
+                if not session_manager.ensure_session_ready("Database Reset - Ethnicity Initialization", skip_csrf=True):
+                    logger.warning("Session not ready for ethnicity initialization - skipping")
+                elif not _initialize_ethnicity_system(session_manager, temp_manager):
+                    logger.warning("Failed to initialize ethnicity tracking system - continuing anyway")
+            except Exception as ethnicity_error:
+                logger.warning(f"Could not initialize ethnicity system: {ethnicity_error}")
+                logger.info("Ethnicity data will be collected during first Action 6 run")
 
             reset_successful = True
             logger.info("Database reset completed successfully.")

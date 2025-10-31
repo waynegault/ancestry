@@ -137,6 +137,7 @@ def fetch_ethnicity_region_names(
     logger.debug(f"Fetching ethnicity region names for {len(region_keys)} regions from: {url}")
 
     # This is a POST request with JSON body containing the region keys
+    logger.debug(f"Sending POST request with {len(region_keys)} region keys: {region_keys}")
     response = _api_req(
         url=url,
         driver=session_manager.driver,
@@ -148,7 +149,7 @@ def fetch_ethnicity_region_names(
     )
 
     if not response or not isinstance(response, dict):
-        logger.warning("Failed to fetch ethnicity region names (may be due to authentication or API format)")
+        logger.error(f"Failed to fetch ethnicity region names. Response type: {type(response)}, Response: {response}")
         return None
 
     logger.info(f"Successfully fetched {len(response)} ethnicity region names")
@@ -277,7 +278,7 @@ def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Opt
         logger.debug(f"Fetching tree owner ethnicity for UUID: {my_uuid}")
         ethnicity_data = fetch_tree_owner_ethnicity_regions(session_manager, my_uuid)
         if not ethnicity_data or "regions" not in ethnicity_data:
-            logger.warning("Failed to fetch tree owner ethnicity regions (API may require full authentication)")
+            logger.error("Failed to fetch tree owner ethnicity regions (API may require full authentication)")
             return False
 
         regions = ethnicity_data["regions"]
@@ -288,7 +289,7 @@ def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Opt
         logger.debug(f"Fetching region names for {len(region_keys)} regions")
         region_names = fetch_ethnicity_region_names(session_manager, region_keys)
         if not region_names:
-            logger.warning("Failed to fetch ethnicity region names (API may require full authentication)")
+            logger.error("Failed to fetch ethnicity region names (API may require full authentication)")
             return False
 
         # Step 3: Build metadata structure
