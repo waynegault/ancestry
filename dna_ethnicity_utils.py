@@ -142,7 +142,7 @@ def fetch_ethnicity_region_names(
         driver=session_manager.driver,
         session_manager=session_manager,
         method="POST",
-        json_data=region_keys,  # Send list of region keys as JSON body
+        json_data={"regionKeys": region_keys},  # Wrap list in dict for API compatibility
         use_csrf_token=False,
         api_description="Ethnicity Region Names API"
     )
