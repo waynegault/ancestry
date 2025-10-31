@@ -128,7 +128,7 @@ class BrowserManager:
         try:
             # Primary method: use WebDriver's minimize_window()
             self.driver.minimize_window()
-            logger.info("✅ Browser window minimized successfully")
+            logger.debug("✅ Browser window minimized successfully")
             return
         except Exception as primary_error:
             logger.warning(f"Primary minimize method failed: {primary_error}")
