@@ -113,7 +113,7 @@ class BrowserManager:
     def _minimize_browser_window(self) -> None:
         """
         Minimize browser window after launch.
-        
+
         Note: Small delay added to ensure Chrome is fully initialized before minimizing.
         This prevents Chrome 142+ from closing immediately on some Windows configurations.
         """
@@ -132,7 +132,7 @@ class BrowserManager:
             return
         except Exception as primary_error:
             logger.warning(f"Primary minimize method failed: {primary_error}")
-            
+
             # Fallback: try setting window position off-screen
             try:
                 logger.debug("Attempting fallback: moving window off-screen")
