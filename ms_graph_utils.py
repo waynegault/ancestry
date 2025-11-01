@@ -208,6 +208,24 @@ if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
 # --- Core Authentication and API Functions ---
 
 
+def _check_token_cache() -> bool:
+    """
+    Check if a valid MS Graph token is available in cache.
+    This is a non-blocking check that doesn't attempt authentication.
+
+    Returns:
+        True if a token is available in cache, False otherwise.
+    """
+    if not msal_app_instance:
+        return False
+
+    try:
+        accounts = msal_app_instance.get_accounts()
+        return len(accounts) > 0
+    except Exception:
+        return False
+
+
 def _try_silent_token_acquisition(app: Any) -> Optional[str]:
     """Attempt to acquire token silently from cache."""
     accounts = app.get_accounts()
