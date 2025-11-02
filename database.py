@@ -1481,9 +1481,10 @@ def _compare_field_values(old_value: Any, new_value: Any) -> bool:
     return old_value != new_value
 
 
-def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dict[str, Any], log_ref: str) -> bool:
+def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dict[str, Any], log_ref: str, session: Session) -> bool:
     """Update existing DNA match record if changes detected."""
     updated = False
+    ethnicity_updates = {}
 
     for field, new_value in validated_data.items():
         if field == "people_id":
@@ -1493,8 +1494,30 @@ def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dic
 
         if _compare_field_values(old_value, new_value):
             logger.debug(f"  DNA Change Detected for {log_ref}: Field '{field}' ('{old_value}' -> '{new_value}')")
-            setattr(existing_dna_match, field, new_value)
+
+            # For ethnicity columns (not in model), collect for direct SQL update
+            if field.startswith("ethnicity_"):
+                ethnicity_updates[field] = new_value
+            else:
+                # For regular columns (in model), use setattr
+                setattr(existing_dna_match, field, new_value)
+
             updated = True
+
+    # If there are ethnicity updates, apply them directly via raw SQL
+    # (SQLAlchemy's ORM doesn't know about dynamically added columns)
+    if ethnicity_updates:
+        try:
+            from sqlalchemy import text
+            # Build raw SQL UPDATE statement
+            set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_updates])
+            sql = f"UPDATE dna_match SET {set_clauses} WHERE id = :id"
+            params = {**ethnicity_updates, "id": existing_dna_match.id}
+            session.execute(text(sql), params)
+            session.flush()  # Ensure the update is flushed to the database
+        except Exception as e:
+            logger.error(f"Error applying ethnicity updates for {log_ref}: {e}", exc_info=True)
+            raise
 
     if updated:
         existing_dna_match.updated_at = datetime.now(timezone.utc)
@@ -1539,7 +1562,7 @@ def create_or_update_dna_match(
         existing_dna_match = session.query(DnaMatch).filter_by(people_id=people_id).first()
 
         if existing_dna_match:
-            updated = _update_existing_dna_match(existing_dna_match, validated_data, log_ref)
+            updated = _update_existing_dna_match(existing_dna_match, validated_data, log_ref, session)
             result = "updated" if updated else "skipped"
         else:
             # Create new record
