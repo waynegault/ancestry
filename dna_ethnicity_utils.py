@@ -253,6 +253,51 @@ def sanitize_column_name(region_name: str) -> str:
     return f"ethnicity_{sanitized}"
 
 
+def initialize_ethnicity_columns_from_metadata(db_manager: Optional[SessionManager] = None) -> bool:
+    """
+    Initialize ethnicity columns in dna_match table using saved metadata file.
+    This is a browserless/API-less version that only adds columns based on
+    previously saved ethnicity_regions.json.
+
+    This should be called during database reset (Action 2) to add ethnicity
+    columns without requiring API access.
+
+    Args:
+        db_manager: Optional SessionManager with active database connection
+
+    Returns:
+        True if columns added successfully, False if metadata file doesn't exist
+    """
+    try:
+        # Check if metadata file exists
+        metadata_path = Path(ETHNICITY_METADATA_FILE)
+        if not metadata_path.exists():
+            logger.debug(f"No {ETHNICITY_METADATA_FILE} found - ethnicity columns will be added on first Action 6 run")
+            return False
+
+        # Load metadata
+        metadata = load_ethnicity_metadata()
+        tree_owner_regions = metadata.get("tree_owner_regions", [])
+
+        if not tree_owner_regions:
+            logger.debug("No tree owner regions in metadata - skipping ethnicity columns")
+            return False
+
+        logger.debug(f"Found {len(tree_owner_regions)} regions in metadata file")
+
+        # Add ethnicity columns to database
+        if not _add_ethnicity_columns_to_database(tree_owner_regions, db_manager):
+            logger.error("Failed to add ethnicity columns to database")
+            return False
+
+        logger.debug(f"✅ Added {len(tree_owner_regions)} ethnicity columns to dna_match table")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error adding ethnicity columns from metadata: {e}", exc_info=True)
+        return False
+
+
 def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Optional[SessionManager] = None) -> bool:
     """
     Initialize the ethnicity tracking system by:
@@ -261,7 +306,7 @@ def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Opt
     3. Creating ethnicity_regions.json file
     4. Adding ethnicity columns to dna_match table
 
-    This should be called when creating a new database (Action 2).
+    This should be called when API access is available (e.g., during Action 6).
 
     Args:
         session_manager: SessionManager for API access (has browser/credentials)
@@ -355,7 +400,7 @@ def _add_single_ethnicity_column(connection: Any, column_name: str, existing_col
     try:
         alter_sql = text(f"ALTER TABLE dna_match ADD COLUMN {column_name} INTEGER")
         connection.execute(alter_sql)
-        connection.commit()
+        # No commit needed - parent context manager handles transaction
         logger.debug(f"Added ethnicity column: {column_name}")
         return True
     except Exception as col_err:
@@ -382,7 +427,7 @@ def _add_ethnicity_columns_to_database(tree_owner_regions: list[dict[str, Any]],
             logger.error("Cannot add ethnicity columns: Database engine not available")
             return False
 
-        with engine.connect() as connection:
+        with engine.begin() as connection:  # Use begin() for auto-commit transaction
             # Check if dna_match table exists
             inspector = sqlalchemy_inspect(connection)
             if "dna_match" not in inspector.get_table_names():
@@ -411,6 +456,7 @@ def _add_ethnicity_columns_to_database(tree_owner_regions: list[dict[str, Any]],
             else:
                 logger.debug("All ethnicity columns already exist in dna_match table")
 
+            # Transaction will auto-commit when exiting the context manager
             return True
 
     except Exception as e:

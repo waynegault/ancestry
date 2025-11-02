@@ -921,26 +921,26 @@ def _seed_message_templates(recreation_session: Any) -> bool:
         return False
 
 
-def _initialize_ethnicity_system(session_manager: SessionManager, db_manager: SessionManager) -> bool:
+def _initialize_ethnicity_columns_from_metadata(db_manager: SessionManager) -> bool:
     """
-    Initialize the ethnicity tracking system by fetching tree owner's ethnicity
-    and creating the necessary database columns.
+    Initialize ethnicity columns in dna_match table using saved metadata file.
+    This is browserless - it only adds columns if ethnicity_regions.json exists.
+    If the file doesn't exist, columns will be added during first Action 6 run.
 
     Args:
-        session_manager: SessionManager for API access (has browser/credentials)
         db_manager: SessionManager with active database connection
 
     Returns:
-        True if initialization successful, False otherwise
+        True if columns added successfully, False if metadata file doesn't exist
     """
     try:
-        from dna_ethnicity_utils import initialize_ethnicity_system
+        from dna_ethnicity_utils import initialize_ethnicity_columns_from_metadata
 
-        logger.debug("Calling ethnicity system initialization...")
-        return initialize_ethnicity_system(session_manager, db_manager)
+        logger.debug("Checking for saved ethnicity metadata...")
+        return initialize_ethnicity_columns_from_metadata(db_manager)
 
     except Exception as e:
-        logger.error(f"Error initializing ethnicity system: {e}", exc_info=True)
+        logger.error(f"Error adding ethnicity columns from metadata: {e}", exc_info=True)
         return False
 
 
@@ -996,21 +996,19 @@ def reset_db_actn(session_manager: SessionManager, *_):
 
             _seed_message_templates(recreation_session)
 
-            # Step 4: Initialize ethnicity tracking system
-            # Ensure session is authenticated before calling ethnicity initialization
-            logger.debug("Initializing ethnicity tracking system...")
-            try:
-                from session_utils import get_authenticated_session
-                # Authenticate the session if not already authenticated
-                authenticated_sm, _ = get_authenticated_session(
-                    action_name="Database Reset - Ethnicity Initialization",
-                    skip_csrf=True
-                )
-                if not _initialize_ethnicity_system(authenticated_sm, temp_manager):
-                    logger.warning("Failed to initialize ethnicity tracking system - continuing anyway")
-            except Exception as auth_error:
-                logger.warning(f"Could not authenticate session for ethnicity initialization: {auth_error}")
-                logger.warning("Skipping ethnicity system initialization - you can run Action 6 to initialize it later")
+            # Step 4: Add ethnicity columns from saved metadata (if available)
+            # This is browserless - uses saved ethnicity_regions.json if it exists
+            # If no metadata file exists, columns will be added during first Action 6 run
+            logger.debug("Adding ethnicity columns from saved metadata...")
+            if _initialize_ethnicity_columns_from_metadata(temp_manager):
+                logger.info("✅ Ethnicity columns added from saved metadata")
+            else:
+                logger.info("ℹ️  No ethnicity metadata found - columns will be added during first Action 6 run")
+
+            # Step 5: Commit all changes to ensure they're flushed to disk
+            logger.debug("Committing database changes...")
+            recreation_session.commit()
+            logger.debug("Database changes committed successfully.")
 
             reset_successful = True
             logger.info("Database reset completed successfully.")
@@ -1026,7 +1024,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
             if temp_manager:
                 if recreation_session:
                     temp_manager.return_session(recreation_session)
-                temp_manager.cls_db_conn(keep_db=False)  # Dispose temp engine
+                # DON'T dispose engine here - let it flush changes naturally
             logger.debug("Temporary resource manager cleanup finished.")
 
     except Exception as e:
