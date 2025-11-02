@@ -1572,15 +1572,25 @@ def create_or_update_dna_match(
             core_data = {k: v for k, v in validated_data.items() if not k.startswith("ethnicity_")}
             ethnicity_data = {k: v for k, v in validated_data.items() if k.startswith("ethnicity_")}
 
-            # Create record with core data
+            # Create record with core data first
             new_dna_match = DnaMatch(**core_data)
-
-            # Set ethnicity columns dynamically
-            for column_name, value in ethnicity_data.items():
-                setattr(new_dna_match, column_name, value)
-
             session.add(new_dna_match)
-            logger.debug(f"DnaMatch record added to session for {log_ref}.")
+            session.flush()  # Ensure INSERT happens so we can apply raw SQL updates
+
+            # Apply ethnicity columns via raw SQL (model doesn't declare these dynamic columns)
+            if ethnicity_data:
+                try:
+                    from sqlalchemy import text
+                    set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
+                    sql = f"UPDATE dna_match SET {set_clauses} WHERE people_id = :people_id"
+                    params = {**ethnicity_data, "people_id": people_id}
+                    session.execute(text(sql), params)
+                    session.flush()
+                except Exception as e:
+                    logger.error(f"Error applying ethnicity on create for {log_ref}: {e}", exc_info=True)
+                    raise
+
+            logger.debug(f"DnaMatch record created for {log_ref} (with ethnicity applied).")
             result = "created"
 
     except IntegrityError as ie:
