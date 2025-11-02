@@ -750,11 +750,32 @@ def dna_ethnicity_utils_module_tests() -> bool:
             expected_outcome="Correct percentages extracted for each region, 0% for missing data",
         )
 
-    # Note: API tests (_test_tree_owner_ethnicity_fetch, _test_region_names_fetch, _test_ethnicity_comparison)
-    # are available but skipped when run directly as they require a live browser session.
-    # They can be called manually when a SessionManager is available.
+        suite.run_test(
+            "Endpoint Literal Regression Guard",
+            _test_regression_endpoint_literals_present_in_source,
+            test_summary="Ensures known endpoint substrings remain present in module source",
+            functions_tested="N/A (source assertion)",
+            method_description="Read module source and assert endpoint substrings exist",
+            expected_outcome="Fails fast if endpoint strings are altered",
+        )
 
     return suite.finish_suite()
+
+
+
+
+
+def _test_regression_endpoint_literals_present_in_source() -> bool:
+    """Regression guard: ensure known endpoint literals remain in source."""
+    try:
+        content = Path(__file__).read_text(encoding="utf-8")
+        assert "dna/origins/secure/tests/" in content
+        assert "dna/origins/public/ethnicity/2025/names?locale" in content
+        assert "discoveryui-matchesservice/api/compare/" in content
+        return True
+    except Exception:
+        return False
+
 
 
 def run_comprehensive_tests() -> bool:

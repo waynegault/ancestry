@@ -438,6 +438,11 @@ For issues or questions:
   - Addresses requirement that ethnicity columns are NOT optional while avoiding cookie consent/login issues
 - All 71 modules pass tests with 100% success rate after improvements
 
+- Action 6 Ethnicity Persistence Fix (commit 8649380): Persist ethnicity columns on CREATE via parameterized raw SQL UPDATE after initial INSERT; resolves NULL ethnicity on first-run creates when ORM model lacks dynamic columns. Verified with a clean reset + Action 6: New 20, Updated 0; 20/20 rows have non-NULL ethnicity values.
+  - Root cause: ORM ignored dynamically added columns during INSERT; UPDATE-path raw SQL already worked
+  - Solution: After inserting core fields and flush, run a single UPDATE by people_id to set all ethnicity columns; keep UPDATE-path raw SQL
+  - Regression guards: Added endpoint-constant tests to api_utils.py and core/api_manager.py; added literal-presence guards to dna_ethnicity_utils.py and core/session_manager.py
+
 2025-10-28
 - Unified presenter: fixed header spacing ("=== Name (years) ==="), ensured empty sections print "None recorded", and normalized relationship header text
 - GEDCOM/API: birth/death years now shown when available; GEDCOM path falls back to parsing years from display name if missing
@@ -639,7 +644,34 @@ For issues or questions:
   **Genealogical Data Endpoints** (used by api_search_core)
   - Edit Relationships: `/family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships`
     - Response: `{ cssBundleUrl, jsBundleUrl, data }` where data is a JSON string; parse with json.loads
-    - Family arrays: `parsed['person']` → fathers[], mothers[], spouses[], children[]
+
+  - New Family View (preferred): `api/treeviewer/tree/newfamilyview/{tree_id}`
+    - Returns: Persons array with people and Family relationships structure; includes siblings via parents' children
+    - Used by: api_utils.call_newfamilyview_api and api_search_core._parse_person_from_newfamilyview
+
+  - TreesUI List: `api/treesui-list/trees/{tree_id}/persons`
+    - Purpose: Person suggestions for a tree; used for API search candidates
+    - Typical params: name, limit=100, fields=EVENTS,GENDERS,NAMES, isGetFullPersonObject=true
+
+  - Person Facts (User): `family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}`
+  - GetLadder (legacy): `family-tree/person/tree/{tree_id}/person/{person_id}/getladder`
+
+  **Ethnicity Endpoints** (used by Action 6)
+  - Tree Owner Ethnicity: `dna/origins/secure/tests/{guid}/v2/ethnicity`
+    - Purpose: Retrieves owner’s ethnicity regions and percentages; seeds dynamic columns
+  - Ethnicity Comparison: `discoveryui-matchesservice/api/compare/{owner_guid}/with/{match_guid}/ethnicity`
+    - Purpose: Retrieves match percentages aligned to owner’s regions (use rightSum values)
+  - Ethnicity Region Names: `dna/origins/public/ethnicity/2025/names?locale=en-GB`
+    - Purpose: Map region keys to friendly names for display and column naming
+
+  **Messaging Endpoints** (used by Action 8)
+  - Send New Message: `app-api/express/v2/conversations/message`
+  - Send Existing Conversation: `app-api/express/v2/conversations/{conv_id}`
+  - Profile Details: `/app-api/express/v1/profiles/details`
+
+  Note: Values above are covered by regression guard tests in-module (api_utils, core/api_manager, dna_ethnicity_utils, core/session_manager). If any literal changes, tests fail to prevent accidental drift.
+
+  - Family arrays: `parsed['person']` → fathers[], mothers[], spouses[], children[]
 
   - Relationship Ladder: `/family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels`
 

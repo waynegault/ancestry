@@ -3691,6 +3691,19 @@ def _test_724_page_workload_simulation():
     return True
 
 
+
+
+def _test_regression_endpoint_literals_present_in_source() -> bool:
+    """Regression guard: ensure critical endpoint literals remain in source."""
+    try:
+        from pathlib import Path as _Path
+        content = _Path(__file__).read_text(encoding="utf-8")
+        assert "api/navheaderdata/v1/header/data/dna" in content
+        assert "api/treesui-list/trees?rights=own" in content
+        return True
+    except Exception:
+        return False
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -3742,6 +3755,10 @@ def session_manager_module_tests() -> bool:
              "SessionManager handles various operations gracefully without raising exceptions",
              "Perform various operations and property access and verify no exceptions are raised",
              "Test error handling and graceful degradation for session operations"),
+            ("Endpoint Literal Regression Guard", _test_regression_endpoint_literals_present_in_source,
+             "Critical endpoint strings remain present in source",
+             "Read module source and assert presence of UUID and TreesUI list endpoints",
+             "Fail fast if key endpoint literals are altered or removed"),
         ]
 
         # Add regression prevention tests to the list

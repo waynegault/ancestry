@@ -40,7 +40,7 @@ ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsRes
 # === API CONSTANTS ===
 API_PATH_CSRF_TOKEN = "discoveryui-matches/parents/api/csrfToken"
 API_PATH_PROFILE_ID = "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"
-API_PATH_UUID = "api/uhome/secure/rest/header/dna"
+API_PATH_UUID = "api/navheaderdata/v1/header/data/dna"
 
 KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
@@ -662,6 +662,19 @@ def _test_connection_error_handling() -> bool:
         return False
 
 
+
+def _test_api_endpoint_constant_values() -> bool:
+    """Regression guard: ensure known-correct endpoint paths are exact."""
+    try:
+        assert API_PATH_CSRF_TOKEN == "discoveryui-matches/parents/api/csrfToken"
+        assert API_PATH_PROFILE_ID == "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"
+        # Critical: UUID endpoint lives under navheaderdata; testId at ROOT
+        assert API_PATH_UUID == "api/navheaderdata/v1/header/data/dna"
+        return True
+    except AssertionError:
+        return False
+
+
 def api_manager_module_tests() -> bool:
     """
     Comprehensive test suite for core/api_manager.py (decomposed).
@@ -720,6 +733,13 @@ def api_manager_module_tests() -> bool:
         "API manager handles connection errors and request exceptions gracefully",
         "Test error handling setup and exception class availability",
         "Test connection error handling and request exception management",
+    )
+    suite.run_test(
+        "Endpoint Constant Regression Guards",
+        _test_api_endpoint_constant_values,
+        "Known-good API endpoint constants remain unchanged",
+        "Assert exact values for CSRF, Profile ID, and UUID endpoints",
+        "Fail if any constant drifts from the documented path (prevents regressions)",
     )
     return suite.finish_suite()
 

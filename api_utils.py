@@ -3607,6 +3607,35 @@ def _run_error_handling_tests(suite: "TestSuite") -> None:
     )
 
 
+
+def _run_regression_guard_tests(suite: "TestSuite") -> None:
+    """Tests that ensure known-good endpoint constants do not drift.
+    If any path changes accidentally, this will fail fast.
+    """
+    def test_endpoint_constants_exact():
+        assert API_PATH_SEND_MESSAGE_NEW == "app-api/express/v2/conversations/message"
+        assert API_PATH_SEND_MESSAGE_EXISTING == "app-api/express/v2/conversations/{conv_id}"
+        assert API_PATH_PROFILE_DETAILS == "/app-api/express/v1/profiles/details"
+        assert API_PATH_PERSON_PICKER_SUGGEST == "api/person-picker/suggest/{tree_id}"
+        assert API_PATH_PERSON_GETLADDER == "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
+        assert API_PATH_RELATION_LADDER_WITH_LABELS == (
+            "family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"
+        )
+        assert API_PATH_DISCOVERY_RELATIONSHIP == "discoveryui-matchingservice/api/relationship"
+        assert API_PATH_TREESUI_LIST == "api/treesui-list/trees/{tree_id}/persons"
+        assert API_PATH_NEW_FAMILY_VIEW == "api/treeviewer/tree/newfamilyview/{tree_id}"
+        assert API_PATH_HEADER_TREES == "api/uhome/secure/rest/header/trees"
+        assert API_PATH_TREE_OWNER_INFO == "api/uhome/secure/rest/user/tree-info"
+
+    suite.run_test(
+        "Endpoint Constants Regression Guard",
+        test_endpoint_constants_exact,
+        "Known-good endpoint constants must match exactly",
+        "Assert exact strings for messaging, person, tree, and relationship endpoints",
+        "Prevents accidental drift in endpoints that are known to work",
+    )
+
+
 def api_utils_module_tests() -> bool:
     """
     Comprehensive test suite for api_utils.py following the standardized 6-category TestSuite framework.
@@ -3627,6 +3656,7 @@ def api_utils_module_tests() -> bool:
     _run_integration_tests(suite)
     _run_performance_tests(suite)
     _run_error_handling_tests(suite)
+    _run_regression_guard_tests(suite)
 
     return suite.finish_suite()
 
