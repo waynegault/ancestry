@@ -418,6 +418,26 @@ For issues or questions:
 
 ### Appendix A: Chronology of Changes
 
+2025-11-02
+- Login Regression Recovery: Reverted to commit 2c8956d (Oct 31, 18:31) after discovering login had been broken since at least Oct 31 due to Ancestry's cookie consent banner blocking form interactions
+- Key Lessons Learned:
+  - Always test at known-good commits before attempting fixes - spent significant time trying to fix login at commits 7c57bd9 and 7c1cd81, only to discover the consent banner problem existed at both
+  - Git history is invaluable for finding working versions - reverting to 2c8956d immediately restored working login with proper 2FA support
+  - Consent banner behavior can be inconsistent/A-B tested by Ancestry - banner dynamically re-injects itself after form interactions (Next button click)
+  - Incremental improvements on working baseline are safer than major refactors on broken code
+- Startup Status Checks: Added non-blocking _check_startup_status() function to display database, Ancestry session cookie, and MS Graph token availability at startup without triggering authentication flows
+  - Added _check_token_cache() helper function to ms_graph_utils.py
+  - Provides user visibility into system readiness without delays
+  - All checks are non-blocking (don't trigger authentication flows)
+- Action 2 Browserless: Made Action 2 (Reset Database) browserless by loading ethnicity columns from saved ethnicity_regions.json metadata file
+  - Execution time reduced from 60+ seconds to ~2 seconds
+  - Fixed transaction handling in ethnicity column creation (use engine.begin() instead of manual commit() calls)
+  - Removed manual commit() calls that caused 'closed transaction' errors
+  - Added initialize_ethnicity_columns_from_metadata() function to dna_ethnicity_utils.py
+  - If no metadata file exists, columns will be added during first Action 6 run
+  - Addresses requirement that ethnicity columns are NOT optional while avoiding cookie consent/login issues
+- All 71 modules pass tests with 100% success rate after improvements
+
 2025-10-28
 - Unified presenter: fixed header spacing ("=== Name (years) ==="), ensured empty sections print "None recorded", and normalized relationship header text
 - GEDCOM/API: birth/death years now shown when available; GEDCOM path falls back to parsing years from display name if missing
