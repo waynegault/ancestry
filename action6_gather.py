@@ -1412,8 +1412,8 @@ def _identify_fetch_candidates(
             if existing_dna:
                 try:
                     # Compare cM (integer conversion for safety)
-                    api_cm = int(match_api_data.get("cM_DNA", 0))
-                    db_cm = existing_dna.cM_DNA
+                    api_cm = int(match_api_data.get("cm_dna", 0))
+                    db_cm = existing_dna.cm_dna
                     if api_cm != db_cm:
                         needs_fetch = True
                         logger.debug(
@@ -1566,7 +1566,7 @@ def _perform_api_prefetches(
         for match_data in matches_to_process_later:
             uuid_val = match_data.get("uuid")
             if uuid_val and uuid_val in fetch_candidates_uuid:
-                cm_value = int(match_data.get("cM_DNA", 0))
+                cm_value = int(match_data.get("cm_dna", 0))
                 has_tree = match_data.get("in_my_tree", False)
                 is_starred = match_data.get("starred", False)
                 
@@ -3979,7 +3979,7 @@ def _prepare_dna_match_operation_data(
 
     Returns:
         Optional[Dict[str, Any]]: Dictionary with DNA match data and '_operation' key set to 'create',
-        or None if no create/update is needed. The dictionary includes fields like: cM_DNA,
+        or None if no create/update is needed. The dictionary includes fields like: cm_dna,
         shared_segments, longest_shared_segment, etc.
     """
     needs_dna_create_or_update = False
@@ -3997,8 +3997,8 @@ def _prepare_dna_match_operation_data(
         needs_dna_create_or_update = True
     else:
         try:
-            api_cm = int(match.get("cM_DNA", 0))
-            db_cm = existing_dna_match.cM_DNA
+            api_cm = int(match.get("cm_dna", 0))
+            db_cm = existing_dna_match.cm_dna
             api_segments = int(
                 details_part.get("shared_segments", match.get("numSharedSegments", 0))
             )
@@ -4069,7 +4069,7 @@ def _prepare_dna_match_operation_data(
         dna_dict_base = {
             "uuid": match_uuid.upper(),
             "compare_link": match.get("compare_link"),
-            "cM_DNA": int(match.get("cM_DNA", 0)),
+            "cm_dna": int(match.get("cm_dna", 0)),
             # Store non-null string; DB schema requires NOT NULL
             "predicted_relationship": safe_predicted_relationship,
             "_operation": "create",  # This operation hint is for the bulk operation logic
@@ -4963,7 +4963,7 @@ def get_matches(
                 "administrator_profile_id_hint": admin_profile_id_hint,
                 "administrator_username_hint": admin_username_hint,
                 "photoUrl": photo_url,
-                "cM_DNA": shared_cm,
+                "cm_dna": shared_cm,
                 "numSharedSegments": shared_segments,
                 "compare_link": compare_link,
                 "message_link": None,
@@ -6248,7 +6248,7 @@ def action6_gather_module_tests() -> bool:
         from unittest.mock import MagicMock
 
         # Test _identify_fetch_candidates with correct signature
-        matches_on_page = [{"uuid": "test_12345", "cM_DNA": 100}]
+        matches_on_page = [{"uuid": "test_12345", "cm_dna": 100}]
         existing_persons_map = {}
 
         result = _identify_fetch_candidates(matches_on_page, existing_persons_map)
