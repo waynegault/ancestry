@@ -1572,6 +1572,8 @@ def create_or_update_dna_match(
             core_data = {k: v for k, v in validated_data.items() if not k.startswith("ethnicity_")}
             ethnicity_data = {k: v for k, v in validated_data.items() if k.startswith("ethnicity_")}
 
+            logger.debug(f"Creating DnaMatch for {log_ref}: ethnicity_data={ethnicity_data}")
+
             # Create record with core data first
             new_dna_match = DnaMatch(**core_data)
             session.add(new_dna_match)
@@ -1584,11 +1586,15 @@ def create_or_update_dna_match(
                     set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
                     sql = f"UPDATE dna_match SET {set_clauses} WHERE people_id = :people_id"
                     params = {**ethnicity_data, "people_id": people_id}
+                    logger.debug(f"Executing ethnicity UPDATE for {log_ref}: SQL={sql}, params={params}")
                     session.execute(text(sql), params)
                     session.flush()
+                    logger.debug(f"Ethnicity UPDATE successful for {log_ref}")
                 except Exception as e:
                     logger.error(f"Error applying ethnicity on create for {log_ref}: {e}", exc_info=True)
                     raise
+            else:
+                logger.debug(f"No ethnicity data to apply for {log_ref}")
 
             logger.debug(f"DnaMatch record created for {log_ref} (with ethnicity applied).")
             result = "created"

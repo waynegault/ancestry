@@ -2695,7 +2695,32 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Bulk inserting {len(dna_insert_data)} DnaMatch records..."
                 )
-                session.bulk_insert_mappings(DnaMatch, dna_insert_data)  # type: ignore
+
+                # Separate ethnicity columns from core data (bulk_insert_mappings doesn't handle dynamic columns)
+                core_insert_data = []
+                ethnicity_updates = []  # List of (people_id, ethnicity_dict) tuples
+
+                for insert_map in dna_insert_data:
+                    core_map = {k: v for k, v in insert_map.items() if not k.startswith("ethnicity_")}
+                    ethnicity_map = {k: v for k, v in insert_map.items() if k.startswith("ethnicity_")}
+                    core_insert_data.append(core_map)
+                    if ethnicity_map:
+                        ethnicity_updates.append((insert_map["people_id"], ethnicity_map))
+
+                # Bulk insert core data
+                session.bulk_insert_mappings(DnaMatch, core_insert_data)  # type: ignore
+                session.flush()  # Ensure inserts are committed before ethnicity updates
+
+                # Apply ethnicity data via raw SQL UPDATE
+                if ethnicity_updates:
+                    from sqlalchemy import text
+                    for people_id, ethnicity_data in ethnicity_updates:
+                        set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
+                        sql = f"UPDATE dna_match SET {set_clauses} WHERE people_id = :people_id"
+                        params = {**ethnicity_data, "people_id": people_id}
+                        session.execute(text(sql), params)
+                    session.flush()
+                    logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} newly inserted DnaMatch records")
             else:
                 pass  # No new DnaMatch records to insert
 
@@ -2704,7 +2729,33 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Bulk updating {len(dna_update_mappings)} DnaMatch records..."
                 )
-                session.bulk_update_mappings(DnaMatch, dna_update_mappings)  # type: ignore
+
+                # Separate ethnicity columns from core data (bulk_update_mappings doesn't handle dynamic columns)
+                core_update_mappings = []
+                ethnicity_updates = []  # List of (id, ethnicity_dict) tuples
+
+                for update_map in dna_update_mappings:
+                    core_map = {k: v for k, v in update_map.items() if not k.startswith("ethnicity_")}
+                    ethnicity_map = {k: v for k, v in update_map.items() if k.startswith("ethnicity_")}
+                    core_update_mappings.append(core_map)
+                    if ethnicity_map:
+                        ethnicity_updates.append((update_map["id"], ethnicity_map))
+
+                # Bulk update core data
+                session.bulk_update_mappings(DnaMatch, core_update_mappings)  # type: ignore
+                session.flush()  # Ensure updates are committed before ethnicity updates
+
+                # Apply ethnicity data via raw SQL UPDATE
+                if ethnicity_updates:
+                    from sqlalchemy import text
+                    for match_id, ethnicity_data in ethnicity_updates:
+                        set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
+                        sql = f"UPDATE dna_match SET {set_clauses} WHERE id = :id"
+                        params = {**ethnicity_data, "id": match_id}
+                        session.execute(text(sql), params)
+                    session.flush()
+                    logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} updated DnaMatch records")
+
                 logger.debug("Bulk update DnaMatches called.")
             else:
                 pass  # No existing DnaMatch records to update
@@ -3670,6 +3721,7 @@ def _prepare_dna_match_operation_data(
 
         # Remove keys with None values *except* for predicted_relationship which we want to store as NULL if it's None
         # Also keep internal keys like _operation and uuid
+        # IMPORTANT: Keep ethnicity columns even if value is 0 (0% is valid ethnicity data)
         return {
             k: v
             for k, v in dna_dict_base.items()
@@ -3678,6 +3730,7 @@ def _prepare_dna_match_operation_data(
             == "predicted_relationship"  # Explicitly keep predicted_relationship even if None
             or k.startswith("_")  # Keep internal keys
             or k == "uuid"  # Keep uuid
+            or k.startswith("ethnicity_")  # Keep ethnicity columns even if 0 or None
         }
     return None
 
