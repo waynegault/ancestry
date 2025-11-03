@@ -2193,86 +2193,6 @@ def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = N
     
     return adapted_size
 
-# ===================================================================
-# PHASE 3: MEMORY-OPTIMIZED DATA STRUCTURES
-# ===================================================================
-
-class MemoryOptimizedMatchProcessor:
-    """
-    Phase 3: Memory-optimized match processing with lazy loading and cleanup.
-    """
-    
-    def __init__(self, max_memory_mb: int = 500):
-        """
-        Initialize with memory limit.
-        
-        Args:
-            max_memory_mb: Maximum memory usage in MB
-        """
-        self.max_memory_mb = max_memory_mb
-        self.processed_count = 0
-        self.memory_checkpoints = []
-    
-    def process_matches_with_memory_management(
-        self, 
-        matches: List[Dict[str, Any]], 
-        session_manager: SessionManager
-    ) -> List[Dict[str, Any]]:
-        """
-        Process matches with active memory management.
-        
-        Args:
-            matches: List of matches to process
-            session_manager: SessionManager for API calls
-            
-        Returns:
-            List of processed matches
-        """
-        import psutil
-        import gc
-        
-        process = psutil.Process()
-        initial_memory = process.memory_info().rss / 1024 / 1024  # MB
-        
-        logger.info(f"Phase 3: Starting memory-optimized processing (Initial: {initial_memory:.1f}MB, Limit: {self.max_memory_mb}MB)")
-        
-        processed_matches = []
-        memory_cleanup_threshold = self.max_memory_mb * 0.8  # Clean up at 80% of limit
-        
-        for i, match in enumerate(matches):
-            # Process single match
-            processed_match = self._process_single_match(match, session_manager)
-            processed_matches.append(processed_match)
-            self.processed_count += 1
-            
-            # Memory check every 10 matches
-            if i % 10 == 0:
-                current_memory = process.memory_info().rss / 1024 / 1024
-                
-                if current_memory > memory_cleanup_threshold:
-                    logger.warning(f"Phase 3: Memory usage {current_memory:.1f}MB exceeds threshold, triggering cleanup")
-                    
-                    # Force garbage collection
-                    gc.collect()
-                    
-                    # Cache cleanup now handled by core/system_cache.py
-                    logger.debug("Phase 3: Cache cleanup handled by existing system_cache.py")
-                    
-                    # Memory after cleanup
-                    after_cleanup = process.memory_info().rss / 1024 / 1024
-                    logger.info(f"Phase 3: Memory cleanup completed: {current_memory:.1f}MB → {after_cleanup:.1f}MB")
-        
-        final_memory = process.memory_info().rss / 1024 / 1024
-        logger.info(f"Phase 3: Memory-optimized processing completed: {initial_memory:.1f}MB → {final_memory:.1f}MB")
-        
-        return processed_matches
-    
-    def _process_single_match(self, match: Dict[str, Any], session_manager: SessionManager) -> Dict[str, Any]:
-        """Process a single match with minimal memory footprint."""
-        # Placeholder - would integrate with existing match processing logic
-        return match
-
-
 def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     De-duplicate Person creates based on Profile ID before bulk insert.
@@ -3044,12 +2964,6 @@ def _process_page_matches(
     num_matches_on_page = len(matches_on_page)
     my_uuid = session_manager.my_uuid
     session: Optional[SqlAlchemySession] = None
-
-    # FINAL OPTIMIZATION 2: Memory-Optimized Data Structures Integration
-    memory_processor = None
-    if num_matches_on_page > 20:  # Use memory optimization for larger batches
-        memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=400)
-        logger.debug(f"Page {current_page}: Enabled memory optimization for {num_matches_on_page} matches")
 
     try:
         # Step 2: Basic validation
