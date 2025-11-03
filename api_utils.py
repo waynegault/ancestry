@@ -3644,7 +3644,7 @@ def _run_regression_guard_tests(suite: "TestSuite") -> None:
         assert API_PATH_DISCOVERY_RELATIONSHIP == "discoveryui-matchingservice/api/relationship"
         assert API_PATH_TREESUI_LIST == "api/treesui-list/trees/{tree_id}/persons"
         assert API_PATH_NEW_FAMILY_VIEW == "api/treeviewer/tree/newfamilyview/{tree_id}"
-        assert API_PATH_HEADER_TREES == "api/uhome/secure/rest/header/trees"
+        assert API_PATH_HEADER_TREES == "api/treesui-list/trees?rights=own"
         assert API_PATH_TREE_OWNER_INFO == "api/uhome/secure/rest/user/tree-info"
 
     suite.run_test(

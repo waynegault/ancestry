@@ -6772,42 +6772,47 @@ def action6_gather_module_tests() -> bool:
         suite.run_test(
             test_name="_initialize_gather_state(), _validate_start_page()",
             test_func=test_module_initialization,
-            expected_behavior="Module initializes correctly with proper state management and page validation",
-            test_description="Module initialization and state management functions",
+            test_summary="Module initialization and state management functions",
+            functions_tested="_initialize_gather_state(), _validate_start_page()",
             method_description="Testing state initialization, page validation, and parameter handling for DNA match gathering",
+            expected_outcome="Module initializes correctly with proper state management and page validation",
         )
 
         # 🛡️ REGRESSION PREVENTION TESTS - These would have caught the issues we encountered
         suite.run_test(
             test_name="Database bulk insert condition logic regression prevention",
             test_func=test_regression_prevention_database_bulk_insert,
-            expected_behavior="Bulk insert logic correctly runs when there are records (not in wrong if/else block)",
-            test_description="Prevents regression where bulk insert was in wrong condition block",
+            test_summary="Prevents regression where bulk insert was in wrong condition block",
+            functions_tested="_execute_bulk_db_operations()",
             method_description="Testing the exact boolean logic that caused bulk insert to only run when person_creates_filtered was empty",
+            expected_outcome="Bulk insert logic correctly runs when there are records (not in wrong if/else block)",
         )
 
         suite.run_test(
             test_name="Configuration settings respect regression prevention",
             test_func=test_regression_prevention_configuration_respect,
-            expected_behavior="Configuration values like MAX_PAGES are loaded and respected by the application",
-            test_description="Prevents regression where configuration values were ignored",
+            test_summary="Prevents regression where configuration values were ignored",
+            functions_tested="config_schema.max_pages",
             method_description="Testing that MAX_PAGES and other critical config values are accessible and valid",
+            expected_outcome="Configuration values like MAX_PAGES are loaded and respected by the application",
         )
 
         suite.run_test(
             test_name="Dynamic API failure threshold calculation",
             test_func=test_dynamic_api_failure_threshold,
-            expected_behavior="API failure threshold scales appropriately with number of pages to process",
-            test_description="Dynamic threshold prevents premature halts on large runs while maintaining safety",
+            test_summary="Dynamic threshold prevents premature halts on large runs while maintaining safety",
+            functions_tested="_main_page_loop()",
             method_description="Testing threshold calculation: min 10, max 100, scales at 1 per 20 pages",
+            expected_outcome="API failure threshold scales appropriately with number of pages to process",
         )
 
         suite.run_test(
             test_name="Session management stability regression prevention",
             test_func=test_regression_prevention_session_management,
-            expected_behavior="SessionManager initializes correctly with all optimization attributes present",
-            test_description="Prevents regressions in SessionManager that caused WebDriver crashes",
+            test_summary="Prevents regressions in SessionManager that caused WebDriver crashes",
+            functions_tested="SessionManager.__init__()",
             method_description="Testing SessionManager initialization and CSRF caching optimization implementation",
+            expected_outcome="SessionManager initializes correctly with all optimization attributes present",
         )
 
         # 303 REDIRECT DETECTION TESTS - This would have caught the authentication issue
@@ -6891,62 +6896,69 @@ def action6_gather_module_tests() -> bool:
         suite.run_test(
             test_name="303 Redirect Detection and Session Recovery",
             test_func=test_303_redirect_detection,
-            expected_behavior="Detects 303 redirects and triggers proper session refresh recovery",
-            test_description="Authentication issue detection that would have caught the Action 6 failure",
+            test_summary="Authentication issue detection that would have caught the Action 6 failure",
+            functions_tested="_get_csrf_token(), _navigate_and_get_initial_page_data()",
             method_description="Testing 303 redirect handling, CSRF token extraction, and session refresh recovery mechanisms",
+            expected_outcome="Detects 303 redirects and triggers proper session refresh recovery",
         )
 
         # CORE FUNCTIONALITY TESTS
         suite.run_test(
             test_name="_lookup_existing_persons(), get_matches(), coord(), nav_to_list()",
             test_func=test_core_functionality,
-            expected_behavior="All core DNA match gathering functions execute correctly with proper data handling",
-            test_description="Core DNA match gathering and navigation functionality",
+            test_summary="Core DNA match gathering and navigation functionality",
+            functions_tested="_lookup_existing_persons(), get_matches(), coord(), nav_to_list()",
             method_description="Testing database lookups, match retrieval, coordination, and navigation functions",
+            expected_outcome="All core DNA match gathering functions execute correctly with proper data handling",
         )
 
         suite.run_test(
             test_name="_identify_fetch_candidates(), _prepare_bulk_db_data(), _execute_bulk_db_operations()",
             test_func=test_data_processing_functions,
-            expected_behavior="All data processing functions handle DNA match data correctly with proper formatting",
-            test_description="Data processing and database preparation functions",
+            test_summary="Data processing and database preparation functions",
+            functions_tested="_identify_fetch_candidates(), _prepare_bulk_db_data(), _execute_bulk_db_operations()",
             method_description="Testing candidate identification, bulk data preparation, and database operations",
+            expected_outcome="All data processing functions handle DNA match data correctly with proper formatting",
         )
 
         # EDGE CASE TESTS
         suite.run_test(
             test_name="ALL functions with edge case inputs",
             test_func=test_edge_cases,
-            expected_behavior="All functions handle edge cases gracefully without crashes or unexpected behavior",
-            test_description="Edge case handling across all DNA match gathering functions",
+            test_summary="Edge case handling across all DNA match gathering functions",
+            functions_tested="All action6_gather.py functions",
             method_description="Testing functions with empty, None, invalid, and boundary condition inputs",
+            expected_outcome="All functions handle edge cases gracefully without crashes or unexpected behavior",
         )
 
         # INTEGRATION TESTS
         suite.run_test(
             test_name="Integration with SessionManager and external dependencies",
             test_func=test_integration,
-            expected_behavior="Integration functions work correctly with mocked external dependencies and session management",
-            test_description="Integration with session management and external systems",
+            test_summary="Integration with session management and external systems",
+            functions_tested="coord(), SessionManager integration",
             method_description="Testing integration with session managers, database connections, and web automation",
+            expected_outcome="Integration functions work correctly with mocked external dependencies and session management",
         )
 
         # PERFORMANCE TESTS
         suite.run_test(
             test_name="Performance of state initialization and validation operations",
             test_func=test_performance,
-            expected_behavior="All operations complete within acceptable time limits with good performance",
-            test_description="Performance characteristics of DNA match gathering operations",
+            test_summary="Performance characteristics of DNA match gathering operations",
+            functions_tested="_initialize_gather_state(), _validate_start_page()",
             method_description="Testing execution speed and efficiency of state management and validation functions",
+            expected_outcome="All operations complete within acceptable time limits with good performance",
         )
 
         # ERROR HANDLING TESTS
         suite.run_test(
             test_name="Comprehensive error handling including RetryableError constructor bug prevention",
             test_func=test_error_handling,
-            expected_behavior="All error conditions handled gracefully, timeout issues resolved, database transaction errors prevented, no constructor parameter conflicts",
-            test_description="Enhanced error handling testing including RetryableError bug fix, timeout configuration validation, duplicate record handling, and final summary accuracy",
+            test_summary="Enhanced error handling testing including RetryableError bug fix, timeout configuration validation, duplicate record handling, and final summary accuracy",
+            functions_tested="Error handling across all functions",
             method_description="Testing RetryableError constructor conflicts, timeout/retry scenarios, UNIQUE constraint handling, and reporting accuracy to prevent Action 6 database transaction failures and multiple summary issues",
+            expected_outcome="All error conditions handled gracefully, timeout issues resolved, database transaction errors prevented, no constructor parameter conflicts",
         )
 
     return suite.finish_suite()
