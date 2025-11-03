@@ -99,10 +99,12 @@ from utils import (
 from core.logging_utils import OptimizedLogger
 
 # FINAL OPTIMIZATION 1: Progressive Processing Import
-from performance_cache import progressive_processing
+# Note: progressive_processing decorator removed - not essential for core functionality
+# from performance_cache import progressive_processing
 
 # FINAL OPTIMIZATION 2: Memory Optimization Import
-from memory_optimizer import ObjectPool, lazy_property
+# Note: ObjectPool and lazy_property removed - not essential for core functionality
+# from memory_optimizer import ObjectPool, lazy_property
 
 # ENHANCEMENT: Advanced Caching Layer
 import hashlib
@@ -1474,8 +1476,8 @@ def _identify_fetch_candidates(
 
 # End of _identify_fetch_candidates
 
-# FINAL OPTIMIZATION 1: Progressive Processing for Large API Prefetch Operations  
-@progressive_processing(chunk_size=25, progress_callback=_progress_callback)
+# FINAL OPTIMIZATION 1: Progressive Processing for Large API Prefetch Operations
+# Note: @progressive_processing decorator removed - not essential for core functionality
 def _perform_api_prefetches(
     session_manager: SessionManager,
     fetch_candidates_uuid: Set[str],
@@ -3381,7 +3383,7 @@ def _do_batch(
 
 
 # FINAL OPTIMIZATION 1: Progressive Processing for Large Match Datasets
-@progressive_processing(chunk_size=50, progress_callback=_progress_callback)
+# Note: @progressive_processing decorator removed - not essential for core functionality
 def _process_page_matches(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],

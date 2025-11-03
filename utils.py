@@ -127,6 +127,61 @@ KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
 KEY_DATA = "data"
 
+# === REGEX PATTERNS ===
+# Pattern to extract JSON from JSONP callback format: callback({...})
+JSONP_PATTERN = re.compile(r'^\w+\((.*)\)$', re.DOTALL)
+# Pattern to extract centiMorgan (cM) values from text
+CM_VALUE_PATTERN = re.compile(r'(\d+(?:\.\d+)?)\s*cM', re.IGNORECASE)
+
+# === JSON UTILITY FUNCTIONS ===
+def fast_json_loads(json_str: str) -> Any:
+    """
+    Fast JSON loading with fallback to standard library.
+    Uses orjson if available, otherwise standard json.
+
+    Args:
+        json_str: JSON string to parse
+
+    Returns:
+        Parsed JSON object
+    """
+    try:
+        # Dynamic import to handle missing orjson gracefully
+        orjson = __import__('orjson')
+        return orjson.loads(json_str)
+    except (ImportError, ModuleNotFoundError):
+        return json.loads(json_str)
+
+
+def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool = False) -> str:
+    """
+    Fast JSON serialization with fallback to standard library.
+    Uses orjson if available, otherwise standard json.
+
+    Args:
+        obj: Object to serialize
+        indent: Optional indentation for pretty printing
+        ensure_ascii: Whether to escape non-ASCII characters
+
+    Returns:
+        JSON string
+    """
+    try:
+        # Dynamic import to handle missing orjson gracefully
+        orjson = __import__('orjson')
+        if indent:
+            # orjson doesn't support indent, fall back to json for pretty printing
+            return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
+        else:
+            # Fast compact serialization
+            return orjson.dumps(obj).decode('utf-8')
+    except (ImportError, ModuleNotFoundError):
+        if indent:
+            return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
+        else:
+            # Optimized compact serialization
+            return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
+
 # --- Third-party and local imports ---
 # Keep the warning for optional dependencies, but don't define dummies.
 # If essential ones fail, other parts of the code will raise errors.
