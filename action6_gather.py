@@ -747,6 +747,37 @@ def _cleanup_progress_bar(progress_bar, state: dict[str, Any], loop_final_succes
         sys.stderr.flush()  # Additional flush to ensure output
 
 
+def _validate_session_before_page(session_manager: SessionManager, current_page_num: int, progress_bar, state: dict[str, Any]) -> bool:
+    """Validate session before processing a page.
+
+    Returns:
+        True if session is valid, False otherwise
+    """
+    if not session_manager.is_sess_valid():
+        logger.critical(
+            f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
+        )
+        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+        if remaining_matches_estimate > 0:
+            progress_bar.update(remaining_matches_estimate)
+            state["total_errors"] += remaining_matches_estimate
+        return False
+    return True
+
+
+def _apply_rate_limiting(session_manager: SessionManager, current_page_num: int = 0) -> None:
+    """Apply rate limiting after processing a page.
+
+    Args:
+        session_manager: SessionManager instance
+        current_page_num: Current page number (default: 0 for batch operations)
+    """
+    _adjust_delay(session_manager, current_page_num)
+    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+    if limiter is not None and hasattr(limiter, "wait"):
+        limiter.wait()
+
+
 def _process_single_page(
     session_manager: SessionManager,
     current_page_num: int,
@@ -776,14 +807,7 @@ def _process_single_page(
         return current_page_num, False
 
     # Validate session
-    if not session_manager.is_sess_valid():
-        logger.critical(
-            f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
-        )
-        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-        if remaining_matches_estimate > 0:
-            progress_bar.update(remaining_matches_estimate)
-            state["total_errors"] += remaining_matches_estimate
+    if not _validate_session_before_page(session_manager, current_page_num, progress_bar, state):
         return current_page_num, False
 
     # Fetch and validate page matches
@@ -818,10 +842,7 @@ def _process_single_page(
     _update_state_and_progress(state, progress_bar, page_new, page_updated, page_skipped, page_errors)
 
     # Rate limiting
-    _adjust_delay(session_manager, current_page_num)
-    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-    if limiter is not None and hasattr(limiter, "wait"):
-        limiter.wait()
+    _apply_rate_limiting(session_manager, current_page_num)
 
     return current_page_num + 1, loop_final_success
 
@@ -1063,6 +1084,51 @@ def _get_database_session_with_retry(
     return None
 
 
+def _handle_session_death(current_page_num: int, progress_bar, state: dict[str, Any]) -> None:
+    """Handle session death by updating progress and state."""
+    logger.critical(
+        f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
+        f"Immediately halting processing to prevent cascade failures."
+    )
+    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+    if remaining_matches_estimate > 0:
+        progress_bar.update(remaining_matches_estimate)
+        state["total_errors"] += remaining_matches_estimate
+
+
+def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
+    """Attempt proactive session refresh to prevent timeout."""
+    if not (hasattr(session_manager, 'session_start_time') and session_manager.session_start_time):
+        return
+
+    session_age = time.time() - session_manager.session_start_time
+    if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
+        logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
+        if session_manager._attempt_session_recovery():
+            logger.info("✅ Proactive session refresh successful")
+            session_manager.session_start_time = time.time()  # Reset session timer
+        else:
+            logger.error("❌ Proactive session refresh failed")
+
+
+def _check_database_pool_health(session_manager: SessionManager, current_page_num: int) -> None:
+    """Check database connection pool health every 25 pages."""
+    if current_page_num % 25 != 0:
+        return
+
+    try:
+        if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
+            db_manager = session_manager.db_manager
+            if hasattr(db_manager, 'get_performance_stats'):
+                stats = db_manager.get_performance_stats()
+                active_conns = stats.get('active_connections', 0)
+                logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
+            else:
+                logger.debug(f"Database connection pool check at page {current_page_num}")
+    except Exception as pool_opt_exc:
+        logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
+
+
 def _check_and_handle_session_health(
     session_manager: SessionManager,
     current_page_num: int,
@@ -1083,40 +1149,14 @@ def _check_and_handle_session_health(
     """
     # Check session health
     if not session_manager.check_session_health():
-        logger.critical(
-            f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
-            f"Immediately halting processing to prevent cascade failures."
-        )
-        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-        if remaining_matches_estimate > 0:
-            progress_bar.update(remaining_matches_estimate)
-            state["total_errors"] += remaining_matches_estimate
+        _handle_session_death(current_page_num, progress_bar, state)
         return False
 
     # Proactive session refresh to prevent 900-second timeout
-    if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
-        session_age = time.time() - session_manager.session_start_time
-        if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
-            logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
-            if session_manager._attempt_session_recovery():
-                logger.info("✅ Proactive session refresh successful")
-                session_manager.session_start_time = time.time()  # Reset session timer
-            else:
-                logger.error("❌ Proactive session refresh failed")
+    _attempt_proactive_session_refresh(session_manager)
 
     # Database connection pool optimization every 25 pages
-    if current_page_num % 25 == 0:
-        try:
-            if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
-                db_manager = session_manager.db_manager
-                if hasattr(db_manager, 'get_performance_stats'):
-                    stats = db_manager.get_performance_stats()
-                    active_conns = stats.get('active_connections', 0)
-                    logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
-                else:
-                    logger.debug(f"Database connection pool check at page {current_page_num}")
-        except Exception as pool_opt_exc:
-            logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
+    _check_database_pool_health(session_manager, current_page_num)
 
     return True
 
