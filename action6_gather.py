@@ -503,204 +503,81 @@ def _validate_start_page(start_arg: Any) -> int:
 # End of _validate_start_page
 
 
+def _try_get_csrf_from_api(session_manager) -> Optional[str]:
+    """
+    Try to get fresh CSRF token from API.
+
+    Args:
+        session_manager: SessionManager instance
+
+    Returns:
+        CSRF token if successful, None otherwise
+    """
+    try:
+        if hasattr(session_manager, 'api_manager') and hasattr(session_manager.api_manager, 'get_csrf_token'):
+            fresh_token = session_manager.api_manager.get_csrf_token()
+            if fresh_token:
+                logger.info("Successfully obtained fresh CSRF token from API")
+                return fresh_token
+            logger.debug("API CSRF token request returned None")
+        else:
+            logger.debug("API CSRF token method not available")
+    except Exception as api_error:
+        logger.warning(f"API CSRF token refresh failed: {api_error}")
+    return None
+
+
+def _try_get_csrf_from_cookies(session_manager) -> Optional[str]:
+    """
+    Try to get CSRF token from browser cookies.
+
+    Args:
+        session_manager: SessionManager instance
+
+    Returns:
+        CSRF token if found, None otherwise
+    """
+    csrf_cookie_names = [
+        '_dnamatches-matchlistui-x-csrf-token',
+        '_csrf',
+        'csrf_token',
+        'X-CSRF-TOKEN'
+    ]
+
+    cookies = session_manager.driver.get_cookies()
+    for cookie_name in csrf_cookie_names:
+        for cookie in cookies:
+            if cookie['name'] == cookie_name:
+                return cookie['value']
+
+    logger.warning("No CSRF token found in cookies")
+    return None
+
+
 def _get_csrf_token(session_manager, force_api_refresh=False):
     """
     Helper function to extract CSRF token from cookies or API.
-    
+
     Args:
         session_manager: SessionManager instance with active browser session
         force_api_refresh: If True, attempts to get fresh token from API
-        
+
     Returns:
         str: CSRF token if found, None otherwise
     """
     try:
-        # If force refresh requested, try to get fresh token from API first
+        # Try API first if force refresh requested
         if force_api_refresh:
-            try:
-                if hasattr(session_manager, 'api_manager') and hasattr(session_manager.api_manager, 'get_csrf_token'):
-                    fresh_token = session_manager.api_manager.get_csrf_token()
-                    if fresh_token:
-                        logger.info("Successfully obtained fresh CSRF token from API")
-                        return fresh_token
-                    logger.debug("API CSRF token request returned None, falling back to cookies")
-                else:
-                    logger.debug("API CSRF token method not available, falling back to cookies")
-            except Exception as api_error:
-                logger.warning(f"API CSRF token refresh failed: {api_error}, falling back to cookies")
+            token = _try_get_csrf_from_api(session_manager)
+            if token:
+                return token
 
-        # Get cookies from the browser
-        cookies = session_manager.driver.get_cookies()
-
-        # Look for CSRF token in various cookie names
-        csrf_cookie_names = [
-            '_dnamatches-matchlistui-x-csrf-token',
-            '_csrf',
-            'csrf_token',
-            'X-CSRF-TOKEN'
-        ]
-
-        for cookie_name in csrf_cookie_names:
-            for cookie in cookies:
-                if cookie['name'] == cookie_name:
-                    return cookie['value']
-
-        logger.warning("No CSRF token found in cookies")
-        return None
+        # Fall back to cookies
+        return _try_get_csrf_from_cookies(session_manager)
 
     except Exception as e:
         logger.error(f"Error extracting CSRF token: {e}")
         return None
-
-
-# UNUSED - COMPLEX RETRY LOGIC (using simple approach instead)
-# def _handle_303_error_with_retry(session_manager, api_response, match_list_url, match_list_headers, driver, max_retries=2):
-    """
-    Handle 303 errors with intelligent retry logic.
-    
-    Args:
-        session_manager: SessionManager instance
-        api_response: The 303 response object
-        match_list_url: URL for the match list API
-        match_list_headers: Headers for the API call
-        driver: WebDriver instance
-        max_retries: Maximum number of retry attempts
-        
-    Returns:
-        dict or None: Successful API response or None if all retries failed
-    """
-
-    for retry_attempt in range(max_retries + 1):
-        if retry_attempt > 0:
-            wait_time = min(2 ** retry_attempt, 10)  # Exponential backoff, capped at 10s
-            logger.info(f"Retry attempt {retry_attempt}/{max_retries} after {wait_time}s wait...")
-            time.sleep(wait_time)
-
-        try:
-            # Try lightweight token refresh first
-            logger.info("Attempting CSRF token refresh...")
-            fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
-
-            if fresh_csrf_token:
-                logger.info("Fresh CSRF token obtained. Retrying API call...")
-                match_list_headers['X-CSRF-Token'] = fresh_csrf_token
-
-                # Retry with fresh token
-                token_retry_response = _api_req(
-                    url=match_list_url,
-                    driver=driver,
-                    session_manager=session_manager,
-                    method="GET",
-                    headers=match_list_headers,
-                    use_csrf_token=False,
-                    api_description=f"Match List API (Token Refresh Retry {retry_attempt})",
-                    allow_redirects=True,
-                )
-
-                if isinstance(token_retry_response, dict):
-                    logger.info(f"API call successful after token refresh (attempt {retry_attempt})")
-                    return token_retry_response
-                # Check if it's a response object with status code
-                response_status = getattr(token_retry_response, 'status_code', None)
-                if response_status and response_status != 303:
-                    logger.warning(f"Token refresh worked but got different error: {response_status}")
-                    # Different error - break the retry loop
-                    break
-                logger.warning(f"Still getting 303 after token refresh (attempt {retry_attempt})")
-
-            # If token refresh didn't work and this is the last attempt, try full session refresh
-            if retry_attempt == max_retries:
-                logger.info("Token refresh failed. Trying full session refresh as final attempt...")
-                if _refresh_session_for_matches(session_manager):
-                    logger.info("Session refreshed successfully. Final retry...")
-
-                    # Get fresh CSRF token after session refresh
-                    csrf_token = _get_csrf_token(session_manager)
-                    if csrf_token:
-                        match_list_headers['X-CSRF-Token'] = csrf_token
-
-                        # Final retry with fresh session
-                        session_retry_response = _api_req(
-                            url=match_list_url,
-                            driver=driver,
-                            session_manager=session_manager,
-                            method="GET",
-                            headers=match_list_headers,
-                            use_csrf_token=False,
-                            api_description="Match List API (Final Session Refresh)",
-                            allow_redirects=True,
-                        )
-
-                        if isinstance(session_retry_response, dict):
-                            logger.info("API call successful after session refresh")
-                            return session_retry_response
-                        logger.error("Final attempt failed after session refresh")
-                    else:
-                        logger.error("Could not get fresh CSRF token after session refresh")
-                else:
-                    logger.error("Session refresh failed")
-
-        except Exception as e:
-            logger.error(f"Exception during retry attempt {retry_attempt}: {e}")
-            if retry_attempt == max_retries:
-                break
-
-    logger.error(f"All {max_retries + 1} retry attempts failed for 303 error")
-    return None
-
-
-# UNUSED - COMPLEX SESSION REFRESH (using simple approach instead)
-# def _refresh_session_for_matches(session_manager):
-    """
-    Refresh the browser session to fix authentication issues.
-    Simplified approach that avoids navigation issues.
-    
-    Args:
-        session_manager: SessionManager instance
-        
-    Returns:
-        bool: True if refresh successful, False otherwise
-    """
-    try:
-        logger.info("Attempting to refresh session for DNA matches...")
-
-        # Navigate back to the base page to refresh session
-        from utils import nav_to_page
-
-        # Get the base URL from config
-        base_url = session_manager.config.api.base_url if hasattr(session_manager, 'config') else 'https://www.ancestry.co.uk/'
-
-        # Navigate to base page to refresh session
-        success = nav_to_page(
-            session_manager.driver,
-            base_url,
-            'body',
-            session_manager
-        )
-
-        if not success:
-            logger.error("Failed to navigate to base page during session refresh")
-            return False
-
-        # Wait for session to stabilize
-        time.sleep(3)
-
-        # Force cookie sync to requests session
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
-
-        # Check if we're currently on a matches page, if so just refresh it
-        current_url = session_manager.driver.current_url
-        if "discoveryui-matches" in current_url:
-            session_manager.driver.refresh()
-            time.sleep(2)
-
-        logger.info("Session refresh completed successfully")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error during session refresh: {e}")
-        return False
 
 
 def _navigate_and_get_initial_page_data(
@@ -1107,9 +984,8 @@ def _fetch_page_matches(
             progress_bar.update(MATCHES_PER_PAGE)
             state["total_errors"] += MATCHES_PER_PAGE
             return []
-        else:
-            matches_on_page, _ = result  # We don't need total_pages again
-            return matches_on_page
+        matches_on_page, _ = result  # We don't need total_pages again
+        return matches_on_page
     except ConnectionError as conn_e:
         logger.error(
             f"ConnectionError get_matches page {current_page_num}: {conn_e}",
@@ -1451,7 +1327,7 @@ def coord(
         state["final_success"] = False
     finally:
         # Step 7: Final Summary Logging (uses updated state from the loop)
-        from utils import log_final_summary, log_action_status
+        from utils import log_action_status, log_final_summary
 
         # Calculate run time
         run_time_seconds = time.time() - action_start_time

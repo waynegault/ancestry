@@ -255,7 +255,7 @@ def log_final_summary(summary_dict: dict[str, Any], run_time_seconds: float) -> 
     logger.info("=" * 80)
 
     # Log all summary items with aligned labels
-    max_label_len = max(len(str(k)) for k in summary_dict.keys())
+    max_label_len = max(len(str(k)) for k in summary_dict)
     for label, value in summary_dict.items():
         logger.info(f"{str(label) + ':':<{max_label_len + 1}} {value}")
 
