@@ -92,9 +92,7 @@ from standard_imports import setup_module
 # === PERFORMANCE OPTIMIZATIONS ===
 from utils import (
     fast_json_loads,
-    fast_json_dumps,
     JSONP_PATTERN,
-    CM_VALUE_PATTERN,
 )
 from core.logging_utils import OptimizedLogger
 
@@ -167,15 +165,12 @@ from error_handling import (
     retry_on_failure,
     circuit_breaker,
     timeout_protection,
-    graceful_degradation,
     error_context,
-    AncestryException,
     RetryableError,
     NetworkTimeoutError,
     DatabaseConnectionError,
     BrowserSessionError,
     AuthenticationExpiredError,
-    ErrorContext,
 )
 
 # === STANDARD LIBRARY IMPORTS ===
@@ -185,8 +180,7 @@ import random
 import re
 import sys
 import time
-import threading
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio  # PHASE 2: Add asyncio for async/await patterns
 from datetime import datetime, timezone
@@ -198,7 +192,6 @@ import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-from requests.cookies import RequestsCookieJar
 from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -235,8 +228,6 @@ from utils import (
 from test_framework import (
     TestSuite,
     suppress_logging,
-    create_mock_data,
-    assert_valid_function,
 )
 from dna_ethnicity_utils import (
     fetch_ethnicity_comparison,
