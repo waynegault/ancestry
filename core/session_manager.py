@@ -1023,6 +1023,23 @@ class SessionManager:
         logger.info("Session restart completed successfully.")
         return True
 
+    def check_browser_health(self) -> bool:
+        """Check browser health and detect browser death."""
+        current_time = time.time()
+        self.session_health_monitor['last_browser_health_check'] = current_time
+
+        # Check if browser is needed
+        if not self.browser_manager.browser_needed:
+            return True
+
+        # Check if driver exists and is responsive
+        if not self.browser_manager.is_session_valid():
+            self.session_health_monitor['browser_death_count'] = self.session_health_monitor.get('browser_death_count', 0) + 1
+            logger.warning(f"🚨 Browser death detected (count: {self.session_health_monitor['browser_death_count']})")
+            return False
+
+        return True
+
     def close_sess(self, keep_db: bool = False):
         """
         Close the session.
