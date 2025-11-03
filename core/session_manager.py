@@ -159,6 +159,13 @@ class SessionManager:
         self._tree_id_logged: bool = False
         self._owner_logged: bool = False
 
+        # Initialize rate limiter (use global singleton for all API calls)
+        try:
+            from utils import get_rate_limiter
+            self.rate_limiter = get_rate_limiter()
+        except ImportError:
+            self.rate_limiter = None
+
         # Add dynamic rate limiter for AI calls (matches utils.py SessionManager)
         try:
             from utils import DynamicRateLimiter
