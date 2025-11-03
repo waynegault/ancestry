@@ -2087,7 +2087,7 @@ def _check_startup_status(session_manager: SessionManager) -> None:
             import time
             file_age_days = (time.time() - cookie_file.stat().st_mtime) / 86400
             if file_age_days < 7:
-                logger.info("✅ Ancestry session cookies available (may be valid)")
+                logger.info("✅ Ancestry session cookies available")
             else:
                 logger.debug("Ancestry session cookies found but may be expired")
         else:
