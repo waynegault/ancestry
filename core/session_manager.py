@@ -1207,7 +1207,7 @@ class SessionManager:
             return None
 
         from urllib.parse import urljoin
-        url = urljoin(config_schema.api.base_url, "api/uhome/secure/rest/header/dna")
+        url = urljoin(config_schema.api.base_url, "api/navheaderdata/v1/header/data/dna")
         logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
 
         try:

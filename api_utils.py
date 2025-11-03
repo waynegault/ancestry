@@ -129,7 +129,7 @@ API_PATH_SEND_MESSAGE_EXISTING = "app-api/express/v2/conversations/{conv_id}"
 API_PATH_PROFILE_DETAILS = "/app-api/express/v1/profiles/details"
 
 # Tree API endpoints
-API_PATH_HEADER_TREES = "api/uhome/secure/rest/header/trees"
+API_PATH_HEADER_TREES = "api/treesui-list/trees?rights=own"
 API_PATH_TREE_OWNER_INFO = "api/uhome/secure/rest/user/tree-info"
 
 # Person API endpoints
@@ -2747,7 +2747,7 @@ def _parse_tree_id_from_url(tree_url: Any, tree_name_config: str) -> Optional[st
 
 
 def _validate_header_trees_response(response_data: Any, api_description: str) -> Optional[list]:
-    """Validate header trees response and return menu items if valid."""
+    """Validate header trees response and return trees list if valid."""
     if not response_data or not isinstance(response_data, dict):
         if response_data is None:
             logger.warning(f"{api_description} call failed (_api_req returned None).")
@@ -2757,30 +2757,50 @@ def _validate_header_trees_response(response_data: Any, api_description: str) ->
             logger.debug(f"Full {api_description} response data: {response_data!s}")
         return None
 
-    if KEY_MENUITEMS not in response_data or not isinstance(response_data[KEY_MENUITEMS], list):
-        logger.warning(f"Unexpected response format from {api_description} (missing or invalid menuItems).")
-        return None
+    # New format: {"trees": [{"id": "...", "name": "..."}]}
+    if "trees" in response_data and isinstance(response_data["trees"], list):
+        logger.debug(f"Using new trees format (found {len(response_data['trees'])} trees)")
+        return response_data["trees"]
 
-    # Validate response with Pydantic if available
-    if PYDANTIC_AVAILABLE:
-        try:
-            HeaderTreesResponse(**response_data)
-            logger.debug("Header Trees API response validation successful")
-        except Exception as validation_err:
-            logger.warning(f"Header Trees API response validation warning: {validation_err}")
+    # Old format: {"menuItems": [...]}
+    if KEY_MENUITEMS in response_data and isinstance(response_data[KEY_MENUITEMS], list):
+        logger.debug("Using old menuItems format")
+        # Validate response with Pydantic if available
+        if PYDANTIC_AVAILABLE:
+            try:
+                HeaderTreesResponse(**response_data)
+                logger.debug("Header Trees API response validation successful")
+            except Exception as validation_err:
+                logger.warning(f"Header Trees API response validation warning: {validation_err}")
+        return response_data[KEY_MENUITEMS]
 
-    return response_data[KEY_MENUITEMS]
+    logger.warning(f"Unexpected response format from {api_description} (missing both 'trees' and 'menuItems').")
+    return None
 
 
 def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
     """Extract tree ID from header trees API response."""
-    menu_items = _validate_header_trees_response(response_data, api_description)
-    if not menu_items:
+    items = _validate_header_trees_response(response_data, api_description)
+    if not items:
         return None
 
-    for item in menu_items:
-        if isinstance(item, dict) and item.get(KEY_TEXT) == tree_name_config:
-            return _parse_tree_id_from_url(item.get(KEY_URL), tree_name_config)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        # New format: {"id": "...", "name": "..."}
+        if "name" in item and item.get("name") == tree_name_config:
+            tree_id = item.get("id")
+            if tree_id:
+                logger.debug(f"Found tree ID '{tree_id}' for TREE_NAME '{tree_name_config}' (new format)")
+                return str(tree_id)
+
+        # Old format: {"text": "...", "url": "..."}
+        if KEY_TEXT in item and item.get(KEY_TEXT) == tree_name_config:
+            tree_id = _parse_tree_id_from_url(item.get(KEY_URL), tree_name_config)
+            if tree_id:
+                logger.debug(f"Found tree ID '{tree_id}' for TREE_NAME '{tree_name_config}' (old format)")
+                return tree_id
 
     logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
     return None
