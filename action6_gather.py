@@ -3266,6 +3266,242 @@ def _prepare_person_insert_data(
     return insert_data
 
 
+def _separate_bulk_operations(
+    prepared_bulk_data: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate prepared data by operation type and table.
+
+    Args:
+        prepared_bulk_data: List of prepared bulk data dictionaries
+
+    Returns:
+        Tuple of (person_creates, person_updates, dna_match_ops, family_tree_ops)
+    """
+    person_creates_raw = [
+        d["person"]
+        for d in prepared_bulk_data
+        if d.get("person") and d["person"]["_operation"] == "create"
+    ]
+    person_updates = [
+        d["person"]
+        for d in prepared_bulk_data
+        if d.get("person") and d["person"]["_operation"] == "update"
+    ]
+    dna_match_ops = [
+        d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")
+    ]
+    family_tree_ops = [
+        d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")
+    ]
+    return person_creates_raw, person_updates, dna_match_ops, family_tree_ops
+
+
+def _validate_no_duplicate_profile_ids(insert_data: list[dict[str, Any]]) -> None:
+    """Validate that there are no duplicate profile IDs in insert data.
+
+    Args:
+        insert_data: List of person insert data dictionaries
+
+    Raises:
+        IntegrityError: If duplicate profile IDs are found
+    """
+    final_profile_ids = {
+        item.get("profile_id") for item in insert_data if item.get("profile_id")
+    }
+    if len(final_profile_ids) != sum(1 for item in insert_data if item.get("profile_id")):
+        logger.error("CRITICAL: Duplicate non-NULL profile IDs DETECTED post-filter! Aborting bulk insert.")
+        id_counts = Counter(item.get("profile_id") for item in insert_data if item.get("profile_id"))
+        duplicates = {pid: count for pid, count in id_counts.items() if count > 1}
+        logger.error(f"Duplicate Profile IDs in filtered list: {duplicates}")
+        dup_exception = ValueError(f"Duplicate profile IDs: {duplicates}")
+        raise IntegrityError(
+            "Duplicate profile IDs found pre-bulk insert",
+            params=str(duplicates),
+            orig=dup_exception,
+        )
+
+
+def _get_person_id_mapping(
+    session: SqlAlchemySession,
+    inserted_uuids: list[str]
+) -> dict[str, int]:
+    """Get Person ID mapping for inserted UUIDs.
+
+    Args:
+        session: SQLAlchemy session
+        inserted_uuids: List of inserted UUIDs
+
+    Returns:
+        Dictionary mapping UUID to Person ID
+    """
+    if not inserted_uuids:
+        logger.warning("No UUIDs available in insert_data to query back IDs.")
+        return {}
+
+    logger.debug(f"Querying IDs for {len(inserted_uuids)} inserted UUIDs...")
+
+    try:
+        session.flush()  # Make pending changes visible to current session
+        session.commit()  # Commit to database for ID generation
+
+        newly_inserted_persons = (
+            session.query(Person.id, Person.uuid)
+            .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
+            .all()
+        )
+        created_person_map = {p_uuid: p_id for p_id, p_uuid in newly_inserted_persons}
+
+        logger.debug(f"Person ID Mapping: Queried {len(inserted_uuids)} UUIDs, mapped {len(created_person_map)} Person IDs")
+
+        if len(created_person_map) != len(inserted_uuids):
+            missing_count = len(inserted_uuids) - len(created_person_map)
+            missing_uuids = [uuid for uuid in inserted_uuids if uuid not in created_person_map]
+            logger.error(
+                f"CRITICAL: Person ID mapping failed for {missing_count} UUIDs. Missing: {missing_uuids[:3]}{'...' if missing_count > 3 else ''}"
+            )
+
+            # Recovery attempt: Query with broader filter
+            recovery_persons = (
+                session.query(Person.id, Person.uuid)
+                .filter(Person.uuid.in_(missing_uuids))
+                .filter(Person.deleted_at.is_(None))
+                .all()
+            )
+
+            recovery_map = {p_uuid: p_id for p_id, p_uuid in recovery_persons}
+            if recovery_map:
+                logger.info(f"Recovery: Found {len(recovery_map)} additional Person IDs")
+                created_person_map.update(recovery_map)
+
+        return created_person_map
+
+    except Exception as mapping_error:
+        logger.error(f"CRITICAL: Person ID mapping query failed: {mapping_error}")
+        session.rollback()
+        return {}
+
+
+def _process_person_creates(
+    session: SqlAlchemySession,
+    person_creates_raw: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person]
+) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    """Process Person create operations.
+
+    Args:
+        session: SQLAlchemy session
+        person_creates_raw: Raw person create data
+        existing_persons_map: Map of existing persons
+
+    Returns:
+        Tuple of (created_person_map, insert_data)
+    """
+    # De-duplicate Person creates
+    person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
+
+    if not person_creates_filtered:
+        return {}, []
+
+    # Prepare insert data
+    insert_data = _prepare_person_insert_data(person_creates_filtered, session, existing_persons_map)
+
+    # Validate no duplicates
+    _validate_no_duplicate_profile_ids(insert_data)
+
+    # Perform bulk insert
+    logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
+    session.bulk_insert_mappings(Person, insert_data)  # type: ignore
+
+    # Get newly created IDs
+    session.flush()
+    inserted_uuids = [p_data["uuid"] for p_data in insert_data if p_data.get("uuid")]
+    created_person_map = _get_person_id_mapping(session, inserted_uuids)
+
+    return created_person_map, insert_data
+
+
+def _process_person_updates(
+    session: SqlAlchemySession,
+    person_updates: list[dict[str, Any]]
+) -> None:
+    """Process Person update operations.
+
+    Args:
+        session: SQLAlchemy session
+        person_updates: List of person update data
+    """
+    if not person_updates:
+        logger.debug("No Person updates needed for this batch.")
+        return
+
+    update_mappings = []
+    for p_data in person_updates:
+        existing_id = p_data.get("_existing_person_id")
+        if not existing_id:
+            logger.warning(
+                f"Skipping person update (UUID {p_data.get('uuid')}): Missing '_existing_person_id'."
+            )
+            continue
+        update_dict = {
+            k: v
+            for k, v in p_data.items()
+            if not k.startswith("_") and k not in ["uuid", "profile_id"]
+        }
+        if "status" in update_dict and isinstance(update_dict["status"], PersonStatusEnum):
+            update_dict["status"] = update_dict["status"].value
+        update_dict["id"] = existing_id
+        update_dict["updated_at"] = datetime.now(timezone.utc)
+        if len(update_dict) > 2:
+            update_mappings.append(update_dict)
+
+    if update_mappings:
+        logger.debug(f"Bulk updating {len(update_mappings)} Person records...")
+        session.bulk_update_mappings(Person, update_mappings)  # type: ignore
+        logger.debug("Bulk update Persons called.")
+    else:
+        logger.debug("No valid Person updates to perform.")
+
+
+def _create_master_id_map(
+    created_person_map: dict[str, int],
+    person_updates: list[dict[str, Any]],
+    prepared_bulk_data: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person]
+) -> dict[str, int]:
+    """Create master ID map for linking related records.
+
+    Args:
+        created_person_map: Map of newly created person IDs
+        person_updates: List of person update data
+        prepared_bulk_data: List of prepared bulk data
+        existing_persons_map: Map of existing persons
+
+    Returns:
+        Master ID map (UUID -> Person ID)
+    """
+    all_person_ids_map: dict[str, int] = created_person_map.copy()
+
+    # Add IDs from updates
+    for p_update_data in person_updates:
+        if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
+            all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+
+    # Add IDs from existing persons
+    processed_uuids = {
+        p["person"]["uuid"]
+        for p in prepared_bulk_data
+        if p.get("person") and p["person"].get("uuid")
+    }
+    for uuid_processed in processed_uuids:
+        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
+            person = existing_persons_map[uuid_processed]
+            person_id_val = getattr(person, "id", None)
+            if person_id_val is not None:
+                all_person_ids_map[uuid_processed] = person_id_val
+
+    return all_person_ids_map
+
+
 def _execute_bulk_db_operations(
     session: SqlAlchemySession,
     prepared_bulk_data: list[dict[str, Any]],
@@ -3300,177 +3536,22 @@ def _execute_bulk_db_operations(
         insert_data: list[dict[str, Any]] = []
 
         # Step 2: Separate data by operation type (create/update) and table
-        # Person Operations
-        person_creates_raw = [
-            d["person"]
-            for d in prepared_bulk_data
-            if d.get("person") and d["person"]["_operation"] == "create"
-        ]
-        person_updates = [
-            d["person"]
-            for d in prepared_bulk_data
-            if d.get("person") and d["person"]["_operation"] == "update"
-        ]
-        # DnaMatch/FamilyTree Operations (Assume create/update logic handled in _do_match prep)
-        dna_match_ops = [
-            d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")
-        ]
-        family_tree_ops = [
-            d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")
-        ]
-
-        created_person_map: dict[str, int] = {}  # Maps UUID -> new Person ID
+        person_creates_raw, person_updates, dna_match_ops, family_tree_ops = _separate_bulk_operations(
+            prepared_bulk_data
+        )
 
         # --- Step 3: Person Creates ---
-        # Use helper function to de-duplicate Person creates
-        person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
-
-        # Bulk Insert Persons (if any unique creates remain)
-        if person_creates_filtered:
-            # Use helper function to prepare insert data
-            insert_data = _prepare_person_insert_data(person_creates_filtered, session, existing_persons_map)
-
-            # Final check for duplicates *within the filtered list* (shouldn't happen if de-dup logic is right)
-            final_profile_ids = {
-                item.get("profile_id") for item in insert_data if item.get("profile_id")
-            }
-            if len(final_profile_ids) != sum(
-                1 for item in insert_data if item.get("profile_id")
-            ):
-                logger.error(
-                    "CRITICAL: Duplicate non-NULL profile IDs DETECTED post-filter! Aborting bulk insert."
-                )
-                id_counts = Counter(
-                    item.get("profile_id")
-                    for item in insert_data
-                    if item.get("profile_id")
-                )
-                duplicates = {
-                    pid: count for pid, count in id_counts.items() if count > 1
-                }
-                logger.error(f"Duplicate Profile IDs in filtered list: {duplicates}")
-                # Create a proper exception to pass as orig
-                dup_exception = ValueError(f"Duplicate profile IDs: {duplicates}")
-                raise IntegrityError(
-                    "Duplicate profile IDs found pre-bulk insert",
-                    params=str(duplicates),
-                    orig=dup_exception,
-                )
-
-            # Perform bulk insert
-            logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
-            session.bulk_insert_mappings(Person, insert_data)  # type: ignore
-
-            # --- Get newly created IDs ---
-            session.flush()
-            inserted_uuids = [
-                p_data["uuid"] for p_data in insert_data if p_data.get("uuid")
-            ]
-            if inserted_uuids:
-                logger.debug(
-                    f"Querying IDs for {len(inserted_uuids)} inserted UUIDs..."
-                )
-
-                # CRITICAL FIX: Ensure database consistency before UUID->ID mapping
-                try:
-                    session.flush()  # Make pending changes visible to current session
-                    session.commit()  # Commit to database for ID generation
-
-                    newly_inserted_persons = (
-                        session.query(Person.id, Person.uuid)
-                        .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
-                        .all()
-                    )
-                    created_person_map = {
-                        p_uuid: p_id for p_id, p_uuid in newly_inserted_persons
-                    }
-
-                    logger.debug(f"Person ID Mapping: Queried {len(inserted_uuids)} UUIDs, mapped {len(created_person_map)} Person IDs")
-
-                    if len(created_person_map) != len(inserted_uuids):
-                        missing_count = len(inserted_uuids) - len(created_person_map)
-                        missing_uuids = [uuid for uuid in inserted_uuids if uuid not in created_person_map]
-                        logger.error(
-                            f"CRITICAL: Person ID mapping failed for {missing_count} UUIDs. Missing: {missing_uuids[:3]}{'...' if missing_count > 3 else ''}"
-                        )
-
-                        # Recovery attempt: Query with broader filter
-                        recovery_persons = (
-                            session.query(Person.id, Person.uuid)
-                            .filter(Person.uuid.in_(missing_uuids))
-                            .filter(Person.deleted_at.is_(None))
-                            .all()
-                        )
-
-                        recovery_map = {p_uuid: p_id for p_id, p_uuid in recovery_persons}
-                        if recovery_map:
-                            logger.info(f"Recovery: Found {len(recovery_map)} additional Person IDs")
-                            created_person_map.update(recovery_map)
-
-                except Exception as mapping_error:
-                    logger.error(f"CRITICAL: Person ID mapping query failed: {mapping_error}")
-                    session.rollback()
-                    created_person_map = {}
-            else:
-                logger.warning("No UUIDs available in insert_data to query back IDs.")
-        else:
-            # No person creates to process
-            insert_data = []
+        created_person_map, insert_data = _process_person_creates(
+            session, person_creates_raw, existing_persons_map
+        )
 
         # --- Step 4: Person Updates ---
-        if person_updates:
-            update_mappings = []
-            for p_data in person_updates:
-                existing_id = p_data.get("_existing_person_id")
-                if not existing_id:
-                    logger.warning(
-                        f"Skipping person update (UUID {p_data.get('uuid')}): Missing '_existing_person_id'."
-                    )
-                    continue
-                update_dict = {
-                    k: v
-                    for k, v in p_data.items()
-                    if not k.startswith("_") and k not in ["uuid", "profile_id"]
-                }
-                if "status" in update_dict and isinstance(
-                    update_dict["status"], PersonStatusEnum
-                ):
-                    update_dict["status"] = update_dict["status"].value
-                update_dict["id"] = existing_id
-                update_dict["updated_at"] = datetime.now(timezone.utc)
-                if len(update_dict) > 2:
-                    update_mappings.append(update_dict)
-
-            if update_mappings:
-                logger.debug(f"Bulk updating {len(update_mappings)} Person records...")
-                session.bulk_update_mappings(Person, update_mappings)  # type: ignore
-                logger.debug("Bulk update Persons called.")
-            else:
-                logger.debug("No valid Person updates to perform.")
-        else:
-            logger.debug("No Person updates needed for this batch.")
+        _process_person_updates(session, person_updates)
 
         # --- Step 5: Create Master ID Map (for linking related records) ---
-        all_person_ids_map: dict[str, int] = created_person_map.copy()
-        for p_update_data in person_updates:
-            if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
-                all_person_ids_map[p_update_data["uuid"]] = p_update_data[
-                    "_existing_person_id"
-                ]
-        processed_uuids = {
-            p["person"]["uuid"]
-            for p in prepared_bulk_data
-            if p.get("person") and p["person"].get("uuid")
-        }
-        for uuid_processed in processed_uuids:
-            if uuid_processed not in all_person_ids_map and existing_persons_map.get(
-                uuid_processed
-            ):
-                person = existing_persons_map[uuid_processed]
-                # Get the id value directly from the SQLAlchemy object
-                person_id_val = getattr(person, "id", None)
-                if person_id_val is not None:
-                    all_person_ids_map[uuid_processed] = person_id_val
+        all_person_ids_map = _create_master_id_map(
+            created_person_map, person_updates, prepared_bulk_data, existing_persons_map
+        )
 
         # --- Step 6: DnaMatch Bulk Upsert (REVISED: Separate Insert/Update) ---
         if dna_match_ops:
