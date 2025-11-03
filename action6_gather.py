@@ -814,6 +814,40 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
+def _update_state_and_progress(
+    state: Dict[str, Any],
+    progress_bar,
+    page_new: int,
+    page_updated: int,
+    page_skipped: int,
+    page_errors: int
+) -> None:
+    """
+    Update state counters and progress bar after processing a page.
+
+    Args:
+        state: State dictionary for tracking
+        progress_bar: Progress bar instance
+        page_new: Number of new matches on page
+        page_updated: Number of updated matches on page
+        page_skipped: Number of skipped matches on page
+        page_errors: Number of errors on page
+    """
+    state["total_new"] += page_new
+    state["total_updated"] += page_updated
+    state["total_skipped"] += page_skipped
+    state["total_errors"] += page_errors
+    state["total_pages_processed"] += 1
+
+    progress_bar.set_postfix(
+        New=state["total_new"],
+        Upd=state["total_updated"],
+        Skip=state["total_skipped"],
+        Err=state["total_errors"],
+        refresh=True,
+    )
+
+
 def _try_fast_skip_page(
     session_manager: SessionManager,
     matches_on_page: List[Dict[str, Any]],
@@ -1172,19 +1206,7 @@ def _main_page_processing_loop(
                     progress_bar=progress_bar,
                 )
 
-                state["total_new"] += page_new
-                state["total_updated"] += page_updated
-                state["total_skipped"] += page_skipped
-                state["total_errors"] += page_errors
-                state["total_pages_processed"] += 1
-
-                progress_bar.set_postfix(
-                    New=state["total_new"],
-                    Upd=state["total_updated"],
-                    Skip=state["total_skipped"],
-                    Err=state["total_errors"],
-                    refresh=True,
-                )
+                _update_state_and_progress(state, progress_bar, page_new, page_updated, page_skipped, page_errors)
 
                 _adjust_delay(session_manager, current_page_num)
                 limiter = getattr(session_manager, "dynamic_rate_limiter", None)
