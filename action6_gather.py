@@ -81,11 +81,6 @@ def _update_session_performance_tracking(session_manager, duration: float, respo
         logger.debug(f"Failed to update session performance tracking: {e}")
         pass
 
-# FINAL OPTIMIZATION 1: Progressive Processing Integration
-def _progress_callback(progress: float) -> None:
-    """Progress callback for large dataset processing"""
-    logger.info(f"Processing progress: {progress:.1%} complete")
-
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
