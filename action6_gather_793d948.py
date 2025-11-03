@@ -236,11 +236,6 @@ from test_framework import (
     create_mock_data,
     assert_valid_function,
 )
-from dna_ethnicity_utils import (
-    fetch_ethnicity_comparison,
-    extract_match_ethnicity_percentages,
-    load_ethnicity_metadata,
-)
 
 # --- Constants ---
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
@@ -326,86 +321,6 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
         )
     except Exception as e:
         logger.warning(f"Error caching profile data for {profile_id}: {e}")
-
-
-# === ETHNICITY ENRICHMENT HELPERS ===
-from functools import lru_cache
-
-@lru_cache(maxsize=1)
-def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
-    """Load ethnicity metadata and return (region_keys, key->column mapping)."""
-    metadata = load_ethnicity_metadata()
-    if not isinstance(metadata, dict):
-        logger.debug("Ethnicity metadata unavailable or invalid; skipping ethnicity enrichment")
-        return [], {}
-
-    regions = metadata.get("tree_owner_regions", [])
-    if not isinstance(regions, list) or not regions:
-        logger.debug("No ethnicity regions configured; skipping ethnicity enrichment")
-        return [], {}
-
-    region_keys: list[str] = []
-    column_map: dict[str, str] = {}
-    for region in regions:
-        if not isinstance(region, dict):
-            continue
-        key = region.get("key")
-        column_name = region.get("column_name")
-        if key and column_name:
-            region_keys.append(str(key))
-            column_map[str(key)] = str(column_name)
-
-    if not region_keys:
-        logger.debug("Ethnicity metadata contained no valid regions; skipping ethnicity enrichment")
-
-    return region_keys, column_map
-
-
-def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
-    """Fetch ethnicity comparison data and map it to database column names."""
-    if not my_uuid or not match_uuid:
-        return {}
-
-    region_keys, column_map = _get_ethnicity_config()
-    if not region_keys or not column_map:
-        return {}
-
-    match_guid = str(match_uuid).upper()
-    comparison_data = fetch_ethnicity_comparison(session_manager, my_uuid, match_guid)
-    if not comparison_data:
-        logger.debug(f"No ethnicity comparison data for match {match_uuid}")
-        return {}
-
-    percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
-    payload: dict[str, Optional[int]] = {}
-    for region_key, percentage in percentages.items():
-        column_name = column_map.get(str(region_key))
-        if not column_name:
-            continue
-        try:
-            payload[column_name] = int(percentage) if percentage is not None else None
-        except (TypeError, ValueError):
-            logger.debug(f"Invalid ethnicity percentage '{percentage}' for region {region_key} (match {match_uuid})")
-
-    return payload
-
-
-def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
-    """Return True if the existing DNA match record is missing ethnicity data."""
-    if not existing_dna_match:
-        return False
-
-    _, column_map = _get_ethnicity_config()
-    if not column_map:
-        return False
-
-    for column_name in column_map.values():
-        if not hasattr(existing_dna_match, column_name):
-            return True
-        if getattr(existing_dna_match, column_name) is None:
-            return True
-
-    return False
 
 
 # === OPTIMIZATION: Rate limiter helper with response-time adaptation
@@ -1139,18 +1054,11 @@ def _main_page_processing_loop(
 @timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
 @error_context("DNA match gathering coordination")
 def coord(
-    session_manager: SessionManager, start: int = 1
+    session_manager: SessionManager, _config_schema_arg: "ConfigSchema", start: int = 1
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
     Handles pagination, fetches match data, compares with database, and processes.
-
-    Args:
-        session_manager: Global SessionManager instance from main.py
-        start: Starting page number (default: 1)
-
-    Returns:
-        bool: True if successful, False otherwise
     """
     # Step 1: Validate Session State
     if (
@@ -3960,7 +3868,6 @@ def _prepare_dna_match_operation_data(
     predicted_relationship: Optional[str],
     log_ref_short: str,
     logger_instance: logging.Logger,
-    session_manager: SessionManager,
 ) -> Optional[Dict[str, Any]]:
     """
     Prepares DnaMatch data for create or update operations by comparing API data with existing records.
@@ -3973,7 +3880,6 @@ def _prepare_dna_match_operation_data(
         predicted_relationship: The predicted relationship string from the API, can be None if not available.
         log_ref_short: Short reference string for logging.
         logger_instance: The logger instance.
-        session_manager: SessionManager instance for ethnicity API calls.
 
     Returns:
         Optional[Dict[str, Any]]: Dictionary with DNA match data and '_operation' key set to 'create',
@@ -4094,20 +4000,6 @@ def _prepare_dna_match_operation_data(
             )
             dna_dict_base["shared_segments"] = match.get("numSharedSegments")
             # Other detail-specific fields (longest_shared_segment, meiosis, sides) will be None if not in dna_dict_base
-
-        # === ETHNICITY ENRICHMENT ===
-        # Add ethnicity data if this is a new record or existing record needs refresh
-        if existing_dna_match is None or _needs_ethnicity_refresh(existing_dna_match):
-            my_uuid = session_manager.my_uuid
-            if my_uuid:
-                ethnicity_payload = _build_ethnicity_payload(session_manager, my_uuid, match_uuid)
-                if ethnicity_payload:
-                    dna_dict_base.update(ethnicity_payload)
-                    logger_instance.debug(f"{log_ref_short}: Added ethnicity data ({len(ethnicity_payload)} regions)")
-                elif _get_ethnicity_config()[0]:  # Only log if ethnicity is configured
-                    logger_instance.debug(f"{log_ref_short}: No ethnicity payload generated")
-            else:
-                logger_instance.debug(f"{log_ref_short}: Cannot fetch ethnicity - my_uuid not available")
 
         # Remove keys with None values *except* for predicted_relationship which we want to store as NULL if it's None
         # Also keep internal keys like _operation and uuid
@@ -4365,7 +4257,6 @@ def _do_match(
                 predicted_relationship=predicted_relationship,
                 log_ref_short=log_ref_short,
                 logger_instance=logger_instance,
-                session_manager=session_manager,
             )
         except Exception as dna_err:
             logger_instance.error(
