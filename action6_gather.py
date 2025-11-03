@@ -814,6 +814,85 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
+def _process_single_page(
+    session_manager: SessionManager,
+    current_page_num: int,
+    start_page: int,
+    matches_on_page_for_batch: Optional[List[Dict[str, Any]]],
+    progress_bar,
+    state: Dict[str, Any],
+    loop_final_success: bool
+) -> tuple[int, bool]:
+    """
+    Process a single page of matches.
+
+    Args:
+        session_manager: SessionManager instance
+        current_page_num: Current page number
+        start_page: Starting page number
+        matches_on_page_for_batch: Existing matches if available
+        progress_bar: Progress bar instance
+        state: State dictionary
+        loop_final_success: Current success status
+
+    Returns:
+        Tuple of (next_page_num, loop_success)
+    """
+    # Check session health
+    if not _check_and_handle_session_health(session_manager, current_page_num, progress_bar, state):
+        return current_page_num, False
+
+    # Validate session
+    if not session_manager.is_sess_valid():
+        logger.critical(
+            f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
+        )
+        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+        if remaining_matches_estimate > 0:
+            progress_bar.update(remaining_matches_estimate)
+            state["total_errors"] += remaining_matches_estimate
+        return current_page_num, False
+
+    # Fetch and validate page matches
+    matches, should_continue, loop_final_success = _handle_page_fetch_and_validation(
+        session_manager, current_page_num, start_page, matches_on_page_for_batch,
+        progress_bar, state, loop_final_success
+    )
+
+    if should_continue:
+        return current_page_num + 1, loop_final_success
+
+    # Handle empty matches
+    if not matches:
+        logger.info(f"No matches found or processed on page {current_page_num}.")
+        if not (current_page_num == start_page and state["total_pages_processed"] == 0):
+            progress_bar.update(MATCHES_PER_PAGE)
+        time.sleep(0.2)
+        return current_page_num + 1, loop_final_success
+
+    # Try fast skip
+    if _try_fast_skip_page(session_manager, matches, current_page_num, progress_bar, state):
+        return current_page_num + 1, loop_final_success
+
+    # Process batch
+    page_new, page_updated, page_skipped, page_errors = _do_batch(
+        session_manager=session_manager,
+        matches_on_page=matches,
+        current_page=current_page_num,
+        progress_bar=progress_bar,
+    )
+
+    _update_state_and_progress(state, progress_bar, page_new, page_updated, page_skipped, page_errors)
+
+    # Rate limiting
+    _adjust_delay(session_manager, current_page_num)
+    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+    if limiter is not None and hasattr(limiter, "wait"):
+        limiter.wait()
+
+    return current_page_num + 1, loop_final_success
+
+
 def _handle_page_fetch_and_validation(
     session_manager: SessionManager,
     current_page_num: int,
@@ -1174,81 +1253,14 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
-                # Check session health and handle proactive refresh
-                if not _check_and_handle_session_health(session_manager, current_page_num, progress_bar, state):
-                    loop_final_success = False
-                    break  # Exit while loop immediately
-
-                if not session_manager.is_sess_valid():
-                    logger.critical(
-                        f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
-                    )
-                    loop_final_success = False
-                    remaining_matches_estimate = max(
-                        0, progress_bar.total - progress_bar.n
-                    )
-                    if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
-                        state["total_errors"] += remaining_matches_estimate
-                    break  # Exit while loop
-
-                # Fetch and validate page matches
-                matches_on_page_for_batch, should_continue, loop_final_success = _handle_page_fetch_and_validation(
+                current_page_num, loop_final_success = _process_single_page(
                     session_manager, current_page_num, start_page, matches_on_page_for_batch,
                     progress_bar, state, loop_final_success
                 )
+                matches_on_page_for_batch = None  # Clear for next iteration
 
-                if should_continue:
-                    if not loop_final_success:
-                        break  # Exit while loop on fatal error
-                    current_page_num += 1
-                    matches_on_page_for_batch = None
-                    continue  # Next page
-
-                if (
-                    not matches_on_page_for_batch
-                ):  # Should be populated or loop continued
-                    logger.info(
-                        f"No matches found or processed on page {current_page_num}."
-                    )
-                    # If it's the first page and initial fetch was empty, progress bar might not have been updated yet.
-                    if not (
-                        current_page_num == start_page
-                        and state["total_pages_processed"] == 0
-                    ):
-                        progress_bar.update(
-                            MATCHES_PER_PAGE
-                        )  # Assume a full page skip if not first&empty
-                    matches_on_page_for_batch = None  # Reset for next iteration
-                    current_page_num += 1
-                    time.sleep(0.2)  # PHASE 1: Reduced from 0.5 to 0.2
-                    continue
-
-                # SURGICAL FIX #8: Page-Level Skip Detection
-                # Quick check if entire page can be skipped based on existing data
-                if _try_fast_skip_page(session_manager, matches_on_page_for_batch, current_page_num, progress_bar, state):
-                    matches_on_page_for_batch = None
-                    current_page_num += 1
-                    continue  # Skip to next page
-
-                page_new, page_updated, page_skipped, page_errors = _do_batch(
-                    session_manager=session_manager,
-                    matches_on_page=matches_on_page_for_batch,
-                    current_page=current_page_num,
-                    progress_bar=progress_bar,
-                )
-
-                _update_state_and_progress(state, progress_bar, page_new, page_updated, page_skipped, page_errors)
-
-                _adjust_delay(session_manager, current_page_num)
-                limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-                if limiter is not None and hasattr(limiter, "wait"):
-                    limiter.wait()
-
-                matches_on_page_for_batch = (
-                    None  # CRITICAL: Clear for the next iteration
-                )
-                current_page_num += 1
+                if not loop_final_success:
+                    break  # Exit while loop on fatal error
         finally:
             if progress_bar:
                 progress_bar.set_postfix(
