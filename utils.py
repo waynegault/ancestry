@@ -75,6 +75,222 @@ SessionManagerType = Optional[
 ]  # Use string literal for forward reference
 
 
+# === STANDARDIZED LOGGING HELPERS ===
+# These functions provide consistent logging format across Actions 6-9
+
+def log_action_configuration(config_dict: dict[str, Any]) -> None:
+    """
+    Log action configuration in standardized format.
+
+    Args:
+        config_dict: Dictionary of configuration key-value pairs
+
+    Example:
+        log_action_configuration({
+            "APP_MODE": "dry_run",
+            "START_PAGE": 1,
+            "MAX_PAGES": 2,
+            "BATCH_SIZE": 10,
+            "RATE_LIMIT_DELAY": 2.50
+        })
+        # Output: Configuration: APP_MODE=dry_run, START_PAGE=1, MAX_PAGES=2, BATCH_SIZE=10, RATE_LIMIT_DELAY=2.50s
+    """
+    config_str = ", ".join([f"{k}={v}" for k, v in config_dict.items()])
+    logger.info(f"Configuration: {config_str}")
+
+
+def log_starting_position(description: str, details: Optional[dict[str, Any]] = None) -> None:
+    """
+    Log starting position summary.
+
+    Args:
+        description: Main description of what will be processed
+        details: Optional dictionary of additional details
+
+    Example:
+        log_starting_position(
+            "Starting from page 1, will process up to 2 pages",
+            {"Estimated matches": "~40 (20 per page)"}
+        )
+    """
+    logger.info(description)
+    if details:
+        for key, value in details.items():
+            logger.info(f"{key}: {value}")
+
+
+def log_cumulative_counts(counts: dict[str, int], prefix: str = "Cumulative") -> None:
+    """
+    Log cumulative counts in standardized format.
+
+    Args:
+        counts: Dictionary of counter names and values
+        prefix: Prefix for the log line (default: "Cumulative")
+
+    Example:
+        log_cumulative_counts({"Pages": 1, "Batches": 2, "New": 15, "Updated": 5, "Skipped": 0, "Errors": 0})
+        # Output: Cumulative: Pages=1, Batches=2, New=15, Updated=5, Skipped=0, Errors=0
+    """
+    count_str = ", ".join([f"{k}={v}" for k, v in counts.items()])
+    logger.info(f"{prefix}: {count_str}")
+
+
+def log_batch_indicator(
+    batch_num: int,
+    total_batches: int,
+    item_range: Optional[tuple[int, int]] = None,
+    page_num: Optional[int] = None,
+    total_pages: Optional[int] = None,
+) -> None:
+    """
+    Log batch/page indicator before processing.
+
+    Args:
+        batch_num: Current batch number
+        total_batches: Total number of batches
+        item_range: Optional tuple of (start_item, end_item) for this batch
+        page_num: Optional current page number
+        total_pages: Optional total number of pages
+
+    Example:
+        log_batch_indicator(1, 2, (1, 10), 1, 2)
+        # Output:
+        # (blank line)
+        # Processing page 1 of 2 pages
+        # Batch 1/2 (items 1-10)
+    """
+    logger.info("")  # Blank line before
+    if page_num and total_pages:
+        logger.info(f"Processing page {page_num} of {total_pages} pages")
+    if item_range:
+        logger.info(f"Batch {batch_num}/{total_batches} (items {item_range[0]}-{item_range[1]})")
+    else:
+        logger.info(f"Batch {batch_num}/{total_batches}")
+
+
+def create_standard_progress_bar(total: int, desc: str = "Processing", unit: str = " item"):
+    """
+    Create standardized progress bar using tqdm.
+
+    Args:
+        total: Total number of items to process
+        desc: Description for the progress bar
+        unit: Unit name for items
+
+    Returns:
+        tqdm progress bar instance
+
+    Example:
+        with create_standard_progress_bar(20, "Processing", " match") as pbar:
+            for item in items:
+                # Process item
+                pbar.update(1)
+    """
+    from tqdm import tqdm
+
+    return tqdm(
+        total=total,
+        desc=desc,
+        unit=unit,
+        bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+    )
+
+
+def log_page_complete(page_num: int, page_counts: dict[str, int], cumulative_counts: dict[str, int]) -> None:
+    """
+    Log page completion summary.
+
+    Args:
+        page_num: Page number that was completed
+        page_counts: Dictionary of counts for this page only
+        cumulative_counts: Dictionary of cumulative counts across all pages
+
+    Example:
+        log_page_complete(1, {"Batches": 2, "New": 15, "Updated": 5},
+                         {"Pages": 1, "Batches": 2, "New": 15, "Updated": 5, "Skipped": 0, "Errors": 0})
+        # Output:
+        # Page 1 complete: Batches=2, New=15, Updated=5
+        # Cumulative: Pages=1, Batches=2, New=15, Updated=5, Skipped=0, Errors=0
+    """
+    page_str = ", ".join([f"{k}={v}" for k, v in page_counts.items()])
+    logger.info(f"Page {page_num} complete: {page_str}")
+    log_cumulative_counts(cumulative_counts)
+
+
+def log_final_summary(summary_dict: dict[str, Any], run_time_seconds: float) -> None:
+    """
+    Log final summary with separators and aligned labels.
+
+    Args:
+        summary_dict: Dictionary of summary items (label: value)
+        run_time_seconds: Total run time in seconds
+
+    Example:
+        log_final_summary({
+            "Pages Scanned": 2,
+            "Batches Processed": 4,
+            "New Matches": 30,
+            "Updated Matches": 10,
+            "Skipped Matches": 0,
+            "Errors": 0
+        }, 90.45)
+        # Output:
+        # (blank line)
+        # ================================================================================
+        # FINAL SUMMARY
+        # ================================================================================
+        # Pages Scanned:       2
+        # Batches Processed:   4
+        # New Matches:         30
+        # Updated Matches:     10
+        # Skipped Matches:     0
+        # Errors:              0
+        # Total Run Time:      0 hr 1 min 30.45 sec
+        # ================================================================================
+        # (blank line)
+    """
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("FINAL SUMMARY")
+    logger.info("=" * 80)
+
+    # Log all summary items with aligned labels
+    max_label_len = max(len(str(k)) for k in summary_dict.keys())
+    for label, value in summary_dict.items():
+        logger.info(f"{str(label) + ':':<{max_label_len + 1}} {value}")
+
+    # Log run time
+    hours = int(run_time_seconds // 3600)
+    minutes = int((run_time_seconds % 3600) // 60)
+    seconds = run_time_seconds % 60
+    logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
+
+    logger.info("=" * 80)
+    logger.info("")
+
+
+def log_action_status(action_name: str, success: bool, error_msg: Optional[str] = None) -> None:
+    """
+    Log final action status with checkmark or X.
+
+    Args:
+        action_name: Name of the action (e.g., "Match gathering")
+        success: True if action completed successfully
+        error_msg: Optional error message if success=False
+
+    Example:
+        log_action_status("Match gathering", True)
+        # Output: ✓ Match gathering completed successfully.
+
+        log_action_status("Match gathering", False, "Session expired")
+        # Output: ✗ Match gathering failed: Session expired
+    """
+    if success:
+        logger.info(f"✓ {action_name} completed successfully.")
+    else:
+        logger.error(f"✗ {action_name} failed: {error_msg or 'Unknown error'}")
+
+
 # === API REQUEST CONFIGURATION ===
 @dataclass
 class ApiRequestConfig:
