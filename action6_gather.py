@@ -814,6 +814,56 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
+def _try_fast_skip_page(
+    session_manager: SessionManager,
+    matches_on_page: List[Dict[str, Any]],
+    current_page_num: int,
+    progress_bar,
+    state: Dict[str, Any]
+) -> bool:
+    """
+    Try to fast-skip entire page if all matches are unchanged.
+
+    Args:
+        session_manager: SessionManager instance
+        matches_on_page: List of matches on current page
+        current_page_num: Current page number
+        progress_bar: Progress bar instance
+        state: State dictionary for tracking
+
+    Returns:
+        bool: True if page was fast-skipped, False otherwise
+    """
+    if not matches_on_page:
+        return False
+
+    # Get a quick DB session for page-level analysis
+    quick_db_session = session_manager.get_db_conn()
+    if not quick_db_session:
+        return False
+
+    try:
+        uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
+        if not uuids_on_page:
+            return False
+
+        existing_persons_map = _lookup_existing_persons(quick_db_session, uuids_on_page)
+        fetch_candidates_uuid, _, page_skip_count = (
+            _identify_fetch_candidates(matches_on_page, existing_persons_map)
+        )
+
+        # If all matches on the page can be skipped, do fast processing
+        if len(fetch_candidates_uuid) == 0:
+            logger.info(f"🚀 Page {current_page_num}: All {len(matches_on_page)} matches unchanged - fast skip")
+            progress_bar.update(len(matches_on_page))
+            state["total_skipped"] += page_skip_count
+            state["total_pages_processed"] += 1
+            return True
+        return False
+    finally:
+        session_manager.return_session(quick_db_session)
+
+
 def _fetch_page_matches(
     session_manager: SessionManager,
     db_session: SqlAlchemySession,
@@ -1110,29 +1160,10 @@ def _main_page_processing_loop(
 
                 # SURGICAL FIX #8: Page-Level Skip Detection
                 # Quick check if entire page can be skipped based on existing data
-                if matches_on_page_for_batch:
-                    # Get a quick DB session for page-level analysis
-                    quick_db_session = session_manager.get_db_conn()
-                    if quick_db_session:
-                        try:
-                            uuids_on_page = [m["uuid"].upper() for m in matches_on_page_for_batch if m.get("uuid")]
-                            if uuids_on_page:
-                                existing_persons_map = _lookup_existing_persons(quick_db_session, uuids_on_page)
-                                fetch_candidates_uuid, _, page_skip_count = (
-                                    _identify_fetch_candidates(matches_on_page_for_batch, existing_persons_map)
-                                )
-
-                                # If all matches on the page can be skipped, do fast processing
-                                if len(fetch_candidates_uuid) == 0:
-                                    logger.info(f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip")
-                                    progress_bar.update(len(matches_on_page_for_batch))
-                                    state["total_skipped"] += page_skip_count
-                                    state["total_pages_processed"] += 1
-                                    matches_on_page_for_batch = None
-                                    current_page_num += 1
-                                    continue  # Skip to next page
-                        finally:
-                            session_manager.return_session(quick_db_session)
+                if _try_fast_skip_page(session_manager, matches_on_page_for_batch, current_page_num, progress_bar, state):
+                    matches_on_page_for_batch = None
+                    current_page_num += 1
+                    continue  # Skip to next page
 
                 page_new, page_updated, page_skipped, page_errors = _do_batch(
                     session_manager=session_manager,
