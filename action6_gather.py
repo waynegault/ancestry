@@ -3735,7 +3735,7 @@ def _prepare_family_tree_operation_data(
             )
             view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
 
-    if match_in_my_tree and existing_family_tree is None:
+    if match_in_my_tree and existing_family_tree is None and prefetched_tree_data:
         tree_operation = "create"
     elif match_in_my_tree and existing_family_tree is not None:
         if prefetched_tree_data:  # Only check if we have new data
