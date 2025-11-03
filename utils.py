@@ -1837,11 +1837,13 @@ def _apply_rate_limiting(
     Returns:
         The wait time applied
     """
-    wait_time = session_manager.rate_limiter.wait()  # type: ignore[union-attr]
-    if wait_time > 0.1:  # Log only significant waits
-        logger.debug(
-            f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
-        )
+    wait_time = 0.0
+    if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
+        wait_time = session_manager.rate_limiter.wait()  # type: ignore[union-attr]
+        if wait_time > 0.1:  # Log only significant waits
+            logger.debug(
+                f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
+            )
     # End of if
     return wait_time
 
@@ -1962,7 +1964,7 @@ def _execute_api_request(
         # RetryError means the requests library exhausted its internal retries (usually 3x)
         # Each RetryError likely represents 3+ actual 429 errors that were hidden from our rate limiter
         error_str = str(e)
-        if (("RetryError" in type(e).__name__ or "RetryError" in error_str) and ("429" in error_str or "too many 429" in error_str.lower()) and session_manager.rate_limiter):
+        if (("RetryError" in type(e).__name__ or "RetryError" in error_str) and ("429" in error_str or "too many 429" in error_str.lower()) and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter):
             # This is a RetryError caused by 429s - track as failed request with 429 errors
             # Estimate 3 actual 429s per RetryError (requests library default retry count)
             for _ in range(3):
@@ -2087,7 +2089,8 @@ def _handle_retryable_status(
     sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
     if status == 429:  # Too Many Requests
-        session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
+        if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
+            session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
 
     logger.warning(
         f"{api_description}: Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). Retrying in {sleep_time:.2f}s..."
@@ -2309,7 +2312,8 @@ def _handle_response_status(
     # Process successful response
     if response.ok:
         logger.debug(f"{api_description}: Successful response ({status} {reason}).")
-        session_manager.rate_limiter.decrease_delay()  # type: ignore[union-attr]
+        if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
+            session_manager.rate_limiter.decrease_delay()  # type: ignore[union-attr]
         processed_response = _process_api_response(
             response=response,
             api_description=api_description,
