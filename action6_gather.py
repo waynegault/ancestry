@@ -814,6 +814,158 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
+def _fetch_page_matches(
+    session_manager: SessionManager,
+    db_session: SqlAlchemySession,
+    current_page_num: int,
+    progress_bar,
+    state: Dict[str, Any]
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Fetch matches for a specific page with error handling.
+
+    Args:
+        session_manager: SessionManager instance
+        db_session: Database session
+        current_page_num: Current page number being processed
+        progress_bar: Progress bar instance for error tracking
+        state: State dictionary for error accumulation
+
+    Returns:
+        List of matches or None if fetch failed
+    """
+    try:
+        if not session_manager.is_sess_valid():
+            raise ConnectionError(
+                f"WebDriver session invalid before get_matches page {current_page_num}."
+            )
+        result = get_matches(session_manager, db_session, current_page_num)
+        if result is None:
+            logger.warning(
+                f"get_matches returned None for page {current_page_num}. Skipping."
+            )
+            progress_bar.update(MATCHES_PER_PAGE)
+            state["total_errors"] += MATCHES_PER_PAGE
+            return []
+        else:
+            matches_on_page, _ = result  # We don't need total_pages again
+            return matches_on_page
+    except ConnectionError as conn_e:
+        logger.error(
+            f"ConnectionError get_matches page {current_page_num}: {conn_e}",
+            exc_info=False,
+        )
+        progress_bar.update(MATCHES_PER_PAGE)
+        state["total_errors"] += MATCHES_PER_PAGE
+        return []
+    except Exception as get_match_e:
+        logger.error(
+            f"Error get_matches page {current_page_num}: {get_match_e}",
+            exc_info=True,
+        )
+        progress_bar.update(MATCHES_PER_PAGE)
+        state["total_errors"] += MATCHES_PER_PAGE
+        return []
+    finally:
+        if db_session:
+            session_manager.return_session(db_session)
+
+
+def _get_database_session_with_retry(
+    session_manager: SessionManager,
+    current_page_num: int,
+    state: Dict[str, Any],
+    max_retries: int = 3
+) -> Optional[SqlAlchemySession]:
+    """
+    Get database session with retry logic.
+
+    Args:
+        session_manager: SessionManager instance
+        current_page_num: Current page number being processed
+        state: State dictionary for error tracking
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        SqlAlchemySession or None if all retries failed
+    """
+    db_session_for_page: Optional[SqlAlchemySession] = None
+    for retry_attempt in range(max_retries):
+        db_session_for_page = session_manager.get_db_conn()
+        if db_session_for_page:
+            state["db_connection_errors"] = 0
+            return db_session_for_page
+        logger.warning(
+            f"DB session attempt {retry_attempt + 1}/{max_retries} failed for page {current_page_num}. Retrying in 5s..."
+        )
+        time.sleep(5)
+
+    # All retries failed
+    state["db_connection_errors"] += 1
+    logger.error(
+        f"Could not get DB session for page {current_page_num} after {max_retries} retries."
+    )
+    return None
+
+
+def _check_and_handle_session_health(
+    session_manager: SessionManager,
+    current_page_num: int,
+    progress_bar,
+    state: Dict[str, Any]
+) -> bool:
+    """
+    Check session health and handle proactive refresh.
+
+    Args:
+        session_manager: SessionManager instance
+        current_page_num: Current page number being processed
+        progress_bar: Progress bar instance for error tracking
+        state: State dictionary for error accumulation
+
+    Returns:
+        bool: True if session is healthy and processing should continue, False to halt
+    """
+    # Check session health
+    if not session_manager.check_session_health():
+        logger.critical(
+            f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
+            f"Immediately halting processing to prevent cascade failures."
+        )
+        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
+        if remaining_matches_estimate > 0:
+            progress_bar.update(remaining_matches_estimate)
+            state["total_errors"] += remaining_matches_estimate
+        return False
+
+    # Proactive session refresh to prevent 900-second timeout
+    if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
+        session_age = time.time() - session_manager.session_start_time
+        if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
+            logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
+            if session_manager._attempt_session_recovery():
+                logger.info("✅ Proactive session refresh successful")
+                session_manager.session_start_time = time.time()  # Reset session timer
+            else:
+                logger.error("❌ Proactive session refresh failed")
+
+    # Database connection pool optimization every 25 pages
+    if current_page_num % 25 == 0:
+        try:
+            if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
+                db_manager = session_manager.db_manager
+                if hasattr(db_manager, 'get_performance_stats'):
+                    stats = db_manager.get_performance_stats()
+                    active_conns = stats.get('active_connections', 0)
+                    logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
+                else:
+                    logger.debug(f"Database connection pool check at page {current_page_num}")
+        except Exception as pool_opt_exc:
+            logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
+
+    return True
+
+
 def _main_page_processing_loop(
     session_manager: SessionManager,
     start_page: int,
@@ -878,45 +1030,10 @@ def _main_page_processing_loop(
             )
 
             while current_page_num <= last_page_to_process:
-                # SURGICAL FIX #20: Universal Session Health Monitoring via SessionManager
-                if not session_manager.check_session_health():
-                    logger.critical(
-                        f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
-                        f"Immediately halting processing to prevent cascade failures."
-                    )
+                # Check session health and handle proactive refresh
+                if not _check_and_handle_session_health(session_manager, current_page_num, progress_bar, state):
                     loop_final_success = False
-                    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-                    if remaining_matches_estimate > 0:
-                        progress_bar.update(remaining_matches_estimate)
-                        state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
-
-                # Proactive session refresh to prevent 900-second timeout
-                if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
-                    session_age = time.time() - session_manager.session_start_time
-                    if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
-                        logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
-                        if session_manager._attempt_session_recovery():
-                            logger.info("✅ Proactive session refresh successful")
-                            session_manager.session_start_time = time.time()  # Reset session timer
-                        else:
-                            logger.error("❌ Proactive session refresh failed")
-
-                # SURGICAL FIX #12: Enhanced Connection Pool Optimization
-                # Optimize database connections every 25 pages
-                if current_page_num % 25 == 0:
-                    try:
-                        # Use existing database manager access pattern
-                        if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
-                            db_manager = session_manager.db_manager
-                            if hasattr(db_manager, 'get_performance_stats'):
-                                stats = db_manager.get_performance_stats()
-                                active_conns = stats.get('active_connections', 0)
-                                logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
-                            else:
-                                logger.debug(f"Database connection pool check at page {current_page_num}")
-                    except Exception as pool_opt_exc:
-                        logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
 
                 if not session_manager.is_sess_valid():
                     logger.critical(
@@ -936,22 +1053,11 @@ def _main_page_processing_loop(
                     current_page_num == start_page
                     and matches_on_page_for_batch is not None
                 ):
-                    db_session_for_page: Optional[SqlAlchemySession] = None
-                    for retry_attempt in range(3):
-                        db_session_for_page = session_manager.get_db_conn()
-                        if db_session_for_page:
-                            state["db_connection_errors"] = 0
-                            break
-                        logger.warning(
-                            f"DB session attempt {retry_attempt + 1}/3 failed for page {current_page_num}. Retrying in 5s..."
-                        )
-                        time.sleep(5)
+                    db_session_for_page = _get_database_session_with_retry(
+                        session_manager, current_page_num, state
+                    )
 
                     if not db_session_for_page:
-                        state["db_connection_errors"] += 1
-                        logger.error(
-                            f"Could not get DB session for page {current_page_num} after retries. Skipping page."
-                        )
                         state["total_errors"] += MATCHES_PER_PAGE
                         progress_bar.update(MATCHES_PER_PAGE)
                         if state["db_connection_errors"] >= DB_ERROR_PAGE_THRESHOLD:
@@ -970,44 +1076,9 @@ def _main_page_processing_loop(
                         matches_on_page_for_batch = None  # Ensure it's reset
                         continue  # Next page
 
-                    try:
-                        if not session_manager.is_sess_valid():
-                            raise ConnectionError(
-                                f"WebDriver session invalid before get_matches page {current_page_num}."
-                            )
-                        result = get_matches(
-                            session_manager, db_session_for_page, current_page_num
-                        )
-                        if result is None:
-                            matches_on_page_for_batch = []
-                            logger.warning(
-                                f"get_matches returned None for page {current_page_num}. Skipping."
-                            )
-                            progress_bar.update(MATCHES_PER_PAGE)
-                            state["total_errors"] += MATCHES_PER_PAGE
-                        else:
-                            matches_on_page_for_batch, _ = (
-                                result  # We don't need total_pages again
-                            )
-                    except ConnectionError as conn_e:
-                        logger.error(
-                            f"ConnectionError get_matches page {current_page_num}: {conn_e}",
-                            exc_info=False,
-                        )
-                        progress_bar.update(MATCHES_PER_PAGE)
-                        state["total_errors"] += MATCHES_PER_PAGE
-                        matches_on_page_for_batch = []  # Ensure it's reset
-                    except Exception as get_match_e:
-                        logger.error(
-                            f"Error get_matches page {current_page_num}: {get_match_e}",
-                            exc_info=True,
-                        )
-                        progress_bar.update(MATCHES_PER_PAGE)
-                        state["total_errors"] += MATCHES_PER_PAGE
-                        matches_on_page_for_batch = []  # Ensure it's reset
-                    finally:
-                        if db_session_for_page:
-                            session_manager.return_session(db_session_for_page)
+                    matches_on_page_for_batch = _fetch_page_matches(
+                        session_manager, db_session_for_page, current_page_num, progress_bar, state
+                    )
 
                     if (
                         not matches_on_page_for_batch
