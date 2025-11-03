@@ -814,6 +814,43 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
+def _cleanup_progress_bar(progress_bar, state: Dict[str, Any], loop_final_success: bool) -> None:
+    """
+    Clean up progress bar at end of processing.
+
+    Args:
+        progress_bar: Progress bar instance
+        state: State dictionary
+        loop_final_success: Whether loop completed successfully
+    """
+    if not progress_bar:
+        return
+
+    progress_bar.set_postfix(
+        New=state["total_new"],
+        Upd=state["total_updated"],
+        Skip=state["total_skipped"],
+        Err=state["total_errors"],
+        refresh=True,
+    )
+
+    if progress_bar.n < progress_bar.total and not loop_final_success:
+        # If loop ended due to error, update bar to reflect error count for remaining
+        remaining_to_mark_error = progress_bar.total - progress_bar.n
+        if remaining_to_mark_error > 0:
+            progress_bar.update(remaining_to_mark_error)
+
+    try:
+        # Set final status before closing
+        progress_bar.set_description("Complete")
+        progress_bar.refresh()  # Force update before close
+        progress_bar.close()
+    finally:
+        # Ensure clean output after progress bar with multiple newlines
+        print("", file=sys.stderr, flush=True)  # Newline to separate from any following log output
+        sys.stderr.flush()  # Additional flush to ensure output
+
+
 def _process_single_page(
     session_manager: SessionManager,
     current_page_num: int,
@@ -1262,33 +1299,7 @@ def _main_page_processing_loop(
                 if not loop_final_success:
                     break  # Exit while loop on fatal error
         finally:
-            if progress_bar:
-                progress_bar.set_postfix(
-                    New=state["total_new"],
-                    Upd=state["total_updated"],
-                    Skip=state["total_skipped"],
-                    Err=state["total_errors"],
-                    refresh=True,
-                )
-                if progress_bar.n < progress_bar.total and loop_final_success:
-                    # If loop ended early but successfully (e.g. fewer pages than estimated)
-                    # Ensure bar reflects actual processed, not estimate.
-                    pass  # tqdm closes itself correctly.
-                elif progress_bar.n < progress_bar.total and not loop_final_success:
-                    # If loop ended due to error, update bar to reflect error count for remaining
-                    remaining_to_mark_error = progress_bar.total - progress_bar.n
-                    if remaining_to_mark_error > 0:
-                        progress_bar.update(remaining_to_mark_error)
-                        # No need to update total_errors here, already done by specific error handling
-                try:
-                    # Set final status before closing
-                    progress_bar.set_description("Complete")
-                    progress_bar.refresh()  # Force update before close
-                    progress_bar.close()
-                finally:
-                    # Ensure clean output after progress bar with multiple newlines
-                    print("", file=sys.stderr, flush=True)  # Newline to separate from any following log output
-                    sys.stderr.flush()  # Additional flush to ensure output
+            _cleanup_progress_bar(progress_bar, state, loop_final_success)
 
     return loop_final_success
 
