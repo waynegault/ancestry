@@ -12,13 +12,13 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
+from pathlib import Path
 
 # Add parent directory to path for core_imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+parent_dir = Path(__file__).resolve().parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 from standard_imports import setup_module
 
@@ -56,7 +56,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -136,7 +136,7 @@ class SessionManager:
 
         # PHASE 5.1: Session state caching for performance
         self._last_readiness_check: Optional[float] = None
-        self._cached_session_state: Dict[str, Any] = {}
+        self._cached_session_state: dict[str, Any] = {}
 
         # ⚡ OPTIMIZATION 1: Pre-cached CSRF token for Action 6 performance
         self._cached_csrf_token: Optional[str] = None
@@ -385,14 +385,13 @@ class SessionManager:
             return None
 
         # Validate that the cached state is still accurate
-        if self.browser_manager.browser_needed:
-            if not self.browser_manager.is_session_valid():
-                logger.debug(
-                    f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)"
-                )
-                self.session_ready = False
-                self._last_readiness_check = None
-                return False
+        if self.browser_manager.browser_needed and not self.browser_manager.is_session_valid():
+            logger.debug(
+                f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)"
+            )
+            self.session_ready = False
+            self._last_readiness_check = None
+            return False
 
         logger.debug(
             f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})"
@@ -717,7 +716,7 @@ class SessionManager:
             logger.error(f"Failed to retrieve tree owner due to import error: {owner_imp_err}")
             return False
 
-    def get_cookies(self, cookie_names: List[str], timeout: int = 30) -> bool:
+    def get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
         """
         Advanced cookie management with timeout and session validation.
 
@@ -907,12 +906,12 @@ class SessionManager:
 
 
 
-    def check_js_errors(self) -> List[Dict[str, Any]]:
+    def check_js_errors(self) -> list[dict[str, Any]]:
         """
         Check for JavaScript errors in the browser console.
 
         Returns:
-            List[Dict]: List of JavaScript errors found since last check
+            list[Dict]: List of JavaScript errors found since last check
         """
         if not self.driver or not self.driver_live:
             return []
@@ -1202,7 +1201,7 @@ class SessionManager:
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_my_profileId(self) -> Optional[str]:
+    def get_my_profileId(self) -> Optional[str]:  # noqa: N802 - matches API field name
         """
         Retrieve user's profile ID (ucdmid).
 
@@ -1315,7 +1314,7 @@ class SessionManager:
             import api_utils as local_api_utils
         except ImportError as e:
             logger.error(f"get_my_tree_id: Failed to import api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}")
+            raise ImportError(f"api_utils module failed to import: {e}") from e
 
         tree_name_config = config_schema.api.tree_name
         if not tree_name_config:
@@ -1359,7 +1358,7 @@ class SessionManager:
             import api_utils as local_api_utils
         except ImportError as e:
             logger.error(f"get_tree_owner: Failed to import api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}")
+            raise ImportError(f"api_utils module failed to import: {e}") from e
 
         if not tree_id:
             logger.warning("Cannot get tree owner: tree_id is missing.")
@@ -1574,7 +1573,7 @@ class SessionManager:
         return None
 
     # PHASE 5.1: Session cache management methods
-    def get_session_performance_stats(self) -> Dict[str, Any]:
+    def get_session_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for this session"""
         stats = get_session_cache_stats()
         stats.update(
@@ -1822,7 +1821,7 @@ def _test_error_handling():
         _ = session_manager.session_ready
         _ = session_manager.is_ready
     except Exception as e:
-        raise AssertionError(f"SessionManager should handle operations gracefully: {e}")
+        raise AssertionError(f"SessionManager should handle operations gracefully: {e}") from e
     return True
 
 

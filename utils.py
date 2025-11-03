@@ -2302,9 +2302,8 @@ def _handle_retryable_status(
 
     sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
-    if status == 429:  # Too Many Requests
-        if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
-            session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
+    if status == 429 and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:  # Too Many Requests
+        session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
 
     logger.warning(
         f"{api_description}: Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). Retrying in {sleep_time:.2f}s..."

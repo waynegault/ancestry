@@ -1003,7 +1003,7 @@ def reset_db_actn(session_manager: SessionManager, *_):
             if _initialize_ethnicity_columns_from_metadata(temp_manager):
                 logger.info("✅ Ethnicity columns added from saved metadata")
             else:
-                logger.info("ℹ️  No ethnicity metadata found - columns will be added during first Action 6 run")
+                logger.info("INFO: No ethnicity metadata found - columns will be added during first Action 6 run")
 
             # Step 5: Commit all changes to ensure they're flushed to disk
             logger.debug("Committing database changes...")

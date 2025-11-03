@@ -1544,61 +1544,9 @@ def _identify_fetch_candidates(
         else:
             # --- Case 2: Existing Person ---
             # Determine if details fetch is needed based on potential changes.
-            needs_fetch = False
-            existing_dna = existing_person.dna_match
-            existing_tree = existing_person.family_tree
-            db_in_tree = existing_person.in_my_tree
-            api_in_tree = match_api_data.get("in_my_tree", False)  # From get_matches
+            needs_fetch = _check_if_fetch_needed(existing_person, match_api_data, uuid_val)
 
-            # Step 2c: Check for changes in core DNA list data
-            if existing_dna:
-                try:
-                    # Compare cM (integer conversion for safety)
-                    api_cm = int(match_api_data.get("cm_dna", 0))
-                    db_cm = existing_dna.cm_dna
-                    if api_cm != db_cm:
-                        needs_fetch = True
-                        logger.debug(
-                            f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})"
-                        )
-
-                    # Compare segments (integer conversion)
-                    api_segments = int(match_api_data.get("numSharedSegments", 0))
-                    db_segments = existing_dna.shared_segments
-                    # NOTE: Use >= comparison for segments as list view might be lower than detail view sometimes? Or stick to != ? Sticking to != for now.
-                    if api_segments != db_segments:
-                        needs_fetch = True
-                        logger.debug(
-                            f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})"
-                        )
-
-                except (ValueError, TypeError, AttributeError) as comp_err:
-                    logger.warning(
-                        f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed."
-                    )
-                    needs_fetch = True
-            else:
-                # If DNA record doesn't exist, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): No existing DNA record."
-                )
-
-            # Step 2d: Check for changes in tree status or missing tree record
-            if bool(api_in_tree) != bool(db_in_tree):
-                # If tree linkage status changed, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})"
-                )
-            elif api_in_tree and not existing_tree:
-                # If marked in tree but no DB record exists, fetch details.
-                needs_fetch = True
-                logger.debug(
-                    f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record."
-                )
-
-            # Step 2e: Add to fetch list or increment skipped count
+            # Add to fetch list or increment skipped count
             if needs_fetch:
                 fetch_candidates_uuid.add(uuid_val)
                 matches_to_process_later.append(match_api_data)
@@ -1617,6 +1565,191 @@ def _identify_fetch_candidates(
 
 
 # End of _identify_fetch_candidates
+
+
+def _check_if_fetch_needed(
+    existing_person: Any,
+    match_api_data: dict[str, Any],
+    uuid_val: str
+) -> bool:
+    """Check if API fetch is needed for an existing person.
+
+    Args:
+        existing_person: Existing Person object from database
+        match_api_data: Match data from API list view
+        uuid_val: UUID of the match
+
+    Returns:
+        True if fetch is needed, False otherwise
+    """
+    needs_fetch = False
+    existing_dna = existing_person.dna_match
+    existing_tree = existing_person.family_tree
+    db_in_tree = existing_person.in_my_tree
+    api_in_tree = match_api_data.get("in_my_tree", False)
+
+    # Check for changes in core DNA list data
+    if existing_dna:
+        try:
+            # Compare cM
+            api_cm = int(match_api_data.get("cm_dna", 0))
+            db_cm = existing_dna.cm_dna
+            if api_cm != db_cm:
+                needs_fetch = True
+                logger.debug(f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})")
+
+            # Compare segments
+            api_segments = int(match_api_data.get("numSharedSegments", 0))
+            db_segments = existing_dna.shared_segments
+            if api_segments != db_segments:
+                needs_fetch = True
+                logger.debug(f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})")
+
+        except (ValueError, TypeError, AttributeError) as comp_err:
+            logger.warning(f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed.")
+            needs_fetch = True
+    else:
+        # If DNA record doesn't exist, fetch details
+        needs_fetch = True
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): No existing DNA record.")
+
+    # Check for changes in tree status or missing tree record
+    if bool(api_in_tree) != bool(db_in_tree):
+        needs_fetch = True
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})")
+    elif api_in_tree and not existing_tree:
+        needs_fetch = True
+        logger.debug(f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record.")
+
+    return needs_fetch
+
+
+def _calculate_optimized_workers(num_candidates: int, base_workers: int) -> int:
+    """Calculate optimal number of workers based on candidate count.
+
+    Args:
+        num_candidates: Number of candidates to process
+        base_workers: Base number of workers from configuration
+
+    Returns:
+        Optimized worker count
+    """
+    if num_candidates <= 3:
+        # Light load - reduce workers to avoid rate limiting overhead
+        optimized_workers = 1
+        logger.debug(f"Light load optimization: Using {optimized_workers} worker for {num_candidates} candidates")
+    elif num_candidates >= 15:
+        # Heavy load - increase workers but respect rate limits
+        optimized_workers = min(4, base_workers + 1)
+        logger.debug(f"Heavy load optimization: Using {optimized_workers} workers for {num_candidates} candidates")
+    else:
+        # Medium load - use configured workers
+        optimized_workers = base_workers
+        logger.debug(f"Optimal load: Using {optimized_workers} workers for {num_candidates} candidates")
+    return optimized_workers
+
+
+def _classify_match_priorities(
+    matches_to_process_later: list[dict[str, Any]],
+    fetch_candidates_uuid: set[str]
+) -> tuple[set[str], set[str], set[str]]:
+    """Classify matches into priority tiers for API call optimization.
+
+    Args:
+        matches_to_process_later: List of match data dictionaries
+        fetch_candidates_uuid: Set of UUIDs requiring fetch
+
+    Returns:
+        Tuple of (high_priority_uuids, medium_priority_uuids, priority_uuids)
+    """
+    high_priority_uuids = set()
+    medium_priority_uuids = set()
+
+    for match_data in matches_to_process_later:
+        uuid_val = match_data.get("uuid")
+        if uuid_val and uuid_val in fetch_candidates_uuid:
+            cm_value = int(match_data.get("cm_dna", 0))
+            has_tree = match_data.get("in_my_tree", False)
+            is_starred = match_data.get("starred", False)
+
+            # Enhanced priority classification
+            if is_starred or cm_value > 50:  # Very high priority
+                high_priority_uuids.add(uuid_val)
+                logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
+            elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
+                # Medium priority: above threshold OR low DNA but has tree
+                medium_priority_uuids.add(uuid_val)
+                logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
+            else:
+                logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
+                            f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)")
+
+    # Combined high and medium for API calls
+    priority_uuids = high_priority_uuids.union(medium_priority_uuids)
+    logger.info(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
+               f"{len(medium_priority_uuids)} medium priority, "
+               f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
+
+    return high_priority_uuids, medium_priority_uuids, priority_uuids
+
+
+def _apply_predictive_rate_limiting(
+    session_manager: SessionManager,
+    total_api_calls: int
+) -> None:
+    """Apply intelligent rate limiting based on predicted API load.
+
+    Args:
+        session_manager: SessionManager instance
+        total_api_calls: Total number of API calls to be made
+    """
+    import time
+
+    if total_api_calls == 0:
+        logger.debug("No API calls needed - skipping all rate limiting")
+        return
+
+    # Get current token count and fill rate from session manager
+    rate_limiter = getattr(session_manager, 'rate_limiter', None)
+    if rate_limiter:
+        current_tokens = getattr(rate_limiter, 'tokens', 0)
+        fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
+
+        # Predict if we'll run out of tokens
+        tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
+        if current_tokens < tokens_needed:
+            # Calculate optimal pre-delay to avoid token bucket depletion
+            tokens_deficit = tokens_needed - current_tokens
+            optimal_pre_delay = min(tokens_deficit / fill_rate, 8.0)  # Cap at 8 seconds
+
+            if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
+                logger.debug(f"Predictive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (current tokens: {current_tokens:.2f})")
+                time.sleep(optimal_pre_delay)
+            # Use existing tiered approach for light loads
+            elif total_api_calls >= 15:
+                _apply_rate_limiting(session_manager)
+                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+            elif total_api_calls >= 5:
+                time.sleep(1.2)  # Shorter than normal rate limiting
+                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+            else:
+                time.sleep(0.3)  # Just 300ms delay for light loads
+                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+        else:
+            # Sufficient tokens available - minimal delay
+            time.sleep(0.1)  # Minimal delay to prevent hammering
+            logger.debug(f"Sufficient tokens available ({current_tokens:.2f}) for {total_api_calls} API calls - minimal delay")
+    # Fallback to original tiered approach if rate_limiter not available
+    elif total_api_calls >= 15:
+        _apply_rate_limiting(session_manager)
+        logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+    elif total_api_calls >= 5:
+        time.sleep(1.2)
+        logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+    else:
+        time.sleep(0.3)
+        logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+
 
 # FINAL OPTIMIZATION 1: Progressive Processing for Large API Prefetch Operations
 # Note: @progressive_processing decorator removed - not essential for core functionality
@@ -1666,28 +1799,14 @@ def _perform_api_prefetches(
 
     critical_combined_details_failures = 0
 
-    # SURGICAL FIX #13: Dynamic Worker Pool Optimization
-    # Optimize worker count based on API load and rate limiting performance
-    base_workers = THREAD_POOL_WORKERS
-    optimized_workers = base_workers
-
-    if num_candidates <= 3:
-        # Light load - reduce workers to avoid rate limiting overhead
-        optimized_workers = 1
-        logger.debug(f"Light load optimization: Using {optimized_workers} worker for {num_candidates} candidates")
-    elif num_candidates >= 15:
-        # Heavy load - increase workers but respect rate limits
-        optimized_workers = min(4, base_workers + 1)
-        logger.debug(f"Heavy load optimization: Using {optimized_workers} workers for {num_candidates} candidates")
-    else:
-        # Medium load - use configured workers
-        optimized_workers = base_workers
-        logger.debug(f"Optimal load: Using {optimized_workers} workers for {num_candidates} candidates")
+    # Calculate optimal worker count
+    optimized_workers = _calculate_optimized_workers(num_candidates, THREAD_POOL_WORKERS)
 
     logger.debug(
         f"--- Starting Parallel API Pre-fetch ({num_candidates} candidates, {optimized_workers} workers) ---"
     )
 
+    # Identify UUIDs for tree badge/ladder fetch
     uuids_for_tree_badge_ladder = {
         match_data["uuid"]
         for match_data in matches_to_process_later
@@ -1699,89 +1818,14 @@ def _perform_api_prefetches(
     )
 
     with ThreadPoolExecutor(max_workers=optimized_workers) as executor:
-        # OPTIMIZATION: Conditional relationship probability fetching
-        # Only fetch relationship probability for significant matches (configurable threshold)
-        # to reduce API overhead for distant matches
-        # PRIORITY 3: Smarter API Call Filtering - Enhanced priority classification
-        high_priority_uuids = set()
-        medium_priority_uuids = set()
-        for match_data in matches_to_process_later:
-            uuid_val = match_data.get("uuid")
-            if uuid_val and uuid_val in fetch_candidates_uuid:
-                cm_value = int(match_data.get("cm_dna", 0))
-                has_tree = match_data.get("in_my_tree", False)
-                is_starred = match_data.get("starred", False)
+        # Classify matches into priority tiers
+        high_priority_uuids, medium_priority_uuids, priority_uuids = _classify_match_priorities(
+            matches_to_process_later, fetch_candidates_uuid
+        )
 
-                # Enhanced priority classification
-                if is_starred or cm_value > 50:  # Very high priority
-                    high_priority_uuids.add(uuid_val)
-                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
-                elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
-                    # Medium priority: above threshold OR low DNA but has tree
-                    medium_priority_uuids.add(uuid_val)
-                    logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
-                else:
-                    logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
-                                f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)")
-
-        # Combined high and medium for API calls, but prioritize high
-        priority_uuids = high_priority_uuids.union(medium_priority_uuids)
-        logger.info(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
-                   f"{len(medium_priority_uuids)} medium priority, "
-                   f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
-
-        # SURGICAL FIX #16: Intelligent Rate Limiting Prediction
-        # Calculate total API calls needed and predict token requirements
+        # Apply intelligent rate limiting
         total_api_calls = len(fetch_candidates_uuid) + len(priority_uuids) + len(uuids_for_tree_badge_ladder)
-        if total_api_calls > 0:
-            # Get current token count and fill rate from session manager
-            rate_limiter = getattr(session_manager, 'rate_limiter', None)
-            if rate_limiter:
-                current_tokens = getattr(rate_limiter, 'tokens', 0)
-                fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
-
-                # Predict if we'll run out of tokens
-                tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
-                if current_tokens < tokens_needed:
-                    # Calculate optimal pre-delay to avoid token bucket depletion
-                    tokens_deficit = tokens_needed - current_tokens
-                    optimal_pre_delay = min(tokens_deficit / fill_rate, 8.0)  # Cap at 8 seconds
-
-                    if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
-                        logger.debug(f"Predictive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (current tokens: {current_tokens:.2f})")
-                        import time
-                        time.sleep(optimal_pre_delay)
-                    # Use existing tiered approach for light loads
-                    elif total_api_calls >= 15:
-                        _apply_rate_limiting(session_manager)
-                        logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-                    elif total_api_calls >= 5:
-                        import time
-                        time.sleep(1.2)  # Shorter than normal rate limiting
-                        logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
-                    else:
-                        import time
-                        time.sleep(0.3)  # Just 300ms delay for light loads
-                        logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
-                else:
-                    # Sufficient tokens available - minimal delay
-                    import time
-                    time.sleep(0.1)  # Minimal delay to prevent hammering
-                    logger.debug(f"Sufficient tokens available ({current_tokens:.2f}) for {total_api_calls} API calls - minimal delay")
-            # Fallback to original tiered approach if rate_limiter not available
-            elif total_api_calls >= 15:
-                _apply_rate_limiting(session_manager)
-                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-            elif total_api_calls >= 5:
-                import time
-                time.sleep(1.2)
-                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
-            else:
-                import time
-                time.sleep(0.3)
-                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
-        else:
-            logger.debug("No API calls needed - skipping all rate limiting")
+        _apply_predictive_rate_limiting(session_manager, total_api_calls)
 
         # SURGICAL FIX #18: Batch API Call Grouping for better efficiency
         # Group similar API calls together to reduce context switching and improve rate limit utilization
