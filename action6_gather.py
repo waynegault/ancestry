@@ -418,57 +418,7 @@ def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
     return False
 
 
-# === OPTIMIZATION: Rate limiter helper with response-time adaptation
-def _apply_rate_limiting(session_manager: SessionManager) -> None:
-    """ENHANCED: Apply intelligent rate limiting with response-time adaptation."""
-    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-    if limiter is not None and hasattr(limiter, "wait"):
-        rate_start_time = time.time()
-
-        # Get current limiter stats for intelligent backoff
-        current_tokens = getattr(limiter, 'tokens', 0)
-        fill_rate = getattr(limiter, 'fill_rate', 2.0)
-
-        # ENHANCEMENT: Check recent API performance for adaptive delays
-        recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
-        avg_response_time = getattr(session_manager, '_avg_response_time', 0.0)
-
-        # Calculate adaptive delay based on recent performance
-        base_delay = 0.0
-        if avg_response_time > 8.0:  # Very slow responses
-            base_delay = min(avg_response_time * 0.3, 4.0)
-            logger.debug(f"Very slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
-        elif avg_response_time > 5.0:  # Moderate slow responses
-            base_delay = min(avg_response_time * 0.2, 2.0)
-            logger.debug(f"Slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
-        elif recent_slow_calls > 3:  # Multiple consecutive slow calls
-            base_delay = 1.0
-            logger.debug(f"Multiple slow calls detected ({recent_slow_calls}), adding {base_delay:.1f}s delay")
-
-        # Apply token-based backoff
-        if current_tokens < 1.0:
-            # Token bucket is nearly empty - apply smart backoff
-            smart_delay = min(2.0 / fill_rate, 3.0) + base_delay  # Add adaptive delay
-            logger.debug(f"Smart rate limiting: Low tokens ({current_tokens:.2f}), "
-                        f"total delay {smart_delay:.2f}s (base: {base_delay:.1f}s)")
-            limiter.wait()
-            time.sleep(smart_delay * 0.5)  # Additional smart delay
-        else:
-            # Normal rate limiting with adaptive component
-            limiter.wait()
-            if base_delay > 0:
-                time.sleep(base_delay)
-
-        rate_duration = time.time() - rate_start_time
-        if rate_duration > 2.0:
-            logger.warning(f"Extended rate limiting delay: {rate_duration:.2f}s")
-
-        # Track rate limiting performance
-        _log_api_performance("rate_limiting", rate_start_time, "applied")
-    else:
-        # Fallback rate limiting if no dynamic limiter available
-        logger.debug("No dynamic rate limiter available - using fallback delay")
-        time.sleep(0.5)  # Conservative fallback
+# Note: _apply_rate_limiting function moved to line ~768 (after helper functions)
 
 
 # ------------------------------------------------------------------------------
@@ -2206,15 +2156,15 @@ def _prepare_bulk_db_data(
                 try:
                     progress_bar.update(1)
 
-                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking
-                    if hasattr(progress_bar, '_enhanced_progress'):
-                        enhanced_progress = progress_bar._enhanced_progress
-                        enhanced_progress.update(
-                            increment=1,
-                            errors=1 if status == "error" else 0,
-                            api_calls=1,  # Approximate API calls per match
-                            cache_hits=1 if status == "skipped" else 0
-                        )
+                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking (DISABLED - placeholder for future)
+                    # if hasattr(progress_bar, '_enhanced_progress'):
+                    #     enhanced_progress = progress_bar._enhanced_progress
+                    #     enhanced_progress.update(
+                    #         increment=1,
+                    #         errors=1 if status == "error" else 0,
+                    #         api_calls=1,  # Approximate API calls per match
+                    #         cache_hits=1 if status == "skipped" else 0
+                    #     )
                 except Exception as pbar_e:
                     logger.warning(f"Progress bar update error: {pbar_e}")
 
