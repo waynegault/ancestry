@@ -1751,6 +1751,335 @@ def _apply_predictive_rate_limiting(
         logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
 
 
+def _submit_api_call_groups(
+    executor: Any,
+    session_manager: SessionManager,
+    fetch_candidates_uuid: set[str],
+    priority_uuids: set[str],
+    high_priority_uuids: set[str],
+    uuids_for_tree_badge_ladder: set[str]
+) -> dict[Any, tuple[str, str]]:
+    """Submit all API call groups (combined, relationship, badge).
+
+    Args:
+        executor: ThreadPoolExecutor instance
+        session_manager: SessionManager instance
+        fetch_candidates_uuid: Set of UUIDs requiring fetch
+        priority_uuids: Set of priority UUIDs for relationship calls
+        high_priority_uuids: Set of high priority UUIDs
+        uuids_for_tree_badge_ladder: Set of UUIDs for badge/ladder fetch
+
+    Returns:
+        Dictionary mapping futures to (task_type, uuid) tuples
+    """
+    import time
+    futures: dict[Any, tuple[str, str]] = {}
+
+    # Group 1: Submit combined details calls first (most common)
+    for uuid_val in fetch_candidates_uuid:
+        future = executor.submit(_fetch_combined_details, session_manager, uuid_val)
+        futures[future] = ("combined_details", uuid_val)
+
+    if fetch_candidates_uuid:
+        time.sleep(0.1)  # 100ms gap between groups
+        logger.debug(f"Submitted {len(fetch_candidates_uuid)} combined details API calls")
+
+    # Group 2: Submit relationship probability calls (selective with priority)
+    rel_count = 0
+    for uuid_val in fetch_candidates_uuid:
+        if uuid_val in priority_uuids:
+            max_labels = 3 if uuid_val in high_priority_uuids else 2
+            future = executor.submit(_fetch_batch_relationship_prob, session_manager, uuid_val, max_labels)
+            futures[future] = ("relationship_prob", uuid_val)
+            rel_count += 1
+            logger.debug(f"Queued relationship probability for {uuid_val[:8]} "
+                       f"(priority: {'high' if uuid_val in high_priority_uuids else 'medium'})")
+
+    if rel_count > 0:
+        time.sleep(0.1)  # 100ms gap between groups
+        logger.debug(f"Submitted {rel_count} relationship probability API calls")
+
+    # Group 3: Submit badge details calls last (tree-related)
+    for uuid_val in uuids_for_tree_badge_ladder:
+        future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
+        futures[future] = ("badge_details", uuid_val)
+
+    if uuids_for_tree_badge_ladder:
+        logger.debug(f"Submitted {len(uuids_for_tree_badge_ladder)} badge details API calls")
+
+    return futures
+
+
+def _store_future_result(
+    task_type: str,
+    identifier_uuid: str,
+    result: Any,
+    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    batch_relationship_prob_data: dict[str, Optional[str]]
+) -> int:
+    """Store result from a future in the appropriate dictionary.
+
+    Args:
+        task_type: Type of task
+        identifier_uuid: UUID of the match
+        result: Result to store (can be None)
+        batch_combined_details: Dictionary to store combined details results
+        temp_badge_results: Dictionary to store badge results
+        batch_relationship_prob_data: Dictionary to store relationship probability results
+
+    Returns:
+        Number of critical failures (0 or 1)
+    """
+    critical_failures = 0
+
+    if task_type == "combined_details":
+        batch_combined_details[identifier_uuid] = result
+        if result is None:
+            logger.warning(f"Critical API task '_fetch_combined_details' for {identifier_uuid} returned None.")
+            critical_failures = 1
+    elif task_type == "badge_details":
+        temp_badge_results[identifier_uuid] = result
+    elif task_type == "relationship_prob":
+        batch_relationship_prob_data[identifier_uuid] = result
+
+    return critical_failures
+
+
+def _process_single_future_result(
+    future: Any,
+    task_type: str,
+    identifier_uuid: str,
+    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    batch_relationship_prob_data: dict[str, Optional[str]]
+) -> int:
+    """Process result from a single future.
+
+    Args:
+        future: Future object to process
+        task_type: Type of task ("combined_details", "badge_details", "relationship_prob")
+        identifier_uuid: UUID of the match
+        batch_combined_details: Dictionary to store combined details results
+        temp_badge_results: Dictionary to store badge results
+        batch_relationship_prob_data: Dictionary to store relationship probability results
+
+    Returns:
+        Number of critical failures (0 or 1)
+    """
+    try:
+        result = future.result()
+        return _store_future_result(
+            task_type, identifier_uuid, result,
+            batch_combined_details, temp_badge_results, batch_relationship_prob_data
+        )
+
+    except ConnectionError as conn_err:
+        logger.error(f"ConnErr prefetch '{task_type}' {identifier_uuid}: {conn_err}", exc_info=False)
+        return _store_future_result(
+            task_type, identifier_uuid, None,
+            batch_combined_details, temp_badge_results, batch_relationship_prob_data
+        )
+
+    except Exception as exc:
+        logger.error(f"Exc prefetch '{task_type}' {identifier_uuid}: {exc}", exc_info=True)
+        return _store_future_result(
+            task_type, identifier_uuid, None,
+            batch_combined_details, temp_badge_results, batch_relationship_prob_data
+        )
+
+
+def _process_ladder_api_calls(
+    executor: Any,
+    session_manager: SessionManager,
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    my_tree_id: Optional[str]
+) -> dict[str, Optional[dict[str, Any]]]:
+    """Process ladder API calls for tree-related matches.
+
+    Args:
+        executor: ThreadPoolExecutor instance
+        session_manager: SessionManager instance
+        temp_badge_results: Badge results from previous API calls
+        my_tree_id: User's tree ID
+
+    Returns:
+        Dictionary mapping UUIDs to ladder results
+    """
+    temp_ladder_results: dict[str, Optional[dict[str, Any]]] = {}
+
+    if not my_tree_id or not temp_badge_results:
+        return temp_ladder_results
+
+    # Build CFPID list and mapping
+    cfpid_to_uuid_map: dict[str, str] = {}
+    cfpid_list_for_ladder: list[str] = []
+
+    for uuid_val, badge_result_data in temp_badge_results.items():
+        if badge_result_data:
+            cfpid = badge_result_data.get("their_cfpid")
+            if cfpid:
+                cfpid_list_for_ladder.append(cfpid)
+                cfpid_to_uuid_map[cfpid] = uuid_val
+
+    if not cfpid_list_for_ladder:
+        return temp_ladder_results
+
+    logger.debug(f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs...")
+
+    # Apply batch rate limiting
+    if len(cfpid_list_for_ladder) > 0:
+        _apply_rate_limiting(session_manager)
+        logger.debug(f"Applied batch rate limiting for {len(cfpid_list_for_ladder)} ladder API calls")
+
+    # Submit ladder futures
+    ladder_futures = {}
+    for cfpid_item in cfpid_list_for_ladder:
+        ladder_futures[
+            executor.submit(_fetch_batch_ladder, session_manager, cfpid_item, my_tree_id)
+        ] = ("ladder", cfpid_item)
+
+    # Process ladder results
+    logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
+    for future in as_completed(ladder_futures):
+        task_type, identifier_cfpid = ladder_futures[future]
+        uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
+
+        if not uuid_for_ladder:
+            logger.warning(
+                f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID "
+                f"(task likely cancelled or map error)."
+            )
+            continue
+
+        try:
+            result = future.result()
+            temp_ladder_results[uuid_for_ladder] = result
+        except ConnectionError as conn_err:
+            logger.error(
+                f"ConnErr ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {conn_err}",
+                exc_info=False
+            )
+            temp_ladder_results[uuid_for_ladder] = None
+        except Exception as exc:
+            logger.error(
+                f"Exc ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {exc}",
+                exc_info=True
+            )
+            temp_ladder_results[uuid_for_ladder] = None
+
+    return temp_ladder_results
+
+
+def _combine_badge_ladder_results(
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    temp_ladder_results: dict[str, Optional[dict[str, Any]]]
+) -> dict[str, Optional[dict[str, Any]]]:
+    """Combine badge and ladder results into final tree data.
+
+    Args:
+        temp_badge_results: Badge results
+        temp_ladder_results: Ladder results
+
+    Returns:
+        Combined tree data dictionary
+    """
+    batch_tree_data: dict[str, Optional[dict[str, Any]]] = {}
+
+    for uuid_val, badge_result in temp_badge_results.items():
+        if badge_result:
+            combined_tree_info = badge_result.copy()
+            ladder_result_for_uuid = temp_ladder_results.get(uuid_val)
+            if ladder_result_for_uuid:
+                combined_tree_info.update(ladder_result_for_uuid)
+            batch_tree_data[uuid_val] = combined_tree_info
+
+    return batch_tree_data
+
+
+def _check_critical_failure_threshold(
+    critical_failures: int,
+    futures: dict[Any, tuple[str, str]],
+    session_manager: SessionManager
+) -> None:
+    """Check if critical failure threshold is exceeded and raise error if so.
+
+    Args:
+        critical_failures: Number of critical failures
+        futures: Dictionary of futures to cancel if threshold exceeded
+        session_manager: SessionManager instance
+
+    Raises:
+        MaxApiFailuresExceededError: If threshold exceeded
+    """
+    if critical_failures < CRITICAL_API_FAILURE_THRESHOLD:
+        return
+
+    # Cancel remaining futures
+    for f_cancel in futures:
+        if not f_cancel.done():
+            f_cancel.cancel()
+
+    # Check if this is due to session death cascade
+    is_session_death = session_manager.is_session_death_cascade()
+
+    if is_session_death:
+        logger.critical(
+            f"🚨 CRITICAL FAILURE DUE TO SESSION DEATH CASCADE: "
+            f"Browser session died causing {critical_failures} API failures. "
+            f"Should have halted at session death, not after {CRITICAL_API_FAILURE_THRESHOLD} API failures."
+        )
+        error_msg = f"Session death cascade caused {critical_failures} API failures"
+    else:
+        logger.critical(
+            f"Exceeded critical API failure threshold ({critical_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) "
+            f"for combined_details. Halting batch."
+        )
+        error_msg = f"Critical API failure threshold reached for combined_details ({critical_failures} failures)."
+
+    raise MaxApiFailuresExceededError(error_msg)
+
+
+def _check_session_health_periodic(
+    processed_tasks: int,
+    total_tasks: int,
+    futures: dict[Any, tuple[str, str]],
+    session_manager: SessionManager
+) -> None:
+    """Check session health periodically during batch processing.
+
+    Args:
+        processed_tasks: Number of tasks processed so far
+        total_tasks: Total number of tasks
+        futures: Dictionary of futures to cancel if session dies
+        session_manager: SessionManager instance
+
+    Raises:
+        MaxApiFailuresExceededError: If session death detected
+    """
+    if processed_tasks % 10 != 0:
+        return
+
+    if session_manager.check_session_health():
+        return
+
+    logger.critical(
+        f"🚨 Session death detected during batch processing "
+        f"(task {processed_tasks}/{total_tasks}). Cancelling remaining tasks."
+    )
+
+    # Cancel all remaining futures
+    for f_cancel in futures:
+        if not f_cancel.done():
+            f_cancel.cancel()
+
+    # Fast-fail to prevent more cascade failures
+    remaining_count = len([f for f in futures if not f.done()])
+    raise MaxApiFailuresExceededError(
+        f"Session death detected during batch processing - cancelled {remaining_count} remaining tasks"
+    )
+
+
 # FINAL OPTIMIZATION 1: Progressive Processing for Large API Prefetch Operations
 # Note: @progressive_processing decorator removed - not essential for core functionality
 def _perform_api_prefetches(
@@ -1827,54 +2156,11 @@ def _perform_api_prefetches(
         total_api_calls = len(fetch_candidates_uuid) + len(priority_uuids) + len(uuids_for_tree_badge_ladder)
         _apply_predictive_rate_limiting(session_manager, total_api_calls)
 
-        # SURGICAL FIX #18: Batch API Call Grouping for better efficiency
-        # Group similar API calls together to reduce context switching and improve rate limit utilization
-
-        # Group 1: Submit combined details calls first (most common)
-        combined_details_futures = []
-        for uuid_val in fetch_candidates_uuid:
-            future = executor.submit(_fetch_combined_details, session_manager, uuid_val)
-            futures[future] = ("combined_details", uuid_val)
-            combined_details_futures.append(future)
-
-        # Small delay between groups to avoid overwhelming the API
-        if combined_details_futures:
-            import time
-            time.sleep(0.1)  # 100ms gap between groups
-            logger.debug(f"Submitted {len(combined_details_futures)} combined details API calls")
-
-        # Group 2: Submit relationship probability calls (selective with priority)
-        relationship_futures = []
-        for uuid_val in fetch_candidates_uuid:
-            # PRIORITY 3: Use priority-based filtering for relationship calls
-            if uuid_val in priority_uuids:
-                # Determine max labels based on priority level
-                max_labels = 3 if uuid_val in high_priority_uuids else 2
-                future = executor.submit(
-                    _fetch_batch_relationship_prob,
-                    session_manager,
-                    uuid_val,
-                    max_labels,
-                )
-                futures[future] = ("relationship_prob", uuid_val)
-                relationship_futures.append(future)
-                logger.debug(f"Queued relationship probability for {uuid_val[:8]} "
-                           f"(priority: {'high' if uuid_val in high_priority_uuids else 'medium'})")
-
-        if relationship_futures:
-            import time
-            time.sleep(0.1)  # 100ms gap between groups
-            logger.debug(f"Submitted {len(relationship_futures)} relationship probability API calls")
-
-        # Group 3: Submit badge details calls last (tree-related)
-        badge_futures = []
-        for uuid_val in uuids_for_tree_badge_ladder:
-            future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
-            futures[future] = ("badge_details", uuid_val)
-            badge_futures.append(future)
-
-        if badge_futures:
-            logger.debug(f"Submitted {len(badge_futures)} badge details API calls")
+        # Submit all API call groups
+        futures = _submit_api_call_groups(
+            executor, session_manager, fetch_candidates_uuid,
+            priority_uuids, high_priority_uuids, uuids_for_tree_badge_ladder
+        )
 
         temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
         temp_ladder_results: dict[str, Optional[dict[str, Any]]] = (
@@ -1883,165 +2169,32 @@ def _perform_api_prefetches(
 
         logger.debug(f"Processing {len(futures)} initially submitted API tasks...")
         for processed_tasks, future in enumerate(as_completed(futures), start=1):
-            # SURGICAL FIX #20: Universal session health check during batch processing
-            if processed_tasks % 10 == 0 and not session_manager.check_session_health():  # Check every 10 processed tasks
-                    logger.critical(
-                        f"🚨 Session death detected during batch processing "
-                        f"(task {processed_tasks}/{len(futures)}). Cancelling remaining tasks."
-                    )
-                    # Cancel all remaining futures
-                    for f_cancel in futures:
-                        if not f_cancel.done():
-                            f_cancel.cancel()
-                    # Fast-fail to prevent more cascade failures
-                    raise MaxApiFailuresExceededError(
-                        f"Session death detected during batch processing - cancelled {len([f for f in futures if not f.done()])} remaining tasks"
-                    )
+            # Check session health periodically
+            _check_session_health_periodic(processed_tasks, len(futures), futures, session_manager)
 
             task_type, identifier_uuid = futures[future]
-            try:
-                result = future.result()
-                if task_type == "combined_details":
-                    batch_combined_details[identifier_uuid] = (
-                        result  # result can be None
-                    )
-                    if (
-                        result is None
-                    ):  # Treat None result as a failure for critical tracking
-                        logger.warning(
-                            f"Critical API task '_fetch_combined_details' for {identifier_uuid} returned None."
-                        )
-                        critical_combined_details_failures += 1
-                elif task_type == "badge_details":
-                    temp_badge_results[identifier_uuid] = result  # result can be None
-                elif task_type == "relationship_prob":
-                    batch_relationship_prob_data[identifier_uuid] = (
-                        result  # result can be None
-                    )
+            critical_combined_details_failures += _process_single_future_result(
+                future, task_type, identifier_uuid,
+                batch_combined_details, temp_badge_results, batch_relationship_prob_data
+            )
 
-            except (
-                ConnectionError
-            ) as conn_err:  # Includes HTTPError if raised by retry_api
-                logger.error(
-                    f"ConnErr prefetch '{task_type}' {identifier_uuid}: {conn_err}",
-                    exc_info=False,  # Keep log concise
-                )
-                if task_type == "combined_details":
-                    critical_combined_details_failures += 1
-                    batch_combined_details[identifier_uuid] = None
-                elif task_type == "badge_details":
-                    temp_badge_results[identifier_uuid] = None
-                elif task_type == "relationship_prob":
-                    batch_relationship_prob_data[identifier_uuid] = None
-            except Exception as exc:
-                logger.error(
-                    f"Exc prefetch '{task_type}' {identifier_uuid}: {exc}",
-                    exc_info=True,  # Log full traceback for unexpected errors
-                )
-                if task_type == "combined_details":
-                    # Potentially count other severe exceptions as critical if needed
-                    critical_combined_details_failures += 1
-                    batch_combined_details[identifier_uuid] = None
-                elif task_type == "badge_details":
-                    temp_badge_results[identifier_uuid] = None
-                elif task_type == "relationship_prob":
-                    batch_relationship_prob_data[identifier_uuid] = None
+            # Check if critical failure threshold exceeded
+            _check_critical_failure_threshold(
+                critical_combined_details_failures, futures, session_manager
+            )
 
-            if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
-                # Cancel remaining futures
-                for f_cancel in futures:  # Iterate over original futures dict keys
-                    if not f_cancel.done():
-                        f_cancel.cancel()
-
-                # SURGICAL FIX #20: Check if this is due to session death cascade (Universal approach)
-                is_session_death = False
-                if session_manager.is_session_death_cascade():
-                    is_session_death = True
-                    logger.critical(
-                        f"🚨 CRITICAL FAILURE DUE TO SESSION DEATH CASCADE: "
-                        f"Browser session died causing {critical_combined_details_failures} API failures. "
-                        f"Should have halted at session death, not after {CRITICAL_API_FAILURE_THRESHOLD} API failures."
-                    )
-                else:
-                    logger.critical(
-                        f"Exceeded critical API failure threshold ({critical_combined_details_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) for combined_details. Halting batch."
-                    )
-
-                error_msg = (
-                    f"Session death cascade caused {critical_combined_details_failures} API failures"
-                    if is_session_death
-                    else f"Critical API failure threshold reached for combined_details ({critical_combined_details_failures} failures)."
-                )
-                raise MaxApiFailuresExceededError(error_msg)
-
-        cfpid_to_uuid_map: dict[str, str] = {}
-        ladder_futures = {}
-        if my_tree_id and temp_badge_results:  # Check temp_badge_results has items
-            cfpid_list_for_ladder: list[str] = []
-            for uuid_val, badge_result_data in temp_badge_results.items():
-                if badge_result_data:  # Ensure badge_result_data is not None
-                    cfpid = badge_result_data.get("their_cfpid")
-                    if cfpid:
-                        cfpid_list_for_ladder.append(cfpid)
-                        cfpid_to_uuid_map[cfpid] = uuid_val
-
-            if cfpid_list_for_ladder:
-                logger.debug(
-                    f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs..."
-                )
-                # SURGICAL FIX #5: Apply batch rate limiting for ladder API calls
-                if len(cfpid_list_for_ladder) > 0:
-                    _apply_rate_limiting(session_manager)
-                    logger.debug(f"Applied batch rate limiting for {len(cfpid_list_for_ladder)} ladder API calls")
-
-                for cfpid_item in cfpid_list_for_ladder:
-                    # Removed individual rate limiting - now handled at batch level
-                    ladder_futures[
-                        executor.submit(
-                            _fetch_batch_ladder, session_manager, cfpid_item, my_tree_id
-                        )
-                    ] = ("ladder", cfpid_item)
-
-        logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
-        for future in as_completed(ladder_futures):
-            task_type, identifier_cfpid = ladder_futures[future]
-            uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
-            if not uuid_for_ladder:
-                logger.warning(
-                    f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID (task likely cancelled or map error)."
-                )
-                continue  # Skip if cannot map back
-            try:
-                result = future.result()
-                temp_ladder_results[uuid_for_ladder] = (
-                    result  # Store ladder result, can be None
-                )
-            except ConnectionError as conn_err:
-                logger.error(
-                    f"ConnErr ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {conn_err}",
-                    exc_info=False,
-                )
-                temp_ladder_results[uuid_for_ladder] = None
-            except Exception as exc:
-                logger.error(
-                    f"Exc ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {exc}",
-                    exc_info=True,
-                )
-                temp_ladder_results[uuid_for_ladder] = None
+        # Process ladder API calls
+        temp_ladder_results = _process_ladder_api_calls(
+            executor, session_manager, temp_badge_results, my_tree_id
+        )
 
     fetch_duration = time.time() - fetch_start_time
     logger.debug(
         f"--- Finished Parallel API Pre-fetch. Duration: {fetch_duration:.2f}s ---"
     )
 
-    for uuid_val, badge_result in temp_badge_results.items():
-        if badge_result:  # Badge fetch was successful and returned data
-            combined_tree_info = badge_result.copy()
-            ladder_result_for_uuid = temp_ladder_results.get(uuid_val)
-            if ladder_result_for_uuid:  # Ladder fetch was successful and returned data
-                combined_tree_info.update(ladder_result_for_uuid)
-            batch_tree_data[uuid_val] = combined_tree_info
-        # If badge_result is None, batch_tree_data[uuid_val] will not be set, correctly defaulting to None if key missing.
+    # Combine badge and ladder results
+    batch_tree_data = _combine_badge_ladder_results(temp_badge_results, temp_ladder_results)
 
     return {
         "combined": batch_combined_details,
