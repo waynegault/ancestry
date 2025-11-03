@@ -1728,7 +1728,7 @@ class InboxProcessor:
             )
 
             # Skip invalid conversations
-            if self._should_skip_invalid(api_conv_id, profile_id_upper, None):
+            if self._should_skip_invalid(api_conv_id, profile_id_upper):
                 skip_map[api_conv_id] = "invalid"
                 logger.debug(f"First pass: Skipping invalid conversation {api_conv_id}")
                 continue
@@ -2121,7 +2121,7 @@ class InboxProcessor:
             stop_reason = f"Critical Error ({type(exception).__name__})"
 
         final_logs, final_persons = self._handle_exception_with_save(
-            session, conv_log_upserts_dicts, person_updates, exception_type, exception
+            session, conv_log_upserts_dicts, person_updates, exception_type
         )
         return final_logs, final_persons, stop_reason
 
