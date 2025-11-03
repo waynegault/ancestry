@@ -418,6 +418,22 @@ For issues or questions:
 
 ### Appendix A: Chronology of Changes
 
+2025-11-03
+- Action 6 Browser Death Fix (commit 4c3277a): Reverted action6_gather.py and core/session_manager.py to stable commit 793d948 (last known-good version that processed 15,000+ matches flawlessly) and cleanly re-added ethnicity enrichment
+  - Root cause: Massive refactoring after 793d948 introduced complex browser recovery mechanisms (_atomic_browser_replacement, attempt_browser_recovery, death cascade detection) that were failing with "atomic replacement failed" errors causing browser session death
+  - Solution: Surgical revert to proven stable base from 793d948, removed all complex recovery mechanisms, adapted for global session_manager pattern from main.py, cleanly re-integrated ethnicity enrichment without recovery complexity
+  - Changes made:
+    - Reverted action6_gather.py from 2,088 lines (current) to 6,824 lines (793d948 base)
+    - Reverted core/session_manager.py from 3,807 lines (current) to 2,023 lines (793d948 base)
+    - Removed _config_schema_arg parameter from coord() function (now uses global config_schema)
+    - Added ethnicity imports: fetch_ethnicity_comparison, extract_match_ethnicity_percentages, load_ethnicity_metadata
+    - Added helper functions: _get_ethnicity_config(),_build_ethnicity_payload(), _needs_ethnicity_refresh()
+    - Integrated ethnicity enrichment into _prepare_dna_match_operation_data() function
+    - Ethnicity data fetched and added to DNA match records when creating new records or refreshing existing ones
+  - Preserved database.py ethnicity persistence fix from commit 8649380 (CREATE-path raw SQL UPDATE)
+  - Backup files created: action6_gather_current_backup.py, core/session_manager_current_backup.py for reference
+  - Simple, proven approach from 793d948 without elaborate recovery mechanisms that were causing failures
+
 2025-11-02
 - Login Regression Recovery: Reverted to commit 2c8956d (Oct 31, 18:31) after discovering login had been broken since at least Oct 31 due to Ancestry's cookie consent banner blocking form interactions
 - Key Lessons Learned:
