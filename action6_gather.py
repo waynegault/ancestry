@@ -1204,6 +1204,147 @@ def _main_page_processing_loop(
 @circuit_breaker(failure_threshold=3, recovery_timeout=60)
 @timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
 @error_context("DNA match gathering coordination")
+def _validate_session_state(session_manager: SessionManager) -> None:
+    """
+    Validate that session manager is ready for DNA match gathering.
+
+    Args:
+        session_manager: SessionManager instance
+
+    Raises:
+        BrowserSessionError: If session is not ready
+        AuthenticationExpiredError: If UUID is missing
+    """
+    if not session_manager.driver or not session_manager.driver_live or not session_manager.session_ready:
+        raise BrowserSessionError(
+            "WebDriver/Session not ready for DNA match gathering",
+            context={
+                "driver_live": session_manager.driver_live,
+                "session_ready": session_manager.session_ready,
+            },
+        )
+    if not session_manager.my_uuid:
+        raise AuthenticationExpiredError(
+            "Failed to retrieve my_uuid for DNA match gathering",
+            context={"session_state": "authenticated but no UUID"},
+        )
+
+
+def _log_action_start(start_page: int) -> None:
+    """
+    Log action configuration at start.
+
+    Args:
+        start_page: Starting page number
+    """
+    from utils import log_action_configuration
+
+    log_action_configuration({
+        "Action": "Action 6 - Gather DNA Matches",
+        "Start Page": start_page,
+        "Max Pages": getattr(config_schema.api, 'max_pages', 'unlimited'),
+        "Matches Per Page": MATCHES_PER_PAGE,
+        "App Mode": getattr(config_schema, 'app_mode', 'production'),
+        "Dry Run": getattr(config_schema, 'dry_run', False)
+    })
+    logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
+
+
+def _handle_initial_fetch(session_manager: SessionManager, start_page: int, state: Dict[str, Any]) -> Tuple[int, int, int]:
+    """
+    Handle initial navigation and page fetch.
+
+    Args:
+        session_manager: SessionManager instance
+        start_page: Starting page number
+        state: State dictionary
+
+    Returns:
+        Tuple of (total_pages_api, last_page_to_process, total_pages_in_run)
+
+    Raises:
+        RuntimeError: If initial fetch fails
+    """
+    from utils import log_starting_position
+
+    # Initial Navigation and Total Pages Fetch
+    initial_matches, total_pages_api, initial_fetch_ok = _navigate_and_get_initial_page_data(
+        session_manager, start_page
+    )
+
+    if not initial_fetch_ok or total_pages_api is None:
+        logger.error("Failed to retrieve total_pages on initial fetch. Aborting.")
+        state["final_success"] = False
+        raise RuntimeError("Initial fetch failed")
+
+    state["total_pages_from_api"] = total_pages_api
+    state["matches_on_current_page"] = initial_matches if initial_matches is not None else []
+    logger.info(f"Total pages found: {total_pages_api}")
+
+    # Determine Page Range
+    last_page_to_process, total_pages_in_run = _determine_page_processing_range(
+        total_pages_api, start_page
+    )
+
+    if total_pages_in_run <= 0:
+        logger.info(f"No pages to process (Start: {start_page}, End: {last_page_to_process}).")
+        raise RuntimeError("No pages to process")
+
+    total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
+
+    # Log Starting Position
+    log_starting_position(
+        f"Processing {total_pages_in_run} pages from page {start_page} to {last_page_to_process}",
+        {
+            "Total Pages Available": total_pages_api,
+            "Pages to Process": total_pages_in_run,
+            "Estimated Matches": total_matches_estimate,
+            "Start Page": start_page,
+            "End Page": last_page_to_process
+        }
+    )
+
+    return total_pages_api, last_page_to_process, total_pages_in_run
+
+
+def _log_final_results(session_manager: SessionManager, state: Dict[str, Any], action_start_time: float) -> None:
+    """
+    Log final summary and performance statistics.
+
+    Args:
+        session_manager: SessionManager instance
+        state: State dictionary
+        action_start_time: Start time of action
+    """
+    from utils import log_action_status, log_final_summary
+
+    run_time_seconds = time.time() - action_start_time
+
+    # Final Summary
+    log_final_summary(
+        {
+            "Pages Scanned": state["total_pages_processed"],
+            "New Matches": state["total_new"],
+            "Updated Matches": state["total_updated"],
+            "Skipped (No Change)": state["total_skipped"],
+            "Errors": state["total_errors"],
+            "Total Processed": state["total_new"] + state["total_updated"] + state["total_skipped"]
+        },
+        run_time_seconds
+    )
+
+    # Performance Statistics
+    if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
+        session_manager.rate_limiter.print_metrics_summary()
+
+    # Success/Failure Statement
+    log_action_status(
+        "Action 6 - Gather DNA Matches",
+        state["final_success"],
+        None if state["final_success"] else f"Processed {state['total_pages_processed']} pages with {state['total_errors']} errors"
+    )
+
+
 def coord(
     session_manager: SessionManager, start: int = 1
 ) -> bool:  # Uses config schema
@@ -1218,156 +1359,51 @@ def coord(
     Returns:
         bool: True if successful, False otherwise
     """
-    from utils import log_action_configuration, log_starting_position
-
-    # Track start time for performance metrics
     action_start_time = time.time()
 
-    # Step 1: Validate Session State
-    if (
-        not session_manager.driver
-        or not session_manager.driver_live
-        or not session_manager.session_ready
-    ):
-        raise BrowserSessionError(
-            "WebDriver/Session not ready for DNA match gathering",
-            context={
-                "driver_live": session_manager.driver_live,
-                "session_ready": session_manager.session_ready,
-            },
-        )
-    if not session_manager.my_uuid:
-        raise AuthenticationExpiredError(
-            "Failed to retrieve my_uuid for DNA match gathering",
-            context={"session_state": "authenticated but no UUID"},
-        )
+    # Validate Session State
+    _validate_session_state(session_manager)
 
-    # Step 2: Initialize state
+    # Initialize state
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
 
-    # STANDARDIZED LOGGING: Step 1 - Configuration Settings
-    log_action_configuration({
-        "Action": "Action 6 - Gather DNA Matches",
-        "Start Page": start_page,
-        "Max Pages": getattr(config_schema.api, 'max_pages', 'unlimited'),
-        "Matches Per Page": MATCHES_PER_PAGE,
-        "App Mode": getattr(config_schema, 'app_mode', 'production'),
-        "Dry Run": getattr(config_schema, 'dry_run', False)
-    })
-
-    logger.debug(
-        f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---"
-    )
+    # Log action start
+    _log_action_start(start_page)
 
     try:
-        # Step 3: Initial Navigation and Total Pages Fetch
-        initial_matches, total_pages_api, initial_fetch_ok = (
-            _navigate_and_get_initial_page_data(session_manager, start_page)
-        )
-
-        if not initial_fetch_ok or total_pages_api is None:
-            logger.error("Failed to retrieve total_pages on initial fetch. Aborting.")
-            state["final_success"] = False
-            return False  # Critical failure if initial fetch fails
-
-        state["total_pages_from_api"] = total_pages_api
-        state["matches_on_current_page"] = (
-            initial_matches if initial_matches is not None else []
-        )
-        logger.info(f"Total pages found: {total_pages_api}")
-
-        # Step 4: Determine Page Range
-        last_page_to_process, total_pages_in_run = _determine_page_processing_range(
-            total_pages_api, start_page
-        )
-
-        if total_pages_in_run <= 0:
-            logger.info(
-                f"No pages to process (Start: {start_page}, End: {last_page_to_process})."
+        # Handle initial fetch and determine page range
+        try:
+            total_pages_api, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
+                session_manager, start_page, state
             )
-            return True  # Successful exit, nothing to do
+        except RuntimeError as e:
+            # No pages to process or initial fetch failed
+            return str(e) == "No pages to process"  # True if no pages, False if fetch failed
 
-        total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
-
-        # STANDARDIZED LOGGING: Step 2 - Starting Position
-        log_starting_position(
-            f"Processing {total_pages_in_run} pages from page {start_page} to {last_page_to_process}",
-            {
-                "Total Pages Available": total_pages_api,
-                "Pages to Process": total_pages_in_run,
-                "Estimated Matches": total_matches_estimate,
-                "Start Page": start_page,
-                "End Page": last_page_to_process
-            }
-        )
-
-        # Step 5: Main Processing Loop (delegated)
-        # Pass only relevant parts of initial_matches to the loop
+        # Main Processing Loop
         initial_matches_for_loop = state["matches_on_current_page"]
-
         loop_success = _main_page_processing_loop(
-            session_manager,
-            start_page,
-            last_page_to_process,
-            total_pages_in_run,  # Correctly passing total_pages_in_run
-            initial_matches_for_loop,
-            state,  # Pass the whole state dict to be updated by the loop
+            session_manager, start_page, last_page_to_process, total_pages_in_run,
+            initial_matches_for_loop, state
         )
-        state["final_success"] = (
-            state["final_success"] and loop_success
-        )  # Update overall success
+        state["final_success"] = state["final_success"] and loop_success
 
-    # Step 6: Handle specific exceptions from coord's orchestration level
     except KeyboardInterrupt:
         logger.warning("Keyboard interrupt detected. Stopping match gathering.")
         state["final_success"] = False
-    except ConnectionError as coord_conn_err:  # Catch ConnectionError if it bubbles up
-        logger.critical(
-            f"ConnectionError during coord execution: {coord_conn_err}",
-            exc_info=True,
-        )
+    except ConnectionError as coord_conn_err:
+        logger.critical(f"ConnectionError during coord execution: {coord_conn_err}", exc_info=True)
         state["final_success"] = False
     except MaxApiFailuresExceededError as api_halt_err:
-        logger.critical(
-            f"Halting run due to excessive critical API failures: {api_halt_err}",
-            exc_info=False,
-        )
+        logger.critical(f"Halting run due to excessive critical API failures: {api_halt_err}", exc_info=False)
         state["final_success"] = False
     except Exception as e:
         logger.error(f"Critical error during coord execution: {e}", exc_info=True)
         state["final_success"] = False
     finally:
-        # Step 7: Final Summary Logging (uses updated state from the loop)
-        from utils import log_action_status, log_final_summary
-
-        # Calculate run time
-        run_time_seconds = time.time() - action_start_time
-
-        # STANDARDIZED LOGGING: Step 11 - Final Summary
-        log_final_summary(
-            {
-                "Pages Scanned": state["total_pages_processed"],
-                "New Matches": state["total_new"],
-                "Updated Matches": state["total_updated"],
-                "Skipped (No Change)": state["total_skipped"],
-                "Errors": state["total_errors"],
-                "Total Processed": state["total_new"] + state["total_updated"] + state["total_skipped"]
-            },
-            run_time_seconds
-        )
-
-        # STANDARDIZED LOGGING: Step 10 - Performance Statistics
-        # Print rate limiter metrics if available
-        if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
-            session_manager.rate_limiter.print_metrics_summary()
-
-        # STANDARDIZED LOGGING: Step 12 - Success/Failure Statement
-        log_action_status(
-            "Action 6 - Gather DNA Matches",
-            state["final_success"],
-            None if state["final_success"] else f"Processed {state['total_pages_processed']} pages with {state['total_errors']} errors"
-        )
+        # Final Summary Logging
+        _log_final_results(session_manager, state, action_start_time)
 
         # Re-raise KeyboardInterrupt if that was the cause
         exc_info_tuple = sys.exc_info()
