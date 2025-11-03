@@ -1151,6 +1151,11 @@ def coord(
     Returns:
         bool: True if successful, False otherwise
     """
+    from utils import log_action_configuration, log_starting_position
+
+    # Track start time for performance metrics
+    action_start_time = time.time()
+
     # Step 1: Validate Session State
     if (
         not session_manager.driver
@@ -1173,6 +1178,17 @@ def coord(
     # Step 2: Initialize state
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
+
+    # STANDARDIZED LOGGING: Step 1 - Configuration Settings
+    log_action_configuration({
+        "Action": "Action 6 - Gather DNA Matches",
+        "Start Page": start_page,
+        "Max Pages": getattr(config_schema.api, 'max_pages', 'unlimited'),
+        "Matches Per Page": MATCHES_PER_PAGE,
+        "App Mode": getattr(config_schema, 'app_mode', 'production'),
+        "Dry Run": getattr(config_schema, 'dry_run', False)
+    })
+
     logger.debug(
         f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---"
     )
@@ -1206,9 +1222,17 @@ def coord(
             return True  # Successful exit, nothing to do
 
         total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
-        logger.info(
-            f"Processing {total_pages_in_run} pages (approx. {total_matches_estimate} matches) "
-            f"from page {start_page} to {last_page_to_process}.\n"
+
+        # STANDARDIZED LOGGING: Step 2 - Starting Position
+        log_starting_position(
+            f"Processing {total_pages_in_run} pages from page {start_page} to {last_page_to_process}",
+            {
+                "Total Pages Available": total_pages_api,
+                "Pages to Process": total_pages_in_run,
+                "Estimated Matches": total_matches_estimate,
+                "Start Page": start_page,
+                "End Page": last_page_to_process
+            }
         )
 
         # Step 5: Main Processing Loop (delegated)
@@ -1248,12 +1272,34 @@ def coord(
         state["final_success"] = False
     finally:
         # Step 7: Final Summary Logging (uses updated state from the loop)
-        _log_coord_summary(
-            state["total_pages_processed"],
-            state["total_new"],
-            state["total_updated"],
-            state["total_skipped"],
-            state["total_errors"],
+        from utils import log_final_summary, log_action_status
+
+        # Calculate run time
+        run_time_seconds = time.time() - action_start_time
+
+        # STANDARDIZED LOGGING: Step 11 - Final Summary
+        log_final_summary(
+            {
+                "Pages Scanned": state["total_pages_processed"],
+                "New Matches": state["total_new"],
+                "Updated Matches": state["total_updated"],
+                "Skipped (No Change)": state["total_skipped"],
+                "Errors": state["total_errors"],
+                "Total Processed": state["total_new"] + state["total_updated"] + state["total_skipped"]
+            },
+            run_time_seconds
+        )
+
+        # STANDARDIZED LOGGING: Step 10 - Performance Statistics
+        # Print rate limiter metrics if available
+        if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
+            session_manager.rate_limiter.print_metrics_summary()
+
+        # STANDARDIZED LOGGING: Step 12 - Success/Failure Statement
+        log_action_status(
+            "Action 6 - Gather DNA Matches",
+            state["final_success"],
+            None if state["final_success"] else f"Processed {state['total_pages_processed']} pages with {state['total_errors']} errors"
         )
 
         # Re-raise KeyboardInterrupt if that was the cause
