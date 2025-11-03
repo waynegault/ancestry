@@ -12,8 +12,8 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
 import os
+import sys
 
 # Add parent directory to path for core_imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,28 +25,27 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    AuthenticationExpiredError,
-    APIRateLimitError,
-    ErrorContext,
-)
-
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
 from core.session_cache import (
-    cached_database_manager,
-    cached_browser_manager,
     cached_api_manager,
+    cached_browser_manager,
+    cached_database_manager,
     cached_session_validator,
-    get_session_cache_stats,
     clear_session_cache,
+    get_session_cache_stats,
+)
+from error_handling import (
+    AncestryException,
+    APIRateLimitError,
+    AuthenticationExpiredError,
+    ErrorContext,
+    NetworkTimeoutError,
+    RetryableError,
+    circuit_breaker,
+    error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
 )
 
 # === MODULE SETUP ===
@@ -57,12 +56,13 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 try:
     import cloudscraper
 except ImportError:
@@ -71,22 +71,18 @@ except ImportError:
 
 # === SELENIUM IMPORTS ===
 try:
-    from selenium.common.exceptions import (
-        WebDriverException,
-        InvalidSessionIdException,
-        NoSuchWindowException
-    )
+    from selenium.common.exceptions import InvalidSessionIdException, NoSuchWindowException, WebDriverException
 except ImportError:
     WebDriverException = Exception
     InvalidSessionIdException = Exception
     NoSuchWindowException = Exception
 
 # === LOCAL IMPORTS ===
-from core.database_manager import DatabaseManager
-from core.browser_manager import BrowserManager
-from core.api_manager import APIManager
-from core.session_validator import SessionValidator
 from config import config_schema
+from core.api_manager import APIManager
+from core.browser_manager import BrowserManager
+from core.database_manager import DatabaseManager
+from core.session_validator import SessionValidator
 
 # === MODULE CONSTANTS ===
 # Use global cached config instance
@@ -190,7 +186,7 @@ class SessionManager:
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
-        
+
         # CSRF token caching for performance optimization
         self._cached_csrf_token: Optional[str] = None
         self._csrf_cache_time: float = 0
@@ -485,12 +481,12 @@ class SessionManager:
             if login_ok is True:
                 logger.debug("Session verification successful (logged in).")
                 return True
-            elif login_ok is False:
+            if login_ok is False:
                 logger.warning("Session verification failed (user not logged in).")
                 return False
-            else:  # login_ok is None
-                logger.error("Session verification failed critically (login_status returned None).")
-                return False
+            # login_ok is None
+            logger.error("Session verification failed critically (login_status returned None).")
+            return False
         except Exception as e:
             logger.error(f"Unexpected error during session verification: {e}", exc_info=True)
             return False
@@ -522,8 +518,7 @@ class SessionManager:
                 if self._attempt_session_recovery():
                     logger.info("✅ Session recovery successful")
                     return True
-                else:
-                    logger.error("❌ Session recovery failed")
+                logger.error("❌ Session recovery failed")
             else:
                 logger.debug("⏭️  Skipping session recovery (not in long-running operation)")
             return False
@@ -561,8 +556,7 @@ class SessionManager:
                 if login_status(self, disable_ui_fallback=False):
                     logger.info("Session recovery and re-authentication successful")
                     return True
-                else:
-                    logger.error("Re-authentication failed after browser recovery")
+                logger.error("Re-authentication failed after browser recovery")
 
         except Exception as e:
             logger.error(f"Session recovery failed: {e}", exc_info=True)
@@ -589,11 +583,11 @@ class SessionManager:
                         f" - Universal session health monitoring triggered"
                     )
                 return False
-            
+
             # Update heartbeat if session is alive
             self.session_health_monitor['last_heartbeat'] = time.time()
             return True
-            
+
         except Exception as exc:
             logger.error(f"Session health check failed: {exc}")
             # Assume session is dead on health check failure
@@ -601,7 +595,7 @@ class SessionManager:
                 self.session_health_monitor['death_detected'].set()
                 self.session_health_monitor['is_alive'].clear()
                 self.session_health_monitor['death_timestamp'] = time.time()
-                logger.critical(f"🚨 SESSION HEALTH CHECK FAILED - Assuming session death")
+                logger.critical("🚨 SESSION HEALTH CHECK FAILED - Assuming session death")
             return False
 
     def is_session_death_cascade(self) -> bool:
@@ -612,7 +606,7 @@ class SessionManager:
         """Determine if operations should halt due to session death."""
         if self.is_session_death_cascade():
             self.session_health_monitor['death_cascade_count'] += 1
-            
+
             # Halt immediately if session is dead
             logger.warning(
                 f"⚠️  Halting operation due to session death cascade "
@@ -798,9 +792,8 @@ class SessionManager:
         if missing_final:
             logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
             return False
-        else:
-            logger.debug("Cookies found in final check after loop (unexpected).")
-            return True
+        logger.debug("Cookies found in final check after loop (unexpected).")
+        return True
 
     def _sync_cookies_to_requests(self):
         """
@@ -1184,12 +1177,10 @@ class SessionManager:
                     logger.debug(f"CSRF token successfully retrieved (Length: {len(csrf_token_val)}).")
                     self.api_manager.csrf_token = csrf_token_val
                     return csrf_token_val
-                else:
-                    logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
-                    return None
-            else:
-                logger.warning("Failed to get CSRF token response via _api_req.")
+                logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
                 return None
+            logger.warning("Failed to get CSRF token response via _api_req.")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_csrf: {e}", exc_info=True)
@@ -1238,12 +1229,10 @@ class SessionManager:
                         logger.info(f"My profile id: {my_profile_id_val}")
                         self._profile_id_logged = True
                     return my_profile_id_val
-                else:
-                    logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
-                    return None
-            else:
-                logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
+                logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
                 return None
+            logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
@@ -1290,12 +1279,10 @@ class SessionManager:
                         logger.debug(f"My uuid: {my_uuid_val}")
                         self._uuid_logged = True
                     return my_uuid_val
-                else:
-                    logger.error("Could not retrieve UUID ('testId' missing in response).")
-                    return None
-            else:
-                logger.error("Failed to get header/dna data via _api_req.")
+                logger.error("Could not retrieve UUID ('testId' missing in response).")
                 return None
+            logger.error("Failed to get header/dna data via _api_req.")
+            return None
 
         except Exception as e:
             logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
@@ -1336,9 +1323,8 @@ class SessionManager:
                     logger.debug(f"My tree id: {my_tree_id_val}")
                     self._tree_id_logged = True
                 return my_tree_id_val
-            else:
-                logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
-                return None
+            logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
+            return None
         except Exception as e:
             logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
             return None
@@ -1382,9 +1368,8 @@ class SessionManager:
                     logger.info(f"Tree owner name: {owner_name}\n")
                     self._owner_logged = True
                 return owner_name
-            else:
-                logger.warning("api_utils.call_tree_owner_api returned None.")
-                return None
+            logger.warning("api_utils.call_tree_owner_api returned None.")
+            return None
         except Exception as e:
             logger.error(f"Error calling api_utils.call_tree_owner_api: {e}", exc_info=True)
             return None
@@ -1463,7 +1448,7 @@ class SessionManager:
             cache_age = time.time() - self._csrf_cache_time
             if cache_age < self._csrf_cache_duration:
                 return self._cached_csrf_token
-        
+
         # Return cached token from API manager if available
         return self.api_manager.csrf_token
 
@@ -1480,28 +1465,28 @@ class SessionManager:
             # Try to get CSRF token from cookies
             driver = self.browser_manager.driver
             csrf_cookie_names = ['_dnamatches-matchlistui-x-csrf-token', '_csrf']
-            
+
             driver_cookies_list = driver.get_cookies()
             driver_cookies_dict = {
                 c["name"]: c["value"]
                 for c in driver_cookies_list
                 if isinstance(c, dict) and "name" in c and "value" in c
             }
-            
+
             for name in csrf_cookie_names:
-                if name in driver_cookies_dict and driver_cookies_dict[name]:
+                if driver_cookies_dict.get(name):
                     from urllib.parse import unquote
                     csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-                    
+
                     # Cache the token
                     self._cached_csrf_token = csrf_token_val
                     self._csrf_cache_time = time.time()
-                    
+
                     logger.debug(f"⚡ Pre-cached CSRF token '{name}' during session setup (performance optimization)")
                     return
-            
+
             logger.debug("⚡ CSRF pre-cache: No CSRF tokens found in cookies yet")
-            
+
         except Exception as e:
             logger.debug(f"⚡ CSRF pre-cache: Error pre-caching CSRF token: {e}")
 
@@ -1511,7 +1496,7 @@ class SessionManager:
         """
         if not self._cached_csrf_token or not self._csrf_cache_time:
             return False
-        
+
         cache_age = time.time() - self._csrf_cache_time
         return cache_age < self._csrf_cache_duration
 
@@ -1614,7 +1599,7 @@ def _test_session_manager_initialization():
     ]
 
     print("📋 Testing SessionManager initialization:")
-    print(f"   Creating SessionManager instance...")
+    print("   Creating SessionManager instance...")
 
     try:
         session_manager = SessionManager()
@@ -1838,10 +1823,10 @@ def _test_regression_prevention_csrf_optimization():
     """
     print("🛡️ Testing CSRF token caching optimization regression prevention:")
     results = []
-    
+
     try:
         session_manager = SessionManager()
-        
+
         # Test 1: Verify CSRF caching attributes exist
         if hasattr(session_manager, '_cached_csrf_token'):
             print("   ✅ _cached_csrf_token attribute exists")
@@ -1849,18 +1834,18 @@ def _test_regression_prevention_csrf_optimization():
         else:
             print("   ❌ _cached_csrf_token attribute missing")
             results.append(False)
-            
+
         if hasattr(session_manager, '_csrf_cache_time'):
             print("   ✅ _csrf_cache_time attribute exists")
             results.append(True)
         else:
             print("   ❌ _csrf_cache_time attribute missing")
             results.append(False)
-            
+
         # Test 2: Verify CSRF validation method exists
         if hasattr(session_manager, '_is_csrf_token_valid'):
             print("   ✅ _is_csrf_token_valid method exists")
-            
+
             # Test that it returns a boolean
             try:
                 is_valid = session_manager._is_csrf_token_valid()
@@ -1876,7 +1861,7 @@ def _test_regression_prevention_csrf_optimization():
         else:
             print("   ❌ _is_csrf_token_valid method missing")
             results.append(False)
-            
+
         # Test 3: Verify pre-cache method exists
         if hasattr(session_manager, '_precache_csrf_token'):
             print("   ✅ _precache_csrf_token method exists")
@@ -1884,11 +1869,11 @@ def _test_regression_prevention_csrf_optimization():
         else:
             print("   ⚠️  _precache_csrf_token method not found (may be named differently)")
             results.append(False)
-            
+
     except Exception as e:
         print(f"   ❌ SessionManager CSRF optimization test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 CSRF token caching optimization regression test passed!")
@@ -1905,10 +1890,10 @@ def _test_regression_prevention_property_access():
     """
     print("🛡️ Testing SessionManager property access regression prevention:")
     results = []
-    
+
     try:
         session_manager = SessionManager()
-        
+
         # Test key properties that had duplicate definition issues
         properties_to_test = [
             ('requests_session', 'requests session object'),
@@ -1917,7 +1902,7 @@ def _test_regression_prevention_property_access():
             ('my_tree_id', 'tree ID string'),
             ('session_ready', 'session ready boolean')
         ]
-        
+
         for prop, description in properties_to_test:
             try:
                 value = getattr(session_manager, prop)
@@ -1929,11 +1914,11 @@ def _test_regression_prevention_property_access():
             except Exception as prop_error:
                 print(f"   ❌ Property '{prop}' error: {prop_error}")
                 results.append(False)
-                
+
     except Exception as e:
         print(f"   ❌ SessionManager property access test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 SessionManager property access regression test passed!")
@@ -1949,7 +1934,7 @@ def _test_regression_prevention_initialization_stability():
     """
     print("🛡️ Testing SessionManager initialization stability regression prevention:")
     results = []
-    
+
     try:
         # Test multiple initialization attempts
         for i in range(3):
@@ -1957,24 +1942,24 @@ def _test_regression_prevention_initialization_stability():
                 session_manager = SessionManager()
                 print(f"   ✅ Initialization attempt {i+1} successful")
                 results.append(True)
-                
+
                 # Test basic attribute access
                 _ = hasattr(session_manager, 'db_manager')
                 _ = hasattr(session_manager, 'browser_manager')
                 _ = hasattr(session_manager, 'api_manager')
-                
+
                 print(f"   ✅ Basic attribute access {i+1} successful")
                 results.append(True)
-                
+
             except Exception as init_error:
                 print(f"   ❌ Initialization attempt {i+1} failed: {init_error}")
                 results.append(False)
                 break
-                
+
     except Exception as e:
         print(f"   ❌ SessionManager initialization stability test failed: {e}")
         results.append(False)
-    
+
     success = all(results)
     if success:
         print("🎉 SessionManager initialization stability regression test passed!")
@@ -2057,19 +2042,19 @@ def run_comprehensive_tests() -> bool:
             "Prevents regression of Optimization 1 (CSRF token pre-caching)",
             "Verify _cached_csrf_token, _csrf_cache_time, and _is_csrf_token_valid implementation",
         )
-        
+
         suite.run_test(
-            "SessionManager property access regression prevention", 
+            "SessionManager property access regression prevention",
             _test_regression_prevention_property_access,
             "All SessionManager properties are accessible without errors or conflicts",
             "Prevents regression of duplicate method definitions and property conflicts",
             "Test key properties that had duplicate definition issues (csrf_token, requests_session, etc.)",
         )
-        
+
         suite.run_test(
             "SessionManager initialization stability regression prevention",
             _test_regression_prevention_initialization_stability,
-            "SessionManager initializes reliably without crashes or WebDriver issues", 
+            "SessionManager initializes reliably without crashes or WebDriver issues",
             "Prevents regression of SessionManager initialization and WebDriver crashes",
             "Test multiple initialization attempts and basic attribute access stability",
         )

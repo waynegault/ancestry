@@ -172,15 +172,13 @@ def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool =
         if indent:
             # orjson doesn't support indent, fall back to json for pretty printing
             return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
-        else:
-            # Fast compact serialization
-            return orjson.dumps(obj).decode('utf-8')
+        # Fast compact serialization
+        return orjson.dumps(obj).decode('utf-8')
     except (ImportError, ModuleNotFoundError):
         if indent:
             return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
-        else:
-            # Optimized compact serialization
-            return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
+        # Optimized compact serialization
+        return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
 
 # --- Third-party and local imports ---
 # Keep the warning for optional dependencies, but don't define dummies.

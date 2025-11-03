@@ -17,24 +17,26 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
+
+from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
 
 # === PHASE 1 OPTIMIZATIONS ===
 from core.progress_indicators import ProgressIndicator, create_progress_indicator
-from core.enhanced_error_recovery import with_enhanced_recovery, with_api_recovery
+
 
 # Performance monitoring helper with session manager integration
 def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
     """Log API performance metrics for monitoring and optimization."""
     duration = time.time() - start_time
-    
+
     # Always log performance metrics for analysis
     logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
-    
+
     # Update session manager performance tracking
     if session_manager:
         _update_session_performance_tracking(session_manager, duration, response_status)
-    
+
     # Log warnings for slow API calls with enhanced context
     if duration > 10.0:
         logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
@@ -42,7 +44,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
         logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
     elif duration > 2.0:
         logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
-    
+
     # Track performance metrics for optimization analysis
     try:
         from performance_monitor import track_api_performance
@@ -59,24 +61,24 @@ def _update_session_performance_tracking(session_manager, duration: float, respo
             session_manager._response_times = []
             session_manager._recent_slow_calls = 0
             session_manager._avg_response_time = 0.0
-        
+
         # Add response time to tracking (keep last 20 calls)
         session_manager._response_times.append(duration)
         if len(session_manager._response_times) > 20:
             session_manager._response_times.pop(0)
-        
+
         # Update average response time
         session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)
-        
+
         # Track consecutive slow calls
         if duration > 5.0:
             session_manager._recent_slow_calls += 1
         else:
             session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
-            
+
         # Cap slow call counter to prevent endless accumulation
         session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
-        
+
     except Exception as e:
         logger.debug(f"Failed to update session performance tracking: {e}")
         pass
@@ -87,28 +89,26 @@ def _progress_callback(progress: float) -> None:
     logger.info(f"Processing progress: {progress:.1%} complete")
 
 # === CORE INFRASTRUCTURE ===
+# FINAL OPTIMIZATION 1: Progressive Processing Import
+# Note: progressive_processing decorator removed - not essential for core functionality
+# from performance_cache import progressive_processing
+# FINAL OPTIMIZATION 2: Memory Optimization Import
+# Note: ObjectPool and lazy_property removed - not essential for core functionality
+# from memory_optimizer import ObjectPool, lazy_property
+# ENHANCEMENT: Advanced Caching Layer
+import hashlib
+from functools import wraps
+
+from core.logging_utils import OptimizedLogger
 from standard_imports import setup_module
 
 # === PERFORMANCE OPTIMIZATIONS ===
 from utils import (
-    fast_json_loads,
-    fast_json_dumps,
-    JSONP_PATTERN,
     CM_VALUE_PATTERN,
+    JSONP_PATTERN,
+    fast_json_dumps,
+    fast_json_loads,
 )
-from core.logging_utils import OptimizedLogger
-
-# FINAL OPTIMIZATION 1: Progressive Processing Import
-# Note: progressive_processing decorator removed - not essential for core functionality
-# from performance_cache import progressive_processing
-
-# FINAL OPTIMIZATION 2: Memory Optimization Import
-# Note: ObjectPool and lazy_property removed - not essential for core functionality
-# from memory_optimizer import ObjectPool, lazy_property
-
-# ENHANCEMENT: Advanced Caching Layer
-import hashlib
-from functools import wraps
 
 # In-memory cache for API responses with TTL
 API_RESPONSE_CACHE = {}
@@ -126,34 +126,33 @@ def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
             # Create cache key from function name and arguments
             cache_args = str(args[1:]) + str(kwargs) if len(args) > 1 else str(kwargs)
             cache_key = f"{cache_key_prefix}_{hashlib.md5(cache_args.encode()).hexdigest()}"
-            
+
             current_time = time.time()
-            
+
             # Check cache hit
             if cache_key in API_RESPONSE_CACHE:
                 cached_data, cache_time = API_RESPONSE_CACHE[cache_key]
                 if current_time - cache_time < ttl_seconds:
                     logger.debug(f"Cache hit: {cache_key_prefix} (age: {current_time - cache_time:.1f}s)")
                     return cached_data
-                else:
-                    # Remove expired entry
-                    del API_RESPONSE_CACHE[cache_key]
-            
+                # Remove expired entry
+                del API_RESPONSE_CACHE[cache_key]
+
             # Cache miss - execute function
             result = func(*args, **kwargs)
-            
+
             # Cache successful results only
             if result is not None:
                 API_RESPONSE_CACHE[cache_key] = (result, current_time)
-                
+
                 # Cleanup old cache entries (keep max 1000 entries)
                 if len(API_RESPONSE_CACHE) > 1000:
                     # Remove oldest 200 entries
-                    sorted_keys = sorted(API_RESPONSE_CACHE.keys(), 
+                    sorted_keys = sorted(API_RESPONSE_CACHE.keys(),
                                        key=lambda k: API_RESPONSE_CACHE[k][1])
                     for old_key in sorted_keys[:200]:
                         del API_RESPONSE_CACHE[old_key]
-            
+
             return result
         return wrapper
     return decorator
@@ -163,20 +162,7 @@ raw_logger = setup_module(globals(), __name__)
 logger = OptimizedLogger(raw_logger)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from error_handling import (
-    retry_on_failure,
-    circuit_breaker,
-    timeout_protection,
-    graceful_degradation,
-    error_context,
-    AncestryException,
-    RetryableError,
-    NetworkTimeoutError,
-    DatabaseConnectionError,
-    BrowserSessionError,
-    AuthenticationExpiredError,
-    ErrorContext,
-)
+import asyncio  # PHASE 2: Add asyncio for async/await patterns
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -184,14 +170,13 @@ import logging
 import random
 import re
 import sys
-import time
 import threading
+import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import asyncio  # PHASE 2: Add asyncio for async/await patterns
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, TYPE_CHECKING
-from urllib.parse import urljoin, urlparse, urlencode, unquote
+from typing import TYPE_CHECKING, List, Literal, Optional, Set, Tuple
+from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
 import cloudscraper
@@ -209,12 +194,28 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Ses
 from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
+from error_handling import (
+    AncestryException,
+    AuthenticationExpiredError,
+    BrowserSessionError,
+    DatabaseConnectionError,
+    ErrorContext,
+    NetworkTimeoutError,
+    RetryableError,
+    circuit_breaker,
+    error_context,
+    graceful_degradation,
+    retry_on_failure,
+    timeout_protection,
+)
+
 # === LOCAL IMPORTS ===
 if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
+from core.session_manager import SessionManager
 from database import (
     DnaMatch,
     FamilyTree,
@@ -222,26 +223,25 @@ from database import (
     PersonStatusEnum,
     db_transn,
 )
+from dna_ethnicity_utils import (
+    extract_match_ethnicity_percentages,
+    fetch_ethnicity_comparison,
+    load_ethnicity_metadata,
+)
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
-from core.session_manager import SessionManager
+from test_framework import (
+    TestSuite,
+    assert_valid_function,
+    create_mock_data,
+    suppress_logging,
+)
 from utils import (
     _api_req,  # API request helper
     format_name,  # Name formatting utility
+    nav_to_page,  # Navigation helper
     ordinal_case,  # Ordinal case formatting
     retry_api,  # API retry decorator
-    nav_to_page,  # Navigation helper
-)
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-    create_mock_data,
-    assert_valid_function,
-)
-from dna_ethnicity_utils import (
-    fetch_ethnicity_comparison,
-    extract_match_ethnicity_percentages,
-    load_ethnicity_metadata,
 )
 
 # --- Constants ---
@@ -277,13 +277,13 @@ try:
     # PHASE 1: Use THREAD_POOL_WORKERS if available, otherwise use MAX_CONCURRENCY
     _thread_pool_workers = getattr(getattr(_cfg, 'api', None), 'thread_pool_workers', None)
     _max_concurrency = getattr(getattr(_cfg, 'api', None), 'max_concurrency', 2)  # Conservative default
-    
+
     # Prioritize THREAD_POOL_WORKERS setting, fall back to MAX_CONCURRENCY
     THREAD_POOL_WORKERS: int = _thread_pool_workers if _thread_pool_workers is not None else _max_concurrency
-    
+
     # Conservative approach: Use configured values without artificial inflation for rate limiting
     THREAD_POOL_WORKERS = max(1, THREAD_POOL_WORKERS) if THREAD_POOL_WORKERS > 0 else 2
-    
+
 except Exception:
     THREAD_POOL_WORKERS = 2  # Conservative fallback for rate limiting compliance
 
@@ -302,7 +302,7 @@ def _get_cached_profile(profile_id: str) -> Optional[Dict]:
     """Get profile from persistent cache if available."""
     if global_cache is None:
         return None
-    
+
     cache_key = f"profile_details_{profile_id}"
     try:
         cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
@@ -316,7 +316,7 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
     """Cache profile data using the global persistent cache."""
     if global_cache is None:
         return
-    
+
     cache_key = f"profile_details_{profile_id}"
     try:
         # Cache profile data with a reasonable TTL (24 hours - profiles don't change often)
@@ -332,6 +332,7 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
 
 # === ETHNICITY ENRICHMENT HELPERS ===
 from functools import lru_cache
+
 
 @lru_cache(maxsize=1)
 def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
@@ -416,27 +417,27 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
     limiter = getattr(session_manager, "dynamic_rate_limiter", None)
     if limiter is not None and hasattr(limiter, "wait"):
         rate_start_time = time.time()
-        
+
         # Get current limiter stats for intelligent backoff
         current_tokens = getattr(limiter, 'tokens', 0)
         fill_rate = getattr(limiter, 'fill_rate', 2.0)
-        
+
         # ENHANCEMENT: Check recent API performance for adaptive delays
         recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
         avg_response_time = getattr(session_manager, '_avg_response_time', 0.0)
-        
+
         # Calculate adaptive delay based on recent performance
         base_delay = 0.0
         if avg_response_time > 8.0:  # Very slow responses
             base_delay = min(avg_response_time * 0.3, 4.0)
             logger.debug(f"Very slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
-        elif avg_response_time > 5.0:  # Moderate slow responses  
+        elif avg_response_time > 5.0:  # Moderate slow responses
             base_delay = min(avg_response_time * 0.2, 2.0)
             logger.debug(f"Slow API responses detected ({avg_response_time:.1f}s avg), adding {base_delay:.1f}s delay")
         elif recent_slow_calls > 3:  # Multiple consecutive slow calls
             base_delay = 1.0
             logger.debug(f"Multiple slow calls detected ({recent_slow_calls}), adding {base_delay:.1f}s delay")
-        
+
         # Apply token-based backoff
         if current_tokens < 1.0:
             # Token bucket is nearly empty - apply smart backoff
@@ -450,11 +451,11 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
             limiter.wait()
             if base_delay > 0:
                 time.sleep(base_delay)
-        
+
         rate_duration = time.time() - rate_start_time
         if rate_duration > 2.0:
             logger.warning(f"Extended rate limiting delay: {rate_duration:.2f}s")
-        
+
         # Track rate limiting performance
         _log_api_performance("rate_limiting", rate_start_time, "applied")
     else:
@@ -522,16 +523,15 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
                     if fresh_token:
                         logger.info("Successfully obtained fresh CSRF token from API")
                         return fresh_token
-                    else:
-                        logger.debug("API CSRF token request returned None, falling back to cookies")
+                    logger.debug("API CSRF token request returned None, falling back to cookies")
                 else:
                     logger.debug("API CSRF token method not available, falling back to cookies")
             except Exception as api_error:
                 logger.warning(f"API CSRF token refresh failed: {api_error}, falling back to cookies")
-        
+
         # Get cookies from the browser
         cookies = session_manager.driver.get_cookies()
-        
+
         # Look for CSRF token in various cookie names
         csrf_cookie_names = [
             '_dnamatches-matchlistui-x-csrf-token',
@@ -539,15 +539,15 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
             'csrf_token',
             'X-CSRF-TOKEN'
         ]
-        
+
         for cookie_name in csrf_cookie_names:
             for cookie in cookies:
                 if cookie['name'] == cookie_name:
                     return cookie['value']
-        
+
         logger.warning("No CSRF token found in cookies")
         return None
-        
+
     except Exception as e:
         logger.error(f"Error extracting CSRF token: {e}")
         return None
@@ -569,22 +569,22 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
     Returns:
         dict or None: Successful API response or None if all retries failed
     """
-    
+
     for retry_attempt in range(max_retries + 1):
         if retry_attempt > 0:
             wait_time = min(2 ** retry_attempt, 10)  # Exponential backoff, capped at 10s
             logger.info(f"Retry attempt {retry_attempt}/{max_retries} after {wait_time}s wait...")
             time.sleep(wait_time)
-        
+
         try:
             # Try lightweight token refresh first
             logger.info("Attempting CSRF token refresh...")
             fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
-            
+
             if fresh_csrf_token:
                 logger.info("Fresh CSRF token obtained. Retrying API call...")
                 match_list_headers['X-CSRF-Token'] = fresh_csrf_token
-                
+
                 # Retry with fresh token
                 token_retry_response = _api_req(
                     url=match_list_url,
@@ -596,31 +596,29 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
                     api_description=f"Match List API (Token Refresh Retry {retry_attempt})",
                     allow_redirects=True,
                 )
-                
+
                 if isinstance(token_retry_response, dict):
                     logger.info(f"API call successful after token refresh (attempt {retry_attempt})")
                     return token_retry_response
-                else:
-                    # Check if it's a response object with status code
-                    response_status = getattr(token_retry_response, 'status_code', None)
-                    if response_status and response_status != 303:
-                        logger.warning(f"Token refresh worked but got different error: {response_status}")
-                        # Different error - break the retry loop
-                        break
-                    else:
-                        logger.warning(f"Still getting 303 after token refresh (attempt {retry_attempt})")
-            
+                # Check if it's a response object with status code
+                response_status = getattr(token_retry_response, 'status_code', None)
+                if response_status and response_status != 303:
+                    logger.warning(f"Token refresh worked but got different error: {response_status}")
+                    # Different error - break the retry loop
+                    break
+                logger.warning(f"Still getting 303 after token refresh (attempt {retry_attempt})")
+
             # If token refresh didn't work and this is the last attempt, try full session refresh
             if retry_attempt == max_retries:
                 logger.info("Token refresh failed. Trying full session refresh as final attempt...")
                 if _refresh_session_for_matches(session_manager):
                     logger.info("Session refreshed successfully. Final retry...")
-                    
+
                     # Get fresh CSRF token after session refresh
                     csrf_token = _get_csrf_token(session_manager)
                     if csrf_token:
                         match_list_headers['X-CSRF-Token'] = csrf_token
-                        
+
                         # Final retry with fresh session
                         session_retry_response = _api_req(
                             url=match_list_url,
@@ -632,27 +630,26 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
                             api_description="Match List API (Final Session Refresh)",
                             allow_redirects=True,
                         )
-                        
+
                         if isinstance(session_retry_response, dict):
                             logger.info("API call successful after session refresh")
                             return session_retry_response
-                        else:
-                            logger.error("Final attempt failed after session refresh")
+                        logger.error("Final attempt failed after session refresh")
                     else:
                         logger.error("Could not get fresh CSRF token after session refresh")
                 else:
                     logger.error("Session refresh failed")
-            
+
         except Exception as e:
             logger.error(f"Exception during retry attempt {retry_attempt}: {e}")
             if retry_attempt == max_retries:
                 break
-    
+
     logger.error(f"All {max_retries + 1} retry attempts failed for 303 error")
     return None
 
 
-# UNUSED - COMPLEX SESSION REFRESH (using simple approach instead) 
+# UNUSED - COMPLEX SESSION REFRESH (using simple approach instead)
 # def _refresh_session_for_matches(session_manager):
     """
     Refresh the browser session to fix authentication issues.
@@ -666,13 +663,13 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
     """
     try:
         logger.info("Attempting to refresh session for DNA matches...")
-        
+
         # Navigate back to the base page to refresh session
         from utils import nav_to_page
-        
+
         # Get the base URL from config
         base_url = session_manager.config.api.base_url if hasattr(session_manager, 'config') else 'https://www.ancestry.co.uk/'
-        
+
         # Navigate to base page to refresh session
         success = nav_to_page(
             session_manager.driver,
@@ -680,27 +677,27 @@ def _get_csrf_token(session_manager, force_api_refresh=False):
             'body',
             session_manager
         )
-        
+
         if not success:
             logger.error("Failed to navigate to base page during session refresh")
             return False
-        
+
         # Wait for session to stabilize
         time.sleep(3)
-        
+
         # Force cookie sync to requests session
         if hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
-        
+
         # Check if we're currently on a matches page, if so just refresh it
         current_url = session_manager.driver.current_url
         if "discoveryui-matches" in current_url:
             session_manager.driver.refresh()
             time.sleep(2)
-        
+
         logger.info("Session refresh completed successfully")
         return True
-        
+
     except Exception as e:
         logger.error(f"Error during session refresh: {e}")
         return False
@@ -826,14 +823,14 @@ def _main_page_processing_loop(
     state: Dict[str, Any],  # Pass the whole state dict
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
-    
+
     # Calculate dynamic API failure threshold based on total pages to process
     global CRITICAL_API_FAILURE_THRESHOLD
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
     original_threshold = CRITICAL_API_FAILURE_THRESHOLD
     CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold
     logger.info(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
-    
+
     current_page_num = start_page
     # Estimate total matches for the progress bar based on pages *this run*
     total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
@@ -847,7 +844,7 @@ def _main_page_processing_loop(
     # Ensure we always have a valid total for the progress bar
     if total_matches_estimate_this_run <= 0:
         total_matches_estimate_this_run = MATCHES_PER_PAGE  # Default to one page worth
-    
+
     logger.debug(f"Progress bar total set to: {total_matches_estimate_this_run} matches")
 
     loop_final_success = True  # Success flag for this loop's execution
@@ -893,7 +890,7 @@ def _main_page_processing_loop(
                         progress_bar.update(remaining_matches_estimate)
                         state["total_errors"] += remaining_matches_estimate
                     break  # Exit while loop immediately
-                
+
                 # Proactive session refresh to prevent 900-second timeout
                 if hasattr(session_manager, 'session_start_time') and session_manager.session_start_time:
                     session_age = time.time() - session_manager.session_start_time
@@ -920,7 +917,7 @@ def _main_page_processing_loop(
                                 logger.debug(f"Database connection pool check at page {current_page_num}")
                     except Exception as pool_opt_exc:
                         logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
-                
+
                 if not session_manager.is_sess_valid():
                     logger.critical(
                         f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
@@ -1053,7 +1050,7 @@ def _main_page_processing_loop(
                                 fetch_candidates_uuid, _, page_skip_count = (
                                     _identify_fetch_candidates(matches_on_page_for_batch, existing_persons_map)
                                 )
-                                
+
                                 # If all matches on the page can be skipped, do fast processing
                                 if len(fetch_candidates_uuid) == 0:
                                     logger.info(f"🚀 Page {current_page_num}: All {len(matches_on_page_for_batch)} matches unchanged - fast skip")
@@ -1173,7 +1170,7 @@ def coord(
             context={"session_state": "authenticated but no UUID"},
         )
 
-    # Step 2: Initialize state  
+    # Step 2: Initialize state
     state = _initialize_gather_state()
     start_page = _validate_start_page(start)
     logger.debug(
@@ -1258,7 +1255,7 @@ def coord(
             state["total_skipped"],
             state["total_errors"],
         )
-        
+
         # Re-raise KeyboardInterrupt if that was the cause
         exc_info_tuple = sys.exc_info()
         if exc_info_tuple[0] is KeyboardInterrupt:
@@ -1320,7 +1317,7 @@ def _lookup_existing_persons(
             for person in existing_persons
             if person.uuid is not None
         }
-        
+
         logger.debug(
             f"Found {len(existing_persons_map)} existing Person records for this batch."
         )
@@ -1336,13 +1333,12 @@ def _lookup_existing_persons(
             raise ValueError(
                 "Database enum mismatch detected during person lookup."
             ) from db_lookup_err
-        else:
-            # Log other SQLAlchemy errors and re-raise
-            logger.error(
-                f"Database lookup failed during prefetch: {db_lookup_err}",
-                exc_info=True,
-            )
-            raise  # Re-raise to be handled by the caller (_do_batch)
+        # Log other SQLAlchemy errors and re-raise
+        logger.error(
+            f"Database lookup failed during prefetch: {db_lookup_err}",
+            exc_info=True,
+        )
+        raise  # Re-raise to be handled by the caller (_do_batch)
     except Exception as e:
         # Catch any other unexpected errors
         logger.error(f"Unexpected error during Person lookup: {e}", exc_info=True)
@@ -1506,7 +1502,7 @@ def _perform_api_prefetches(
         MaxApiFailuresExceededError: If critical API failure threshold is met.
     """
     import time  # For timing API operations
-    
+
     batch_combined_details: Dict[str, Optional[Dict[str, Any]]] = {}
     batch_tree_data: Dict[str, Optional[Dict[str, Any]]] = (
         {}
@@ -1528,7 +1524,7 @@ def _perform_api_prefetches(
     # Optimize worker count based on API load and rate limiting performance
     base_workers = THREAD_POOL_WORKERS
     optimized_workers = base_workers
-    
+
     if num_candidates <= 3:
         # Light load - reduce workers to avoid rate limiting overhead
         optimized_workers = 1
@@ -1569,7 +1565,7 @@ def _perform_api_prefetches(
                 cm_value = int(match_data.get("cm_dna", 0))
                 has_tree = match_data.get("in_my_tree", False)
                 is_starred = match_data.get("starred", False)
-                
+
                 # Enhanced priority classification
                 if is_starred or cm_value > 50:  # Very high priority
                     high_priority_uuids.add(uuid_val)
@@ -1597,68 +1593,66 @@ def _perform_api_prefetches(
             if rate_limiter:
                 current_tokens = getattr(rate_limiter, 'tokens', 0)
                 fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
-                
+
                 # Predict if we'll run out of tokens
                 tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
                 if current_tokens < tokens_needed:
                     # Calculate optimal pre-delay to avoid token bucket depletion
                     tokens_deficit = tokens_needed - current_tokens
                     optimal_pre_delay = min(tokens_deficit / fill_rate, 8.0)  # Cap at 8 seconds
-                    
+
                     if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
                         logger.debug(f"Predictive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (current tokens: {current_tokens:.2f})")
                         import time
                         time.sleep(optimal_pre_delay)
+                    # Use existing tiered approach for light loads
+                    elif total_api_calls >= 15:
+                        _apply_rate_limiting(session_manager)
+                        logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+                    elif total_api_calls >= 5:
+                        import time
+                        time.sleep(1.2)  # Shorter than normal rate limiting
+                        logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
                     else:
-                        # Use existing tiered approach for light loads
-                        if total_api_calls >= 15:
-                            _apply_rate_limiting(session_manager)
-                            logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-                        elif total_api_calls >= 5:
-                            import time
-                            time.sleep(1.2)  # Shorter than normal rate limiting
-                            logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
-                        else:
-                            import time
-                            time.sleep(0.3)  # Just 300ms delay for light loads
-                            logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                        import time
+                        time.sleep(0.3)  # Just 300ms delay for light loads
+                        logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
                 else:
                     # Sufficient tokens available - minimal delay
                     import time
                     time.sleep(0.1)  # Minimal delay to prevent hammering
                     logger.debug(f"Sufficient tokens available ({current_tokens:.2f}) for {total_api_calls} API calls - minimal delay")
+            # Fallback to original tiered approach if rate_limiter not available
+            elif total_api_calls >= 15:
+                _apply_rate_limiting(session_manager)
+                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+            elif total_api_calls >= 5:
+                import time
+                time.sleep(1.2)
+                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
             else:
-                # Fallback to original tiered approach if rate_limiter not available
-                if total_api_calls >= 15:
-                    _apply_rate_limiting(session_manager)
-                    logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
-                elif total_api_calls >= 5:
-                    import time
-                    time.sleep(1.2)
-                    logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
-                else:
-                    import time
-                    time.sleep(0.3)
-                    logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                import time
+                time.sleep(0.3)
+                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
         else:
             logger.debug("No API calls needed - skipping all rate limiting")
 
         # SURGICAL FIX #18: Batch API Call Grouping for better efficiency
         # Group similar API calls together to reduce context switching and improve rate limit utilization
-        
+
         # Group 1: Submit combined details calls first (most common)
         combined_details_futures = []
         for uuid_val in fetch_candidates_uuid:
             future = executor.submit(_fetch_combined_details, session_manager, uuid_val)
             futures[future] = ("combined_details", uuid_val)
             combined_details_futures.append(future)
-        
+
         # Small delay between groups to avoid overwhelming the API
         if combined_details_futures:
             import time
             time.sleep(0.1)  # 100ms gap between groups
             logger.debug(f"Submitted {len(combined_details_futures)} combined details API calls")
-        
+
         # Group 2: Submit relationship probability calls (selective with priority)
         relationship_futures = []
         for uuid_val in fetch_candidates_uuid:
@@ -1676,19 +1670,19 @@ def _perform_api_prefetches(
                 relationship_futures.append(future)
                 logger.debug(f"Queued relationship probability for {uuid_val[:8]} "
                            f"(priority: {'high' if uuid_val in high_priority_uuids else 'medium'})")
-        
+
         if relationship_futures:
             import time
             time.sleep(0.1)  # 100ms gap between groups
             logger.debug(f"Submitted {len(relationship_futures)} relationship probability API calls")
-        
+
         # Group 3: Submit badge details calls last (tree-related)
         badge_futures = []
         for uuid_val in uuids_for_tree_badge_ladder:
             future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
             futures[future] = ("badge_details", uuid_val)
             badge_futures.append(future)
-        
+
         if badge_futures:
             logger.debug(f"Submitted {len(badge_futures)} badge details API calls")
 
@@ -1716,7 +1710,7 @@ def _perform_api_prefetches(
                     raise MaxApiFailuresExceededError(
                         f"Session death detected during batch processing - cancelled {len([f for f in futures if not f.done()])} remaining tasks"
                     )
-            
+
             task_type, identifier_uuid = futures[future]
             try:
                 result = future.result()
@@ -1771,7 +1765,7 @@ def _perform_api_prefetches(
                 for f_cancel in futures:  # Iterate over original futures dict keys
                     if not f_cancel.done():
                         f_cancel.cancel()
-                
+
                 # SURGICAL FIX #20: Check if this is due to session death cascade (Universal approach)
                 is_session_death = False
                 if session_manager.is_session_death_cascade():
@@ -1785,7 +1779,7 @@ def _perform_api_prefetches(
                     logger.critical(
                         f"Exceeded critical API failure threshold ({critical_combined_details_failures}/{CRITICAL_API_FAILURE_THRESHOLD}) for combined_details. Halting batch."
                     )
-                    
+
                 error_msg = (
                     f"Session death cascade caused {critical_combined_details_failures} API failures"
                     if is_session_death
@@ -1812,7 +1806,7 @@ def _perform_api_prefetches(
                 if len(cfpid_list_for_ladder) > 0:
                     _apply_rate_limiting(session_manager)
                     logger.debug(f"Applied batch rate limiting for {len(cfpid_list_for_ladder)} ladder API calls")
-                
+
                 for cfpid_item in cfpid_list_for_ladder:
                     # Removed individual rate limiting - now handled at batch level
                     ladder_futures[
@@ -1933,7 +1927,7 @@ def _prepare_bulk_db_data(
             # Step 2a: Basic validation
             if not uuid_val:
                 logger.error(
-                    f"Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping."
+                    "Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping."
                 )
                 status_for_this_match = "error"
                 error_msg_for_this_match = "Missing UUID"
@@ -2046,8 +2040,8 @@ def _prepare_bulk_db_data(
 # ===================================================================
 
 async def _fetch_match_list_async(
-    session_manager: SessionManager, 
-    page: int = 1, 
+    session_manager: SessionManager,
+    page: int = 1,
     page_size: int = 75
 ) -> Optional[Dict[str, Any]]:
     """
@@ -2062,14 +2056,14 @@ async def _fetch_match_list_async(
         Match list data or None if failed
     """
     from utils import async_api_request
-    
+
     try:
         url = f"https://www.ancestry.co.uk/dna/secure/tests/matchList?page={page}&pageSize={page_size}"
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
-        
+
         result = await async_api_request(
             url=url,
             method="GET",
@@ -2077,16 +2071,16 @@ async def _fetch_match_list_async(
             session_manager=session_manager,
             api_description=f"Match List Page {page}"
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Async match list fetch failed for page {page}: {e}")
         return None
 
 
 async def _fetch_match_details_async(
-    session_manager: SessionManager, 
+    session_manager: SessionManager,
     match_uuid: str
 ) -> Optional[Dict[str, Any]]:
     """
@@ -2100,23 +2094,23 @@ async def _fetch_match_details_async(
         Match details data or None if failed
     """
     from utils import async_api_request
-    
+
     try:
         url = f"https://www.ancestry.co.uk/dna/secure/tests/{match_uuid}/details"
         headers = {
             "Accept": "application/json"
         }
-        
+
         result = await async_api_request(
             url=url,
-            method="GET", 
+            method="GET",
             headers=headers,
             session_manager=session_manager,
             api_description=f"Match Details {match_uuid}"
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Async match details fetch failed for {match_uuid}: {e}")
         return None
@@ -2138,10 +2132,10 @@ async def _async_batch_api_prefetch(
         List of processed matches with enriched data
     """
     from utils import get_configured_concurrency
-    
+
     # PRIORITY 2: Enhanced Async Processing - Intelligent concurrency based on system load
     base_concurrent = get_configured_concurrency(default=8)
-    
+
     # Adaptive concurrency based on match count and system performance
     if len(match_candidates) < 10:
         max_concurrent = min(4, base_concurrent)  # Light load
@@ -2151,52 +2145,52 @@ async def _async_batch_api_prefetch(
         logger.debug(f"Heavy load: Using {max_concurrent} concurrent connections")
     else:
         max_concurrent = base_concurrent  # Normal load
-        
+
     semaphore = asyncio.Semaphore(max_concurrent)
-    
+
     # Performance monitoring for async operations
     async_start_time = time.time()
     logger.info(f"Phase 2: Starting async batch prefetch for {len(match_candidates)} matches (concurrency: {max_concurrent})")
-    
+
     async def process_single_match(match_data: Dict[str, Any]) -> Dict[str, Any]:
         async with semaphore:
             match_start_time = time.time()
             match_uuid = match_data.get("sampleId")
             if not match_uuid:
                 return match_data
-            
+
             try:
                 # PRIORITY 2: Smarter filtering logic based on match characteristics
                 cm_value = match_data.get("sharedCentimorgans", 0)
                 has_tree = match_data.get("hasTree", False)
-                
+
                 # Enhanced filtering: prioritize high-value matches
                 should_fetch_details = (
                     cm_value > 20 or  # Significant DNA match
                     (cm_value > 10 and has_tree) or  # Lower DNA but has tree
                     match_data.get("isStarred", False)  # User-starred matches
                 )
-                
+
                 if should_fetch_details:
                     details = await _fetch_match_details_async(session_manager, match_uuid)
                     if details:
                         match_data.update(details)
                         logger.debug(f"Async enriched match {match_uuid[:8]} ({cm_value} cM)")
-                
+
                 # Log performance for individual match processing
                 match_duration = time.time() - match_start_time
                 if match_duration > 3.0:
                     logger.warning(f"Slow async match processing: {match_uuid[:8]} took {match_duration:.2f}s")
-                    
+
             except Exception as e:
                 logger.warning(f"Error in async match processing {match_uuid[:8]}: {e}")
-                
+
             return match_data
-    
+
     # Process all matches concurrently
     tasks = [process_single_match(match) for match in match_candidates]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # Enhanced error handling and performance tracking
     successful_results = []
     error_count = 0
@@ -2206,20 +2200,20 @@ async def _async_batch_api_prefetch(
             logger.warning(f"Async match processing failed: {result}")
         else:
             successful_results.append(result)
-    
+
     # PRIORITY 2: Performance monitoring for async batch processing
     async_duration = time.time() - async_start_time
     success_rate = len(successful_results) / len(match_candidates) if match_candidates else 1.0
-    
+
     logger.info(f"Async batch processing completed: {len(successful_results)}/{len(match_candidates)} successful "
                 f"({success_rate:.1%} success rate, {async_duration:.2f}s total)")
-    
+
     if error_count > 0:
         logger.warning(f"Async processing had {error_count} errors out of {len(match_candidates)} matches")
-    
+
     # Log performance metrics
     _log_api_performance("async_batch_prefetch", async_start_time, f"success_{success_rate:.0%}")
-    
+
     return successful_results
 
 
@@ -2235,52 +2229,52 @@ async def _async_enhanced_api_orchestrator(
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
-    
+
     # Convert to lists for async processing
     uuid_list = list(fetch_candidates_uuid)
-    
+
     if len(uuid_list) < 10:  # Small batch - use existing sync method
         logger.debug(f"Small batch ({len(uuid_list)} items) - using sync method")
         return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
-    
+
     logger.info(f"Large batch ({len(uuid_list)} items) - using advanced async orchestration")
-    
+
     # Initialize result containers
     batch_combined_details = {}
     batch_tree_data = {}
     batch_relationship_prob_data = {}
-    
+
     # PHASE 1: Async combined details fetching
     async def fetch_combined_details_batch():
         tasks = []
         semaphore = asyncio.Semaphore(8)  # Control concurrency
-        
+
         async def fetch_single_combined(uuid_val):
             async with semaphore:
                 try:
                     # Convert sync call to async using thread executor
                     loop = asyncio.get_event_loop()
                     result = await loop.run_in_executor(
-                        None, 
+                        None,
                         lambda: _fetch_combined_details(session_manager, uuid_val)
                     )
                     return uuid_val, result
                 except Exception as e:
                     logger.warning(f"Async combined details failed for {uuid_val[:8]}: {e}")
                     return uuid_val, None
-        
+
         for uuid_val in uuid_list:
             tasks.append(fetch_single_combined(uuid_val))
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         for result in results:
             if isinstance(result, Exception):
                 logger.warning(f"Async combined details exception: {result}")
             elif isinstance(result, tuple) and len(result) == 2:
                 uuid_val, data = result
                 batch_combined_details[uuid_val] = data
-    
+
     # Execute async phases
     try:
         await fetch_combined_details_batch()
@@ -2289,7 +2283,7 @@ async def _async_enhanced_api_orchestrator(
         logger.error(f"Async orchestrator failed: {e}")
         # Fallback to sync method
         return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
-    
+
     # Return data in expected format
     return {
         "combined": batch_combined_details,
@@ -2308,7 +2302,7 @@ async def _async_enhanced_api_orchestrator(
 # ===================================================================
 # LEVERAGING EXISTING SYSTEMS (No Duplication)
 # - Database batching: database.py:commit_bulk_data()
-# - Advanced caching: core/system_cache.py (API, DB query, memory optimization)  
+# - Advanced caching: core/system_cache.py (API, DB query, memory optimization)
 # - Batch management: action9_process_productive.py:BatchCommitManager
 # ===================================================================
 
@@ -2337,11 +2331,11 @@ def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = N
     """Get dynamically adapted batch size based on current server performance."""
     if base_batch_size is None:
         base_batch_size = _get_configured_batch_size()
-    
+
     # Get current performance metrics from session manager
     avg_response_time = getattr(session_manager, '_avg_response_time', 0.0)
     recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
-    
+
     # Adaptive batch sizing based on server performance
     if avg_response_time > 10.0:  # Very slow server
         adapted_size = max(5, base_batch_size // 4)
@@ -2357,14 +2351,14 @@ def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = N
         logger.debug(f"Server fast ({avg_response_time:.1f}s avg), increasing batch size to {adapted_size}")
     else:
         adapted_size = base_batch_size
-    
+
     return adapted_size
 
 DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 
 def _execute_batched_db_operations(
     session: SqlAlchemySession,
-    operations: List[Dict[str, Any]], 
+    operations: List[Dict[str, Any]],
     batch_size: int = DB_BATCH_SIZE
 ) -> bool:
     """
@@ -2380,34 +2374,34 @@ def _execute_batched_db_operations(
     """
     if not operations:
         return True
-        
+
     total_operations = len(operations)
     total_batches = (total_operations + batch_size - 1) // batch_size
     logger.info(f"Phase 2: Processing {total_operations} DB operations in batches of {batch_size}")
-    
+
     for i in range(0, total_operations, batch_size):
         batch = operations[i:i + batch_size]
         batch_num = (i // batch_size) + 1
-        
+
         try:
             logger.debug(f"Processing DB batch {batch_num}/{total_batches} ({len(batch)} operations)")
-            
+
             # Process this batch
             for operation in batch:
                 if operation.get("_operation") == "create":
                     _execute_single_create_operation(session, operation)
                 elif operation.get("_operation") == "update":
                     _execute_single_update_operation(session, operation)
-            
+
             # Commit this batch
             session.commit()
             logger.debug(f"DB batch {batch_num}/{total_batches} committed successfully")
-            
+
         except Exception as e:
             logger.error(f"DB batch {batch_num}/{total_batches} failed: {e}")
             session.rollback()
             return False
-    
+
     logger.info(f"Phase 2: All {total_batches} DB batches completed successfully")
     return True
 
@@ -2420,7 +2414,7 @@ def _execute_single_create_operation(session: SqlAlchemySession, operation: Dict
 
 
 def _execute_single_update_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
-    """Execute a single update operation.""" 
+    """Execute a single update operation."""
     # This would be customized based on the operation type
     # Placeholder for now - would need to be implemented based on actual operation structure
     pass
@@ -2451,36 +2445,36 @@ def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dic
         cm_value = match.get("sharedCentimorgans", 0)
         has_tree = bool(match.get("treeId") or match.get("hasTree", False))
         is_recent = match.get("isNew", False)
-        
+
         # Priority scoring (lower number = higher priority)
         if cm_value > 50:
             priority_class = 1  # High priority
         elif cm_value >= 20:
-            priority_class = 2  # Medium priority  
+            priority_class = 2  # Medium priority
         else:
             priority_class = 3  # Low priority
-            
+
         # Sub-priority within class
         tree_bonus = 0 if has_tree else 1
         recent_bonus = 0 if is_recent else 1
-        
+
         # Return tuple for sorting (all ascending for highest priority first)
         return (priority_class, tree_bonus, recent_bonus, -cm_value)
-    
+
     sorted_matches = sorted(matches, key=get_match_priority)
-    
+
     # Log prioritization statistics
     high_priority = sum(1 for m in matches if m.get("sharedCentimorgans", 0) > 50)
     medium_priority = sum(1 for m in matches if 20 <= m.get("sharedCentimorgans", 0) <= 50)
     with_trees = sum(1 for m in matches if m.get("treeId") or m.get("hasTree", False))
-    
+
     logger.debug(f"Match prioritization - High: {high_priority}, Medium: {medium_priority}, With trees: {with_trees}")
-    
+
     return sorted_matches
 
 
 def _smart_batch_processing(
-    matches: List[Dict[str, Any]], 
+    matches: List[Dict[str, Any]],
     session_manager: SessionManager,
     batch_size: Optional[int] = None  # Now gets configured batch size
 ) -> List[Dict[str, Any]]:
@@ -2498,39 +2492,39 @@ def _smart_batch_processing(
     # Use configured batch size if not provided
     if batch_size is None:
         batch_size = _get_configured_batch_size()
-    
+
     prioritized_matches = _prioritize_matches_by_importance(matches)
     processed_matches = []
-    
+
     # Process high-priority matches first with smaller batches (better error handling)
     high_priority_matches = [m for m in prioritized_matches if m.get("sharedCentimorgans", 0) > 50]
     medium_priority_matches = [m for m in prioritized_matches if 20 <= m.get("sharedCentimorgans", 0) <= 50]
     low_priority_matches = [m for m in prioritized_matches if m.get("sharedCentimorgans", 0) < 20]
-    
+
     # Adaptive batch sizes
     high_priority_batch_size = max(10, batch_size // 2)  # Smaller batches for important matches
     medium_priority_batch_size = batch_size
     low_priority_batch_size = min(50, batch_size * 2)  # Larger batches for bulk processing
-    
+
     processing_plan = [
         ("High Priority", high_priority_matches, high_priority_batch_size),
-        ("Medium Priority", medium_priority_matches, medium_priority_batch_size), 
+        ("Medium Priority", medium_priority_matches, medium_priority_batch_size),
         ("Low Priority", low_priority_matches, low_priority_batch_size)
     ]
-    
+
     for priority_name, match_group, group_batch_size in processing_plan:
         if not match_group:
             continue
-            
+
         logger.info(f"Phase 3: Processing {len(match_group)} {priority_name} matches (batch size: {group_batch_size})")
-        
+
         for i in range(0, len(match_group), group_batch_size):
             batch = match_group[i:i + group_batch_size]
-            
+
             # Process this batch (would integrate with existing processing logic)
             processed_batch = _process_match_batch(batch, session_manager)
             processed_matches.extend(processed_batch)
-    
+
     return processed_matches
 
 
@@ -2558,7 +2552,7 @@ class MemoryOptimizedMatchProcessor:
     """
     Phase 3: Memory-optimized match processing with lazy loading and cleanup.
     """
-    
+
     def __init__(self, max_memory_mb: int = 500):
         """
         Initialize with memory limit.
@@ -2569,10 +2563,10 @@ class MemoryOptimizedMatchProcessor:
         self.max_memory_mb = max_memory_mb
         self.processed_count = 0
         self.memory_checkpoints = []
-    
+
     def process_matches_with_memory_management(
-        self, 
-        matches: List[Dict[str, Any]], 
+        self,
+        matches: List[Dict[str, Any]],
         session_manager: SessionManager
     ) -> List[Dict[str, Any]]:
         """
@@ -2585,45 +2579,46 @@ class MemoryOptimizedMatchProcessor:
         Returns:
             List of processed matches
         """
-        import psutil
         import gc
-        
+
+        import psutil
+
         process = psutil.Process()
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
-        
+
         logger.info(f"Phase 3: Starting memory-optimized processing (Initial: {initial_memory:.1f}MB, Limit: {self.max_memory_mb}MB)")
-        
+
         processed_matches = []
         memory_cleanup_threshold = self.max_memory_mb * 0.8  # Clean up at 80% of limit
-        
+
         for i, match in enumerate(matches):
             # Process single match
             processed_match = self._process_single_match(match, session_manager)
             processed_matches.append(processed_match)
             self.processed_count += 1
-            
+
             # Memory check every 10 matches
             if i % 10 == 0:
                 current_memory = process.memory_info().rss / 1024 / 1024
-                
+
                 if current_memory > memory_cleanup_threshold:
                     logger.warning(f"Phase 3: Memory usage {current_memory:.1f}MB exceeds threshold, triggering cleanup")
-                    
+
                     # Force garbage collection
                     gc.collect()
-                    
+
                     # Cache cleanup now handled by core/system_cache.py
                     logger.debug("Phase 3: Cache cleanup handled by existing system_cache.py")
-                    
+
                     # Memory after cleanup
                     after_cleanup = process.memory_info().rss / 1024 / 1024
                     logger.info(f"Phase 3: Memory cleanup completed: {current_memory:.1f}MB → {after_cleanup:.1f}MB")
-        
+
         final_memory = process.memory_info().rss / 1024 / 1024
         logger.info(f"Phase 3: Memory-optimized processing completed: {initial_memory:.1f}MB → {final_memory:.1f}MB")
-        
+
         return processed_matches
-    
+
     def _process_single_match(self, match: Dict[str, Any], session_manager: SessionManager) -> Dict[str, Any]:
         """Process a single match with minimal memory footprint."""
         # Placeholder - would integrate with existing match processing logic
@@ -2643,16 +2638,16 @@ def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> Lis
     person_creates_filtered = []
     seen_profile_ids: Set[str] = set()
     skipped_duplicates = 0
-    
+
     if not person_creates_raw:
         return person_creates_filtered
-        
+
     logger.debug(f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID...")
-    
+
     for p_data in person_creates_raw:
         profile_id = p_data.get("profile_id")  # Already uppercase from prep if exists
         uuid_for_log = p_data.get("uuid")  # For logging skipped items
-        
+
         if profile_id is None:
             person_creates_filtered.append(p_data)  # Allow creates with null profile ID
         elif profile_id not in seen_profile_ids:
@@ -2661,11 +2656,11 @@ def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> Lis
         else:
             logger.warning(f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log}).")
             skipped_duplicates += 1
-    
+
     if skipped_duplicates > 0:
         logger.info(f"Skipped {skipped_duplicates} duplicate person creates in this batch.")
     logger.debug(f"Proceeding with {len(person_creates_filtered)} unique person creates.")
-    
+
     return person_creates_filtered
 
 
@@ -2682,10 +2677,10 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
     """
     profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw if item.get("profile_id")}
     uuids_to_check = {str(item.get("uuid") or "").upper() for item in insert_data_raw if item.get("uuid")}
-    
+
     existing_profile_ids: Set[str] = set()
     existing_uuids: Set[str] = set()
-    
+
     if profile_ids_to_check:
         try:
             logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
@@ -2698,7 +2693,7 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
                 logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
         except Exception as e:
             logger.warning(f"Failed to check existing profile IDs: {e}")
-    
+
     if uuids_to_check:
         try:
             logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
@@ -2711,7 +2706,7 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
                 logger.info(f"Found {len(existing_uuids)} existing UUIDs that will be skipped")
         except Exception as e:
             logger.warning(f"Failed to check existing UUIDs: {e}")
-    
+
     return existing_profile_ids, existing_uuids
 
 
@@ -2729,14 +2724,14 @@ def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Op
     try:
         session.rollback()  # Clear the failed transaction
         logger.debug("Rolled back failed transaction due to UNIQUE constraint violation")
-        
+
         if not insert_data:
             logger.debug("No insert_data available for recovery - treating as successful (records likely already exist)")
             return True
-            
+
         logger.debug(f"Retrying with individual inserts for {len(insert_data)} records")
         successful_inserts = 0
-        
+
         for item in insert_data:
             try:
                 # Try individual insert
@@ -2751,17 +2746,17 @@ def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Op
             except Exception as individual_exc:
                 logger.warning(f"Failed to insert individual record UUID {item.get('uuid', 'unknown')}: {individual_exc}")
                 session.rollback()  # Clear this specific failure
-        
+
         logger.info(f"Successfully inserted {successful_inserts} of {len(insert_data)} records after handling duplicates")
         return True
-        
+
     except Exception as rollback_err:
         logger.error(f"Failed to handle UNIQUE constraint violation gracefully: {rollback_err}", exc_info=True)
         return False
 
 
 def _prepare_person_insert_data(
-    person_creates_filtered: List[Dict[str, Any]], 
+    person_creates_filtered: List[Dict[str, Any]],
     session: SqlAlchemySession,
     existing_persons_map: Dict[str, Person]
 ) -> List[Dict[str, Any]]:
@@ -2778,26 +2773,26 @@ def _prepare_person_insert_data(
     """
     if not person_creates_filtered:
         return []
-        
+
     logger.debug(f"Preparing {len(person_creates_filtered)} Person records for bulk insert...")
-    
+
     # Prepare list of dictionaries for bulk_insert_mappings
     insert_data_raw = [
         {k: v for k, v in p.items() if not k.startswith("_")}
         for p in person_creates_filtered
     ]
-    
+
     # Check for existing records in database
     existing_profile_ids, existing_uuids = _check_existing_records(session, insert_data_raw)
-    
+
     # De-duplicate by UUID within this batch and drop existing records
     seen_uuids: Set[str] = set()
     insert_data: List[Dict[str, Any]] = []
-    
+
     for item in insert_data_raw:
         uuid_val = str(item.get("uuid") or "").upper()
         profile_id = item.get("profile_id")
-        
+
         if not uuid_val:
             continue
         if uuid_val in seen_uuids:
@@ -2812,16 +2807,16 @@ def _prepare_person_insert_data(
         if profile_id and profile_id in existing_profile_ids:
             logger.debug(f"Person exists with profile ID {profile_id} (UUID: {uuid_val}); will handle as update if needed.")
             continue
-            
+
         seen_uuids.add(uuid_val)
         item["uuid"] = uuid_val
         insert_data.append(item)
-        
+
     # Convert status Enum to its value for bulk insertion
     for item_data in insert_data:
         if "status" in item_data and hasattr(item_data["status"], 'value'):
             item_data["status"] = item_data["status"].value
-            
+
     return insert_data
 
 
@@ -2857,7 +2852,7 @@ def _execute_bulk_db_operations(
     try:
         # Initialize variables that might be needed in exception handlers
         insert_data: List[Dict[str, Any]] = []
-        
+
         # Step 2: Separate data by operation type (create/update) and table
         # Person Operations
         person_creates_raw = [
@@ -2888,7 +2883,7 @@ def _execute_bulk_db_operations(
         if person_creates_filtered:
             # Use helper function to prepare insert data
             insert_data = _prepare_person_insert_data(person_creates_filtered, session, existing_persons_map)
-            
+
             # Final check for duplicates *within the filtered list* (shouldn't happen if de-dup logic is right)
             final_profile_ids = {
                 item.get("profile_id") for item in insert_data if item.get("profile_id")
@@ -2929,12 +2924,12 @@ def _execute_bulk_db_operations(
                 logger.debug(
                     f"Querying IDs for {len(inserted_uuids)} inserted UUIDs..."
                 )
-                
+
                 # CRITICAL FIX: Ensure database consistency before UUID->ID mapping
                 try:
                     session.flush()  # Make pending changes visible to current session
                     session.commit()  # Commit to database for ID generation
-                    
+
                     newly_inserted_persons = (
                         session.query(Person.id, Person.uuid)
                         .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
@@ -2943,16 +2938,16 @@ def _execute_bulk_db_operations(
                     created_person_map = {
                         p_uuid: p_id for p_id, p_uuid in newly_inserted_persons
                     }
-                    
+
                     logger.debug(f"Person ID Mapping: Queried {len(inserted_uuids)} UUIDs, mapped {len(created_person_map)} Person IDs")
-                    
+
                     if len(created_person_map) != len(inserted_uuids):
                         missing_count = len(inserted_uuids) - len(created_person_map)
                         missing_uuids = [uuid for uuid in inserted_uuids if uuid not in created_person_map]
                         logger.error(
                             f"CRITICAL: Person ID mapping failed for {missing_count} UUIDs. Missing: {missing_uuids[:3]}{'...' if missing_count > 3 else ''}"
                         )
-                        
+
                         # Recovery attempt: Query with broader filter
                         recovery_persons = (
                             session.query(Person.id, Person.uuid)
@@ -2960,12 +2955,12 @@ def _execute_bulk_db_operations(
                             .filter(Person.deleted_at.is_(None))
                             .all()
                         )
-                        
+
                         recovery_map = {p_uuid: p_id for p_id, p_uuid in recovery_persons}
                         if recovery_map:
                             logger.info(f"Recovery: Found {len(recovery_map)} additional Person IDs")
                             created_person_map.update(recovery_map)
-                            
+
                 except Exception as mapping_error:
                     logger.error(f"CRITICAL: Person ID mapping query failed: {mapping_error}")
                     session.rollback()
@@ -3089,7 +3084,7 @@ def _execute_bulk_db_operations(
                                 logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
                                 continue
                     else:
-                        logger.warning(f"Missing UUID in DNA match data - skipping DNA Match creation")
+                        logger.warning("Missing UUID in DNA match data - skipping DNA Match creation")
                         continue
 
                 # Prepare data dictionary (exclude internal keys)
@@ -3212,7 +3207,7 @@ def _execute_bulk_db_operations(
             for tree_data in tree_creates:
                 person_uuid = tree_data.get("uuid")
                 person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
-                
+
                 # ENHANCED UUID RESOLUTION: Multiple fallback strategies for FamilyTree
                 if not person_id and person_uuid:
                     # Strategy 1: Check existing_persons_map
@@ -3243,7 +3238,7 @@ def _execute_bulk_db_operations(
                         except Exception as e:
                             logger.warning(f"Database query failed for FamilyTree UUID {person_uuid}: {e}")
                             continue
-                
+
                 if person_id:
                     insert_dict = {
                         k: v for k, v in tree_data.items() if not k.startswith("_")
@@ -3306,13 +3301,12 @@ def _execute_bulk_db_operations(
             logger.warning(f"UNIQUE constraint violation during bulk insert - some records already exist: {integrity_err}")
             # This is expected behavior when records already exist - don't fail the entire batch
             logger.info("Continuing with database operations despite duplicate records...")
-            
+
             # Use helper function to handle recovery
             # Note: insert_data might not be available in this exception scope, pass None for safe recovery
             return _handle_integrity_error_recovery(session, None)
-        else:
-            logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
-            return False  # Other integrity errors should still fail
+        logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
+        return False  # Other integrity errors should still fail
     except SQLAlchemyError as bulk_db_err:
         logger.error(f"Bulk DB operation FAILED: {bulk_db_err}", exc_info=True)
         return False  # Indicate failure (rollback handled by db_transn)
@@ -3338,13 +3332,13 @@ def _do_batch(
     """
     # ENHANCED: Dynamic Batch Optimization with Server Performance Integration
     batch_start_time = time.time()
-    
+
     try:
         # Get adaptive batch size based on current server performance
         optimized_batch_size = _get_adaptive_batch_size(session_manager)
-        
+
         num_matches_on_page = len(matches_on_page)
-        
+
         # Additional optimizations based on page characteristics
         if num_matches_on_page >= 50:  # Large pages
             optimized_batch_size = min(25, int(optimized_batch_size * 1.2))
@@ -3352,48 +3346,48 @@ def _do_batch(
         elif num_matches_on_page <= 10:  # Small pages
             optimized_batch_size = max(5, int(optimized_batch_size * 0.8))
             logger.debug(f"Small page optimization: Reduced batch size to {optimized_batch_size}")
-        
+
         # Memory efficiency for long runs
         if current_page % 20 == 0:  # Every 20 pages, use smaller batches
             optimized_batch_size = max(5, optimized_batch_size - 2)
             logger.debug(f"Memory efficiency: Reduced batch size to {optimized_batch_size} at page {current_page}")
-        
+
     except Exception as batch_opt_exc:
         logger.warning(f"Batch size optimization failed: {batch_opt_exc}, using fallback")
         optimized_batch_size = 10  # Safe fallback
-    
+
     # If we have fewer matches than optimized batch size, process normally (no need to split)
     if num_matches_on_page <= optimized_batch_size:
         return _process_page_matches(session_manager, matches_on_page, current_page, progress_bar)
-    
+
     # SURGICAL FIX #7: Create single session for all batches on this page
     page_session = session_manager.get_db_conn()
     if not page_session:
         logger.error(f"Page {current_page}: Failed to get DB session for batch processing.")
         return 0, 0, 0, 0
-    
+
     try:
         # Otherwise, split into batches and process each with individual summaries
         logger.debug(f"Splitting page {current_page} ({num_matches_on_page} matches) into batches of {optimized_batch_size}")
         total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
-        
+
         for batch_idx in range(0, num_matches_on_page, optimized_batch_size):
             batch_matches = matches_on_page[batch_idx:batch_idx + optimized_batch_size]
             batch_num = (batch_idx // optimized_batch_size) + 1
-            
+
             logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
-            
+
             # Process this batch using the original logic with reused session
             new, updated, skipped, errors = _process_page_matches(
                 session_manager, batch_matches, current_page, progress_bar, is_batch=True, reused_session=page_session
             )
-            
+
             # Accumulate totals
             total_stats["new"] += new
             total_stats["updated"] += updated
             total_stats["skipped"] += skipped
             total_stats["error"] += errors
-            
+
             # Log batch summary
             print()
             logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
@@ -3407,25 +3401,25 @@ def _do_batch(
         batch_duration = time.time() - batch_start_time
         if not hasattr(_do_batch, '_recent_performance'):
             _do_batch._recent_performance = []
-        
+
         # Keep recent performance history for dynamic optimization
         _do_batch._recent_performance.append(batch_duration)
         if len(_do_batch._recent_performance) > 10:
             _do_batch._recent_performance = _do_batch._recent_performance[-10:]  # Keep last 10
-        
+
         # Log performance metrics
         success_rate = (total_stats["new"] + total_stats["updated"] + total_stats["skipped"]) / num_matches_on_page if num_matches_on_page > 0 else 1.0
         logger.debug(f"Batch performance: {batch_duration:.2f}s for {num_matches_on_page} matches "
                     f"({success_rate:.1%} success rate, batch size: {optimized_batch_size})")
-        
+
         if batch_duration > 30.0:  # Log slow batch processing
             logger.warning(f"Slow batch processing: Page {current_page} took {batch_duration:.1f}s")
-        
+
         # Track performance in global monitoring
         _log_api_performance("batch_processing", batch_start_time, f"success_{success_rate:.0%}")
-        
+
         return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
-    
+
     finally:
         # SURGICAL FIX #7: Clean up the reused session
         if page_session:
@@ -3479,8 +3473,8 @@ def _process_page_matches(
             batch_session = reused_session
             logger.debug(f"Batch {current_page}: Using reused session for batch operations")
         else:
-            # OPTIMIZED - Use long-lived DB Session for batch operations  
-            # Reusing the same session reduces connection overhead significantly  
+            # OPTIMIZED - Use long-lived DB Session for batch operations
+            # Reusing the same session reduces connection overhead significantly
             batch_session = session_manager.get_db_conn()
             if not batch_session:
                 logger.error(f"_do_batch Page {current_page}: Failed DB session.")
@@ -3513,18 +3507,18 @@ def _process_page_matches(
                 prefetched_data = {}  # Empty prefetch data
             else:
                 logger.debug(f"Batch {current_page}: Performing API Prefetches...")
-                
+
                 # FINAL OPTIMIZATION 3: Advanced Async Integration for large batches
                 if len(fetch_candidates_uuid) >= 15:  # Use async orchestrator for large batches
                     try:
                         import asyncio
                         logger.debug(f"Batch {current_page}: Using enhanced async orchestrator for {len(fetch_candidates_uuid)} candidates")
-                        
+
                         # Run async orchestrator
                         prefetched_data = asyncio.run(_async_enhanced_api_orchestrator(
                             session_manager, fetch_candidates_uuid, matches_to_process_later
                         ))
-                        
+
                         logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
                     except Exception as async_error:
                         logger.warning(f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync")
@@ -3702,9 +3696,10 @@ def _process_page_matches(
         # Clean up large objects to prevent memory accumulation
         try:
             import gc
-            import psutil
             import os
-            
+
+            import psutil
+
             # Get current memory usage for monitoring
             try:
                 process = psutil.Process(os.getpid())
@@ -3712,51 +3707,49 @@ def _process_page_matches(
                 logger.debug(f"Memory usage at page {current_page}: {current_memory_mb:.1f} MB")
             except Exception:
                 current_memory_mb = 0  # Fallback if psutil not available
-            
+
             # Clear large data structures with more thorough cleanup
             cleanup_vars = [
-                'matches_on_page', 'existing_persons_map', 'prepared_bulk_data', 
+                'matches_on_page', 'existing_persons_map', 'prepared_bulk_data',
                 'prefetched_data', 'fetch_candidates_uuid', 'matches_to_process_later'
             ]
-            
+
             for var_name in cleanup_vars:
                 if var_name in locals():
                     var_obj = locals()[var_name]
-                    if hasattr(var_obj, 'clear'):
-                        var_obj.clear()
-                    elif isinstance(var_obj, (list, set)):
+                    if hasattr(var_obj, 'clear') or isinstance(var_obj, (list, set)):
                         var_obj.clear()
                     # Set to None to free reference
                     locals()[var_name] = None
-            
+
             # Adaptive garbage collection based on memory usage and page number
             if current_page % 5 == 0 or current_memory_mb > 500:  # Every 5 pages or high memory
                 collected = gc.collect()
                 logger.debug(f"Memory cleanup: Forced garbage collection at page {current_page}, "
                            f"collected {collected} objects, memory: {current_memory_mb:.1f} MB")
-                
+
                 # If memory is still high after GC, do more aggressive cleanup
                 if current_memory_mb > 800:
                     logger.warning(f"High memory usage ({current_memory_mb:.1f} MB) - performing aggressive cleanup")
                     gc.collect(0)  # Gen 0
                     gc.collect(1)  # Gen 1
                     gc.collect(2)  # Gen 2
-                    
+
             elif current_page % 3 == 0:
                 # Light cleanup every 3 pages
                 gc.collect(0)  # Only collect generation 0
                 logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
-                
+
             # Monitor for memory growth patterns
             if hasattr(_process_page_matches, '_prev_memory'):
                 memory_growth = current_memory_mb - _process_page_matches._prev_memory
                 if memory_growth > 50:  # 50MB growth is concerning
                     logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
             _process_page_matches._prev_memory = current_memory_mb
-            
+
         except Exception as cleanup_exc:
             logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
-        
+
         # OPTIMIZED: No need to return session here since it's handled in the main try/finally block above
         logger.debug(f"--- Finished Batch Processing for Page {current_page} ---")
 
@@ -3893,113 +3886,112 @@ def _prepare_person_operation_data(
             person_op_dict,
             False,
         )  # False for person_fields_changed as it's a new person
-    else:
-        person_data_for_update: Dict[str, Any] = {
-            "_operation": "update",
-            "_existing_person_id": existing_person.id,
-            "uuid": match_uuid.upper(),  # Keep UUID for identification
-        }
-        person_fields_changed = False
-        for key, new_value in incoming_person_data.items():
-            if key == "uuid":  # UUID should not be changed for existing records
-                continue
-            current_value = getattr(existing_person, key, None)
-            value_changed = False
-            value_to_set = new_value  # Default to new_value
+    person_data_for_update: Dict[str, Any] = {
+        "_operation": "update",
+        "_existing_person_id": existing_person.id,
+        "uuid": match_uuid.upper(),  # Keep UUID for identification
+    }
+    person_fields_changed = False
+    for key, new_value in incoming_person_data.items():
+        if key == "uuid":  # UUID should not be changed for existing records
+            continue
+        current_value = getattr(existing_person, key, None)
+        value_changed = False
+        value_to_set = new_value  # Default to new_value
 
-            # Specific comparisons and transformations
-            if key == "last_logged_in":
-                # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
-                current_dt_utc = (
-                    current_value.astimezone(timezone.utc).replace(microsecond=0)
-                    if isinstance(current_value, datetime) and current_value.tzinfo
-                    else (
-                        current_value.replace(tzinfo=timezone.utc, microsecond=0)
-                        if isinstance(current_value, datetime)
-                        else None
-                    )
+        # Specific comparisons and transformations
+        if key == "last_logged_in":
+            # Ensure both are aware UTC datetimes for comparison, ignoring microseconds
+            current_dt_utc = (
+                current_value.astimezone(timezone.utc).replace(microsecond=0)
+                if isinstance(current_value, datetime) and current_value.tzinfo
+                else (
+                    current_value.replace(tzinfo=timezone.utc, microsecond=0)
+                    if isinstance(current_value, datetime)
+                    else None
                 )
-                new_dt_utc = (
-                    new_value.astimezone(timezone.utc).replace(microsecond=0)
-                    if isinstance(new_value, datetime) and new_value.tzinfo
-                    else (
-                        new_value.replace(tzinfo=timezone.utc, microsecond=0)
-                        if isinstance(new_value, datetime)
-                        else None
-                    )
+            )
+            new_dt_utc = (
+                new_value.astimezone(timezone.utc).replace(microsecond=0)
+                if isinstance(new_value, datetime) and new_value.tzinfo
+                else (
+                    new_value.replace(tzinfo=timezone.utc, microsecond=0)
+                    if isinstance(new_value, datetime)
+                    else None
                 )
-                if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
-                    value_changed = True
-                    # value_to_set is already new_value (potentially a datetime obj)
-            elif key == "status":
-                # Ensure comparison is between Enum types or their values
-                current_enum_val = (
-                    current_value.value
-                    if isinstance(current_value, PersonStatusEnum)
-                    else current_value
-                )
-                new_enum_val = (
-                    new_value.value
-                    if isinstance(new_value, PersonStatusEnum)
-                    else new_value
-                )
-                if new_enum_val != current_enum_val:
-                    value_changed = True
-                    value_to_set = new_value  # Store the Enum object
-            elif key == "birth_year":  # Update only if new is valid and current is None
-                if new_value is not None and current_value is None:
-                    try:
-                        value_to_set_int = int(new_value)
-                        value_changed = True
-                        value_to_set = value_to_set_int
-                    except (ValueError, TypeError):
-                        logger_instance.warning(
-                            f"Invalid birth_year '{new_value}' for update {log_ref_short}"
-                        )
-                        continue  # Skip this field
-                # No change if new_value is None or current_value exists
-            elif (
-                key == "gender"
-            ):  # Update only if new is valid ('f'/'m') and current is None
-                if (
-                    new_value is not None
-                    and current_value is None
-                    and isinstance(new_value, str)
-                    and new_value.lower() in ("f", "m")
-                ):
-                    value_to_set = new_value.lower()
-                    value_changed = True
-            elif key in ("profile_id", "administrator_profile_id"):
-                # Ensure comparison of uppercase strings, handle None
-                current_str_upper = (
-                    str(current_value).upper() if current_value is not None else None
-                )
-                new_str_upper = (
-                    str(new_value).upper() if new_value is not None else None
-                )
-                if new_str_upper != current_str_upper:
-                    value_changed = True
-                    value_to_set = new_str_upper  # Store uppercase
-            elif isinstance(current_value, bool) or isinstance(
-                new_value, bool
-            ):  # For boolean fields
-                if bool(current_value) != bool(new_value):
-                    value_changed = True
-                    value_to_set = bool(new_value)
-            # General comparison for other fields
-            elif current_value != new_value:
+            )
+            if new_dt_utc != current_dt_utc:  # Handles None comparisons correctly
                 value_changed = True
+                # value_to_set is already new_value (potentially a datetime obj)
+        elif key == "status":
+            # Ensure comparison is between Enum types or their values
+            current_enum_val = (
+                current_value.value
+                if isinstance(current_value, PersonStatusEnum)
+                else current_value
+            )
+            new_enum_val = (
+                new_value.value
+                if isinstance(new_value, PersonStatusEnum)
+                else new_value
+            )
+            if new_enum_val != current_enum_val:
+                value_changed = True
+                value_to_set = new_value  # Store the Enum object
+        elif key == "birth_year":  # Update only if new is valid and current is None
+            if new_value is not None and current_value is None:
+                try:
+                    value_to_set_int = int(new_value)
+                    value_changed = True
+                    value_to_set = value_to_set_int
+                except (ValueError, TypeError):
+                    logger_instance.warning(
+                        f"Invalid birth_year '{new_value}' for update {log_ref_short}"
+                    )
+                    continue  # Skip this field
+            # No change if new_value is None or current_value exists
+        elif (
+            key == "gender"
+        ):  # Update only if new is valid ('f'/'m') and current is None
+            if (
+                new_value is not None
+                and current_value is None
+                and isinstance(new_value, str)
+                and new_value.lower() in ("f", "m")
+            ):
+                value_to_set = new_value.lower()
+                value_changed = True
+        elif key in ("profile_id", "administrator_profile_id"):
+            # Ensure comparison of uppercase strings, handle None
+            current_str_upper = (
+                str(current_value).upper() if current_value is not None else None
+            )
+            new_str_upper = (
+                str(new_value).upper() if new_value is not None else None
+            )
+            if new_str_upper != current_str_upper:
+                value_changed = True
+                value_to_set = new_str_upper  # Store uppercase
+        elif isinstance(current_value, bool) or isinstance(
+            new_value, bool
+        ):  # For boolean fields
+            if bool(current_value) != bool(new_value):
+                value_changed = True
+                value_to_set = bool(new_value)
+        # General comparison for other fields
+        elif current_value != new_value:
+            value_changed = True
 
-            if value_changed:
-                person_data_for_update[key] = value_to_set
-                person_fields_changed = True
-                logger_instance.debug(
-                    f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
-                )
+        if value_changed:
+            person_data_for_update[key] = value_to_set
+            person_fields_changed = True
+            logger_instance.debug(
+                f"  Person change {log_ref_short}: Field '{key}' ('{current_value}' -> '{value_to_set}')"
+            )
 
-        return (
-            person_data_for_update if person_fields_changed else None
-        ), person_fields_changed
+    return (
+        person_data_for_update if person_fields_changed else None
+    ), person_fields_changed
 
 
 # End of _prepare_person_operation_data
@@ -4290,11 +4282,10 @@ def _prepare_family_tree_operation_data(
                 or k in ["_operation", "_existing_tree_id", "uuid"]  # Keep uuid
             }
             return incoming_tree_data, tree_operation
-        else:
-            logger_instance.warning(
-                f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
-            )
-            tree_operation = "none"
+        logger_instance.warning(
+            f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
+        )
+        tree_operation = "none"
 
     return None, tree_operation
 
@@ -4565,21 +4556,21 @@ def get_matches(
             # Try to refresh the page
             driver.refresh()
             time.sleep(2)
-        
+
         # Validate session cookies are present
         if not session_manager.is_sess_valid():
             logger.error("Session validation failed before API call")
             return None
-            
+
         # SURGICAL FIX #17: Smart Cookie Sync Optimization
         # Track cookie sync freshness to avoid unnecessary syncing
         import time as time_module
         current_time = time_module.time()
-        
+
         # Check if cookies were synced recently (within last 5 minutes)
         last_cookie_sync = getattr(session_manager, '_last_cookie_sync_time', 0)
         cookie_sync_needed = (current_time - last_cookie_sync) > 300  # 5 minutes
-        
+
         if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
             # Track the sync time
@@ -4589,7 +4580,7 @@ def get_matches(
             logger.debug("Skipping cookie sync - cookies are fresh")
         else:
             logger.debug("Cookie sync method not available")
-            
+
     except Exception as session_validation_error:
         logger.error(f"Session validation error: {session_validation_error}")
         return None
@@ -4599,7 +4590,7 @@ def get_matches(
     cached_csrf_token = getattr(session_manager, '_cached_csrf_token', None)
     cached_csrf_time = getattr(session_manager, '_cached_csrf_time', 0)
     csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
-    
+
     if cached_csrf_token and csrf_cache_valid:
         logger.debug(f"Using cached CSRF token (age: {time_module.time() - cached_csrf_time:.1f}s)")
         specific_csrf_token = cached_csrf_token
@@ -4669,8 +4660,7 @@ def get_matches(
             "Failed to obtain specific CSRF token required for Match List API."
         )
         return None
-    else:
-        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+    logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
     # Use the working API endpoint pattern that matches other working API calls (like matchProbabilityData, badges, etc.)
     match_list_url = urljoin(
@@ -4687,7 +4677,7 @@ def get_matches(
     logger.debug(
         f"Headers being passed to _api_req for Match List: {match_list_headers}"
     )
-    
+
     # Additional debug logging for troubleshooting 303 redirects
     logger.debug(f"Match List URL: {match_list_url}")
     logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
@@ -4728,7 +4718,7 @@ def get_matches(
         if isinstance(api_response, requests.Response):
             status = api_response.status_code
             location = api_response.headers.get('Location')
-            
+
             if status == 303:
                 if location:
                     logger.warning(
@@ -4765,17 +4755,17 @@ def get_matches(
                             logger.debug(f"🧹 Cleared {cleared_count} session cache entries before refresh")
                         except Exception as cache_err:
                             logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
-                        
+
                         # Force clear readiness check cache to ensure fresh validation
                         session_manager._last_readiness_check = None
                         logger.debug("🔄 Cleared session readiness cache to force fresh validation")
-                        
+
                         # Force session refresh with cleared cache
                         fresh_success = session_manager.ensure_session_ready(action_name="coord_action - Session Refresh")
                         if not fresh_success:
                             logger.error("❌ Session refresh failed after cache clear")
                             return None
-                        
+
                         # Force cookie sync and CSRF token refresh
                         session_manager._sync_cookies_to_requests()
                         fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
@@ -4785,7 +4775,7 @@ def get_matches(
                             logger.info("✅ Retrying Match List API with refreshed session, cleared cache, and fresh CSRF token.")
                             logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
                             logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
-                            
+
                             api_response_refresh = _api_req(
                                 url=match_list_url,
                                 driver=driver,
@@ -5073,7 +5063,7 @@ def _fetch_combined_details(
     """
     # PRIORITY 1: Performance Monitoring Integration
     api_start_time = time.time()
-    
+
     # SURGICAL FIX #14: Enhanced Smart Caching using existing global cache system
     if global_cache is not None:
         cache_key = f"combined_details_{match_uuid}"
@@ -5105,7 +5095,7 @@ def _fetch_combined_details(
     if not session_manager.is_sess_valid():
         # Update session health monitoring in SessionManager
         session_manager.check_session_health()
-            
+
         logger.error(
             f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
         )
@@ -5281,7 +5271,7 @@ def _fetch_combined_details(
                     logger.debug(
                         f"Successfully fetched /profiles/details for {tester_profile_id_for_api}."
                     )
-                    
+
                     # Parse last login date
                     last_login_dt = None
                     last_login_str = profile_response.get("LastLoginDate")
@@ -5302,23 +5292,23 @@ def _fetch_combined_details(
                             logger.warning(
                                 f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id_for_api}: {date_parse_err}"
                             )
-                    
+
                     # Parse contactable status
                     contactable_val = profile_response.get("IsContactable")
                     is_contactable = (
                         bool(contactable_val) if contactable_val is not None else False
                     )
-                    
+
                     # Update combined_data with fetched values
                     combined_data["last_logged_in_dt"] = last_login_dt
                     combined_data["contactable"] = is_contactable
-                    
+
                     # OPTIMIZATION: Cache the successful response for future use
                     _cache_profile(tester_profile_id_for_api, {
                         "last_logged_in_dt": last_login_dt,
                         "contactable": is_contactable
                     })
-                    
+
                 elif isinstance(profile_response, requests.Response):
                     logger.warning(
                         f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
@@ -5362,7 +5352,7 @@ def _fetch_combined_details(
         _log_api_performance("combined_details", api_start_time, "success", session_manager)
     else:
         _log_api_performance("combined_details", api_start_time, "failed", session_manager)
-    
+
     return combined_data if combined_data else None
 
 
@@ -5400,7 +5390,7 @@ def _fetch_batch_badge_details(
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_badge_details: Missing my_uuid or match_uuid.")
         return None
-        
+
     # SURGICAL FIX #20: Universal session validation with SessionManager death detection
     if session_manager.should_halt_operations():
         logger.warning(f"_fetch_batch_badge_details: Halting due to session death cascade for UUID {match_uuid}")
@@ -5412,7 +5402,7 @@ def _fetch_batch_badge_details(
     if not session_manager.is_sess_valid():
         # Update session health monitoring in SessionManager
         session_manager.check_session_health()
-            
+
         logger.error(
             f"_fetch_batch_badge_details: WebDriver session invalid for UUID {match_uuid}."
         )
@@ -5462,7 +5452,7 @@ def _fetch_batch_badge_details(
                 "their_lastname": person_badged.get("lastName", "Unknown"),
                 "their_birth_year": person_badged.get("birthYear"),
             }
-            
+
             # SURGICAL FIX #14: Cache successful badge details using existing global cache system
             if global_cache is not None:
                 cache_key = f"badge_details_{match_uuid}"
@@ -5477,18 +5467,17 @@ def _fetch_batch_badge_details(
                     logger.debug(f"Cached badge details for {match_uuid}")
                 except Exception as cache_exc:
                     logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
-            
+
             return result_data
-        elif isinstance(badge_response, requests.Response):
+        if isinstance(badge_response, requests.Response):
             logger.warning(
                 f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
             )
             return None
-        else:
-            logger.warning(
-                f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
-            )
-            return None
+        logger.warning(
+            f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
+        )
+        return None
 
     except ConnectionError as conn_err:
         logger.error(
@@ -5620,10 +5609,10 @@ def _fetch_batch_ladder_legacy(
                 f"Get Ladder API call failed for CFPID {cfpid} (Status: {api_result.status_code})."
             )
             return None
-        elif api_result is None:
+        if api_result is None:
             logger.warning(f"Get Ladder API call returned None for CFPID {cfpid}.")
             return None
-        elif not isinstance(api_result, str):
+        if not isinstance(api_result, str):
             logger.warning(
                 f"_api_req returned unexpected type '{type(api_result).__name__}' for Get Ladder API (CFPID {cfpid})."
             )
@@ -5718,22 +5707,20 @@ def _fetch_batch_ladder_legacy(
                         or ladder_data["relationship_path"]
                     ):
                         return ladder_data
-                    else:  # No data found after parsing
-                        logger.warning(
-                            f"No actual_relationship or path found for CFPID {cfpid} after parsing."
-                        )
-                        return None
-
-                else:
+                    # No data found after parsing
                     logger.warning(
-                        f"Empty HTML in getladder response for CFPID {cfpid}."
+                        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
                     )
                     return None
-            else:
+
                 logger.warning(
-                    f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+                    f"Empty HTML in getladder response for CFPID {cfpid}."
                 )
                 return None
+            logger.warning(
+                f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
+            )
+            return None
         except json.JSONDecodeError as inner_json_err:
             logger.error(
                 f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
@@ -5784,7 +5771,7 @@ def _fetch_batch_relationship_prob(
     # PRIORITY 6: Enhanced Caching Strategies for relationship probability data
     import time as time_module
     api_start_time = time_module.time()
-    
+
     # Enhanced caching with longer TTL for relationship data
     if global_cache is not None:
         cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
@@ -5796,7 +5783,7 @@ def _fetch_batch_relationship_prob(
                 return cached_data
         except Exception as cache_exc:
             logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
-    
+
     my_uuid = session_manager.my_uuid
     driver = session_manager.driver
     scraper = session_manager.scraper
@@ -5835,9 +5822,9 @@ def _fetch_batch_relationship_prob(
 
     # OPTIMIZATION: Use cached CSRF token instead of hitting WebDriver every time
     csrf_token_val: Optional[str] = None
-    
+
     # Try session manager's cached CSRF first (much faster)
-    if (hasattr(session_manager, '_cached_csrf_token') and 
+    if (hasattr(session_manager, '_cached_csrf_token') and
         hasattr(session_manager, '_is_csrf_token_valid') and
         session_manager._is_csrf_token_valid() and
         session_manager._cached_csrf_token):
@@ -5858,15 +5845,15 @@ def _fetch_batch_relationship_prob(
                 if isinstance(c, dict) and "name" in c and "value" in c
             }
             for name in csrf_cookie_names:
-                if name in driver_cookies_dict and driver_cookies_dict[name]:
+                if driver_cookies_dict.get(name):
                     csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
                     rel_headers["X-CSRF-Token"] = csrf_token_val
-                    
+
                     # Cache the token for future use (5-minute cache)
                     import time
                     session_manager._cached_csrf_token = csrf_token_val
                     session_manager._csrf_cache_time = time.time()
-                    
+
                     logger.debug(
                         f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}."
                     )
@@ -5947,7 +5934,7 @@ def _fetch_batch_relationship_prob(
             final_labels = labels[:max_labels_param]
             relationship_str = " or ".join(map(str, final_labels))
             result = f"{relationship_str} [{top_prob_display:.1f}%]"
-            
+
             # PRIORITY 6: Cache the successful result
             if global_cache is not None:
                 try:
@@ -5956,7 +5943,7 @@ def _fetch_batch_relationship_prob(
                     logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
                 except Exception as cache_exc:
                     logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
-            
+
             _log_api_performance("relationship_prob", api_start_time, "success", session_manager)
             return result
 
@@ -6211,7 +6198,6 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 
 def action6_gather_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py"""
-    from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Action 6 - Gather DNA Matches", "action6_gather.py")
     suite.start_suite()  # INITIALIZATION TESTS
@@ -6260,7 +6246,7 @@ def action6_gather_module_tests() -> bool:
                 matches_expected = result == expected
 
                 status = "✅" if matches_expected else "❌"
-                print(f"   {status} {description}: {repr(input_val)} → {result}")
+                print(f"   {status} {description}: {input_val!r} → {result}")
 
                 results.append(matches_expected)
                 assert (
@@ -6410,9 +6396,8 @@ def action6_gather_module_tests() -> bool:
         Test error handling scenarios including the critical RetryableError constructor bug
         that caused Action 6 database transaction failures.
         """
-        from unittest.mock import MagicMock, patch
         import sqlite3
-        from error_handling import RetryableError, DatabaseConnectionError
+        from unittest.mock import MagicMock, patch
 
         print("🧪 Testing error handling scenarios that previously caused Action 6 failures...")
 
@@ -6466,13 +6451,13 @@ def action6_gather_module_tests() -> bool:
                         "transaction_time": 1.5,
                         "error_type": error_type,
                     }
-                    
+
                     # This specific call pattern was causing the constructor bug
                     retryable_error = RetryableError(
                         f"Transaction failed: {e}",
                         context=context
                     )
-                    
+
                     assert "Transaction failed:" in retryable_error.message
                     assert retryable_error.context["error_type"] == "IntegrityError"
                     print("     ✅ Database rollback error handling works correctly")
@@ -6482,10 +6467,14 @@ def action6_gather_module_tests() -> bool:
         # Test 4: Test all error class constructors to prevent future regressions
         print("   • Test 4: All error class constructors parameter validation")
         from error_handling import (
-            APIRateLimitError, AuthenticationExpiredError, NetworkTimeoutError,
-            DataValidationError, BrowserSessionError, ConfigurationError, FatalError
+            APIRateLimitError,
+            AuthenticationExpiredError,
+            BrowserSessionError,
+            ConfigurationError,
+            DataValidationError,
+            FatalError,
         )
-        
+
         error_classes = [
             (APIRateLimitError, {"retry_after": 30}),
             (AuthenticationExpiredError, {}),
@@ -6495,7 +6484,7 @@ def action6_gather_module_tests() -> bool:
             (ConfigurationError, {}),
             (FatalError, {}),
         ]
-        
+
         for error_class, extra_args in error_classes:
             try:
                 error = error_class(
@@ -6531,28 +6520,28 @@ def action6_gather_module_tests() -> bool:
 
         result = _validate_start_page("not_a_number_12345")
         assert result == 1, "Should handle invalid input gracefully"
-        
+
         print("     ✅ Legacy function error handling works correctly")
-        
+
         # Test 6: CRITICAL - Timeout and Retry Handling Tests (Action 6 Main Issue)
         print("   • Test 6: Timeout and retry handling that caused multiple final summaries")
-        
+
         # Test timeout configuration is appropriate for Action 6's runtime
         print("     • Checking coord function timeout configuration...")
         # Action 6 typically takes 12+ minutes, timeout should be at least 15 minutes (900s)
         expected_min_timeout = 900  # 15 minutes
         print(f"     ✅ coord function should have timeout >= {expected_min_timeout}s for 12+ min runtime")
-        
+
         # Test 7: Duplicate record handling during retries
         print("   • Test 7: Duplicate record handling during retry scenarios")
         try:
             # Simulate the exact UNIQUE constraint scenario from logs
             import sqlite3
             test_uuid = "F9721E26-7FBB-4359-8AAB-F6E246DF09F2"  # From actual log
-            
+
             # Simulate the specific IntegrityError pattern
             integrity_error = sqlite3.IntegrityError("UNIQUE constraint failed: people.uuid")
-            
+
             # Test that we can create proper error without constructor conflicts
             error_response = RetryableError(
                 f"Bulk DB operation FAILED: {integrity_error}",
@@ -6563,23 +6552,23 @@ def action6_gather_module_tests() -> bool:
                 },
                 recovery_hint="Records may already exist, check for duplicates"
             )
-            
+
             assert "UNIQUE constraint failed" in error_response.message
             assert error_response.context["uuid"] == test_uuid
             print("     ✅ UNIQUE constraint error handling works without constructor conflicts")
-            
+
         except Exception as e:
             assert False, f"Duplicate record error handling failed: {e}"
 
-        # Test 8: Final Summary Accuracy Test  
+        # Test 8: Final Summary Accuracy Test
         print("   • Test 8: Final summary accuracy validation")
         # This would test that final summaries reflect actual DB state, not retry failures
         # For now, this is a design validation
         print("     ✅ Final summaries should reflect actual database state, not retry attempt failures")
-        
+
         print("🎯 All critical error handling scenarios validated successfully!")
         print("   This comprehensive test would have caught:")
-        print("   - RetryableError constructor parameter conflicts") 
+        print("   - RetryableError constructor parameter conflicts")
         print("   - Timeout configuration too short for Action 6 runtime")
         print("   - Duplicate record handling during retries")
         print("   - Multiple final summary reporting issues")
@@ -6597,57 +6586,57 @@ def action6_gather_module_tests() -> bool:
         """
         print("🛡️ Testing database bulk insert condition logic regression prevention:")
         results = []
-        
+
         # Test 1: Verify correct bulk insert condition (has records -> should insert)
         test_person_creates = [
             {'profile_id': 'reg_test_1', 'username': 'RegUser1'},
             {'profile_id': 'reg_test_2', 'username': 'RegUser2'}
         ]
-        
+
         # CORRECT logic (after our fix)
         should_bulk_insert = bool(test_person_creates)  # True when has records
-        
-        # WRONG logic (the bug we fixed)  
+
+        # WRONG logic (the bug we fixed)
         wrong_logic_would_bulk = not bool(test_person_creates)  # False when has records
-        
+
         if should_bulk_insert and not wrong_logic_would_bulk:
             print("   ✅ Bulk insert condition CORRECT: runs when has records")
             results.append(True)
         else:
             print("   ❌ Bulk insert condition WRONG: logic may be in wrong if/else block")
             results.append(False)
-        
+
         # Test 2: Verify empty list correctly skips bulk insert
         empty_creates = []
         should_not_bulk_empty = not bool(empty_creates)  # True - should NOT bulk insert
         wrong_would_bulk_empty = bool(empty_creates)     # False - correct, no bulk insert
-        
+
         if should_not_bulk_empty and not wrong_would_bulk_empty:
             print("   ✅ Empty list condition CORRECT: skips bulk insert when no records")
             results.append(True)
         else:
             print("   ❌ Empty list condition WRONG: logic error")
             results.append(False)
-            
+
         # Test 3: Verify actual code structure contains correct condition
         try:
             import inspect
             source = inspect.getsource(_execute_bulk_db_operations)
-            
+
             # Look for the correct pattern: "if person_creates_filtered:"
             correct_pattern_found = "if person_creates_filtered:" in source
-            
+
             if correct_pattern_found:
                 print("   ✅ Source code contains correct 'if person_creates_filtered:' pattern")
                 results.append(True)
             else:
                 print("   ⚠️  Could not verify correct bulk insert pattern in source")
                 results.append(False)
-                
+
         except Exception as e:
             print(f"   ⚠️  Could not inspect source code: {e}")
             results.append(False)
-        
+
         # Test 4: Verify THREAD_POOL_WORKERS optimization
         if THREAD_POOL_WORKERS >= 16:
             print(f"   ✅ Thread pool optimized: {THREAD_POOL_WORKERS} workers (≥16)")
@@ -6655,7 +6644,7 @@ def action6_gather_module_tests() -> bool:
         else:
             print(f"   ❌ Thread pool not optimized: {THREAD_POOL_WORKERS} workers (<16)")
             results.append(False)
-        
+
         success = all(results)
         if success:
             print("🎉 All regression prevention tests passed - database bulk insert bug prevented!")
@@ -6670,13 +6659,13 @@ def action6_gather_module_tests() -> bool:
         """
         print("🛡️ Testing configuration respect regression prevention:")
         results = []
-        
+
         try:
             from config import config_schema
-            
+
             # Test MAX_PAGES configuration
             max_pages = getattr(getattr(config_schema, 'api', None), 'max_pages', None)
-            
+
             if max_pages is not None:
                 if isinstance(max_pages, int) and max_pages >= 1:
                     print(f"   ✅ MAX_PAGES configuration valid: {max_pages}")
@@ -6687,7 +6676,7 @@ def action6_gather_module_tests() -> bool:
             else:
                 print("   ⚠️  MAX_PAGES configuration not found")
                 results.append(False)
-                
+
             # Test that THREAD_POOL_WORKERS configuration is accessible
             if THREAD_POOL_WORKERS > 0:
                 print(f"   ✅ THREAD_POOL_WORKERS accessible: {THREAD_POOL_WORKERS}")
@@ -6695,11 +6684,11 @@ def action6_gather_module_tests() -> bool:
             else:
                 print(f"   ❌ THREAD_POOL_WORKERS invalid: {THREAD_POOL_WORKERS}")
                 results.append(False)
-                
+
         except Exception as e:
             print(f"   ❌ Configuration access failed: {e}")
             results.append(False)
-        
+
         success = all(results)
         if success:
             print("🎉 Configuration respect regression tests passed!")
@@ -6714,25 +6703,25 @@ def action6_gather_module_tests() -> bool:
         """
         print("🔧 Testing Dynamic API Failure Threshold:")
         results = []
-        
+
         test_cases = [
             (10, 10),    # 10 pages -> minimum threshold of 10
             (100, 10),   # 100 pages -> 100/20 = 5, but minimum is 10
             (200, 10),   # 200 pages -> 200/20 = 10
-            (400, 20),   # 400 pages -> 400/20 = 20  
+            (400, 20),   # 400 pages -> 400/20 = 20
             (795, 39),   # 795 pages -> 795/20 = 39 (our actual use case)
             (2000, 100), # 2000 pages -> 2000/20 = 100 (maximum)
             (5000, 100), # 5000 pages -> 5000/20 = 250, but capped at 100
         ]
-        
+
         for pages, expected in test_cases:
             result = get_critical_api_failure_threshold(pages)
             status = "✅" if result == expected else "❌"
             print(f"   {status} {pages} pages -> {result} threshold (expected {expected})")
             results.append(result == expected)
-            
+
         print(f"   Current default threshold: {CRITICAL_API_FAILURE_THRESHOLD}")
-        
+
         success = all(results)
         if success:
             print("🎉 Dynamic API failure threshold tests passed!")
@@ -6747,19 +6736,19 @@ def action6_gather_module_tests() -> bool:
         """
         print("🛡️ Testing session management regression prevention:")
         results = []
-        
+
         try:
             # Test SessionManager import and basic attributes
             from core.session_manager import SessionManager
-            
+
             # Test that SessionManager can be imported without errors
             print("   ✅ SessionManager import successful")
             results.append(True)
-            
+
             # Test that basic SessionManager attributes exist
             expected_attrs = ['_cached_csrf_token', '_is_csrf_token_valid']
             session_manager = SessionManager()
-            
+
             for attr in expected_attrs:
                 if hasattr(session_manager, attr):
                     print(f"   ✅ SessionManager has {attr} (optimization implemented)")
@@ -6767,11 +6756,11 @@ def action6_gather_module_tests() -> bool:
                 else:
                     print(f"   ⚠️  SessionManager missing {attr}")
                     results.append(False)
-                    
+
         except Exception as e:
             print(f"   ❌ SessionManager test failed: {e}")
             results.append(False)
-        
+
         success = all(results)
         if success:
             print("🎉 Session management regression tests passed!")
@@ -6827,30 +6816,30 @@ def action6_gather_module_tests() -> bool:
             try:
                 from unittest.mock import Mock, patch
                 print("Testing 303 redirect detection and recovery mechanisms...")
-                
+
                 # Test 1: Verify CSRF token extraction works
                 print("✓ Test 1: CSRF token extraction")
                 with patch('action6_gather.SessionManager') as mock_sm_class:
                     mock_session_manager = Mock()
                     mock_session_manager.driver = Mock()
-                    
+
                     # Test CSRF token found
                     mock_session_manager.driver.get_cookies.return_value = [
                         {'name': '_dnamatches-matchlistui-x-csrf-token', 'value': 'test-token-123'}
                     ]
-                    
+
                     from action6_gather import _get_csrf_token
                     result = _get_csrf_token(mock_session_manager)
                     assert result == 'test-token-123', "Should extract CSRF token correctly"
-                    
+
                     # Test no CSRF token found
                     mock_session_manager.driver.get_cookies.return_value = []
                     result = _get_csrf_token(mock_session_manager)
                     assert result is None, "Should return None when no CSRF token found"
-                
+
                 # Test 2: Verify session refresh navigation (simplified)
                 print("✓ Test 2: Session refresh navigation")
-                
+
                 # Create a simple mock without complex patching
                 mock_session_manager = Mock()
                 mock_session_manager.driver = Mock()
@@ -6859,32 +6848,32 @@ def action6_gather_module_tests() -> bool:
                 mock_session_manager.config.api.base_url = 'https://www.ancestry.co.uk/'
                 mock_session_manager._sync_cookies_to_requests = Mock()
                 mock_session_manager.driver.current_url = 'https://www.ancestry.co.uk/discoveryui-matches/list/FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7'
-                
+
                 # Test the logic without actual navigation
                 base_url = mock_session_manager.config.api.base_url
                 current_url = mock_session_manager.driver.current_url
-                
+
                 # Verify our session refresh function would detect matches page
                 is_on_matches_page = "discoveryui-matches" in current_url
                 assert is_on_matches_page, "Should detect when on matches page"
-                
+
                 # Verify base URL construction
                 assert base_url.startswith('https://'), "Base URL should be HTTPS"
                 assert 'ancestry.co.uk' in base_url, "Should be Ancestry URL"
-                
+
                 # Test 3: Verify 303 response handling logic
                 print("✓ Test 3: 303 response handling detection")
-                
+
                 # Create mock 303 response
                 mock_303_response = Mock()
                 mock_303_response.status_code = 303
                 mock_303_response.headers = {}  # No Location header, simulating the actual issue
                 mock_303_response.text = 'See Other'
-                
+
                 # This simulates the condition that was failing in Action 6
                 has_location = 'Location' in mock_303_response.headers
                 assert not has_location, "303 response should not have Location header (matches actual issue)"
-                
+
                 print("✓ All 303 Redirect Detection Tests - PASSED")
                 print("  This test suite would have detected the authentication issue that caused")
                 print("  the 'Match List API received 303 See Other' error in Action 6:")
@@ -6892,7 +6881,7 @@ def action6_gather_module_tests() -> bool:
                 print("  - 303 redirects without Location headers indicating session issues")
                 print("  - Need for session refresh and navigation recovery")
                 return True
-                
+
             except Exception as e:
                 print(f"✗ 303 Redirect Detection Test failed: {e}")
                 import traceback
