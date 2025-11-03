@@ -1021,9 +1021,8 @@ def reset_db_actn(session_manager: SessionManager, *_):
         finally:
             # Clean up the temporary manager and its session/engine
             logger.debug("Cleaning up temporary resource manager for reset...")
-            if temp_manager:
-                if recreation_session:
-                    temp_manager.return_session(recreation_session)
+            if temp_manager and recreation_session:
+                temp_manager.return_session(recreation_session)
                 # DON'T dispose engine here - let it flush changes naturally
             logger.debug("Temporary resource manager cleanup finished.")
 

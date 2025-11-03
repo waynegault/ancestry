@@ -17,7 +17,7 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
 
@@ -53,8 +53,14 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
         pass  # Graceful degradation if performance monitor not available
 
 
-def _update_session_performance_tracking(session_manager, duration: float, response_status: str) -> None:
-    """Update session manager with performance tracking data."""
+def _update_session_performance_tracking(session_manager, duration: float, _response_status: str) -> None:
+    """Update session manager with performance tracking data.
+
+    Args:
+        session_manager: SessionManager instance
+        duration: Response duration in seconds
+        _response_status: Response status (unused, kept for API compatibility)
+    """
     try:
         # Initialize tracking if not exists
         if not hasattr(session_manager, '_response_times'):
@@ -175,7 +181,7 @@ import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List, Literal, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -298,7 +304,7 @@ class MaxApiFailuresExceededError(Exception):
 # End of MaxApiFailuresExceededError
 
 # OPTIMIZATION: Profile caching using existing global cache infrastructure
-def _get_cached_profile(profile_id: str) -> Optional[Dict]:
+def _get_cached_profile(profile_id: str) -> Optional[dict]:
     """Get profile from persistent cache if available."""
     if global_cache is None:
         return None
@@ -312,7 +318,7 @@ def _get_cached_profile(profile_id: str) -> Optional[Dict]:
         logger.warning(f"Error reading profile cache for {profile_id}: {e}")
     return None
 
-def _cache_profile(profile_id: str, profile_data: Dict) -> None:
+def _cache_profile(profile_id: str, profile_data: dict) -> None:
     """Cache profile data using the global persistent cache."""
     if global_cache is None:
         return
@@ -331,6 +337,7 @@ def _cache_profile(profile_id: str, profile_data: Dict) -> None:
 
 
 # === ETHNICITY ENRICHMENT HELPERS ===
+import contextlib
 from functools import lru_cache
 
 
@@ -469,7 +476,7 @@ def _apply_rate_limiting(session_manager: SessionManager) -> None:
 # ------------------------------------------------------------------------------
 
 
-def _initialize_gather_state() -> Dict[str, Any]:
+def _initialize_gather_state() -> dict[str, Any]:
     """Initializes counters and state variables for the gathering process."""
     return {
         "total_new": 0,
@@ -633,12 +640,12 @@ def _get_db_session_with_retries(session_manager: SessionManager, max_retries: i
 
 def _navigate_and_get_initial_page_data(
     session_manager: SessionManager, start_page: int
-) -> Tuple[Optional[List[Dict[str, Any]]], Optional[int], bool]:
+) -> tuple[Optional[list[dict[str, Any]]], Optional[int], bool]:
     """
     Ensures navigation to the match list and fetches initial page data.
 
     Returns:
-        Tuple: (matches_on_page, total_pages, success_flag)
+        tuple: (matches_on_page, total_pages, success_flag)
     """
     # Ensure we're on the correct page
     if not _ensure_on_match_list_page(session_manager):
@@ -683,7 +690,7 @@ def _navigate_and_get_initial_page_data(
 
 def _determine_page_processing_range(
     total_pages_from_api: int, start_page: int
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Determines the last page to process and total pages in the run."""
     max_pages_config = config_schema.api.max_pages
     logger.debug(f"🔍 DEBUG MAX_PAGES config value: {max_pages_config} (from config_schema.api.max_pages)")
@@ -703,7 +710,7 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
-def _cleanup_progress_bar(progress_bar, state: Dict[str, Any], loop_final_success: bool) -> None:
+def _cleanup_progress_bar(progress_bar, state: dict[str, Any], loop_final_success: bool) -> None:
     """
     Clean up progress bar at end of processing.
 
@@ -730,7 +737,7 @@ def _cleanup_progress_bar(progress_bar, state: Dict[str, Any], loop_final_succes
             progress_bar.update(remaining_to_mark_error)
 
     try:
-        # Set final status before closing
+        # set final status before closing
         progress_bar.set_description("Complete")
         progress_bar.refresh()  # Force update before close
         progress_bar.close()
@@ -744,9 +751,9 @@ def _process_single_page(
     session_manager: SessionManager,
     current_page_num: int,
     start_page: int,
-    matches_on_page_for_batch: Optional[List[Dict[str, Any]]],
+    matches_on_page_for_batch: Optional[list[dict[str, Any]]],
     progress_bar,
-    state: Dict[str, Any],
+    state: dict[str, Any],
     loop_final_success: bool
 ) -> tuple[int, bool]:
     """
@@ -762,7 +769,7 @@ def _process_single_page(
         loop_final_success: Current success status
 
     Returns:
-        Tuple of (next_page_num, loop_success)
+        tuple of (next_page_num, loop_success)
     """
     # Check session health
     if not _check_and_handle_session_health(session_manager, current_page_num, progress_bar, state):
@@ -823,11 +830,11 @@ def _handle_page_fetch_and_validation(
     session_manager: SessionManager,
     current_page_num: int,
     start_page: int,
-    matches_on_page_for_batch: Optional[List[Dict[str, Any]]],
+    matches_on_page_for_batch: Optional[list[dict[str, Any]]],
     progress_bar,
-    state: Dict[str, Any],
+    state: dict[str, Any],
     loop_final_success: bool
-) -> tuple[Optional[List[Dict[str, Any]]], bool, bool]:
+) -> tuple[Optional[list[dict[str, Any]]], bool, bool]:
     """
     Handle fetching and validating matches for a page.
 
@@ -841,8 +848,8 @@ def _handle_page_fetch_and_validation(
         loop_final_success: Current success status
 
     Returns:
-        Tuple of (matches, should_continue, loop_success)
-        - matches: List of matches or None
+        tuple of (matches, should_continue, loop_success)
+        - matches: list of matches or None
         - should_continue: True to continue to next page, False to process this page
         - loop_success: Updated success status
     """
@@ -880,7 +887,7 @@ def _handle_page_fetch_and_validation(
 
 
 def _update_state_and_progress(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     progress_bar,
     page_new: int,
     page_updated: int,
@@ -915,17 +922,17 @@ def _update_state_and_progress(
 
 def _try_fast_skip_page(
     session_manager: SessionManager,
-    matches_on_page: List[Dict[str, Any]],
+    matches_on_page: list[dict[str, Any]],
     current_page_num: int,
     progress_bar,
-    state: Dict[str, Any]
+    state: dict[str, Any]
 ) -> bool:
     """
     Try to fast-skip entire page if all matches are unchanged.
 
     Args:
         session_manager: SessionManager instance
-        matches_on_page: List of matches on current page
+        matches_on_page: list of matches on current page
         current_page_num: Current page number
         progress_bar: Progress bar instance
         state: State dictionary for tracking
@@ -968,8 +975,8 @@ def _fetch_page_matches(
     db_session: SqlAlchemySession,
     current_page_num: int,
     progress_bar,
-    state: Dict[str, Any]
-) -> Optional[List[Dict[str, Any]]]:
+    state: dict[str, Any]
+) -> Optional[list[dict[str, Any]]]:
     """
     Fetch matches for a specific page with error handling.
 
@@ -981,7 +988,7 @@ def _fetch_page_matches(
         state: State dictionary for error accumulation
 
     Returns:
-        List of matches or None if fetch failed
+        list of matches or None if fetch failed
     """
     try:
         if not session_manager.is_sess_valid():
@@ -1022,7 +1029,7 @@ def _fetch_page_matches(
 def _get_database_session_with_retry(
     session_manager: SessionManager,
     current_page_num: int,
-    state: Dict[str, Any],
+    state: dict[str, Any],
     max_retries: int = 3
 ) -> Optional[SqlAlchemySession]:
     """
@@ -1060,7 +1067,7 @@ def _check_and_handle_session_health(
     session_manager: SessionManager,
     current_page_num: int,
     progress_bar,
-    state: Dict[str, Any]
+    state: dict[str, Any]
 ) -> bool:
     """
     Check session health and handle proactive refresh.
@@ -1119,13 +1126,13 @@ def _main_page_processing_loop(
     start_page: int,
     last_page_to_process: int,
     total_pages_in_run: int,  # Added this argument
-    initial_matches_on_page: Optional[List[Dict[str, Any]]],
-    state: Dict[str, Any],  # Pass the whole state dict
+    initial_matches_on_page: Optional[list[dict[str, Any]]],
+    state: dict[str, Any],  # Pass the whole state dict
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
 
     # Calculate dynamic API failure threshold based on total pages to process
-    global CRITICAL_API_FAILURE_THRESHOLD
+    global CRITICAL_API_FAILURE_THRESHOLD  # noqa: PLW0603
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
     original_threshold = CRITICAL_API_FAILURE_THRESHOLD
     CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold
@@ -1156,7 +1163,7 @@ def _main_page_processing_loop(
         unit="matches",
         show_memory=True,
         show_rate=True
-    ) as enhanced_progress:
+    ):
 
         # Keep original tqdm for compatibility
         with logging_redirect_tqdm():
@@ -1173,7 +1180,7 @@ def _main_page_processing_loop(
                 maxinterval=1.0,
             )
         try:
-            matches_on_page_for_batch: Optional[List[Dict[str, Any]]] = (
+            matches_on_page_for_batch: Optional[list[dict[str, Any]]] = (
                 initial_matches_on_page
             )
 
@@ -1250,7 +1257,7 @@ def _log_action_start(start_page: int) -> None:
     logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
 
 
-def _handle_initial_fetch(session_manager: SessionManager, start_page: int, state: Dict[str, Any]) -> Tuple[int, int, int]:
+def _handle_initial_fetch(session_manager: SessionManager, start_page: int, state: dict[str, Any]) -> tuple[int, int, int]:
     """
     Handle initial navigation and page fetch.
 
@@ -1260,7 +1267,7 @@ def _handle_initial_fetch(session_manager: SessionManager, start_page: int, stat
         state: State dictionary
 
     Returns:
-        Tuple of (total_pages_api, last_page_to_process, total_pages_in_run)
+        tuple of (total_pages_api, last_page_to_process, total_pages_in_run)
 
     Raises:
         RuntimeError: If initial fetch fails
@@ -1307,7 +1314,7 @@ def _handle_initial_fetch(session_manager: SessionManager, start_page: int, stat
     return total_pages_api, last_page_to_process, total_pages_in_run
 
 
-def _log_final_results(session_manager: SessionManager, state: Dict[str, Any], action_start_time: float) -> None:
+def _log_final_results(session_manager: SessionManager, state: dict[str, Any], action_start_time: float) -> None:
     """
     Log final summary and performance statistics.
 
@@ -1423,8 +1430,8 @@ def coord(
 
 
 def _lookup_existing_persons(
-    session: SqlAlchemySession, uuids_on_page: List[str]
-) -> Dict[str, Person]:
+    session: SqlAlchemySession, uuids_on_page: list[str]
+) -> dict[str, Person]:
     """
     Queries the database for existing Person records based on a list of UUIDs.
     Eager loads related DnaMatch and FamilyTree data for efficiency.
@@ -1442,7 +1449,7 @@ def _lookup_existing_persons(
         ValueError: If a critical data mismatch (like Enum) is detected.
     """
     # Step 1: Initialize result map
-    existing_persons_map: Dict[str, Person] = {}
+    existing_persons_map: dict[str, Person] = {}
     # Step 2: Handle empty input list
     if not uuids_on_page:
         return existing_persons_map
@@ -1456,12 +1463,12 @@ def _lookup_existing_persons(
         existing_persons = (
             session.query(Person)
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .filter(Person.deleted_at == None)  # type: ignore  # Exclude soft-deleted
+            .filter(Person.deleted_at is None)  # type: ignore  # Exclude soft-deleted
             .filter(Person.uuid.in_(uuids_norm))  # type: ignore
             .all()
         )
         # Step 4: Populate the result map (key by UUID)
-        existing_persons_map: Dict[str, Person] = {
+        existing_persons_map: dict[str, Person] = {
             str(person.uuid).upper(): person
             for person in existing_persons
             if person.uuid is not None
@@ -1501,28 +1508,28 @@ def _lookup_existing_persons(
 
 
 def _identify_fetch_candidates(
-    matches_on_page: List[Dict[str, Any]], existing_persons_map: Dict[str, Any]
-) -> Tuple[Set[str], List[Dict[str, Any]], int]:
+    matches_on_page: list[dict[str, Any]], existing_persons_map: dict[str, Any]
+) -> tuple[set[str], list[dict[str, Any]], int]:
     """
     Analyzes matches from a page against existing database records to determine:
     1. Which matches need detailed API data fetched (new or potentially changed).
     2. Which matches can be skipped (no apparent change based on list view data).
 
     Args:
-        matches_on_page: List of match data dictionaries from the `get_matches` function.
+        matches_on_page: list of match data dictionaries from the `get_matches` function.
         existing_persons_map: Dictionary mapping UUIDs to existing Person objects
                                (from `_lookup_existing_persons`).
 
     Returns:
         A tuple containing:
-        - fetch_candidates_uuid (Set[str]): Set of UUIDs requiring API detail fetches.
-        - matches_to_process_later (List[Dict]): List of match data dicts for candidates.
+        - fetch_candidates_uuid (set[str]): set of UUIDs requiring API detail fetches.
+        - matches_to_process_later (list[dict]): list of match data dicts for candidates.
         - skipped_count_this_batch (int): Number of matches skipped in this batch.
     """
     # Step 1: Initialize results
-    fetch_candidates_uuid: Set[str] = set()
+    fetch_candidates_uuid: set[str] = set()
     skipped_count_this_batch = 0
-    matches_to_process_later: List[Dict[str, Any]] = []
+    matches_to_process_later: list[dict[str, Any]] = []
     invalid_uuid_count = 0
 
     # Step 2: Iterate through matches fetched from the current page
@@ -1625,9 +1632,9 @@ def _identify_fetch_candidates(
 # Note: @progressive_processing decorator removed - not essential for core functionality
 def _perform_api_prefetches(
     session_manager: SessionManager,
-    fetch_candidates_uuid: Set[str],
-    matches_to_process_later: List[Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
+    fetch_candidates_uuid: set[str],
+    matches_to_process_later: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     """
     Performs parallel API calls to prefetch detailed data for candidate matches
     using a ThreadPoolExecutor. Fetches combined details, relationship probability,
@@ -1636,8 +1643,8 @@ def _perform_api_prefetches(
 
     Args:
         session_manager: The active SessionManager instance.
-        fetch_candidates_uuid: Set of UUIDs requiring detail fetches.
-        matches_to_process_later: List of match data dicts corresponding to the candidates.
+        fetch_candidates_uuid: set of UUIDs requiring detail fetches.
+        matches_to_process_later: list of match data dicts corresponding to the candidates.
 
     Returns:
         A dictionary containing the prefetched data, organized by type.
@@ -1652,17 +1659,17 @@ def _perform_api_prefetches(
     """
     import time  # For timing API operations
 
-    batch_combined_details: Dict[str, Optional[Dict[str, Any]]] = {}
-    batch_tree_data: Dict[str, Optional[Dict[str, Any]]] = (
+    batch_combined_details: dict[str, Optional[dict[str, Any]]] = {}
+    batch_tree_data: dict[str, Optional[dict[str, Any]]] = (
         {}
     )  # Changed to Optional value
-    batch_relationship_prob_data: Dict[str, Optional[str]] = {}
+    batch_relationship_prob_data: dict[str, Optional[str]] = {}
 
     if not fetch_candidates_uuid:
         logger.debug("No fetch candidates provided for API pre-fetch.")
         return {"combined": {}, "tree": {}, "rel_prob": {}}
 
-    futures: Dict[Any, Tuple[str, str]] = {}
+    futures: dict[Any, tuple[str, str]] = {}
     fetch_start_time = time.time()
     num_candidates = len(fetch_candidates_uuid)
     my_tree_id = session_manager.my_tree_id
@@ -1835,18 +1842,15 @@ def _perform_api_prefetches(
         if badge_futures:
             logger.debug(f"Submitted {len(badge_futures)} badge details API calls")
 
-        temp_badge_results: Dict[str, Optional[Dict[str, Any]]] = {}
-        temp_ladder_results: Dict[str, Optional[Dict[str, Any]]] = (
+        temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
+        temp_ladder_results: dict[str, Optional[dict[str, Any]]] = (
             {}
         )  # For ladder results before combining
 
         logger.debug(f"Processing {len(futures)} initially submitted API tasks...")
-        processed_tasks = 0
-        for future in as_completed(futures):
+        for processed_tasks, future in enumerate(as_completed(futures), start=1):
             # SURGICAL FIX #20: Universal session health check during batch processing
-            processed_tasks += 1
-            if processed_tasks % 10 == 0:  # Check every 10 processed tasks
-                if not session_manager.check_session_health():
+            if processed_tasks % 10 == 0 and not session_manager.check_session_health():  # Check every 10 processed tasks
                     logger.critical(
                         f"🚨 Session death detected during batch processing "
                         f"(task {processed_tasks}/{len(futures)}). Cancelling remaining tasks."
@@ -1936,10 +1940,10 @@ def _perform_api_prefetches(
                 )
                 raise MaxApiFailuresExceededError(error_msg)
 
-        cfpid_to_uuid_map: Dict[str, str] = {}
+        cfpid_to_uuid_map: dict[str, str] = {}
         ladder_futures = {}
         if my_tree_id and temp_badge_results:  # Check temp_badge_results has items
-            cfpid_list_for_ladder: List[str] = []
+            cfpid_list_for_ladder: list[str] = []
             for uuid_val, badge_result_data in temp_badge_results.items():
                 if badge_result_data:  # Ensure badge_result_data is not None
                     cfpid = badge_result_data.get("their_cfpid")
@@ -2018,11 +2022,11 @@ def _perform_api_prefetches(
 def _prepare_bulk_db_data(
     session: SqlAlchemySession,
     session_manager: SessionManager,
-    matches_to_process: List[Dict[str, Any]],
-    existing_persons_map: Dict[str, Person],
-    prefetched_data: Dict[str, Dict[str, Any]],
+    matches_to_process: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person],
+    prefetched_data: dict[str, dict[str, Any]],
     progress_bar: Optional[tqdm],
-) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """
     Processes individual matches using prefetched API data, compares with existing
     DB records, and prepares dictionaries formatted for bulk database operations
@@ -2031,22 +2035,22 @@ def _prepare_bulk_db_data(
     Args:
         session: The active SQLAlchemy database session.
         session_manager: The active SessionManager instance.
-        matches_to_process: List of match data dictionaries identified as candidates.
+        matches_to_process: list of match data dictionaries identified as candidates.
         existing_persons_map: Dictionary mapping UUIDs to existing Person objects.
         prefetched_data: Dictionary containing results from `_perform_api_prefetches`.
         progress_bar: Optional tqdm progress bar instance to update.
 
     Returns:
         A tuple containing:
-        - prepared_bulk_data (List[Dict]): A list where each element is a dictionary
+        - prepared_bulk_data (list[dict]): A list where each element is a dictionary
           representing one person and contains keys 'person', 'dna_match', 'family_tree'
           with data formatted for bulk operations (or None if no change needed).
-        - page_statuses (Dict[str, int]): Counts of 'new', 'updated', 'error' outcomes
+        - page_statuses (dict[str, int]): Counts of 'new', 'updated', 'error' outcomes
           during the preparation phase for this batch.
     """
     # Step 1: Initialize results
-    prepared_bulk_data: List[Dict[str, Any]] = []
-    page_statuses: Dict[str, int] = {
+    prepared_bulk_data: list[dict[str, Any]] = []
+    page_statuses: dict[str, int] = {
         "new": 0,
         "updated": 0,
         "error": 0,
@@ -2066,7 +2070,7 @@ def _prepare_bulk_db_data(
         # Initialize state for this match
         uuid_val = match_list_data.get("uuid")
         log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
-        prepared_data_for_this_match: Optional[Dict[str, Any]] = None
+        prepared_data_for_this_match: Optional[dict[str, Any]] = None
         status_for_this_match: Literal["new", "updated", "skipped", "error"] = (
             "error"  # Default to error
         )
@@ -2192,15 +2196,15 @@ async def _fetch_match_list_async(
     session_manager: SessionManager,
     page: int = 1,
     page_size: int = 75
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Async version of match list fetching for Phase 2 performance improvements.
-    
+
     Args:
         session_manager: SessionManager for authentication
         page: Page number to fetch
         page_size: Number of matches per page
-        
+
     Returns:
         Match list data or None if failed
     """
@@ -2213,15 +2217,14 @@ async def _fetch_match_list_async(
             "Content-Type": "application/json"
         }
 
-        result = await async_api_request(
+        return await async_api_request(
             url=url,
             method="GET",
             headers=headers,
             session_manager=session_manager,
-            api_description=f"Match List Page {page}"
+            api_description=f"Match list Page {page}"
         )
 
-        return result
 
     except Exception as e:
         logger.error(f"Async match list fetch failed for page {page}: {e}")
@@ -2231,14 +2234,14 @@ async def _fetch_match_list_async(
 async def _fetch_match_details_async(
     session_manager: SessionManager,
     match_uuid: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Async version of match details fetching for Phase 2 performance improvements.
-    
+
     Args:
         session_manager: SessionManager for authentication
         match_uuid: UUID of the match to fetch details for
-        
+
     Returns:
         Match details data or None if failed
     """
@@ -2250,7 +2253,7 @@ async def _fetch_match_details_async(
             "Accept": "application/json"
         }
 
-        result = await async_api_request(
+        return await async_api_request(
             url=url,
             method="GET",
             headers=headers,
@@ -2258,7 +2261,6 @@ async def _fetch_match_details_async(
             api_description=f"Match Details {match_uuid}"
         )
 
-        return result
 
     except Exception as e:
         logger.error(f"Async match details fetch failed for {match_uuid}: {e}")
@@ -2267,18 +2269,18 @@ async def _fetch_match_details_async(
 
 async def _async_batch_api_prefetch(
     session_manager: SessionManager,
-    match_candidates: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+    match_candidates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """
     Phase 2: High-performance async batch API prefetching.
     Replaces ThreadPoolExecutor with native async/await for better resource utilization.
-    
+
     Args:
         session_manager: SessionManager for authentication
-        match_candidates: List of match dictionaries to process
-        
+        match_candidates: list of match dictionaries to process
+
     Returns:
-        List of processed matches with enriched data
+        list of processed matches with enriched data
     """
     from utils import get_configured_concurrency
 
@@ -2301,7 +2303,7 @@ async def _async_batch_api_prefetch(
     async_start_time = time.time()
     logger.info(f"Phase 2: Starting async batch prefetch for {len(match_candidates)} matches (concurrency: {max_concurrent})")
 
-    async def process_single_match(match_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def process_single_match(match_data: dict[str, Any]) -> dict[str, Any]:
         async with semaphore:
             match_start_time = time.time()
             match_uuid = match_data.get("sampleId")
@@ -2369,9 +2371,9 @@ async def _async_batch_api_prefetch(
 # FINAL OPTIMIZATION 3: Advanced Async Integration - Enhanced Async Orchestrator
 async def _async_enhanced_api_orchestrator(
     session_manager: SessionManager,
-    fetch_candidates_uuid: Set[str],
-    matches_to_process_later: List[Dict[str, Any]]
-) -> Dict[str, Dict[str, Any]]:
+    fetch_candidates_uuid: set[str],
+    matches_to_process_later: list[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
     """
     Advanced async orchestration that replaces ThreadPoolExecutor patterns
     with native async/await for better resource utilization and scalability.
@@ -2507,17 +2509,17 @@ DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 
 def _execute_batched_db_operations(
     session: SqlAlchemySession,
-    operations: List[Dict[str, Any]],
+    operations: list[dict[str, Any]],
     batch_size: int = DB_BATCH_SIZE
 ) -> bool:
     """
     Phase 2: Execute database operations in smaller batches for better performance.
-    
+
     Args:
         session: SQLAlchemy session
-        operations: List of database operations
+        operations: list of database operations
         batch_size: Size of each batch
-        
+
     Returns:
         True if all batches succeeded, False otherwise
     """
@@ -2555,14 +2557,14 @@ def _execute_batched_db_operations(
     return True
 
 
-def _execute_single_create_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
+def _execute_single_create_operation(session: SqlAlchemySession, operation: dict[str, Any]) -> None:
     """Execute a single create operation."""
     # This would be customized based on the operation type
     # Placeholder for now - would need to be implemented based on actual operation structure
     pass
 
 
-def _execute_single_update_operation(session: SqlAlchemySession, operation: Dict[str, Any]) -> None:
+def _execute_single_update_operation(session: SqlAlchemySession, operation: dict[str, Any]) -> None:
     """Execute a single update operation."""
     # This would be customized based on the operation type
     # Placeholder for now - would need to be implemented based on actual operation structure
@@ -2573,24 +2575,24 @@ def _execute_single_update_operation(session: SqlAlchemySession, operation: Dict
 # PHASE 3: ADVANCED OPTIMIZATIONS - SMART MATCH PRIORITIZATION
 # ===================================================================
 
-def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _prioritize_matches_by_importance(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Phase 3: Intelligently prioritize matches for processing.
-    
+
     Priority order:
     1. High cM matches (>50 cM) - likely close relatives
     2. Medium cM matches (20-50 cM) - potential cousins
     3. Matches with trees - more genealogical value
     4. Recent activity - newly added matches
     5. Low cM matches (<20 cM) - distant relatives
-    
+
     Args:
-        matches: List of match dictionaries
-        
+        matches: list of match dictionaries
+
     Returns:
         Sorted list of matches by priority (highest first)
     """
-    def get_match_priority(match: Dict[str, Any]) -> tuple:
+    def get_match_priority(match: dict[str, Any]) -> tuple:
         cm_value = match.get("sharedCentimorgans", 0)
         has_tree = bool(match.get("treeId") or match.get("hasTree", False))
         is_recent = match.get("isNew", False)
@@ -2623,20 +2625,20 @@ def _prioritize_matches_by_importance(matches: List[Dict[str, Any]]) -> List[Dic
 
 
 def _smart_batch_processing(
-    matches: List[Dict[str, Any]],
+    matches: list[dict[str, Any]],
     session_manager: SessionManager,
     batch_size: Optional[int] = None  # Now gets configured batch size
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Phase 3: Smart batch processing with adaptive sizing based on match priority.
-    
+
     Args:
-        matches: List of matches to process
+        matches: list of matches to process
         session_manager: SessionManager for API calls
         batch_size: Base batch size (adjusted based on priority)
-        
+
     Returns:
-        List of processed matches
+        list of processed matches
     """
     # Use configured batch size if not provided
     if batch_size is None:
@@ -2677,16 +2679,16 @@ def _smart_batch_processing(
     return processed_matches
 
 
-def _process_match_batch(matches: List[Dict[str, Any]], session_manager: SessionManager) -> List[Dict[str, Any]]:
+def _process_match_batch(matches: list[dict[str, Any]], _session_manager: SessionManager) -> list[dict[str, Any]]:
     """
     Process a batch of matches with error handling.
-    
+
     Args:
         matches: Batch of matches to process
-        session_manager: SessionManager for API calls
-        
+        _session_manager: SessionManager for API calls (unused, kept for API compatibility)
+
     Returns:
-        List of successfully processed matches
+        list of successfully processed matches
     """
     # Placeholder for actual batch processing logic
     # This would integrate with existing _perform_api_prefetches or async equivalent
@@ -2705,7 +2707,7 @@ class MemoryOptimizedMatchProcessor:
     def __init__(self, max_memory_mb: int = 500):
         """
         Initialize with memory limit.
-        
+
         Args:
             max_memory_mb: Maximum memory usage in MB
         """
@@ -2715,18 +2717,18 @@ class MemoryOptimizedMatchProcessor:
 
     def process_matches_with_memory_management(
         self,
-        matches: List[Dict[str, Any]],
+        matches: list[dict[str, Any]],
         session_manager: SessionManager
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Process matches with active memory management.
-        
+
         Args:
-            matches: List of matches to process
+            matches: list of matches to process
             session_manager: SessionManager for API calls
-            
+
         Returns:
-            List of processed matches
+            list of processed matches
         """
         import gc
 
@@ -2768,24 +2770,29 @@ class MemoryOptimizedMatchProcessor:
 
         return processed_matches
 
-    def _process_single_match(self, match: Dict[str, Any], session_manager: SessionManager) -> Dict[str, Any]:
-        """Process a single match with minimal memory footprint."""
+    def _process_single_match(self, match: dict[str, Any], _session_manager: SessionManager) -> dict[str, Any]:
+        """Process a single match with minimal memory footprint.
+
+        Args:
+            match: Match data to process
+            _session_manager: SessionManager (unused, kept for API compatibility)
+        """
         # Placeholder - would integrate with existing match processing logic
         return match
 
 
-def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     De-duplicate Person creates based on Profile ID before bulk insert.
-    
+
     Args:
-        person_creates_raw: List of raw person create data dictionaries
-        
+        person_creates_raw: list of raw person create data dictionaries
+
     Returns:
-        List of filtered person create data (duplicates removed)
+        list of filtered person create data (duplicates removed)
     """
     person_creates_filtered = []
-    seen_profile_ids: Set[str] = set()
+    seen_profile_ids: set[str] = set()
     skipped_duplicates = 0
 
     if not person_creates_raw:
@@ -2813,29 +2820,29 @@ def _deduplicate_person_creates(person_creates_raw: List[Dict[str, Any]]) -> Lis
     return person_creates_filtered
 
 
-def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Dict[str, Any]]) -> Tuple[Set[str], Set[str]]:
+def _check_existing_records(session: SqlAlchemySession, insert_data_raw: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
     """
     Check database for existing profile IDs and UUIDs to prevent constraint violations.
-    
+
     Args:
         session: SQLAlchemy session
         insert_data_raw: Raw insert data to check
-        
+
     Returns:
-        Tuple of (existing_profile_ids, existing_uuids) sets
+        tuple of (existing_profile_ids, existing_uuids) sets
     """
     profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw if item.get("profile_id")}
     uuids_to_check = {str(item.get("uuid") or "").upper() for item in insert_data_raw if item.get("uuid")}
 
-    existing_profile_ids: Set[str] = set()
-    existing_uuids: Set[str] = set()
+    existing_profile_ids: set[str] = set()
+    existing_uuids: set[str] = set()
 
     if profile_ids_to_check:
         try:
             logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
             existing_records = session.query(Person.profile_id).filter(
                 Person.profile_id.in_(profile_ids_to_check),
-                Person.deleted_at == None
+                Person.deleted_at is None
             ).all()
             existing_profile_ids = {record.profile_id for record in existing_records}
             if existing_profile_ids:
@@ -2848,7 +2855,7 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
             logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
             existing_uuid_records = session.query(Person.uuid).filter(
                 Person.uuid.in_(uuids_to_check),
-                Person.deleted_at == None
+                Person.deleted_at is None
             ).all()
             existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
             if existing_uuids:
@@ -2859,14 +2866,14 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: List[Di
     return existing_profile_ids, existing_uuids
 
 
-def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Optional[List[Dict[str, Any]]] = None) -> bool:
+def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Optional[list[dict[str, Any]]] = None) -> bool:
     """
     Handle UNIQUE constraint violations by attempting individual inserts.
-    
+
     Args:
         session: SQLAlchemy session
         insert_data: Data that failed bulk insert (optional)
-        
+
     Returns:
         True if recovery was successful
     """
@@ -2905,20 +2912,20 @@ def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Op
 
 
 def _prepare_person_insert_data(
-    person_creates_filtered: List[Dict[str, Any]],
+    person_creates_filtered: list[dict[str, Any]],
     session: SqlAlchemySession,
-    existing_persons_map: Dict[str, Person]
-) -> List[Dict[str, Any]]:
+    existing_persons_map: dict[str, Person]
+) -> list[dict[str, Any]]:
     """
     Prepare and validate person insert data, removing duplicates and existing records.
-    
+
     Args:
         person_creates_filtered: Filtered person create data
         session: SQLAlchemy session
         existing_persons_map: Map of existing persons by UUID
-        
+
     Returns:
-        List of validated insert data ready for bulk insert
+        list of validated insert data ready for bulk insert
     """
     if not person_creates_filtered:
         return []
@@ -2935,8 +2942,8 @@ def _prepare_person_insert_data(
     existing_profile_ids, existing_uuids = _check_existing_records(session, insert_data_raw)
 
     # De-duplicate by UUID within this batch and drop existing records
-    seen_uuids: Set[str] = set()
-    insert_data: List[Dict[str, Any]] = []
+    seen_uuids: set[str] = set()
+    insert_data: list[dict[str, Any]] = []
 
     for item in insert_data_raw:
         uuid_val = str(item.get("uuid") or "").upper()
@@ -2971,8 +2978,8 @@ def _prepare_person_insert_data(
 
 def _execute_bulk_db_operations(
     session: SqlAlchemySession,
-    prepared_bulk_data: List[Dict[str, Any]],
-    existing_persons_map: Dict[str, Person],  # Needed to potentially map existing IDs
+    prepared_bulk_data: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person],  # Needed to potentially map existing IDs
 ) -> bool:
     """
     Executes bulk INSERT and UPDATE operations for Person, DnaMatch, and FamilyTree
@@ -2980,7 +2987,7 @@ def _execute_bulk_db_operations(
 
     Args:
         session: The active SQLAlchemy database session (within a transaction).
-        prepared_bulk_data: List of dictionaries prepared by `_prepare_bulk_db_data`.
+        prepared_bulk_data: list of dictionaries prepared by `_prepare_bulk_db_data`.
                             Each dict contains 'person', 'dna_match', 'family_tree' keys
                             with data and an '_operation' hint ('create'/'update').
         existing_persons_map: Dictionary mapping UUIDs to existing Person objects,
@@ -3000,7 +3007,7 @@ def _execute_bulk_db_operations(
 
     try:
         # Initialize variables that might be needed in exception handlers
-        insert_data: List[Dict[str, Any]] = []
+        insert_data: list[dict[str, Any]] = []
 
         # Step 2: Separate data by operation type (create/update) and table
         # Person Operations
@@ -3022,7 +3029,7 @@ def _execute_bulk_db_operations(
             d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")
         ]
 
-        created_person_map: Dict[str, int] = {}  # Maps UUID -> new Person ID
+        created_person_map: dict[str, int] = {}  # Maps UUID -> new Person ID
 
         # --- Step 3: Person Creates ---
         # Use helper function to de-duplicate Person creates
@@ -3154,7 +3161,7 @@ def _execute_bulk_db_operations(
             logger.debug("No Person updates needed for this batch.")
 
         # --- Step 5: Create Master ID Map (for linking related records) ---
-        all_person_ids_map: Dict[str, int] = created_person_map.copy()
+        all_person_ids_map: dict[str, int] = created_person_map.copy()
         for p_update_data in person_updates:
             if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
                 all_person_ids_map[p_update_data["uuid"]] = p_update_data[
@@ -3178,7 +3185,7 @@ def _execute_bulk_db_operations(
         # --- Step 6: DnaMatch Bulk Upsert (REVISED: Separate Insert/Update) ---
         if dna_match_ops:
             dna_insert_data = []
-            dna_update_mappings = []  # List for bulk updates
+            dna_update_mappings = []  # list for bulk updates
             # Query existing DnaMatch records for people in this batch to determine insert vs update
             people_ids_in_batch = {
                 pid for pid in all_person_ids_map.values() if pid is not None
@@ -3190,9 +3197,7 @@ def _execute_bulk_db_operations(
                     .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
                     .all()
                 )
-                existing_dna_matches_map = {
-                    pid: match_id for pid, match_id in existing_matches
-                }
+                existing_dna_matches_map = dict(existing_matches)
                 logger.debug(
                     f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
                 )
@@ -3255,7 +3260,7 @@ def _execute_bulk_db_operations(
                     )
                     update_map["updated_at"] = datetime.now(
                         timezone.utc
-                    )  # Set update timestamp
+                    )  # set update timestamp
                     # Add to update list only if there are fields other than id/people_id/updated_at
                     if len(update_map) > 3:
                         dna_update_mappings.append(update_map)
@@ -3279,7 +3284,7 @@ def _execute_bulk_db_operations(
 
                 # Separate ethnicity columns from core data (bulk_insert_mappings doesn't handle dynamic columns)
                 core_insert_data = []
-                ethnicity_updates = []  # List of (people_id, ethnicity_dict) tuples
+                ethnicity_updates = []  # list of (people_id, ethnicity_dict) tuples
 
                 for insert_map in dna_insert_data:
                     core_map = {k: v for k, v in insert_map.items() if not k.startswith("ethnicity_")}
@@ -3313,7 +3318,7 @@ def _execute_bulk_db_operations(
 
                 # Separate ethnicity columns from core data (bulk_update_mappings doesn't handle dynamic columns)
                 core_update_mappings = []
-                ethnicity_updates = []  # List of (id, ethnicity_dict) tuples
+                ethnicity_updates = []  # list of (id, ethnicity_dict) tuples
 
                 for update_map in dna_update_mappings:
                     core_map = {k: v for k, v in update_map.items() if not k.startswith("ethnicity_")}
@@ -3469,10 +3474,10 @@ def _execute_bulk_db_operations(
 
 def _do_batch(
     session_manager: SessionManager,
-    matches_on_page: List[Dict[str, Any]],
+    matches_on_page: list[dict[str, Any]],
     current_page: int,
     progress_bar: Optional[tqdm] = None,  # Accept progress bar
-) -> Tuple[int, int, int, int]:
+) -> tuple[int, int, int, int]:
     """
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
     If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
@@ -3580,18 +3585,18 @@ def _do_batch(
 # Note: @progressive_processing decorator removed - not essential for core functionality
 def _process_page_matches(
     session_manager: SessionManager,
-    matches_on_page: List[Dict[str, Any]],
+    matches_on_page: list[dict[str, Any]],
     current_page: int,
     progress_bar: Optional[tqdm] = None,
     is_batch: bool = False,
     reused_session: Optional[SqlAlchemySession] = None,  # SURGICAL FIX #7: Accept reused session
-) -> Tuple[int, int, int, int]:
+) -> tuple[int, int, int, int]:
     """
     Original batch processing logic - now used by both single page and chunked batch processing.
     Coordinates DB lookups, API prefetches, data preparation, and bulk DB operations.
     """
     # Step 1: Initialization
-    page_statuses: Dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+    page_statuses: dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
     my_uuid = session_manager.my_uuid
     session: Optional[SqlAlchemySession] = None
@@ -3825,10 +3830,9 @@ def _process_page_matches(
                 0, num_matches_on_page - items_already_accounted_for_in_bar
             )
             if remaining_in_batch > 0:
-                try:
+                from contextlib import suppress
+                with suppress(Exception):  # Ignore progress bar errors during exception handling
                     progress_bar.update(remaining_in_batch)
-                except Exception:
-                    pass  # Ignore progress bar errors during exception handling
         # All remaining items in the batch are considered errors
         final_error_count_for_page = num_matches_on_page - (
             page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
@@ -3868,7 +3872,7 @@ def _process_page_matches(
                     var_obj = locals()[var_name]
                     if hasattr(var_obj, 'clear') or isinstance(var_obj, (list, set)):
                         var_obj.clear()
-                    # Set to None to free reference
+                    # set to None to free reference
                     locals()[var_name] = None
 
             # Adaptive garbage collection based on memory usage and page number
@@ -3911,17 +3915,17 @@ def _process_page_matches(
 
 
 def _prepare_person_operation_data(
-    match: Dict[str, Any],
+    match: dict[str, Any],
     existing_person: Optional[Person],
-    prefetched_combined_details: Optional[Dict[str, Any]],
-    prefetched_tree_data: Optional[Dict[str, Any]],
+    prefetched_combined_details: Optional[dict[str, Any]],
+    prefetched_tree_data: Optional[dict[str, Any]],
     config_schema_arg: "ConfigSchema",  # Config schema argument
     match_uuid: str,
     formatted_match_username: str,
     match_in_my_tree: bool,
     log_ref_short: str,
     logger_instance: logging.Logger,
-) -> Tuple[Optional[Dict[str, Any]], bool]:
+) -> tuple[Optional[dict[str, Any]], bool]:
     """
     Prepares Person data for create or update operations based on API data and existing records.
 
@@ -3939,7 +3943,7 @@ def _prepare_person_operation_data(
 
     Returns:
         A tuple containing:
-        - person_op_dict (Optional[Dict]): Dictionary with person data and '_operation' key
+        - person_op_dict (Optional[dict]): Dictionary with person data and '_operation' key
           set to 'create' or 'update'. None if no update is needed.
         - person_fields_changed (bool): True if any fields were changed for an existing person,
           False otherwise.
@@ -4000,10 +4004,8 @@ def _prepare_person_operation_data(
 
     birth_year_val: Optional[int] = None
     if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             birth_year_val = int(prefetched_tree_data["their_birth_year"])
-        except (ValueError, TypeError):
-            pass
 
     last_logged_in_val: Optional[datetime] = profile_part.get("last_logged_in_dt")
     if isinstance(last_logged_in_val, datetime):
@@ -4035,7 +4037,7 @@ def _prepare_person_operation_data(
             person_op_dict,
             False,
         )  # False for person_fields_changed as it's a new person
-    person_data_for_update: Dict[str, Any] = {
+    person_data_for_update: dict[str, Any] = {
         "_operation": "update",
         "_existing_person_id": existing_person.id,
         "uuid": match_uuid.upper(),  # Keep UUID for identification
@@ -4147,15 +4149,15 @@ def _prepare_person_operation_data(
 
 
 def _prepare_dna_match_operation_data(
-    match: Dict[str, Any],
+    match: dict[str, Any],
     existing_dna_match: Optional[DnaMatch],
-    prefetched_combined_details: Optional[Dict[str, Any]],
+    prefetched_combined_details: Optional[dict[str, Any]],
     match_uuid: str,
     predicted_relationship: Optional[str],
     log_ref_short: str,
     logger_instance: logging.Logger,
     session_manager: SessionManager,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Prepares DnaMatch data for create or update operations by comparing API data with existing records.
 
@@ -4170,7 +4172,7 @@ def _prepare_dna_match_operation_data(
         session_manager: SessionManager instance for ethnicity API calls.
 
     Returns:
-        Optional[Dict[str, Any]]: Dictionary with DNA match data and '_operation' key set to 'create',
+        Optional[dict[str, Any]]: Dictionary with DNA match data and '_operation' key set to 'create',
         or None if no create/update is needed. The dictionary includes fields like: cm_dna,
         shared_segments, longest_shared_segment, etc.
     """
@@ -4324,14 +4326,14 @@ def _prepare_dna_match_operation_data(
 
 def _prepare_family_tree_operation_data(
     existing_family_tree: Optional[FamilyTree],
-    prefetched_tree_data: Optional[Dict[str, Any]],
+    prefetched_tree_data: Optional[dict[str, Any]],
     match_uuid: str,
     match_in_my_tree: bool,
     session_manager: SessionManager,
     config_schema_arg: "ConfigSchema",  # Config schema argument
     log_ref_short: str,
     logger_instance: logging.Logger,
-) -> Tuple[Optional[Dict[str, Any]], Literal["create", "update", "none"]]:
+) -> tuple[Optional[dict[str, Any]], Literal["create", "update", "none"]]:
     """
     Prepares FamilyTree data for create or update operations based on API data and existing records.
 
@@ -4347,7 +4349,7 @@ def _prepare_family_tree_operation_data(
 
     Returns:
         A tuple containing:
-        - tree_data (Optional[Dict]): Dictionary with family tree data and '_operation' key
+        - tree_data (Optional[dict]): Dictionary with family tree data and '_operation' key
           set to 'create' or 'update'. None if no create/update is needed.
         - tree_operation (Literal["create", "update", "none"]): The operation type determined
           for this family tree record.
@@ -4448,15 +4450,15 @@ def _prepare_family_tree_operation_data(
 
 def _do_match(
     _session: SqlAlchemySession,  # Changed from _ to session
-    match: Dict[str, Any],
+    match: dict[str, Any],
     session_manager: SessionManager,
     existing_person_arg: Optional[Person],
-    prefetched_combined_details: Optional[Dict[str, Any]],
-    prefetched_tree_data: Optional[Dict[str, Any]],
-    config_schema_arg: "ConfigSchema",  # Config schema argument
+    prefetched_combined_details: Optional[dict[str, Any]],
+    prefetched_tree_data: Optional[dict[str, Any]],
+    _config_schema_arg: "ConfigSchema",  # Config schema argument (unused, kept for API compatibility)
     logger_instance: logging.Logger,
-) -> Tuple[
-    Optional[Dict[str, Any]],
+) -> tuple[
+    Optional[dict[str, Any]],
     Literal["new", "updated", "skipped", "error"],
     Optional[str],
 ]:
@@ -4483,7 +4485,7 @@ def _do_match(
 
     Returns:
         A tuple containing:
-        - prepared_data (Optional[Dict[str, Any]]): Dictionary with keys 'person', 'dna_match', and
+        - prepared_data (Optional[dict[str, Any]]): Dictionary with keys 'person', 'dna_match', and
           'family_tree', each containing data for bulk operations or None if no change needed.
           Returns None if status is 'skipped' or 'error'.
         - status (Literal["new", "updated", "skipped", "error"]): The overall status determined
@@ -4510,7 +4512,7 @@ def _do_match(
     match_in_my_tree = match.get("in_my_tree", False)
     log_ref_short = f"UUID={match_uuid} User='{match_username}'"
 
-    prepared_data_for_bulk: Dict[str, Any] = {
+    prepared_data_for_bulk: dict[str, Any] = {
         "person": None,
         "dna_match": None,
         "family_tree": None,
@@ -4657,7 +4659,7 @@ def get_matches(
     session_manager: SessionManager,
     _db_session: SqlAlchemySession,  # Parameter name changed for clarity
     current_page: int = 1,
-) -> Optional[Tuple[List[Dict[str, Any]], Optional[int]]]:
+) -> Optional[tuple[list[dict[str, Any]], Optional[int]]]:
     """
     Fetches a single page of DNA match list data from the Ancestry API v2.
     Also fetches the 'in_my_tree' status for matches on the page via a separate API call.
@@ -4671,7 +4673,7 @@ def get_matches(
 
     Returns:
         A tuple containing:
-        - List of refined match data dictionaries for the page, or empty list if none.
+        - list of refined match data dictionaries for the page, or empty list if none.
         - Total number of pages available (integer), or None if retrieval fails.
         Returns None if a critical error occurs during fetching.
     """
@@ -4694,7 +4696,7 @@ def get_matches(
         logger.error("get_matches: Session invalid at start.")
         return None
 
-    logger.debug(f"--- Fetching Match List Page {current_page} ---")
+    logger.debug(f"--- Fetching Match list Page {current_page} ---")
 
     # Validate session state before API call
     try:
@@ -4806,7 +4808,7 @@ def get_matches(
 
     if not specific_csrf_token:
         logger.error(
-            "Failed to obtain specific CSRF token required for Match List API."
+            "Failed to obtain specific CSRF token required for Match list API."
         )
         return None
     logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
@@ -4822,13 +4824,13 @@ def get_matches(
         "Accept": "application/json",
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
     }
-    logger.debug(f"Calling Match List API for page {current_page}...")
+    logger.debug(f"Calling Match list API for page {current_page}...")
     logger.debug(
-        f"Headers being passed to _api_req for Match List: {match_list_headers}"
+        f"Headers being passed to _api_req for Match list: {match_list_headers}"
     )
 
     # Additional debug logging for troubleshooting 303 redirects
-    logger.debug(f"Match List URL: {match_list_url}")
+    logger.debug(f"Match list URL: {match_list_url}")
     logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
 
     # CRITICAL: Ensure cookies are synced immediately before API call
@@ -4848,7 +4850,7 @@ def get_matches(
         method="GET",
         headers=match_list_headers,
         use_csrf_token=False,
-        api_description="Match List API",
+        api_description="Match list API",
         allow_redirects=True,
     )
 
@@ -4856,7 +4858,7 @@ def get_matches(
 
 
     total_pages: Optional[int] = None
-    match_data_list: List[Dict] = []
+    match_data_list: list[dict] = []
     if api_response is None:
         logger.warning(
             f"No response/error from match list API page {current_page}. Assuming empty page."
@@ -4871,7 +4873,7 @@ def get_matches(
             if status == 303:
                 if location:
                     logger.warning(
-                        f"Match List API received 303 See Other. Retrying with redirect to {location}."
+                        f"Match list API received 303 See Other. Retrying with redirect to {location}."
                     )
                     # Retry once with the new location
                     api_response_redirect = _api_req(
@@ -4881,20 +4883,20 @@ def get_matches(
                         method="GET",
                         headers=match_list_headers,
                         use_csrf_token=False,
-                        api_description="Match List API (redirected)",
+                        api_description="Match list API (redirected)",
                         allow_redirects=False,
                     )
                     if isinstance(api_response_redirect, dict):
                         api_response = api_response_redirect
                     else:
                         logger.error(
-                            f"Redirected Match List API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
+                            f"Redirected Match list API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
                         )
                         return None
                 else:
                     # 303 with no location usually means session expired - try session refresh
                     logger.warning(
-                        "Match List API received 303 See Other with no redirect location. "
+                        "Match list API received 303 See Other with no redirect location. "
                         "This usually indicates session expiration. Attempting session refresh with cache clear."
                     )
                     try:
@@ -4921,7 +4923,7 @@ def get_matches(
                         if fresh_csrf_token:
                             # Update headers with fresh token and retry
                             match_list_headers['X-CSRF-Token'] = fresh_csrf_token
-                            logger.info("✅ Retrying Match List API with refreshed session, cleared cache, and fresh CSRF token.")
+                            logger.info("✅ Retrying Match list API with refreshed session, cleared cache, and fresh CSRF token.")
                             logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
                             logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
 
@@ -4932,13 +4934,13 @@ def get_matches(
                                 method="GET",
                                 headers=match_list_headers,
                                 use_csrf_token=False,
-                                api_description="Match List API (Session Refreshed)",
+                                api_description="Match list API (Session Refreshed)",
                                 allow_redirects=True,
                             )
                             if isinstance(api_response_refresh, dict):
                                 api_response = api_response_refresh
                             else:
-                                logger.error("Match List API still failing after session refresh. Aborting.")
+                                logger.error("Match list API still failing after session refresh. Aborting.")
                                 return None
                         else:
                             logger.error("Could not obtain fresh CSRF token for session refresh.")
@@ -4948,13 +4950,13 @@ def get_matches(
                         return None
             else:
                 logger.error(
-                    f"Match List API did not return dict. Type: {type(api_response).__name__}, "
+                    f"Match list API did not return dict. Type: {type(api_response).__name__}, "
                     f"Status: {getattr(api_response, 'status_code', 'N/A')}"
                 )
                 return None
         else:
             logger.error(
-                f"Match List API did not return dict. Type: {type(api_response).__name__}"
+                f"Match list API did not return dict. Type: {type(api_response).__name__}"
             )
             return None
 
@@ -4970,7 +4972,7 @@ def get_matches(
     if not match_data_list:
         logger.info(f"No matches found in 'matchList' array for page {current_page}.")
 
-    valid_matches_for_processing: List[Dict[str, Any]] = []
+    valid_matches_for_processing: list[dict[str, Any]] = []
     skipped_sampleid_count = 0
     for m_idx, m_val in enumerate(match_data_list):  # Use enumerate for index
         if isinstance(m_val, dict) and m_val.get("sampleId"):
@@ -4994,7 +4996,7 @@ def get_matches(
     sample_ids_on_page = [
         match["sampleId"].upper() for match in valid_matches_for_processing
     ]
-    in_tree_ids: Set[str] = set()
+    in_tree_ids: set[str] = set()
     cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
 
     try:
@@ -5037,10 +5039,8 @@ def get_matches(
             origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
             ua_in_tree = None
             if driver and session_manager.is_sess_valid():
-                try:
+                with contextlib.suppress(Exception):
                     ua_in_tree = driver.execute_script("return navigator.userAgent;")
-                except Exception:
-                    pass
             ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
             in_tree_headers = {
                 "X-CSRF-Token": specific_csrf_token,
@@ -5105,7 +5105,7 @@ def get_matches(
                 )
                 logger.debug(f"In-Tree check response: {response_in_tree}")
 
-    refined_matches: List[Dict[str, Any]] = []
+    refined_matches: list[dict[str, Any]] = []
     logger.debug(f"Refining {len(valid_matches_for_processing)} valid matches...")
     for match_index, match_api_data in enumerate(valid_matches_for_processing):
         try:
@@ -5196,7 +5196,7 @@ def get_matches(
 @api_cache("combined_details", CACHE_TTL['combined_details'])
 def _fetch_combined_details(
     session_manager: SessionManager, match_uuid: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Fetches combined match details (DNA stats, Admin/Tester IDs) and profile details
     (login date, contactable status) for a single match using two API calls.
@@ -5231,7 +5231,6 @@ def _fetch_combined_details(
         logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
         _log_api_performance("combined_details", api_start_time, "error_missing_uuid")
         return None
-        return None
 
     # SURGICAL FIX #20: Universal session validation with SessionManager death detection
     if session_manager.should_halt_operations():
@@ -5252,12 +5251,12 @@ def _fetch_combined_details(
             f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
         )
 
-    combined_data: Dict[str, Any] = {}
+    combined_data: dict[str, Any] = {}
     details_url = urljoin(
         config_schema.api.base_url,
         f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
     )
-    details_referer = urljoin(
+    urljoin(
         config_schema.api.base_url,
         f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
     )
@@ -5281,7 +5280,7 @@ def _fetch_combined_details(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     }
 
-    # Apply the same cookie sync fix that worked for Match List API
+    # Apply the same cookie sync fix that worked for Match list API
     # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
     try:
         if hasattr(session_manager, '_sync_cookies_to_requests'):
@@ -5511,7 +5510,7 @@ def _fetch_combined_details(
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
 def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Fetches badge details for a specific match UUID. Used primarily to get the
     match's CFPID (Person ID within the user's tree) and basic tree profile info.
@@ -5649,7 +5648,7 @@ def _fetch_batch_badge_details(
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
 def _fetch_batch_ladder(
     session_manager: SessionManager, cfpid: str, tree_id: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Fetches the relationship ladder details (relationship path, actual relationship)
     between the user and a specific person (CFPID) within the user's tree.
@@ -5710,7 +5709,7 @@ def _fetch_batch_ladder(
 
 def _fetch_batch_ladder_legacy(
     session_manager: SessionManager, cfpid: str, tree_id: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Legacy implementation of relationship ladder fetching using the old /getladder endpoint.
     This is kept as a fallback for the enhanced API.
@@ -5736,7 +5735,7 @@ def _fetch_batch_ladder_legacy(
     )
     logger.debug(f"Fetching /getladder API for CFPID {cfpid} in Tree {tree_id}...")
 
-    ladder_data: Dict[str, Optional[str]] = {
+    ladder_data: dict[str, Optional[str]] = {
         "actual_relationship": None,
         "relationship_path": None,
     }
@@ -6041,7 +6040,7 @@ def _fetch_batch_relationship_prob(
             json={},
         )
 
-        def _parse_probability(data_obj: Dict[str, Any]) -> Optional[str]:
+        def _parse_probability(data_obj: dict[str, Any]) -> Optional[str]:
             if "matchProbabilityToSampleId" not in data_obj:
                 logger.debug(
                     f"{api_description}: Unexpected structure for {sample_id_upper}. Keys: {list(data_obj.keys())[:5]}"
@@ -6519,7 +6518,7 @@ def action6_gather_module_tests() -> bool:
 
         # Test _initialize_gather_state performance
         start_time = time.time()
-        for i in range(100):
+        for _ in range(100):
             state = _initialize_gather_state()
             assert isinstance(state, dict), "Should return dict each time"
         duration = time.time() - start_time
@@ -6565,9 +6564,8 @@ def action6_gather_module_tests() -> bool:
             print("     ✅ RetryableError constructor handles conflicting parameters correctly")
         except TypeError as e:
             if "got multiple values for keyword argument" in str(e):
-                assert False, f"CRITICAL: RetryableError constructor bug still exists: {e}"
-            else:
-                raise
+                raise AssertionError(f"CRITICAL: RetryableError constructor bug still exists: {e}") from e
+            raise
 
         # Test 2: DatabaseConnectionError constructor
         print("   • Test 2: DatabaseConnectionError constructor")
@@ -6581,13 +6579,13 @@ def action6_gather_module_tests() -> bool:
             assert db_error.recovery_hint and "temporarily unavailable" in db_error.recovery_hint
             print("     ✅ DatabaseConnectionError constructor works correctly")
         except TypeError as e:
-            assert False, f"DatabaseConnectionError constructor has parameter conflicts: {e}"
+            raise AssertionError(f"DatabaseConnectionError constructor has parameter conflicts: {e}") from e
 
         # Test 3: Simulate the specific database transaction rollback scenario
         print("   • Test 3: Database transaction rollback scenario simulation")
         try:
             # Simulate the exact sequence that caused rollbacks in Action 6
-            with patch('database.logger') as mock_logger:
+            with patch('database.logger'):
                 # This mimics the database.py db_transn function error handling
                 try:
                     # Simulate UNIQUE constraint failure during bulk insert
@@ -6611,7 +6609,7 @@ def action6_gather_module_tests() -> bool:
                     assert retryable_error.context["error_type"] == "IntegrityError"
                     print("     ✅ Database rollback error handling works correctly")
         except Exception as e:
-            assert False, f"Database transaction rollback simulation failed: {e}"
+            raise AssertionError(f"Database transaction rollback simulation failed: {e}") from e
 
         # Test 4: Test all error class constructors to prevent future regressions
         print("   • Test 4: All error class constructors parameter validation")
@@ -6646,9 +6644,8 @@ def action6_gather_module_tests() -> bool:
                 print(f"     ✅ {error_class.__name__} constructor works correctly")
             except TypeError as e:
                 if "got multiple values for keyword argument" in str(e):
-                    assert False, f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}"
-                else:
-                    raise
+                    raise AssertionError(f"CRITICAL: {error_class.__name__} has constructor parameter conflicts: {e}") from e
+                raise
 
         # Test 5: Legacy function error handling
         print("   • Test 5: Legacy function error handling")
@@ -6707,7 +6704,7 @@ def action6_gather_module_tests() -> bool:
             print("     ✅ UNIQUE constraint error handling works without constructor conflicts")
 
         except Exception as e:
-            assert False, f"Duplicate record error handling failed: {e}"
+            raise AssertionError(f"Duplicate record error handling failed: {e}") from e
 
         # Test 8: Final Summary Accuracy Test
         print("   • Test 8: Final summary accuracy validation")
@@ -6726,10 +6723,10 @@ def action6_gather_module_tests() -> bool:
     def test_regression_prevention_database_bulk_insert():
         """
         🛡️ REGRESSION TEST: Database bulk insert condition logic.
-        
+
         This test prevents the exact regression we encountered where bulk insert
         logic was in the wrong if/else block.
-        
+
         BUG WE HAD: Bulk insert only ran when person_creates_filtered was EMPTY
         FIX: Bulk insert should run when person_creates_filtered HAS records
         """
@@ -6802,8 +6799,8 @@ def action6_gather_module_tests() -> bool:
     def test_regression_prevention_configuration_respect():
         """
         🛡️ REGRESSION TEST: Configuration settings respect.
-        
-        This test prevents regressions where configuration values like 
+
+        This test prevents regressions where configuration values like
         MAX_PAGES=1 were set but ignored by the application.
         """
         print("🛡️ Testing configuration respect regression prevention:")
@@ -6846,7 +6843,7 @@ def action6_gather_module_tests() -> bool:
     def test_dynamic_api_failure_threshold():
         """
         🔧 TEST: Dynamic API failure threshold calculation.
-        
+
         Tests that the dynamic threshold scales appropriately with the number of pages
         to prevent premature halts on large processing runs while maintaining safety.
         """
@@ -6879,7 +6876,7 @@ def action6_gather_module_tests() -> bool:
     def test_regression_prevention_session_management():
         """
         🛡️ REGRESSION TEST: Session management and stability.
-        
+
         This test prevents regressions in SessionManager initialization
         and property access that caused WebDriver crashes.
         """
@@ -6973,7 +6970,7 @@ def action6_gather_module_tests() -> bool:
 
                 # Test 1: Verify CSRF token extraction works
                 print("✓ Test 1: CSRF token extraction")
-                with patch('action6_gather.SessionManager') as mock_sm_class:
+                with patch('action6_gather.SessionManager'):
                     mock_session_manager = Mock()
                     mock_session_manager.driver = Mock()
 
@@ -7030,7 +7027,7 @@ def action6_gather_module_tests() -> bool:
 
                 print("✓ All 303 Redirect Detection Tests - PASSED")
                 print("  This test suite would have detected the authentication issue that caused")
-                print("  the 'Match List API received 303 See Other' error in Action 6:")
+                print("  the 'Match list API received 303 See Other' error in Action 6:")
                 print("  - Missing CSRF tokens leading to authentication failures")
                 print("  - 303 redirects without Location headers indicating session issues")
                 print("  - Need for session refresh and navigation recovery")

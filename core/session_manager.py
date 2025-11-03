@@ -78,6 +78,8 @@ except ImportError:
     NoSuchWindowException = Exception
 
 # === LOCAL IMPORTS ===
+import contextlib
+
 from config import config_schema
 from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
@@ -388,7 +390,7 @@ class SessionManager:
         self.browser_manager.browser_needed = True
 
         # PHASE 5.1: Check cached session state first
-        session_id = f"{id(self)}_{action_name or 'default'}"
+        f"{id(self)}_{action_name or 'default'}"
 
         # Try to use cached readiness state, but validate driver is still live
         if self._last_readiness_check is not None:
@@ -415,11 +417,10 @@ class SessionManager:
                     return True
 
         # Ensure driver is live if browser is needed (with optimization)
-        if self.browser_manager.browser_needed:
-            if not self.browser_manager.ensure_driver_live(action_name):
-                logger.error("Failed to ensure driver live.")
-                self.session_ready = False
-                return False
+        if self.browser_manager.browser_needed and not self.browser_manager.ensure_driver_live(action_name):
+            logger.error("Failed to ensure driver live.")
+            self.session_ready = False
+            return False
 
         # PHASE 5.1: Optimized readiness checks with circuit breaker pattern
         try:
@@ -567,8 +568,8 @@ class SessionManager:
     def check_session_health(self) -> bool:
         """
         Universal session health monitoring that detects session death and prevents
-        cascade failures during long-running operations. 
-        
+        cascade failures during long-running operations.
+
         This replaces action6-specific monitoring with universal monitoring.
         """
         try:
@@ -1625,8 +1626,8 @@ def _test_session_manager_initialization():
         initial_ready = session_manager.session_ready
         print(f"   ✅ Initial session_ready state: {initial_ready} (Expected: False)")
 
-        results.append(initial_ready == False)
-        assert initial_ready == False, "Should start with session_ready=False"
+        results.append(initial_ready is False)
+        assert initial_ready is False, "Should start with session_ready=False"
 
         print(f"📊 Results: {sum(results)}/{len(results)} initialization checks passed")
         return True
@@ -1783,7 +1784,7 @@ def _test_initialization_performance():
 
     session_managers = []
     start_time = time.time()
-    for i in range(3):
+    for _i in range(3):
         session_manager = SessionManager()
         session_managers.append(session_manager)
     end_time = time.time()
@@ -1793,10 +1794,8 @@ def _test_initialization_performance():
         total_time < max_time
     ), f"3 optimized initializations took {total_time:.3f}s, should be under {max_time}s"
     for sm in session_managers:
-        try:
+        with contextlib.suppress(Exception):
             sm.close_sess(keep_db=True)
-        except Exception:
-            pass
     return True
 
 
@@ -1809,14 +1808,14 @@ def _test_error_handling():
         _ = session_manager.session_ready
         _ = session_manager.is_ready
     except Exception as e:
-        assert False, f"SessionManager should handle operations gracefully: {e}"
+        raise AssertionError(f"SessionManager should handle operations gracefully: {e}")
     return True
 
 
 def _test_regression_prevention_csrf_optimization():
     """
     🛡️ REGRESSION TEST: CSRF token caching optimization.
-    
+
     This test verifies that Optimization 1 (CSRF token pre-caching) is properly
     implemented and working. This would have prevented performance regressions
     caused by fetching CSRF tokens on every API call.
@@ -1883,7 +1882,7 @@ def _test_regression_prevention_csrf_optimization():
 def _test_regression_prevention_property_access():
     """
     🛡️ REGRESSION TEST: SessionManager property access stability.
-    
+
     This test verifies that SessionManager properties are accessible without
     errors. This would have caught the duplicate method definition issues
     we encountered.
@@ -1905,7 +1904,7 @@ def _test_regression_prevention_property_access():
 
         for prop, description in properties_to_test:
             try:
-                value = getattr(session_manager, prop)
+                getattr(session_manager, prop)
                 print(f"   ✅ Property '{prop}' accessible ({description})")
                 results.append(True)
             except AttributeError:
@@ -1928,7 +1927,7 @@ def _test_regression_prevention_property_access():
 def _test_regression_prevention_initialization_stability():
     """
     🛡️ REGRESSION TEST: SessionManager initialization stability.
-    
+
     This test verifies that SessionManager initializes without crashes,
     which would have caught WebDriver stability issues.
     """
