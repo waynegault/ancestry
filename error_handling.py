@@ -506,10 +506,12 @@ class ConfigurationError(AncestryException):
     """Configuration-related errors."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        recovery_hint = kwargs.pop("recovery_hint", "Check configuration settings and retry")
         super().__init__(
             message,
             severity="ERROR",
-            recovery_hint="Check configuration settings and retry",
+            recovery_hint=recovery_hint,
             **kwargs,
         )
 
@@ -518,10 +520,12 @@ class DatabaseConnectionError(RetryableError):
     """Database connection issues that can be retried."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        recovery_hint = kwargs.pop("recovery_hint", "Check database connectivity and retry")
         super().__init__(
             message,
             error_code="DB_CONNECTION_FAILED",
-            recovery_hint="Check database connectivity and retry",
+            recovery_hint=recovery_hint,
             **kwargs,
         )
 
@@ -530,10 +534,12 @@ class BrowserSessionError(RetryableError):
     """Browser session issues that can be recovered."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        recovery_hint = kwargs.pop("recovery_hint", "Restart browser session and retry")
         super().__init__(
             message,
             error_code="BROWSER_SESSION_FAILED",
-            recovery_hint="Restart browser session and retry",
+            recovery_hint=recovery_hint,
             **kwargs,
         )
 
@@ -543,15 +549,21 @@ class APIRateLimitError(RetryableError):
 
     def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs: Any) -> None:
         self.retry_after = retry_after
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        default_hint = (
+            f"Retry after {retry_after} seconds"
+            if retry_after
+            else "Retry with exponential backoff"
+        )
+        recovery_hint = kwargs.pop("recovery_hint", default_hint)
+        # Extract context from kwargs if provided, merge with retry_after
+        context = kwargs.pop("context", {})
+        context["retry_after"] = retry_after
         super().__init__(
             message,
             error_code="API_RATE_LIMIT",
-            recovery_hint=(
-                f"Retry after {retry_after} seconds"
-                if retry_after
-                else "Retry with exponential backoff"
-            ),
-            context={"retry_after": retry_after},
+            recovery_hint=recovery_hint,
+            context=context,
             **kwargs,
         )
 
@@ -560,10 +572,12 @@ class AuthenticationExpiredError(RetryableError):
     """Authentication token expiration."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        recovery_hint = kwargs.pop("recovery_hint", "Refresh authentication token and retry")
         super().__init__(
             message,
             error_code="AUTH_EXPIRED",
-            recovery_hint="Refresh authentication token and retry",
+            recovery_hint=recovery_hint,
             **kwargs,
         )
 
@@ -572,10 +586,12 @@ class NetworkTimeoutError(RetryableError):
     """Network timeout that can be retried."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        recovery_hint = kwargs.pop("recovery_hint", "Check network connectivity and retry")
         super().__init__(
             message,
             error_code="NETWORK_TIMEOUT",
-            recovery_hint="Check network connectivity and retry",
+            recovery_hint=recovery_hint,
             **kwargs,
         )
 
@@ -584,10 +600,12 @@ class DataValidationError(FatalError):
     """Data validation errors that require manual intervention."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
+        # Extract recovery_hint from kwargs if provided, otherwise use default
+        recovery_hint = kwargs.pop("recovery_hint", "Fix data validation issues manually")
         super().__init__(
             message,
             error_code="DATA_VALIDATION_FAILED",
-            recovery_hint="Fix data validation issues manually",
+            recovery_hint=recovery_hint,
             **kwargs,
         )
 
