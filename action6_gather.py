@@ -511,7 +511,7 @@ def _try_get_csrf_from_cookies(session_manager) -> Optional[str]:
     return None
 
 
-def _get_csrf_token(session_manager, force_api_refresh=False):
+def _get_csrf_token(session_manager: SessionManager, force_api_refresh: bool = False) -> Optional[str]:
     """
     Helper function to extract CSRF token from cookies or API.
 
@@ -1889,6 +1889,105 @@ def _process_single_future_result(
         )
 
 
+def _build_cfpid_mapping(
+    temp_badge_results: dict[str, Optional[dict[str, Any]]]
+) -> tuple[dict[str, str], list[str]]:
+    """Build CFPID to UUID mapping and list.
+
+    Args:
+        temp_badge_results: Badge results from previous API calls
+
+    Returns:
+        Tuple of (cfpid_to_uuid_map, cfpid_list_for_ladder)
+    """
+    cfpid_to_uuid_map: dict[str, str] = {}
+    cfpid_list_for_ladder: list[str] = []
+
+    for uuid_val, badge_result_data in temp_badge_results.items():
+        if badge_result_data:
+            cfpid = badge_result_data.get("their_cfpid")
+            if cfpid:
+                cfpid_list_for_ladder.append(cfpid)
+                cfpid_to_uuid_map[cfpid] = uuid_val
+
+    return cfpid_to_uuid_map, cfpid_list_for_ladder
+
+
+def _submit_ladder_futures(
+    executor: Any,
+    session_manager: SessionManager,
+    cfpid_list_for_ladder: list[str],
+    my_tree_id: str
+) -> dict[Any, tuple[str, str]]:
+    """Submit ladder API call futures.
+
+    Args:
+        executor: ThreadPoolExecutor instance
+        session_manager: SessionManager instance
+        cfpid_list_for_ladder: List of CFPIDs to fetch
+        my_tree_id: User's tree ID
+
+    Returns:
+        Dictionary mapping futures to (task_type, cfpid) tuples
+    """
+    logger.debug(f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs...")
+
+    # Apply batch rate limiting
+    if len(cfpid_list_for_ladder) > 0:
+        _apply_rate_limiting(session_manager)
+        logger.debug(f"Applied batch rate limiting for {len(cfpid_list_for_ladder)} ladder API calls")
+
+    # Submit ladder futures
+    ladder_futures = {}
+    for cfpid_item in cfpid_list_for_ladder:
+        ladder_futures[
+            executor.submit(_fetch_batch_ladder, session_manager, cfpid_item, my_tree_id)
+        ] = ("ladder", cfpid_item)
+
+    return ladder_futures
+
+
+def _process_single_ladder_result(
+    future: Any,
+    identifier_cfpid: str,
+    cfpid_to_uuid_map: dict[str, str]
+) -> tuple[Optional[str], Optional[dict[str, Any]]]:
+    """Process a single ladder API result.
+
+    Args:
+        future: Future to process
+        identifier_cfpid: CFPID identifier
+        cfpid_to_uuid_map: Mapping from CFPID to UUID
+
+    Returns:
+        Tuple of (uuid, result) or (None, None) if error
+    """
+    uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
+
+    if not uuid_for_ladder:
+        logger.warning(
+            f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID "
+            f"(task likely cancelled or map error)."
+        )
+        return None, None
+
+    try:
+        result = future.result()
+        return uuid_for_ladder, result
+    except ConnectionError as conn_err:
+        logger.error(
+            f"ConnErr ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {conn_err}",
+            exc_info=False
+        )
+        return uuid_for_ladder, None
+    except Exception as exc:
+        logger.error(
+            f"Exc ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {exc}",
+            exc_info=True
+        )
+        return uuid_for_ladder, None
+
+
 def _process_ladder_api_calls(
     executor: Any,
     session_manager: SessionManager,
@@ -1912,61 +2011,26 @@ def _process_ladder_api_calls(
         return temp_ladder_results
 
     # Build CFPID list and mapping
-    cfpid_to_uuid_map: dict[str, str] = {}
-    cfpid_list_for_ladder: list[str] = []
-
-    for uuid_val, badge_result_data in temp_badge_results.items():
-        if badge_result_data:
-            cfpid = badge_result_data.get("their_cfpid")
-            if cfpid:
-                cfpid_list_for_ladder.append(cfpid)
-                cfpid_to_uuid_map[cfpid] = uuid_val
+    cfpid_to_uuid_map, cfpid_list_for_ladder = _build_cfpid_mapping(temp_badge_results)
 
     if not cfpid_list_for_ladder:
         return temp_ladder_results
 
-    logger.debug(f"Submitting Ladder tasks for {len(cfpid_list_for_ladder)} CFPIDs...")
-
-    # Apply batch rate limiting
-    if len(cfpid_list_for_ladder) > 0:
-        _apply_rate_limiting(session_manager)
-        logger.debug(f"Applied batch rate limiting for {len(cfpid_list_for_ladder)} ladder API calls")
-
     # Submit ladder futures
-    ladder_futures = {}
-    for cfpid_item in cfpid_list_for_ladder:
-        ladder_futures[
-            executor.submit(_fetch_batch_ladder, session_manager, cfpid_item, my_tree_id)
-        ] = ("ladder", cfpid_item)
+    ladder_futures = _submit_ladder_futures(
+        executor, session_manager, cfpid_list_for_ladder, my_tree_id
+    )
 
     # Process ladder results
     logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
     for future in as_completed(ladder_futures):
         task_type, identifier_cfpid = ladder_futures[future]
-        uuid_for_ladder = cfpid_to_uuid_map.get(identifier_cfpid)
+        uuid_for_ladder, result = _process_single_ladder_result(
+            future, identifier_cfpid, cfpid_to_uuid_map
+        )
 
-        if not uuid_for_ladder:
-            logger.warning(
-                f"Could not map ladder result for CFPID {identifier_cfpid} back to UUID "
-                f"(task likely cancelled or map error)."
-            )
-            continue
-
-        try:
-            result = future.result()
+        if uuid_for_ladder:
             temp_ladder_results[uuid_for_ladder] = result
-        except ConnectionError as conn_err:
-            logger.error(
-                f"ConnErr ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {conn_err}",
-                exc_info=False
-            )
-            temp_ladder_results[uuid_for_ladder] = None
-        except Exception as exc:
-            logger.error(
-                f"Exc ladder fetch CFPID {identifier_cfpid} (UUID: {uuid_for_ladder}): {exc}",
-                exc_info=True
-            )
-            temp_ladder_results[uuid_for_ladder] = None
 
     return temp_ladder_results
 
@@ -2206,6 +2270,136 @@ def _perform_api_prefetches(
 # End of _perform_api_prefetches
 
 
+def _get_prefetched_data_for_match(
+    uuid_val: str,
+    prefetched_data: dict[str, dict[str, Any]]
+) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[str]]:
+    """Get prefetched data for a match.
+
+    Args:
+        uuid_val: UUID of the match
+        prefetched_data: Dictionary containing prefetched API data
+
+    Returns:
+        Tuple of (combined, tree, rel_prob) data
+    """
+    prefetched_combined = prefetched_data.get("combined", {}).get(uuid_val)
+    prefetched_tree = prefetched_data.get("tree", {}).get(uuid_val)
+    prefetched_rel_prob = prefetched_data.get("rel_prob", {}).get(uuid_val)
+    return prefetched_combined, prefetched_tree, prefetched_rel_prob
+
+
+def _process_single_match_for_bulk(
+    session: SqlAlchemySession,
+    session_manager: SessionManager,
+    match_list_data: dict[str, Any],
+    existing_persons_map: dict[str, Person],
+    prefetched_data: dict[str, dict[str, Any]]
+) -> tuple[Optional[dict[str, Any]], Literal["new", "updated", "skipped", "error"], Optional[str]]:
+    """Process a single match and prepare bulk data.
+
+    Args:
+        session: SQLAlchemy session
+        session_manager: SessionManager instance
+        match_list_data: Match data dictionary
+        existing_persons_map: Map of existing persons
+        prefetched_data: Prefetched API data
+
+    Returns:
+        Tuple of (prepared_data, status, error_msg)
+    """
+    uuid_val = match_list_data.get("uuid")
+    log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
+
+    # Basic validation
+    if not uuid_val:
+        logger.error("Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping.")
+        return None, "error", "Missing UUID"
+
+    # Retrieve existing person and prefetched data
+    existing_person = existing_persons_map.get(uuid_val.upper())
+    prefetched_combined, prefetched_tree, prefetched_rel_prob = _get_prefetched_data_for_match(
+        uuid_val, prefetched_data
+    )
+
+    # Add relationship probability to match dict
+    match_list_data["predicted_relationship"] = prefetched_rel_prob
+
+    # Check WebDriver session validity
+    if not session_manager.is_sess_valid():
+        logger.error(
+            f"WebDriver session invalid before calling _do_match for {log_ref_short}. Treating as error."
+        )
+        return None, "error", "WebDriver session invalid"
+
+    # Call _do_match to prepare the bulk dictionary structure
+    return _do_match(
+        session,
+        match_list_data,
+        session_manager,
+        existing_person,
+        prefetched_combined,
+        prefetched_tree,
+        config_schema,
+        raw_logger,
+    )
+
+
+def _update_page_statuses(
+    status: Literal["new", "updated", "skipped", "error"],
+    page_statuses: dict[str, int],
+    log_ref_short: str
+) -> None:
+    """Update page status counts.
+
+    Args:
+        status: Status of the match processing
+        page_statuses: Dictionary of status counts
+        log_ref_short: Short log reference for the match
+    """
+    if status in ["new", "updated", "error"]:
+        page_statuses[status] += 1
+    elif status == "skipped":
+        logger.debug(
+            f"_do_match returned 'skipped' for {log_ref_short}. Not counted in page new/updated/error."
+        )
+    else:
+        logger.error(
+            f"Unknown status '{status}' from _do_match for {log_ref_short}. Counting as error."
+        )
+        page_statuses["error"] += 1
+
+
+def _handle_match_processing_result(
+    prepared_data: Optional[dict[str, Any]],
+    status: Literal["new", "updated", "skipped", "error"],
+    error_msg: Optional[str],
+    log_ref_short: str,
+    prepared_bulk_data: list[dict[str, Any]],
+    page_statuses: dict[str, int]
+) -> None:
+    """Handle the result of processing a single match.
+
+    Args:
+        prepared_data: Prepared data from _process_single_match_for_bulk
+        status: Status of the match processing
+        error_msg: Error message if any
+        log_ref_short: Short log reference
+        prepared_bulk_data: List to append valid data to
+        page_statuses: Status counts to update
+    """
+    # Update status counts
+    _update_page_statuses(status, page_statuses, log_ref_short)
+
+    # Append valid prepared data
+    if status not in ["error", "skipped"] and prepared_data:
+        prepared_bulk_data.append(prepared_data)
+    elif status == "error":
+        logger.error(
+            f"Error preparing DB data for {log_ref_short}: {error_msg or 'Unknown error in _do_match'}"
+        )
+
+
 def _prepare_bulk_db_data(
     session: SqlAlchemySession,
     session_manager: SessionManager,
@@ -2235,141 +2429,50 @@ def _prepare_bulk_db_data(
         - page_statuses (dict[str, int]): Counts of 'new', 'updated', 'error' outcomes
           during the preparation phase for this batch.
     """
-    # Step 1: Initialize results
+    # Initialize results
     prepared_bulk_data: list[dict[str, Any]] = []
-    page_statuses: dict[str, int] = {
-        "new": 0,
-        "updated": 0,
-        "error": 0,
-    }  # Skipped handled before this function
+    page_statuses: dict[str, int] = {"new": 0, "updated": 0, "error": 0}
     num_to_process = len(matches_to_process)
 
     if not num_to_process:
-        return [], page_statuses  # Return empty if nothing to process
+        return [], page_statuses
 
-    logger.debug(
-        f"--- Preparing DB data structures for {num_to_process} candidates ---"
-    )
+    logger.debug(f"--- Preparing DB data structures for {num_to_process} candidates ---")
     process_start_time = time.time()
 
-    # Step 2: Iterate through each candidate match
+    # Iterate through each candidate match
     for match_list_data in matches_to_process:
-        # Initialize state for this match
         uuid_val = match_list_data.get("uuid")
         log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
-        prepared_data_for_this_match: Optional[dict[str, Any]] = None
-        status_for_this_match: Literal["new", "updated", "skipped", "error"] = (
-            "error"  # Default to error
-        )
-        error_msg_for_this_match: Optional[str] = None
 
         try:
-            # Step 2a: Basic validation
-            if not uuid_val:
-                logger.error(
-                    "Critical error: Match data missing UUID in _prepare_bulk_db_data. Skipping."
-                )
-                status_for_this_match = "error"
-                error_msg_for_this_match = "Missing UUID"
-                raise ValueError("Missing UUID")  # Stop processing this item
+            # Process single match
+            prepared_data, status, error_msg = _process_single_match_for_bulk(
+                session, session_manager, match_list_data, existing_persons_map, prefetched_data
+            )
 
-            # Step 2b: Retrieve existing person and prefetched data
-            existing_person = existing_persons_map.get(uuid_val.upper())
-            prefetched_combined = prefetched_data.get("combined", {}).get(
-                uuid_val
-            )  # Can be None
-            prefetched_tree = prefetched_data.get("tree", {}).get(
-                uuid_val
-            )  # Can be None
-            prefetched_rel_prob = prefetched_data.get("rel_prob", {}).get(
-                uuid_val
-            )  # Can be None
+            # Handle result
+            _handle_match_processing_result(
+                prepared_data, status, error_msg, log_ref_short, prepared_bulk_data, page_statuses
+            )
 
-            # Step 2c: Add relationship probability to match dict *before* calling _do_match
-            # _do_match and its helpers should handle predicted_relationship potentially being None
-            match_list_data["predicted_relationship"] = prefetched_rel_prob
-
-            # Step 2d: Check WebDriver session validity before calling _do_match
-            if not session_manager.is_sess_valid():
-                logger.error(
-                    f"WebDriver session invalid before calling _do_match for {log_ref_short}. Treating as error."
-                )
-                status_for_this_match = "error"
-                error_msg_for_this_match = "WebDriver session invalid"
-                # Need to raise an exception or handle this state appropriately to stop/skip
-                # For now, let it proceed but the status is error.
-            else:
-                # Step 2e: Call _do_match to compare data and prepare the bulk dictionary structure
-                (
-                    prepared_data_for_this_match,
-                    status_for_this_match,
-                    error_msg_for_this_match,
-                ) = _do_match(
-                    session,  # Pass session
-                    match_list_data,
-                    session_manager,
-                    existing_person,  # Pass existing_person_arg correctly
-                    prefetched_combined,  # Pass prefetched_combined_details correctly
-                    prefetched_tree,  # Pass prefetched_tree_data correctly
-                    config_schema,
-                    raw_logger,  # Pass underlying logger instance for compatibility
-                )
-
-            # Step 2f: Tally status based on _do_match result
-            if status_for_this_match in ["new", "updated", "error"]:
-                page_statuses[status_for_this_match] += 1
-            elif status_for_this_match == "skipped":
-                # This path should ideally not be hit if _do_match determines status correctly based on changes
-                logger.debug(  # Changed to debug as it's an expected outcome if no changes
-                    f"_do_match returned 'skipped' for {log_ref_short}. Not counted in page new/updated/error."
-                )
-            else:  # Handle unknown status string
-                logger.error(
-                    f"Unknown status '{status_for_this_match}' from _do_match for {log_ref_short}. Counting as error."
-                )
-                page_statuses["error"] += 1
-
-            # Step 2g: Append valid prepared data to the bulk list
-            if (
-                status_for_this_match not in ["error", "skipped"]
-                and prepared_data_for_this_match
-            ):
-                prepared_bulk_data.append(prepared_data_for_this_match)
-            elif status_for_this_match == "error":
-                logger.error(
-                    f"Error preparing DB data for {log_ref_short}: {error_msg_for_this_match or 'Unknown error in _do_match'}"
-                )
-
-        # Step 3: Handle unexpected exceptions during single match processing
         except Exception as inner_e:
             logger.error(
                 f"Critical unexpected error processing {log_ref_short} in _prepare_bulk_db_data: {inner_e}",
                 exc_info=True,
             )
-            page_statuses["error"] += 1  # Count as error for this item
+            page_statuses["error"] += 1
         finally:
-            # Step 4: Update progress bar after processing each item (regardless of outcome)
+            # Update progress bar
             if progress_bar:
                 try:
                     progress_bar.update(1)
-
-                    # PHASE 1 OPTIMIZATION: Enhanced progress tracking (DISABLED - placeholder for future)
-                    # if hasattr(progress_bar, '_enhanced_progress'):
-                    #     enhanced_progress = progress_bar._enhanced_progress
-                    #     enhanced_progress.update(
-                    #         increment=1,
-                    #         errors=1 if status == "error" else 0,
-                    #         api_calls=1,  # Approximate API calls per match
-                    #         cache_hits=1 if status == "skipped" else 0
-                    #     )
                 except Exception as pbar_e:
                     logger.warning(f"Progress bar update error: {pbar_e}")
 
-    # Step 5: Log summary and return results
+    # Log summary and return results
     process_duration = time.time() - process_start_time
-    logger.debug(
-        f"--- Finished preparing DB data structures. Duration: {process_duration:.2f}s ---"
-    )
+    logger.debug(f"--- Finished preparing DB data structures. Duration: {process_duration:.2f}s ---")
     return prepared_bulk_data, page_statuses
 
 
