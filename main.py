@@ -2064,9 +2064,8 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
 
 def _check_startup_status(session_manager: SessionManager) -> None:
     """
-    Check and display authentication and connection status at startup.
-    This is a non-blocking check - it only verifies if credentials/connections
-    are available, without actually performing authentication.
+    Check and display database connection status at startup.
+    Authentication status is already displayed by the authentication steps above.
     """
     # Check database connection
     try:
@@ -2076,34 +2075,6 @@ def _check_startup_status(session_manager: SessionManager) -> None:
             logger.warning("⚠️ Database connection not available")
     except Exception as e:
         logger.warning(f"⚠️ Database connection check failed: {e}")
-
-    # Check if we have saved cookies (indicates potential valid session)
-    try:
-        import os
-        from pathlib import Path
-        cookie_file = Path("ancestry_cookies.json")
-        if cookie_file.exists():
-            # Check if cookies are recent (less than 7 days old)
-            import time
-            file_age_days = (time.time() - cookie_file.stat().st_mtime) / 86400
-            if file_age_days < 7:
-                logger.info("✅ Ancestry session cookies available")
-            else:
-                logger.debug("Ancestry session cookies found but may be expired")
-        else:
-            logger.debug("No saved Ancestry session cookies found")
-    except Exception as e:
-        logger.debug(f"Could not check Ancestry session cookies: {e}")
-
-    # Check MS Graph token availability
-    try:
-        from ms_graph_utils import _check_token_cache
-        if _check_token_cache():
-            logger.info("✅ MS Graph authentication token available")
-        else:
-            logger.debug("No MS Graph authentication token found")
-    except Exception as e:
-        logger.debug(f"Could not check MS Graph token: {e}")
 
 
 def _validate_ai_provider_on_startup() -> None:
