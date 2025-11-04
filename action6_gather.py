@@ -2498,7 +2498,7 @@ async def _fetch_match_list_async(
     Returns:
         Match list data or None if failed
     """
-    from utils import async_api_request
+    from utils import async_api_request  # type: ignore
 
     try:
         url = f"https://www.ancestry.co.uk/dna/secure/tests/matchList?page={page}&pageSize={page_size}"
@@ -2535,7 +2535,7 @@ async def _fetch_match_details_async(
     Returns:
         Match details data or None if failed
     """
-    from utils import async_api_request
+    from utils import async_api_request  # type: ignore
 
     try:
         url = f"https://www.ancestry.co.uk/dna/secure/tests/{match_uuid}/details"
@@ -2572,7 +2572,7 @@ async def _async_batch_api_prefetch(
     Returns:
         list of processed matches with enriched data
     """
-    from utils import get_configured_concurrency
+    from utils import get_configured_concurrency  # type: ignore
 
     # PRIORITY 2: Enhanced Async Processing - Intelligent concurrency based on system load
     base_concurrent = get_configured_concurrency(default=8)
