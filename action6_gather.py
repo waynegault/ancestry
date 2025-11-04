@@ -3807,179 +3807,398 @@ def _do_batch(
 
 # FINAL OPTIMIZATION 1: Progressive Processing for Large Match Datasets
 # Note: @progressive_processing decorator removed - not essential for core functionality
+def _initialize_page_processing(
+    matches_on_page: list[dict[str, Any]],
+    current_page: int,
+    my_uuid: Optional[str]
+) -> tuple[dict[str, int], int, Optional[Any]]:
+    """Initialize page processing with validation and memory optimization."""
+    page_statuses: dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+    num_matches_on_page = len(matches_on_page)
+
+    if not my_uuid:
+        logger.error(f"_do_batch Page {current_page}: Missing my_uuid.")
+        raise ValueError("Missing my_uuid")
+    if not matches_on_page:
+        logger.debug(f"_do_batch Page {current_page}: Empty match list.")
+        raise ValueError("Empty match list")
+
+    logger.debug(
+        f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---"
+    )
+
+    memory_processor = None
+    if num_matches_on_page > 20:
+        memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=400)
+        logger.debug(f"Page {current_page}: Enabled memory optimization for {num_matches_on_page} matches")
+
+    return page_statuses, num_matches_on_page, memory_processor
+
+
+def _process_batch_lookups(
+    batch_session: SqlAlchemySession,
+    matches_on_page: list[dict[str, Any]],
+    current_page: int,
+    progress_bar: Optional[tqdm],
+    page_statuses: dict[str, int]
+) -> tuple[dict[str, Person], set[str], list[dict[str, Any]], int]:
+    """Process batch lookups and identify candidates."""
+    logger.debug(f"Batch {current_page}: Looking up existing persons...")
+    uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
+    existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
+
+    logger.debug(f"Batch {current_page}: Identifying candidates...")
+    fetch_candidates_uuid, matches_to_process_later, skipped_count = (
+        _identify_fetch_candidates(matches_on_page, existing_persons_map)
+    )
+    page_statuses["skipped"] = skipped_count
+
+    if progress_bar and skipped_count > 0:
+        try:
+            progress_bar.update(skipped_count)
+        except Exception as pbar_e:
+            logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
+
+    return existing_persons_map, fetch_candidates_uuid, matches_to_process_later, skipped_count
+
+
+def _update_progress_bar_for_error(
+    progress_bar: Optional[tqdm],
+    page_statuses: dict[str, int],
+    num_matches_on_page: int,
+    current_page: int
+) -> None:
+    """Update progress bar for remaining items due to error."""
+    if not progress_bar:
+        return
+
+    items_already_accounted_for_in_bar = (
+        page_statuses["skipped"]
+        + page_statuses["new"]
+        + page_statuses["updated"]
+        + page_statuses["error"]
+    )
+    remaining_in_batch = max(0, num_matches_on_page - items_already_accounted_for_in_bar)
+    if remaining_in_batch > 0:
+        try:
+            logger.debug(
+                f"Updating progress bar by {remaining_in_batch} due to critical error in _do_batch."
+            )
+            progress_bar.update(remaining_in_batch)
+        except Exception as pbar_e:
+            logger.warning(
+                f"Progress bar update error during critical exception handling: {pbar_e}"
+            )
+
+
+def _handle_critical_batch_error(
+    critical_err: Exception,
+    current_page: int,
+    page_statuses: dict[str, int],
+    num_matches_on_page: int,
+    progress_bar: Optional[tqdm]
+) -> tuple[int, int, int, int]:
+    """Handle critical batch processing errors."""
+    logger.critical(
+        f"CRITICAL ERROR processing batch page {current_page}: {critical_err}",
+        exc_info=True,
+    )
+
+    _update_progress_bar_for_error(progress_bar, page_statuses, num_matches_on_page, current_page)
+
+    final_error_count_for_page = page_statuses["error"] + max(
+        0,
+        num_matches_on_page
+        - (
+            page_statuses["new"]
+            + page_statuses["updated"]
+            + page_statuses["skipped"]
+            + page_statuses["error"]
+        ),
+    )
+
+    return (
+        page_statuses["new"],
+        page_statuses["updated"],
+        page_statuses["skipped"],
+        final_error_count_for_page,
+    )
+
+
+def _handle_unhandled_batch_error(
+    outer_batch_exc: Exception,
+    current_page: int,
+    page_statuses: dict[str, int],
+    num_matches_on_page: int,
+    progress_bar: Optional[tqdm]
+) -> tuple[int, int, int, int]:
+    """Handle unhandled batch processing exceptions."""
+    logger.critical(
+        f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}",
+        exc_info=True,
+    )
+
+    if progress_bar:
+        items_already_accounted_for_in_bar = (
+            page_statuses["skipped"]
+            + page_statuses["new"]
+            + page_statuses["updated"]
+            + page_statuses["error"]
+        )
+        remaining_in_batch = max(0, num_matches_on_page - items_already_accounted_for_in_bar)
+        if remaining_in_batch > 0:
+            from contextlib import suppress
+            with suppress(Exception):
+                progress_bar.update(remaining_in_batch)
+
+    final_error_count_for_page = num_matches_on_page - (
+        page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
+    )
+    return (
+        page_statuses["new"],
+        page_statuses["updated"],
+        page_statuses["skipped"],
+        max(0, final_error_count_for_page),
+    )
+
+
+def _execute_batch_db_commit(
+    batch_session: SqlAlchemySession,
+    prepared_bulk_data: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person],
+    current_page: int,
+    page_statuses: dict[str, int]
+) -> None:
+    """Execute bulk DB operations for batch."""
+    logger.debug(f"Attempting bulk DB operations for page {current_page}...")
+    try:
+        from core.database import db_transn
+        with db_transn(batch_session) as sess:
+            bulk_success = _execute_bulk_db_operations(
+                sess, prepared_bulk_data, existing_persons_map
+            )
+            if not bulk_success:
+                logger.error(f"Bulk DB ops FAILED page {current_page}. Adjusting counts.")
+                failed_items = len(prepared_bulk_data)
+                page_statuses["error"] += failed_items
+                page_statuses["new"] = 0
+                page_statuses["updated"] = 0
+        logger.debug(f"Transaction block finished page {current_page}.")
+    except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
+        logger.error(
+            f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}",
+            exc_info=True,
+        )
+        failed_items = len(prepared_bulk_data)
+        page_statuses["error"] += failed_items
+        page_statuses["new"] = 0
+        page_statuses["updated"] = 0
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during bulk DB transaction page {current_page}: {e}",
+            exc_info=True,
+        )
+        failed_items = len(prepared_bulk_data)
+        page_statuses["error"] += failed_items
+        page_statuses["new"] = 0
+        page_statuses["updated"] = 0
+
+
+def _prepare_and_commit_batch_data(
+    batch_session: SqlAlchemySession,
+    session_manager: SessionManager,
+    matches_to_process_later: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person],
+    prefetched_data: dict[str, Any],
+    progress_bar: Optional[tqdm],
+    current_page: int,
+    page_statuses: dict[str, int]
+) -> None:
+    """Prepare and commit batch data to database."""
+    logger.debug(f"Batch {current_page}: Preparing DB data...")
+    prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
+        batch_session,
+        session_manager,
+        matches_to_process_later,
+        existing_persons_map,
+        prefetched_data,
+        progress_bar,
+    )
+    page_statuses["new"] = prep_statuses.get("new", 0)
+    page_statuses["updated"] = prep_statuses.get("updated", 0)
+    page_statuses["error"] = prep_statuses.get("error", 0)
+
+    logger.debug(f"Batch {current_page}: Executing DB Commit...")
+    if prepared_bulk_data:
+        _execute_batch_db_commit(
+            batch_session, prepared_bulk_data, existing_persons_map,
+            current_page, page_statuses
+        )
+    else:
+        logger.debug(f"No data prepared for bulk DB operations on page {current_page}.")
+
+
+def _perform_batch_api_prefetches(
+    session_manager: SessionManager,
+    fetch_candidates_uuid: set[str],
+    matches_to_process_later: list[dict[str, Any]],
+    current_page: int
+) -> dict[str, Any]:
+    """Perform API prefetches for batch."""
+    if len(fetch_candidates_uuid) == 0:
+        logger.debug(f"Batch {current_page}: All matches skipped (no API processing needed) - fast path")
+        return {}
+
+    logger.debug(f"Batch {current_page}: Performing API Prefetches...")
+
+    if len(fetch_candidates_uuid) >= 15:
+        try:
+            import asyncio
+            logger.debug(f"Batch {current_page}: Using enhanced async orchestrator for {len(fetch_candidates_uuid)} candidates")
+
+            prefetched_data = asyncio.run(_async_enhanced_api_orchestrator(
+                session_manager, fetch_candidates_uuid, matches_to_process_later
+            ))
+
+            logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
+            return prefetched_data
+        except Exception as async_error:
+            logger.warning(f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync")
+
+    return _perform_api_prefetches(
+        session_manager, fetch_candidates_uuid, matches_to_process_later
+    )
+
+
+def _perform_memory_cleanup(current_page: int) -> None:
+    """Perform memory cleanup for batch processing."""
+    try:
+        import gc
+        import os
+
+        import psutil
+
+        try:
+            process = psutil.Process(os.getpid())
+            current_memory_mb = process.memory_info().rss / 1024 / 1024
+            logger.debug(f"Memory usage at page {current_page}: {current_memory_mb:.1f} MB")
+        except Exception:
+            current_memory_mb = 0
+
+        if current_page % 5 == 0 or current_memory_mb > 500:
+            collected = gc.collect()
+            logger.debug(f"Memory cleanup: Forced garbage collection at page {current_page}, "
+                       f"collected {collected} objects, memory: {current_memory_mb:.1f} MB")
+
+            if current_memory_mb > 800:
+                logger.warning(f"High memory usage ({current_memory_mb:.1f} MB) - performing aggressive cleanup")
+                gc.collect(0)
+                gc.collect(1)
+                gc.collect(2)
+
+        elif current_page % 3 == 0:
+            gc.collect(0)
+            logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
+
+        if hasattr(_process_page_matches, '_prev_memory'):
+            memory_growth = current_memory_mb - _process_page_matches._prev_memory  # type: ignore
+            if memory_growth > 50:
+                logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
+        _process_page_matches._prev_memory = current_memory_mb  # type: ignore
+
+    except Exception as cleanup_exc:
+        logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
+
+
+def _cleanup_batch_session(
+    session_manager: SessionManager,
+    batch_session: SqlAlchemySession,
+    reused_session: Optional[SqlAlchemySession],
+    current_page: int
+) -> None:
+    """Clean up batch session if it wasn't reused."""
+    if not reused_session and batch_session:
+        session_manager.return_session(batch_session)
+    elif reused_session:
+        logger.debug(f"Batch {current_page}: Keeping reused session for parent cleanup")
+
+
+def _log_batch_summary_if_needed(
+    is_batch: bool,
+    current_page: int,
+    page_statuses: dict[str, int]
+) -> None:
+    """Log page summary if not processing as part of a batch."""
+    if not is_batch:
+        _log_page_summary(
+            current_page,
+            page_statuses["new"],
+            page_statuses["updated"],
+            page_statuses["skipped"],
+            page_statuses["error"],
+        )
+
+
+def _get_batch_session(
+    session_manager: SessionManager,
+    reused_session: Optional[SqlAlchemySession],
+    current_page: int
+) -> SqlAlchemySession:
+    """Get or create batch session."""
+    if reused_session:
+        logger.debug(f"Batch {current_page}: Using reused session for batch operations")
+        return reused_session
+
+    batch_session = session_manager.get_db_conn()
+    if not batch_session:
+        logger.error(f"_do_batch Page {current_page}: Failed DB session.")
+        raise SQLAlchemyError("Failed get DB session")
+    return batch_session
+
+
 def _process_page_matches(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
     current_page: int,
     progress_bar: Optional[tqdm] = None,
     is_batch: bool = False,
-    reused_session: Optional[SqlAlchemySession] = None,  # SURGICAL FIX #7: Accept reused session
+    reused_session: Optional[SqlAlchemySession] = None,
 ) -> tuple[int, int, int, int]:
     """
     Original batch processing logic - now used by both single page and chunked batch processing.
     Coordinates DB lookups, API prefetches, data preparation, and bulk DB operations.
     """
-    # Step 1: Initialization
-    page_statuses: dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
-    num_matches_on_page = len(matches_on_page)
     my_uuid = session_manager.my_uuid
     session: Optional[SqlAlchemySession] = None
 
-    # FINAL OPTIMIZATION 2: Memory-Optimized Data Structures Integration
-    memory_processor = None
-    if num_matches_on_page > 20:  # Use memory optimization for larger batches
-        memory_processor = MemoryOptimizedMatchProcessor(max_memory_mb=400)
-        logger.debug(f"Page {current_page}: Enabled memory optimization for {num_matches_on_page} matches")
+    try:
+        page_statuses, num_matches_on_page, memory_processor = _initialize_page_processing(
+            matches_on_page, current_page, my_uuid
+        )
+    except ValueError:
+        return 0, 0, 0, 0
 
     try:
-        # Step 2: Basic validation
-        if not my_uuid:
-            logger.error(f"_do_batch Page {current_page}: Missing my_uuid.")
-            raise ValueError(
-                "Missing my_uuid"
-            )  # This will be caught by outer try-except
-        if not matches_on_page:
-            logger.debug(f"_do_batch Page {current_page}: Empty match list.")
-            return 0, 0, 0, 0
-
-        logger.debug(
-            f"--- Starting Batch Processing for Page {current_page} ({num_matches_on_page} matches) ---"
-        )
-
-        # Step 3: SURGICAL FIX #7 - Use reused session when available
-        if reused_session:
-            batch_session = reused_session
-            logger.debug(f"Batch {current_page}: Using reused session for batch operations")
-        else:
-            # OPTIMIZED - Use long-lived DB Session for batch operations
-            # Reusing the same session reduces connection overhead significantly
-            batch_session = session_manager.get_db_conn()
-            if not batch_session:
-                logger.error(f"_do_batch Page {current_page}: Failed DB session.")
-                raise SQLAlchemyError("Failed get DB session")  # Caught by outer try-except
+        batch_session = _get_batch_session(session_manager, reused_session, current_page)
 
         try:
-            # --- Data Processing Pipeline (using reused session) ---
-            logger.debug(f"Batch {current_page}: Looking up existing persons...")
-            uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-            existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
-
-            logger.debug(f"Batch {current_page}: Identifying candidates...")
-            fetch_candidates_uuid, matches_to_process_later, skipped_count = (
-                _identify_fetch_candidates(matches_on_page, existing_persons_map)
+            existing_persons_map, fetch_candidates_uuid, matches_to_process_later, skipped_count = (
+                _process_batch_lookups(batch_session, matches_on_page, current_page, progress_bar, page_statuses)
             )
-            page_statuses["skipped"] = skipped_count
 
-            if progress_bar and skipped_count > 0:
-                # This logic updates the progress bar for items identified as "skipped" (no change from list view)
-                # It ensures the bar progresses even for items not going through full API fetch/DB prep.
-                try:
-                    progress_bar.update(skipped_count)
-                except Exception as pbar_e:
-                    logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
-
-            # SURGICAL FIX #6: Smart API Call Elimination
-            # Early exit when no API processing needed - skip expensive operations
-            if len(fetch_candidates_uuid) == 0:
-                logger.debug(f"Batch {current_page}: All matches skipped (no API processing needed) - fast path")
-                prefetched_data = {}  # Empty prefetch data
-            else:
-                logger.debug(f"Batch {current_page}: Performing API Prefetches...")
-
-                # FINAL OPTIMIZATION 3: Advanced Async Integration for large batches
-                if len(fetch_candidates_uuid) >= 15:  # Use async orchestrator for large batches
-                    try:
-                        import asyncio
-                        logger.debug(f"Batch {current_page}: Using enhanced async orchestrator for {len(fetch_candidates_uuid)} candidates")
-
-                        # Run async orchestrator
-                        prefetched_data = asyncio.run(_async_enhanced_api_orchestrator(
-                            session_manager, fetch_candidates_uuid, matches_to_process_later
-                        ))
-
-                        logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
-                    except Exception as async_error:
-                        logger.warning(f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync")
-                        # Fallback to sync method
-                        prefetched_data = _perform_api_prefetches(
-                            session_manager, fetch_candidates_uuid, matches_to_process_later
-                        )
-                else:
-                    # Use standard sync method for smaller batches
-                    prefetched_data = _perform_api_prefetches(
-                        session_manager, fetch_candidates_uuid, matches_to_process_later
-                    )  # This exception, if raised, will be caught by coord.
-
-            logger.debug(f"Batch {current_page}: Preparing DB data...")
-            prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
-                batch_session,  # OPTIMIZED: Reuse same session
-                session_manager,
-                matches_to_process_later,
-                existing_persons_map,
-                prefetched_data,
-                progress_bar,  # Pass progress_bar here
+            prefetched_data = _perform_batch_api_prefetches(
+                session_manager, fetch_candidates_uuid, matches_to_process_later, current_page
             )
-            page_statuses["new"] = prep_statuses.get("new", 0)
-            page_statuses["updated"] = prep_statuses.get("updated", 0)
-            page_statuses["error"] = prep_statuses.get("error", 0)
 
-            logger.debug(f"Batch {current_page}: Executing DB Commit...")
-            if prepared_bulk_data:
-                logger.debug(f"Attempting bulk DB operations for page {current_page}...")
-                try:
-                    # OPTIMIZED: Use same session for transaction instead of creating new one
-                    with db_transn(batch_session) as sess:
-                        bulk_success = _execute_bulk_db_operations(
-                            sess, prepared_bulk_data, existing_persons_map
-                        )
-                        if not bulk_success:
-                            logger.error(
-                                f"Bulk DB ops FAILED page {current_page}. Adjusting counts."
-                            )
-                            failed_items = len(prepared_bulk_data)
-                            page_statuses["error"] += failed_items
-                            page_statuses["new"] = 0
-                            page_statuses["updated"] = 0
-                    logger.debug(f"Transaction block finished page {current_page}.")
-                except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
-                    logger.error(
-                        f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}",
-                        exc_info=True,
-                    )
-                    failed_items = len(prepared_bulk_data)
-                    page_statuses["error"] += failed_items
-                    page_statuses["new"] = 0
-                    page_statuses["updated"] = 0
-                except Exception as e:
-                    logger.error(
-                        f"Unexpected error during bulk DB transaction page {current_page}: {e}",
-                        exc_info=True,
-                    )
-                    failed_items = len(prepared_bulk_data)
-                    page_statuses["error"] += failed_items
-                    page_statuses["new"] = 0
-                    page_statuses["updated"] = 0
-            else:
-                logger.debug(
-                    f"No data prepared for bulk DB operations on page {current_page}."
-                )
+            _prepare_and_commit_batch_data(
+                batch_session, session_manager, matches_to_process_later,
+                existing_persons_map, prefetched_data, progress_bar,
+                current_page, page_statuses
+            )
         finally:
-            # SURGICAL FIX #7: Only return session if it wasn't reused from parent
-            if not reused_session and batch_session:
-                session_manager.return_session(batch_session)
-            elif reused_session:
-                logger.debug(f"Batch {current_page}: Keeping reused session for parent cleanup")
+            _cleanup_batch_session(session_manager, batch_session, reused_session, current_page)
 
-        # Only log page summary if not processing as part of a batch
-        # (batch summaries are logged by _do_batch function)
-        if not is_batch:
-            _log_page_summary(
-                current_page,
-                page_statuses["new"],
-                page_statuses["updated"],
-                page_statuses["skipped"],
-                page_statuses["error"],
-            )
+        _log_batch_summary_if_needed(is_batch, current_page, page_statuses)
         return (
             page_statuses["new"],
             page_statuses["updated"],
@@ -3987,147 +4206,19 @@ def _process_page_matches(
             page_statuses["error"],
         )
 
-    except MaxApiFailuresExceededError:  # Explicitly catch and re-raise for coord
+    except MaxApiFailuresExceededError:
         raise
-    except (
-        ValueError,
-        SQLAlchemyError,
-        ConnectionError,
-    ) as critical_err:  # Catch other critical errors specific to this batch
-        logger.critical(
-            f"CRITICAL ERROR processing batch page {current_page}: {critical_err}",
-            exc_info=True,
+    except (ValueError, SQLAlchemyError, ConnectionError) as critical_err:
+        return _handle_critical_batch_error(
+            critical_err, current_page, page_statuses, num_matches_on_page, progress_bar
         )
-        # If progress_bar is active, update it for the remaining items in this batch as errors
-        if progress_bar:
-            items_already_accounted_for_in_bar = (
-                page_statuses["skipped"]
-                + page_statuses["new"]
-                + page_statuses["updated"]
-                + page_statuses["error"]
-            )
-            remaining_in_batch = max(
-                0, num_matches_on_page - items_already_accounted_for_in_bar
-            )
-            if remaining_in_batch > 0:
-                try:
-                    logger.debug(
-                        f"Updating progress bar by {remaining_in_batch} due to critical error in _do_batch."
-                    )
-                    progress_bar.update(remaining_in_batch)
-                except Exception as pbar_e:
-                    logger.warning(
-                        f"Progress bar update error during critical exception handling: {pbar_e}"
-                    )
-        # Calculate final error count for the page
-        # Errors are items that hit an error in prep + items that couldn't be processed due to critical batch error
-        final_error_count_for_page = page_statuses["error"] + max(
-            0,
-            num_matches_on_page
-            - (
-                page_statuses["new"]
-                + page_statuses["updated"]
-                + page_statuses["skipped"]
-                + page_statuses["error"]
-            ),
-        )
-
-        return (
-            page_statuses["new"],
-            page_statuses["updated"],
-            page_statuses["skipped"],
-            final_error_count_for_page,
-        )
-    except Exception as outer_batch_exc:  # Catch-all for any other unexpected exception
-        logger.critical(
-            f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}",
-            exc_info=True,
-        )
-        if progress_bar:
-            items_already_accounted_for_in_bar = (
-                page_statuses["skipped"]
-                + page_statuses["new"]
-                + page_statuses["updated"]
-                + page_statuses["error"]
-            )
-            remaining_in_batch = max(
-                0, num_matches_on_page - items_already_accounted_for_in_bar
-            )
-            if remaining_in_batch > 0:
-                from contextlib import suppress
-                with suppress(Exception):  # Ignore progress bar errors during exception handling
-                    progress_bar.update(remaining_in_batch)
-        # All remaining items in the batch are considered errors
-        final_error_count_for_page = num_matches_on_page - (
-            page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
-        )
-        return (
-            page_statuses["new"],
-            page_statuses["updated"],
-            page_statuses["skipped"],
-            max(0, final_error_count_for_page),  # Ensure error count is not negative
+    except Exception as outer_batch_exc:
+        return _handle_unhandled_batch_error(
+            outer_batch_exc, current_page, page_statuses, num_matches_on_page, progress_bar
         )
 
     finally:
-        # PRIORITY 4: Enhanced Memory Management Improvements
-        # Clean up large objects to prevent memory accumulation
-        try:
-            import gc
-            import os
-
-            import psutil
-
-            # Get current memory usage for monitoring
-            try:
-                process = psutil.Process(os.getpid())
-                current_memory_mb = process.memory_info().rss / 1024 / 1024
-                logger.debug(f"Memory usage at page {current_page}: {current_memory_mb:.1f} MB")
-            except Exception:
-                current_memory_mb = 0  # Fallback if psutil not available
-
-            # Clear large data structures with more thorough cleanup
-            cleanup_vars = [
-                'matches_on_page', 'existing_persons_map', 'prepared_bulk_data',
-                'prefetched_data', 'fetch_candidates_uuid', 'matches_to_process_later'
-            ]
-
-            for var_name in cleanup_vars:
-                if var_name in locals():
-                    var_obj = locals()[var_name]
-                    if hasattr(var_obj, 'clear') or isinstance(var_obj, (list, set)):
-                        var_obj.clear()
-                    # set to None to free reference
-                    locals()[var_name] = None
-
-            # Adaptive garbage collection based on memory usage and page number
-            if current_page % 5 == 0 or current_memory_mb > 500:  # Every 5 pages or high memory
-                collected = gc.collect()
-                logger.debug(f"Memory cleanup: Forced garbage collection at page {current_page}, "
-                           f"collected {collected} objects, memory: {current_memory_mb:.1f} MB")
-
-                # If memory is still high after GC, do more aggressive cleanup
-                if current_memory_mb > 800:
-                    logger.warning(f"High memory usage ({current_memory_mb:.1f} MB) - performing aggressive cleanup")
-                    gc.collect(0)  # Gen 0
-                    gc.collect(1)  # Gen 1
-                    gc.collect(2)  # Gen 2
-
-            elif current_page % 3 == 0:
-                # Light cleanup every 3 pages
-                gc.collect(0)  # Only collect generation 0
-                logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
-
-            # Monitor for memory growth patterns
-            if hasattr(_process_page_matches, '_prev_memory'):
-                memory_growth = current_memory_mb - _process_page_matches._prev_memory  # type: ignore
-                if memory_growth > 50:  # 50MB growth is concerning
-                    logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
-            _process_page_matches._prev_memory = current_memory_mb  # type: ignore
-
-        except Exception as cleanup_exc:
-            logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
-
-        # OPTIMIZED: No need to return session here since it's handled in the main try/finally block above
+        _perform_memory_cleanup(current_page)
         logger.debug(f"--- Finished Batch Processing for Page {current_page} ---")
 
 
@@ -4937,9 +5028,8 @@ def _populate_bulk_data_dict(
     if is_new_person:
         if tree_op_data and tree_operation_status == "create":
             prepared_data["family_tree"] = tree_op_data
-    else:
-        if tree_op_data:
-            prepared_data["family_tree"] = tree_op_data
+    elif tree_op_data:
+        prepared_data["family_tree"] = tree_op_data
 
 
 def _determine_overall_status(
@@ -5684,7 +5774,7 @@ def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[
             "from_my_fathers_side": bool(details_response.get("fathersSide", False)),
             "from_my_mothers_side": bool(details_response.get("mothersSide", False)),
         }
-    elif isinstance(details_response, requests.Response):
+    if isinstance(details_response, requests.Response):
         logger.error(
             f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
         )
@@ -5755,13 +5845,12 @@ def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> Optio
     try:
         if last_login_str.endswith("Z"):
             return datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
-        else:
-            dt_naive_or_aware = datetime.fromisoformat(last_login_str)
-            return (
-                dt_naive_or_aware.replace(tzinfo=timezone.utc)
-                if dt_naive_or_aware.tzinfo is None
-                else dt_naive_or_aware.astimezone(timezone.utc)
-            )
+        dt_naive_or_aware = datetime.fromisoformat(last_login_str)
+        return (
+            dt_naive_or_aware.replace(tzinfo=timezone.utc)
+            if dt_naive_or_aware.tzinfo is None
+            else dt_naive_or_aware.astimezone(timezone.utc)
+        )
     except (ValueError, TypeError) as date_parse_err:
         logger.warning(
             f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id}: {date_parse_err}"
@@ -5813,7 +5902,7 @@ def _fetch_profile_details_api(
             _cache_profile(tester_profile_id, profile_data)
             return profile_data
 
-        elif isinstance(profile_response, requests.Response):
+        if isinstance(profile_response, requests.Response):
             logger.warning(
                 f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
             )
@@ -6041,7 +6130,7 @@ def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[di
     }
 
 
-def _fetch_batch_badge_details(  # noqa: PLR0911
+def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[dict[str, Any]]:
     """
@@ -6354,7 +6443,7 @@ def _parse_ladder_html(
     return None
 
 
-def _fetch_batch_ladder_legacy(  # noqa: PLR0911
+def _fetch_batch_ladder_legacy(
     session_manager: SessionManager, cfpid: str, tree_id: str
 ) -> Optional[dict[str, Any]]:
     """
@@ -6735,7 +6824,7 @@ def _validate_relationship_prob_session(
     return my_uuid, driver, scraper
 
 
-def _fetch_batch_relationship_prob(  # noqa: PLR0911
+def _fetch_batch_relationship_prob(
     session_manager: SessionManager, match_uuid: str, max_labels_param: int = 2
 ) -> Optional[str]:
     """
