@@ -164,7 +164,6 @@ raw_logger = setup_module(globals(), __name__)
 logger = OptimizedLogger(raw_logger)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-import asyncio  # PHASE 2: Add asyncio for async/await patterns
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
@@ -2612,192 +2611,10 @@ def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = N
 
 DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 
-def _execute_batched_db_operations(
-    session: SqlAlchemySession,
-    operations: list[dict[str, Any]],
-    batch_size: int = DB_BATCH_SIZE
-) -> bool:
-    """
-    Phase 2: Execute database operations in smaller batches for better performance.
-
-    Args:
-        session: SQLAlchemy session
-        operations: list of database operations
-        batch_size: Size of each batch
-
-    Returns:
-        True if all batches succeeded, False otherwise
-    """
-    if not operations:
-        return True
-
-    total_operations = len(operations)
-    total_batches = (total_operations + batch_size - 1) // batch_size
-    logger.info(f"Phase 2: Processing {total_operations} DB operations in batches of {batch_size}")
-
-    for i in range(0, total_operations, batch_size):
-        batch = operations[i:i + batch_size]
-        batch_num = (i // batch_size) + 1
-
-        try:
-            logger.debug(f"Processing DB batch {batch_num}/{total_batches} ({len(batch)} operations)")
-
-            # Process this batch
-            for operation in batch:
-                if operation.get("_operation") == "create":
-                    _execute_single_create_operation(session, operation)
-                elif operation.get("_operation") == "update":
-                    _execute_single_update_operation(session, operation)
-
-            # Commit this batch
-            session.commit()
-            logger.debug(f"DB batch {batch_num}/{total_batches} committed successfully")
-
-        except Exception as e:
-            logger.error(f"DB batch {batch_num}/{total_batches} failed: {e}")
-            session.rollback()
-            return False
-
-    logger.info(f"Phase 2: All {total_batches} DB batches completed successfully")
-    return True
-
-
-def _execute_single_create_operation(session: SqlAlchemySession, operation: dict[str, Any]) -> None:
-    """Execute a single create operation."""
-    # This would be customized based on the operation type
-    # Placeholder for now - would need to be implemented based on actual operation structure
-    pass
-
-
-def _execute_single_update_operation(session: SqlAlchemySession, operation: dict[str, Any]) -> None:
-    """Execute a single update operation."""
-    # This would be customized based on the operation type
-    # Placeholder for now - would need to be implemented based on actual operation structure
-    pass
-
-
 # ===================================================================
 # PHASE 3: ADVANCED OPTIMIZATIONS - SMART MATCH PRIORITIZATION
 # ===================================================================
-
-def _prioritize_matches_by_importance(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """
-    Phase 3: Intelligently prioritize matches for processing.
-
-    Priority order:
-    1. High cM matches (>50 cM) - likely close relatives
-    2. Medium cM matches (20-50 cM) - potential cousins
-    3. Matches with trees - more genealogical value
-    4. Recent activity - newly added matches
-    5. Low cM matches (<20 cM) - distant relatives
-
-    Args:
-        matches: list of match dictionaries
-
-    Returns:
-        Sorted list of matches by priority (highest first)
-    """
-    def get_match_priority(match: dict[str, Any]) -> tuple:
-        cm_value = match.get("sharedCentimorgans", 0)
-        has_tree = bool(match.get("treeId") or match.get("hasTree", False))
-        is_recent = match.get("isNew", False)
-
-        # Priority scoring (lower number = higher priority)
-        if cm_value > 50:
-            priority_class = 1  # High priority
-        elif cm_value >= 20:
-            priority_class = 2  # Medium priority
-        else:
-            priority_class = 3  # Low priority
-
-        # Sub-priority within class
-        tree_bonus = 0 if has_tree else 1
-        recent_bonus = 0 if is_recent else 1
-
-        # Return tuple for sorting (all ascending for highest priority first)
-        return (priority_class, tree_bonus, recent_bonus, -cm_value)
-
-    sorted_matches = sorted(matches, key=get_match_priority)
-
-    # Log prioritization statistics
-    high_priority = sum(1 for m in matches if m.get("sharedCentimorgans", 0) > 50)
-    medium_priority = sum(1 for m in matches if 20 <= m.get("sharedCentimorgans", 0) <= 50)
-    with_trees = sum(1 for m in matches if m.get("treeId") or m.get("hasTree", False))
-
-    logger.debug(f"Match prioritization - High: {high_priority}, Medium: {medium_priority}, With trees: {with_trees}")
-
-    return sorted_matches
-
-
-def _smart_batch_processing(
-    matches: list[dict[str, Any]],
-    session_manager: SessionManager,
-    batch_size: Optional[int] = None  # Now gets configured batch size
-) -> list[dict[str, Any]]:
-    """
-    Phase 3: Smart batch processing with adaptive sizing based on match priority.
-
-    Args:
-        matches: list of matches to process
-        session_manager: SessionManager for API calls
-        batch_size: Base batch size (adjusted based on priority)
-
-    Returns:
-        list of processed matches
-    """
-    # Use configured batch size if not provided
-    if batch_size is None:
-        batch_size = _get_configured_batch_size()
-
-    prioritized_matches = _prioritize_matches_by_importance(matches)
-    processed_matches = []
-
-    # Process high-priority matches first with smaller batches (better error handling)
-    high_priority_matches = [m for m in prioritized_matches if m.get("sharedCentimorgans", 0) > 50]
-    medium_priority_matches = [m for m in prioritized_matches if 20 <= m.get("sharedCentimorgans", 0) <= 50]
-    low_priority_matches = [m for m in prioritized_matches if m.get("sharedCentimorgans", 0) < 20]
-
-    # Adaptive batch sizes
-    high_priority_batch_size = max(10, batch_size // 2)  # Smaller batches for important matches
-    medium_priority_batch_size = batch_size
-    low_priority_batch_size = min(50, batch_size * 2)  # Larger batches for bulk processing
-
-    processing_plan = [
-        ("High Priority", high_priority_matches, high_priority_batch_size),
-        ("Medium Priority", medium_priority_matches, medium_priority_batch_size),
-        ("Low Priority", low_priority_matches, low_priority_batch_size)
-    ]
-
-    for priority_name, match_group, group_batch_size in processing_plan:
-        if not match_group:
-            continue
-
-        logger.info(f"Phase 3: Processing {len(match_group)} {priority_name} matches (batch size: {group_batch_size})")
-
-        for i in range(0, len(match_group), group_batch_size):
-            batch = match_group[i:i + group_batch_size]
-
-            # Process this batch (would integrate with existing processing logic)
-            processed_batch = _process_match_batch(batch, session_manager)
-            processed_matches.extend(processed_batch)
-
-    return processed_matches
-
-
-def _process_match_batch(matches: list[dict[str, Any]], _session_manager: SessionManager) -> list[dict[str, Any]]:
-    """
-    Process a batch of matches with error handling.
-
-    Args:
-        matches: Batch of matches to process
-        _session_manager: SessionManager for API calls (unused, kept for API compatibility)
-
-    Returns:
-        list of successfully processed matches
-    """
-    # Placeholder for actual batch processing logic
-    # This would integrate with existing _perform_api_prefetches or async equivalent
-    return matches
+# Removed unused functions: _prioritize_matches_by_importance, _process_match_batch
 
 
 # ===================================================================
@@ -6572,24 +6389,7 @@ def _log_page_summary(
 # End of _log_page_summary
 
 
-def _log_coord_summary(
-    total_pages_processed: int,
-    total_new: int,
-    total_updated: int,
-    total_skipped: int,
-    total_errors: int,
-):
-    """Logs the final summary of the entire coord (match gathering) execution."""
-    logger.info("---- Gather Matches Final Summary ----")
-    logger.info(f"  Total Pages Processed: {total_pages_processed}")
-    logger.info(f"  Total New Added:     {total_new}")
-    logger.info(f"  Total Updated:       {total_updated}")
-    logger.info(f"  Total Skipped:       {total_skipped}")
-    logger.info(f"  Total Errors:        {total_errors}")
-    logger.info("------------------------------------\n")
-
-
-# End of _log_coord_summary
+# Removed unused function: _log_coord_summary
 
 
 def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
