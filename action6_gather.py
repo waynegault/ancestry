@@ -5247,6 +5247,771 @@ def _do_match(
 # ------------------------------------------------------------------------------
 
 
+def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool, Optional[Any], Optional[str]]:
+    """
+    Validate session manager, driver, UUID, and session validity for get_matches.
+
+    Returns:
+        Tuple of (is_valid, driver, my_uuid)
+    """
+    if not isinstance(session_manager, SessionManager):  # type: ignore
+        logger.error("get_matches: Invalid SessionManager.")
+        return False, None, None
+    driver = session_manager.driver
+    if not driver:
+        logger.error("get_matches: WebDriver not initialized.")
+        return False, None, None
+    my_uuid = session_manager.my_uuid
+    if not my_uuid:
+        logger.error("get_matches: SessionManager my_uuid not set.")
+        return False, None, None
+    if not session_manager.is_sess_valid():
+        logger.error("get_matches: Session invalid at start.")
+        return False, None, None
+    return True, driver, my_uuid
+
+
+def _validate_and_refresh_page_url(driver: Any, session_manager: SessionManager) -> bool:
+    """
+    Validate current URL is on Ancestry page and refresh if needed.
+
+    Returns:
+        True if validation successful, False otherwise
+    """
+    try:
+        # Check if we're still on a valid Ancestry page
+        current_url = driver.current_url
+        if not current_url or "ancestry.co" not in current_url:
+            logger.warning(f"Driver not on Ancestry page. Current URL: {current_url}")
+            # Try to refresh the page
+            driver.refresh()
+            time.sleep(2)
+
+        # Validate session cookies are present
+        if not session_manager.is_sess_valid():
+            logger.error("Session validation failed before API call")
+            return False
+        return True
+    except Exception as session_validation_error:
+        logger.error(f"Session validation error: {session_validation_error}")
+        return False
+
+
+def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
+    """
+    Perform smart cookie sync with freshness tracking to avoid unnecessary syncing.
+    """
+    import time as time_module
+    current_time = time_module.time()
+
+    # Check if cookies were synced recently (within last 5 minutes)
+    last_cookie_sync = getattr(session_manager, '_last_cookie_sync_time', 0)
+    cookie_sync_needed = (current_time - last_cookie_sync) > 300  # 5 minutes
+
+    if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
+        session_manager._sync_cookies_to_requests()
+        # Track the sync time
+        setattr(session_manager, '_last_cookie_sync_time', current_time)
+        logger.debug("Smart cookie sync performed (cookies were stale)")
+    elif not cookie_sync_needed:
+        logger.debug("Skipping cookie sync - cookies are fresh")
+    else:
+        logger.debug("Cookie sync method not available")
+
+
+
+
+def _read_csrf_from_driver_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> Optional[str]:
+    """
+    Read CSRF token from driver cookies using get_cookie method.
+
+    Returns:
+        CSRF token string or None if not found
+    """
+    import time as time_module
+
+    for cookie_name in csrf_token_cookie_names:
+        try:
+            cookie_obj = driver.get_cookie(cookie_name)
+            if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
+                csrf_token = unquote(cookie_obj["value"]).split("|")[0]
+                logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
+                return csrf_token
+        except NoSuchCookieException:
+            continue
+        except WebDriverException as cookie_e:
+            logger.warning(
+                f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Unexpected error getting cookie '{cookie_name}': {e}",
+                exc_info=True,
+            )
+    return None
+
+
+def _read_csrf_from_fallback_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> Optional[str]:
+    """
+    Read CSRF token from driver cookies using get_driver_cookies fallback.
+
+    Returns:
+        CSRF token string or None if not found
+    """
+    logger.debug(
+        "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
+    )
+    all_cookies = get_driver_cookies(driver)
+    if not all_cookies:
+        logger.warning(
+            "Fallback get_driver_cookies also failed to retrieve cookies."
+        )
+        return None
+
+    # get_driver_cookies returns a list of cookie dictionaries
+    for cookie_name in csrf_token_cookie_names:
+        for cookie in all_cookies:
+            if cookie.get("name") == cookie_name and cookie.get("value"):
+                csrf_token = unquote(cookie["value"]).split("|")[0]
+                logger.debug(
+                    f"Read CSRF token via fallback from '{cookie_name}'."
+                )
+                return csrf_token
+    return None
+
+
+def _cache_csrf_token(session_manager: SessionManager, csrf_token: str) -> None:
+    """Cache CSRF token in session manager."""
+    import time as time_module
+    setattr(session_manager, '_cached_csrf_token', csrf_token)
+    setattr(session_manager, '_cached_csrf_time', time_module.time())
+
+def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> Optional[str]:
+    """
+    Get CSRF token from cache if valid, otherwise read fresh from cookies.
+
+    Returns:
+        CSRF token string or None if not found
+    """
+    import time as time_module
+
+    # Check if we have a cached CSRF token that's still valid
+    cached_csrf_token = getattr(session_manager, '_cached_csrf_token', None)
+    cached_csrf_time = getattr(session_manager, '_cached_csrf_time', 0)
+    csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
+
+    if cached_csrf_token and csrf_cache_valid:
+        logger.debug(f"Using cached CSRF token (age: {time_module.time() - cached_csrf_time:.1f}s)")
+        return cached_csrf_token
+
+    # Need to read CSRF token from cookies
+    csrf_token_cookie_names = (
+        "_dnamatches-matchlistui-x-csrf-token",
+        "_csrf",
+    )
+
+    try:
+        logger.debug(f"Reading fresh CSRF token from cookies: {csrf_token_cookie_names}")
+
+        # Try reading from driver cookies first
+        specific_csrf_token = _read_csrf_from_driver_cookies(driver, csrf_token_cookie_names)
+
+        # If not found, try fallback method
+        if not specific_csrf_token:
+            specific_csrf_token = _read_csrf_from_fallback_cookies(driver, csrf_token_cookie_names)
+
+        # Cache the token if found
+        if specific_csrf_token:
+            _cache_csrf_token(session_manager, specific_csrf_token)
+
+        return specific_csrf_token
+
+    except Exception as csrf_err:
+        logger.error(
+            f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
+        )
+        return None
+
+
+def _call_match_list_api(
+    session_manager: SessionManager,
+    driver: Any,
+    my_uuid: str,
+    current_page: int,
+    specific_csrf_token: str
+) -> Any:
+    """
+    Build URL and headers, then call the match list API.
+
+    Returns:
+        API response (dict, Response object, or None)
+    """
+    # Use the working API endpoint pattern
+    match_list_url = urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
+    )
+    # Use simplified headers that were working earlier
+    match_list_headers = {
+        "X-CSRF-Token": specific_csrf_token,
+        "Accept": "application/json",
+        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
+    }
+    logger.debug(f"Calling Match list API for page {current_page}...")
+    logger.debug(
+        f"Headers being passed to _api_req for Match list: {match_list_headers}"
+    )
+
+    # Additional debug logging for troubleshooting 303 redirects
+    logger.debug(f"Match list URL: {match_list_url}")
+    logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
+
+    # CRITICAL: Ensure cookies are synced immediately before API call
+    try:
+        if hasattr(session_manager, '_sync_cookies_to_requests'):
+            session_manager._sync_cookies_to_requests()
+    except Exception as cookie_sync_error:
+        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
+
+    # Call the API with fresh cookie sync
+    api_response = _api_req(
+        url=match_list_url,
+        driver=driver,
+        session_manager=session_manager,
+        method="GET",
+        headers=match_list_headers,
+        use_csrf_token=False,
+        api_description="Match list API",
+        allow_redirects=True,
+    )
+    return api_response
+
+
+def _handle_303_with_redirect(
+    location: str,
+    driver: Any,
+    session_manager: SessionManager,
+    match_list_headers: dict[str, str]
+) -> Any:
+    """
+    Handle 303 See Other response with redirect location.
+
+    Returns:
+        API response from redirected URL or None if failed
+    """
+    logger.warning(
+        f"Match list API received 303 See Other. Retrying with redirect to {location}."
+    )
+    # Retry once with the new location
+    api_response_redirect = _api_req(
+        url=location,
+        driver=driver,
+        session_manager=session_manager,
+        method="GET",
+        headers=match_list_headers,
+        use_csrf_token=False,
+        api_description="Match list API (redirected)",
+        allow_redirects=False,
+    )
+    if isinstance(api_response_redirect, dict):
+        return api_response_redirect
+    else:
+        logger.error(
+            f"Redirected Match list API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
+        )
+        return None
+
+
+def _handle_303_session_refresh(
+    session_manager: SessionManager,
+    driver: Any,
+    match_list_url: str,
+    match_list_headers: dict[str, str]
+) -> Any:
+    """
+    Handle 303 See Other without redirect location (session expired).
+    Performs session refresh with cache clear and retries the API call.
+
+    Returns:
+        API response after session refresh or None if failed
+    """
+    logger.warning(
+        "Match list API received 303 See Other with no redirect location. "
+        "This usually indicates session expiration. Attempting session refresh with cache clear."
+    )
+    try:
+        # Clear session cache for complete fresh start
+        try:
+            cleared_count = session_manager.clear_session_caches()
+            logger.debug(f"🧹 Cleared {cleared_count} session cache entries before refresh")
+        except Exception as cache_err:
+            logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
+
+        # Force clear readiness check cache to ensure fresh validation
+        session_manager._last_readiness_check = None
+        logger.debug("🔄 Cleared session readiness cache to force fresh validation")
+
+        # Force session refresh with cleared cache
+        fresh_success = session_manager.ensure_session_ready(action_name="coord_action - Session Refresh")
+        if not fresh_success:
+            logger.error("❌ Session refresh failed after cache clear")
+            return None
+
+        # Force cookie sync and CSRF token refresh
+        session_manager._sync_cookies_to_requests()
+        fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
+        if fresh_csrf_token:
+            # Update headers with fresh token and retry
+            match_list_headers['X-CSRF-Token'] = fresh_csrf_token
+            logger.info("✅ Retrying Match list API with refreshed session, cleared cache, and fresh CSRF token.")
+            logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
+            logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
+
+            api_response_refresh = _api_req(
+                url=match_list_url,
+                driver=driver,
+                session_manager=session_manager,
+                method="GET",
+                headers=match_list_headers,
+                use_csrf_token=False,
+                api_description="Match list API (Session Refreshed)",
+                allow_redirects=True,
+            )
+            if isinstance(api_response_refresh, dict):
+                return api_response_refresh
+            else:
+                logger.error("Match list API still failing after session refresh. Aborting.")
+                return None
+        else:
+            logger.error("Could not obtain fresh CSRF token for session refresh.")
+            return None
+    except Exception as refresh_err:
+        logger.error(f"Error during session refresh: {refresh_err}")
+        return None
+
+
+def _handle_match_list_response(
+    api_response: Any,
+    current_page: int,
+    driver: Any,
+    session_manager: SessionManager,
+    match_list_url: str,
+    match_list_headers: dict[str, str]
+) -> Optional[dict]:
+    """
+    Handle and validate match list API response, including 303 redirect handling.
+
+    Returns:
+        Response dict if successful, None if failed
+    """
+    if api_response is None:
+        logger.warning(
+            f"No response/error from match list API page {current_page}. Assuming empty page."
+        )
+        return None
+
+    if not isinstance(api_response, dict):
+        # Handle 303 See Other: retry with redirect or session refresh
+        if isinstance(api_response, requests.Response):
+            status = api_response.status_code
+            location = api_response.headers.get('Location')
+
+            if status == 303:
+                if location:
+                    # Handle 303 with redirect location
+                    result = _handle_303_with_redirect(location, driver, session_manager, match_list_headers)
+                    if result is None:
+                        return None
+                    return result
+                else:
+                    # Handle 303 without location (session expired)
+                    result = _handle_303_session_refresh(session_manager, driver, match_list_url, match_list_headers)
+                    if result is None:
+                        return None
+                    return result
+            else:
+                logger.error(
+                    f"Match list API did not return dict. Type: {type(api_response).__name__}, "
+                    f"Status: {getattr(api_response, 'status_code', 'N/A')}"
+                )
+                return None
+        else:
+            logger.error(
+                f"Match list API did not return dict. Type: {type(api_response).__name__}"
+            )
+            return None
+
+    return api_response
+
+
+def _parse_total_pages(api_response: dict, current_page: int) -> Optional[int]:
+    """
+    Parse total pages from API response.
+
+    Returns:
+        Total pages as integer or None if not found/invalid
+    """
+    total_pages: Optional[int] = None
+    total_pages_raw = api_response.get("totalPages")
+    if total_pages_raw is not None:
+        try:
+            total_pages = int(total_pages_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
+    else:
+        logger.warning("Total pages missing from match list response.")
+    return total_pages
+
+
+def _filter_valid_matches(match_data_list: list, current_page: int) -> list[dict[str, Any]]:
+    """
+    Filter matches to only include those with valid sampleId.
+
+    Returns:
+        List of valid matches with sampleId
+    """
+    valid_matches_for_processing: list[dict[str, Any]] = []
+    skipped_sampleid_count = 0
+    for m_idx, m_val in enumerate(match_data_list):
+        if isinstance(m_val, dict) and m_val.get("sampleId"):
+            valid_matches_for_processing.append(m_val)
+        else:
+            skipped_sampleid_count += 1
+            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
+            logger.warning(
+                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
+            )
+    if skipped_sampleid_count > 0:
+        logger.warning(
+            f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
+        )
+    if not valid_matches_for_processing:
+        logger.warning(
+            f"No valid matches (with sampleId) found on page {current_page} to process further."
+        )
+    return valid_matches_for_processing
+
+
+def _read_in_tree_cache(sample_ids_on_page: list[str], current_page: int) -> set[str]:
+    """
+    Read in-tree status from cache if available.
+
+    Returns:
+        Set of in-tree sample IDs (empty set if cache miss or error)
+    """
+    in_tree_ids: set[str] = set()
+    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
+
+    try:
+        if global_cache is not None:
+            cached_in_tree = global_cache.get(
+                cache_key_tree, default=ENOVAL, retry=True
+            )
+            if cached_in_tree is not ENOVAL:
+                if isinstance(cached_in_tree, set):
+                    in_tree_ids = cached_in_tree
+                logger.debug(
+                    f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
+                )
+            else:
+                logger.debug(
+                    f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
+                )
+    except Exception as cache_read_err:
+        logger.error(
+            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
+            exc_info=True,
+        )
+        in_tree_ids = set()
+
+    return in_tree_ids
+
+
+
+
+def _process_in_tree_api_response(
+    response_in_tree: Any,
+    sample_ids_on_page: list[str],
+    current_page: int
+) -> set[str]:
+    """
+    Process in-tree API response and cache the result.
+
+    Returns:
+        Set of in-tree sample IDs (empty set if response is invalid)
+    """
+    in_tree_ids: set[str] = set()
+
+    if isinstance(response_in_tree, list):
+        in_tree_ids = {
+            item.upper() for item in response_in_tree if isinstance(item, str)
+        }
+        logger.debug(
+            f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}."
+        )
+        # Cache the result
+        try:
+            cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
+            if global_cache is not None:
+                global_cache.set(
+                    cache_key_tree,
+                    in_tree_ids,
+                    expire=config_schema.cache.memory_cache_ttl,
+                    retry=True,
+                )
+            logger.debug(
+                f"Cached in-tree status result for page {current_page}."
+            )
+        except Exception as cache_write_err:
+            logger.error(
+                f"Error writing in-tree status to cache: {cache_write_err}"
+            )
+    else:
+        status_code_log = (
+            f" Status: {response_in_tree.status_code}"  # type: ignore
+            if isinstance(response_in_tree, requests.Response)
+            else ""
+        )
+        logger.warning(
+            f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
+        )
+        logger.debug(f"In-Tree check response: {response_in_tree}")
+
+    return in_tree_ids
+
+def _fetch_in_tree_from_api(
+    session_manager: SessionManager,
+    driver: Any,
+    my_uuid: str,
+    sample_ids_on_page: list[str],
+    specific_csrf_token: str,
+    current_page: int
+) -> set[str]:
+    """
+    Fetch in-tree status from API and cache the result.
+
+    Returns:
+        Set of in-tree sample IDs (empty set if API call fails)
+    """
+    in_tree_ids: set[str] = set()
+
+    if not session_manager.is_sess_valid():
+        logger.error(
+            f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch."
+        )
+        return in_tree_ids
+
+    in_tree_url = urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
+    )
+    parsed_base_url = urlparse(config_schema.api.base_url)
+    origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
+    ua_in_tree = None
+    if driver and session_manager.is_sess_valid():
+        with contextlib.suppress(Exception):
+            ua_in_tree = driver.execute_script("return navigator.userAgent;")
+    ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
+    in_tree_headers = {
+        "X-CSRF-Token": specific_csrf_token,
+        "Referer": urljoin(
+            config_schema.api.base_url, "/discoveryui-matches/list/"
+        ),
+        "Origin": origin_header_value,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": ua_in_tree,
+    }
+    in_tree_headers = {k: v for k, v in in_tree_headers.items() if v}
+
+    logger.debug(
+        f"Fetching in-tree status for {len(sample_ids_on_page)} matches on page {current_page}..."
+    )
+    logger.debug(
+        f"In-Tree Check Headers FULLY set in get_matches: {in_tree_headers}"
+    )
+    response_in_tree = _api_req(
+        url=in_tree_url,
+        driver=driver,
+        session_manager=session_manager,
+        method="POST",
+        json_data={
+            "sampleIds": sample_ids_on_page
+        },
+        headers=in_tree_headers,
+        use_csrf_token=False,
+        api_description="In-Tree Status Check",
+    )
+
+    # Process the response and cache the result
+    in_tree_ids = _process_in_tree_api_response(
+        response_in_tree,
+        sample_ids_on_page,
+        current_page
+    )
+
+    return in_tree_ids
+
+
+def _fetch_in_tree_status(
+    session_manager: SessionManager,
+    driver: Any,
+    my_uuid: str,
+    valid_matches_for_processing: list[dict[str, Any]],
+    specific_csrf_token: str,
+    current_page: int
+) -> set[str]:
+    """
+    Fetch in-tree status for matches, using cache if available.
+
+    Returns:
+        Set of in-tree sample IDs
+    """
+    sample_ids_on_page = [
+        match["sampleId"].upper() for match in valid_matches_for_processing
+    ]
+
+    # Try to read from cache first
+    in_tree_ids = _read_in_tree_cache(sample_ids_on_page, current_page)
+
+    # If cache miss, fetch from API
+    if not in_tree_ids:
+        in_tree_ids = _fetch_in_tree_from_api(
+            session_manager,
+            driver,
+            my_uuid,
+            sample_ids_on_page,
+            specific_csrf_token,
+            current_page
+        )
+
+    return in_tree_ids
+
+
+def _refine_single_match(
+    match_api_data: dict[str, Any],
+    my_uuid: str,
+    in_tree_ids: set[str],
+    match_index: int,
+    current_page: int
+) -> Optional[dict[str, Any]]:
+    """
+    Refine a single match from raw API data into structured format.
+
+    Returns:
+        Refined match dict or None if refinement fails
+    """
+    try:
+        profile_info = match_api_data.get("matchProfile", {})
+        relationship_info = match_api_data.get("relationship", {})
+        sample_id = match_api_data["sampleId"]
+        sample_id_upper = sample_id.upper()
+
+        profile_user_id_raw = profile_info.get("userId")
+        profile_user_id_upper = (
+            str(profile_user_id_raw).upper() if profile_user_id_raw else None
+        )
+        raw_display_name = profile_info.get("displayName")
+        match_username = format_name(raw_display_name)
+
+        first_name: Optional[str] = None
+        if match_username and match_username != "Valued Relative":
+            trimmed_username = match_username.strip()
+            if trimmed_username:
+                name_parts = trimmed_username.split()
+                if name_parts:
+                    first_name = name_parts[0]
+
+        admin_profile_id_hint = match_api_data.get("adminId")
+        admin_username_hint = match_api_data.get("adminName")
+        photo_url = profile_info.get("photoUrl", "")
+        initials = profile_info.get("displayInitials", "??").upper()
+        gender = match_api_data.get("gender")
+
+        shared_cm = int(relationship_info.get("sharedCentimorgans", 0))
+        shared_segments = int(relationship_info.get("numSharedSegments", 0))
+        created_date_raw = match_api_data.get("createdDate")
+
+        compare_link = urljoin(
+            config_schema.api.base_url,
+            f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
+        )
+        is_in_tree = sample_id_upper in in_tree_ids
+
+        refined_match_data = {
+            "username": match_username,
+            "first_name": first_name,
+            "initials": initials,
+            "gender": gender,
+            "profile_id": profile_user_id_upper,
+            "uuid": sample_id_upper,
+            "administrator_profile_id_hint": admin_profile_id_hint,
+            "administrator_username_hint": admin_username_hint,
+            "photoUrl": photo_url,
+            "cm_dna": shared_cm,
+            "numSharedSegments": shared_segments,
+            "compare_link": compare_link,
+            "message_link": None,
+            "in_my_tree": is_in_tree,
+            "createdDate": created_date_raw,
+        }
+        return refined_match_data
+
+    except (IndexError, KeyError, TypeError, ValueError) as refine_err:
+        match_uuid_err = match_api_data.get("sampleId", "UUID_UNKNOWN")
+        logger.error(
+            f"Refinement error page {current_page}, match #{match_index+1} (UUID: {match_uuid_err}): {type(refine_err).__name__} - {refine_err}. Skipping match.",
+            exc_info=False,
+        )
+        logger.debug(f"Problematic match data during refinement: {match_api_data}")
+        return None
+    except Exception as critical_refine_err:
+        match_uuid_err = match_api_data.get("sampleId", "UUID_UNKNOWN")
+        logger.error(
+            f"CRITICAL unexpected error refining match page {current_page}, match #{match_index+1} (UUID: {match_uuid_err}): {critical_refine_err}",
+            exc_info=True,
+        )
+        logger.debug(
+            f"Problematic match data during critical error: {match_api_data}"
+        )
+        raise critical_refine_err
+
+
+def _refine_all_matches(
+    valid_matches_for_processing: list[dict[str, Any]],
+    my_uuid: str,
+    in_tree_ids: set[str],
+    current_page: int
+) -> list[dict[str, Any]]:
+    """
+    Refine all matches from raw API data into structured format.
+
+    Returns:
+        List of refined match dicts
+    """
+    refined_matches: list[dict[str, Any]] = []
+    logger.debug(f"Refining {len(valid_matches_for_processing)} valid matches...")
+    for match_index, match_api_data in enumerate(valid_matches_for_processing):
+        refined_match = _refine_single_match(
+            match_api_data,
+            my_uuid,
+            in_tree_ids,
+            match_index,
+            current_page
+        )
+        if refined_match is not None:
+            refined_matches.append(refined_match)
+
+    logger.debug(
+        f"Successfully refined {len(refined_matches)} matches on page {current_page}."
+    )
+    return refined_matches
+
+
+
+
+
+
 def get_matches(  # noqa: PLR0911
     session_manager: SessionManager,
     _db_session: SqlAlchemySession,  # Parameter name changed for clarity
@@ -5273,131 +6038,22 @@ def get_matches(  # noqa: PLR0911
     # Consider removing it if it's not planned for future use here.
     # For now, we'll keep it to maintain the signature as per original code.
 
-    if not isinstance(session_manager, SessionManager):  # type: ignore
-        logger.error("get_matches: Invalid SessionManager.")
-        return None
-    driver = session_manager.driver
-    if not driver:
-        logger.error("get_matches: WebDriver not initialized.")
-        return None
-    my_uuid = session_manager.my_uuid
-    if not my_uuid:
-        logger.error("get_matches: SessionManager my_uuid not set.")
-        return None
-    if not session_manager.is_sess_valid():
-        logger.error("get_matches: Session invalid at start.")
+    # Step 1: Validate session, driver, UUID
+    is_valid, driver, my_uuid = _validate_get_matches_session(session_manager)
+    if not is_valid:
         return None
 
     logger.debug(f"--- Fetching Match list Page {current_page} ---")
 
-    # Validate session state before API call
-    try:
-        # Check if we're still on a valid Ancestry page
-        current_url = driver.current_url
-        if not current_url or "ancestry.co" not in current_url:
-            logger.warning(f"Driver not on Ancestry page. Current URL: {current_url}")
-            # Try to refresh the page
-            driver.refresh()
-            time.sleep(2)
-
-        # Validate session cookies are present
-        if not session_manager.is_sess_valid():
-            logger.error("Session validation failed before API call")
-            return None
-
-        # SURGICAL FIX #17: Smart Cookie Sync Optimization
-        # Track cookie sync freshness to avoid unnecessary syncing
-        import time as time_module
-        current_time = time_module.time()
-
-        # Check if cookies were synced recently (within last 5 minutes)
-        last_cookie_sync = getattr(session_manager, '_last_cookie_sync_time', 0)
-        cookie_sync_needed = (current_time - last_cookie_sync) > 300  # 5 minutes
-
-        if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
-            # Track the sync time
-            setattr(session_manager, '_last_cookie_sync_time', current_time)
-            logger.debug("Smart cookie sync performed (cookies were stale)")
-        elif not cookie_sync_needed:
-            logger.debug("Skipping cookie sync - cookies are fresh")
-        else:
-            logger.debug("Cookie sync method not available")
-
-    except Exception as session_validation_error:
-        logger.error(f"Session validation error: {session_validation_error}")
+    # Step 2: Validate and refresh page URL if needed
+    if not _validate_and_refresh_page_url(driver, session_manager):
         return None
 
-    # SURGICAL FIX #19: Enhanced CSRF Token Caching
-    # Check if we have a cached CSRF token that's still valid
-    cached_csrf_token = getattr(session_manager, '_cached_csrf_token', None)
-    cached_csrf_time = getattr(session_manager, '_cached_csrf_time', 0)
-    csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
+    # Step 3: Perform smart cookie sync
+    _perform_smart_cookie_sync(session_manager)
 
-    if cached_csrf_token and csrf_cache_valid:
-        logger.debug(f"Using cached CSRF token (age: {time_module.time() - cached_csrf_time:.1f}s)")
-        specific_csrf_token = cached_csrf_token
-    else:
-        # Need to read CSRF token from cookies
-        specific_csrf_token: Optional[str] = None
-        csrf_token_cookie_names = (
-            "_dnamatches-matchlistui-x-csrf-token",
-            "_csrf",
-        )
-        try:
-            logger.debug(f"Reading fresh CSRF token from cookies: {csrf_token_cookie_names}")
-            for cookie_name in csrf_token_cookie_names:
-                try:
-                    cookie_obj = driver.get_cookie(cookie_name)
-                    if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
-                        specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
-                        logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
-                        # Cache the token for future use
-                        setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
-                        setattr(session_manager, '_cached_csrf_time', time_module.time())
-                        break
-                except NoSuchCookieException:
-                    continue
-                except WebDriverException as cookie_e:
-                    logger.warning(
-                        f"WebDriver error getting cookie '{cookie_name}': {cookie_e}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Unexpected error getting cookie '{cookie_name}': {e}",
-                        exc_info=True,
-                    )
-
-            if not specific_csrf_token:
-                logger.debug(
-                    "CSRF token not found via get_cookie. Trying get_driver_cookies fallback..."
-                )
-                all_cookies = get_driver_cookies(driver)
-                if all_cookies:
-                    # get_driver_cookies returns a list of cookie dictionaries
-                    for cookie_name in csrf_token_cookie_names:
-                        for cookie in all_cookies:
-                            if cookie.get("name") == cookie_name and cookie.get("value"):
-                                specific_csrf_token = unquote(cookie["value"]).split("|")[0]
-                                logger.debug(
-                                    f"Read CSRF token via fallback from '{cookie_name}'."
-                                )
-                                # Cache the token for future use
-                                setattr(session_manager, '_cached_csrf_token', specific_csrf_token)
-                                setattr(session_manager, '_cached_csrf_time', time_module.time())
-                                break
-                        if specific_csrf_token:
-                            break
-                else:
-                    logger.warning(
-                        "Fallback get_driver_cookies also failed to retrieve cookies."
-                    )
-        except Exception as csrf_err:
-            logger.error(
-                f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True
-            )
-            return None
-
+    # Step 4: Get CSRF token (cached or fresh)
+    specific_csrf_token = _get_cached_or_fresh_csrf_token(session_manager, driver)
     if not specific_csrf_token:
         logger.error(
             "Failed to obtain specific CSRF token required for Match list API."
@@ -5405,379 +6061,64 @@ def get_matches(  # noqa: PLR0911
         return None
     logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
-    # Use the working API endpoint pattern that matches other working API calls (like matchProbabilityData, badges, etc.)
+    # Step 5: Call match list API
+    api_response = _call_match_list_api(
+        session_manager,
+        driver,
+        my_uuid,
+        current_page,
+        specific_csrf_token
+    )
+
+    # Build match_list_url for use in response handling
     match_list_url = urljoin(
         config_schema.api.base_url,
         f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
     )
-    # Use simplified headers that were working earlier
     match_list_headers = {
         "X-CSRF-Token": specific_csrf_token,
         "Accept": "application/json",
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
     }
-    logger.debug(f"Calling Match list API for page {current_page}...")
-    logger.debug(
-        f"Headers being passed to _api_req for Match list: {match_list_headers}"
+    # Step 6: Handle response (including 303 redirects and session refresh)
+    api_response = _handle_match_list_response(
+        api_response,
+        current_page,
+        driver,
+        session_manager,
+        match_list_url,
+        match_list_headers
     )
-
-    # Additional debug logging for troubleshooting 303 redirects
-    logger.debug(f"Match list URL: {match_list_url}")
-    logger.debug(f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}")
-
-    # CRITICAL: Ensure cookies are synced immediately before API call
-    # This was simpler in the working version from 6 weeks ago
-    # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
-    try:
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
-    except Exception as cookie_sync_error:
-        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
-
-    # Call the API with fresh cookie sync
-    api_response = _api_req(
-        url=match_list_url,
-        driver=driver,
-        session_manager=session_manager,
-        method="GET",
-        headers=match_list_headers,
-        use_csrf_token=False,
-        api_description="Match list API",
-        allow_redirects=True,
-    )
-
-
-
-
-    total_pages: Optional[int] = None
-    match_data_list: list[dict] = []
     if api_response is None:
-        logger.warning(
-            f"No response/error from match list API page {current_page}. Assuming empty page."
-        )
         return [], None
-    if not isinstance(api_response, dict):
-        # Handle 303 See Other: retry with redirect or session refresh
-        if isinstance(api_response, requests.Response):
-            status = api_response.status_code
-            location = api_response.headers.get('Location')
 
-            if status == 303:
-                if location:
-                    logger.warning(
-                        f"Match list API received 303 See Other. Retrying with redirect to {location}."
-                    )
-                    # Retry once with the new location
-                    api_response_redirect = _api_req(
-                        url=location,
-                        driver=driver,
-                        session_manager=session_manager,
-                        method="GET",
-                        headers=match_list_headers,
-                        use_csrf_token=False,
-                        api_description="Match list API (redirected)",
-                        allow_redirects=False,
-                    )
-                    if isinstance(api_response_redirect, dict):
-                        api_response = api_response_redirect
-                    else:
-                        logger.error(
-                            f"Redirected Match list API did not return dict. Status: {getattr(api_response_redirect, 'status_code', None)}"
-                        )
-                        return None
-                else:
-                    # 303 with no location usually means session expired - try session refresh
-                    logger.warning(
-                        "Match list API received 303 See Other with no redirect location. "
-                        "This usually indicates session expiration. Attempting session refresh with cache clear."
-                    )
-                    try:
-                        # Clear session cache for complete fresh start
-                        try:
-                            cleared_count = session_manager.clear_session_caches()
-                            logger.debug(f"🧹 Cleared {cleared_count} session cache entries before refresh")
-                        except Exception as cache_err:
-                            logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
+    # Step 7: Parse total pages
+    total_pages = _parse_total_pages(api_response, current_page)
 
-                        # Force clear readiness check cache to ensure fresh validation
-                        session_manager._last_readiness_check = None
-                        logger.debug("🔄 Cleared session readiness cache to force fresh validation")
-
-                        # Force session refresh with cleared cache
-                        fresh_success = session_manager.ensure_session_ready(action_name="coord_action - Session Refresh")
-                        if not fresh_success:
-                            logger.error("❌ Session refresh failed after cache clear")
-                            return None
-
-                        # Force cookie sync and CSRF token refresh
-                        session_manager._sync_cookies_to_requests()
-                        fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
-                        if fresh_csrf_token:
-                            # Update headers with fresh token and retry
-                            match_list_headers['X-CSRF-Token'] = fresh_csrf_token
-                            logger.info("✅ Retrying Match list API with refreshed session, cleared cache, and fresh CSRF token.")
-                            logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
-                            logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
-
-                            api_response_refresh = _api_req(
-                                url=match_list_url,
-                                driver=driver,
-                                session_manager=session_manager,
-                                method="GET",
-                                headers=match_list_headers,
-                                use_csrf_token=False,
-                                api_description="Match list API (Session Refreshed)",
-                                allow_redirects=True,
-                            )
-                            if isinstance(api_response_refresh, dict):
-                                api_response = api_response_refresh
-                            else:
-                                logger.error("Match list API still failing after session refresh. Aborting.")
-                                return None
-                        else:
-                            logger.error("Could not obtain fresh CSRF token for session refresh.")
-                            return None
-                    except Exception as refresh_err:
-                        logger.error(f"Error during session refresh: {refresh_err}")
-                        return None
-            else:
-                logger.error(
-                    f"Match list API did not return dict. Type: {type(api_response).__name__}, "
-                    f"Status: {getattr(api_response, 'status_code', 'N/A')}"
-                )
-                return None
-        else:
-            logger.error(
-                f"Match list API did not return dict. Type: {type(api_response).__name__}"
-            )
-            return None
-
-    total_pages_raw = api_response.get("totalPages")
-    if total_pages_raw is not None:
-        try:
-            total_pages = int(total_pages_raw)
-        except (ValueError, TypeError):
-            logger.warning(f"Could not parse totalPages '{total_pages_raw}'.")
-    else:
-        logger.warning("Total pages missing from match list response.")
+    # Step 8: Filter valid matches
     match_data_list = api_response.get("matchList", [])
-    if not match_data_list:
-        logger.info(f"No matches found in 'matchList' array for page {current_page}.")
-
-    valid_matches_for_processing: list[dict[str, Any]] = []
-    skipped_sampleid_count = 0
-    for m_idx, m_val in enumerate(match_data_list):  # Use enumerate for index
-        if isinstance(m_val, dict) and m_val.get("sampleId"):
-            valid_matches_for_processing.append(m_val)
-        else:
-            skipped_sampleid_count += 1
-            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
-            logger.warning(
-                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
-            )
-    if skipped_sampleid_count > 0:
-        logger.warning(
-            f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
-        )
+    valid_matches_for_processing = _filter_valid_matches(match_data_list, current_page)
     if not valid_matches_for_processing:
-        logger.warning(
-            f"No valid matches (with sampleId) found on page {current_page} to process further."
-        )
         return [], total_pages
 
-    sample_ids_on_page = [
-        match["sampleId"].upper() for match in valid_matches_for_processing
-    ]
-    in_tree_ids: set[str] = set()
-    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
-
-    try:
-        if global_cache is not None:
-            cached_in_tree = global_cache.get(
-                cache_key_tree, default=ENOVAL, retry=True
-            )
-            if cached_in_tree is not ENOVAL:
-                if isinstance(cached_in_tree, set):
-                    in_tree_ids = cached_in_tree
-                logger.debug(
-                    f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
-                )
-            else:  # Cache miss or ENOVAL (which means miss in this context)
-                logger.debug(
-                    f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
-                )
-                # Fall through to API fetch
-        # If global_cache is None, also fall through to API fetch
-    except Exception as cache_read_err:
-        logger.error(
-            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
-            exc_info=True,
-        )
-        in_tree_ids = (
-            set()
-        )  # Ensure it's an empty set before API fetch if cache read fails
-
-    if not in_tree_ids:  # Fetch if cache miss, cache error, or cache was disabled
-        if not session_manager.is_sess_valid():
-            logger.error(
-                f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch."
-            )
-        else:
-            in_tree_url = urljoin(
-                config_schema.api.base_url,
-                f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
-            )
-            parsed_base_url = urlparse(config_schema.api.base_url)
-            origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
-            ua_in_tree = None
-            if driver and session_manager.is_sess_valid():
-                with contextlib.suppress(Exception):
-                    ua_in_tree = driver.execute_script("return navigator.userAgent;")
-            ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
-            in_tree_headers = {
-                "X-CSRF-Token": specific_csrf_token,
-                "Referer": urljoin(
-                    config_schema.api.base_url, "/discoveryui-matches/list/"
-                ),
-                "Origin": origin_header_value,
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": ua_in_tree,
-            }
-            in_tree_headers = {k: v for k, v in in_tree_headers.items() if v}
-
-            logger.debug(
-                f"Fetching in-tree status for {len(sample_ids_on_page)} matches on page {current_page}..."
-            )
-            logger.debug(
-                f"In-Tree Check Headers FULLY set in get_matches: {in_tree_headers}"
-            )
-            response_in_tree = _api_req(
-                url=in_tree_url,
-                driver=driver,
-                session_manager=session_manager,
-                method="POST",
-                json_data={
-                    "sampleIds": sample_ids_on_page
-                },  # This is correct - _api_req expects json_data
-                headers=in_tree_headers,
-                use_csrf_token=False,
-                api_description="In-Tree Status Check",
-            )
-            if isinstance(response_in_tree, list):
-                in_tree_ids = {
-                    item.upper() for item in response_in_tree if isinstance(item, str)
-                }
-                logger.debug(
-                    f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}."
-                )
-                try:
-                    if global_cache is not None:
-                        global_cache.set(
-                            cache_key_tree,
-                            in_tree_ids,
-                            expire=config_schema.cache.memory_cache_ttl,
-                            retry=True,
-                        )
-                    logger.debug(
-                        f"Cached in-tree status result for page {current_page}."
-                    )
-                except Exception as cache_write_err:
-                    logger.error(
-                        f"Error writing in-tree status to cache: {cache_write_err}"
-                    )
-            else:
-                status_code_log = (
-                    f" Status: {response_in_tree.status_code}"  # type: ignore
-                    if isinstance(response_in_tree, requests.Response)
-                    else ""
-                )
-                logger.warning(
-                    f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
-                )
-                logger.debug(f"In-Tree check response: {response_in_tree}")
-
-    refined_matches: list[dict[str, Any]] = []
-    logger.debug(f"Refining {len(valid_matches_for_processing)} valid matches...")
-    for match_index, match_api_data in enumerate(valid_matches_for_processing):
-        try:
-            profile_info = match_api_data.get("matchProfile", {})
-            relationship_info = match_api_data.get("relationship", {})
-            sample_id = match_api_data["sampleId"]
-            sample_id_upper = sample_id.upper()
-
-            profile_user_id_raw = profile_info.get("userId")
-            profile_user_id_upper = (
-                str(profile_user_id_raw).upper() if profile_user_id_raw else None
-            )
-            raw_display_name = profile_info.get("displayName")
-            match_username = format_name(raw_display_name)
-
-            first_name: Optional[str] = None
-            if match_username and match_username != "Valued Relative":
-                trimmed_username = match_username.strip()
-                if trimmed_username:
-                    name_parts = trimmed_username.split()
-                    if name_parts:
-                        first_name = name_parts[0]
-
-            admin_profile_id_hint = match_api_data.get("adminId")
-            admin_username_hint = match_api_data.get("adminName")
-            photo_url = profile_info.get("photoUrl", "")
-            initials = profile_info.get("displayInitials", "??").upper()
-            gender = match_api_data.get("gender")
-
-            shared_cm = int(relationship_info.get("sharedCentimorgans", 0))
-            shared_segments = int(relationship_info.get("numSharedSegments", 0))
-            created_date_raw = match_api_data.get("createdDate")
-
-            compare_link = urljoin(
-                config_schema.api.base_url,
-                f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
-            )
-            is_in_tree = sample_id_upper in in_tree_ids
-
-            refined_match_data = {
-                "username": match_username,
-                "first_name": first_name,
-                "initials": initials,
-                "gender": gender,
-                "profile_id": profile_user_id_upper,
-                "uuid": sample_id_upper,
-                "administrator_profile_id_hint": admin_profile_id_hint,
-                "administrator_username_hint": admin_username_hint,
-                "photoUrl": photo_url,
-                "cm_dna": shared_cm,
-                "numSharedSegments": shared_segments,
-                "compare_link": compare_link,
-                "message_link": None,
-                "in_my_tree": is_in_tree,
-                "createdDate": created_date_raw,
-            }
-            refined_matches.append(refined_match_data)
-
-        except (IndexError, KeyError, TypeError, ValueError) as refine_err:
-            match_uuid_err = match_api_data.get("sampleId", "UUID_UNKNOWN")
-            logger.error(
-                f"Refinement error page {current_page}, match #{match_index+1} (UUID: {match_uuid_err}): {type(refine_err).__name__} - {refine_err}. Skipping match.",
-                exc_info=False,
-            )
-            logger.debug(f"Problematic match data during refinement: {match_api_data}")
-            continue
-        except Exception as critical_refine_err:
-            match_uuid_err = match_api_data.get("sampleId", "UUID_UNKNOWN")
-            logger.error(
-                f"CRITICAL unexpected error refining match page {current_page}, match #{match_index+1} (UUID: {match_uuid_err}): {critical_refine_err}",
-                exc_info=True,
-            )
-            logger.debug(
-                f"Problematic match data during critical error: {match_api_data}"
-            )
-            raise critical_refine_err
-
-    logger.debug(
-        f"Successfully refined {len(refined_matches)} matches on page {current_page}."
+    # Step 9: Fetch in-tree status (using cache if available)
+    in_tree_ids = _fetch_in_tree_status(
+        session_manager,
+        driver,
+        my_uuid,
+        valid_matches_for_processing,
+        specific_csrf_token,
+        current_page
     )
+
+    # Step 10: Refine all matches
+    refined_matches = _refine_all_matches(
+        valid_matches_for_processing,
+        my_uuid,
+        in_tree_ids,
+        current_page
+    )
+
     return refined_matches, total_pages
 
 
