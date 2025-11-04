@@ -205,14 +205,25 @@ class BrowserManager:
                 # (OSError: [WinError 6] The handle is invalid)
                 import contextlib
                 import io
+                import sys
+
+                # Store driver reference and clear it immediately to prevent gc issues
+                driver_to_close = self.driver
+                self.driver = None
 
                 with contextlib.redirect_stderr(io.StringIO()):
-                    self.driver.quit()
+                    driver_to_close.quit()
+                    # Give Windows time to release handles before gc runs
+                    time.sleep(0.1)
+                    # Explicitly delete to prevent gc errors
+                    del driver_to_close
             except Exception as e:
                 logger.warning(f"Error quitting WebDriver: {e}")
+                # Ensure driver reference is cleared even on error
+                self.driver = None
 
         # Reset state
-        self.driver = None
+        self.driver = None  # Ensure it's cleared
         self.driver_live = False
         self.browser_needed = False
         self.session_start_time = None
