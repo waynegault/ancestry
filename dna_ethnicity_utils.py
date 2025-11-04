@@ -23,6 +23,11 @@ from typing import Any, Optional
 from urllib.parse import urljoin
 
 # === LOCAL IMPORTS ===
+from api_constants import (
+    API_PATH_ETHNICITY_COMPARE,
+    API_PATH_ETHNICITY_OWNER,
+    API_PATH_ETHNICITY_REGION_NAMES,
+)
 from config import config_schema
 from core.session_manager import SessionManager
 from session_utils import ensure_session_for_tests_sm_only
@@ -78,7 +83,7 @@ def fetch_tree_owner_ethnicity_regions(
     """
     url = urljoin(
         config_schema.api.base_url,
-        f"dna/origins/secure/tests/{tree_owner_test_guid}/v2/ethnicity"
+        API_PATH_ETHNICITY_OWNER.format(tree_owner_test_guid=tree_owner_test_guid)
     )
 
     logger.debug(f"Fetching tree owner ethnicity regions from: {url}")
@@ -131,7 +136,7 @@ def fetch_ethnicity_region_names(
     """
     url = urljoin(
         config_schema.api.base_url,
-        f"dna/origins/public/ethnicity/2025/names?locale={locale}"
+        API_PATH_ETHNICITY_REGION_NAMES.format(locale=locale)
     )
 
     logger.debug(f"Fetching ethnicity region names for {len(region_keys)} regions from: {url}")
@@ -196,7 +201,10 @@ def fetch_ethnicity_comparison(
     """
     url = urljoin(
         config_schema.api.base_url,
-        f"discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity"
+        API_PATH_ETHNICITY_COMPARE.format(
+            tree_owner_test_guid=tree_owner_test_guid,
+            match_test_guid=match_test_guid
+        )
     )
 
     logger.debug(f"Fetching ethnicity comparison for match {match_test_guid}")
@@ -766,12 +774,18 @@ def dna_ethnicity_utils_module_tests() -> bool:
 
 
 def _test_regression_endpoint_literals_present_in_source() -> bool:
-    """Regression guard: ensure known endpoint literals remain in source."""
+    """Regression guard: ensure API constants are imported and used correctly."""
     try:
         content = Path(__file__).read_text(encoding="utf-8")
-        assert "dna/origins/secure/tests/" in content
-        assert "dna/origins/public/ethnicity/2025/names?locale" in content
-        assert "discoveryui-matchesservice/api/compare/" in content
+        # Check that we import from api_constants
+        assert "from api_constants import" in content
+        assert "API_PATH_ETHNICITY_OWNER" in content
+        assert "API_PATH_ETHNICITY_REGION_NAMES" in content
+        assert "API_PATH_ETHNICITY_COMPARE" in content
+        # Ensure we're NOT using hardcoded strings anymore
+        assert 'f"dna/origins/secure/tests/' not in content
+        assert 'f"dna/origins/public/ethnicity/' not in content
+        assert 'f"discoveryui-matchesservice/api/compare/' not in content
         return True
     except Exception:
         return False

@@ -32,16 +32,17 @@ from requests.exceptions import RequestException
 from urllib3.util.retry import Retry
 
 # === LOCAL IMPORTS ===
+from api_constants import (
+    API_PATH_CSRF_TOKEN,
+    API_PATH_PROFILE_ID,
+    API_PATH_UUID_NAVHEADER,
+)
 from config import config_schema
 
 # === TYPE ALIASES ===
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
 
-# === API CONSTANTS ===
-API_PATH_CSRF_TOKEN = "discoveryui-matches/parents/api/csrfToken"
-API_PATH_PROFILE_ID = "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"
-API_PATH_UUID = "api/navheaderdata/v1/header/data/dna"
-
+# === API CONSTANTS (local keys) ===
 KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
 KEY_DATA = "data"
@@ -669,7 +670,7 @@ def _test_api_endpoint_constant_values() -> bool:
         assert API_PATH_CSRF_TOKEN == "discoveryui-matches/parents/api/csrfToken"
         assert API_PATH_PROFILE_ID == "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"
         # Critical: UUID endpoint lives under navheaderdata; testId at ROOT
-        assert API_PATH_UUID == "api/navheaderdata/v1/header/data/dna"
+        assert API_PATH_UUID_NAVHEADER == "api/navheaderdata/v1/header/data/dna"
         return True
     except AssertionError:
         return False

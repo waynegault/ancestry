@@ -63,6 +63,11 @@ from selenium.webdriver.remote.webdriver import WebDriver
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
+from api_constants import (
+    API_PATH_CSRF_TOKEN,
+    API_PATH_PROFILE_ID,
+    API_PATH_UUID_LEGACY,
+)
 from common_params import NavigationConfig, RetryContext
 
 # === TYPE ALIASES ===
@@ -334,11 +339,10 @@ class ApiRequestConfig:
 
 
 # === MODULE CONSTANTS ===
-# Key constants remain here or moved to api_utils as appropriate
-API_PATH_CSRF_TOKEN = "discoveryui-matches/parents/api/csrfToken"
-API_PATH_PROFILE_ID = "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid"
-API_PATH_UUID = "api/uhome/secure/rest/header/dna"
+# Re-export API constants for backwards compatibility
+API_PATH_UUID = API_PATH_UUID_LEGACY
 
+# Key constants for API responses
 KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
 KEY_DATA = "data"

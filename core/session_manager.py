@@ -80,6 +80,7 @@ except ImportError:
 # === LOCAL IMPORTS ===
 import contextlib
 
+from api_constants import API_PATH_UUID_NAVHEADER
 from config import config_schema
 from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
@@ -1304,7 +1305,7 @@ class SessionManager:
             return None
 
         from urllib.parse import urljoin
-        url = urljoin(config_schema.api.base_url, "api/navheaderdata/v1/header/data/dna")
+        url = urljoin(config_schema.api.base_url, API_PATH_UUID_NAVHEADER)
         logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
 
         try:
