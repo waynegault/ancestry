@@ -356,7 +356,7 @@ def _prepare_action_arguments(action_func, session_manager: SessionManager, args
     return final_args, {}
 
 
-def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict):
+def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict) -> Any:
     """Execute the action function with prepared arguments."""
     if kwargs:
         return action_func(*prepared_args, **kwargs)
@@ -398,7 +398,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
     return duration, mem_used
 
 
-def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str):
+def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
     """Perform session cleanup based on action result."""
     if should_close and isinstance(session_manager, SessionManager):
         if session_manager.browser_needed and session_manager.driver_live:
@@ -550,7 +550,7 @@ def _perform_deletions(sess, person_id_to_keep: int) -> dict:
     return deleted_counts
 
 
-def all_but_first_actn(session_manager: SessionManager, *_):
+def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
     """
     V1.5: Delete all records except for the test profile (Frances Milne).
     Uses TEST_PROFILE_ID from .env to identify which profile to keep.
@@ -945,7 +945,57 @@ def _initialize_ethnicity_columns_from_metadata(db_manager: SessionManager) -> b
         return False
 
 
-def reset_db_actn(session_manager: SessionManager, *_):
+def _close_main_pool_for_reset(session_manager: SessionManager) -> None:
+    """Close main pool and force garbage collection."""
+    if session_manager:
+        logger.debug("Closing main DB connections before database deletion...")
+        session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
+        logger.debug("Main DB pool closed.")
+
+    # Force garbage collection to release any file handles
+    logger.debug("Running garbage collection to release file handles...")
+    gc.collect()
+    time.sleep(1.0)
+    gc.collect()
+
+
+def _perform_database_reset_steps(temp_manager: SessionManager) -> tuple[bool, Any]:
+    """Perform database reset steps and return success status and session.
+    
+    Returns:
+        Tuple of (success, recreation_session)
+    """
+    # Step 1: Truncate all tables
+    if not _truncate_all_tables(temp_manager):
+        return False, None
+
+    # Step 2: Re-initialize database schema
+    if not _reinitialize_database_schema(temp_manager):
+        return False, None
+
+    # Step 3: Seed MessageType Table
+    recreation_session = temp_manager.get_db_conn()
+    if not recreation_session:
+        raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
+
+    _seed_message_templates(recreation_session)
+
+    # Step 4: Add ethnicity columns from saved metadata (if available)
+    logger.debug("Adding ethnicity columns from saved metadata...")
+    if _initialize_ethnicity_columns_from_metadata(temp_manager):
+        logger.info("✅ Ethnicity columns added from saved metadata")
+    else:
+        logger.info("INFO: No ethnicity metadata found - columns will be added during first Action 6 run")
+
+    # Step 5: Commit all changes to ensure they're flushed to disk
+    logger.debug("Committing database changes...")
+    recreation_session.commit()
+    logger.debug("Database changes committed successfully.")
+    
+    return True, recreation_session
+
+
+def reset_db_actn(session_manager: SessionManager, *_) -> bool:
     """
     Action to COMPLETELY reset the database by deleting the file. Browserless.
     - Closes main pool.
@@ -955,81 +1005,44 @@ def reset_db_actn(session_manager: SessionManager, *_):
     """
     db_path = config.database.database_file
     reset_successful = False
-    temp_manager = None  # For recreation/seeding
-    recreation_session = None  # Session for seeding
+    temp_manager = None
+    recreation_session = None
 
     try:
-        # --- 1. Close main pool FIRST ---
-        if session_manager:
-            logger.debug("Closing main DB connections before database deletion...")
-            session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
-            logger.debug("Main DB pool closed.")
+        # Step 1: Close main pool
+        _close_main_pool_for_reset(session_manager)
 
-        # Force garbage collection to release any file handles
-        logger.debug("Running garbage collection to release file handles...")
-        gc.collect()
-        time.sleep(1.0)
-        gc.collect()
-
-        # --- 2. Delete the Database File ---
+        # Step 2: Validate database path
         if db_path is None:
             logger.critical("DATABASE_FILE is not configured. Reset aborted.")
             return False
 
         logger.debug(f"Attempting to delete database file: {db_path}...")
+        
         try:
-            # Streamlined database reset using single temporary SessionManager
+            # Create temporary session manager
             logger.debug("Creating temporary session manager for database reset...")
             temp_manager = SessionManager()
 
-            # Step 1: Truncate all tables
-            if not _truncate_all_tables(temp_manager):
-                return False
-
-            # Step 2: Re-initialize database schema
-            if not _reinitialize_database_schema(temp_manager):
-                return False
-
-            # Step 3: Seed MessageType Table
-            recreation_session = temp_manager.get_db_conn()
-            if not recreation_session:
-                raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
-
-            _seed_message_templates(recreation_session)
-
-            # Step 4: Add ethnicity columns from saved metadata (if available)
-            # This is browserless - uses saved ethnicity_regions.json if it exists
-            # If no metadata file exists, columns will be added during first Action 6 run
-            logger.debug("Adding ethnicity columns from saved metadata...")
-            if _initialize_ethnicity_columns_from_metadata(temp_manager):
-                logger.info("✅ Ethnicity columns added from saved metadata")
-            else:
-                logger.info("INFO: No ethnicity metadata found - columns will be added during first Action 6 run")
-
-            # Step 5: Commit all changes to ensure they're flushed to disk
-            logger.debug("Committing database changes...")
-            recreation_session.commit()
-            logger.debug("Database changes committed successfully.")
-
-            reset_successful = True
-            logger.info("Database reset completed successfully.")
+            # Perform reset steps
+            reset_successful, recreation_session = _perform_database_reset_steps(temp_manager)
+            
+            if reset_successful:
+                logger.info("Database reset completed successfully.")
 
         except Exception as recreate_err:
-            logger.error(
-                f"Error during DB recreation/seeding: {recreate_err}", exc_info=True
-            )
+            logger.error(f"Error during DB recreation/seeding: {recreate_err}", exc_info=True)
             reset_successful = False
         finally:
             # Clean up the temporary manager and its session/engine
             logger.debug("Cleaning up temporary resource manager for reset...")
             if temp_manager and recreation_session:
                 temp_manager.return_session(recreation_session)
-                # DON'T dispose engine here - let it flush changes naturally
             logger.debug("Temporary resource manager cleanup finished.")
 
     except Exception as e:
         logger.error(f"Outer error during DB reset action: {e}", exc_info=True)
-        reset_successful = False  # Ensure failure is marked
+        reset_successful = False
 
     finally:
         logger.debug("Reset DB action finished.")
@@ -1061,7 +1074,7 @@ def backup_db_actn(*_: Any) -> bool:
 
 
 # Action 4 (restore_db_actn)
-def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manager back
+def restore_db_actn(session_manager: SessionManager, *_) -> bool:  # Added session_manager back
     """
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.
@@ -1117,7 +1130,7 @@ def restore_db_actn(session_manager: SessionManager, *_):  # Added session_manag
     return success
 
 
-def _display_table_statistics():
+def _display_table_statistics() -> None:
     """Display statistics for all tables in the database."""
     from sqlalchemy import create_engine, inspect, text
 
@@ -1452,101 +1465,106 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 
 
 # Merged Action 10/11 wrapper: GEDCOM-first then API fallback
-def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
-    """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
-    try:
-        from action10 import (
-            _build_filter_criteria,  # type: ignore
-            _create_table_row as _create_row_gedcom,  # type: ignore
-            _normalize_id,  # type: ignore
-            analyze_top_match,  # type: ignore
-            filter_and_score_individuals,
-            load_gedcom_data,
-            validate_config,
-        )
-        from api_search_core import (
-            _create_table_row_for_candidate as _create_row_api,  # type: ignore
-            _handle_supplementary_info_phase,  # type: ignore
-            search_ancestry_api_for_person,
-        )
-        from search_criteria_utils import get_unified_search_criteria
-    except Exception as e:
-        logger.error(f"Side-by-side setup failed: {e}", exc_info=True)
-        return False
+def _import_search_modules() -> tuple[Any, ...]:
+    """Import required modules for GEDCOM and API search.
+    
+    Returns:
+        Tuple of imported functions and modules
+    """
+    from action10 import (
+        _build_filter_criteria,  # type: ignore
+        _create_table_row as _create_row_gedcom,  # type: ignore
+        _normalize_id,  # type: ignore
+        analyze_top_match,  # type: ignore
+        filter_and_score_individuals,
+        load_gedcom_data,
+        validate_config,
+    )
+    from api_search_core import (
+        _create_table_row_for_candidate as _create_row_api,  # type: ignore
+        _handle_supplementary_info_phase,  # type: ignore
+        search_ancestry_api_for_person,
+    )
+    from search_criteria_utils import get_unified_search_criteria
+    
+    return (
+        _build_filter_criteria, _create_row_gedcom, _normalize_id, analyze_top_match,
+        filter_and_score_individuals, load_gedcom_data, validate_config,
+        _create_row_api, _handle_supplementary_info_phase, search_ancestry_api_for_person,
+        get_unified_search_criteria
+    )
 
-    # Collect unified criteria (identical prompts)
-    criteria = get_unified_search_criteria()
-    if not criteria:
-        return False
 
-    # Validate configuration and load GEDCOM
-    (
-        gedcom_path,
-        _reference_person_id_raw,
-        _reference_person_name,
-        date_flex,
-        scoring_weights,
-        max_display_results,
-    ) = validate_config()
-
-    gedcom_data = None  # Will hold loaded GEDCOM data if available
+def _perform_gedcom_search(gedcom_path: Any, criteria: dict, scoring_weights: dict, date_flex: Any) -> tuple[Any, list]:
+    """Perform GEDCOM search and return data and matches.
+    
+    Returns:
+        Tuple of (gedcom_data, gedcom_matches)
+    """
+    from action10 import _build_filter_criteria, filter_and_score_individuals, load_gedcom_data
+    
+    gedcom_data = None
     gedcom_matches: list[dict] = []
+    
     if gedcom_path:
         try:
             gedcom_data = load_gedcom_data(gedcom_path)
             filter_criteria = _build_filter_criteria(criteria)
             gedcom_matches = filter_and_score_individuals(
-                gedcom_data,
-                filter_criteria,
-                criteria,
-                scoring_weights,
-                date_flex,
+                gedcom_data, filter_criteria, criteria, scoring_weights, date_flex
             )
         except Exception as e:
             logger.error(f"GEDCOM search failed: {e}")
+    
+    return gedcom_data, gedcom_matches
 
-    # Ensure session for API search (only if GEDCOM empty)
-    api_matches: list[dict] = []
-    if not gedcom_matches:
+
+def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_results: int) -> list:
+    """Perform API search as fallback when GEDCOM has no matches.
+    
+    Returns:
+        List of API matches
+    """
+    from api_search_core import search_ancestry_api_for_person
+    
+    try:
+        session_ok = session_manager.ensure_session_ready(
+            action_name="GEDCOM/API Search - API Fallback", skip_csrf=False
+        )
+        if not session_ok:
+            logger.error("Could not establish browser session for API search")
+            return []
+
+        # Sync cookies from browser to API session
         try:
-            # Always use browser for API search to ensure reliable authentication
-            # Browserless mode often fails with 404 errors due to missing auth state
-            session_ok = session_manager.ensure_session_ready(
-                action_name="GEDCOM/API Search - API Fallback",
-                skip_csrf=False,
+            synced = session_manager.api_manager.sync_cookies_from_browser(
+                session_manager.browser_manager, session_manager=session_manager
             )
-            if session_ok:
-                # Sync cookies from browser to API session
-                try:
-                    synced = session_manager.api_manager.sync_cookies_from_browser(
-                        session_manager.browser_manager, session_manager=session_manager
-                    )
-                    if not synced:
-                        logger.warning("Cookie sync from browser failed, but attempting API search anyway")
-                except Exception as sync_err:
-                    logger.warning(f"Cookie sync error: {sync_err}, but attempting API search anyway")
+            if not synced:
+                logger.warning("Cookie sync from browser failed, but attempting API search anyway")
+        except Exception as sync_err:
+            logger.warning(f"Cookie sync error: {sync_err}, but attempting API search anyway")
 
-                api_matches = search_ancestry_api_for_person(session_manager, criteria, max_results=max_display_results)
-            else:
-                logger.error("Could not establish browser session for API search")
-        except Exception as e:
-            logger.error(f"API search failed: {e}", exc_info=True)
-    else:
-        logger.debug("Skipping API search because GEDCOM returned matches.")
+        return search_ancestry_api_for_person(session_manager, criteria, max_results=max_results)
+    except Exception as e:
+        logger.error(f"API search failed: {e}", exc_info=True)
+        return []
 
-    # Prepare display (show only highest-scoring result from each source)
-    max_to_show = 1
+
+def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show: int) -> None:
+    """Display GEDCOM and API search results in tables."""
+    from action10 import _create_table_row as _create_row_gedcom  # type: ignore
+    from api_search_core import _create_table_row_for_candidate as _create_row_api  # type: ignore
+    
     headers = ["ID", "Name", "Birth", "Birth Place", "Death", "Death Place", "Total"]
     left_rows = [_create_row_gedcom(m) for m in gedcom_matches[:max_to_show]]
     right_rows = [_create_row_api(m) for m in api_matches[:max_to_show]]
 
-    # If no matches at all, print a clean message and return success (no warning)
     if not left_rows and not right_rows:
         print("")
         print("No matches found.")
-        return True
+        return
 
-    # Helpers for printing tables
     def _pad_row(row: list[str], widths: list[int]) -> str:
         return " | ".join((str(c) if c is not None else "").ljust(w) for c, w in zip(row, widths))
 
@@ -1557,63 +1575,94 @@ def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
                 widths[i] = max(widths[i], len(str(c)))
         return widths
 
-    # Compute widths per section
-    lw = _compute_widths(left_rows, headers)
-    rw = _compute_widths(right_rows, headers)
-
-    # Print tables and summary only at DEBUG level (use logger.debug instead of print)
     if logger.isEnabledFor(logging.DEBUG):
+        lw = _compute_widths(left_rows, headers)
+        rw = _compute_widths(right_rows, headers)
+        
         logger.debug("")
-
-        # GEDCOM section
         logger.debug(f"=== GEDCOM Results (Top {len(left_rows)} of {len(gedcom_matches)}) ===")
-        left_header = _pad_row(headers, lw)
-        sep_left = "-" * len(left_header)
-        logger.debug(left_header)
-        logger.debug(sep_left)
+        logger.debug(_pad_row(headers, lw))
+        logger.debug("-" * len(_pad_row(headers, lw)))
         for r in left_rows:
             logger.debug(_pad_row(r, lw))
         if not left_rows:
             logger.debug("(no matches)")
 
-        # API section
         logger.debug("")
         logger.debug(f"=== API Results (Top {len(right_rows)} of {len(api_matches)}) ===")
-        right_header = _pad_row(headers, rw)
-        sep_right = "-" * len(right_header)
-        logger.debug(right_header)
-        logger.debug(sep_right)
+        logger.debug(_pad_row(headers, rw))
+        logger.debug("-" * len(_pad_row(headers, rw)))
         for r in right_rows:
             logger.debug(_pad_row(r, rw))
         if not right_rows:
             logger.debug("(no matches)")
 
-        # Summary line
         logger.debug("")
         logger.debug(f"Summary: GEDCOM — showing top {len(left_rows)} of {len(gedcom_matches)} total | API — showing top {len(right_rows)} of {len(api_matches)} total")
 
-    # Show GEDCOM top result: family & relationship to reference person
+
+def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom_data: Any, 
+                                  _reference_person_id_raw: Any, _reference_person_name: Any,
+                                  session_manager: Any) -> None:
+    """Display detailed information for top match."""
+    from action10 import _normalize_id, analyze_top_match  # type: ignore
+    from api_search_core import _handle_supplementary_info_phase  # type: ignore
+    
     try:
         if gedcom_matches and gedcom_data is not None:
-            ref_norm = _normalize_id(_reference_person_id_raw) if _reference_person_id_raw else None  # type: ignore[name-defined]
-            analyze_top_match(  # type: ignore[name-defined]
-                gedcom_data,  # type: ignore[arg-type]
-                gedcom_matches[0],
-                ref_norm,
-                _reference_person_name or "Reference Person",  # type: ignore[name-defined]
+            ref_norm = _normalize_id(_reference_person_id_raw) if _reference_person_id_raw else None
+            analyze_top_match(
+                gedcom_data, gedcom_matches[0], ref_norm,
+                _reference_person_name or "Reference Person"
             )
     except Exception as e:
         logger.error(f"GEDCOM family/relationship display failed: {e}")
 
-    # Show API top result: family & relationship to tree owner
     try:
         if api_matches and not gedcom_matches:
-            _handle_supplementary_info_phase(  # type: ignore[name-defined]
-                api_matches[0],
-                session_manager,
-            )
+            _handle_supplementary_info_phase(api_matches[0], session_manager)
     except Exception as e:
         logger.error(f"API family/relationship display failed: {e}")
+
+
+def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
+    """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
+    try:
+        from search_criteria_utils import get_unified_search_criteria
+        from action10 import validate_config
+    except Exception as e:
+        logger.error(f"Side-by-side setup failed: {e}", exc_info=True)
+        return False
+
+    # Collect unified criteria
+    criteria = get_unified_search_criteria()
+    if not criteria:
+        return False
+
+    # Validate configuration
+    (gedcom_path, _reference_person_id_raw, _reference_person_name,
+     date_flex, scoring_weights, max_display_results) = validate_config()
+
+    # Perform GEDCOM search
+    gedcom_data, gedcom_matches = _perform_gedcom_search(
+        gedcom_path, criteria, scoring_weights, date_flex
+    )
+
+    # API fallback if no GEDCOM matches
+    api_matches: list[dict] = []
+    if not gedcom_matches:
+        api_matches = _perform_api_search_fallback(session_manager, criteria, max_display_results)
+    else:
+        logger.debug("Skipping API search because GEDCOM returned matches.")
+
+    # Display results
+    _display_search_results(gedcom_matches, api_matches, max_to_show=1)
+    
+    # Display detailed match info
+    _display_detailed_match_info(
+        gedcom_matches, api_matches, gedcom_data,
+        _reference_person_id_raw, _reference_person_name, session_manager
+    )
 
     # Analytics context
     try:
@@ -1778,6 +1827,131 @@ def _show_analytics_dashboard() -> None:
     input("Press Enter to continue...")
 
 
+def _show_base_cache_stats() -> bool:
+    """Show base disk cache statistics.
+    
+    Returns:
+        True if stats were displayed, False otherwise
+    """
+    try:
+        from cache import get_cache_stats
+        base_stats = get_cache_stats()
+        if base_stats:
+            print("📁 DISK CACHE (Base System)")
+            print("-" * 70)
+            print(f"  Hits: {base_stats.get('hits', 0):,}")
+            print(f"  Misses: {base_stats.get('misses', 0):,}")
+            print(f"  Hit Rate: {base_stats.get('hit_rate', 0):.1f}%")
+            print(f"  Entries: {base_stats.get('entries', 0):,} / {base_stats.get('max_entries', 'N/A')}")
+            print(f"  Volume: {base_stats.get('volume', 0):,} bytes")
+            print(f"  Cache Dir: {base_stats.get('cache_dir', 'N/A')}")
+            print()
+            return True
+    except Exception as e:
+        logger.debug(f"Could not get base cache stats: {e}")
+    return False
+
+
+def _show_unified_cache_stats() -> bool:
+    """Show unified cache manager statistics.
+    
+    Returns:
+        True if any stats were displayed, False otherwise
+    """
+    try:
+        from cache_manager import get_unified_cache_manager
+        unified_mgr = get_unified_cache_manager()
+        comprehensive_stats = unified_mgr.get_comprehensive_stats()
+        stats_shown = False
+
+        # Session cache
+        session_stats = comprehensive_stats.get('session_cache', {})
+        if session_stats:
+            print("🔐 SESSION CACHE")
+            print("-" * 70)
+            print(f"  Active Sessions: {session_stats.get('active_sessions', 0)}")
+            print(f"  Tracked Sessions: {session_stats.get('tracked_sessions', 0)}")
+            print(f"  Component TTL: {session_stats.get('component_ttl', 0)}s")
+            print(f"  Session TTL: {session_stats.get('session_ttl', 0)}s")
+            print()
+            stats_shown = True
+
+        # API cache
+        api_stats = comprehensive_stats.get('api_cache', {})
+        if api_stats:
+            print("🌐 API CACHE")
+            print("-" * 70)
+            print(f"  Active Sessions: {api_stats.get('active_sessions', 0)}")
+            print(f"  Cache Available: {api_stats.get('cache_available', False)}")
+            print()
+            stats_shown = True
+
+        # System cache
+        system_stats = comprehensive_stats.get('system_cache', {})
+        if system_stats:
+            print("⚙️  SYSTEM CACHE")
+            print("-" * 70)
+            print(f"  GC Collections: {system_stats.get('gc_collections', 0)}")
+            print(f"  Memory Freed: {system_stats.get('memory_freed_mb', 0):.2f} MB")
+            print(f"  Peak Memory: {system_stats.get('peak_memory_mb', 0):.2f} MB")
+            print(f"  Current Memory: {system_stats.get('current_memory_mb', 0):.2f} MB")
+            print()
+            stats_shown = True
+
+        return stats_shown
+    except Exception as e:
+        logger.debug(f"Could not get unified cache stats: {e}")
+    return False
+
+
+def _show_tree_stats_cache() -> bool:
+    """Show tree statistics cache.
+    
+    Returns:
+        True if stats were displayed, False otherwise
+    """
+    try:
+        from core.database_manager import DatabaseManager
+        from database import TreeStatisticsCache
+        db_mgr = DatabaseManager()
+        session = db_mgr.get_session()
+        if session:
+            cache_count = session.query(TreeStatisticsCache).count()
+            print("🌳 TREE STATISTICS CACHE (Database)")
+            print("-" * 70)
+            print(f"  Cached Profiles: {cache_count}")
+            print("  Cache Expiration: 24 hours")
+            print()
+            db_mgr.return_session(session)
+            return True
+    except Exception as e:
+        logger.debug(f"Could not get tree statistics cache: {e}")
+    return False
+
+
+def _show_performance_cache_stats() -> bool:
+    """Show performance cache (GEDCOM) statistics.
+    
+    Returns:
+        True if stats were displayed, False otherwise
+    """
+    try:
+        from performance_cache import get_cache_stats as get_perf_stats
+        perf_stats = get_perf_stats()
+        if perf_stats:
+            print("📊 PERFORMANCE CACHE (GEDCOM)")
+            print("-" * 70)
+            print(f"  Memory Entries: {perf_stats.get('memory_entries', 0)}")
+            print(f"  Memory Usage: {perf_stats.get('memory_usage_mb', 0):.2f} MB")
+            print(f"  Memory Pressure: {perf_stats.get('memory_pressure', 0):.1f}%")
+            print(f"  Disk Cache Dir: {perf_stats.get('disk_cache_dir', 'N/A')}")
+            print()
+            return True
+    except Exception as e:
+        logger.debug(f"Could not get performance cache stats: {e}")
+    return False
+
+
 def _show_cache_statistics() -> None:
     """Show comprehensive cache statistics from all cache subsystems."""
     try:
@@ -1786,107 +1960,17 @@ def _show_cache_statistics() -> None:
         print("CACHE STATISTICS")
         print("="*70 + "\n")
 
-        # Get statistics from all cache systems
-        stats_collected = False
-
-        # 1. Base disk cache statistics
-        try:
-            from cache import get_cache_stats
-            base_stats = get_cache_stats()
-            if base_stats:
-                print("📁 DISK CACHE (Base System)")
-                print("-" * 70)
-                print(f"  Hits: {base_stats.get('hits', 0):,}")
-                print(f"  Misses: {base_stats.get('misses', 0):,}")
-                print(f"  Hit Rate: {base_stats.get('hit_rate', 0):.1f}%")
-                print(f"  Entries: {base_stats.get('entries', 0):,} / {base_stats.get('max_entries', 'N/A')}")
-                print(f"  Volume: {base_stats.get('volume', 0):,} bytes")
-                print(f"  Cache Dir: {base_stats.get('cache_dir', 'N/A')}")
-                print()
-                stats_collected = True
-        except Exception as e:
-            logger.debug(f"Could not get base cache stats: {e}")
-
-        # 2. Unified cache manager statistics
-        try:
-            from cache_manager import get_unified_cache_manager
-            unified_mgr = get_unified_cache_manager()
-            comprehensive_stats = unified_mgr.get_comprehensive_stats()
-
-            # Session cache
-            session_stats = comprehensive_stats.get('session_cache', {})
-            if session_stats:
-                print("🔐 SESSION CACHE")
-                print("-" * 70)
-                print(f"  Active Sessions: {session_stats.get('active_sessions', 0)}")
-                print(f"  Tracked Sessions: {session_stats.get('tracked_sessions', 0)}")
-                print(f"  Component TTL: {session_stats.get('component_ttl', 0)}s")
-                print(f"  Session TTL: {session_stats.get('session_ttl', 0)}s")
-                print()
-                stats_collected = True
-
-            # API cache
-            api_stats = comprehensive_stats.get('api_cache', {})
-            if api_stats:
-                print("🌐 API CACHE")
-                print("-" * 70)
-                print(f"  Active Sessions: {api_stats.get('active_sessions', 0)}")
-                print(f"  Cache Available: {api_stats.get('cache_available', False)}")
-                print()
-                stats_collected = True
-
-            # System cache
-            system_stats = comprehensive_stats.get('system_cache', {})
-            if system_stats:
-                print("⚙️  SYSTEM CACHE")
-                print("-" * 70)
-                print(f"  GC Collections: {system_stats.get('gc_collections', 0)}")
-                print(f"  Memory Freed: {system_stats.get('memory_freed_mb', 0):.2f} MB")
-                print(f"  Peak Memory: {system_stats.get('peak_memory_mb', 0):.2f} MB")
-                print(f"  Current Memory: {system_stats.get('current_memory_mb', 0):.2f} MB")
-                print()
-                stats_collected = True
-        except Exception as e:
-            logger.debug(f"Could not get unified cache stats: {e}")
-
-        # 3. Tree statistics cache
-        try:
-            from core.database_manager import DatabaseManager
-            from database import TreeStatisticsCache
-            db_mgr = DatabaseManager()
-            session = db_mgr.get_session()
-            if session:
-                cache_count = session.query(TreeStatisticsCache).count()
-                print("🌳 TREE STATISTICS CACHE (Database)")
-                print("-" * 70)
-                print(f"  Cached Profiles: {cache_count}")
-                print("  Cache Expiration: 24 hours")
-                print()
-                db_mgr.return_session(session)
-                stats_collected = True
-        except Exception as e:
-            logger.debug(f"Could not get tree statistics cache: {e}")
-
-        # 4. Performance cache (GEDCOM)
-        try:
-            from performance_cache import get_cache_stats as get_perf_stats
-            perf_stats = get_perf_stats()
-            if perf_stats:
-                print("📊 PERFORMANCE CACHE (GEDCOM)")
-                print("-" * 70)
-                print(f"  Memory Entries: {perf_stats.get('memory_entries', 0)}")
-                print(f"  Memory Usage: {perf_stats.get('memory_usage_mb', 0):.2f} MB")
-                print(f"  Memory Pressure: {perf_stats.get('memory_pressure', 0):.1f}%")
-                print(f"  Disk Cache Dir: {perf_stats.get('disk_cache_dir', 'N/A')}")
-                print()
-                stats_collected = True
-        except Exception as e:
-            logger.debug(f"Could not get performance cache stats: {e}")
+        # Collect statistics from all cache systems
+        stats_collected = any([
+            _show_base_cache_stats(),
+            _show_unified_cache_stats(),
+            _show_tree_stats_cache(),
+            _show_performance_cache_stats()
+        ])
 
         if not stats_collected:
             print("No cache statistics available.")
             print("Caches may not be initialized yet.")
-
 
         logger.debug("Cache statistics displayed")
         print("="*70)
@@ -2077,6 +2161,83 @@ def _check_startup_status(session_manager: SessionManager) -> None:
         logger.warning(f"⚠️ Database connection check failed: {e}")
 
 
+def _check_lm_studio_running() -> bool:
+    """Check if LM Studio process is running.
+    
+    Returns:
+        True if LM Studio is running, False otherwise
+    """
+    import psutil
+    
+    for proc in psutil.process_iter(['name']):
+        try:
+            proc_name = proc.info['name'].lower()
+            if 'lm studio' in proc_name or 'lmstudio' in proc_name:
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return False
+
+
+def _validate_local_llm_config(config_schema: Any) -> bool:
+    """Validate local LLM configuration.
+    
+    Returns:
+        True if validation passed, False otherwise
+    """
+    from openai import OpenAI
+    
+    api_key = config_schema.api.local_llm_api_key
+    model_name = config_schema.api.local_llm_model
+    base_url = config_schema.api.local_llm_base_url
+
+    if not all([api_key, model_name, base_url]):
+        logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
+        return False
+
+    if not _check_lm_studio_running():
+        logger.warning("⚠️ LM Studio is not running")
+        logger.warning("   Please start LM Studio and load a model before using AI features")
+        return False
+
+    # Check if model is loaded
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+        from ai_interface import _validate_local_llm_model_loaded
+        actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
+
+        if error_msg:
+            logger.warning(f"⚠️ {error_msg}")
+            logger.warning("   Please load the model in LM Studio before using AI features")
+            return False
+        else:
+            logger.info(f"✅ Local LLM ready: {actual_model_name}")
+            return True
+    except Exception as e:
+        logger.warning(f"⚠️ Could not validate Local LLM: {e}")
+        logger.warning("   AI features may not work until LM Studio is running")
+        return False
+
+
+def _validate_cloud_provider(provider_name: str, api_key: Any, model: Any) -> bool:
+    """Validate cloud AI provider configuration.
+    
+    Args:
+        provider_name: Name of the provider (DeepSeek, Gemini, etc.)
+        api_key: API key for the provider
+        model: Model name
+        
+    Returns:
+        True if configured, False otherwise
+    """
+    if api_key and model:
+        logger.info(f"✅ {provider_name} configured: {model}")
+        return True
+    else:
+        logger.warning(f"⚠️ {provider_name} configuration incomplete")
+        return False
+
+
 def _validate_ai_provider_on_startup() -> None:
     """
     Validate AI provider configuration on startup.
@@ -2095,138 +2256,113 @@ def _validate_ai_provider_on_startup() -> None:
     logger.debug(f"Validating AI provider: {ai_provider}")
 
     if ai_provider == "local_llm":
-        # Validate local LLM is accessible
-        try:
-            import psutil
-            from openai import OpenAI
-            api_key = config_schema.api.local_llm_api_key
-            model_name = config_schema.api.local_llm_model
-            base_url = config_schema.api.local_llm_base_url
-
-            if not all([api_key, model_name, base_url]):
-                logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
-                return
-
-            # Check if LM Studio is running BEFORE attempting connection
-            lm_studio_running = False
-            for proc in psutil.process_iter(['name']):
-                try:
-                    if 'lm studio' in proc.info['name'].lower() or 'lmstudio' in proc.info['name'].lower():
-                        lm_studio_running = True
-                        break
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
-            if not lm_studio_running:
-                logger.warning("⚠️ LM Studio is not running")
-                logger.warning("   Please start LM Studio and load a model before using AI features")
-                return
-
-            # LM Studio is running - now try to connect and check if model is loaded
-            client = OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
-            from ai_interface import _validate_local_llm_model_loaded
-            actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
-
-            if error_msg:
-                logger.warning(f"⚠️ {error_msg}")
-                logger.warning("   Please load the model in LM Studio before using AI features")
-            else:
-                logger.info(f"✅ Local LLM ready: {actual_model_name}")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not validate Local LLM: {e}")
-            logger.warning("   AI features may not work until LM Studio is running")
-
+        _validate_local_llm_config(config_schema)
     elif ai_provider == "deepseek":
-        api_key = config_schema.api.deepseek_api_key
-        model = config_schema.api.deepseek_ai_model
-        if api_key and model:
-            logger.info(f"✅ DeepSeek configured: {model}")
-        else:
-            logger.warning("⚠️ DeepSeek configuration incomplete")
-
+        _validate_cloud_provider("DeepSeek", config_schema.api.deepseek_api_key, 
+                                config_schema.api.deepseek_ai_model)
     elif ai_provider == "gemini":
-        api_key = config_schema.api.google_api_key
-        model = config_schema.api.google_ai_model
-        if api_key and model:
-            logger.info(f"✅ Gemini configured: {model}")
-        else:
-            logger.warning("⚠️ Gemini configuration incomplete")
-
+        _validate_cloud_provider("Gemini", config_schema.api.google_api_key,
+                                config_schema.api.google_ai_model)
     else:
         logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
 
 
-def main() -> None:
-    # Initialize session_manager as local variable
-    session_manager = None
+def _initialize_application() -> "SessionManager":
+    """Initialize application logging and configuration.
+    
+    Returns:
+        SessionManager instance
+    """
+    print("")
+    setup_logging()
+    validate_action_config()
 
-    # Ensure terminal window has focus on Windows
+    if config is None:
+        _print_config_error_message()
+
+    session_manager = SessionManager()
+    
+    from session_utils import set_global_session
+    set_global_session(session_manager)
+    logger.debug("✅ SessionManager registered as global session")
+    
+    return session_manager
+
+
+def _pre_authenticate_session() -> None:
+    """Pre-authenticate the global session."""
+    try:
+        from session_utils import get_authenticated_session
+        _, _ = get_authenticated_session(
+            action_name="Main Menu Initialization",
+            skip_csrf=False
+        )
+        logger.info("✅ Session authenticated successfully")
+    except Exception as e:
+        logger.warning(f"Session authentication failed (will authenticate during action): {e}")
+
+
+def _pre_authenticate_ms_graph() -> None:
+    """Pre-authenticate MS Graph for MS To-Do integration."""
+    try:
+        from ms_graph_utils import acquire_token_device_flow
+        logger.debug("Attempting MS Graph authentication at startup...")
+        ms_token = acquire_token_device_flow()
+        if ms_token:
+            logger.info("✅ MS Graph authenticated successfully")
+        else:
+            logger.debug("MS Graph authentication skipped or failed (will retry during Action 9 if needed)")
+    except Exception as e:
+        logger.debug(f"MS Graph authentication failed at startup: {e}")
+
+
+def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
+    """Clean up session manager on shutdown.
+    
+    Args:
+        session_manager: SessionManager instance to clean up
+    """
+    logger.info("Performing final cleanup...")
+
+    if session_manager is not None:
+        try:
+            import contextlib
+            import io
+            # Suppress stderr during cleanup to hide undetected_chromedriver errors
+            with contextlib.redirect_stderr(io.StringIO()):
+                session_manager.close_sess(keep_db=False)
+            logger.debug("Session Manager closed in final cleanup.")
+        except Exception as final_close_e:
+            logger.debug(f"Cleanup error (non-critical): {final_close_e}")
+
+    logger.info("--- Main program execution finished ---")
+    print("\nExecution finished.")
+
+
+def main() -> None:
+    session_manager = None
     _set_windows_console_focus()
 
     try:
-        print("")
-        # --- Logging Setup ---
-        # Logger already set up by setup_module at module level
-        # Just call setup_logging to ensure proper configuration
-        setup_logging()
+        # Initialize application
+        session_manager = _initialize_application()
 
-        # --- Configuration Validation ---
-        # Validate action configuration to prevent Action 6-style failures
-        validate_action_config()
+        # Pre-authenticate services
+        _pre_authenticate_session()
+        _pre_authenticate_ms_graph()
 
-        if config is None:
-            _print_config_error_message()
-
-        # --- Instantiate SessionManager ---
-        session_manager = SessionManager()  # No browser started by default
-
-        # Register this session as the global session for all actions and tests
-        from session_utils import set_global_session
-        set_global_session(session_manager)
-        logger.debug("✅ SessionManager registered as global session")
-
-        # Pre-authenticate the global session immediately
-        try:
-            from session_utils import get_authenticated_session
-            # This will authenticate the global session that we registered earlier
-            _, _ = get_authenticated_session(
-                action_name="Main Menu Initialization",
-                skip_csrf=False  # Get CSRF token too
-            )
-            logger.info("✅ Session authenticated successfully")
-        except Exception as e:
-            logger.warning(f"Session authentication failed (will authenticate during action): {e}")
-            # Don't fail - action will authenticate itself if needed
-
-        # Pre-authenticate MS Graph (for MS To-Do integration)
-        try:
-            from ms_graph_utils import acquire_token_device_flow
-            logger.debug("Attempting MS Graph authentication at startup...")
-            ms_token = acquire_token_device_flow()
-            if ms_token:
-                logger.info("✅ MS Graph authenticated successfully")
-            else:
-                logger.debug("MS Graph authentication skipped or failed (will retry during Action 9 if needed)")
-        except Exception as e:
-            logger.debug(f"MS Graph authentication failed at startup: {e}")
-            # Don't fail - Action 9 will authenticate itself if needed
-
-        # Check startup status (non-blocking)
+        # Check startup status and validate AI provider
         _check_startup_status(session_manager)
-
-        # Validate AI provider configuration if configured
         _validate_ai_provider_on_startup()
 
-        # --- Main menu loop ---
+        # Main menu loop
         while True:
             choice = menu()
             print("")
 
-            # --- Confirmation Check ---
             if not _check_action_confirmation(choice):
                 continue
 
-            # --- Action Dispatching ---
             if not _dispatch_menu_action(choice, session_manager, config):
                 break  # Exit requested
 
@@ -2236,26 +2372,7 @@ def main() -> None:
     except Exception as e:
         logger.critical(f"Critical error in main: {e}", exc_info=True)
     finally:
-        # Final cleanup: Always close the session manager if it exists
-        logger.info("Performing final cleanup...")
-
-        if session_manager is not None:
-            try:
-                # Suppress stderr during cleanup to hide undetected_chromedriver errors
-                import contextlib
-                import io
-
-                # Redirect stderr to suppress cleanup errors
-                with contextlib.redirect_stderr(io.StringIO()):
-                    session_manager.close_sess(keep_db=False)
-                logger.debug("Session Manager closed in final cleanup.")
-            except Exception as final_close_e:
-                # Silently ignore cleanup errors - they're not critical
-                logger.debug(f"Cleanup error (non-critical): {final_close_e}")
-
-        # Log program finish
-        logger.info("--- Main program execution finished ---")
-        print("\nExecution finished.")
+        _cleanup_session_manager(session_manager)
 
 
 # end main
@@ -2268,7 +2385,7 @@ def main() -> None:
 # Each test function is independent and can be run individually
 
 
-def _test_module_initialization():
+def _test_module_initialization() -> bool:
         """Test module initialization and import availability"""
         # Test that all required functions are available
         assert callable(menu), "menu() function should be callable"
@@ -2287,7 +2404,7 @@ def _test_module_initialization():
         assert run_action10 is not None, "run_action10 should be imported"
 
 
-def _test_configuration_availability():
+def _test_configuration_availability() -> bool:
     """Test configuration and database availability"""
     assert config is not None, "config should be available"
     assert logger is not None, "logger should be available"
@@ -2300,7 +2417,7 @@ def _test_configuration_availability():
     assert DnaMatch is not None, "DnaMatch model should be available"
 
 
-def _test_clear_log_file_function():
+def _test_clear_log_file_function() -> bool:
         """Test log file clearing functionality"""
         # Test clear_log_file function exists and is callable
         assert callable(clear_log_file), "clear_log_file should be callable"
@@ -2320,7 +2437,7 @@ def _test_clear_log_file_function():
             assert isinstance(e, Exception), "Should handle errors gracefully"
 
 
-def _test_main_function_structure():
+def _test_main_function_structure() -> bool:
     """Test main function structure and error handling"""
     assert callable(main), "main() function should be callable"
 
@@ -2331,7 +2448,7 @@ def _test_main_function_structure():
     assert len(sig.parameters) == 0, "main() should take no parameters"
 
 
-def _test_menu_system_components():
+def _test_menu_system_components() -> bool:
         """Test menu system components availability"""
         # Test menu function exists
         assert callable(menu), "menu() function should be callable"
@@ -2351,7 +2468,7 @@ def _test_menu_system_components():
         assert "run_action10" in menu_globals, "menu should have access to run_action10"
 
 
-def _test_action_function_availability():
+def _test_action_function_availability() -> bool:
     """Test all action functions are properly imported and callable"""
     # Test action6_gather
     assert callable(coord), "coord function should be callable"
@@ -2374,7 +2491,7 @@ def _test_action_function_availability():
 
 
 
-def _test_database_operations():
+def _test_database_operations() -> bool:
         """Test database operation functions"""
         assert callable(backup_database), "backup_database should be callable"
         assert callable(db_transn), "db_transn should be callable"
@@ -2388,7 +2505,7 @@ def _test_database_operations():
         assert MessageTemplate is not None, "MessageTemplate model should be available"
 
 
-def _test_reset_db_actn_integration():
+def _test_reset_db_actn_integration() -> bool:
     """Test reset_db_actn function integration and method availability"""
     # Test that reset_db_actn can be called without AttributeError
     try:
@@ -2413,7 +2530,7 @@ def _test_reset_db_actn_integration():
         logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")
 
 
-def _test_edge_case_handling():
+def _test_edge_case_handling() -> bool:
         """Test edge cases and error conditions"""
         # Test imports are properly structured
         import sys
@@ -2430,7 +2547,7 @@ def _test_edge_case_handling():
         # api_search_core is imported lazily inside run_gedcom_then_api_fallback, not at module level
 
 
-def _test_import_error_handling():
+def _test_import_error_handling() -> bool:
     """Test import error scenarios"""
     # Check that main module has all required imports
     module_globals = globals()
@@ -2450,7 +2567,7 @@ def _test_import_error_handling():
         assert import_name in module_globals, f"{import_name} should be imported"
 
 
-def _test_session_manager_integration():
+def _test_session_manager_integration() -> bool:
         """Test SessionManager integration"""
         assert SessionManager is not None, "SessionManager should be available"
         assert callable(SessionManager), "SessionManager should be callable"
@@ -2462,7 +2579,7 @@ def _test_session_manager_integration():
         ), "SessionManager should have __init__ method"
 
 
-def _test_logging_integration():
+def _test_logging_integration() -> bool:
     """Test logging system integration"""
     assert logger is not None, "logger should be available"
     assert hasattr(logger, "info"), "logger should have info method"
@@ -2472,7 +2589,7 @@ def _test_logging_integration():
     assert hasattr(logger, "critical"), "logger should have critical method"
 
 
-def _test_configuration_integration():
+def _test_configuration_integration() -> bool:
     """Test configuration system integration"""
     assert config is not None, "config should be available"
 
@@ -2483,7 +2600,7 @@ def _test_configuration_integration():
     ), "config should be a proper object"
 
 
-def _test_validate_action_config():
+def _test_validate_action_config() -> bool:
         """Test the new validate_action_config() function from Action 6 lessons"""
         # Test that the function exists and is callable
         assert callable(validate_action_config), "validate_action_config should be callable"
@@ -2499,7 +2616,7 @@ def _test_validate_action_config():
             assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
 
 
-def _test_database_integration():
+def _test_database_integration() -> bool:
     """Test database system integration"""
     # Test database functions are available
     assert callable(backup_database), "backup_database should be callable"
@@ -2513,7 +2630,7 @@ def _test_database_integration():
     assert Base is not None, "SQLAlchemy Base should be accessible"
 
 
-def _test_action_integration():
+def _test_action_integration() -> bool:
         """Test all actions integrate properly with main"""
         # Test that all action functions can be called (at module level)
         actions_to_test = [
@@ -2529,7 +2646,7 @@ def _test_action_integration():
             assert action_func is not None, f"{action_name} should not be None"
 
 
-def _test_import_performance():
+def _test_import_performance() -> bool:
     """Test import performance is reasonable"""
     import importlib
     import time
@@ -2549,7 +2666,7 @@ def _test_import_performance():
     assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
 
 
-def _test_memory_efficiency():
+def _test_memory_efficiency() -> bool:
     """Test memory usage is reasonable"""
     import sys
 
@@ -2566,7 +2683,7 @@ def _test_memory_efficiency():
     ), f"Global variables should be reasonable, got {globals_count}"
 
 
-def _test_function_call_performance():
+def _test_function_call_performance() -> bool:
         """Test function call performance"""
         import time
 
@@ -2584,7 +2701,7 @@ def _test_function_call_performance():
         ), f"1000 function checks should be fast, took {duration:.3f}s"
 
 
-def _test_error_handling_structure():
+def _test_error_handling_structure() -> bool:
     """Test error handling structure in main functions"""
     import inspect
 
@@ -2600,7 +2717,7 @@ def _test_error_handling_structure():
     ), "main() should handle KeyboardInterrupt"
 
 
-def _test_cleanup_procedures():
+def _test_cleanup_procedures() -> bool:
     """Test cleanup procedures are in place"""
     import inspect
 
@@ -2610,7 +2727,7 @@ def _test_cleanup_procedures():
     assert "cleanup" in main_source.lower(), "main() should mention cleanup"
 
 
-def _test_exception_handling_coverage():
+def _test_exception_handling_coverage() -> bool:
         """Test exception handling covers expected scenarios"""
         import inspect
 
