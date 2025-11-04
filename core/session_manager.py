@@ -329,7 +329,7 @@ class SessionManager:
         self._reset_logged_flags()
         return self.browser_manager.start_browser(action_name)
 
-    def close_browser(self):
+    def close_browser(self) -> None:
         """Close the browser session without affecting database."""
         self.browser_manager.close_browser()
 
@@ -625,7 +625,7 @@ class SessionManager:
             return True
         return False
 
-    def reset_session_health_monitoring(self):
+    def reset_session_health_monitoring(self) -> None:
         """Reset session health monitoring (used when creating new sessions)."""
         self.session_health_monitor['is_alive'].set()
         self.session_health_monitor['death_detected'].clear()
@@ -635,7 +635,7 @@ class SessionManager:
         self.session_health_monitor['death_cascade_count'] = 0
         logger.debug("🔄 Session health monitoring reset for new session")
 
-    def _reset_logged_flags(self):
+    def _reset_logged_flags(self) -> None:
         """Reset flags used to prevent repeated logging of IDs."""
         self._profile_id_logged = False
         self._uuid_logged = False
@@ -843,7 +843,7 @@ class SessionManager:
 
         return self._perform_final_cookie_check(cookie_names)
 
-    def _sync_cookies_to_requests(self):
+    def _sync_cookies_to_requests(self) -> None:
         """
         Synchronize cookies from WebDriver to requests session.
         Only syncs once per session unless forced due to auth errors.
@@ -888,7 +888,7 @@ class SessionManager:
             if hasattr(self, '_in_sync_cookies'):
                 self._in_sync_cookies = False
 
-    def force_cookie_resync(self):
+    def force_cookie_resync(self) -> None:
         """Force a cookie resync when authentication errors occur."""
         if hasattr(self, '_session_cookies_synced'):
             delattr(self, '_session_cookies_synced')
@@ -1425,25 +1425,25 @@ class SessionManager:
             return None
 
     # Database delegation methods
-    def get_db_conn(self):
+    def get_db_conn(self) -> Any:
         """Get a database session."""
         return self.db_manager.get_session()
 
-    def return_session(self, session):
+    def return_session(self, session: Any) -> None:
         """Return a database session."""
         self.db_manager.return_session(session)
 
-    def get_db_conn_context(self):
+    def get_db_conn_context(self) -> Any:
         """Get database session context manager."""
         return self.db_manager.get_session_context()
 
-    def cls_db_conn(self, keep_db: bool = True):
+    def cls_db_conn(self, keep_db: bool = True) -> None:
         """Close database connections."""
         self.db_manager.close_connections(
             dispose_engine=not keep_db
         )  # Browser delegation methods
 
-    def invalidate_csrf_cache(self):
+    def invalidate_csrf_cache(self) -> None:
         """Invalidate cached CSRF token (useful on auth errors)."""
         self._cached_csrf_token = None
         self._csrf_cache_time = 0

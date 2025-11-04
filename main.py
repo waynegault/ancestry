@@ -2106,8 +2106,8 @@ def _validate_ai_provider_on_startup() -> None:
                 logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
                 return
 
-            # Try to connect and check if model is loaded
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            # Try to connect and check if model is loaded (disable retries for faster startup)
+            client = OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
             from ai_interface import _validate_local_llm_model_loaded
             actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
 

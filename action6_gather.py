@@ -17,7 +17,7 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
-from typing import Any
+from typing import Any, Callable
 
 from core.enhanced_error_recovery import with_enhanced_recovery
 
@@ -122,11 +122,11 @@ CACHE_TTL = {
     'person_facts': 1800,  # 30 minute cache for person facts
 }
 
-def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600):
+def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600) -> Callable:
     """Decorator for caching API responses with TTL."""
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Create cache key from function name and arguments
             cache_args = str(args[1:]) + str(kwargs) if len(args) > 1 else str(kwargs)
             cache_key = f"{cache_key_prefix}_{hashlib.md5(cache_args.encode()).hexdigest()}"
@@ -177,7 +177,7 @@ import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Callable, Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -4308,6 +4308,25 @@ def _compare_boolean_field(current_value: Any, new_value: Any) -> tuple[bool, An
     return (bool(current_value) != bool(new_value), bool(new_value))
 
 
+def _get_field_comparator(key: str, current_value: Any, new_value: Any):
+    """Get the appropriate comparator function for a field."""
+    # Check for boolean fields first (type-based)
+    if isinstance(current_value, bool) or isinstance(new_value, bool):
+        return _compare_boolean_field
+
+    # Field-specific comparators
+    field_comparators = {
+        "last_logged_in": _compare_datetime_field,
+        "status": _compare_status_field,
+        "birth_year": _compare_birth_year_field,
+        "gender": _compare_gender_field,
+        "profile_id": _compare_profile_id_field,
+        "administrator_profile_id": _compare_profile_id_field,
+    }
+
+    return field_comparators.get(key)
+
+
 def _compare_person_field(
     key: str,
     current_value: Any,
@@ -4316,19 +4335,17 @@ def _compare_person_field(
     logger_instance: logging.Logger
 ) -> tuple[bool, Any]:
     """Compare person field and return whether it changed and the value to set."""
-    if key == "last_logged_in":
-        return _compare_datetime_field(current_value, new_value)
-    if key == "status":
-        return _compare_status_field(current_value, new_value)
-    if key == "birth_year":
-        return _compare_birth_year_field(current_value, new_value, log_ref_short, logger_instance)
-    if key == "gender":
-        return _compare_gender_field(current_value, new_value)
-    if key in ("profile_id", "administrator_profile_id"):
-        return _compare_profile_id_field(current_value, new_value)
-    if isinstance(current_value, bool) or isinstance(new_value, bool):
-        return _compare_boolean_field(current_value, new_value)
-    return (current_value != new_value, new_value)
+    comparator = _get_field_comparator(key, current_value, new_value)
+
+    if comparator is None:
+        # Default comparison for fields without special handling
+        return (current_value != new_value, new_value)
+
+    # Call the appropriate comparator
+    if comparator == _compare_birth_year_field:
+        return comparator(current_value, new_value, log_ref_short, logger_instance)
+
+    return comparator(current_value, new_value)
 
 
 def _determine_profile_ids_when_both_exist(
@@ -4878,7 +4895,13 @@ def _determine_tree_operation(
 ) -> Literal["create", "update", "none"]:
     """Determine what operation is needed for family tree record."""
     if match_in_my_tree and existing_family_tree is None:
-        return "create"
+        # Only create if we have tree data available
+        if prefetched_tree_data:
+            return "create"
+        logger_instance.debug(
+            f"{log_ref_short}: Match is in tree but tree data not available. Skipping tree record creation."
+        )
+        return "none"
     if match_in_my_tree and existing_family_tree is not None:
         if prefetched_tree_data and _check_tree_update_needed(
             existing_family_tree, prefetched_tree_data, their_cfpid_final,
@@ -5579,6 +5602,35 @@ def _handle_303_session_refresh(
         return None
 
 
+def _handle_non_dict_response(
+    api_response: Any,
+    driver: Any,
+    session_manager: SessionManager,
+    match_list_url: str,
+    match_list_headers: dict[str, str]
+) -> Optional[dict]:
+    """Handle non-dict API response including 303 redirects."""
+    if not isinstance(api_response, requests.Response):
+        logger.error(
+            f"Match list API did not return dict. Type: {type(api_response).__name__}"
+        )
+        return None
+
+    status = api_response.status_code
+    location = api_response.headers.get('Location')
+
+    if status == 303:
+        if location:
+            return _handle_303_with_redirect(location, driver, session_manager, match_list_headers)
+        return _handle_303_session_refresh(session_manager, driver, match_list_url, match_list_headers)
+
+    logger.error(
+        f"Match list API did not return dict. Type: {type(api_response).__name__}, "
+        f"Status: {getattr(api_response, 'status_code', 'N/A')}"
+    )
+    return None
+
+
 def _handle_match_list_response(
     api_response: Any,
     current_page: int,
@@ -5600,32 +5652,7 @@ def _handle_match_list_response(
         return None
 
     if not isinstance(api_response, dict):
-        # Handle 303 See Other: retry with redirect or session refresh
-        if isinstance(api_response, requests.Response):
-            status = api_response.status_code
-            location = api_response.headers.get('Location')
-
-            if status == 303:
-                if location:
-                    # Handle 303 with redirect location
-                    result = _handle_303_with_redirect(location, driver, session_manager, match_list_headers)
-                    if result is None:
-                        return None
-                    return result
-                # Handle 303 without location (session expired)
-                result = _handle_303_session_refresh(session_manager, driver, match_list_url, match_list_headers)
-                if result is None:
-                    return None
-                return result
-            logger.error(
-                f"Match list API did not return dict. Type: {type(api_response).__name__}, "
-                f"Status: {getattr(api_response, 'status_code', 'N/A')}"
-            )
-            return None
-        logger.error(
-            f"Match list API did not return dict. Type: {type(api_response).__name__}"
-        )
-        return None
+        return _handle_non_dict_response(api_response, driver, session_manager, match_list_url, match_list_headers)
 
     return api_response
 
