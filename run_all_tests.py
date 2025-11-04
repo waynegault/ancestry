@@ -788,23 +788,51 @@ def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
 
 
 
-def _try_pattern_passed_failed_counts_any(stdout_lines: list[str]) -> str:
-    """Pattern 9: Fallback - sum any 'Passed:' and 'Failed:' counts anywhere in output."""
+def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
+    """Extract count from line containing keyword.
+    
+    Args:
+        line: Line to parse
+        keyword: Keyword to search for (e.g., "Passed:", "Failed:")
+        
+    Returns:
+        Extracted count or None if not found
+    """
     import re
+    clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+    if keyword not in clean_line:
+        return None
+    try:
+        return int(clean_line.split(keyword)[1].split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[Optional[int], Optional[int]]:
+    """Find passed and failed counts in output lines.
+    
+    Args:
+        stdout_lines: List of output lines to search
+        
+    Returns:
+        Tuple of (passed_count, failed_count) or (None, None) if not found
+    """
     passed = None
     failed = None
     for line in stdout_lines:
-        clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-        if passed is None and "Passed:" in clean_line:
-            try:
-                passed = int(clean_line.split("Passed:")[1].split()[0])
-            except (ValueError, IndexError):
-                continue
-        if failed is None and "Failed:" in clean_line:
-            try:
-                failed = int(clean_line.split("Failed:")[1].split()[0])
-            except (ValueError, IndexError):
-                continue
+        if passed is None:
+            passed = _extract_count_from_line(line, "Passed:")
+        if failed is None:
+            failed = _extract_count_from_line(line, "Failed:")
+        if passed is not None and failed is not None:
+            break
+    return passed, failed
+
+
+def _try_pattern_passed_failed_counts_any(stdout_lines: list[str]) -> str:
+    """Pattern 9: Fallback - sum any 'Passed:' and 'Failed:' counts anywhere in output."""
+    passed, failed = _find_passed_failed_counts(stdout_lines)
+    
     if passed is not None or failed is not None:
         total = (passed or 0) + (failed or 0)
         if total >= 0:
