@@ -72,10 +72,12 @@ except ImportError:
 # === SELENIUM IMPORTS ===
 try:
     from selenium.common.exceptions import InvalidSessionIdException, NoSuchWindowException, WebDriverException
+    from selenium.webdriver.remote.webdriver import WebDriver
 except ImportError:
     WebDriverException = Exception
     InvalidSessionIdException = Exception
     NoSuchWindowException = Exception
+    WebDriver = None  # type: ignore
 
 # === LOCAL IMPORTS ===
 import contextlib
@@ -1450,22 +1452,22 @@ class SessionManager:
         self._csrf_cache_time = 0
 
     @property
-    def driver(self):
+    def driver(self) -> Optional["WebDriver"]:
         """Get the WebDriver instance."""
         return self.browser_manager.driver
 
     @property
-    def driver_live(self):
+    def driver_live(self) -> bool:
         """Check if driver is live."""
         return self.browser_manager.driver_live
 
-    def make_tab(self):
+    def make_tab(self) -> Optional[str]:
         """Create a new browser tab."""
         return self.browser_manager.create_new_tab()
 
     # API delegation methods
     @property
-    def my_profile_id(self):
+    def my_profile_id(self) -> Optional[str]:
         """Get the user's profile ID."""
         # Try to get from API manager first, then retrieve if needed
         profile_id = self.api_manager.my_profile_id
@@ -1474,7 +1476,7 @@ class SessionManager:
         return profile_id
 
     @property
-    def my_uuid(self):
+    def my_uuid(self) -> Optional[str]:
         """Get the user's UUID."""
         # Try to get from API manager first, then retrieve if needed
         uuid_val = self.api_manager.my_uuid
@@ -1483,7 +1485,7 @@ class SessionManager:
         return uuid_val
 
     @property
-    def my_tree_id(self):
+    def my_tree_id(self) -> Optional[str]:
         """Get the user's tree ID."""
         # Try to get from API manager first, then retrieve if needed
         tree_id = self.api_manager.my_tree_id
@@ -1492,7 +1494,7 @@ class SessionManager:
         return tree_id
 
     @property
-    def csrf_token(self):
+    def csrf_token(self) -> Optional[str]:
         """Get the CSRF token with smart caching."""
         # ⚡ OPTIMIZATION 1: Check pre-cached CSRF token first
         if self._cached_csrf_token and self._csrf_cache_time:
@@ -1553,41 +1555,41 @@ class SessionManager:
 
     # Public properties
     @property
-    def tree_owner_name(self):
+    def tree_owner_name(self) -> Optional[str]:
         """Get the tree owner name."""
         return self.api_manager.tree_owner_name
 
     @property
-    def requests_session(self):
+    def requests_session(self) -> requests.Session:
         """Get the requests session."""
         return self.api_manager.requests_session
 
     # Enhanced capabilities properties
     @property
-    def scraper(self):
+    def scraper(self) -> Optional[Any]:
         """Get the CloudScraper instance for anti-bot protection."""
         return getattr(self, '_scraper', None)
 
     @scraper.setter
-    def scraper(self, value):
+    def scraper(self, value: Any) -> None:
         """Set the CloudScraper instance."""
         self._scraper = value
 
     # Compatibility properties for legacy code
     @property
-    def browser_needed(self):
+    def browser_needed(self) -> bool:
         """Get/set browser needed flag."""
         return self.browser_manager.browser_needed
 
     @browser_needed.setter
-    def browser_needed(self, value: bool):
+    def browser_needed(self, value: bool) -> None:
         """Set browser needed flag."""
         self.browser_manager.browser_needed = value
 
 
 
     @property
-    def _requests_session(self):
+    def _requests_session(self) -> requests.Session:
         """Get the requests session (compatibility property with underscore)."""
         return self.api_manager.requests_session
 
