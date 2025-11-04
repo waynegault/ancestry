@@ -2926,6 +2926,16 @@ def _prepare_person_insert_data(
     return insert_data
 
 
+def _is_person_create(d: dict[str, Any]) -> bool:
+    """Check if data dict contains a person create operation."""
+    return bool(d.get("person") and d["person"]["_operation"] == "create")
+
+
+def _is_person_update(d: dict[str, Any]) -> bool:
+    """Check if data dict contains a person update operation."""
+    return bool(d.get("person") and d["person"]["_operation"] == "update")
+
+
 def _separate_bulk_operations(
     prepared_bulk_data: list[dict[str, Any]]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -2937,22 +2947,10 @@ def _separate_bulk_operations(
     Returns:
         Tuple of (person_creates, person_updates, dna_match_ops, family_tree_ops)
     """
-    person_creates_raw = [
-        d["person"]
-        for d in prepared_bulk_data
-        if d.get("person") and d["person"]["_operation"] == "create"
-    ]
-    person_updates = [
-        d["person"]
-        for d in prepared_bulk_data
-        if d.get("person") and d["person"]["_operation"] == "update"
-    ]
-    dna_match_ops = [
-        d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")
-    ]
-    family_tree_ops = [
-        d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")
-    ]
+    person_creates_raw = [d["person"] for d in prepared_bulk_data if _is_person_create(d)]
+    person_updates = [d["person"] for d in prepared_bulk_data if _is_person_update(d)]
+    dna_match_ops = [d["dna_match"] for d in prepared_bulk_data if d.get("dna_match")]
+    family_tree_ops = [d["family_tree"] for d in prepared_bulk_data if d.get("family_tree")]
     return person_creates_raw, person_updates, dna_match_ops, family_tree_ops
 
 
@@ -3080,6 +3078,20 @@ def _process_person_creates(
     return created_person_map, insert_data
 
 
+def _build_person_update_dict(p_data: dict[str, Any], existing_id: int) -> dict[str, Any]:
+    """Build update dictionary for a person record."""
+    update_dict = {
+        k: v
+        for k, v in p_data.items()
+        if not k.startswith("_") and k not in ["uuid", "profile_id"]
+    }
+    if "status" in update_dict and isinstance(update_dict["status"], PersonStatusEnum):
+        update_dict["status"] = update_dict["status"].value
+    update_dict["id"] = existing_id
+    update_dict["updated_at"] = datetime.now(timezone.utc)
+    return update_dict
+
+
 def _process_person_updates(
     session: SqlAlchemySession,
     person_updates: list[dict[str, Any]]
@@ -3102,15 +3114,7 @@ def _process_person_updates(
                 f"Skipping person update (UUID {p_data.get('uuid')}): Missing '_existing_person_id'."
             )
             continue
-        update_dict = {
-            k: v
-            for k, v in p_data.items()
-            if not k.startswith("_") and k not in ["uuid", "profile_id"]
-        }
-        if "status" in update_dict and isinstance(update_dict["status"], PersonStatusEnum):
-            update_dict["status"] = update_dict["status"].value
-        update_dict["id"] = existing_id
-        update_dict["updated_at"] = datetime.now(timezone.utc)
+        update_dict = _build_person_update_dict(p_data, existing_id)
         if len(update_dict) > 2:
             update_mappings.append(update_dict)
 
@@ -3120,6 +3124,32 @@ def _process_person_updates(
         logger.debug("Bulk update Persons called.")
     else:
         logger.debug("No valid Person updates to perform.")
+
+
+def _add_update_ids_to_map(all_person_ids_map: dict[str, int], person_updates: list[dict[str, Any]]) -> None:
+    """Add IDs from person updates to the master ID map."""
+    for p_update_data in person_updates:
+        if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
+            all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
+
+
+def _add_existing_ids_to_map(
+    all_person_ids_map: dict[str, int],
+    prepared_bulk_data: list[dict[str, Any]],
+    existing_persons_map: dict[str, Person]
+) -> None:
+    """Add IDs from existing persons to the master ID map."""
+    processed_uuids = {
+        p["person"]["uuid"]
+        for p in prepared_bulk_data
+        if p.get("person") and p["person"].get("uuid")
+    }
+    for uuid_processed in processed_uuids:
+        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
+            person = existing_persons_map[uuid_processed]
+            person_id_val = getattr(person, "id", None)
+            if person_id_val is not None:
+                all_person_ids_map[uuid_processed] = person_id_val
 
 
 def _create_master_id_map(
@@ -3140,25 +3170,8 @@ def _create_master_id_map(
         Master ID map (UUID -> Person ID)
     """
     all_person_ids_map: dict[str, int] = created_person_map.copy()
-
-    # Add IDs from updates
-    for p_update_data in person_updates:
-        if p_update_data.get("_existing_person_id") and p_update_data.get("uuid"):
-            all_person_ids_map[p_update_data["uuid"]] = p_update_data["_existing_person_id"]
-
-    # Add IDs from existing persons
-    processed_uuids = {
-        p["person"]["uuid"]
-        for p in prepared_bulk_data
-        if p.get("person") and p["person"].get("uuid")
-    }
-    for uuid_processed in processed_uuids:
-        if uuid_processed not in all_person_ids_map and existing_persons_map.get(uuid_processed):
-            person = existing_persons_map[uuid_processed]
-            person_id_val = getattr(person, "id", None)
-            if person_id_val is not None:
-                all_person_ids_map[uuid_processed] = person_id_val
-
+    _add_update_ids_to_map(all_person_ids_map, person_updates)
+    _add_existing_ids_to_map(all_person_ids_map, prepared_bulk_data, existing_persons_map)
     return all_person_ids_map
 
 
@@ -3377,6 +3390,13 @@ def _bulk_insert_dna_matches(
         logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} newly inserted DnaMatch records")
 
 
+def _separate_core_and_ethnicity(update_map: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Separate core data from ethnicity data in an update mapping."""
+    core_map = {k: v for k, v in update_map.items() if not k.startswith("ethnicity_")}
+    ethnicity_map = {k: v for k, v in update_map.items() if k.startswith("ethnicity_")}
+    return core_map, ethnicity_map
+
+
 def _bulk_update_dna_matches(
     session: SqlAlchemySession,
     dna_update_mappings: list[dict[str, Any]]
@@ -3397,8 +3417,7 @@ def _bulk_update_dna_matches(
     ethnicity_updates = []
 
     for update_map in dna_update_mappings:
-        core_map = {k: v for k, v in update_map.items() if not k.startswith("ethnicity_")}
-        ethnicity_map = {k: v for k, v in update_map.items() if k.startswith("ethnicity_")}
+        core_map, ethnicity_map = _separate_core_and_ethnicity(update_map)
         core_update_mappings.append(core_map)
         if ethnicity_map:
             ethnicity_updates.append((update_map["id"], ethnicity_map))
