@@ -2097,6 +2097,7 @@ def _validate_ai_provider_on_startup() -> None:
     if ai_provider == "local_llm":
         # Validate local LLM is accessible
         try:
+            import psutil
             from openai import OpenAI
             api_key = config_schema.api.local_llm_api_key
             model_name = config_schema.api.local_llm_model
@@ -2106,7 +2107,22 @@ def _validate_ai_provider_on_startup() -> None:
                 logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
                 return
 
-            # Try to connect and check if model is loaded (disable retries for faster startup)
+            # Check if LM Studio is running BEFORE attempting connection
+            lm_studio_running = False
+            for proc in psutil.process_iter(['name']):
+                try:
+                    if 'lm studio' in proc.info['name'].lower() or 'lmstudio' in proc.info['name'].lower():
+                        lm_studio_running = True
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            if not lm_studio_running:
+                logger.warning("⚠️ LM Studio is not running")
+                logger.warning("   Please start LM Studio and load a model before using AI features")
+                return
+
+            # LM Studio is running - now try to connect and check if model is loaded
             client = OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
             from ai_interface import _validate_local_llm_model_loaded
             actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)

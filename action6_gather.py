@@ -1713,32 +1713,32 @@ def _apply_predictive_rate_limiting(
             optimal_pre_delay = min(tokens_deficit / fill_rate, 8.0)  # Cap at 8 seconds
 
             if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
-                logger.debug(f"Predictive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (current tokens: {current_tokens:.2f})")
+                logger.info(f"⏱️ Adaptive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (tokens: {current_tokens:.1f}/{tokens_needed:.1f})")
                 time.sleep(optimal_pre_delay)
             # Use existing tiered approach for light loads
             elif total_api_calls >= 15:
                 _apply_rate_limiting(session_manager)
-                logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+                logger.info(f"⏱️ Adaptive rate limiting: Full delay for heavy batch ({total_api_calls} API calls)")
             elif total_api_calls >= 5:
                 time.sleep(1.2)  # Shorter than normal rate limiting
-                logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+                logger.info(f"⏱️ Adaptive rate limiting: 1.2s delay for medium batch ({total_api_calls} API calls)")
             else:
                 time.sleep(0.3)  # Just 300ms delay for light loads
-                logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+                logger.debug(f"Adaptive rate limiting: 0.3s delay for light batch ({total_api_calls} API calls)")
         else:
             # Sufficient tokens available - minimal delay
             time.sleep(0.1)  # Minimal delay to prevent hammering
-            logger.debug(f"Sufficient tokens available ({current_tokens:.2f}) for {total_api_calls} API calls - minimal delay")
+            logger.info(f"⚡ Adaptive rate limiting: Sufficient tokens ({current_tokens:.1f}) - minimal delay for {total_api_calls} API calls")
     # Fallback to original tiered approach if rate_limiter not available
     elif total_api_calls >= 15:
         _apply_rate_limiting(session_manager)
-        logger.debug(f"Applied full rate limiting for heavy batch: {total_api_calls} parallel API calls")
+        logger.info(f"⏱️ Rate limiting: Full delay for heavy batch ({total_api_calls} API calls)")
     elif total_api_calls >= 5:
         time.sleep(1.2)
-        logger.debug(f"Applied light rate limiting (1.2s) for medium batch: {total_api_calls} parallel API calls")
+        logger.info(f"⏱️ Rate limiting: 1.2s delay for medium batch ({total_api_calls} API calls)")
     else:
         time.sleep(0.3)
-        logger.debug(f"Applied minimal rate limiting (0.3s) for light batch: {total_api_calls} parallel API calls")
+        logger.debug(f"Rate limiting: 0.3s delay for light batch ({total_api_calls} API calls)")
 
 
 def _submit_api_call_groups(
@@ -7385,8 +7385,8 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
     if limiter is None:
         return
     if hasattr(limiter, "is_throttled") and limiter.is_throttled():
-        logger.debug(
-            f"Rate limiter was throttled during processing before/during page {current_page}. Delay remains increased."
+        logger.info(
+            f"⚠️ Adaptive rate limiting: Throttling detected on page {current_page}. Delay remains increased."
         )
     else:
         previous_delay = getattr(limiter, "current_delay", None)
@@ -7398,8 +7398,8 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
             abs(previous_delay - new_delay) > 0.01
             and new_delay > getattr(config_schema.api, "initial_delay", 0.5)
         ):
-            logger.debug(
-                f"Decreased rate limit base delay to {new_delay:.2f}s after page {current_page}."
+            logger.info(
+                f"⚡ Adaptive rate limiting: Decreased delay to {new_delay:.2f}s after page {current_page} (was {previous_delay:.2f}s)."
             )
 
 
