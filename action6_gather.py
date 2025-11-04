@@ -4548,6 +4548,56 @@ def _prepare_dna_match_operation_data(
 # End of _prepare_dna_match_operation_data
 
 
+def _build_tree_links(
+    their_cfpid: str,
+    session_manager: SessionManager,
+    config_schema_arg: "ConfigSchema"
+) -> tuple[Optional[str], Optional[str]]:
+    """Build facts and view links for a person in the tree."""
+    if not their_cfpid or not session_manager.my_tree_id:
+        return None, None
+
+    base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid}"
+    facts_link = urljoin(config_schema_arg.api.base_url, f"{base_person_path}/facts")  # type: ignore
+    view_params = {
+        "cfpid": their_cfpid,
+        "showMatches": "true",
+        "sid": session_manager.my_uuid,
+    }
+    base_view_url = urljoin(
+        config_schema_arg.api.base_url,  # type: ignore
+        f"/family-tree/tree/{session_manager.my_tree_id}/family",
+    )
+    view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
+    return facts_link, view_in_tree_link
+
+
+def _check_tree_update_needed(
+    existing_family_tree: FamilyTree,
+    prefetched_tree_data: dict[str, Any],
+    their_cfpid_final: Optional[str],
+    facts_link: Optional[str],
+    view_in_tree_link: Optional[str],
+    log_ref_short: str,
+    logger_instance: logging.Logger
+) -> bool:
+    """Check if family tree record needs updating."""
+    fields_to_check = [
+        ("cfpid", their_cfpid_final),
+        ("person_name_in_tree", prefetched_tree_data.get("their_firstname", "Unknown")),
+        ("actual_relationship", prefetched_tree_data.get("actual_relationship")),
+        ("relationship_path", prefetched_tree_data.get("relationship_path")),
+        ("facts_link", facts_link),
+        ("view_in_tree_link", view_in_tree_link),
+    ]
+    for field, new_val in fields_to_check:
+        old_val = getattr(existing_family_tree, field, None)
+        if new_val != old_val:
+            logger_instance.debug(f"  Tree change {log_ref_short}: Field '{field}'")
+            return True
+    return False
+
+
 def _prepare_family_tree_operation_data(
     existing_family_tree: Optional[FamilyTree],
     prefetched_tree_data: Optional[dict[str, Any]],
@@ -4582,48 +4632,22 @@ def _prepare_family_tree_operation_data(
     view_in_tree_link, facts_link = None, None
     their_cfpid_final = None
 
-    if prefetched_tree_data:  # Ensure prefetched_tree_data is not None
+    if prefetched_tree_data:
         their_cfpid_final = prefetched_tree_data.get("their_cfpid")
-        if their_cfpid_final and session_manager.my_tree_id:
-            base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid_final}"
-            facts_link = urljoin(config_schema_arg.api.base_url, f"{base_person_path}/facts")  # type: ignore
-            view_params = {
-                "cfpid": their_cfpid_final,
-                "showMatches": "true",
-                "sid": session_manager.my_uuid,
-            }
-            base_view_url = urljoin(
-                config_schema_arg.api.base_url,  # type: ignore
-                f"/family-tree/tree/{session_manager.my_tree_id}/family",
+        if their_cfpid_final:
+            facts_link, view_in_tree_link = _build_tree_links(
+                their_cfpid_final, session_manager, config_schema_arg
             )
-            view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
 
     if match_in_my_tree and existing_family_tree is None:
         tree_operation = "create"
     elif match_in_my_tree and existing_family_tree is not None:
         if prefetched_tree_data:  # Only check if we have new data
-            fields_to_check = [
-                ("cfpid", their_cfpid_final),
-                (
-                    "person_name_in_tree",
-                    prefetched_tree_data.get("their_firstname", "Unknown"),
-                ),
-                (
-                    "actual_relationship",
-                    prefetched_tree_data.get("actual_relationship"),
-                ),
-                ("relationship_path", prefetched_tree_data.get("relationship_path")),
-                ("facts_link", facts_link),
-                ("view_in_tree_link", view_in_tree_link),
-            ]
-            for field, new_val in fields_to_check:
-                old_val = getattr(existing_family_tree, field, None)
-                if new_val != old_val:  # Handles None comparison correctly
-                    tree_operation = "update"
-                    logger_instance.debug(
-                        f"  Tree change {log_ref_short}: Field '{field}'"
-                    )
-                    break
+            if _check_tree_update_needed(
+                existing_family_tree, prefetched_tree_data, their_cfpid_final,
+                facts_link, view_in_tree_link, log_ref_short, logger_instance
+            ):
+                tree_operation = "update"
         # else: no prefetched_tree_data, cannot determine update, tree_operation remains "none"
     elif not match_in_my_tree and existing_family_tree is not None:
         logger_instance.warning(
@@ -5732,6 +5756,49 @@ def _fetch_combined_details(
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
+def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
+    """Try to get badge details from cache."""
+    if global_cache is None:
+        return None
+
+    cache_key = f"badge_details_{match_uuid}"
+    try:
+        cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+        if cached_data is not ENOVAL and isinstance(cached_data, dict):
+            logger.debug(f"Cache hit for badge details: {match_uuid}")
+            return cached_data
+    except Exception as cache_exc:
+        logger.debug(f"Cache check failed for badge details {match_uuid}: {cache_exc}")
+    return None
+
+
+def _validate_badge_session(session_manager: SessionManager, match_uuid: str) -> None:
+    """Validate session for badge details fetch."""
+    if session_manager.should_halt_operations():
+        logger.warning(f"_fetch_batch_badge_details: Halting due to session death cascade for UUID {match_uuid}")
+        raise ConnectionError(
+            f"Session death cascade detected - halting badge details fetch (UUID: {match_uuid})"
+        )
+
+    if not session_manager.is_sess_valid():
+        session_manager.check_session_health()
+        logger.error(f"_fetch_batch_badge_details: WebDriver session invalid for UUID {match_uuid}.")
+        raise ConnectionError(f"WebDriver session invalid for badge details fetch (UUID: {match_uuid})")
+
+
+def _cache_badge_details(match_uuid: str, result_data: dict[str, Any]) -> None:
+    """Cache badge details for future use."""
+    if global_cache is None:
+        return
+
+    cache_key = f"badge_details_{match_uuid}"
+    try:
+        global_cache.set(cache_key, result_data, expire=3600, retry=True)
+        logger.debug(f"Cached badge details for {match_uuid}")
+    except Exception as cache_exc:
+        logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
+
+
 def _fetch_batch_badge_details(  # noqa: PLR0911
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[dict[str, Any]]:
@@ -5747,40 +5814,18 @@ def _fetch_batch_badge_details(  # noqa: PLR0911
         A dictionary containing badge details (their_cfpid, their_firstname, etc.)
         if successful, otherwise None.
     """
-    # SURGICAL FIX #14: Enhanced Smart Caching using existing global cache system
-    if global_cache is not None:
-        cache_key = f"badge_details_{match_uuid}"
-        try:
-            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-            if cached_data is not ENOVAL and isinstance(cached_data, dict):
-                logger.debug(f"Cache hit for badge details: {match_uuid}")
-                return cached_data
-        except Exception as cache_exc:
-            logger.debug(f"Cache check failed for badge details {match_uuid}: {cache_exc}")
+    # Try cache first
+    cached_result = _get_cached_badge_details(match_uuid)
+    if cached_result:
+        return cached_result
 
     my_uuid = session_manager.my_uuid
     if not my_uuid or not match_uuid:
         logger.warning("_fetch_batch_badge_details: Missing my_uuid or match_uuid.")
         return None
 
-    # SURGICAL FIX #20: Universal session validation with SessionManager death detection
-    if session_manager.should_halt_operations():
-        logger.warning(f"_fetch_batch_badge_details: Halting due to session death cascade for UUID {match_uuid}")
-        raise ConnectionError(
-            f"Session death cascade detected - halting badge details fetch (UUID: {match_uuid})"
-        )
-
-    # Traditional session check with enhanced logging
-    if not session_manager.is_sess_valid():
-        # Update session health monitoring in SessionManager
-        session_manager.check_session_health()
-
-        logger.error(
-            f"_fetch_batch_badge_details: WebDriver session invalid for UUID {match_uuid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for badge details fetch (UUID: {match_uuid})"
-        )
+    # Validate session
+    _validate_badge_session(session_manager, match_uuid)
 
     badge_url = urljoin(
         config_schema.api.base_url,
@@ -5825,21 +5870,8 @@ def _fetch_batch_badge_details(  # noqa: PLR0911
                 "their_birth_year": person_badged.get("birthYear"),
             }
 
-            # SURGICAL FIX #14: Cache successful badge details using existing global cache system
-            if global_cache is not None:
-                cache_key = f"badge_details_{match_uuid}"
-                try:
-                    # Cache for shorter TTL since badge details can change
-                    global_cache.set(
-                        cache_key,
-                        result_data,
-                        expire=3600,  # 1 hour TTL for badge details
-                        retry=True
-                    )
-                    logger.debug(f"Cached badge details for {match_uuid}")
-                except Exception as cache_exc:
-                    logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
-
+            # Cache successful badge details
+            _cache_badge_details(match_uuid, result_data)
             return result_data
         if isinstance(badge_response, requests.Response):
             logger.warning(
