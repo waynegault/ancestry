@@ -164,13 +164,9 @@ class SessionManager:
         except ImportError:
             self.rate_limiter = None
 
-        # Add dynamic rate limiter for AI calls (matches utils.py SessionManager)
-        try:
-            from utils import DynamicRateLimiter
-
-            self.dynamic_rate_limiter = DynamicRateLimiter()
-        except ImportError:
-            self.dynamic_rate_limiter = None
+        # Alias for backward compatibility with code that references dynamic_rate_limiter
+        # Both attributes point to the same RateLimiter instance
+        self.dynamic_rate_limiter = self.rate_limiter
 
         # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
         self.session_health_monitor = {
@@ -851,7 +847,15 @@ class SessionManager:
         """
         Synchronize cookies from WebDriver to requests session.
         Only syncs once per session unless forced due to auth errors.
+
+        Enhanced with recursion prevention and robust error handling.
         """
+        # Recursion prevention check
+        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
+            logger.debug("Recursion detected in _sync_cookies_to_requests(), skipping to prevent loop")
+            return
+
+        # Validate prerequisites
         if not self.driver or not hasattr(self.api_manager, '_requests_session'):
             return
 
@@ -860,27 +864,29 @@ class SessionManager:
             return
 
         try:
+            # Set recursion prevention flag
+            self._in_sync_cookies = True
+
             # Get cookies from WebDriver
             driver_cookies = self.driver.get_cookies()
 
-            # Clear existing cookies in requests session
-            self.api_manager._requests_session.cookies.clear()
+            # Validate cookies were retrieved
+            if not driver_cookies:
+                logger.debug("No cookies retrieved from WebDriver")
+                return
 
-            # Sync cookies from driver to requests session
-            synced_count = 0
-            for cookie in driver_cookies:
-                if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
-                    self.api_manager._requests_session.cookies.set(
-                        cookie["name"], cookie["value"],
-                        domain=cookie.get("domain"), path=cookie.get("path", "/")
-                    )
-                    synced_count += 1
+            # Use helper method for robust cookie syncing
+            synced_count = self._sync_driver_cookies_to_requests(driver_cookies)
 
             self._session_cookies_synced = True
             logger.debug(f"Synced {synced_count} cookies from WebDriver to requests session (once per session)")
 
         except Exception as e:
             logger.error(f"Failed to sync cookies to requests session: {e}")
+        finally:
+            # Always clear recursion flag
+            if hasattr(self, '_in_sync_cookies'):
+                self._in_sync_cookies = False
 
     def force_cookie_resync(self):
         """Force a cookie resync when authentication errors occur."""
@@ -889,20 +895,7 @@ class SessionManager:
         self._sync_cookies_to_requests()
         logger.debug("Forced session cookie resync due to authentication error")
 
-    def _can_sync_cookies(self) -> bool:
-        """Check if cookie sync is possible.
 
-        Returns:
-            True if sync can proceed, False otherwise
-        """
-        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
-            logger.debug("Recursion detected in _sync_cookies(), skipping to prevent loop")
-            return False
-
-        if not self.driver:
-            return False
-
-        return hasattr(self.api_manager, '_requests_session') and bool(self.api_manager._requests_session)
 
     def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
         """Sync driver cookies to requests session.
@@ -931,31 +924,7 @@ class SessionManager:
 
         return synced_count
 
-    def _sync_cookies(self) -> None:
-        """
-        Simple cookie synchronization from WebDriver to requests session.
 
-        Simplified version that avoids all session validation to prevent recursion.
-        """
-        if not self._can_sync_cookies():
-            return
-
-        try:
-            self._in_sync_cookies = True
-
-            driver_cookies = self.driver.get_cookies()
-            if not driver_cookies:
-                return
-
-            synced_count = self._sync_driver_cookies_to_requests(driver_cookies)
-            logger.debug(f"Synced {synced_count} cookies to requests session")
-
-        except Exception as e:
-            logger.warning(f"Cookie sync failed: {e}")
-            return
-        finally:
-            if hasattr(self, '_in_sync_cookies'):
-                self._in_sync_cookies = False
 
 
 
@@ -1099,6 +1068,20 @@ class SessionManager:
             return False
 
         return True
+
+    def attempt_browser_recovery(self, action_name: Optional[str] = None) -> bool:
+        """
+        Public method to attempt browser session recovery.
+
+        Args:
+            action_name: Optional name of the action for logging context
+
+        Returns:
+            bool: True if recovery successful, False otherwise
+        """
+        if action_name:
+            logger.info(f"Attempting browser recovery for: {action_name}")
+        return self._attempt_session_recovery()
 
     def validate_system_health(self, action_name: str = "Unknown") -> bool:
         """

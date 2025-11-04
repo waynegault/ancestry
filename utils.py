@@ -3732,7 +3732,7 @@ def _perform_api_login_check(session_manager: SessionManager) -> Optional[bool]:
     """Perform API-based login status check."""
     logger.debug("Performing primary API-based login status check...")
     try:
-        session_manager._sync_cookies()
+        session_manager._sync_cookies_to_requests()
         api_check_result = session_manager.api_manager.verify_api_login_status()
 
         if api_check_result is True:

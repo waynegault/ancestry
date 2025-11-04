@@ -201,7 +201,13 @@ class BrowserManager:
         """Close the browser and cleanup resources."""
         if self.driver:
             try:
-                self.driver.quit()
+                # Suppress stderr to hide undetected_chromedriver cleanup errors on Windows
+                # (OSError: [WinError 6] The handle is invalid)
+                import contextlib
+                import io
+
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.driver.quit()
             except Exception as e:
                 logger.warning(f"Error quitting WebDriver: {e}")
 

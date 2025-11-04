@@ -3002,7 +3002,7 @@ def _check_and_handle_browser_health(
     """Check browser health and attempt recovery if needed. Returns (should_break, additional_skips)."""
     if state.processed_in_loop % 5 == 0 and not session_manager.check_browser_health():
         logger.warning(f"🚨 BROWSER DEATH DETECTED during message processing at person {state.processed_in_loop}")
-        if session_manager.attempt_browser_recovery():
+        if session_manager.attempt_browser_recovery(action_name="Action 8 - Message Processing"):
             logger.warning(f"✅ Browser recovery successful at person {state.processed_in_loop} - continuing")
             return False, 0
         logger.critical(f"❌ Browser recovery failed at person {state.processed_in_loop} - halting messaging")
