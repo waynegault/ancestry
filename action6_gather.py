@@ -3162,7 +3162,14 @@ def _add_existing_ids_to_map(
     prepared_bulk_data: list[dict[str, Any]],
     existing_persons_map: dict[str, Person]
 ) -> None:
-    """Add IDs from existing persons to the master ID map."""
+    """Add IDs from existing persons to the master ID map.
+
+    This function ensures that ALL existing persons are added to the map,
+    not just those that have new/updated data in prepared_bulk_data.
+    This is critical when all persons in a batch already exist - without this,
+    all_person_ids_map would be empty, causing DNA match INSERT failures.
+    """
+    # First, add IDs for persons that have data in prepared_bulk_data
     processed_uuids = {
         p["person"]["uuid"]
         for p in prepared_bulk_data
@@ -3174,6 +3181,17 @@ def _add_existing_ids_to_map(
             person_id_val = getattr(person, "id", None)
             if person_id_val is not None:
                 all_person_ids_map[uuid_processed] = person_id_val
+
+    # CRITICAL FIX: Also add IDs for ALL other existing persons, even if they don't have
+    # data in prepared_bulk_data. This handles the case where all persons already exist
+    # and were filtered out from Person INSERT operations, but we still need their IDs
+    # to properly handle DNA match UPDATE operations.
+    for uuid_val, person in existing_persons_map.items():
+        if uuid_val not in all_person_ids_map:
+            person_id_val = getattr(person, "id", None)
+            if person_id_val is not None:
+                all_person_ids_map[uuid_val] = person_id_val
+                logger.debug(f"Added existing person ID to map: UUID={uuid_val}, ID={person_id_val}")
 
 
 def _create_master_id_map(
@@ -3193,9 +3211,11 @@ def _create_master_id_map(
     Returns:
         Master ID map (UUID -> Person ID)
     """
+    logger.debug(f"Creating master ID map: created_person_map has {len(created_person_map)} entries, person_updates has {len(person_updates)} entries, existing_persons_map has {len(existing_persons_map)} entries")
     all_person_ids_map: dict[str, int] = created_person_map.copy()
     _add_update_ids_to_map(all_person_ids_map, person_updates)
     _add_existing_ids_to_map(all_person_ids_map, prepared_bulk_data, existing_persons_map)
+    logger.debug(f"Master ID map created with {len(all_person_ids_map)} total entries")
     return all_person_ids_map
 
 
@@ -3270,9 +3290,12 @@ def _get_existing_dna_matches(
     people_ids_in_batch = {
         pid for pid in all_person_ids_map.values() if pid is not None
     }
+    logger.debug(f"all_person_ids_map has {len(all_person_ids_map)} entries, people_ids_in_batch has {len(people_ids_in_batch)} IDs")
     if not people_ids_in_batch:
+        logger.warning("No people IDs in batch - cannot query for existing DNA matches")
         return {}
 
+    logger.debug(f"Querying for existing DNA matches for people IDs: {sorted(people_ids_in_batch)}")
     existing_matches = (
         session.query(DnaMatch.people_id, DnaMatch.id)
         .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
@@ -3282,6 +3305,9 @@ def _get_existing_dna_matches(
     logger.debug(
         f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
     )
+    if len(existing_dna_matches_map) < len(people_ids_in_batch):
+        missing_count = len(people_ids_in_batch) - len(existing_dna_matches_map)
+        logger.debug(f"{missing_count} people IDs do not have existing DNA match records")
     return existing_dna_matches_map
 
 
@@ -3660,7 +3686,8 @@ def _execute_bulk_db_operations(
     # Step 9: Handle database errors during bulk operations
     except IntegrityError as integrity_err:
         # Handle UNIQUE constraint violations gracefully
-        if "UNIQUE constraint failed: people.uuid" in str(integrity_err):
+        error_str = str(integrity_err)
+        if "UNIQUE constraint failed: people.uuid" in error_str:
             logger.warning(f"UNIQUE constraint violation during bulk insert - some records already exist: {integrity_err}")
             # This is expected behavior when records already exist - don't fail the entire batch
             logger.info("Continuing with database operations despite duplicate records...")
@@ -3668,6 +3695,13 @@ def _execute_bulk_db_operations(
             # Use helper function to handle recovery
             # Note: insert_data might not be available in this exception scope, pass None for safe recovery
             return _handle_integrity_error_recovery(session, None)
+        elif "UNIQUE constraint failed: dna_match.people_id" in error_str:
+            logger.error(f"UNIQUE constraint violation: dna_match.people_id already exists. This indicates the code tried to INSERT when it should UPDATE.")
+            logger.error(f"Error details: {integrity_err}")
+            # Roll back the session to clear the error state
+            session.rollback()
+            logger.info("Session rolled back. Returning False to indicate failure.")
+            return False
         logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
         return False  # Other integrity errors should still fail
     except SQLAlchemyError as bulk_db_err:
