@@ -832,7 +832,7 @@ def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[Optional[int], 
 def _try_pattern_passed_failed_counts_any(stdout_lines: list[str]) -> str:
     """Pattern 9: Fallback - sum any 'Passed:' and 'Failed:' counts anywhere in output."""
     passed, failed = _find_passed_failed_counts(stdout_lines)
-    
+
     if passed is not None or failed is not None:
         total = (passed or 0) + (failed or 0)
         if total >= 0:

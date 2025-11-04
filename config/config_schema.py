@@ -413,9 +413,11 @@ class APIConfig:
     max_retries: int = 5  # Increased from 3 to 5 for better resilience to transient rate limits
     retry_backoff_factor: float = 6.0  # Increased from 4.0 to 6.0 for much longer exponential backoff on 429 errors
 
-    # Rate limiting (optimized for performance with circuit breaker protection)
+    # Rate limiting (CRITICAL - Zero Tolerance for 429 errors)
+    # Conservative rate to prevent 429 errors with 72-second penalties
+    # Sequential processing only - no parallel execution to prevent burst requests
     rate_limit_enabled: bool = True
-    requests_per_second: float = 5.0  # OPTIMIZATION: 0.4 → 5.0 (12x faster) - safe with circuit breaker; Ancestry API typically allows 10-20 RPS
+    requests_per_second: float = 0.3  # Conservative rate validated for zero 429 errors
     burst_limit: int = 4  # Allows better burst efficiency while maintaining stability
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"

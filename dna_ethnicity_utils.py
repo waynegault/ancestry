@@ -496,7 +496,7 @@ def extract_match_ethnicity_percentages(
 
     if not comparison_data or "comparisons" not in comparison_data:
         # Return 0% for all regions if no comparison data
-        return {key: 0 for key in tree_owner_region_keys}
+        return dict.fromkeys(tree_owner_region_keys, 0)
 
     # Build lookup dict from comparisons
     comparison_lookup = {

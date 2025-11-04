@@ -991,7 +991,7 @@ def _perform_database_reset_steps(temp_manager: SessionManager) -> tuple[bool, A
     logger.debug("Committing database changes...")
     recreation_session.commit()
     logger.debug("Database changes committed successfully.")
-    
+
     return True, recreation_session
 
 
@@ -1018,7 +1018,7 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
             return False
 
         logger.debug(f"Attempting to delete database file: {db_path}...")
-        
+
         try:
             # Create temporary session manager
             logger.debug("Creating temporary session manager for database reset...")
@@ -1026,7 +1026,7 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
 
             # Perform reset steps
             reset_successful, recreation_session = _perform_database_reset_steps(temp_manager)
-            
+
             if reset_successful:
                 logger.info("Database reset completed successfully.")
 
@@ -1486,7 +1486,7 @@ def _import_search_modules() -> tuple[Any, ...]:
         search_ancestry_api_for_person,
     )
     from search_criteria_utils import get_unified_search_criteria
-    
+
     return (
         _build_filter_criteria, _create_row_gedcom, _normalize_id, analyze_top_match,
         filter_and_score_individuals, load_gedcom_data, validate_config,
@@ -1502,10 +1502,10 @@ def _perform_gedcom_search(gedcom_path: Any, criteria: dict, scoring_weights: di
         Tuple of (gedcom_data, gedcom_matches)
     """
     from action10 import _build_filter_criteria, filter_and_score_individuals, load_gedcom_data
-    
+
     gedcom_data = None
     gedcom_matches: list[dict] = []
-    
+
     if gedcom_path:
         try:
             gedcom_data = load_gedcom_data(gedcom_path)
@@ -1515,7 +1515,7 @@ def _perform_gedcom_search(gedcom_path: Any, criteria: dict, scoring_weights: di
             )
         except Exception as e:
             logger.error(f"GEDCOM search failed: {e}")
-    
+
     return gedcom_data, gedcom_matches
 
 
@@ -1526,7 +1526,7 @@ def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_resul
         List of API matches
     """
     from api_search_core import search_ancestry_api_for_person
-    
+
     try:
         session_ok = session_manager.ensure_session_ready(
             action_name="GEDCOM/API Search - API Fallback", skip_csrf=False
@@ -1555,7 +1555,7 @@ def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show
     """Display GEDCOM and API search results in tables."""
     from action10 import _create_table_row as _create_row_gedcom  # type: ignore
     from api_search_core import _create_table_row_for_candidate as _create_row_api  # type: ignore
-    
+
     headers = ["ID", "Name", "Birth", "Birth Place", "Death", "Death Place", "Total"]
     left_rows = [_create_row_gedcom(m) for m in gedcom_matches[:max_to_show]]
     right_rows = [_create_row_api(m) for m in api_matches[:max_to_show]]
@@ -1578,7 +1578,7 @@ def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show
     if logger.isEnabledFor(logging.DEBUG):
         lw = _compute_widths(left_rows, headers)
         rw = _compute_widths(right_rows, headers)
-        
+
         logger.debug("")
         logger.debug(f"=== GEDCOM Results (Top {len(left_rows)} of {len(gedcom_matches)}) ===")
         logger.debug(_pad_row(headers, lw))
@@ -1601,13 +1601,13 @@ def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show
         logger.debug(f"Summary: GEDCOM — showing top {len(left_rows)} of {len(gedcom_matches)} total | API — showing top {len(right_rows)} of {len(api_matches)} total")
 
 
-def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom_data: Any, 
+def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom_data: Any,
                                   _reference_person_id_raw: Any, _reference_person_name: Any,
                                   session_manager: Any) -> None:
     """Display detailed information for top match."""
     from action10 import _normalize_id, analyze_top_match  # type: ignore
     from api_search_core import _handle_supplementary_info_phase  # type: ignore
-    
+
     try:
         if gedcom_matches and gedcom_data is not None:
             ref_norm = _normalize_id(_reference_person_id_raw) if _reference_person_id_raw else None
@@ -1628,8 +1628,8 @@ def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom
 def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
     """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
     try:
-        from search_criteria_utils import get_unified_search_criteria
         from action10 import validate_config
+        from search_criteria_utils import get_unified_search_criteria
     except Exception as e:
         logger.error(f"Side-by-side setup failed: {e}", exc_info=True)
         return False
@@ -1657,7 +1657,7 @@ def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
 
     # Display results
     _display_search_results(gedcom_matches, api_matches, max_to_show=1)
-    
+
     # Display detailed match info
     _display_detailed_match_info(
         gedcom_matches, api_matches, gedcom_data,
@@ -2168,7 +2168,7 @@ def _check_lm_studio_running() -> bool:
         True if LM Studio is running, False otherwise
     """
     import psutil
-    
+
     for proc in psutil.process_iter(['name']):
         try:
             proc_name = proc.info['name'].lower()
@@ -2186,7 +2186,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         True if validation passed, False otherwise
     """
     from openai import OpenAI
-    
+
     api_key = config_schema.api.local_llm_api_key
     model_name = config_schema.api.local_llm_model
     base_url = config_schema.api.local_llm_base_url
@@ -2210,9 +2210,8 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
             logger.warning(f"⚠️ {error_msg}")
             logger.warning("   Please load the model in LM Studio before using AI features")
             return False
-        else:
-            logger.info(f"✅ Local LLM ready: {actual_model_name}")
-            return True
+        logger.info(f"✅ Local LLM ready: {actual_model_name}")
+        return True
     except Exception as e:
         logger.warning(f"⚠️ Could not validate Local LLM: {e}")
         logger.warning("   AI features may not work until LM Studio is running")
@@ -2233,9 +2232,8 @@ def _validate_cloud_provider(provider_name: str, api_key: Any, model: Any) -> bo
     if api_key and model:
         logger.info(f"✅ {provider_name} configured: {model}")
         return True
-    else:
-        logger.warning(f"⚠️ {provider_name} configuration incomplete")
-        return False
+    logger.warning(f"⚠️ {provider_name} configuration incomplete")
+    return False
 
 
 def _validate_ai_provider_on_startup() -> None:
@@ -2258,7 +2256,7 @@ def _validate_ai_provider_on_startup() -> None:
     if ai_provider == "local_llm":
         _validate_local_llm_config(config_schema)
     elif ai_provider == "deepseek":
-        _validate_cloud_provider("DeepSeek", config_schema.api.deepseek_api_key, 
+        _validate_cloud_provider("DeepSeek", config_schema.api.deepseek_api_key,
                                 config_schema.api.deepseek_ai_model)
     elif ai_provider == "gemini":
         _validate_cloud_provider("Gemini", config_schema.api.google_api_key,
@@ -2281,11 +2279,11 @@ def _initialize_application() -> "SessionManager":
         _print_config_error_message()
 
     session_manager = SessionManager()
-    
+
     from session_utils import set_global_session
     set_global_session(session_manager)
     logger.debug("✅ SessionManager registered as global session")
-    
+
     return session_manager
 
 

@@ -3386,7 +3386,7 @@ def _classify_dna_match_operations(
             continue
 
         op_data = _prepare_dna_match_data(dna_data, person_id)
-        
+
         # FIX: Double-check for existing DnaMatch record even if not in existing_dna_matches_map
         # This handles cases where the record was created in a previous batch in the same run
         existing_match_id = existing_dna_matches_map.get(person_id)
@@ -3547,7 +3547,7 @@ def _process_dna_match_operations(
 
     _bulk_insert_dna_matches(session, dna_insert_data)
     _bulk_update_dna_matches(session, dna_update_mappings)
-    
+
     # FIX: Expire session cache after bulk operations to ensure subsequent queries
     # can see newly inserted/updated records. This prevents UNIQUE constraint errors
     # when the same person is processed in subsequent batches.
@@ -7951,9 +7951,8 @@ def _test_bulk_insert_condition_with_records() -> bool:
     if should_bulk_insert and not wrong_logic_would_bulk:
         print("   ✅ Bulk insert condition CORRECT: runs when has records")
         return True
-    else:
-        print("   ❌ Bulk insert condition WRONG: logic may be in wrong if/else block")
-        return False
+    print("   ❌ Bulk insert condition WRONG: logic may be in wrong if/else block")
+    return False
 
 
 def _test_bulk_insert_empty_list() -> bool:
@@ -7965,15 +7964,14 @@ def _test_bulk_insert_empty_list() -> bool:
     if should_not_bulk_empty and not wrong_would_bulk_empty:
         print("   ✅ Empty list condition CORRECT: skips bulk insert when no records")
         return True
-    else:
-        print("   ❌ Empty list condition WRONG: logic error")
-        return False
+    print("   ❌ Empty list condition WRONG: logic error")
+    return False
 
 
 def _test_bulk_insert_source_code_pattern() -> bool:
     """Test 3: Verify actual code structure contains correct early return pattern."""
     import inspect
-    
+
     try:
         # Check _process_person_creates which contains the bulk insert logic
         source = inspect.getsource(_process_person_creates)
@@ -7982,18 +7980,17 @@ def _test_bulk_insert_source_code_pattern() -> bool:
         # CORRECT: "if not person_creates_filtered:" followed by "return"
         # WRONG: bulk insert inside "if not person_creates_filtered:" block
         correct_early_return = "if not person_creates_filtered:" in source and "return" in source
-        
+
         # Also verify bulk_insert_mappings is called (not inside the early return)
         has_bulk_insert = "bulk_insert_mappings" in source
 
         if correct_early_return and has_bulk_insert:
             print("   ✅ Source code contains correct early return pattern for empty lists")
             return True
-        else:
-            print("   ❌ CRITICAL: Bulk insert logic may be in wrong conditional block!")
-            print(f"      Early return pattern found: {correct_early_return}")
-            print(f"      Bulk insert present: {has_bulk_insert}")
-            return False
+        print("   ❌ CRITICAL: Bulk insert logic may be in wrong conditional block!")
+        print(f"      Early return pattern found: {correct_early_return}")
+        print(f"      Bulk insert present: {has_bulk_insert}")
+        return False
 
     except Exception as e:
         print(f"   ❌ Could not inspect source code: {e}")
@@ -8006,9 +8003,8 @@ def _test_thread_pool_configuration() -> bool:
     if THREAD_POOL_WORKERS >= 1:
         print(f"   ✅ Thread pool configured: {THREAD_POOL_WORKERS} workers (sequential=1 recommended)")
         return True
-    else:
-        print(f"   ❌ Thread pool not configured: {THREAD_POOL_WORKERS} workers")
-        return False
+    print(f"   ❌ Thread pool not configured: {THREAD_POOL_WORKERS} workers")
+    return False
 
 
 def _test_regression_prevention_database_bulk_insert():
@@ -8022,7 +8018,7 @@ def _test_regression_prevention_database_bulk_insert():
     FIX: Bulk insert should run when person_creates_filtered HAS records
     """
     print("🛡️ Testing database bulk insert condition logic regression prevention:")
-    
+
     results = [
         _test_bulk_insert_condition_with_records(),
         _test_bulk_insert_empty_list(),

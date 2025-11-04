@@ -1178,38 +1178,52 @@ def _test_config_error_handling():
 def _test_requests_per_second_loading():
     """Test REQUESTS_PER_SECOND environment variable loading."""
     import os
+    from dotenv import load_dotenv
 
-    # Test 1: Default value (no env var set)
+    # Save and clear the environment variable
     if "REQUESTS_PER_SECOND" in os.environ:
         original_value = os.environ["REQUESTS_PER_SECOND"]
         del os.environ["REQUESTS_PER_SECOND"]
     else:
         original_value = None
 
+    # Test 1: Default value (no env var set)
+    # Need to reload dotenv to ensure clean state
+    load_dotenv(override=True)
+    if "REQUESTS_PER_SECOND" in os.environ:
+        del os.environ["REQUESTS_PER_SECOND"]
+    
     manager = ConfigManager()
     config = manager.load_config()
     default_rps = config.api.requests_per_second
-    assert default_rps == 0.4, f"Expected default 0.4, got {default_rps}"
+    assert default_rps == 0.3, f"Expected default 0.3, got {default_rps}"
 
     # Test 2: Custom value from environment
-    os.environ["REQUESTS_PER_SECOND"] = "0.3"
+    os.environ["REQUESTS_PER_SECOND"] = "0.2"
+    load_dotenv(override=True)
+    os.environ["REQUESTS_PER_SECOND"] = "0.2"  # Ensure our value persists
     manager = ConfigManager()
     config = manager.load_config()
     custom_rps = config.api.requests_per_second
-    assert custom_rps == 0.3, f"Expected 0.3 from env, got {custom_rps}"
+    assert custom_rps == 0.2, f"Expected 0.2 from env, got {custom_rps}"
 
     # Test 3: Invalid value should use default
     os.environ["REQUESTS_PER_SECOND"] = "invalid"
+    load_dotenv(override=True)
+    os.environ["REQUESTS_PER_SECOND"] = "invalid"  # Ensure our value persists
     manager = ConfigManager()
     config = manager.load_config()
     invalid_rps = config.api.requests_per_second
-    assert invalid_rps == 0.4, f"Expected fallback to 0.4, got {invalid_rps}"
+    assert invalid_rps == 0.3, f"Expected fallback to 0.3, got {invalid_rps}"
 
     # Cleanup: restore original value
     if original_value is not None:
         os.environ["REQUESTS_PER_SECOND"] = original_value
     elif "REQUESTS_PER_SECOND" in os.environ:
         del os.environ["REQUESTS_PER_SECOND"]
+    
+    # Reload dotenv to restore .env file values
+    load_dotenv(override=True)
 
 
 # ==============================================

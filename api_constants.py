@@ -132,7 +132,7 @@ def validate_all_endpoints() -> bool:
         True if all validations pass, False otherwise
     """
     import sys
-    
+
     # Get all API_PATH_ constants from this module
     current_module = sys.modules[__name__]
     api_constants = {
@@ -140,17 +140,17 @@ def validate_all_endpoints() -> bool:
         for name in dir(current_module)
         if name.startswith("API_PATH_")
     }
-    
+
     # Validate each constant
     all_valid = True
     for name, value in api_constants.items():
         if not value or not isinstance(value, str):
             print(f"❌ Invalid endpoint: {name} = {value!r}")
             all_valid = False
-    
+
     if all_valid:
         print(f"✅ All {len(api_constants)} API endpoint constants are valid")
-    
+
     return all_valid
 
 
@@ -172,9 +172,9 @@ def run_comprehensive_tests() -> bool:
     """
     print("🧬 Testing API Constants Module...")
     print()
-    
+
     success = True
-    
+
     # Test 1: Validate all endpoints
     print("Test 1: Validate all API endpoint constants")
     if not validate_all_endpoints():
@@ -183,7 +183,7 @@ def run_comprehensive_tests() -> bool:
     else:
         print("✅ PASSED: All endpoints valid")
     print()
-    
+
     # Test 2: Regression guards for critical endpoints
     print("Test 2: Regression guards for critical endpoints")
     critical_tests = [
@@ -195,7 +195,7 @@ def run_comprehensive_tests() -> bool:
         ("API_PATH_TREESUI_LIST", "api/treesui-list/trees/{tree_id}/persons"),
         ("API_PATH_HEADER_TREES", "api/treesui-list/trees?rights=own"),
     ]
-    
+
     regression_passed = True
     for const_name, expected_value in critical_tests:
         actual_value = globals().get(const_name)
@@ -207,23 +207,23 @@ def run_comprehensive_tests() -> bool:
             success = False
         else:
             print(f"✅ {const_name} = {expected_value}")
-    
+
     if regression_passed:
         print("✅ PASSED: All regression guards passed")
     print()
-    
+
     # Test 3: Check for literal presence in source code
     print("Test 3: Literal presence guards")
     import inspect
     source = inspect.getsource(sys.modules[__name__])
-    
+
     literal_tests = [
         "dna/origins/secure/tests/",
         "dna/origins/public/ethnicity/2025/names?locale",
         "discoveryui-matchesservice/api/compare/",
         "api/treesui-list/trees",
     ]
-    
+
     literal_passed = True
     for literal in literal_tests:
         if literal in source:
@@ -232,16 +232,16 @@ def run_comprehensive_tests() -> bool:
             print(f"❌ Missing literal: {literal}")
             literal_passed = False
             success = False
-    
+
     if literal_passed:
         print("✅ PASSED: All literals present in source")
     print()
-    
+
     if success:
         print("🎉 All API constants tests PASSED")
     else:
         print("❌ Some API constants tests FAILED")
-    
+
     return success
 
 

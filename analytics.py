@@ -195,7 +195,7 @@ def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
                 obj = _parse_analytics_line(line)
                 if obj is None:
                     continue
-                    
+
                 ts = _parse_timestamp(obj)
                 if ts is None or ts < cutoff:
                     continue
@@ -203,7 +203,7 @@ def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
                 action = obj.get("action_name", "unknown")
                 if action not in summary:
                     summary[action] = _initialize_action_entry()
-                    
+
                 _update_action_entry(summary[action], obj)
 
         # finalize averages
