@@ -35,13 +35,6 @@ from core.session_cache import (
     get_session_cache_stats,
 )
 from error_handling import (
-    AncestryException,
-    APIRateLimitError,
-    AuthenticationExpiredError,
-    ErrorContext,
-    NetworkTimeoutError,
-    RetryableError,
-    circuit_breaker,
     error_context,
     graceful_degradation,
     retry_on_failure,
@@ -52,7 +45,6 @@ from error_handling import (
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
 import threading
 import time
 from datetime import datetime, timezone
@@ -71,12 +63,10 @@ except ImportError:
 
 # === SELENIUM IMPORTS ===
 try:
-    from selenium.common.exceptions import InvalidSessionIdException, NoSuchWindowException, WebDriverException
+    from selenium.common.exceptions import WebDriverException
     from selenium.webdriver.remote.webdriver import WebDriver
 except ImportError:
     WebDriverException = Exception
-    InvalidSessionIdException = Exception
-    NoSuchWindowException = Exception
     WebDriver = None  # type: ignore
 
 # === LOCAL IMPORTS ===
