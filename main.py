@@ -2674,10 +2674,11 @@ def _test_memory_efficiency() -> bool:
         module_size < 10000
     ), f"Module size should be reasonable, got {module_size} bytes"
 
-    # Test that globals are not excessive (increased limit due to extracted test functions)
+    # Test that globals are not excessive (increased limit due to extracted helper functions)
+    # Limit increased from 150 to 160 to accommodate refactored helper functions
     globals_count = len(globals())
     assert (
-        globals_count < 150
+        globals_count < 160
     ), f"Global variables should be reasonable, got {globals_count}"
 
 
