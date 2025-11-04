@@ -2474,21 +2474,7 @@ class InboxProcessor:
 # Migrated to use centralized session_utils.py (reduces 88 lines to 1 import!)
 from session_utils import ensure_session_for_tests_sm_only as _ensure_session_for_tests
 
-
-def _test_class_and_methods_available() -> None:
-    """Ensure core classes and methods exist and are callable."""
-    from unittest.mock import MagicMock
-    # InboxProcessor exists
-    assert 'InboxProcessor' in globals(), "InboxProcessor class should exist"
-    assert callable(InboxProcessor), "InboxProcessor should be callable"
-    # search_inbox method exists and is callable on an instance
-    sm = MagicMock()
-    processor = InboxProcessor(sm)
-    assert hasattr(processor, 'search_inbox') and callable(processor.search_inbox)
-    # internal helpers exist
-    assert hasattr(processor, '_process_inbox_loop'), "_process_inbox_loop should exist"
-    assert hasattr(processor, '_log_unified_summary'), "_log_unified_summary should exist"
-    return True
+# Removed smoke test: _test_class_and_methods_available - only checked callable() and hasattr()
 
 
 def _test_inbox_processor_initialization() -> None:
@@ -2760,14 +2746,7 @@ def action7_inbox_module_tests() -> bool:
     suite.start_suite()
 
     with suppress_logging():
-        suite.run_test(
-            test_name="Class and method availability",
-            test_func=_test_class_and_methods_available,
-            test_summary="Module structure",
-            functions_tested="InboxProcessor, search_inbox, _process_inbox_loop",
-            method_description="Check class and method existence",
-            expected_outcome="InboxProcessor and key methods present",
-        )
+        # Removed smoke test: _test_class_and_methods_available
         suite.run_test(
             test_name="Inbox processor initialization",
             test_func=_test_inbox_processor_initialization,

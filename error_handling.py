@@ -1168,78 +1168,7 @@ def _test_module_imports() -> None:
 
     print(f"📊 Results: {sum(results)}/{len(results)} module imports available")
 
-
-def _test_function_availability() -> None:
-    """Test all essential error handling functions are available with detailed verification."""
-    test_categories = [
-        (
-            "Classes",
-            [
-                ("CircuitBreaker", "Circuit breaker implementation"),
-                ("ErrorRecoveryManager", "Error recovery coordination"),
-                ("IntelligentRetryHandler", "Advanced retry logic"),
-                ("CircuitBreakerConfig", "Circuit breaker configuration"),
-                ("RetryConfig", "Retry strategy configuration"),
-            ],
-        ),
-        (
-            "Functions",
-            [
-                ("with_circuit_breaker", "Circuit breaker decorator"),
-                ("with_recovery", "Recovery strategy decorator"),
-                ("ancestry_session_recovery", "Session recovery strategy"),
-                ("ancestry_api_recovery", "API recovery strategy"),
-                ("ancestry_database_recovery", "Database recovery strategy"),
-            ],
-        ),
-    ]
-
-    print("📋 Testing error handling function availability:")
-    results = []
-
-    for category_name, items in test_categories:
-        print(f"   • Testing {category_name}:")
-
-        for item_name, description in items:
-            is_available = item_name in globals()
-
-            if category_name == "Classes":
-                is_correct_type = (
-                    isinstance(globals().get(item_name), type)
-                    if is_available
-                    else False
-                )
-                test_passed = is_available and is_correct_type
-                type_info = (
-                    f"type: {type(globals().get(item_name)).__name__}"
-                    if is_available
-                    else "Not Available"
-                )
-            else:  # Functions
-                is_callable = (
-                    callable(globals().get(item_name)) if is_available else False
-                )
-                test_passed = is_available and is_callable
-                type_info = (
-                    f"Callable: {is_callable}" if is_available else "Not Available"
-                )
-
-            status = "✅" if test_passed else "❌"
-            print(f"     {status} {item_name}: {description}")
-            print(f"        {type_info}")
-
-            results.append(test_passed)
-
-            if category_name == "Classes" and is_available:
-                assert isinstance(
-                    globals()[item_name], type
-                ), f"Class {item_name} should be available as a type"
-            elif category_name == "Functions" and is_available:
-                assert callable(
-                    globals()[item_name]
-                ), f"Function {item_name} should be callable"
-
-    print(f"📊 Results: {sum(results)}/{len(results)} functions/classes available")
+# Removed smoke test: _test_function_availability - only checked callable() and isinstance()
 
 
 def _test_circuit_breaker_config() -> None:
@@ -1468,13 +1397,7 @@ def error_handling_module_tests() -> bool:
         "Verify CircuitState→enum, CircuitBreakerConfig→class, RetryStrategy→enum, ErrorRecoveryManager→class, IntelligentRetryHandler→class, AncestryException→class.",
     )
 
-    suite.run_test(
-        "Function Availability",
-        _test_function_availability,
-        "10 items tested: 5 classes (CircuitBreaker, ErrorRecoveryManager, etc.) + 5 functions (with_circuit_breaker, recovery strategies).",
-        "Test all essential error handling functions are available with detailed verification.",
-        "Verify classes are types, functions are callable: CircuitBreaker, ErrorRecoveryManager, with_circuit_breaker, ancestry_*_recovery functions.",
-    )
+    # Removed smoke test: Function Availability
 
     suite.run_test(
         "Circuit Breaker Config",

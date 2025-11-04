@@ -285,14 +285,7 @@ def selenium_module_tests() -> list[tuple[str, Any]]:  # type: ignore[misc]
 # ==============================================
 
 
-def _test_function_availability():
-    """Test selenium utility functions are available."""
-    required_functions = [
-        "force_user_agent", "extract_text", "extract_attribute",
-        "is_elem_there", "is_browser_open", "close_tabs", "get_driver_cookies"
-    ]
-    for func_name in required_functions:
-        assert func_name in globals(), f"{func_name} should be available"
+# Removed smoke test: _test_function_availability - only checked availability in globals()
 
 
 def _test_force_user_agent():
@@ -341,7 +334,7 @@ def selenium_utils_module_tests() -> bool:
     suite.start_suite()
 
     # Assign module-level test functions
-    test_function_availability = _test_function_availability
+    # Removed: test_function_availability = _test_function_availability (smoke test)
     test_force_user_agent = _test_force_user_agent
     test_safe_execution = _test_safe_execution
     test_element_text = _test_element_text
@@ -349,10 +342,7 @@ def selenium_utils_module_tests() -> bool:
 
     # Define all tests in a data structure to reduce complexity
     tests = [
-        ("Function Availability", test_function_availability,
-         "All selenium utility functions are available",
-         "Test function availability",
-         "Verify force_user_agent, extract_text, etc. are available"),
+        # Removed smoke test: Function Availability
         ("Force User Agent", test_force_user_agent,
          "force_user_agent function is callable",
          "Test user agent modification",

@@ -783,33 +783,7 @@ def _test_error_handling_and_resilience() -> None:
         # Should not raise unhandled exceptions
         raise AssertionError(f"Optimization should handle errors gracefully: {e}") from e
 
-
-def _test_function_availability() -> None:
-    """Test that all required optimization functions are available"""
-    required_functions = [
-        "optimize_performance",
-        "get_performance_report",
-        "track_query_performance",
-        "monitor_memory_pressure"
-    ]
-
-    required_classes = [
-        "PerformanceOptimizer",
-        "SmartQueryOptimizer",
-        "MemoryPressureMonitor",
-        "APIBatchCoordinator",
-        "ModuleLoadOptimizer",
-        "PerformanceMetric",
-        "OptimizationResult"
-    ]
-
-    for func_name in required_functions:
-        assert func_name in globals(), f"Function {func_name} should be available"
-        assert callable(globals()[func_name]), f"Function {func_name} should be callable"
-
-    for class_name in required_classes:
-        assert class_name in globals(), f"Class {class_name} should be available"
-        assert isinstance(globals()[class_name], type), f"{class_name} should be a class"
+# Removed smoke test: _test_function_availability - only checked callable() and isinstance()
 
 
 # ==============================================
@@ -847,7 +821,7 @@ def performance_orchestrator_module_tests() -> bool:
     test_memory_optimization_techniques = _test_memory_optimization_techniques
     test_query_optimization_patterns = _test_query_optimization_patterns
     test_error_handling_and_resilience = _test_error_handling_and_resilience
-    test_function_availability = _test_function_availability
+    # Removed: test_function_availability = _test_function_availability (smoke test)
 
     # Run all tests
     suite.run_test(
@@ -938,13 +912,7 @@ def performance_orchestrator_module_tests() -> bool:
         "Verify robust error handling prevents optimization failures from affecting system stability"
     )
 
-    suite.run_test(
-        "Function availability",
-        test_function_availability,
-        "All required performance optimization functions and classes are available",
-        "Test availability of optimize_performance, PerformanceOptimizer, and related classes",
-        "Verify complete performance optimization API is accessible"
-    )
+    # Removed smoke test: Function availability
 
     return suite.finish_suite()
 

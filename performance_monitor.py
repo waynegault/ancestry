@@ -1225,33 +1225,7 @@ def _test_error_handling() -> None:
     assert len(error_profiles) > 0
 
 
-def _test_function_availability() -> None:
-    """Test that all required performance monitoring functions are available"""
-    required_functions = [
-        "track_api_performance",
-        "start_advanced_monitoring",
-        "stop_advanced_monitoring",
-        "get_performance_dashboard",
-        "validate_system_configuration",
-        "get_system_health_score"
-    ]
-
-    required_classes = [
-        "PerformanceMonitor",
-        "PerformanceMetric",
-        "PerformanceAlert",
-        "FunctionProfile",
-        "AlertLevel",
-        "AdvancedPerformanceMonitor"
-    ]
-
-    for func_name in required_functions:
-        assert func_name in globals(), f"Function {func_name} should be available"
-        assert callable(globals()[func_name]), f"Function {func_name} should be callable"
-
-    for class_name in required_classes:
-        assert class_name in globals(), f"Class {class_name} should be available"
-        assert isinstance(globals()[class_name], type), f"{class_name} should be a class"
+# Removed smoke test: _test_function_availability - only checked callable() and isinstance()
 
 
 # ==============================================
@@ -1289,7 +1263,7 @@ def performance_monitor_module_tests() -> bool:
     test_performance_optimization = _test_performance_optimization
     test_global_performance_functions = _test_global_performance_functions
     test_error_handling = _test_error_handling
-    test_function_availability = _test_function_availability
+    # Removed: test_function_availability = _test_function_availability (smoke test)
 
     # Run all tests
     suite.run_test(
@@ -1380,13 +1354,7 @@ def performance_monitor_module_tests() -> bool:
         "Verify monitoring continues despite errors"
     )
 
-    suite.run_test(
-        "Function availability",
-        test_function_availability,
-        "All required performance monitoring functions and classes are available",
-        "Test availability of required functions and classes",
-        "Verify all public API functions and classes are accessible"
-    )
+    # Removed smoke test: Function availability
 
     return suite.finish_suite()
 

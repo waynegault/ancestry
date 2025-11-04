@@ -825,11 +825,11 @@ def _test_clear_system_caches():
     # This is acceptable in a running system
     try:
         result = clear_system_caches()
-        
+
         # Verify result structure if clear succeeded
         assert result is not None, "Result should be returned"
         assert isinstance(result, dict), "Result should be dictionary"
-        
+
         logger.info(f"✅ System caches cleared: {result}")
         return True
     except (PermissionError, OSError) as e:

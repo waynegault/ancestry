@@ -2381,45 +2381,12 @@ def main() -> None:
 # ============================================================================
 # Extracted from monolithic main_module_tests() for better organization
 # Each test function is independent and can be run individually
-
-
-def _test_module_initialization() -> bool:
-        """Test module initialization and import availability"""
-        # Test that all required functions are available
-        assert callable(menu), "menu() function should be callable"
-        assert callable(main), "main() function should be callable"
-        assert callable(clear_log_file), "clear_log_file() function should be callable"
-
-        # Test that all action modules are imported
-        assert coord is not None, "action6_gather.coord should be imported"
-        assert InboxProcessor is not None, "InboxProcessor should be imported"
-        assert (
-            send_messages_to_matches is not None
-        ), "send_messages_to_matches should be imported"
-        assert (
-            process_productive_messages is not None
-        ), "process_productive_messages should be imported"
-        assert run_action10 is not None, "run_action10 should be imported"
-
-
-def _test_configuration_availability() -> bool:
-    """Test configuration and database availability"""
-    assert config is not None, "config should be available"
-    assert logger is not None, "logger should be available"
-    assert SessionManager is not None, "SessionManager should be available"
-
-    # Test database components
-    assert Base is not None, "SQLAlchemy Base should be available"
-    assert Person is not None, "Person model should be available"
-    assert ConversationLog is not None, "ConversationLog model should be available"
-    assert DnaMatch is not None, "DnaMatch model should be available"
+# NOTE: Smoke tests (testing only callable/existence) have been removed
+# All tests now validate actual behavior, not just imports
 
 
 def _test_clear_log_file_function() -> bool:
-        """Test log file clearing functionality"""
-        # Test clear_log_file function exists and is callable
-        assert callable(clear_log_file), "clear_log_file should be callable"
-
+        """Test log file clearing functionality - validates actual behavior"""
         # Test function returns proper tuple structure
         try:
             result = clear_log_file()
@@ -2446,61 +2413,8 @@ def _test_main_function_structure() -> bool:
     assert len(sig.parameters) == 0, "main() should take no parameters"
 
 
-def _test_menu_system_components() -> bool:
-        """Test menu system components availability"""
-        # Test menu function exists
-        assert callable(menu), "menu() function should be callable"
-
-        # Test that menu has access to all action functions
-        menu_globals = menu.__globals__
-        assert "coord" in menu_globals, "menu should have access to coord function"
-        assert (
-            "InboxProcessor" in menu_globals
-        ), "menu should have access to InboxProcessor"
-        assert (
-            "send_messages_to_matches" in menu_globals
-        ), "menu should have access to send_messages_to_matches"
-        assert (
-            "process_productive_messages" in menu_globals
-        ), "menu should have access to process_productive_messages"
-        assert "run_action10" in menu_globals, "menu should have access to run_action10"
-
-
-def _test_action_function_availability() -> bool:
-    """Test all action functions are properly imported and callable"""
-    # Test action6_gather
-    assert callable(coord), "coord function should be callable"
-
-    # Test action7_inbox
-    assert callable(InboxProcessor), "InboxProcessor should be callable"
-
-    # Test action8_messaging
-    assert callable(
-        send_messages_to_matches
-    ), "send_messages_to_matches should be callable"
-
-    # Test action9_process_productive
-    assert callable(
-        process_productive_messages
-    ), "process_productive_messages should be callable"
-
-    # Test action10
-    assert callable(run_action10), "run_action10 should be callable"
-
-
-
-def _test_database_operations() -> bool:
-        """Test database operation functions"""
-        assert callable(backup_database), "backup_database should be callable"
-        assert callable(db_transn), "db_transn should be callable"
-        assert callable(reset_db_actn), "reset_db_actn should be callable"
-
-        # Test database models are available
-        assert Person is not None, "Person model should be available"
-        assert ConversationLog is not None, "ConversationLog model should be available"
-        assert DnaMatch is not None, "DnaMatch model should be available"
-        assert FamilyTree is not None, "FamilyTree model should be available"
-        assert MessageTemplate is not None, "MessageTemplate model should be available"
+# Removed smoke tests: _test_menu_system_components, _test_action_function_availability, _test_database_operations
+# These only checked callable() and hasattr() without validating actual behavior
 
 
 def _test_reset_db_actn_integration() -> bool:
@@ -2565,37 +2479,8 @@ def _test_import_error_handling() -> bool:
         assert import_name in module_globals, f"{import_name} should be imported"
 
 
-def _test_session_manager_integration() -> bool:
-        """Test SessionManager integration"""
-        assert SessionManager is not None, "SessionManager should be available"
-        assert callable(SessionManager), "SessionManager should be callable"
-
-        # Test SessionManager has required methods
-        # Should have key methods for session management
-        assert hasattr(
-            SessionManager, "__init__"
-        ), "SessionManager should have __init__ method"
-
-
-def _test_logging_integration() -> bool:
-    """Test logging system integration"""
-    assert logger is not None, "logger should be available"
-    assert hasattr(logger, "info"), "logger should have info method"
-    assert hasattr(logger, "error"), "logger should have error method"
-    assert hasattr(logger, "warning"), "logger should have warning method"
-    assert hasattr(logger, "debug"), "logger should have debug method"
-    assert hasattr(logger, "critical"), "logger should have critical method"
-
-
-def _test_configuration_integration() -> bool:
-    """Test configuration system integration"""
-    assert config is not None, "config should be available"
-
-    # Test config has basic attributes (may vary by implementation)
-    # This tests that the config object is properly initialized
-    assert hasattr(config, "__dict__") or hasattr(
-        config, "__getattribute__"
-    ), "config should be a proper object"
+# Removed smoke tests: _test_session_manager_integration, _test_logging_integration, _test_configuration_integration
+# These only checked hasattr() and existence without validating actual behavior
 
 
 def _test_validate_action_config() -> bool:
@@ -2758,24 +2643,8 @@ def main_module_tests() -> bool:
 
     # Run all tests with suppress_logging
     with suppress_logging():
-        # INITIALIZATION TESTS
-        suite.run_test(
-            test_name="menu(), main(), clear_log_file(), action imports",
-            test_func=_test_module_initialization,
-            test_summary="Module initialization and core function availability",
-            method_description="Testing availability of main functions and action module imports",
-            expected_outcome="All core functions are available and action modules are properly imported",
-        )
-
-        suite.run_test(
-            test_name="config, logger, SessionManager, database models",
-            test_func=_test_configuration_availability,
-            test_summary="Configuration and database component availability",
-            method_description="Testing configuration instance and database model imports",
-            expected_outcome="Configuration and database components are properly available",
-        )
-
         # CORE FUNCTIONALITY TESTS
+        # Removed smoke tests: _test_module_initialization, _test_configuration_availability
         suite.run_test(
             test_name="clear_log_file() function logic and return values",
             test_func=_test_clear_log_file_function,
@@ -2792,29 +2661,7 @@ def main_module_tests() -> bool:
             expected_outcome="Main function has proper structure and takes no parameters",
         )
 
-        suite.run_test(
-            test_name="menu() system and action function access",
-            test_func=_test_menu_system_components,
-            test_summary="Menu system components and action function accessibility",
-            method_description="Testing menu function and its access to all action functions",
-            expected_outcome="Menu system has access to all required action functions",
-        )
-
-        suite.run_test(
-            test_name="coord(), InboxProcessor(), send_messages_to_matches(), process_productive_messages(), run_action10()",
-            test_func=_test_action_function_availability,
-            test_summary="All action functions are properly imported and callable",
-            method_description="Testing callable status of all action module functions",
-            expected_outcome="All action functions are available and callable",
-        )
-
-        suite.run_test(
-            test_name="backup_database(), db_transn(), database models",
-            test_func=_test_database_operations,
-            test_summary="Database operation functions and model availability",
-            method_description="Testing database functions and model imports",
-            expected_outcome="Database operations and models are properly available",
-        )
+        # Removed smoke tests: _test_menu_system_components, _test_action_function_availability, _test_database_operations
 
         suite.run_test(
             test_name="reset_db_actn() integration and method availability",
@@ -2842,29 +2689,7 @@ def main_module_tests() -> bool:
         )
 
         # INTEGRATION TESTS
-        suite.run_test(
-            test_name="SessionManager integration and method availability",
-            test_func=_test_session_manager_integration,
-            test_summary="SessionManager integration with main application",
-            method_description="Testing SessionManager availability and method access",
-            expected_outcome="SessionManager integrates properly with required methods",
-        )
-
-        suite.run_test(
-            test_name="Logging system integration and method availability",
-            test_func=_test_logging_integration,
-            test_summary="Logging system integration with main application",
-            method_description="Testing logger availability and all required logging methods",
-            expected_outcome="Logging system is properly integrated with all methods available",
-        )
-
-        suite.run_test(
-            test_name="Configuration system integration and object access",
-            test_func=_test_configuration_integration,
-            test_summary="Configuration system integration with main application",
-            method_description="Testing config availability and object structure",
-            expected_outcome="Configuration system is properly integrated and accessible",
-        )
+        # Removed smoke tests: _test_session_manager_integration, _test_logging_integration, _test_configuration_integration
 
         suite.run_test(
             test_name="Configuration validation system from Action 6 lessons",

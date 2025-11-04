@@ -2771,20 +2771,7 @@ def format_response_with_relationship_diagram(
 # MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
 
-
-def _test_module_initialization() -> None:
-    """Test module initialization and constants"""
-    # Test constants
-    assert PRODUCTIVE_SENTIMENT == "PRODUCTIVE", "PRODUCTIVE_SENTIMENT constant not properly set"
-    assert OTHER_SENTIMENT == "OTHER", "OTHER_SENTIMENT constant not properly set"
-    assert ACKNOWLEDGEMENT_MESSAGE_TYPE == "Productive_Reply_Acknowledgement", "ACKNOWLEDGEMENT_MESSAGE_TYPE not set"
-    assert CUSTOM_RESPONSE_MESSAGE_TYPE == "Automated_Genealogy_Response", "CUSTOM_RESPONSE_MESSAGE_TYPE not set"
-    assert "PersonProcessor" in globals(), "PersonProcessor class not defined"
-    assert "BatchCommitManager" in globals(), "BatchCommitManager class not defined"
-
-    # Test function availability
-    assert callable(process_productive_messages), "process_productive_messages should be callable"
-    assert callable(safe_column_value), "safe_column_value should be callable"
+# Removed smoke test: _test_module_initialization - only checked constants and callable()
 
 
 def _test_core_functionality() -> None:
@@ -2803,10 +2790,14 @@ def _test_core_functionality() -> None:
 
     # Test should_exclude_message function
     result = should_exclude_message("Hi there!")
-    assert isinstance(result, bool), "Should return boolean value"
+    assert result is False, "Normal message should not be excluded"
 
     result = should_exclude_message("stop messaging me")
     assert result is True, "Should detect exclusion keywords"
+
+    # Test additional exclusion patterns
+    result = should_exclude_message("STOP contacting me")
+    assert result is True, "Should detect exclusion keywords (case-insensitive)"
 
 
 def _test_ai_processing_functions() -> None:
@@ -2826,6 +2817,12 @@ def _test_ai_processing_functions() -> None:
     assert isinstance(result, dict), "Should return dictionary"
     assert "extracted_data" in result, "Should have extracted_data key"
     assert "suggested_tasks" in result, "Should have suggested_tasks key"
+    # Validate result has proper structure (Pydantic may transform keys)
+    assert isinstance(result["extracted_data"], dict), "Extracted data should be dict"
+    assert isinstance(result["suggested_tasks"], list), "Suggested tasks should be list"
+    # Verify function processes data (doesn't just return empty defaults)
+    assert len(result["extracted_data"]) > 0 or len(result["suggested_tasks"]) > 0, \
+        "Should process at least some data from valid response"
 
     # Test _generate_ack_summary function
     test_data = {
@@ -2838,6 +2835,10 @@ def _test_ai_processing_functions() -> None:
     result = _generate_ack_summary(test_data)
     assert isinstance(result, str), "Should return string summary"
     assert len(result) > 0, "Should generate meaningful summary"
+    # Validate summary contains key information
+    assert "Test Person 12345" in result or "name" in result.lower(), "Summary should mention extracted names"
+    assert "Scotland" in result or "location" in result.lower(), "Summary should mention locations"
+    assert "1985" in result or "date" in result.lower(), "Summary should mention dates"
 
 
 def _test_edge_cases() -> None:
@@ -3163,7 +3164,7 @@ def action9_process_productive_module_tests() -> bool:
     skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
     # Assign all module-level test functions
-    test_module_initialization = _test_module_initialization
+    # Removed: test_module_initialization = _test_module_initialization (smoke test)
     test_core_functionality = _test_core_functionality
     test_ai_processing_functions = _test_ai_processing_functions
     test_edge_cases = _test_edge_cases
@@ -3182,11 +3183,7 @@ def action9_process_productive_module_tests() -> bool:
 
     # Define all tests in a data structure to reduce complexity
     tests = [
-        ("Module constants, classes, and function availability",
-         test_module_initialization,
-         "Module initializes correctly with proper constants and function definitions",
-         "Module initialization and configuration verification",
-         "Testing constants, class definitions, and core function availability"),
+        # Removed smoke test: Module constants, classes, and function availability
 
         ("safe_column_value(), should_exclude_message() core functions",
          test_core_functionality,

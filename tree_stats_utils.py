@@ -545,6 +545,13 @@ def _test_calculate_tree_statistics_with_valid_profile() -> None:
         assert isinstance(stats['total_matches'], int), "total_matches should be int"
         assert isinstance(stats['in_tree_count'], int), "in_tree_count should be int"
         assert isinstance(stats['out_tree_count'], int), "out_tree_count should be int"
+
+        # Verify logical constraints
+        assert stats['total_matches'] >= 0, "Total matches should be non-negative"
+        assert stats['in_tree_count'] >= 0, "In tree count should be non-negative"
+        assert stats['out_tree_count'] >= 0, "Out tree count should be non-negative"
+        assert stats['in_tree_count'] + stats['out_tree_count'] <= stats['total_matches'], \
+            "In tree + out tree should not exceed total matches"
     finally:
         session.close()
 

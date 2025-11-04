@@ -1552,11 +1552,16 @@ def relationship_module_tests() -> None:
         path = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
         assert isinstance(path, list), "BFS should return a list"
         assert len(path) >= 2, "Path should contain at least start and end"
+        # Validate path contains valid IDs
+        assert all(isinstance(id, str) for id in path), "Path should contain string IDs"
+        assert path[0] == "@I001@", "Path should start with source"
+        assert path[-1] == "@I003@", "Path should end with target"
         print(f"   ✅ Multi-generation pathfinding: {path}")
 
         # Test 2: Same person path
         same_path = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
         assert len(same_path) == 1, "Same person path should have length 1"
+        assert same_path[0] == "@I001@", "Same person path should contain only that person"
         print(f"   ✅ Same person pathfinding: {same_path}")
 
         # Test 3: No path available

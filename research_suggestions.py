@@ -266,7 +266,14 @@ def _test_basic_research_suggestions():
     assert "formatted_message" in result, "Should have formatted_message"
 
     assert len(result["collections"]) > 0, "Should suggest at least one collection"
+    assert isinstance(result["collections"], list), "Collections should be a list"
+    assert all(isinstance(c, str) for c in result["collections"]), "Each collection should be a string"
+
+    assert len(result["record_types"]) > 0, "Should suggest at least one record type"
+    assert len(result["research_strategies"]) > 0, "Should suggest at least one strategy"
+
     assert "Scotland" in result["formatted_message"], "Should mention Scotland"
+    assert "1850" in result["formatted_message"], "Should mention time period"
 
     logger.info("✓ Basic research suggestions work correctly")
     return True

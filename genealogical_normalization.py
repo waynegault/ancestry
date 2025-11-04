@@ -565,11 +565,7 @@ def _test_container_structure() -> None:
     assert isinstance(result["suggested_tasks"], list)
 
 
-def _test_function_availability() -> None:
-    """Test function availability"""
-    # Test that all required functions are available
-    assert callable(normalize_ai_response)
-    assert callable(normalize_extracted_data)
+# Removed smoke test: _test_function_availability - only checked callable()
 
 
 # ==============================================
@@ -603,7 +599,7 @@ def genealogical_normalization_module_tests() -> bool:
     test_list_deduplication = _test_list_deduplication
     test_edge_cases = _test_edge_cases
     test_container_structure = _test_container_structure
-    test_function_availability = _test_function_availability
+    # Removed: test_function_availability = _test_function_availability (smoke test)
 
     # Define all tests in a data structure to reduce complexity
     tests = [
@@ -643,11 +639,7 @@ def genealogical_normalization_module_tests() -> bool:
          "Test container structure in normalize_ai_response",
          "Verify container structure ensures proper dict/list types for all fields"),
 
-        ("Function availability verification",
-         test_function_availability,
-         "All required genealogical normalization functions are available and callable",
-         "Test availability of normalize_ai_response, normalize_extracted_data, and helper functions",
-         "Verify function availability ensures complete genealogical normalization interface"),
+        # Removed smoke test: Function availability verification
     ]
 
     # Run all tests from the list
