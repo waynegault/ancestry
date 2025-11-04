@@ -62,9 +62,9 @@ class EmptyTestService:
     pass
 
 
-def test_func() -> str:
+def mock_func() -> str:
     """
-    Standard test function that returns a predictable result.
+    Mock function that returns a predictable result.
 
     Used for testing function registration, retrieval, and execution systems.
     Consolidated from multiple modules where this exact function was duplicated.
@@ -75,9 +75,9 @@ def test_func() -> str:
     return "test_result"
 
 
-def test_func_with_param(x: int) -> int:
+def mock_func_with_param(x: int) -> int:
     """
-    Test function that takes a parameter and returns a computed result.
+    Mock function that takes a parameter and returns a computed result.
 
     Used for testing function registration with parameters.
     Consolidated from core_imports.py and other modules.
@@ -188,8 +188,8 @@ def create_parameterized_test_function(operation: str = "multiply", factor: int 
 
 # Test function registry for common test patterns
 TEST_FUNCTIONS = {
-    "test_func": test_func,
-    "test_func_with_param": test_func_with_param,
+    "mock_func": mock_func,
+    "mock_func_with_param": mock_func_with_param,
     "sample_function": sample_function,
     "temp_function": temp_function,
     "safe_func": safe_func,
@@ -663,8 +663,8 @@ def mock_api_response(status_code: int = 200, json_data: Optional[dict] = None,
 
 def _test_basic_functions() -> None:
     """Test basic utility functions."""
-    assert test_func() == "test_result"
-    assert test_func_with_param(5) == 10
+    assert mock_func() == "test_result"
+    assert mock_func_with_param(5) == 10
     assert sample_function() == "sample_result"
     assert temp_function() == "temp"
     assert safe_func() == "safe_result"
@@ -685,7 +685,7 @@ def _test_factory_functions() -> None:
 
 def _test_function_registry() -> None:
     """Test function registry."""
-    retrieved_func = get_test_function("test_func")
+    retrieved_func = get_test_function("mock_func")
     assert retrieved_func() == "test_result"
 
 
@@ -701,10 +701,10 @@ def _test_runner_factory() -> None:
 def _test_assert_function_behavior() -> None:
     """Test the assert_function_behavior helper."""
     # Test successful assertion
-    assert_function_behavior(test_func_with_param, (5,), 10)
+    assert_function_behavior(mock_func_with_param, (5,), 10)
 
     # Test with custom error message
-    assert_function_behavior(test_func, (), "test_result", "Custom error message")
+    assert_function_behavior(mock_func, (), "test_result", "Custom error message")
 
 
 def _test_mock_api_response() -> None:
