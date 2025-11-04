@@ -6405,6 +6405,336 @@ def _fetch_batch_ladder_legacy(  # noqa: PLR0911
     )
 )
 @api_cache("relationship_prob", CACHE_TTL['relationship_prob'])
+def _get_cached_csrf_token(session_manager: SessionManager, api_description: str) -> Optional[str]:
+    """Get cached CSRF token if available."""
+    if (hasattr(session_manager, '_cached_csrf_token') and
+        hasattr(session_manager, '_is_csrf_token_valid') and
+        session_manager._is_csrf_token_valid() and
+        session_manager._cached_csrf_token):
+        logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
+        return session_manager._cached_csrf_token
+    return None
+
+
+def _extract_csrf_from_cookies(
+    session_manager: SessionManager,
+    driver: Any,
+    api_description: str
+) -> Optional[str]:
+    """Extract CSRF token from driver cookies."""
+    csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
+    try:
+        if hasattr(session_manager, '_sync_cookies_to_requests'):
+            session_manager._sync_cookies_to_requests()
+        driver_cookies_list = driver.get_cookies()
+        driver_cookies_dict = {
+            c["name"]: c["value"]
+            for c in driver_cookies_list
+            if isinstance(c, dict) and "name" in c and "value" in c
+        }
+        for name in csrf_cookie_names:
+            if driver_cookies_dict.get(name):
+                csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
+
+                import time
+                session_manager._cached_csrf_token = csrf_token_val
+                session_manager._csrf_cache_time = time.time()
+
+                logger.debug(
+                    f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}."
+                )
+                return csrf_token_val
+    except Exception as csrf_e:
+        logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
+    return None
+
+
+def _get_csrf_token_for_relationship_prob(
+    session_manager: SessionManager,
+    driver: Any,
+    api_description: str
+) -> Optional[str]:
+    """Get CSRF token for relationship probability API."""
+    cached_token = _get_cached_csrf_token(session_manager, api_description)
+    if cached_token:
+        return cached_token
+
+    cookie_token = _extract_csrf_from_cookies(session_manager, driver, api_description)
+    if cookie_token:
+        return cookie_token
+
+    if session_manager.csrf_token:
+        logger.warning(f"{api_description}: Using potentially stale CSRF from SessionManager.")
+        return session_manager.csrf_token
+
+    return None
+
+
+def _check_relationship_prob_cache(match_uuid: str, max_labels_param: int, api_start_time: float) -> Optional[str]:
+    """Check cache for relationship probability."""
+    if global_cache is not None:
+        cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
+        try:
+            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            if cached_data is not ENOVAL and isinstance(cached_data, str):
+                logger.debug(f"Cache hit for relationship probability: {match_uuid[:8]}")
+                _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
+                return cached_data
+        except Exception as cache_exc:
+            logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
+    return None
+
+
+def _try_get_fallback(
+    rel_url: str,
+    driver: Any,
+    session_manager: SessionManager,
+    rel_headers: dict[str, str],
+    referer_url: str,
+    api_description: str,
+    match_uuid: str,
+    max_labels_param: int,
+    sample_id_upper: str,
+    api_start_time: float
+) -> Optional[str]:
+    """Try GET fallback for relationship probability."""
+    get_resp = _api_req(
+        url=rel_url,
+        driver=driver,
+        session_manager=session_manager,
+        method="GET",
+        headers=rel_headers,
+        referer_url=referer_url,
+        api_description=f"{api_description} (GET Fallback)",
+        timeout=config_schema.selenium.api_timeout,
+        allow_redirects=True,
+        use_csrf_token=False,
+    )
+    if isinstance(get_resp, dict):
+        return _parse_relationship_probability(
+            get_resp, match_uuid, max_labels_param, sample_id_upper,
+            api_description, api_start_time, session_manager
+        )
+    return None
+
+
+def _try_csrf_refresh_fallback(
+    rel_url: str,
+    driver: Any,
+    session_manager: SessionManager,
+    rel_headers: dict[str, str],
+    referer_url: str,
+    api_description: str,
+    match_uuid: str,
+    max_labels_param: int,
+    sample_id_upper: str,
+    api_start_time: float
+) -> Optional[str]:
+    """Try CSRF refresh fallback for relationship probability."""
+    try:
+        fresh_csrf = session_manager.get_csrf()
+        if fresh_csrf:
+            rel_headers["X-CSRF-Token"] = fresh_csrf
+            logger.debug("Refreshed CSRF token. Retrying POST for probability...")
+            api_resp2 = _api_req(
+                url=rel_url,
+                driver=driver,
+                session_manager=session_manager,
+                method="POST",
+                headers=rel_headers,
+                referer_url=referer_url,
+                api_description=f"{api_description} (Retry with fresh CSRF)",
+                timeout=config_schema.selenium.api_timeout,
+                allow_redirects=True,
+                use_csrf_token=False,
+                json={},
+            )
+            if isinstance(api_resp2, dict):
+                return _parse_relationship_probability(
+                    api_resp2, match_uuid, max_labels_param, sample_id_upper,
+                    api_description, api_start_time, session_manager
+                )
+    except Exception as csrf_refresh_err:
+        logger.debug(f"{api_description}: CSRF refresh attempt failed: {csrf_refresh_err}")
+    return None
+
+
+def _try_cloudscraper_fallback(
+    rel_url: str,
+    scraper: Any,
+    rel_headers: dict[str, str],
+    api_description: str,
+    match_uuid: str,
+    max_labels_param: int,
+    sample_id_upper: str,
+    api_start_time: float,
+    session_manager: SessionManager
+) -> Optional[str]:
+    """Try cloudscraper fallback for relationship probability."""
+    try:
+        logger.debug(f"{api_description}: Falling back to cloudscraper with redirects enabled...")
+        cs_resp = scraper.post(
+            rel_url,
+            headers=rel_headers,
+            json={},
+            allow_redirects=True,
+            timeout=config_schema.selenium.api_timeout,
+        )
+        if cs_resp.ok and cs_resp.headers.get("content-type", "").lower().startswith("application/json"):
+            data = cs_resp.json()
+            return _parse_relationship_probability(
+                data, match_uuid, max_labels_param, sample_id_upper,
+                api_description, api_start_time, session_manager
+            )
+    except Exception as cs_e:
+        logger.debug(f"{api_description}: Cloudscraper fallback failed: {cs_e}")
+    return None
+
+
+def _try_relationship_prob_fallbacks(
+    api_resp: Any,
+    rel_url: str,
+    driver: Any,
+    session_manager: SessionManager,
+    rel_headers: dict[str, str],
+    referer_url: str,
+    api_description: str,
+    scraper: Any,
+    match_uuid: str,
+    max_labels_param: int,
+    sample_id_upper: str,
+    api_start_time: float
+) -> Optional[str]:
+    """Try fallback methods for fetching relationship probability."""
+    if isinstance(api_resp, requests.Response):
+        status = api_resp.status_code
+        if 300 <= status < 400:
+            logger.debug(f"{api_description}: Redirect {status}. Retrying with GET...")
+        elif not api_resp.ok:
+            logger.debug(f"{api_description}: Non-OK {status}. Will attempt CSRF refresh + retry.")
+
+    result = _try_get_fallback(
+        rel_url, driver, session_manager, rel_headers, referer_url,
+        api_description, match_uuid, max_labels_param, sample_id_upper, api_start_time
+    )
+    if result:
+        return result
+
+    result = _try_csrf_refresh_fallback(
+        rel_url, driver, session_manager, rel_headers, referer_url,
+        api_description, match_uuid, max_labels_param, sample_id_upper, api_start_time
+    )
+    if result:
+        return result
+
+    return _try_cloudscraper_fallback(
+        rel_url, scraper, rel_headers, api_description, match_uuid,
+        max_labels_param, sample_id_upper, api_start_time, session_manager
+    )
+
+
+def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper: str, api_description: str) -> Optional[tuple[float, list[str]]]:
+    """Extract best prediction from predictions list."""
+    valid_preds = [
+        p
+        for p in predictions
+        if isinstance(p, dict)
+        and "distributionProbability" in p
+        and "pathsToMatch" in p
+    ]
+    if not valid_preds:
+        logger.debug(f"{api_description}: No valid prediction paths for {sample_id_upper}.")
+        return None
+
+    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+    top_prob = best_pred.get("distributionProbability", 0.0)
+    paths = best_pred.get("pathsToMatch", [])
+    labels = [
+        p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
+    ]
+    if not labels:
+        top_prob_display = top_prob * 100.0
+        logger.debug(
+            f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob_display:.1f}%"
+        )
+        return None
+
+    return top_prob, labels
+
+
+def _cache_relationship_result(match_uuid: str, max_labels_param: int, result: str) -> None:
+    """Cache relationship probability result."""
+    if global_cache is not None:
+        try:
+            cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
+            global_cache.set(cache_key, result, expire=7200, retry=True)
+            logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
+        except Exception as cache_exc:
+            logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
+
+
+def _parse_relationship_probability(
+    data_obj: dict[str, Any],
+    match_uuid: str,
+    max_labels_param: int,
+    sample_id_upper: str,
+    api_description: str,
+    api_start_time: float,
+    session_manager: SessionManager
+) -> Optional[str]:
+    """Parse relationship probability from API response."""
+    if "matchProbabilityToSampleId" not in data_obj:
+        logger.debug(
+            f"{api_description}: Unexpected structure for {sample_id_upper}. Keys: {list(data_obj.keys())[:5]}"
+        )
+        return None
+
+    prob_data = data_obj.get("matchProbabilityToSampleId", {})
+    predictions = prob_data.get("relationships", {}).get("predictions", [])
+    if not predictions:
+        logger.debug(f"No relationship predictions found for {sample_id_upper}. Marking as Distant.")
+        return "Distant relationship?"
+
+    prediction_result = _extract_best_prediction(predictions, sample_id_upper, api_description)
+    if prediction_result is None:
+        return None
+
+    top_prob, labels = prediction_result
+    top_prob_display = top_prob * 100.0
+    final_labels = labels[:max_labels_param]
+    relationship_str = " or ".join(map(str, final_labels))
+    result = f"{relationship_str} [{top_prob_display:.1f}%]"
+
+    _cache_relationship_result(match_uuid, max_labels_param, result)
+    _log_api_performance("relationship_prob", api_start_time, "success", session_manager)
+    return result
+
+
+def _validate_relationship_prob_session(
+    session_manager: SessionManager,
+    match_uuid: str,
+    api_start_time: float
+) -> tuple[str, Any, Any]:
+    """Validate session and return required components."""
+    my_uuid = session_manager.my_uuid
+    driver = session_manager.driver
+    scraper = session_manager.scraper
+
+    if not my_uuid or not match_uuid:
+        logger.warning("_fetch_batch_relationship_prob: Missing my_uuid or match_uuid.")
+        _log_api_performance("relationship_prob", api_start_time, "error_missing_uuid")
+        raise ValueError("Missing my_uuid or match_uuid")
+    if not scraper:
+        logger.error("_fetch_batch_relationship_prob: SessionManager scraper not initialized.")
+        raise ConnectionError("SessionManager scraper not initialized.")
+    if not driver or not session_manager.is_sess_valid():
+        logger.error(f"_fetch_batch_relationship_prob: Driver/session invalid for UUID {match_uuid}.")
+        raise ConnectionError(
+            f"WebDriver session invalid for relationship probability fetch (UUID: {match_uuid})"
+        )
+    return my_uuid, driver, scraper
+
+
 def _fetch_batch_relationship_prob(  # noqa: PLR0911
     session_manager: SessionManager, match_uuid: str, max_labels_param: int = 2
 ) -> Optional[str]:
@@ -6421,42 +6751,19 @@ def _fetch_batch_relationship_prob(  # noqa: PLR0911
         A formatted string like "1st cousin [95.5%]" or "Distant relationship?",
         or None if the fetch fails.
     """
-    # PRIORITY 6: Enhanced Caching Strategies for relationship probability data
     import time as time_module
     api_start_time = time_module.time()
 
-    # Enhanced caching with longer TTL for relationship data
-    if global_cache is not None:
-        cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
-        try:
-            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-            if cached_data is not ENOVAL and isinstance(cached_data, str):
-                logger.debug(f"Cache hit for relationship probability: {match_uuid[:8]}")
-                _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
-                return cached_data
-        except Exception as cache_exc:
-            logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
+    cached_result = _check_relationship_prob_cache(match_uuid, max_labels_param, api_start_time)
+    if cached_result is not None:
+        return cached_result
 
-    my_uuid = session_manager.my_uuid
-    driver = session_manager.driver
-    scraper = session_manager.scraper
-
-    if not my_uuid or not match_uuid:
-        logger.warning("_fetch_batch_relationship_prob: Missing my_uuid or match_uuid.")
-        _log_api_performance("relationship_prob", api_start_time, "error_missing_uuid")
-        return None  # Changed from "N/A (Error - Missing IDs)"
-    if not scraper:
-        logger.error(
-            "_fetch_batch_relationship_prob: SessionManager scraper not initialized."
+    try:
+        my_uuid, driver, scraper = _validate_relationship_prob_session(
+            session_manager, match_uuid, api_start_time
         )
-        raise ConnectionError("SessionManager scraper not initialized.")
-    if not driver or not session_manager.is_sess_valid():
-        logger.error(
-            f"_fetch_batch_relationship_prob: Driver/session invalid for UUID {match_uuid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for relationship probability fetch (UUID: {match_uuid})"
-        )
+    except (ValueError, ConnectionError):
+        return None
 
     my_uuid_upper = my_uuid.upper()
     sample_id_upper = match_uuid.upper()
@@ -6473,64 +6780,16 @@ def _fetch_batch_relationship_prob(  # noqa: PLR0911
         "User-Agent": random.choice(config_schema.api.user_agents),
     }
 
-    # OPTIMIZATION: Use cached CSRF token instead of hitting WebDriver every time
-    csrf_token_val: Optional[str] = None
-
-    # Try session manager's cached CSRF first (much faster)
-    if (hasattr(session_manager, '_cached_csrf_token') and
-        hasattr(session_manager, '_is_csrf_token_valid') and
-        session_manager._is_csrf_token_valid() and
-        session_manager._cached_csrf_token):
-        csrf_token_val = session_manager._cached_csrf_token
+    csrf_token_val = _get_csrf_token_for_relationship_prob(session_manager, driver, api_description)
+    if csrf_token_val:
         rel_headers["X-CSRF-Token"] = csrf_token_val
-        logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
     else:
-        # Fallback to driver cookies only if cache miss
-        csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
-        try:
-            # Ensure session-level cookie sync occurs once
-            if hasattr(session_manager, '_sync_cookies_to_requests'):
-                session_manager._sync_cookies_to_requests()
-            driver_cookies_list = driver.get_cookies()
-            driver_cookies_dict = {
-                c["name"]: c["value"]
-                for c in driver_cookies_list
-                if isinstance(c, dict) and "name" in c and "value" in c
-            }
-            for name in csrf_cookie_names:
-                if driver_cookies_dict.get(name):
-                    csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-                    rel_headers["X-CSRF-Token"] = csrf_token_val
-
-                    # Cache the token for future use (5-minute cache)
-                    import time
-                    session_manager._cached_csrf_token = csrf_token_val
-                    session_manager._csrf_cache_time = time.time()
-
-                    logger.debug(
-                        f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}."
-                    )
-                    break
-        except Exception as csrf_e:
-            logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
-
-    if "X-CSRF-Token" not in rel_headers:
-        if session_manager.csrf_token:
-            logger.warning(
-                f"{api_description}: Using potentially stale CSRF from SessionManager."
-            )
-            rel_headers["X-CSRF-Token"] = session_manager.csrf_token
-        else:
-            logger.error(
-                f"{api_description}: Failed to add CSRF token to headers. Returning None."
-            )
-            return None  # Changed from "N/A (Error - Missing CSRF)"
+        logger.error(f"{api_description}: Failed to add CSRF token to headers. Returning None.")
+        return None
 
     try:
-        # Strengthen headers for AJAX-style call and allow redirects
         rel_headers["X-Requested-With"] = "XMLHttpRequest"
 
-        # Prefer the unified API helper which follows redirects and syncs cookies/headers
         api_resp = _api_req(
             url=rel_url,
             driver=driver,
@@ -6545,140 +6804,22 @@ def _fetch_batch_relationship_prob(  # noqa: PLR0911
             json={},
         )
 
-        def _parse_probability(data_obj: dict[str, Any]) -> Optional[str]:
-            if "matchProbabilityToSampleId" not in data_obj:
-                logger.debug(
-                    f"{api_description}: Unexpected structure for {sample_id_upper}. Keys: {list(data_obj.keys())[:5]}"
-                )
-                return None
-            prob_data = data_obj.get("matchProbabilityToSampleId", {})
-            predictions = prob_data.get("relationships", {}).get("predictions", [])
-            if not predictions:
-                logger.debug(
-                    f"No relationship predictions found for {sample_id_upper}. Marking as Distant."
-                )
-                return "Distant relationship?"
-            valid_preds = [
-                p
-                for p in predictions
-                if isinstance(p, dict)
-                and "distributionProbability" in p
-                and "pathsToMatch" in p
-            ]
-            if not valid_preds:
-                logger.debug(
-                    f"{api_description}: No valid prediction paths for {sample_id_upper}."
-                )
-                return None
-            best_pred = max(
-                valid_preds, key=lambda x: x.get("distributionProbability", 0.0)
+        if isinstance(api_resp, dict):
+            parsed = _parse_relationship_probability(
+                api_resp, match_uuid, max_labels_param, sample_id_upper,
+                api_description, api_start_time, session_manager
             )
-            top_prob = best_pred.get("distributionProbability", 0.0)
-            top_prob_display = top_prob * 100.0
-            paths = best_pred.get("pathsToMatch", [])
-            labels = [
-                p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
-            ]
-            if not labels:
-                logger.debug(
-                    f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob_display:.1f}%"
-                )
-                return None
-            final_labels = labels[:max_labels_param]
-            relationship_str = " or ".join(map(str, final_labels))
-            result = f"{relationship_str} [{top_prob_display:.1f}%]"
-
-            # PRIORITY 6: Cache the successful result
-            if global_cache is not None:
-                try:
-                    cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
-                    global_cache.set(cache_key, result, expire=7200, retry=True)  # 2 hour TTL
-                    logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
-                except Exception as cache_exc:
-                    logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
-
-            _log_api_performance("relationship_prob", api_start_time, "success", session_manager)
+            if parsed:
+                return parsed
+        # Try alternative methods if first attempt failed
+        result = _try_relationship_prob_fallbacks(
+            api_resp, rel_url, driver, session_manager, rel_headers,
+            referer_url, api_description, scraper, match_uuid,
+            max_labels_param, sample_id_upper, api_start_time
+        )
+        if result:
             return result
 
-        # Case 1: Parsed JSON returned directly
-        if isinstance(api_resp, dict):
-            parsed = _parse_probability(api_resp)
-            if parsed:
-                return parsed
-        # Case 2: Non-JSON Response object or text; try alternative methods
-        if isinstance(api_resp, requests.Response):
-            status = api_resp.status_code
-            # If redirect happened despite allow_redirects (edge), try GET fallback
-            if 300 <= status < 400:
-                logger.debug(f"{api_description}: Redirect {status}. Retrying with GET...")
-            elif not api_resp.ok:
-                logger.debug(
-                    f"{api_description}: Non-OK {status}. Will attempt CSRF refresh + retry."
-                )
-
-        # If we reached here, attempt GET fallback (some builds accept GET)
-        get_resp = _api_req(
-            url=rel_url,
-            driver=driver,
-            session_manager=session_manager,
-            method="GET",
-            headers=rel_headers,
-            referer_url=referer_url,
-            api_description=f"{api_description} (GET Fallback)",
-            timeout=config_schema.selenium.api_timeout,
-            allow_redirects=True,
-            use_csrf_token=False,
-        )
-        if isinstance(get_resp, dict):
-            parsed = _parse_probability(get_resp)
-            if parsed:
-                return parsed
-
-        # CSRF refresh fallback once, then retry POST via helper
-        try:
-            fresh_csrf = session_manager.get_csrf()
-            if fresh_csrf:
-                rel_headers["X-CSRF-Token"] = fresh_csrf
-                logger.debug("Refreshed CSRF token. Retrying POST for probability...")
-                api_resp2 = _api_req(
-                    url=rel_url,
-                    driver=driver,
-                    session_manager=session_manager,
-                    method="POST",
-                    headers=rel_headers,
-                    referer_url=referer_url,
-                    api_description=f"{api_description} (Retry with fresh CSRF)",
-                    timeout=config_schema.selenium.api_timeout,
-                    allow_redirects=True,
-                    use_csrf_token=False,
-                    json={},
-                )
-                if isinstance(api_resp2, dict):
-                    parsed = _parse_probability(api_resp2)
-                    if parsed:
-                        return parsed
-        except Exception as csrf_refresh_err:
-            logger.debug(f"{api_description}: CSRF refresh attempt failed: {csrf_refresh_err}")
-
-        # Last resort: use cloudscraper directly with redirects enabled
-        try:
-            logger.debug(
-                f"{api_description}: Falling back to cloudscraper with redirects enabled..."
-            )
-            cs_resp = scraper.post(
-                rel_url,
-                headers=rel_headers,
-                json={},
-                allow_redirects=True,
-                timeout=config_schema.selenium.api_timeout,
-            )
-            if cs_resp.ok and cs_resp.headers.get("content-type", "").lower().startswith("application/json"):
-                data = cs_resp.json()
-                return _parse_probability(data)
-        except Exception as cs_e:
-            logger.debug(f"{api_description}: Cloudscraper fallback failed: {cs_e}")
-
-        # If all attempts fail, return None quietly (optional data)
         logger.debug(f"{api_description}: Unable to retrieve probability data for {sample_id_upper}.")
         return None
 
