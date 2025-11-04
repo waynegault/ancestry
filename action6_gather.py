@@ -7935,22 +7935,8 @@ def _test_error_handling():
     print("🎉 All error handling tests passed - Action 6 database transaction bugs prevented!")
 
 
-def _test_regression_prevention_database_bulk_insert():
-    """
-    🛡️ REGRESSION TEST: Database bulk insert condition logic.
-
-    This test prevents the exact regression we encountered where bulk insert
-    logic was in the wrong if/else block.
-
-    BUG WE HAD: Bulk insert only ran when person_creates_filtered was EMPTY
-    FIX: Bulk insert should run when person_creates_filtered HAS records
-    """
-    import inspect
-
-    print("🛡️ Testing database bulk insert condition logic regression prevention:")
-    results = []
-
-    # Test 1: Verify correct bulk insert condition (has records -> should insert)
+def _test_bulk_insert_condition_with_records() -> bool:
+    """Test 1: Verify correct bulk insert condition (has records -> should insert)."""
     test_person_creates = [
         {'profile_id': 'reg_test_1', 'username': 'RegUser1'},
         {'profile_id': 'reg_test_2', 'username': 'RegUser2'}
@@ -7964,24 +7950,30 @@ def _test_regression_prevention_database_bulk_insert():
 
     if should_bulk_insert and not wrong_logic_would_bulk:
         print("   ✅ Bulk insert condition CORRECT: runs when has records")
-        results.append(True)
+        return True
     else:
         print("   ❌ Bulk insert condition WRONG: logic may be in wrong if/else block")
-        results.append(False)
+        return False
 
-    # Test 2: Verify empty list correctly skips bulk insert
+
+def _test_bulk_insert_empty_list() -> bool:
+    """Test 2: Verify empty list correctly skips bulk insert."""
     empty_creates = []
     should_not_bulk_empty = not bool(empty_creates)  # True - should NOT bulk insert
     wrong_would_bulk_empty = bool(empty_creates)     # False - correct, no bulk insert
 
     if should_not_bulk_empty and not wrong_would_bulk_empty:
         print("   ✅ Empty list condition CORRECT: skips bulk insert when no records")
-        results.append(True)
+        return True
     else:
         print("   ❌ Empty list condition WRONG: logic error")
-        results.append(False)
+        return False
 
-    # Test 3: Verify actual code structure contains correct early return pattern
+
+def _test_bulk_insert_source_code_pattern() -> bool:
+    """Test 3: Verify actual code structure contains correct early return pattern."""
+    import inspect
+    
     try:
         # Check _process_person_creates which contains the bulk insert logic
         source = inspect.getsource(_process_person_creates)
@@ -7996,25 +7988,47 @@ def _test_regression_prevention_database_bulk_insert():
 
         if correct_early_return and has_bulk_insert:
             print("   ✅ Source code contains correct early return pattern for empty lists")
-            results.append(True)
+            return True
         else:
             print("   ❌ CRITICAL: Bulk insert logic may be in wrong conditional block!")
             print(f"      Early return pattern found: {correct_early_return}")
             print(f"      Bulk insert present: {has_bulk_insert}")
-            results.append(False)
+            return False
 
     except Exception as e:
         print(f"   ❌ Could not inspect source code: {e}")
-        results.append(False)
+        return False
 
-    # Test 4: Verify THREAD_POOL_WORKERS is configured (value depends on .env)
+
+def _test_thread_pool_configuration() -> bool:
+    """Test 4: Verify THREAD_POOL_WORKERS is configured."""
     # NOTE: THREAD_POOL_WORKERS=1 is CORRECT per README (sequential processing to prevent 429 errors)
     if THREAD_POOL_WORKERS >= 1:
         print(f"   ✅ Thread pool configured: {THREAD_POOL_WORKERS} workers (sequential=1 recommended)")
-        results.append(True)
+        return True
     else:
         print(f"   ❌ Thread pool not configured: {THREAD_POOL_WORKERS} workers")
-        results.append(False)
+        return False
+
+
+def _test_regression_prevention_database_bulk_insert():
+    """
+    🛡️ REGRESSION TEST: Database bulk insert condition logic.
+
+    This test prevents the exact regression we encountered where bulk insert
+    logic was in the wrong if/else block.
+
+    BUG WE HAD: Bulk insert only ran when person_creates_filtered was EMPTY
+    FIX: Bulk insert should run when person_creates_filtered HAS records
+    """
+    print("🛡️ Testing database bulk insert condition logic regression prevention:")
+    
+    results = [
+        _test_bulk_insert_condition_with_records(),
+        _test_bulk_insert_empty_list(),
+        _test_bulk_insert_source_code_pattern(),
+        _test_thread_pool_configuration()
+    ]
 
     success = all(results)
     if success:
