@@ -2742,6 +2742,48 @@ def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> lis
     return person_creates_filtered
 
 
+def _check_existing_profile_ids(session: SqlAlchemySession, profile_ids_to_check: set[str]) -> set[str]:
+    """Check database for existing profile IDs."""
+    existing_profile_ids: set[str] = set()
+    if not profile_ids_to_check:
+        return existing_profile_ids
+
+    try:
+        logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
+        existing_records = session.query(Person.profile_id).filter(
+            Person.profile_id.in_(profile_ids_to_check),
+            Person.deleted_at.is_(None)
+        ).all()
+        existing_profile_ids = {record.profile_id for record in existing_records}
+        if existing_profile_ids:
+            logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
+    except Exception as e:
+        logger.warning(f"Failed to check existing profile IDs: {e}")
+
+    return existing_profile_ids
+
+
+def _check_existing_uuids(session: SqlAlchemySession, uuids_to_check: set[str]) -> set[str]:
+    """Check database for existing UUIDs."""
+    existing_uuids: set[str] = set()
+    if not uuids_to_check:
+        return existing_uuids
+
+    try:
+        logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
+        existing_uuid_records = session.query(Person.uuid).filter(
+            Person.uuid.in_(uuids_to_check),
+            Person.deleted_at.is_(None)
+        ).all()
+        existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
+        if existing_uuids:
+            logger.info(f"Found {len(existing_uuids)} existing UUIDs that will be skipped")
+    except Exception as e:
+        logger.warning(f"Failed to check existing UUIDs: {e}")
+
+    return existing_uuids
+
+
 def _check_existing_records(session: SqlAlchemySession, insert_data_raw: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
     """
     Check database for existing profile IDs and UUIDs to prevent constraint violations.
@@ -2753,37 +2795,15 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: list[di
     Returns:
         tuple of (existing_profile_ids, existing_uuids) sets
     """
-    profile_ids_to_check = {item.get("profile_id") for item in insert_data_raw if item.get("profile_id")}
-    uuids_to_check = {str(item.get("uuid") or "").upper() for item in insert_data_raw if item.get("uuid")}
+    profile_ids_to_check: set[str] = {
+        str(item.get("profile_id")) for item in insert_data_raw if item.get("profile_id")
+    }
+    uuids_to_check: set[str] = {
+        str(item.get("uuid") or "").upper() for item in insert_data_raw if item.get("uuid")
+    }
 
-    existing_profile_ids: set[str] = set()
-    existing_uuids: set[str] = set()
-
-    if profile_ids_to_check:
-        try:
-            logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
-            existing_records = session.query(Person.profile_id).filter(
-                Person.profile_id.in_(profile_ids_to_check),
-                Person.deleted_at.is_(None)
-            ).all()
-            existing_profile_ids = {record.profile_id for record in existing_records}
-            if existing_profile_ids:
-                logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
-        except Exception as e:
-            logger.warning(f"Failed to check existing profile IDs: {e}")
-
-    if uuids_to_check:
-        try:
-            logger.debug(f"Checking database for {len(uuids_to_check)} existing UUIDs...")
-            existing_uuid_records = session.query(Person.uuid).filter(
-                Person.uuid.in_(uuids_to_check),
-                Person.deleted_at.is_(None)
-            ).all()
-            existing_uuids = {record.uuid.upper() for record in existing_uuid_records}
-            if existing_uuids:
-                logger.info(f"Found {len(existing_uuids)} existing UUIDs that will be skipped")
-        except Exception as e:
-            logger.warning(f"Failed to check existing UUIDs: {e}")
+    existing_profile_ids = _check_existing_profile_ids(session, profile_ids_to_check)
+    existing_uuids = _check_existing_uuids(session, uuids_to_check)
 
     return existing_profile_ids, existing_uuids
 
@@ -2867,6 +2887,13 @@ def _should_skip_person_insert(
     return False, None
 
 
+def _convert_status_enums(insert_data: list[dict[str, Any]]) -> None:
+    """Convert status Enum to its value for bulk insertion."""
+    for item_data in insert_data:
+        if "status" in item_data and hasattr(item_data["status"], 'value'):
+            item_data["status"] = item_data["status"].value
+
+
 def _prepare_person_insert_data(
     person_creates_filtered: list[dict[str, Any]],
     session: SqlAlchemySession,
@@ -2918,11 +2945,7 @@ def _prepare_person_insert_data(
         item["uuid"] = uuid_val
         insert_data.append(item)
 
-    # Convert status Enum to its value for bulk insertion
-    for item_data in insert_data:
-        if "status" in item_data and hasattr(item_data["status"], 'value'):
-            item_data["status"] = item_data["status"].value
-
+    _convert_status_enums(insert_data)
     return insert_data
 
 
@@ -3660,6 +3683,40 @@ def _execute_bulk_db_operations(
 # End of _execute_bulk_db_operations
 
 
+def _optimize_batch_size_for_page(
+    base_batch_size: int, num_matches: int, current_page: int
+) -> int:
+    """Optimize batch size based on page characteristics."""
+    optimized_size = base_batch_size
+
+    # Additional optimizations based on page characteristics
+    if num_matches >= 50:  # Large pages
+        optimized_size = min(25, int(optimized_size * 1.2))
+        logger.debug(f"Large page optimization: Increased batch size to {optimized_size}")
+    elif num_matches <= 10:  # Small pages
+        optimized_size = max(5, int(optimized_size * 0.8))
+        logger.debug(f"Small page optimization: Reduced batch size to {optimized_size}")
+
+    # Memory efficiency for long runs
+    if current_page % 20 == 0:  # Every 20 pages, use smaller batches
+        optimized_size = max(5, optimized_size - 2)
+        logger.debug(f"Memory efficiency: Reduced batch size to {optimized_size} at page {current_page}")
+
+    return optimized_size
+
+
+def _get_optimized_batch_size(
+    session_manager: SessionManager, num_matches: int, current_page: int
+) -> int:
+    """Get optimized batch size with fallback handling."""
+    try:
+        base_batch_size = _get_adaptive_batch_size(session_manager)
+        return _optimize_batch_size_for_page(base_batch_size, num_matches, current_page)
+    except Exception as batch_opt_exc:
+        logger.warning(f"Batch size optimization failed: {batch_opt_exc}, using fallback")
+        return 10  # Safe fallback
+
+
 def _do_batch(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
@@ -3674,29 +3731,8 @@ def _do_batch(
     """
     # ENHANCED: Dynamic Batch Optimization with Server Performance Integration
     batch_start_time = time.time()
-
-    try:
-        # Get adaptive batch size based on current server performance
-        optimized_batch_size = _get_adaptive_batch_size(session_manager)
-
-        num_matches_on_page = len(matches_on_page)
-
-        # Additional optimizations based on page characteristics
-        if num_matches_on_page >= 50:  # Large pages
-            optimized_batch_size = min(25, int(optimized_batch_size * 1.2))
-            logger.debug(f"Large page optimization: Increased batch size to {optimized_batch_size}")
-        elif num_matches_on_page <= 10:  # Small pages
-            optimized_batch_size = max(5, int(optimized_batch_size * 0.8))
-            logger.debug(f"Small page optimization: Reduced batch size to {optimized_batch_size}")
-
-        # Memory efficiency for long runs
-        if current_page % 20 == 0:  # Every 20 pages, use smaller batches
-            optimized_batch_size = max(5, optimized_batch_size - 2)
-            logger.debug(f"Memory efficiency: Reduced batch size to {optimized_batch_size} at page {current_page}")
-
-    except Exception as batch_opt_exc:
-        logger.warning(f"Batch size optimization failed: {batch_opt_exc}, using fallback")
-        optimized_batch_size = 10  # Safe fallback
+    num_matches_on_page = len(matches_on_page)
+    optimized_batch_size = _get_optimized_batch_size(session_manager, num_matches_on_page, current_page)
 
     # If we have fewer matches than optimized batch size, process normally (no need to split)
     if num_matches_on_page <= optimized_batch_size:
@@ -5834,6 +5870,31 @@ def _fetch_batch_badge_details(  # noqa: PLR0911
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
+def _extract_relationship_from_person(person: dict[str, Any], cfpid: str) -> Optional[dict[str, Any]]:
+    """Extract relationship data from a kinship person record."""
+    if isinstance(person, dict) and person.get("personId") == cfpid:
+        relationship = person.get("relationship", "")
+        if relationship:
+            return {
+                "actual_relationship": relationship,
+                "relationship_path": f"Enhanced API: {relationship}"
+            }
+    return None
+
+
+def _extract_first_relationship(kinship_persons: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Extract relationship from the first kinship person."""
+    if kinship_persons and isinstance(kinship_persons[0], dict):
+        first_person = kinship_persons[0]
+        relationship = first_person.get("relationship", "")
+        if relationship:
+            return {
+                "actual_relationship": relationship,
+                "relationship_path": f"Enhanced API: {relationship}"
+            }
+    return None
+
+
 def _fetch_batch_ladder(
     session_manager: SessionManager, cfpid: str, tree_id: str
 ) -> Optional[dict[str, Any]]:
@@ -5867,24 +5928,14 @@ def _fetch_batch_ladder(
             if kinship_persons:
                 # Extract relationship information from the enhanced API
                 for person in kinship_persons:
-                    if isinstance(person, dict) and person.get("personId") == cfpid:
-                        relationship = person.get("relationship", "")
-                        if relationship:
-                            # Format the result to match the expected format
-                            return {
-                                "actual_relationship": relationship,
-                                "relationship_path": f"Enhanced API: {relationship}"
-                            }
+                    result = _extract_relationship_from_person(person, cfpid)
+                    if result:
+                        return result
 
                 # If we have kinship data but no direct match, use the first relationship
-                if kinship_persons and isinstance(kinship_persons[0], dict):
-                    first_person = kinship_persons[0]
-                    relationship = first_person.get("relationship", "")
-                    if relationship:
-                        return {
-                            "actual_relationship": relationship,
-                            "relationship_path": f"Enhanced API: {relationship}"
-                        }
+                result = _extract_first_relationship(kinship_persons)
+                if result:
+                    return result
 
         logger.debug(f"Enhanced API didn't return usable data for {cfpid}, falling back to legacy API")
 
