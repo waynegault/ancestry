@@ -235,7 +235,7 @@ class SessionManager:
         logger.debug("Creating/retrieving SessionValidator from cache")
         return SessionValidator()
 
-    def _initialize_enhanced_requests_session(self):
+    def _initialize_enhanced_requests_session(self) -> None:
         """
         Initialize enhanced requests session with advanced configuration.
         Includes connection pooling, retry strategies, and performance optimizations.
@@ -269,7 +269,7 @@ class SessionManager:
             self.api_manager._requests_session.mount("http://", adapter)
             self.api_manager._requests_session.mount("https://", adapter)
 
-    def _initialize_cloudscraper(self):
+    def _initialize_cloudscraper(self) -> None:
         """
         Initialize CloudScraper for anti-bot protection.
         Provides enhanced capabilities for bypassing CloudFlare and other protections.
@@ -716,6 +716,85 @@ class SessionManager:
             logger.error(f"Failed to retrieve tree owner due to import error: {owner_imp_err}")
             return False
 
+    def _get_current_cookie_names(self) -> set[str]:
+        """Get current cookie names from driver (lowercase).
+
+        Returns:
+            Set of lowercase cookie names
+        """
+        if not self.driver:
+            return set()
+        try:
+            cookies = self.driver.get_cookies()
+            return {
+                c["name"].lower()
+                for c in cookies
+                if isinstance(c, dict) and "name" in c
+            }
+        except Exception:
+            return set()
+
+    def _check_cookies_available(
+        self,
+        required_lower: set[str],
+        last_missing_str: str
+    ) -> tuple[bool, str]:
+        """Check if required cookies are available.
+
+        Args:
+            required_lower: Set of required cookie names (lowercase)
+            last_missing_str: Last missing cookies string for logging
+
+        Returns:
+            Tuple of (all_found, new_missing_str)
+        """
+        current_cookies_lower = self._get_current_cookie_names()
+        missing_lower = required_lower - current_cookies_lower
+
+        if not missing_lower:
+            return True, ""
+
+        # Log missing cookies only if the set changes
+        missing_str = ", ".join(sorted(missing_lower))
+        if missing_str != last_missing_str:
+            logger.debug(f"Still missing cookies: {missing_str}")
+
+        return False, missing_str
+
+    def _perform_final_cookie_check(
+        self,
+        cookie_names: list[str]
+    ) -> bool:
+        """Perform final cookie check after timeout.
+
+        Args:
+            cookie_names: List of required cookie names
+
+        Returns:
+            True if all cookies found, False otherwise
+        """
+        try:
+            if not self.is_sess_valid():
+                logger.warning(f"Timeout waiting for cookies. Missing: {cookie_names}.")
+                return False
+
+            current_cookies_lower = self._get_current_cookie_names()
+            missing_final = [
+                name for name in cookie_names
+                if name.lower() not in current_cookies_lower
+            ]
+
+            if missing_final:
+                logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
+                return False
+
+            logger.debug("Cookies found in final check after loop (unexpected).")
+            return True
+
+        except Exception:
+            logger.warning(f"Timeout waiting for cookies. Missing: {cookie_names}.")
+            return False
+
     def get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
         """
         Advanced cookie management with timeout and session validation.
@@ -734,8 +813,6 @@ class SessionManager:
             logger.error("get_cookies: WebDriver instance is None.")
             return False
 
-        # Skip is_sess_valid() check here to prevent circular recursion
-
         start_time = time.time()
         logger.debug(f"Waiting up to {timeout}s for cookies: {cookie_names}...")
         required_lower = {name.lower() for name in cookie_names}
@@ -744,70 +821,31 @@ class SessionManager:
 
         while time.time() - start_time < timeout:
             try:
-                # Basic driver check (avoid is_sess_valid() to prevent recursion)
                 if not self.driver:
                     logger.warning("Driver became None while waiting for cookies.")
                     return False
 
-                cookies = self.driver.get_cookies()
-                current_cookies_lower = {
-                    c["name"].lower()
-                    for c in cookies
-                    if isinstance(c, dict) and "name" in c
-                }
-                missing_lower = required_lower - current_cookies_lower
-
-                if not missing_lower:
+                all_found, last_missing_str = self._check_cookies_available(
+                    required_lower, last_missing_str
+                )
+                if all_found:
                     logger.debug(f"All required cookies found: {cookie_names}.")
-                    # Skip automatic cookie sync to prevent recursion
-                    # Cookie syncing will be handled elsewhere when needed
                     return True
-
-                # Log missing cookies only if the set changes
-                missing_str = ", ".join(sorted(missing_lower))
-                if missing_str != last_missing_str:
-                    logger.debug(f"Still missing cookies: {missing_str}")
-                    last_missing_str = missing_str
 
                 time.sleep(interval)
 
             except WebDriverException as e:
                 logger.error(f"WebDriverException while retrieving cookies: {e}")
-                # Check if session died due to the exception
                 if not self.is_sess_valid():
                     logger.error("Session invalid after WebDriverException during cookie retrieval.")
                     return False
-                # If session still valid, wait a bit longer before next try
                 time.sleep(interval * 2)
 
             except Exception as e:
                 logger.error(f"Unexpected error during cookie retrieval: {e}")
                 time.sleep(interval * 2)
 
-        # Final check after timeout
-        missing_final = []
-        try:
-            if self.is_sess_valid():
-                cookies_final = self.driver.get_cookies()
-                current_cookies_final_lower = {
-                    c["name"].lower()
-                    for c in cookies_final
-                    if isinstance(c, dict) and "name" in c
-                }
-                missing_final = [
-                    name for name in cookie_names
-                    if name.lower() not in current_cookies_final_lower
-                ]
-            else:
-                missing_final = cookie_names
-        except Exception:
-            missing_final = cookie_names
-
-        if missing_final:
-            logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
-            return False
-        logger.debug("Cookies found in final check after loop (unexpected).")
-        return True
+        return self._perform_final_cookie_check(cookie_names)
 
     def _sync_cookies_to_requests(self):
         """
@@ -851,56 +889,74 @@ class SessionManager:
         self._sync_cookies_to_requests()
         logger.debug("Forced session cookie resync due to authentication error")
 
-    def _sync_cookies(self):
+    def _can_sync_cookies(self) -> bool:
+        """Check if cookie sync is possible.
+
+        Returns:
+            True if sync can proceed, False otherwise
+        """
+        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
+            logger.debug("Recursion detected in _sync_cookies(), skipping to prevent loop")
+            return False
+
+        if not self.driver:
+            return False
+
+        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
+            return False
+
+        return True
+
+    def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
+        """Sync driver cookies to requests session.
+
+        Args:
+            driver_cookies: List of cookies from WebDriver
+
+        Returns:
+            Number of cookies synced
+        """
+        self.api_manager._requests_session.cookies.clear()
+        synced_count = 0
+
+        for cookie in driver_cookies:
+            if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
+                try:
+                    self.api_manager._requests_session.cookies.set(
+                        cookie["name"],
+                        cookie["value"],
+                        domain=cookie.get("domain"),
+                        path=cookie.get("path", "/")
+                    )
+                    synced_count += 1
+                except Exception:
+                    continue  # Skip problematic cookies silently
+
+        return synced_count
+
+    def _sync_cookies(self) -> None:
         """
         Simple cookie synchronization from WebDriver to requests session.
 
         Simplified version that avoids all session validation to prevent recursion.
         """
-        # Recursion guard to prevent infinite loops
-        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
-            logger.debug("Recursion detected in _sync_cookies(), skipping to prevent loop")
-            return
-
-        if not self.driver:
-            return
-
-        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
+        if not self._can_sync_cookies():
             return
 
         try:
-            # Set recursion guard
             self._in_sync_cookies = True
 
-            # Simple cookie retrieval without any validation
             driver_cookies = self.driver.get_cookies()
             if not driver_cookies:
                 return
 
-            # Clear and sync cookies
-            self.api_manager._requests_session.cookies.clear()
-            synced_count = 0
-
-            for cookie in driver_cookies:
-                if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
-                    try:
-                        self.api_manager._requests_session.cookies.set(
-                            cookie["name"],
-                            cookie["value"],
-                            domain=cookie.get("domain"),
-                            path=cookie.get("path", "/")
-                        )
-                        synced_count += 1
-                    except Exception:
-                        continue  # Skip problematic cookies silently
-
+            synced_count = self._sync_driver_cookies_to_requests(driver_cookies)
             logger.debug(f"Synced {synced_count} cookies to requests session")
 
         except Exception as e:
             logger.warning(f"Cookie sync failed: {e}")
             return
         finally:
-            # Clear recursion guard
             if hasattr(self, '_in_sync_cookies'):
                 self._in_sync_cookies = False
 

@@ -3502,6 +3502,399 @@ def _create_master_id_map(
     return all_person_ids_map
 
 
+def _resolve_person_id(
+    session: SqlAlchemySession,
+    person_uuid: Optional[str],
+    all_person_ids_map: dict[str, int],
+    existing_persons_map: dict[str, Person]
+) -> Optional[int]:
+    """Resolve person ID from UUID using multiple strategies.
+
+    Args:
+        session: SQLAlchemy session
+        person_uuid: Person UUID to resolve
+        all_person_ids_map: Map of UUID to Person ID
+        existing_persons_map: Map of existing persons
+
+    Returns:
+        Person ID if found, None otherwise
+    """
+    if not person_uuid:
+        logger.warning("Missing UUID in DNA match data - skipping DNA Match creation")
+        return None
+
+    # Strategy 1: Check all_person_ids_map
+    person_id = all_person_ids_map.get(person_uuid)
+    if person_id:
+        return person_id
+
+    # Strategy 2: Check existing_persons_map
+    if existing_persons_map.get(person_uuid):
+        existing_person = existing_persons_map[person_uuid]
+        person_id = getattr(existing_person, "id", None)
+        if person_id:
+            all_person_ids_map[person_uuid] = person_id
+            logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (from existing_persons_map)")
+            return person_id
+        logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
+        return None
+
+    # Strategy 3: Direct database query as fallback
+    try:
+        db_person = session.query(Person.id).filter(
+            Person.uuid == person_uuid,
+            Person.deleted_at.is_(None)
+        ).first()
+        if db_person:
+            person_id = db_person.id
+            all_person_ids_map[person_uuid] = person_id
+            logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (direct DB query)")
+            return person_id
+        logger.info(f"Person UUID {person_uuid} not found in database - will be created in next batch")
+        return None
+    except Exception as e:
+        logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
+        return None
+
+
+def _get_existing_dna_matches(
+    session: SqlAlchemySession,
+    all_person_ids_map: dict[str, int]
+) -> dict[int, int]:
+    """Get existing DnaMatch records for people in batch.
+
+    Args:
+        session: SQLAlchemy session
+        all_person_ids_map: Map of UUID to Person ID
+
+    Returns:
+        Map of people_id to DnaMatch ID
+    """
+    people_ids_in_batch = {
+        pid for pid in all_person_ids_map.values() if pid is not None
+    }
+    if not people_ids_in_batch:
+        return {}
+
+    existing_matches = (
+        session.query(DnaMatch.people_id, DnaMatch.id)
+        .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
+        .all()
+    )
+    existing_dna_matches_map: dict[int, int] = dict(existing_matches)  # type: ignore
+    logger.debug(
+        f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
+    )
+    return existing_dna_matches_map
+
+
+def _prepare_dna_match_data(
+    dna_data: dict[str, Any],
+    person_id: int
+) -> dict[str, Any]:
+    """Prepare DNA match data for insert/update.
+
+    Args:
+        dna_data: Raw DNA match data
+        person_id: Person ID to link to
+
+    Returns:
+        Prepared data dictionary
+    """
+    op_data = {
+        k: v
+        for k, v in dna_data.items()
+        if not k.startswith("_") and k != "uuid"
+    }
+    op_data["people_id"] = person_id
+    return op_data
+
+
+def _classify_dna_match_operations(
+    session: SqlAlchemySession,
+    dna_match_ops: list[dict[str, Any]],
+    all_person_ids_map: dict[str, int],
+    existing_persons_map: dict[str, Person]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify DNA match operations into inserts and updates.
+
+    Args:
+        session: SQLAlchemy session
+        dna_match_ops: List of DNA match operations
+        all_person_ids_map: Map of UUID to Person ID
+        existing_persons_map: Map of existing persons
+
+    Returns:
+        Tuple of (insert_data, update_mappings)
+    """
+    existing_dna_matches_map = _get_existing_dna_matches(session, all_person_ids_map)
+    dna_insert_data = []
+    dna_update_mappings = []
+
+    for dna_data in dna_match_ops:
+        person_uuid = dna_data.get("uuid")
+        person_id = _resolve_person_id(session, person_uuid, all_person_ids_map, existing_persons_map)
+
+        if not person_id:
+            continue
+
+        op_data = _prepare_dna_match_data(dna_data, person_id)
+        existing_match_id = existing_dna_matches_map.get(person_id)
+
+        if existing_match_id:
+            # Prepare for UPDATE
+            update_map = op_data.copy()
+            update_map["id"] = existing_match_id
+            update_map["updated_at"] = datetime.now(timezone.utc)
+            if len(update_map) > 3:  # More than id/people_id/updated_at
+                dna_update_mappings.append(update_map)
+            else:
+                logger.debug(f"Skipping DnaMatch update for PersonID {person_id}: No changed fields.")
+        else:
+            # Prepare for INSERT
+            insert_map = op_data.copy()
+            insert_map.setdefault("created_at", datetime.now(timezone.utc))
+            insert_map.setdefault("updated_at", datetime.now(timezone.utc))
+            dna_insert_data.append(insert_map)
+
+    return dna_insert_data, dna_update_mappings
+
+
+def _apply_ethnicity_data(
+    session: SqlAlchemySession,
+    people_id: int,
+    ethnicity_data: dict[str, Any]
+) -> None:
+    """Apply ethnicity data via raw SQL UPDATE.
+
+    Args:
+        session: SQLAlchemy session
+        people_id: Person ID
+        ethnicity_data: Ethnicity data dictionary
+    """
+    from sqlalchemy import text
+    set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
+    sql = f"UPDATE dna_match SET {set_clauses} WHERE people_id = :people_id"
+    params = {**ethnicity_data, "people_id": people_id}
+    session.execute(text(sql), params)
+
+
+def _bulk_insert_dna_matches(
+    session: SqlAlchemySession,
+    dna_insert_data: list[dict[str, Any]]
+) -> None:
+    """Bulk insert DNA match records with ethnicity data.
+
+    Args:
+        session: SQLAlchemy session
+        dna_insert_data: List of DNA match insert data
+    """
+    if not dna_insert_data:
+        return
+
+    logger.debug(f"Bulk inserting {len(dna_insert_data)} DnaMatch records...")
+
+    # Separate ethnicity columns from core data
+    core_insert_data = []
+    ethnicity_updates = []
+
+    for insert_map in dna_insert_data:
+        core_map = {k: v for k, v in insert_map.items() if not k.startswith("ethnicity_")}
+        ethnicity_map = {k: v for k, v in insert_map.items() if k.startswith("ethnicity_")}
+        core_insert_data.append(core_map)
+        if ethnicity_map:
+            ethnicity_updates.append((insert_map["people_id"], ethnicity_map))
+
+    # Bulk insert core data
+    session.bulk_insert_mappings(DnaMatch, core_insert_data)  # type: ignore
+    session.flush()
+
+    # Apply ethnicity data
+    if ethnicity_updates:
+        for people_id, ethnicity_data in ethnicity_updates:
+            _apply_ethnicity_data(session, people_id, ethnicity_data)
+        session.flush()
+        logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} newly inserted DnaMatch records")
+
+
+def _bulk_update_dna_matches(
+    session: SqlAlchemySession,
+    dna_update_mappings: list[dict[str, Any]]
+) -> None:
+    """Bulk update DNA match records with ethnicity data.
+
+    Args:
+        session: SQLAlchemy session
+        dna_update_mappings: List of DNA match update mappings
+    """
+    if not dna_update_mappings:
+        return
+
+    logger.debug(f"Bulk updating {len(dna_update_mappings)} DnaMatch records...")
+
+    # Separate ethnicity columns from core data
+    core_update_mappings = []
+    ethnicity_updates = []
+
+    for update_map in dna_update_mappings:
+        core_map = {k: v for k, v in update_map.items() if not k.startswith("ethnicity_")}
+        ethnicity_map = {k: v for k, v in update_map.items() if k.startswith("ethnicity_")}
+        core_update_mappings.append(core_map)
+        if ethnicity_map:
+            ethnicity_updates.append((update_map["id"], ethnicity_map))
+
+    # Bulk update core data
+    if core_update_mappings:
+        session.bulk_update_mappings(DnaMatch, core_update_mappings)  # type: ignore
+        session.flush()
+
+    # Apply ethnicity data
+    if ethnicity_updates:
+        for match_id, ethnicity_data in ethnicity_updates:
+            _apply_ethnicity_data(session, match_id, ethnicity_data)
+        session.flush()
+        logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} updated DnaMatch records")
+
+
+def _process_dna_match_operations(
+    session: SqlAlchemySession,
+    dna_match_ops: list[dict[str, Any]],
+    all_person_ids_map: dict[str, int],
+    existing_persons_map: dict[str, Person]
+) -> None:
+    """Process DNA match operations (inserts and updates).
+
+    Args:
+        session: SQLAlchemy session
+        dna_match_ops: List of DNA match operations
+        all_person_ids_map: Map of UUID to Person ID
+        existing_persons_map: Map of existing persons
+    """
+    if not dna_match_ops:
+        return
+
+    dna_insert_data, dna_update_mappings = _classify_dna_match_operations(
+        session, dna_match_ops, all_person_ids_map, existing_persons_map
+    )
+
+    _bulk_insert_dna_matches(session, dna_insert_data)
+    _bulk_update_dna_matches(session, dna_update_mappings)
+
+
+def _prepare_family_tree_inserts(
+    session: SqlAlchemySession,
+    tree_creates: list[dict[str, Any]],
+    all_person_ids_map: dict[str, int],
+    existing_persons_map: dict[str, Person]
+) -> list[dict[str, Any]]:
+    """Prepare FamilyTree insert data.
+
+    Args:
+        session: SQLAlchemy session
+        tree_creates: List of FamilyTree create operations
+        all_person_ids_map: Map of UUID to Person ID
+        existing_persons_map: Map of existing persons
+
+    Returns:
+        List of FamilyTree insert data
+    """
+    tree_insert_data = []
+
+    for tree_data in tree_creates:
+        person_uuid = tree_data.get("uuid")
+        person_id = _resolve_person_id(session, person_uuid, all_person_ids_map, existing_persons_map)
+
+        if person_id:
+            insert_dict = {
+                k: v for k, v in tree_data.items() if not k.startswith("_")
+            }
+            insert_dict["people_id"] = person_id
+            insert_dict.pop("uuid", None)
+            tree_insert_data.append(insert_dict)
+        else:
+            logger.debug(f"Person with UUID {person_uuid} not found in database - skipping FamilyTree creation.")
+
+    return tree_insert_data
+
+
+def _prepare_family_tree_updates(
+    tree_updates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Prepare FamilyTree update mappings.
+
+    Args:
+        tree_updates: List of FamilyTree update operations
+
+    Returns:
+        List of FamilyTree update mappings
+    """
+    tree_update_mappings = []
+
+    for tree_data in tree_updates:
+        existing_tree_id = tree_data.get("_existing_tree_id")
+        if not existing_tree_id:
+            logger.warning(
+                f"Skipping FamilyTree update op (UUID {tree_data.get('uuid')}): Missing '_existing_tree_id'."
+            )
+            continue
+
+        update_dict_tree = {
+            k: v
+            for k, v in tree_data.items()
+            if not k.startswith("_") and k != "uuid"
+        }
+        update_dict_tree["id"] = existing_tree_id
+        update_dict_tree["updated_at"] = datetime.now(timezone.utc)
+
+        if len(update_dict_tree) > 2:
+            tree_update_mappings.append(update_dict_tree)
+
+    return tree_update_mappings
+
+
+def _process_family_tree_operations(
+    session: SqlAlchemySession,
+    family_tree_ops: list[dict[str, Any]],
+    all_person_ids_map: dict[str, int],
+    existing_persons_map: dict[str, Person]
+) -> None:
+    """Process FamilyTree operations (inserts and updates).
+
+    Args:
+        session: SQLAlchemy session
+        family_tree_ops: List of FamilyTree operations
+        all_person_ids_map: Map of UUID to Person ID
+        existing_persons_map: Map of existing persons
+    """
+    tree_creates = [op for op in family_tree_ops if op.get("_operation") == "create"]
+    tree_updates = [op for op in family_tree_ops if op.get("_operation") == "update"]
+
+    # Process creates
+    if tree_creates:
+        tree_insert_data = _prepare_family_tree_inserts(
+            session, tree_creates, all_person_ids_map, existing_persons_map
+        )
+        if tree_insert_data:
+            logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
+            session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
+        else:
+            logger.debug("No valid FamilyTree records to insert")
+    else:
+        logger.debug("No FamilyTree creates prepared.")
+
+    # Process updates
+    if tree_updates:
+        tree_update_mappings = _prepare_family_tree_updates(tree_updates)
+        if tree_update_mappings:
+            logger.debug(f"Bulk updating {len(tree_update_mappings)} FamilyTree records...")
+            session.bulk_update_mappings(FamilyTree, tree_update_mappings)  # type: ignore
+            logger.debug("Bulk update FamilyTrees called.")
+        else:
+            logger.debug("No valid FamilyTree updates.")
+    else:
+        logger.debug("No FamilyTree updates prepared.")
+
+
 def _execute_bulk_db_operations(
     session: SqlAlchemySession,
     prepared_bulk_data: list[dict[str, Any]],
@@ -3553,266 +3946,11 @@ def _execute_bulk_db_operations(
             created_person_map, person_updates, prepared_bulk_data, existing_persons_map
         )
 
-        # --- Step 6: DnaMatch Bulk Upsert (REVISED: Separate Insert/Update) ---
-        if dna_match_ops:
-            dna_insert_data = []
-            dna_update_mappings = []  # list for bulk updates
-            # Query existing DnaMatch records for people in this batch to determine insert vs update
-            people_ids_in_batch = {
-                pid for pid in all_person_ids_map.values() if pid is not None
-            }
-            existing_dna_matches_map = {}
-            if people_ids_in_batch:
-                existing_matches = (
-                    session.query(DnaMatch.people_id, DnaMatch.id)
-                    .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
-                    .all()
-                )
-                existing_dna_matches_map = dict(existing_matches)
-                logger.debug(
-                    f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
-                )
-
-            for dna_data in dna_match_ops:  # Process each prepared DNA operation
-                person_uuid = dna_data.get("uuid")  # Use UUID to find person ID
-                person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
-
-                if not person_id:
-                    # ENHANCED UUID RESOLUTION: Multiple fallback strategies
-                    if person_uuid:
-                        # Strategy 1: Check existing_persons_map
-                        if existing_persons_map.get(person_uuid):
-                            existing_person = existing_persons_map[person_uuid]
-                            person_id = getattr(existing_person, "id", None)
-                            if person_id:
-                                # Add to mapping for future use
-                                all_person_ids_map[person_uuid] = person_id
-                                logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (from existing_persons_map)")
-                            else:
-                                logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
-                                continue
-                        else:
-                            # Strategy 2: Direct database query as fallback
-                            try:
-                                db_person = session.query(Person.id).filter(
-                                    Person.uuid == person_uuid,
-                                    Person.deleted_at.is_(None)
-                                ).first()
-                                if db_person:
-                                    person_id = db_person.id
-                                    all_person_ids_map[person_uuid] = person_id
-                                    logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (direct DB query)")
-                                else:
-                                    logger.info(f"Person UUID {person_uuid} not found in database - will be created in next batch")
-                                    continue
-                            except Exception as e:
-                                logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
-                                continue
-                    else:
-                        logger.warning("Missing UUID in DNA match data - skipping DNA Match creation")
-                        continue
-
-                # Prepare data dictionary (exclude internal keys)
-                op_data = {
-                    k: v
-                    for k, v in dna_data.items()
-                    if not k.startswith("_") and k != "uuid"
-                }
-                op_data["people_id"] = person_id  # Ensure people_id is set
-
-                # Check if a DnaMatch record already exists for this person_id
-                existing_match_id = existing_dna_matches_map.get(person_id)
-
-                if existing_match_id:
-                    # Prepare for UPDATE
-                    update_map = op_data.copy()
-                    update_map["id"] = (
-                        existing_match_id  # Add primary key for update mapping
-                    )
-                    update_map["updated_at"] = datetime.now(
-                        timezone.utc
-                    )  # set update timestamp
-                    # Add to update list only if there are fields other than id/people_id/updated_at
-                    if len(update_map) > 3:
-                        dna_update_mappings.append(update_map)
-                    else:
-                        logger.debug(
-                            f"Skipping DnaMatch update for PersonID {person_id}: No changed fields."
-                        )
-                else:
-                    # Prepare for INSERT
-                    insert_map = op_data.copy()
-                    # created_at/updated_at handled by defaults or set explicitly if needed
-                    insert_map.setdefault("created_at", datetime.now(timezone.utc))
-                    insert_map.setdefault("updated_at", datetime.now(timezone.utc))
-                    dna_insert_data.append(insert_map)
-
-            # Perform Bulk Insert
-            if dna_insert_data:
-                logger.debug(
-                    f"Bulk inserting {len(dna_insert_data)} DnaMatch records..."
-                )
-
-                # Separate ethnicity columns from core data (bulk_insert_mappings doesn't handle dynamic columns)
-                core_insert_data = []
-                ethnicity_updates = []  # list of (people_id, ethnicity_dict) tuples
-
-                for insert_map in dna_insert_data:
-                    core_map = {k: v for k, v in insert_map.items() if not k.startswith("ethnicity_")}
-                    ethnicity_map = {k: v for k, v in insert_map.items() if k.startswith("ethnicity_")}
-                    core_insert_data.append(core_map)
-                    if ethnicity_map:
-                        ethnicity_updates.append((insert_map["people_id"], ethnicity_map))
-
-                # Bulk insert core data
-                session.bulk_insert_mappings(DnaMatch, core_insert_data)  # type: ignore
-                session.flush()  # Ensure inserts are committed before ethnicity updates
-
-                # Apply ethnicity data via raw SQL UPDATE
-                if ethnicity_updates:
-                    from sqlalchemy import text
-                    for people_id, ethnicity_data in ethnicity_updates:
-                        set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
-                        sql = f"UPDATE dna_match SET {set_clauses} WHERE people_id = :people_id"
-                        params = {**ethnicity_data, "people_id": people_id}
-                        session.execute(text(sql), params)
-                    session.flush()
-                    logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} newly inserted DnaMatch records")
-            else:
-                pass  # No new DnaMatch records to insert
-
-            # Perform Bulk Update
-            if dna_update_mappings:
-                logger.debug(
-                    f"Bulk updating {len(dna_update_mappings)} DnaMatch records..."
-                )
-
-                # Separate ethnicity columns from core data (bulk_update_mappings doesn't handle dynamic columns)
-                core_update_mappings = []
-                ethnicity_updates = []  # list of (id, ethnicity_dict) tuples
-
-                for update_map in dna_update_mappings:
-                    core_map = {k: v for k, v in update_map.items() if not k.startswith("ethnicity_")}
-                    ethnicity_map = {k: v for k, v in update_map.items() if k.startswith("ethnicity_")}
-                    core_update_mappings.append(core_map)
-                    if ethnicity_map:
-                        ethnicity_updates.append((update_map["id"], ethnicity_map))
-
-                # Bulk update core data
-                session.bulk_update_mappings(DnaMatch, core_update_mappings)  # type: ignore
-                session.flush()  # Ensure updates are committed before ethnicity updates
-
-                # Apply ethnicity data via raw SQL UPDATE
-                if ethnicity_updates:
-                    from sqlalchemy import text
-                    for match_id, ethnicity_data in ethnicity_updates:
-                        set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
-                        sql = f"UPDATE dna_match SET {set_clauses} WHERE id = :id"
-                        params = {**ethnicity_data, "id": match_id}
-                        session.execute(text(sql), params)
-                    session.flush()
-                    logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} updated DnaMatch records")
-
-                logger.debug("Bulk update DnaMatches called.")
-            else:
-                pass  # No existing DnaMatch records to update
-        else:
-            logger.debug("No DnaMatch operations prepared.")
+        # --- Step 6: DnaMatch Bulk Upsert ---
+        _process_dna_match_operations(session, dna_match_ops, all_person_ids_map, existing_persons_map)
 
         # --- Step 7: FamilyTree Bulk Upsert ---
-        tree_creates = [
-            op for op in family_tree_ops if op.get("_operation") == "create"
-        ]
-        tree_updates = [
-            op for op in family_tree_ops if op.get("_operation") == "update"
-        ]
-
-        if tree_creates:
-            tree_insert_data = []
-            for tree_data in tree_creates:
-                person_uuid = tree_data.get("uuid")
-                person_id = all_person_ids_map.get(person_uuid) if person_uuid else None
-
-                # ENHANCED UUID RESOLUTION: Multiple fallback strategies for FamilyTree
-                if not person_id and person_uuid:
-                    # Strategy 1: Check existing_persons_map
-                    if existing_persons_map.get(person_uuid):
-                        existing_person = existing_persons_map[person_uuid]
-                        person_id = getattr(existing_person, "id", None)
-                        if person_id:
-                            # Add to mapping for future use
-                            all_person_ids_map[person_uuid] = person_id
-                            logger.debug(f"Resolved Person ID {person_id} for FamilyTree UUID {person_uuid} (from existing_persons_map)")
-                        else:
-                            logger.warning(f"Person exists for FamilyTree UUID {person_uuid} but has no ID attribute")
-                            continue
-                    else:
-                        # Strategy 2: Direct database query as fallback
-                        try:
-                            db_person = session.query(Person.id).filter(
-                                Person.uuid == person_uuid,
-                                Person.deleted_at.is_(None)
-                            ).first()
-                            if db_person:
-                                person_id = db_person.id
-                                all_person_ids_map[person_uuid] = person_id
-                                logger.debug(f"Resolved Person ID {person_id} for FamilyTree UUID {person_uuid} (direct DB query)")
-                            else:
-                                logger.info(f"FamilyTree Person UUID {person_uuid} not found in database - will be created in next batch")
-                                continue
-                        except Exception as e:
-                            logger.warning(f"Database query failed for FamilyTree UUID {person_uuid}: {e}")
-                            continue
-
-                if person_id:
-                    insert_dict = {
-                        k: v for k, v in tree_data.items() if not k.startswith("_")
-                    }
-                    insert_dict["people_id"] = person_id
-                    insert_dict.pop("uuid", None)  # Remove uuid before insert
-                    tree_insert_data.append(insert_dict)
-                else:
-                    logger.debug(
-                        f"Person with UUID {person_uuid} not found in database - skipping FamilyTree creation."
-                    )
-            if tree_insert_data:
-                logger.debug(
-                    f"Bulk inserting {len(tree_insert_data)} FamilyTree records..."
-                )
-                session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
-            else:
-                pass  # No valid FamilyTree records to insert
-        else:
-            logger.debug("No FamilyTree creates prepared.")
-
-        if tree_updates:
-            tree_update_mappings = []
-            for tree_data in tree_updates:
-                existing_tree_id = tree_data.get("_existing_tree_id")
-                if not existing_tree_id:
-                    logger.warning(
-                        f"Skipping FamilyTree update op (UUID {tree_data.get('uuid')}): Missing '_existing_tree_id'."
-                    )
-                    continue
-                update_dict_tree = {
-                    k: v
-                    for k, v in tree_data.items()
-                    if not k.startswith("_") and k != "uuid"
-                }
-                update_dict_tree["id"] = existing_tree_id
-                update_dict_tree["updated_at"] = datetime.now(timezone.utc)
-                if len(update_dict_tree) > 2:
-                    tree_update_mappings.append(update_dict_tree)
-            if tree_update_mappings:
-                logger.debug(
-                    f"Bulk updating {len(tree_update_mappings)} FamilyTree records..."
-                )
-                session.bulk_update_mappings(FamilyTree, tree_update_mappings)  # type: ignore
-                logger.debug("Bulk update FamilyTrees called.")
-            else:
-                logger.debug("No valid FamilyTree updates.")
-        else:
-            logger.debug("No FamilyTree updates prepared.")
+        _process_family_tree_operations(session, family_tree_ops, all_person_ids_map, existing_persons_map)
 
         # Step 8: Log success
         bulk_duration = time.time() - bulk_start_time
@@ -3925,12 +4063,12 @@ def _do_batch(
         # PRIORITY 5: Track batch performance for future optimization
         batch_duration = time.time() - batch_start_time
         if not hasattr(_do_batch, '_recent_performance'):
-            _do_batch._recent_performance = []
+            _do_batch._recent_performance = []  # type: ignore
 
         # Keep recent performance history for dynamic optimization
-        _do_batch._recent_performance.append(batch_duration)
-        if len(_do_batch._recent_performance) > 10:
-            _do_batch._recent_performance = _do_batch._recent_performance[-10:]  # Keep last 10
+        _do_batch._recent_performance.append(batch_duration)  # type: ignore
+        if len(_do_batch._recent_performance) > 10:  # type: ignore
+            _do_batch._recent_performance = _do_batch._recent_performance[-10:]  # type: ignore
 
         # Log performance metrics
         success_rate = (total_stats["new"] + total_stats["updated"] + total_stats["skipped"]) / num_matches_on_page if num_matches_on_page > 0 else 1.0
@@ -4266,10 +4404,10 @@ def _process_page_matches(
 
             # Monitor for memory growth patterns
             if hasattr(_process_page_matches, '_prev_memory'):
-                memory_growth = current_memory_mb - _process_page_matches._prev_memory
+                memory_growth = current_memory_mb - _process_page_matches._prev_memory  # type: ignore
                 if memory_growth > 50:  # 50MB growth is concerning
                     logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
-            _process_page_matches._prev_memory = current_memory_mb
+            _process_page_matches._prev_memory = current_memory_mb  # type: ignore
 
         except Exception as cleanup_exc:
             logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
@@ -5052,7 +5190,7 @@ def get_matches(
     # Consider removing it if it's not planned for future use here.
     # For now, we'll keep it to maintain the signature as per original code.
 
-    if not isinstance(session_manager, SessionManager):
+    if not isinstance(session_manager, SessionManager):  # type: ignore
         logger.error("get_matches: Invalid SessionManager.")
         return None
     driver = session_manager.driver
