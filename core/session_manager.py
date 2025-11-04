@@ -902,10 +902,7 @@ class SessionManager:
         if not self.driver:
             return False
 
-        if not hasattr(self.api_manager, '_requests_session') or not self.api_manager._requests_session:
-            return False
-
-        return True
+        return hasattr(self.api_manager, '_requests_session') and bool(self.api_manager._requests_session)
 
     def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
         """Sync driver cookies to requests session.

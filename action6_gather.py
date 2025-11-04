@@ -3201,6 +3201,40 @@ def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Op
         return False
 
 
+def _should_skip_person_insert(
+    uuid_val: str,
+    profile_id: Optional[str],
+    seen_uuids: set[str],
+    existing_persons_map: dict[str, Person],
+    existing_uuids: set[str],
+    existing_profile_ids: set[str]
+) -> tuple[bool, Optional[str]]:
+    """Check if person should be skipped during insert preparation.
+
+    Args:
+        uuid_val: Person UUID
+        profile_id: Person profile ID
+        seen_uuids: Set of UUIDs already seen in this batch
+        existing_persons_map: Map of existing persons by UUID
+        existing_uuids: Set of UUIDs that exist in database
+        existing_profile_ids: Set of profile IDs that exist in database
+
+    Returns:
+        Tuple of (should_skip, reason)
+    """
+    if not uuid_val:
+        return True, None
+    if uuid_val in seen_uuids:
+        return True, f"Duplicate Person in batch (UUID: {uuid_val}) - skipping duplicate."
+    if uuid_val in existing_persons_map:
+        return True, f"Person exists for UUID {uuid_val}; will handle as update if changes detected."
+    if uuid_val in existing_uuids:
+        return True, f"Person exists in DB for UUID {uuid_val}; will handle as update if needed."
+    if profile_id and profile_id in existing_profile_ids:
+        return True, f"Person exists with profile ID {profile_id} (UUID: {uuid_val}); will handle as update if needed."
+    return False, None
+
+
 def _prepare_person_insert_data(
     person_creates_filtered: list[dict[str, Any]],
     session: SqlAlchemySession,
@@ -3239,19 +3273,13 @@ def _prepare_person_insert_data(
         uuid_val = str(item.get("uuid") or "").upper()
         profile_id = item.get("profile_id")
 
-        if not uuid_val:
-            continue
-        if uuid_val in seen_uuids:
-            logger.debug(f"Duplicate Person in batch (UUID: {uuid_val}) - skipping duplicate.")
-            continue
-        if uuid_val in existing_persons_map:
-            logger.debug(f"Person exists for UUID {uuid_val}; will handle as update if changes detected.")
-            continue
-        if uuid_val in existing_uuids:
-            logger.debug(f"Person exists in DB for UUID {uuid_val}; will handle as update if needed.")
-            continue
-        if profile_id and profile_id in existing_profile_ids:
-            logger.debug(f"Person exists with profile ID {profile_id} (UUID: {uuid_val}); will handle as update if needed.")
+        should_skip, reason = _should_skip_person_insert(
+            uuid_val, profile_id, seen_uuids, existing_persons_map, existing_uuids, existing_profile_ids
+        )
+
+        if should_skip:
+            if reason:
+                logger.debug(reason)
             continue
 
         seen_uuids.add(uuid_val)

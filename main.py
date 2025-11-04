@@ -83,6 +83,7 @@ def _log_configuration_summary(config: Any) -> None:
     logger.info(f"  BATCH_SIZE: {config.batch_size}")
     logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
     logger.info(f"  MAX_INBOX: {config.max_inbox}")
+    logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
     logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
     logger.info("=" * 80)
     print("")  # Blank line after configuration

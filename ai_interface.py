@@ -555,6 +555,9 @@ def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[Optional[
         return None, f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}"
 
     except Exception as e:
+        error_str = str(e).lower()
+        if "connection" in error_str or "refused" in error_str or "timeout" in error_str:
+            return None, "Local LLM: Connection error. Please ensure LM Studio is running."
         return None, f"Local LLM: Failed to check loaded models: {e}"
 
 
