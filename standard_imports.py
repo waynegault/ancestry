@@ -396,8 +396,8 @@ def standard_imports_module_tests() -> bool:
         logger = setup_module(globals(), __name__)
         assert logger is not None
         print("✅ Module setup test passed")
-        from test_utilities import test_func
-        register_function("test_standard_imports", test_func)
+        from test_utilities import mock_func
+        register_function("test_standard_imports", mock_func)
         assert is_function_available("test_standard_imports")
         print("✅ Function registration test passed")
         print("✅ Basic Standard Imports tests completed")

@@ -349,7 +349,7 @@ def cleanup_registry() -> None:
 
 def _test_function_registration() -> None:
     """Test function registration and retrieval."""
-    from test_utilities import test_func_with_param as test_func
+    from test_utilities import mock_func_with_param as test_func
 
     register_function("test_func", test_func)
     assert is_function_available(

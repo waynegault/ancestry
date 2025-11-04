@@ -127,7 +127,7 @@ API_PATH_FAMILY_TREE_VIEW = "/family-tree/tree/{tree_id}/family"
 def validate_all_endpoints() -> bool:
     """
     Validate that all API endpoint constants are defined and non-empty.
-    
+
     Returns:
         True if all validations pass, False otherwise
     """
@@ -161,12 +161,12 @@ def validate_all_endpoints() -> bool:
 def run_comprehensive_tests() -> bool:
     """
     Run comprehensive tests for API constants module.
-    
+
     Tests:
     1. All constants are defined and non-empty
     2. No duplicate values (except intentional aliases)
     3. Critical endpoints match expected values (regression guards)
-    
+
     Returns:
         True if all tests pass
     """

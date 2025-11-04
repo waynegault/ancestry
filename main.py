@@ -961,7 +961,7 @@ def _close_main_pool_for_reset(session_manager: SessionManager) -> None:
 
 def _perform_database_reset_steps(temp_manager: SessionManager) -> tuple[bool, Any]:
     """Perform database reset steps and return success status and session.
-    
+
     Returns:
         Tuple of (success, recreation_session)
     """
@@ -1467,7 +1467,7 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 # Merged Action 10/11 wrapper: GEDCOM-first then API fallback
 def _import_search_modules() -> tuple[Any, ...]:
     """Import required modules for GEDCOM and API search.
-    
+
     Returns:
         Tuple of imported functions and modules
     """
@@ -1497,7 +1497,7 @@ def _import_search_modules() -> tuple[Any, ...]:
 
 def _perform_gedcom_search(gedcom_path: Any, criteria: dict, scoring_weights: dict, date_flex: Any) -> tuple[Any, list]:
     """Perform GEDCOM search and return data and matches.
-    
+
     Returns:
         Tuple of (gedcom_data, gedcom_matches)
     """
@@ -1521,7 +1521,7 @@ def _perform_gedcom_search(gedcom_path: Any, criteria: dict, scoring_weights: di
 
 def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_results: int) -> list:
     """Perform API search as fallback when GEDCOM has no matches.
-    
+
     Returns:
         List of API matches
     """
@@ -1829,7 +1829,7 @@ def _show_analytics_dashboard() -> None:
 
 def _show_base_cache_stats() -> bool:
     """Show base disk cache statistics.
-    
+
     Returns:
         True if stats were displayed, False otherwise
     """
@@ -1854,7 +1854,7 @@ def _show_base_cache_stats() -> bool:
 
 def _show_unified_cache_stats() -> bool:
     """Show unified cache manager statistics.
-    
+
     Returns:
         True if any stats were displayed, False otherwise
     """
@@ -1906,7 +1906,7 @@ def _show_unified_cache_stats() -> bool:
 
 def _show_tree_stats_cache() -> bool:
     """Show tree statistics cache.
-    
+
     Returns:
         True if stats were displayed, False otherwise
     """
@@ -1931,7 +1931,7 @@ def _show_tree_stats_cache() -> bool:
 
 def _show_performance_cache_stats() -> bool:
     """Show performance cache (GEDCOM) statistics.
-    
+
     Returns:
         True if stats were displayed, False otherwise
     """
@@ -2163,7 +2163,7 @@ def _check_startup_status(session_manager: SessionManager) -> None:
 
 def _check_lm_studio_running() -> bool:
     """Check if LM Studio process is running.
-    
+
     Returns:
         True if LM Studio is running, False otherwise
     """
@@ -2181,7 +2181,7 @@ def _check_lm_studio_running() -> bool:
 
 def _validate_local_llm_config(config_schema: Any) -> bool:
     """Validate local LLM configuration.
-    
+
     Returns:
         True if validation passed, False otherwise
     """
@@ -2220,12 +2220,12 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
 
 def _validate_cloud_provider(provider_name: str, api_key: Any, model: Any) -> bool:
     """Validate cloud AI provider configuration.
-    
+
     Args:
         provider_name: Name of the provider (DeepSeek, Gemini, etc.)
         api_key: API key for the provider
         model: Model name
-        
+
     Returns:
         True if configured, False otherwise
     """
@@ -2267,7 +2267,7 @@ def _validate_ai_provider_on_startup() -> None:
 
 def _initialize_application() -> "SessionManager":
     """Initialize application logging and configuration.
-    
+
     Returns:
         SessionManager instance
     """
@@ -2316,7 +2316,7 @@ def _pre_authenticate_ms_graph() -> None:
 
 def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
     """Clean up session manager on shutdown.
-    
+
     Args:
         session_manager: SessionManager instance to clean up
     """

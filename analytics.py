@@ -92,10 +92,10 @@ def log_event(
 
 def _parse_analytics_line(line: str) -> Optional[dict[str, Any]]:
     """Parse a single analytics log line.
-    
+
     Args:
         line: JSON line from analytics log
-        
+
     Returns:
         Parsed object or None if invalid
     """
@@ -110,10 +110,10 @@ def _parse_analytics_line(line: str) -> Optional[dict[str, Any]]:
 
 def _parse_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
     """Parse timestamp from analytics object.
-    
+
     Args:
         obj: Analytics object with 'ts' field
-        
+
     Returns:
         Parsed datetime or None if invalid
     """
@@ -128,7 +128,7 @@ def _parse_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
 
 def _initialize_action_entry() -> dict[str, Any]:
     """Initialize a new action summary entry.
-    
+
     Returns:
         Dictionary with counters and totals initialized to zero
     """
@@ -143,7 +143,7 @@ def _initialize_action_entry() -> dict[str, Any]:
 
 def _update_action_entry(ent: dict[str, Any], obj: dict[str, Any]) -> None:
     """Update action entry with data from analytics object.
-    
+
     Args:
         ent: Action entry dictionary to update
         obj: Analytics object with run data
@@ -162,7 +162,7 @@ def _update_action_entry(ent: dict[str, Any], obj: dict[str, Any]) -> None:
 
 def _finalize_action_entry(ent: dict[str, Any]) -> None:
     """Finalize action entry by computing averages and cleaning up.
-    
+
     Args:
         ent: Action entry dictionary to finalize
     """

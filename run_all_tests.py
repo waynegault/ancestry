@@ -790,11 +790,11 @@ def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
 
 def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
     """Extract count from line containing keyword.
-    
+
     Args:
         line: Line to parse
         keyword: Keyword to search for (e.g., "Passed:", "Failed:")
-        
+
     Returns:
         Extracted count or None if not found
     """
@@ -810,10 +810,10 @@ def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
 
 def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[Optional[int], Optional[int]]:
     """Find passed and failed counts in output lines.
-    
+
     Args:
         stdout_lines: List of output lines to search
-        
+
     Returns:
         Tuple of (passed_count, failed_count) or (None, None) if not found
     """

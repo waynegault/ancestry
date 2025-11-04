@@ -722,7 +722,7 @@ class ConfigManager:
 
     def _load_env_var_if_present(self, api_config: dict[str, Any], env_var: str, config_key: str) -> None:
         """Load environment variable into config if present.
-        
+
         Args:
             api_config: Dictionary to update with config value
             env_var: Environment variable name to check
@@ -1178,6 +1178,7 @@ def _test_config_error_handling():
 def _test_requests_per_second_loading():
     """Test REQUESTS_PER_SECOND environment variable loading."""
     import os
+
     from dotenv import load_dotenv
 
     # Save and clear the environment variable
@@ -1192,7 +1193,7 @@ def _test_requests_per_second_loading():
     load_dotenv(override=True)
     if "REQUESTS_PER_SECOND" in os.environ:
         del os.environ["REQUESTS_PER_SECOND"]
-    
+
     manager = ConfigManager()
     config = manager.load_config()
     default_rps = config.api.requests_per_second
@@ -1221,7 +1222,7 @@ def _test_requests_per_second_loading():
         os.environ["REQUESTS_PER_SECOND"] = original_value
     elif "REQUESTS_PER_SECOND" in os.environ:
         del os.environ["REQUESTS_PER_SECOND"]
-    
+
     # Reload dotenv to restore .env file values
     load_dotenv(override=True)
 
