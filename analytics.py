@@ -90,6 +90,94 @@ def log_event(
         logger.debug(f"analytics.log_event skipped due to error: {e}")
 
 
+def _parse_analytics_line(line: str) -> Optional[dict[str, Any]]:
+    """Parse a single analytics log line.
+    
+    Args:
+        line: JSON line from analytics log
+        
+    Returns:
+        Parsed object or None if invalid
+    """
+    line_s = line.strip()
+    if not line_s:
+        return None
+    try:
+        return json.loads(line_s)
+    except Exception:
+        return None
+
+
+def _parse_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
+    """Parse timestamp from analytics object.
+    
+    Args:
+        obj: Analytics object with 'ts' field
+        
+    Returns:
+        Parsed datetime or None if invalid
+    """
+    ts_str = obj.get("ts")
+    if not ts_str:
+        return None
+    try:
+        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _initialize_action_entry() -> dict[str, Any]:
+    """Initialize a new action summary entry.
+    
+    Returns:
+        Dictionary with counters and totals initialized to zero
+    """
+    return {
+        "runs": 0,
+        "success": 0,
+        "duration_total": 0.0,
+        "mem_total": 0.0,
+        "mem_samples": 0,
+    }
+
+
+def _update_action_entry(ent: dict[str, Any], obj: dict[str, Any]) -> None:
+    """Update action entry with data from analytics object.
+    
+    Args:
+        ent: Action entry dictionary to update
+        obj: Analytics object with run data
+    """
+    ent["runs"] += 1
+    if obj.get("success"):
+        ent["success"] += 1
+    dur = obj.get("duration_sec")
+    if isinstance(dur, (int, float)):
+        ent["duration_total"] += float(dur)
+    mem = obj.get("mem_used_mb")
+    if isinstance(mem, (int, float)):
+        ent["mem_total"] += float(mem)
+        ent["mem_samples"] += 1
+
+
+def _finalize_action_entry(ent: dict[str, Any]) -> None:
+    """Finalize action entry by computing averages and cleaning up.
+    
+    Args:
+        ent: Action entry dictionary to finalize
+    """
+    runs = max(1, ent["runs"])  # avoid div by zero
+    ent["success_rate"] = ent["success"] / runs
+    ent["avg_duration_sec"] = ent["duration_total"] / runs
+    if ent["mem_samples"] > 0:
+        ent["avg_mem_mb"] = ent["mem_total"] / ent["mem_samples"]
+    else:
+        ent["avg_mem_mb"] = None
+    # drop raw totals to keep clean
+    for k in ("duration_total", "mem_total", "mem_samples"):
+        ent.pop(k, None)
+
+
 def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
     """Compute a simple rollup over the last N days.
 
@@ -104,54 +192,23 @@ def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with path.open("r", encoding="utf-8") as f:
             for line in f:
-                line_s = line.strip()
-                if not line_s:
+                obj = _parse_analytics_line(line)
+                if obj is None:
                     continue
-                try:
-                    obj = json.loads(line_s)
-                except Exception:
-                    continue
-                ts_str = obj.get("ts")
-                try:
-                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")) if ts_str else None
-                except Exception:
-                    ts = None
+                    
+                ts = _parse_timestamp(obj)
                 if ts is None or ts < cutoff:
                     continue
 
                 action = obj.get("action_name", "unknown")
                 if action not in summary:
-                    summary[action] = {
-                        "runs": 0,
-                        "success": 0,
-                        "duration_total": 0.0,
-                        "mem_total": 0.0,
-                        "mem_samples": 0,
-                    }
-                ent = summary[action]
-                ent["runs"] += 1
-                if obj.get("success"):
-                    ent["success"] += 1
-                dur = obj.get("duration_sec")
-                if isinstance(dur, (int, float)):
-                    ent["duration_total"] += float(dur)
-                mem = obj.get("mem_used_mb")
-                if isinstance(mem, (int, float)):
-                    ent["mem_total"] += float(mem)
-                    ent["mem_samples"] += 1
+                    summary[action] = _initialize_action_entry()
+                    
+                _update_action_entry(summary[action], obj)
 
         # finalize averages
         for _action, ent in summary.items():
-            runs = max(1, ent["runs"])  # avoid div by zero
-            ent["success_rate"] = ent["success"] / runs
-            ent["avg_duration_sec"] = ent["duration_total"] / runs
-            if ent["mem_samples"] > 0:
-                ent["avg_mem_mb"] = ent["mem_total"] / ent["mem_samples"]
-            else:
-                ent["avg_mem_mb"] = None
-            # drop raw totals to keep clean
-            for k in ("duration_total", "mem_total", "mem_samples"):
-                ent.pop(k, None)
+            _finalize_action_entry(ent)
 
     except Exception as e:
         logger.debug(f"analytics.generate_weekly_summary failed: {e}")
