@@ -4830,6 +4830,46 @@ def _process_tree_data_safe(
         return None, "none"  # type: ignore
 
 
+def _populate_bulk_data_dict(
+    prepared_data: dict[str, Any],
+    person_op_data: Optional[dict[str, Any]],
+    dna_op_data: Optional[dict[str, Any]],
+    tree_op_data: Optional[dict[str, Any]],
+    tree_operation_status: Literal["create", "update", "none"],
+    is_new_person: bool
+) -> None:
+    """Populate bulk data dictionary with operation data."""
+    if person_op_data:
+        prepared_data["person"] = person_op_data
+    if dna_op_data:
+        prepared_data["dna_match"] = dna_op_data
+    if is_new_person:
+        if tree_op_data and tree_operation_status == "create":
+            prepared_data["family_tree"] = tree_op_data
+    else:
+        if tree_op_data:
+            prepared_data["family_tree"] = tree_op_data
+
+
+def _determine_overall_status(
+    is_new_person: bool,
+    person_fields_changed: bool,
+    dna_op_data: Optional[dict[str, Any]],
+    tree_op_data: Optional[dict[str, Any]],
+    tree_operation_status: Literal["create", "update", "none"]
+) -> Literal["new", "updated", "skipped", "error"]:
+    """Determine overall status based on operation data."""
+    if is_new_person:
+        return "new"
+    if (
+        person_fields_changed
+        or dna_op_data
+        or (tree_op_data and tree_operation_status != "none")
+    ):
+        return "updated"
+    return "skipped"
+
+
 def _assemble_bulk_data(
     is_new_person: bool,
     person_op_data: Optional[dict[str, Any]],
@@ -4845,30 +4885,15 @@ def _assemble_bulk_data(
         "family_tree": None,
     }
 
-    if is_new_person:
-        overall_status: Literal["new", "updated", "skipped", "error"] = "new"
-        if person_op_data:
-            prepared_data_for_bulk["person"] = person_op_data
-        if dna_op_data:
-            prepared_data_for_bulk["dna_match"] = dna_op_data
-        if tree_op_data and tree_operation_status == "create":
-            prepared_data_for_bulk["family_tree"] = tree_op_data
-    else:
-        if person_op_data:
-            prepared_data_for_bulk["person"] = person_op_data
-        if dna_op_data:
-            prepared_data_for_bulk["dna_match"] = dna_op_data
-        if tree_op_data:
-            prepared_data_for_bulk["family_tree"] = tree_op_data
+    _populate_bulk_data_dict(
+        prepared_data_for_bulk, person_op_data, dna_op_data,
+        tree_op_data, tree_operation_status, is_new_person
+    )
 
-        if (
-            person_fields_changed
-            or dna_op_data
-            or (tree_op_data and tree_operation_status != "none")
-        ):
-            overall_status = "updated"
-        else:
-            overall_status = "skipped"
+    overall_status = _determine_overall_status(
+        is_new_person, person_fields_changed, dna_op_data,
+        tree_op_data, tree_operation_status
+    )
 
     return prepared_data_for_bulk, overall_status
 
