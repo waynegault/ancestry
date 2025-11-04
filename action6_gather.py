@@ -4598,6 +4598,40 @@ def _check_tree_update_needed(
     return False
 
 
+def _build_tree_data_dict(
+    match_uuid: str,
+    their_cfpid_final: Optional[str],
+    prefetched_tree_data: dict[str, Any],
+    facts_link: Optional[str],
+    view_in_tree_link: Optional[str],
+    tree_operation: Literal["create", "update", "none"],
+    existing_family_tree: Optional[FamilyTree]
+) -> dict[str, Any]:
+    """Build family tree data dictionary for create/update operations."""
+    tree_person_name = prefetched_tree_data.get("their_firstname", "Unknown")
+    tree_dict_base = {
+        "uuid": match_uuid.upper(),
+        "cfpid": their_cfpid_final,
+        "person_name_in_tree": tree_person_name,
+        "facts_link": facts_link,
+        "view_in_tree_link": view_in_tree_link,
+        "actual_relationship": prefetched_tree_data.get("actual_relationship"),
+        "relationship_path": prefetched_tree_data.get("relationship_path"),
+        "_operation": tree_operation,
+        "_existing_tree_id": (
+            existing_family_tree.id
+            if tree_operation == "update" and existing_family_tree
+            else None
+        ),
+    }
+    # Keep all keys for _operation and _existing_tree_id, otherwise only non-None values
+    return {
+        k: v
+        for k, v in tree_dict_base.items()
+        if v is not None or k in ["_operation", "_existing_tree_id", "uuid"]
+    }
+
+
 def _prepare_family_tree_operation_data(
     existing_family_tree: Optional[FamilyTree],
     prefetched_tree_data: Optional[dict[str, Any]],
@@ -4656,31 +4690,12 @@ def _prepare_family_tree_operation_data(
         tree_operation = "none"
 
     if tree_operation != "none":
-        if prefetched_tree_data:  # Can only build if data was fetched
-            tree_person_name = prefetched_tree_data.get("their_firstname", "Unknown")
-            tree_dict_base = {
-                "uuid": match_uuid.upper(),
-                "cfpid": their_cfpid_final,
-                "person_name_in_tree": tree_person_name,
-                "facts_link": facts_link,
-                "view_in_tree_link": view_in_tree_link,
-                "actual_relationship": prefetched_tree_data.get("actual_relationship"),
-                "relationship_path": prefetched_tree_data.get("relationship_path"),
-                "_operation": tree_operation,
-                "_existing_tree_id": (
-                    existing_family_tree.id
-                    if tree_operation == "update" and existing_family_tree
-                    else None
-                ),
-            }
-            # Keep all keys for _operation and _existing_tree_id, otherwise only non-None values
-            incoming_tree_data = {
-                k: v
-                for k, v in tree_dict_base.items()
-                if v is not None
-                or k in ["_operation", "_existing_tree_id", "uuid"]  # Keep uuid
-            }
-            return incoming_tree_data, tree_operation
+        if prefetched_tree_data:
+            tree_data = _build_tree_data_dict(
+                match_uuid, their_cfpid_final, prefetched_tree_data,
+                facts_link, view_in_tree_link, tree_operation, existing_family_tree
+            )
+            return tree_data, tree_operation
         logger_instance.warning(
             f"{log_ref_short}: FamilyTree needs '{tree_operation}', but tree details not fetched. Skipping."
         )
@@ -5799,6 +5814,43 @@ def _cache_badge_details(match_uuid: str, result_data: dict[str, Any]) -> None:
         logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
 
 
+def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
+    """Process badge details API response."""
+    if not badge_response or not isinstance(badge_response, dict):
+        if isinstance(badge_response, requests.Response):
+            logger.warning(
+                f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
+            )
+        else:
+            logger.warning(
+                f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
+            )
+        return None
+
+    person_badged = badge_response.get("personBadged", {})
+    if not person_badged:
+        logger.warning(
+            f"Badge details response for UUID {match_uuid} missing 'personBadged' key."
+        )
+        return None
+
+    their_cfpid = person_badged.get("personId")
+    raw_firstname = person_badged.get("firstName")
+    formatted_name_val = format_name(raw_firstname)
+    their_firstname_formatted = (
+        formatted_name_val.split()[0]
+        if formatted_name_val and formatted_name_val != "Valued Relative"
+        else "Unknown"
+    )
+
+    return {
+        "their_cfpid": their_cfpid,
+        "their_firstname": their_firstname_formatted,
+        "their_lastname": person_badged.get("lastName", "Unknown"),
+        "their_birth_year": person_badged.get("birthYear"),
+    }
+
+
 def _fetch_batch_badge_details(  # noqa: PLR0911
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[dict[str, Any]]:
@@ -5845,43 +5897,10 @@ def _fetch_batch_badge_details(  # noqa: PLR0911
             referer_url=badge_referer,
         )
 
-        if badge_response and isinstance(badge_response, dict):
-            person_badged = badge_response.get("personBadged", {})
-            if not person_badged:
-                logger.warning(
-                    f"Badge details response for UUID {match_uuid} missing 'personBadged' key."
-                )
-                return None
-
-            their_cfpid = person_badged.get("personId")
-            raw_firstname = person_badged.get("firstName")
-            # Use format_name for consistent name handling
-            formatted_name_val = format_name(raw_firstname)
-            their_firstname_formatted = (
-                formatted_name_val.split()[0]
-                if formatted_name_val and formatted_name_val != "Valued Relative"
-                else "Unknown"
-            )
-
-            result_data = {
-                "their_cfpid": their_cfpid,
-                "their_firstname": their_firstname_formatted,  # Use formatted name
-                "their_lastname": person_badged.get("lastName", "Unknown"),
-                "their_birth_year": person_badged.get("birthYear"),
-            }
-
-            # Cache successful badge details
-            _cache_badge_details(match_uuid, result_data)
-            return result_data
-        if isinstance(badge_response, requests.Response):
-            logger.warning(
-                f"Failed /badgedetails fetch for UUID {match_uuid}. Status: {badge_response.status_code}."
-            )
-            return None
-        logger.warning(
-            f"Invalid badge details response for UUID {match_uuid}. Type: {type(badge_response)}"
-        )
-        return None
+        result = _process_badge_response(badge_response, match_uuid)
+        if result:
+            _cache_badge_details(match_uuid, result)
+        return result
 
     except ConnectionError as conn_err:
         logger.error(
