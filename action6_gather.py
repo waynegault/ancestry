@@ -5638,76 +5638,9 @@ def get_matches(  # noqa: PLR0911
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
 @api_cache("combined_details", CACHE_TTL['combined_details'])
-def _fetch_combined_details(
-    session_manager: SessionManager, match_uuid: str
-) -> Optional[dict[str, Any]]:
-    """
-    Fetches combined match details (DNA stats, Admin/Tester IDs) and profile details
-    (login date, contactable status) for a single match using two API calls.
-
-    Args:
-        session_manager: The active SessionManager instance.
-        match_uuid: The UUID (Sample ID) of the match to fetch details for.
-
-    Returns:
-        A dictionary containing combined details, or None if fetching fails critically.
-        Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
-        longest_shared_segment, last_logged_in_dt, contactable, etc.
-    """
-    # PRIORITY 1: Performance Monitoring Integration
-    api_start_time = time.time()
-
-    # SURGICAL FIX #14: Enhanced Smart Caching using existing global cache system
-    if global_cache is not None:
-        cache_key = f"combined_details_{match_uuid}"
-        try:
-            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-            if cached_data is not ENOVAL and isinstance(cached_data, dict):
-                logger.debug(f"Cache hit for combined details: {match_uuid}")
-                _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
-                return cached_data
-        except Exception as cache_exc:
-            logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
-
-    my_uuid = session_manager.my_uuid
-
-    if not my_uuid or not match_uuid:
-        logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
-        _log_api_performance("combined_details", api_start_time, "error_missing_uuid")
-        return None
-
-    # SURGICAL FIX #20: Universal session validation with SessionManager death detection
-    if session_manager.should_halt_operations():
-        logger.warning(f"_fetch_combined_details: Halting due to session death cascade for UUID {match_uuid}")
-        raise ConnectionError(
-            f"Session death cascade detected - halting combined details fetch (UUID: {match_uuid})"
-        )
-
-    # Traditional session check with enhanced logging
-    if not session_manager.is_sess_valid():
-        # Update session health monitoring in SessionManager
-        session_manager.check_session_health()
-
-        logger.error(
-            f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
-        )
-
-    combined_data: dict[str, Any] = {}
-    details_url = urljoin(
-        config_schema.api.base_url,
-        f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
-    )
-    urljoin(
-        config_schema.api.base_url,
-        f"/discoveryui-matches/compare/{my_uuid}/with/{match_uuid}",
-    )
-    logger.debug(f"Fetching /details API for UUID {match_uuid}...")
-
-    # Use headers from working cURL command
-    details_headers = {
+def _get_api_headers() -> dict[str, str]:
+    """Get standard API headers for match details requests."""
+    return {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
         "cache-control": "no-cache",
@@ -5724,13 +5657,55 @@ def _fetch_combined_details(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     }
 
-    # Apply the same cookie sync fix that worked for Match list API
-    # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
+
+def _sync_session_cookies(session_manager: SessionManager) -> None:
+    """Sync session cookies if available."""
     try:
         if hasattr(session_manager, '_sync_cookies_to_requests'):
             session_manager._sync_cookies_to_requests()
     except Exception as cookie_sync_error:
         logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
+
+
+def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
+    """Parse match details API response."""
+    if details_response and isinstance(details_response, dict):
+        relationship_part = details_response.get("relationship", {})
+        return {
+            "admin_profile_id": details_response.get("adminUcdmId"),
+            "admin_username": details_response.get("adminDisplayName"),
+            "tester_profile_id": details_response.get("userId"),
+            "tester_username": details_response.get("displayName"),
+            "tester_initials": details_response.get("displayInitials"),
+            "gender": details_response.get("subjectGender"),
+            "shared_segments": relationship_part.get("sharedSegments"),
+            "longest_shared_segment": relationship_part.get("longestSharedSegment"),
+            "meiosis": relationship_part.get("meiosis"),
+            "from_my_fathers_side": bool(details_response.get("fathersSide", False)),
+            "from_my_mothers_side": bool(details_response.get("mothersSide", False)),
+        }
+    elif isinstance(details_response, requests.Response):
+        logger.error(
+            f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
+        )
+    else:
+        logger.error(
+            f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}"
+        )
+    return None
+
+
+def _fetch_match_details_api(
+    session_manager: SessionManager, my_uuid: str, match_uuid: str
+) -> Optional[dict[str, Any]]:
+    """Fetch match details from API."""
+    details_url = urljoin(
+        config_schema.api.base_url,
+        f"/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true",
+    )
+    logger.debug(f"Fetching /details API for UUID {match_uuid}...")
+
+    _sync_session_cookies(session_manager)
 
     try:
         details_response = _api_req(
@@ -5738,39 +5713,11 @@ def _fetch_combined_details(
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
-            headers=details_headers,
+            headers=_get_api_headers(),
             use_csrf_token=False,
             api_description="Match Details API (Batch)",
         )
-        if details_response and isinstance(details_response, dict):
-            combined_data["admin_profile_id"] = details_response.get("adminUcdmId")
-            combined_data["admin_username"] = details_response.get("adminDisplayName")
-            combined_data["tester_profile_id"] = details_response.get("userId")
-            combined_data["tester_username"] = details_response.get("displayName")
-            combined_data["tester_initials"] = details_response.get("displayInitials")
-            combined_data["gender"] = details_response.get("subjectGender")
-            relationship_part = details_response.get("relationship", {})
-            combined_data["shared_segments"] = relationship_part.get("sharedSegments")
-            combined_data["longest_shared_segment"] = relationship_part.get(
-                "longestSharedSegment"
-            )
-            combined_data["meiosis"] = relationship_part.get("meiosis")
-            combined_data["from_my_fathers_side"] = bool(
-                details_response.get("fathersSide", False)
-            )
-            combined_data["from_my_mothers_side"] = bool(
-                details_response.get("mothersSide", False)
-            )
-        elif isinstance(details_response, requests.Response):
-            logger.error(
-                f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
-            )
-            return None
-        else:
-            logger.error(
-                f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}"
-            )
-            return None
+        return _parse_details_response(details_response, match_uuid)
 
     except ConnectionError as conn_err:
         logger.error(
@@ -5787,163 +5734,225 @@ def _fetch_combined_details(
             raise
         return None
 
-    tester_profile_id_for_api = combined_data.get("tester_profile_id")
-    # Profile ID header available from session manager if needed
 
+def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Optional[dict[str, Any]]:
+    """Check cache for combined details."""
+    if global_cache is not None:
+        cache_key = f"combined_details_{match_uuid}"
+        try:
+            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            if cached_data is not ENOVAL and isinstance(cached_data, dict):
+                logger.debug(f"Cache hit for combined details: {match_uuid}")
+                _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
+                return cached_data
+        except Exception as cache_exc:
+            logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
+    return None
+
+
+def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> Optional[datetime]:
+    """Parse last login date string."""
+    try:
+        if last_login_str.endswith("Z"):
+            return datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
+        else:
+            dt_naive_or_aware = datetime.fromisoformat(last_login_str)
+            return (
+                dt_naive_or_aware.replace(tzinfo=timezone.utc)
+                if dt_naive_or_aware.tzinfo is None
+                else dt_naive_or_aware.astimezone(timezone.utc)
+            )
+    except (ValueError, TypeError) as date_parse_err:
+        logger.warning(
+            f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id}: {date_parse_err}"
+        )
+        return None
+
+
+def _fetch_profile_details_api(
+    session_manager: SessionManager,
+    tester_profile_id: str,
+    match_uuid: str
+) -> Optional[dict[str, Any]]:
+    """Fetch profile details from API."""
+    profile_url = urljoin(
+        config_schema.api.base_url,
+        f"/app-api/express/v1/profiles/details?userId={tester_profile_id.upper()}",
+    )
+    logger.debug(
+        f"Fetching /profiles/details for Profile ID {tester_profile_id} (Match UUID {match_uuid})..."
+    )
+
+    _sync_session_cookies(session_manager)
+
+    try:
+        profile_response = _api_req(
+            url=profile_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=_get_api_headers(),
+            use_csrf_token=False,
+            api_description="Profile Details API (Batch)",
+        )
+        if profile_response and isinstance(profile_response, dict):
+            logger.debug(f"Successfully fetched /profiles/details for {tester_profile_id}.")
+
+            last_login_dt = None
+            last_login_str = profile_response.get("LastLoginDate")
+            if last_login_str:
+                last_login_dt = _parse_last_login_date(last_login_str, tester_profile_id)
+
+            contactable_val = profile_response.get("IsContactable")
+            is_contactable = bool(contactable_val) if contactable_val is not None else False
+
+            profile_data = {
+                "last_logged_in_dt": last_login_dt,
+                "contactable": is_contactable
+            }
+            _cache_profile(tester_profile_id, profile_data)
+            return profile_data
+
+        elif isinstance(profile_response, requests.Response):
+            logger.warning(
+                f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
+            )
+        else:
+            logger.warning(
+                f"Failed /profiles/details fetch for UUID {match_uuid} (Invalid response: {type(profile_response)})."
+            )
+        return None
+
+    except ConnectionError as conn_err:
+        logger.error(
+            f"ConnectionError fetching /profiles/details for {tester_profile_id}: {conn_err}",
+            exc_info=False,
+        )
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error processing /profiles/details for {tester_profile_id}: {e}",
+            exc_info=True,
+        )
+        if isinstance(e, requests.exceptions.RequestException):
+            raise
+        return None
+
+
+def _add_profile_details_to_combined_data(
+    combined_data: dict[str, Any],
+    session_manager: SessionManager,
+    match_uuid: str
+) -> None:
+    """Add profile details to combined data."""
     combined_data["last_logged_in_dt"] = None
     combined_data["contactable"] = False
 
-    if not tester_profile_id_for_api:
+    tester_profile_id = combined_data.get("tester_profile_id")
+    if not tester_profile_id:
         logger.debug(
             f"Skipping /profiles/details fetch for {match_uuid}: Tester profile ID not found in /details."
         )
-    # Removed check for my_profile_id_header as it's not used for this API call's headers.
-    # The important part is session validity.
-    elif not session_manager.is_sess_valid():
+        return
+
+    if not session_manager.is_sess_valid():
         logger.error(
-            f"_fetch_combined_details: WebDriver session invalid before profile fetch for {tester_profile_id_for_api}."
+            f"_fetch_combined_details: WebDriver session invalid before profile fetch for {tester_profile_id}."
         )
         raise ConnectionError(
-            f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id_for_api})"
+            f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id})"
         )
+
+    cached_profile = _get_cached_profile(tester_profile_id)
+    if cached_profile is not None:
+        combined_data["last_logged_in_dt"] = cached_profile.get("last_logged_in_dt")
+        combined_data["contactable"] = cached_profile.get("contactable", False)
     else:
-        # OPTIMIZATION: Check cache first to avoid redundant API calls
-        cached_profile = _get_cached_profile(tester_profile_id_for_api)
-        if cached_profile is not None:
-            # Apply cached profile data to combined_data
-            combined_data["last_logged_in_dt"] = cached_profile.get("last_logged_in_dt")
-            combined_data["contactable"] = cached_profile.get("contactable", False)
-        else:
-            # Cache miss - need to fetch from API
-            profile_url = urljoin(
-                config_schema.api.base_url,
-                f"/app-api/express/v1/profiles/details?userId={tester_profile_id_for_api.upper()}",
-            )
-            logger.debug(
-                f"Fetching /profiles/details for Profile ID {tester_profile_id_for_api} (Match UUID {match_uuid})..."
-            )
+        profile_data = _fetch_profile_details_api(session_manager, tester_profile_id, match_uuid)
+        if profile_data:
+            combined_data["last_logged_in_dt"] = profile_data.get("last_logged_in_dt")
+            combined_data["contactable"] = profile_data.get("contactable", False)
 
-            # Use the same headers as the working cURL command
-            profile_headers = {
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-                "cache-control": "no-cache",
-                "pragma": "no-cache",
-                "priority": "u=0, i",
-                "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
-                "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"Windows"',
-                "sec-fetch-dest": "document",
-                "sec-fetch-mode": "navigate",
-                "sec-fetch-site": "none",
-                "sec-fetch-user": "?1",
-                "upgrade-insecure-requests": "1",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-            }
 
-            # Apply cookie sync for Profile Details API as well
-            # Session-level cookie sync is handled by SessionManager; avoid per-call sync here
-            try:
-                if hasattr(session_manager, '_sync_cookies_to_requests'):
-                    session_manager._sync_cookies_to_requests()
-            except Exception as cookie_sync_error:
-                logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
-
-            try:
-                profile_response = _api_req(
-                    url=profile_url,
-                    driver=session_manager.driver,
-                    session_manager=session_manager,
-                    method="GET",
-                    headers=profile_headers,
-                    use_csrf_token=False,
-                    api_description="Profile Details API (Batch)",
-                )
-                if profile_response and isinstance(profile_response, dict):
-                    logger.debug(
-                        f"Successfully fetched /profiles/details for {tester_profile_id_for_api}."
-                    )
-
-                    # Parse last login date
-                    last_login_dt = None
-                    last_login_str = profile_response.get("LastLoginDate")
-                    if last_login_str:
-                        try:
-                            if last_login_str.endswith("Z"):
-                                last_login_dt = datetime.fromisoformat(
-                                    last_login_str.replace("Z", "+00:00")
-                                )
-                            else:  # Assuming it might be naive or already have offset
-                                dt_naive_or_aware = datetime.fromisoformat(last_login_str)
-                                last_login_dt = (
-                                    dt_naive_or_aware.replace(tzinfo=timezone.utc)
-                                    if dt_naive_or_aware.tzinfo is None
-                                    else dt_naive_or_aware.astimezone(timezone.utc)
-                                )
-                        except (ValueError, TypeError) as date_parse_err:
-                            logger.warning(
-                                f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id_for_api}: {date_parse_err}"
-                            )
-
-                    # Parse contactable status
-                    contactable_val = profile_response.get("IsContactable")
-                    is_contactable = (
-                        bool(contactable_val) if contactable_val is not None else False
-                    )
-
-                    # Update combined_data with fetched values
-                    combined_data["last_logged_in_dt"] = last_login_dt
-                    combined_data["contactable"] = is_contactable
-
-                    # OPTIMIZATION: Cache the successful response for future use
-                    _cache_profile(tester_profile_id_for_api, {
-                        "last_logged_in_dt": last_login_dt,
-                        "contactable": is_contactable
-                    })
-
-                elif isinstance(profile_response, requests.Response):
-                    logger.warning(
-                        f"Failed /profiles/details fetch for UUID {match_uuid}. Status: {profile_response.status_code}."
-                    )
-                else:
-                    logger.warning(
-                        f"Failed /profiles/details fetch for UUID {match_uuid} (Invalid response: {type(profile_response)})."
-                    )
-
-            except ConnectionError as conn_err:
-                logger.error(
-                    f"ConnectionError fetching /profiles/details for {tester_profile_id_for_api}: {conn_err}",
-                    exc_info=False,
-                )
-                raise
-            except Exception as e:
-                logger.error(
-                    f"Error processing /profiles/details for {tester_profile_id_for_api}: {e}",
-                    exc_info=True,
-                )
-                if isinstance(e, requests.exceptions.RequestException):
-                    raise
-
-    # SURGICAL FIX #14: Cache successful results using existing global cache system
+def _cache_combined_details(combined_data: dict[str, Any], match_uuid: str) -> None:
+    """Cache combined details."""
     if combined_data and global_cache is not None:
         cache_key = f"combined_details_{match_uuid}"
         try:
-            # Cache for a shorter TTL since match details can change
             global_cache.set(
                 cache_key,
                 combined_data,
-                expire=3600,  # 1 hour TTL for combined details
+                expire=3600,
                 retry=True
             )
             logger.debug(f"Cached combined details for {match_uuid}")
         except Exception as cache_exc:
             logger.debug(f"Failed to cache combined details for {match_uuid}: {cache_exc}")
 
-    # PRIORITY 1: Performance Monitoring - Log completion
-    if combined_data:
-        _log_api_performance("combined_details", api_start_time, "success", session_manager)
-    else:
-        _log_api_performance("combined_details", api_start_time, "failed", session_manager)
+
+def _validate_session_for_combined_details(session_manager: SessionManager, match_uuid: str) -> None:
+    """Validate session for combined details fetch."""
+    if session_manager.should_halt_operations():
+        logger.warning(f"_fetch_combined_details: Halting due to session death cascade for UUID {match_uuid}")
+        raise ConnectionError(
+            f"Session death cascade detected - halting combined details fetch (UUID: {match_uuid})"
+        )
+
+    if not session_manager.is_sess_valid():
+        session_manager.check_session_health()
+        logger.error(
+            f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
+        )
+        raise ConnectionError(
+            f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
+        )
+
+
+def _fetch_combined_details(
+    session_manager: SessionManager, match_uuid: str
+) -> Optional[dict[str, Any]]:
+    """
+    Fetches combined match details (DNA stats, Admin/Tester IDs) and profile details
+    (login date, contactable status) for a single match using two API calls.
+
+    Args:
+        session_manager: The active SessionManager instance.
+        match_uuid: The UUID (Sample ID) of the match to fetch details for.
+
+    Returns:
+        A dictionary containing combined details, or None if fetching fails critically.
+        Includes fields like: tester_profile_id, admin_profile_id, shared_segments,
+        longest_shared_segment, last_logged_in_dt, contactable, etc.
+    """
+    api_start_time = time.time()
+
+    cached_data = _check_combined_details_cache(match_uuid, api_start_time)
+    if cached_data is not None:
+        return cached_data
+
+    my_uuid = session_manager.my_uuid
+    if not my_uuid or not match_uuid:
+        logger.warning(f"_fetch_combined_details: Missing my_uuid ({my_uuid}) or match_uuid ({match_uuid}).")
+        _log_api_performance("combined_details", api_start_time, "error_missing_uuid")
+        return None
+
+    _validate_session_for_combined_details(session_manager, match_uuid)
+
+    combined_data = _fetch_match_details_api(session_manager, my_uuid, match_uuid)
+    if combined_data is None:
+        return None
+
+    _add_profile_details_to_combined_data(
+        combined_data, session_manager, match_uuid
+    )
+
+    _cache_combined_details(combined_data, match_uuid)
+    _log_api_performance(
+        "combined_details",
+        api_start_time,
+        "success" if combined_data else "failed",
+        session_manager
+    )
 
     return combined_data if combined_data else None
 
