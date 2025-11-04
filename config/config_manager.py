@@ -720,53 +720,43 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid ACTION6_COORD_TIMEOUT: {a6_coord_timeout}")
 
+    def _load_env_var_if_present(self, api_config: dict[str, Any], env_var: str, config_key: str) -> None:
+        """Load environment variable into config if present.
+        
+        Args:
+            api_config: Dictionary to update with config value
+            env_var: Environment variable name to check
+            config_key: Key to use in api_config dictionary
+        """
+        value = os.getenv(env_var)
+        if value:
+            api_config[config_key] = value
+
     def _load_api_keys_from_env(self, config: dict[str, Any]) -> None:
         """Load API keys configuration from environment variables."""
         api_config = {}
 
-        # Ancestry credentials
-        ancestry_username = os.getenv("ANCESTRY_USERNAME")
-        if ancestry_username:
-            api_config["username"] = ancestry_username
+        # Define mapping of environment variables to config keys
+        env_mappings = [
+            # Ancestry credentials
+            ("ANCESTRY_USERNAME", "username"),
+            ("ANCESTRY_PASSWORD", "password"),
+            # DeepSeek API configuration
+            ("DEEPSEEK_API_KEY", "deepseek_api_key"),
+            ("DEEPSEEK_AI_MODEL", "deepseek_ai_model"),
+            ("DEEPSEEK_AI_BASE_URL", "deepseek_ai_base_url"),
+            # Google API configuration
+            ("GOOGLE_API_KEY", "google_api_key"),
+            ("GOOGLE_AI_MODEL", "google_ai_model"),
+            # Local LLM API configuration
+            ("LOCAL_LLM_API_KEY", "local_llm_api_key"),
+            ("LOCAL_LLM_MODEL", "local_llm_model"),
+            ("LOCAL_LLM_BASE_URL", "local_llm_base_url"),
+        ]
 
-        ancestry_password = os.getenv("ANCESTRY_PASSWORD")
-        if ancestry_password:
-            api_config["password"] = ancestry_password
-
-        # DeepSeek API configuration
-        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-        if deepseek_api_key:
-            api_config["deepseek_api_key"] = deepseek_api_key
-
-        deepseek_ai_model = os.getenv("DEEPSEEK_AI_MODEL")
-        if deepseek_ai_model:
-            api_config["deepseek_ai_model"] = deepseek_ai_model
-
-        deepseek_ai_base_url = os.getenv("DEEPSEEK_AI_BASE_URL")
-        if deepseek_ai_base_url:
-            api_config["deepseek_ai_base_url"] = deepseek_ai_base_url
-
-        # Google API configuration
-        google_api_key = os.getenv("GOOGLE_API_KEY")
-        if google_api_key:
-            api_config["google_api_key"] = google_api_key
-
-        google_ai_model = os.getenv("GOOGLE_AI_MODEL")
-        if google_ai_model:
-            api_config["google_ai_model"] = google_ai_model
-
-        # Local LLM API configuration
-        local_llm_api_key = os.getenv("LOCAL_LLM_API_KEY")
-        if local_llm_api_key:
-            api_config["local_llm_api_key"] = local_llm_api_key
-
-        local_llm_model = os.getenv("LOCAL_LLM_MODEL")
-        if local_llm_model:
-            api_config["local_llm_model"] = local_llm_model
-
-        local_llm_base_url = os.getenv("LOCAL_LLM_BASE_URL")
-        if local_llm_base_url:
-            api_config["local_llm_base_url"] = local_llm_base_url
+        # Load all environment variables using helper method
+        for env_var, config_key in env_mappings:
+            self._load_env_var_if_present(api_config, env_var, config_key)
 
         if api_config:
             config["api"] = api_config
