@@ -1440,10 +1440,24 @@ def _lookup_existing_persons(
         # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
         uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
 
+        # DEBUG: Log first 3 UUIDs being looked up
+        sample_uuids = list(uuids_norm)[:3]
+        logger.info(f"Sample UUIDs being looked up: {sample_uuids}")
+
+        # DEBUG: Check if data exists using raw SQL
+        from sqlalchemy import text
+        first_uuid = sample_uuids[0] if sample_uuids else None
+        if first_uuid:
+            raw_count = session.execute(
+                text("SELECT COUNT(*) FROM people WHERE uuid = :uuid AND deleted_at IS NULL"),
+                {"uuid": first_uuid}
+            ).scalar()
+            logger.info(f"Raw SQL count for UUID {first_uuid}: {raw_count}")
+
         existing_persons = (
             session.query(Person)
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .filter(Person.deleted_at is None)  # type: ignore  # Exclude soft-deleted
+            .filter(Person.deleted_at.is_(None))  # type: ignore  # Exclude soft-deleted
             .filter(Person.uuid.in_(uuids_norm))  # type: ignore
             .all()
         )
@@ -1453,6 +1467,13 @@ def _lookup_existing_persons(
             for person in existing_persons
             if person.uuid is not None
         }
+
+        # DEBUG: Log first 3 UUIDs found
+        if existing_persons_map:
+            sample_found = list(existing_persons_map.keys())[:3]
+            logger.info(f"Sample UUIDs found in DB: {sample_found}")
+        else:
+            logger.warning("No existing persons found in database!")
 
         logger.debug(
             f"Found {len(existing_persons_map)} existing Person records for this batch."
@@ -3186,12 +3207,15 @@ def _add_existing_ids_to_map(
     # data in prepared_bulk_data. This handles the case where all persons already exist
     # and were filtered out from Person INSERT operations, but we still need their IDs
     # to properly handle DNA match UPDATE operations.
+    added_count = 0
     for uuid_val, person in existing_persons_map.items():
         if uuid_val not in all_person_ids_map:
             person_id_val = getattr(person, "id", None)
             if person_id_val is not None:
                 all_person_ids_map[uuid_val] = person_id_val
-                logger.debug(f"Added existing person ID to map: UUID={uuid_val}, ID={person_id_val}")
+                added_count += 1
+    if added_count > 0:
+        logger.info(f"Added {added_count} existing person IDs to map from existing_persons_map")
 
 
 def _create_master_id_map(
@@ -3211,11 +3235,11 @@ def _create_master_id_map(
     Returns:
         Master ID map (UUID -> Person ID)
     """
-    logger.debug(f"Creating master ID map: created_person_map has {len(created_person_map)} entries, person_updates has {len(person_updates)} entries, existing_persons_map has {len(existing_persons_map)} entries")
+    logger.info(f"Creating master ID map: created_person_map={len(created_person_map)}, person_updates={len(person_updates)}, existing_persons_map={len(existing_persons_map)}")
     all_person_ids_map: dict[str, int] = created_person_map.copy()
     _add_update_ids_to_map(all_person_ids_map, person_updates)
     _add_existing_ids_to_map(all_person_ids_map, prepared_bulk_data, existing_persons_map)
-    logger.debug(f"Master ID map created with {len(all_person_ids_map)} total entries")
+    logger.info(f"Master ID map created with {len(all_person_ids_map)} total entries")
     return all_person_ids_map
 
 
@@ -3362,7 +3386,21 @@ def _classify_dna_match_operations(
             continue
 
         op_data = _prepare_dna_match_data(dna_data, person_id)
+        
+        # FIX: Double-check for existing DnaMatch record even if not in existing_dna_matches_map
+        # This handles cases where the record was created in a previous batch in the same run
         existing_match_id = existing_dna_matches_map.get(person_id)
+        if not existing_match_id:
+            # Query database directly to ensure we don't miss recently created records
+            try:
+                db_match = session.query(DnaMatch.id).filter(
+                    DnaMatch.people_id == person_id
+                ).first()
+                if db_match:
+                    existing_match_id = db_match.id
+                    logger.debug(f"Found existing DnaMatch (ID={existing_match_id}) for PersonID {person_id} via direct query")
+            except Exception as e:
+                logger.warning(f"Direct DnaMatch query failed for PersonID {person_id}: {e}")
 
         if existing_match_id:
             # Prepare for UPDATE
@@ -3470,7 +3508,8 @@ def _bulk_update_dna_matches(
         core_map, ethnicity_map = _separate_core_and_ethnicity(update_map)
         core_update_mappings.append(core_map)
         if ethnicity_map:
-            ethnicity_updates.append((update_map["id"], ethnicity_map))
+            # FIX: Use people_id instead of id for ethnicity updates
+            ethnicity_updates.append((update_map["people_id"], ethnicity_map))
 
     # Bulk update core data
     if core_update_mappings:
@@ -3479,8 +3518,8 @@ def _bulk_update_dna_matches(
 
     # Apply ethnicity data
     if ethnicity_updates:
-        for match_id, ethnicity_data in ethnicity_updates:
-            _apply_ethnicity_data(session, match_id, ethnicity_data)
+        for people_id, ethnicity_data in ethnicity_updates:
+            _apply_ethnicity_data(session, people_id, ethnicity_data)
         session.flush()
         logger.debug(f"Applied ethnicity data to {len(ethnicity_updates)} updated DnaMatch records")
 
@@ -3508,6 +3547,13 @@ def _process_dna_match_operations(
 
     _bulk_insert_dna_matches(session, dna_insert_data)
     _bulk_update_dna_matches(session, dna_update_mappings)
+    
+    # FIX: Expire session cache after bulk operations to ensure subsequent queries
+    # can see newly inserted/updated records. This prevents UNIQUE constraint errors
+    # when the same person is processed in subsequent batches.
+    if dna_insert_data or dna_update_mappings:
+        session.expire_all()
+        logger.debug("Session cache expired after DnaMatch bulk operations")
 
 
 def _prepare_family_tree_inserts(
@@ -3695,8 +3741,8 @@ def _execute_bulk_db_operations(
             # Use helper function to handle recovery
             # Note: insert_data might not be available in this exception scope, pass None for safe recovery
             return _handle_integrity_error_recovery(session, None)
-        elif "UNIQUE constraint failed: dna_match.people_id" in error_str:
-            logger.error(f"UNIQUE constraint violation: dna_match.people_id already exists. This indicates the code tried to INSERT when it should UPDATE.")
+        if "UNIQUE constraint failed: dna_match.people_id" in error_str:
+            logger.error("UNIQUE constraint violation: dna_match.people_id already exists. This indicates the code tried to INSERT when it should UPDATE.")
             logger.error(f"Error details: {integrity_err}")
             # Roll back the session to clear the error state
             session.rollback()
@@ -3877,7 +3923,9 @@ def _process_batch_lookups(
     """Process batch lookups and identify candidates."""
     logger.debug(f"Batch {current_page}: Looking up existing persons...")
     uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
+    logger.info(f"Batch {current_page}: Looking up {len(uuids_on_page)} UUIDs in database...")
     existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
+    logger.info(f"Batch {current_page}: Found {len(existing_persons_map)} existing persons in database")
 
     logger.debug(f"Batch {current_page}: Identifying candidates...")
     fetch_candidates_uuid, matches_to_process_later, skipped_count = (
