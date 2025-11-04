@@ -19,10 +19,10 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 
 from typing import Any
 
-from core.enhanced_error_recovery import with_api_recovery, with_enhanced_recovery
+from core.enhanced_error_recovery import with_enhanced_recovery
 
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import ProgressIndicator, create_progress_indicator
+from core.progress_indicators import create_progress_indicator
 
 
 # Performance monitoring helper with session manager integration
@@ -90,9 +90,7 @@ def _update_session_performance_tracking(session_manager, duration: float, _resp
         pass
 
 # FINAL OPTIMIZATION 1: Progressive Processing Integration
-def _progress_callback(progress: float) -> None:
-    """Progress callback for large dataset processing"""
-    logger.info(f"Processing progress: {progress:.1%} complete")
+# Removed unused _progress_callback function
 
 # === CORE INFRASTRUCTURE ===
 # FINAL OPTIMIZATION 1: Progressive Processing Import
@@ -110,9 +108,7 @@ from standard_imports import setup_module
 
 # === PERFORMANCE OPTIMIZATIONS ===
 from utils import (
-    CM_VALUE_PATTERN,
     JSONP_PATTERN,
-    fast_json_dumps,
     fast_json_loads,
 )
 
@@ -176,9 +172,8 @@ import logging
 import random
 import re
 import sys
-import threading
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal, Optional
@@ -189,7 +184,6 @@ import cloudscraper
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # For checking cache misses
-from requests.cookies import RequestsCookieJar
 from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -201,16 +195,13 @@ from tqdm.auto import tqdm  # Progress bar
 from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
 from error_handling import (
-    AncestryException,
     AuthenticationExpiredError,
     BrowserSessionError,
     DatabaseConnectionError,
-    ErrorContext,
     NetworkTimeoutError,
     RetryableError,
     circuit_breaker,
     error_context,
-    graceful_degradation,
     retry_on_failure,
     timeout_protection,
 )
@@ -238,8 +229,6 @@ from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
 from test_framework import (
     TestSuite,
-    assert_valid_function,
-    create_mock_data,
     suppress_logging,
 )
 from utils import (
@@ -2481,181 +2470,7 @@ def _prepare_bulk_db_data(
 # ===================================================================
 # PHASE 2: ASYNC/AWAIT API FUNCTIONS FOR IMPROVED PERFORMANCE
 # ===================================================================
-
-async def _fetch_match_list_async(
-    session_manager: SessionManager,
-    page: int = 1,
-    page_size: int = 75
-) -> Optional[dict[str, Any]]:
-    """
-    Async version of match list fetching for Phase 2 performance improvements.
-
-    Args:
-        session_manager: SessionManager for authentication
-        page: Page number to fetch
-        page_size: Number of matches per page
-
-    Returns:
-        Match list data or None if failed
-    """
-    from utils import async_api_request  # type: ignore
-
-    try:
-        url = f"https://www.ancestry.co.uk/dna/secure/tests/matchList?page={page}&pageSize={page_size}"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-
-        return await async_api_request(
-            url=url,
-            method="GET",
-            headers=headers,
-            session_manager=session_manager,
-            api_description=f"Match list Page {page}"
-        )
-
-
-    except Exception as e:
-        logger.error(f"Async match list fetch failed for page {page}: {e}")
-        return None
-
-
-async def _fetch_match_details_async(
-    session_manager: SessionManager,
-    match_uuid: str
-) -> Optional[dict[str, Any]]:
-    """
-    Async version of match details fetching for Phase 2 performance improvements.
-
-    Args:
-        session_manager: SessionManager for authentication
-        match_uuid: UUID of the match to fetch details for
-
-    Returns:
-        Match details data or None if failed
-    """
-    from utils import async_api_request  # type: ignore
-
-    try:
-        url = f"https://www.ancestry.co.uk/dna/secure/tests/{match_uuid}/details"
-        headers = {
-            "Accept": "application/json"
-        }
-
-        return await async_api_request(
-            url=url,
-            method="GET",
-            headers=headers,
-            session_manager=session_manager,
-            api_description=f"Match Details {match_uuid}"
-        )
-
-
-    except Exception as e:
-        logger.error(f"Async match details fetch failed for {match_uuid}: {e}")
-        return None
-
-
-async def _async_batch_api_prefetch(
-    session_manager: SessionManager,
-    match_candidates: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """
-    Phase 2: High-performance async batch API prefetching.
-    Replaces ThreadPoolExecutor with native async/await for better resource utilization.
-
-    Args:
-        session_manager: SessionManager for authentication
-        match_candidates: list of match dictionaries to process
-
-    Returns:
-        list of processed matches with enriched data
-    """
-    from utils import get_configured_concurrency  # type: ignore
-
-    # PRIORITY 2: Enhanced Async Processing - Intelligent concurrency based on system load
-    base_concurrent = get_configured_concurrency(default=8)
-
-    # Adaptive concurrency based on match count and system performance
-    if len(match_candidates) < 10:
-        max_concurrent = min(4, base_concurrent)  # Light load
-        logger.debug(f"Light load: Using {max_concurrent} concurrent connections")
-    elif len(match_candidates) > 50:
-        max_concurrent = min(base_concurrent + 2, 12)  # Heavy load with bounds
-        logger.debug(f"Heavy load: Using {max_concurrent} concurrent connections")
-    else:
-        max_concurrent = base_concurrent  # Normal load
-
-    semaphore = asyncio.Semaphore(max_concurrent)
-
-    # Performance monitoring for async operations
-    async_start_time = time.time()
-    logger.info(f"Phase 2: Starting async batch prefetch for {len(match_candidates)} matches (concurrency: {max_concurrent})")
-
-    async def process_single_match(match_data: dict[str, Any]) -> dict[str, Any]:
-        async with semaphore:
-            match_start_time = time.time()
-            match_uuid = match_data.get("sampleId")
-            if not match_uuid:
-                return match_data
-
-            try:
-                # PRIORITY 2: Smarter filtering logic based on match characteristics
-                cm_value = match_data.get("sharedCentimorgans", 0)
-                has_tree = match_data.get("hasTree", False)
-
-                # Enhanced filtering: prioritize high-value matches
-                should_fetch_details = (
-                    cm_value > 20 or  # Significant DNA match
-                    (cm_value > 10 and has_tree) or  # Lower DNA but has tree
-                    match_data.get("isStarred", False)  # User-starred matches
-                )
-
-                if should_fetch_details:
-                    details = await _fetch_match_details_async(session_manager, match_uuid)
-                    if details:
-                        match_data.update(details)
-                        logger.debug(f"Async enriched match {match_uuid[:8]} ({cm_value} cM)")
-
-                # Log performance for individual match processing
-                match_duration = time.time() - match_start_time
-                if match_duration > 3.0:
-                    logger.warning(f"Slow async match processing: {match_uuid[:8]} took {match_duration:.2f}s")
-
-            except Exception as e:
-                logger.warning(f"Error in async match processing {match_uuid[:8]}: {e}")
-
-            return match_data
-
-    # Process all matches concurrently
-    tasks = [process_single_match(match) for match in match_candidates]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Enhanced error handling and performance tracking
-    successful_results = []
-    error_count = 0
-    for result in results:
-        if isinstance(result, Exception):
-            error_count += 1
-            logger.warning(f"Async match processing failed: {result}")
-        else:
-            successful_results.append(result)
-
-    # PRIORITY 2: Performance monitoring for async batch processing
-    async_duration = time.time() - async_start_time
-    success_rate = len(successful_results) / len(match_candidates) if match_candidates else 1.0
-
-    logger.info(f"Async batch processing completed: {len(successful_results)}/{len(match_candidates)} successful "
-                f"({success_rate:.1%} success rate, {async_duration:.2f}s total)")
-
-    if error_count > 0:
-        logger.warning(f"Async processing had {error_count} errors out of {len(match_candidates)} matches")
-
-    # Log performance metrics
-    _log_api_performance("async_batch_prefetch", async_start_time, f"success_{success_rate:.0%}")
-
-    return successful_results
+# Removed unused async functions: _fetch_match_list_async, _fetch_match_details_async, _async_batch_api_prefetch
 
 
 # FINAL OPTIMIZATION 3: Advanced Async Integration - Enhanced Async Orchestrator
@@ -3530,7 +3345,7 @@ def _create_master_id_map(
     return all_person_ids_map
 
 
-def _resolve_person_id(
+def _resolve_person_id(  # noqa: PLR0911
     session: SqlAlchemySession,
     person_uuid: Optional[str],
     all_person_ids_map: dict[str, int],
@@ -5192,7 +5007,7 @@ def _do_match(
 # ------------------------------------------------------------------------------
 
 
-def get_matches(
+def get_matches(  # noqa: PLR0911
     session_manager: SessionManager,
     _db_session: SqlAlchemySession,  # Parameter name changed for clarity
     current_page: int = 1,
@@ -6045,7 +5860,7 @@ def _fetch_combined_details(
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
-def _fetch_batch_badge_details(
+def _fetch_batch_badge_details(  # noqa: PLR0911
     session_manager: SessionManager, match_uuid: str
 ) -> Optional[dict[str, Any]]:
     """
@@ -6244,7 +6059,7 @@ def _fetch_batch_ladder(
     return _fetch_batch_ladder_legacy(session_manager, cfpid, tree_id)
 
 
-def _fetch_batch_ladder_legacy(
+def _fetch_batch_ladder_legacy(  # noqa: PLR0911
     session_manager: SessionManager, cfpid: str, tree_id: str
 ) -> Optional[dict[str, Any]]:
     """
@@ -6437,7 +6252,7 @@ def _fetch_batch_ladder_legacy(
     )
 )
 @api_cache("relationship_prob", CACHE_TTL['relationship_prob'])
-def _fetch_batch_relationship_prob(
+def _fetch_batch_relationship_prob(  # noqa: PLR0911
     session_manager: SessionManager, match_uuid: str, max_labels_param: int = 2
 ) -> Optional[str]:
     """
