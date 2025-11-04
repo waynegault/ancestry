@@ -1361,7 +1361,7 @@ def coord(
     try:
         # Handle initial fetch and determine page range
         try:
-            _total_pages_api, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
+            _, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
                 session_manager, start_page, state
             )
         except RuntimeError as e:
@@ -2014,7 +2014,7 @@ def _process_ladder_api_calls(
     # Process ladder results
     logger.debug(f"Processing {len(ladder_futures)} Ladder API tasks...")
     for future in as_completed(ladder_futures):
-        _task_type, identifier_cfpid = ladder_futures[future]
+        _, identifier_cfpid = ladder_futures[future]
         uuid_for_ladder, result = _process_single_ladder_result(
             future, identifier_cfpid, cfpid_to_uuid_map
         )
@@ -2202,7 +2202,7 @@ def _perform_api_prefetches(
 
     with ThreadPoolExecutor(max_workers=optimized_workers) as executor:
         # Classify matches into priority tiers
-        high_priority_uuids, _medium_priority_uuids, priority_uuids = _classify_match_priorities(
+        high_priority_uuids, _, priority_uuids = _classify_match_priorities(
             matches_to_process_later, fetch_candidates_uuid
         )
 
@@ -2485,7 +2485,6 @@ async def _async_enhanced_api_orchestrator(
     with native async/await for better resource utilization and scalability.
     """
     import asyncio
-    from concurrent.futures import ThreadPoolExecutor
 
     # Convert to lists for async processing
     uuid_list = list(fetch_candidates_uuid)
@@ -3629,16 +3628,13 @@ def _execute_bulk_db_operations(
     logger.debug(f"--- Starting Bulk DB Operations ({num_items} prepared items) ---")
 
     try:
-        # Initialize variables that might be needed in exception handlers
-        insert_data: list[dict[str, Any]] = []
-
         # Step 2: Separate data by operation type (create/update) and table
         person_creates_raw, person_updates, dna_match_ops, family_tree_ops = _separate_bulk_operations(
             prepared_bulk_data
         )
 
         # --- Step 3: Person Creates ---
-        created_person_map, insert_data = _process_person_creates(
+        created_person_map, _ = _process_person_creates(
             session, person_creates_raw, existing_persons_map
         )
 
@@ -4171,7 +4167,7 @@ def _process_page_matches(
     my_uuid = session_manager.my_uuid
 
     try:
-        page_statuses, num_matches_on_page, memory_processor = _initialize_page_processing(
+        page_statuses, num_matches_on_page, _ = _initialize_page_processing(
             matches_on_page, current_page, my_uuid
         )
     except ValueError:
@@ -4181,7 +4177,7 @@ def _process_page_matches(
         batch_session = _get_batch_session(session_manager, reused_session, current_page)
 
         try:
-            existing_persons_map, fetch_candidates_uuid, matches_to_process_later, skipped_count = (
+            existing_persons_map, fetch_candidates_uuid, matches_to_process_later, _ = (
                 _process_batch_lookups(batch_session, matches_on_page, current_page, progress_bar, page_statuses)
             )
 
@@ -4343,9 +4339,9 @@ def _compare_person_field(
 
     # Call the appropriate comparator
     if comparator == _compare_birth_year_field:
-        return comparator(current_value, new_value, log_ref_short, logger_instance)
+        return comparator(current_value, new_value, log_ref_short, logger_instance)  # type: ignore[call-arg]
 
-    return comparator(current_value, new_value)
+    return comparator(current_value, new_value)  # type: ignore[misc]
 
 
 def _determine_profile_ids_when_both_exist(
@@ -5270,7 +5266,7 @@ def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool
     Returns:
         Tuple of (is_valid, driver, my_uuid)
     """
-    if not isinstance(session_manager, SessionManager):  # type: ignore
+    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
         logger.error("get_matches: Invalid SessionManager.")
         return False, None, None
     driver = session_manager.driver
@@ -5344,8 +5340,6 @@ def _read_csrf_from_driver_cookies(driver: Any, csrf_token_cookie_names: tuple[s
     Returns:
         CSRF token string or None if not found
     """
-    import time as time_module
-
     for cookie_name in csrf_token_cookie_names:
         try:
             cookie_obj = driver.get_cookie(cookie_name)
@@ -7564,8 +7558,6 @@ def _test_core_functionality():
 
 def _test_data_processing_functions():
     """Test all data processing and preparation functions"""
-    from unittest.mock import MagicMock
-
     # Test _identify_fetch_candidates with correct signature
     matches_on_page = [{"uuid": "test_12345", "cm_dna": 100}]
     existing_persons_map = {}
