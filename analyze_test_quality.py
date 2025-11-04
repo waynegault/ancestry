@@ -20,10 +20,10 @@ from typing import Any
 class TestQualityAnalyzer:
     """Analyzes test quality across all Python modules."""
 
-    def __init__(self):
-        self.results = []
-        self.issues = defaultdict(list)
-        self.stats = {
+    def __init__(self) -> None:
+        self.results: list[dict[str, Any]] = []
+        self.issues: defaultdict[str, list[str]] = defaultdict(list)
+        self.stats: dict[str, int] = {
             "total_modules": 0,
             "modules_with_tests": 0,
             "total_test_functions": 0,
@@ -34,7 +34,7 @@ class TestQualityAnalyzer:
             "duplicate_logic": 0,
         }
 
-    def analyze_all_modules(self):
+    def analyze_all_modules(self) -> None:
         """Analyze all Python modules in the project."""
         exclude_dirs = {"__pycache__", ".git", "venv", "env", ".venv", "Cache", "Data", "Logs", "test_data", "scripts", "archive"}
 
@@ -49,7 +49,7 @@ class TestQualityAnalyzer:
                     filepath = filepath.replace("\\", "/")
                     self.analyze_module(filepath)
 
-    def analyze_module(self, filepath: str):
+    def analyze_module(self, filepath: str) -> None:
         """Analyze a single Python module."""
         self.stats["total_modules"] += 1
 
@@ -166,8 +166,8 @@ class TestQualityAnalyzer:
         # Check if it's just "return True" or similar
         return len(lines) <= 3 and any("return True" in line for line in lines)
 
-    def _has_assertions(self, source: str) -> bool:
-        """Check if test has any assertions."""
+    def _has_explicit_assertions(self, source: str) -> bool:
+        """Check for explicit assertion statements."""
         assertion_patterns = [
             r"\bassert\b",
             r"\.assert",
@@ -177,43 +177,48 @@ class TestQualityAnalyzer:
             r"assertIn",
             r"assertNotIn",
             r"assertRaises",
-            r"raise AssertionError",  # Pattern used in action10.py and others
+            r"raise AssertionError",
         ]
+        return any(re.search(pattern, source) for pattern in assertion_patterns)
 
-        # Check for explicit assertion patterns
-        if any(re.search(pattern, source) for pattern in assertion_patterns):
-            return True
-
-        # Check for return True/False pattern (used in ai_interface.py and others)
-        # This is valid when the test function returns bool and is called by test framework
+    def _has_boolean_return_pattern(self, source: str) -> bool:
+        """Check for boolean return patterns that indicate validation."""
+        # Multiple return statements or explicit False return
         if re.search(r"return\s+(True|False)", source):
-            # Make sure it's not just "return True" at the end (smoke test)
-            # Look for conditional returns or multiple return statements
             return_statements = re.findall(r"return\s+(True|False)", source)
-            if len(return_statements) > 1 or "return False" in source:
-                return True
+            return len(return_statements) > 1 or "return False" in source
+        return False
 
-        # Check for boolean expressions in return statements (message_personalization.py pattern)
-        # Examples: return x > 5, return "text" in msg, return count == 2
-        if re.search(r"return\s+.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source):
-            return True
+    def _has_comparison_return(self, source: str) -> bool:
+        """Check for comparison operators in return statements."""
+        return bool(re.search(r"return\s+.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source))
 
-        # Check for result/success variable pattern (database.py, message_personalization.py pattern)
-        # Pattern: result = True/False ... return result
-        # Pattern: success = len(x) > 5 and "text" in x ... return success
-        has_result_var = re.search(r"(result|success)\s*=\s*(True|False)", source) or \
-                         re.search(r"(result|success)\s*=\s*.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source)
-        if has_result_var and re.search(r"return\s+(result|success)", source):
-            return True
+    def _has_result_variable_pattern(self, source: str) -> bool:
+        """Check for result/success variable validation pattern."""
+        has_result_var = (
+            re.search(r"(result|success)\s*=\s*(True|False)", source) or
+            re.search(r"(result|success)\s*=\s*.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source)
+        )
+        return bool(has_result_var and re.search(r"return\s+(result|success)", source))
 
-        # Check for all() pattern (system_cache.py pattern)
-        # Pattern: all_passed = all(results.values()) ... return all_passed
-        if re.search(r"all\(", source) and re.search(r"return\s+\w+", source):
-            return True
+    def _has_aggregation_pattern(self, source: str) -> bool:
+        """Check for all() aggregation patterns."""
+        return bool(re.search(r"all\(", source) and re.search(r"return\s+\w+", source))
 
-        # Check for suite.finish_suite() pattern (test_framework.py pattern)
-        # Pattern: return suite.finish_suite()
+    def _has_suite_finish_pattern(self, source: str) -> bool:
+        """Check for test suite finish pattern."""
         return bool(re.search(r"return\s+\w+\.finish_suite\(\)", source))
+
+    def _has_assertions(self, source: str) -> bool:
+        """Check if test has any assertions."""
+        return (
+            self._has_explicit_assertions(source) or
+            self._has_boolean_return_pattern(source) or
+            self._has_comparison_return(source) or
+            self._has_result_variable_pattern(source) or
+            self._has_aggregation_pattern(source) or
+            self._has_suite_finish_pattern(source)
+        )
 
     def _always_returns_true(self, source: str) -> bool:
         """Check if test always returns True without real validation."""
@@ -279,7 +284,7 @@ class TestQualityAnalyzer:
         # If less than 3 lines of actual code, it's minimal
         return code_lines < 3
 
-    def print_report(self):
+    def print_report(self) -> None:
         """Print comprehensive test quality report."""
         print("\n" + "=" * 80)
         print("TEST QUALITY ANALYSIS REPORT")
