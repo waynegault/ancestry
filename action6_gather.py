@@ -4372,6 +4372,73 @@ def _prepare_person_operation_data(
 # End of _prepare_person_operation_data
 
 
+def _check_basic_dna_changes(
+    api_cm: int,
+    db_cm: int,
+    api_segments: int,
+    db_segments: int,
+    log_ref_short: str,
+    logger_instance: logging.Logger
+) -> bool:
+    """Check basic DNA changes (cM and segments)."""
+    if api_cm != db_cm:
+        logger_instance.debug(f"  DNA change {log_ref_short}: cM")
+        return True
+    if api_segments != db_segments:
+        logger_instance.debug(f"  DNA change {log_ref_short}: Segments")
+        return True
+    return False
+
+
+def _check_longest_segment_changes(
+    api_longest: Optional[float],
+    db_longest: Optional[float],
+    log_ref_short: str,
+    logger_instance: logging.Logger
+) -> bool:
+    """Check longest segment changes."""
+    if (
+        api_longest is not None
+        and db_longest is not None
+        and abs(float(str(api_longest)) - float(str(db_longest))) > 0.01
+    ):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Longest Segment")
+        return True
+    if db_longest is not None and api_longest is None:
+        logger_instance.debug(
+            f"  DNA change {log_ref_short}: Longest Segment (API lost data)"
+        )
+        return True
+    return False
+
+
+def _check_relationship_and_side_changes(
+    db_predicted_rel_for_comp: str,
+    api_predicted_rel_for_comp: str,
+    details_part: dict[str, Any],
+    existing_dna_match: DnaMatch,
+    log_ref_short: str,
+    logger_instance: logging.Logger
+) -> bool:
+    """Check relationship and parental side changes."""
+    if str(db_predicted_rel_for_comp) != str(api_predicted_rel_for_comp):
+        logger_instance.debug(
+            f"  DNA change {log_ref_short}: Predicted Rel ({db_predicted_rel_for_comp} -> {api_predicted_rel_for_comp})"
+        )
+        return True
+    if bool(details_part.get("from_my_fathers_side", False)) != bool(
+        existing_dna_match.from_my_fathers_side
+    ):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Father Side")
+        return True
+    if bool(details_part.get("from_my_mothers_side", False)) != bool(
+        existing_dna_match.from_my_mothers_side
+    ):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Mother Side")
+        return True
+    return False
+
+
 def _compare_dna_fields(
     existing_dna_match: DnaMatch,
     match: dict[str, Any],
@@ -4397,38 +4464,14 @@ def _compare_dna_fields(
         else "N/A"
     )
 
-    if api_cm != db_cm:
-        logger_instance.debug(f"  DNA change {log_ref_short}: cM")
+    if _check_basic_dna_changes(api_cm, db_cm, api_segments, db_segments, log_ref_short, logger_instance):
         return True
-    if api_segments != db_segments:
-        logger_instance.debug(f"  DNA change {log_ref_short}: Segments")
+    if _check_longest_segment_changes(api_longest, db_longest, log_ref_short, logger_instance):
         return True
-    if (
-        api_longest is not None
-        and db_longest is not None
-        and abs(float(str(api_longest)) - float(str(db_longest))) > 0.01
+    if _check_relationship_and_side_changes(
+        db_predicted_rel_for_comp, api_predicted_rel_for_comp,
+        details_part, existing_dna_match, log_ref_short, logger_instance
     ):
-        logger_instance.debug(f"  DNA change {log_ref_short}: Longest Segment")
-        return True
-    if db_longest is not None and api_longest is None:
-        logger_instance.debug(
-            f"  DNA change {log_ref_short}: Longest Segment (API lost data)"
-        )
-        return True
-    if str(db_predicted_rel_for_comp) != str(api_predicted_rel_for_comp):
-        logger_instance.debug(
-            f"  DNA change {log_ref_short}: Predicted Rel ({db_predicted_rel_for_comp} -> {api_predicted_rel_for_comp})"
-        )
-        return True
-    if bool(details_part.get("from_my_fathers_side", False)) != bool(
-        existing_dna_match.from_my_fathers_side
-    ):
-        logger_instance.debug(f"  DNA change {log_ref_short}: Father Side")
-        return True
-    if bool(details_part.get("from_my_mothers_side", False)) != bool(
-        existing_dna_match.from_my_mothers_side
-    ):
-        logger_instance.debug(f"  DNA change {log_ref_short}: Mother Side")
         return True
 
     api_meiosis = details_part.get("meiosis")
@@ -4508,6 +4551,19 @@ def _add_dna_details(
         dna_dict_base["shared_segments"] = match.get("numSharedSegments")
 
 
+def _filter_dna_dict(dna_dict_base: dict[str, Any]) -> dict[str, Any]:
+    """Filter DNA dictionary to remove None values except for special keys."""
+    return {
+        k: v
+        for k, v in dna_dict_base.items()
+        if v is not None
+        or k == "predicted_relationship"
+        or k.startswith("_")
+        or k == "uuid"
+        or k.startswith("ethnicity_")
+    }
+
+
 def _add_ethnicity_data(
     dna_dict_base: dict[str, Any],
     existing_dna_match: Optional[DnaMatch],
@@ -4577,16 +4633,7 @@ def _prepare_dna_match_operation_data(
     dna_dict_base = _build_dna_dict_base(match_uuid, match, safe_predicted_relationship)
     _add_dna_details(dna_dict_base, prefetched_combined_details, match, log_ref_short, logger_instance)
     _add_ethnicity_data(dna_dict_base, existing_dna_match, session_manager, match_uuid, log_ref_short, logger_instance)
-
-    return {
-        k: v
-        for k, v in dna_dict_base.items()
-        if v is not None
-        or k == "predicted_relationship"
-        or k.startswith("_")
-        or k == "uuid"
-        or k.startswith("ethnicity_")
-    }
+    return _filter_dna_dict(dna_dict_base)
 
 
 # End of _prepare_dna_match_operation_data
