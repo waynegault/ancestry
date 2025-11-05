@@ -6784,246 +6784,43 @@ def _fetch_batch_ladder(
         A dictionary containing 'actual_relationship' and 'relationship_path' strings
         if successful, otherwise None.
     """
-    # Try the new enhanced API first
-    try:
-        from api_utils import get_relationship_path_data
+    # Use the modern enhanced relationship ladder API (no legacy fallback)
+    from api_utils import get_relationship_path_data
 
-        enhanced_result = get_relationship_path_data(
-            session_manager=session_manager,
-            person_id=cfpid
-        )
-
-        if enhanced_result and isinstance(enhanced_result, dict):
-            kinship_persons = enhanced_result.get("kinship_persons", [])
-            if kinship_persons:
-                # Extract relationship information from the enhanced API
-                for person in kinship_persons:
-                    result = _extract_relationship_from_person(person, cfpid, kinship_persons)
-                    if result:
-                        return result
-
-                # If we have kinship data but no direct match, use the first relationship
-                result = _extract_first_relationship(kinship_persons)
-                if result:
-                    return result
-
-        logger.debug(f"Enhanced API didn't return usable data for {cfpid}, falling back to legacy API")
-
-    except Exception as e:
-        logger.debug(f"Enhanced API failed for {cfpid}, falling back to legacy API: {e}")
-
-    # Fallback to the original implementation
-    return _fetch_batch_ladder_legacy(session_manager, cfpid, tree_id)
-
-
-def _validate_ladder_session(session_manager: SessionManager, cfpid: str, tree_id: str) -> None:
-    """Validate session and parameters for ladder fetch."""
-    if not cfpid or not tree_id:
-        logger.warning("_fetch_batch_ladder_legacy: Missing cfpid or tree_id.")
-        raise ValueError("Missing cfpid or tree_id")
-    if not session_manager.is_sess_valid():
-        logger.error(
-            f"_fetch_batch_ladder_legacy: WebDriver session invalid for CFPID {cfpid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for ladder fetch (CFPID: {cfpid})"
-        )
-
-
-def _fetch_ladder_api_response(
-    session_manager: SessionManager, cfpid: str, tree_id: str
-) -> Optional[str]:
-    """Fetch ladder API response and validate it."""
-    ladder_api_url = urljoin(
-        config_schema.api.base_url,
-        f"family-tree/person/tree/{tree_id}/person/{cfpid}/getladder?callback=jQuery",
-    )
-    dynamic_referer = urljoin(
-        config_schema.api.base_url,
-        f"family-tree/person/tree/{tree_id}/person/{cfpid}/facts",
-    )
-    logger.debug(f"Fetching /getladder API for CFPID {cfpid} in Tree {tree_id}...")
-
-    api_result = _api_req(
-        url=ladder_api_url,
-        driver=session_manager.driver,
+    enhanced_result = get_relationship_path_data(
         session_manager=session_manager,
-        method="GET",
-        headers={},
-        use_csrf_token=False,
-        api_description="Get Ladder API (Batch)",
-        referer_url=dynamic_referer,
-        force_text_response=True,
+        person_id=cfpid
     )
 
-    if isinstance(api_result, requests.Response):
-        logger.warning(
-            f"Get Ladder API call failed for CFPID {cfpid} (Status: {api_result.status_code})."
-        )
-        return None
-    if api_result is None:
-        logger.warning(f"Get Ladder API call returned None for CFPID {cfpid}.")
-        return None
-    if not isinstance(api_result, str):
-        logger.warning(
-            f"_api_req returned unexpected type '{type(api_result).__name__}' for Get Ladder API (CFPID {cfpid})."
-        )
-        return None
-    return api_result
-
-
-def _parse_jsonp_response(response_text: str, cfpid: str) -> Optional[dict[str, Any]]:
-    """Parse JSONP response and extract JSON data."""
-    match_jsonp = JSONP_PATTERN.match(response_text)
-    if not match_jsonp:
-        logger.error(
-            f"Could not parse JSONP format for CFPID {cfpid}. Response: {response_text[:200]}..."
-        )
+    if not enhanced_result or not isinstance(enhanced_result, dict):
+        logger.error(f"Enhanced API failed to return data for {cfpid} - NO FALLBACK")
         return None
 
-    json_string = match_jsonp.group(1).strip()
-    if not json_string or json_string in ('""', "''"):
-        logger.warning(f"Empty JSON content within JSONP for CFPID {cfpid}.")
+    kinship_persons = enhanced_result.get("kinship_persons", [])
+    if not kinship_persons:
+        logger.warning(f"Enhanced API returned no kinship data for {cfpid}")
         return None
 
-    try:
-        return fast_json_loads(json_string)
-    except json.JSONDecodeError as inner_json_err:
-        logger.error(
-            f"Failed to decode JSONP content for CFPID {cfpid}: {inner_json_err}"
-        )
-        logger.debug(f"JSON string causing decode error: '{json_string[:200]}...'")
-        return None
+    # Extract relationship information from the enhanced API
+    for person in kinship_persons:
+        result = _extract_relationship_from_person(person, cfpid, kinship_persons)
+        if result:
+            return result
 
+    # If we have kinship data but no direct match, use the first relationship
+    result = _extract_first_relationship(kinship_persons)
+    if result:
+        return result
 
-def _extract_relationship_from_html(soup: Any, cfpid: str) -> Optional[str]:
-    """Extract actual relationship from HTML soup."""
-    rel_elem = soup.select_one(
-        "ul.textCenter > li:first-child > i > b"
-    ) or soup.select_one("ul.textCenter > li > i > b")
-    if rel_elem:
-        raw_relationship = rel_elem.get_text(strip=True)
-        return ordinal_case(raw_relationship.title())
-    logger.warning(f"Could not extract actual_relationship for CFPID {cfpid}")
+    logger.error(f"Enhanced API returned kinship data but failed to extract relationship for {cfpid}")
     return None
 
 
-def _parse_path_item_description(
-    desc_element: Any, i: int, num_items: int
-) -> str:
-    """Parse description text from a path item."""
-    raw_desc_full = desc_element.get_text(strip=True).replace('"', "'")
-    # Check if it's the "You are the..." line
-    if i == num_items - 1 and raw_desc_full.lower().startswith("you are the "):
-        return format_name(raw_desc_full[len("You are the ") :].strip())
-    # Normal relationship "of" someone else
-    match_rel = re.match(r"^(.*?)\s+of\s+(.*)$", raw_desc_full, re.IGNORECASE)
-    if match_rel:
-        return f"{match_rel.group(1).strip().capitalize()} of {format_name(match_rel.group(2).strip())}"
-    # Fallback if "of" not found (e.g., "Wife")
-    return format_name(raw_desc_full)
-
-
-def _build_relationship_path(soup: Any, cfpid: str) -> Optional[str]:
-    """Build relationship path from HTML soup."""
-    path_items = soup.select('ul.textCenter > li:not([class*="iconArrowDown"])')
-    path_list = []
-    num_items = len(path_items)
-    for i, item in enumerate(path_items):
-        name_text, desc_text = "", ""
-        name_container = item.find("a") or item.find("b")
-        if name_container:
-            name_text = format_name(
-                name_container.get_text(strip=True).replace('"', "'")
-            )
-        if i > 0:  # Description is not for the first person (the target)
-            desc_element = item.find("i")
-            if desc_element:
-                desc_text = _parse_path_item_description(desc_element, i, num_items)
-        if name_text:  # Only add if name was found
-            path_list.append(
-                f"{name_text} ({desc_text})" if desc_text else name_text
-            )
-    if path_list:
-        return "\n↓\n".join(path_list)
-    logger.warning(f"Could not construct relationship_path for CFPID {cfpid}.")
-    return None
-
-
-def _parse_ladder_html(
-    ladder_json: dict[str, Any],
-    cfpid: str,
-    ladder_data: dict[str, Optional[str]]
-) -> Optional[dict[str, Any]]:
-    """Parse ladder HTML content and extract relationship data."""
-    if not isinstance(ladder_json, dict) or "html" not in ladder_json:
-        logger.warning(
-            f"Missing 'html' key in getladder JSON for CFPID {cfpid}. JSON: {ladder_json}"
-        )
-        return None
-
-    html_content = ladder_json["html"]
-    if not html_content:
-        logger.warning(f"Empty HTML in getladder response for CFPID {cfpid}.")
-        return None
-
-    soup = BeautifulSoup(html_content, "html.parser")
-    ladder_data["actual_relationship"] = _extract_relationship_from_html(soup, cfpid)
-    ladder_data["relationship_path"] = _build_relationship_path(soup, cfpid)
-
-    logger.debug(f"Successfully parsed ladder details for CFPID {cfpid}.")
-
-    # Return only if at least one piece of data was found
-    if ladder_data["actual_relationship"] or ladder_data["relationship_path"]:
-        return ladder_data
-
-    logger.warning(
-        f"No actual_relationship or path found for CFPID {cfpid} after parsing."
-    )
-    return None
-
-
-def _fetch_batch_ladder_legacy(
-    session_manager: SessionManager, cfpid: str, tree_id: str
-) -> Optional[dict[str, Any]]:
-    """
-    Legacy implementation of relationship ladder fetching using the old /getladder endpoint.
-    This is kept as a fallback for the enhanced API.
-    """
-    try:
-        _validate_ladder_session(session_manager, cfpid, tree_id)
-    except ValueError:
-        return None
-
-    ladder_data: dict[str, Optional[str]] = {
-        "actual_relationship": None,
-        "relationship_path": None,
-    }
-    try:
-        response_text = _fetch_ladder_api_response(session_manager, cfpid, tree_id)
-        if not response_text:
-            return None
-
-        ladder_json = _parse_jsonp_response(response_text, cfpid)
-        if not ladder_json:
-            return None
-
-        return _parse_ladder_html(ladder_json, cfpid, ladder_data)
-
-    except ConnectionError as conn_err:
-        logger.error(
-            f"ConnectionError fetching ladder for CFPID {cfpid}: {conn_err}",
-            exc_info=False,
-        )
-        raise
-    except Exception as e:
-        logger.error(f"Error processing ladder for CFPID {cfpid}: {e}", exc_info=True)
-        if isinstance(e, requests.exceptions.RequestException):
-            raise
-        return None
-
-
-# End of _fetch_batch_ladder
+# ============================================================================
+# LEGACY CODE REMOVED - All ladder/relationship API calls now use modern enhanced API
+# via api_utils.get_relationship_path_data() which calls relationladderwithlabels endpoint
+# NO FALLBACK to old /getladder endpoint - failures should be visible for quick repair
+# ============================================================================
 
 
 @retry_api(

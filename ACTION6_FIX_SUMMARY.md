@@ -23,7 +23,7 @@ predicted_relationship = relationship_info.get("relationshipRange") or relations
 if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
     return int(prefetched_tree_data["their_birth_year"])
 ```
-**Likely Cause**: 
+**Likely Cause**:
 - Badge API (line 6621) returns `person_badged.get("birthYear")` which might be NULL
 - OR only 5/20 matches are in the user's tree (see Issue #4)
 

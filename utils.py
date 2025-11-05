@@ -1520,8 +1520,10 @@ class RateLimiter:
                     # Gradual recovery: 2% decrease when close to initial delay
                     adaptive_decrease_factor = self.decrease_factor
 
+                # Allow delay to decrease below initial_delay (initial_delay is starting point, not minimum)
+                # Minimum delay is determined by token bucket refill rate, not initial_delay
                 self.current_delay = max(
-                    self.current_delay * adaptive_decrease_factor, self.initial_delay
+                    self.current_delay * adaptive_decrease_factor, 0.1  # Hard minimum: 0.1s
                 )
                 if (
                     abs(previous_delay - self.current_delay) > 0.01
