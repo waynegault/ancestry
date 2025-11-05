@@ -211,6 +211,7 @@ from error_handling import (
 if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
+from api_constants import API_PATH_PROFILE_DETAILS
 from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
 from core.session_manager import SessionManager
@@ -2504,14 +2505,21 @@ async def _async_enhanced_api_orchestrator(
     """
     Advanced async orchestration that replaces ThreadPoolExecutor patterns
     with native async/await for better resource utilization and scalability.
+
+    NOTE: Currently incomplete - only fetches combined details.
+    Using sync method for all batch sizes until async implementation is complete.
     """
     import asyncio
 
     # Convert to lists for async processing
     uuid_list = list(fetch_candidates_uuid)
 
-    if len(uuid_list) < 10:  # Small batch - use existing sync method
-        logger.debug(f"Small batch ({len(uuid_list)} items) - using sync method")
+    # TEMPORARY FIX: Disable incomplete async orchestrator
+    # The async version only fetches combined details but NOT badge/ladder/rel_prob data
+    # This causes missing birth_year and family_tree records for batches with 10+ matches
+    # TODO: Complete async implementation for badge/ladder/rel_prob fetching
+    if len(uuid_list) < 1000:  # Changed from 10 to 1000 to always use complete sync method
+        logger.debug(f"Batch size {len(uuid_list)} - using proven sync method (async incomplete)")
         return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
 
     logger.info(f"Large batch ({len(uuid_list)} items) - using advanced async orchestration")
@@ -3670,7 +3678,7 @@ def _process_family_tree_operations(
         logger.debug("No FamilyTree updates prepared.")
 
 
-def _execute_bulk_db_operations(
+def _execute_bulk_db_operations(  # noqa: PLR0911
     session: SqlAlchemySession,
     prepared_bulk_data: list[dict[str, Any]],
     existing_persons_map: dict[str, Person],  # Needed to potentially map existing IDs
@@ -6358,7 +6366,7 @@ def _fetch_profile_details_api(
     """Fetch profile details from API."""
     profile_url = urljoin(
         config_schema.api.base_url,
-        f"/app-api/express/v1/profiles/details?userId={tester_profile_id.upper()}",
+        f"{API_PATH_PROFILE_DETAILS}?userId={tester_profile_id.upper()}",
     )
     logger.debug(
         f"Fetching /profiles/details for Profile ID {tester_profile_id} (Match UUID {match_uuid})..."
@@ -6691,15 +6699,53 @@ def _fetch_batch_badge_details(
 # End of _fetch_batch_badge_details
 
 
+def _format_kinship_path_for_action6(kinship_persons: list[dict[str, Any]]) -> str:
+    """Format kinshipPersons array from relation ladder API into readable path."""
+    if not kinship_persons or len(kinship_persons) < 2:
+        return "(No relationship path available)"
+
+    # Build the relationship path
+    path_lines = []
+    seen_names = set()
+
+    # Add first person as standalone line with years
+    first_person = kinship_persons[0]
+    first_name = first_person.get("name", "Unknown")
+    first_lifespan = first_person.get("lifeSpan", "")
+    first_years = f" ({first_lifespan})" if first_lifespan else ""
+    path_lines.append(f"{first_name}{first_years}")
+    seen_names.add(first_name.lower())
+
+    # Process remaining path steps
+    for i in range(len(kinship_persons) - 1):
+        next_person = kinship_persons[i + 1]
+        relationship = next_person.get("relationship", "relative")
+        next_name = next_person.get("name", "Unknown")
+        next_lifespan = next_person.get("lifeSpan", "")
+
+        # Format lifespan only if we haven't seen this name before
+        next_years = ""
+        if next_name.lower() not in seen_names:
+            next_years = f" ({next_lifespan})" if next_lifespan else ""
+            seen_names.add(next_name.lower())
+
+        # Format the relationship step
+        path_lines.append(f" → {relationship} → {next_name}{next_years}")
+
+    return " ".join(path_lines)
+
+
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
-def _extract_relationship_from_person(person: dict[str, Any], cfpid: str) -> Optional[dict[str, Any]]:
+def _extract_relationship_from_person(person: dict[str, Any], cfpid: str, kinship_persons: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     """Extract relationship data from a kinship person record."""
     if isinstance(person, dict) and person.get("personId") == cfpid:
         relationship = person.get("relationship", "")
         if relationship:
+            # Format the full kinship path with names and years
+            relationship_path = _format_kinship_path_for_action6(kinship_persons)
             return {
                 "actual_relationship": relationship,
-                "relationship_path": f"Enhanced API: {relationship}"
+                "relationship_path": relationship_path
             }
     return None
 
@@ -6710,9 +6756,11 @@ def _extract_first_relationship(kinship_persons: list[dict[str, Any]]) -> Option
         first_person = kinship_persons[0]
         relationship = first_person.get("relationship", "")
         if relationship:
+            # Format the full kinship path with names and years
+            relationship_path = _format_kinship_path_for_action6(kinship_persons)
             return {
                 "actual_relationship": relationship,
-                "relationship_path": f"Enhanced API: {relationship}"
+                "relationship_path": relationship_path
             }
     return None
 
@@ -6750,7 +6798,7 @@ def _fetch_batch_ladder(
             if kinship_persons:
                 # Extract relationship information from the enhanced API
                 for person in kinship_persons:
-                    result = _extract_relationship_from_person(person, cfpid)
+                    result = _extract_relationship_from_person(person, cfpid, kinship_persons)
                     if result:
                         return result
 
@@ -7234,7 +7282,8 @@ def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper:
         p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
     ]
     if not labels:
-        top_prob_display = top_prob * 100.0
+        # Note: API returns probability already as percentage (e.g., 99.0), not decimal (0.99)
+        top_prob_display = top_prob
         logger.debug(
             f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob_display:.1f}%"
         )
@@ -7281,7 +7330,9 @@ def _parse_relationship_probability(
         return None
 
     top_prob, labels = prediction_result
-    top_prob_display = top_prob * 100.0
+    # Note: API returns probability already as percentage (e.g., 99.0), not decimal (0.99)
+    # So we don't multiply by 100.0
+    top_prob_display = top_prob
     final_labels = labels[:max_labels_param]
     relationship_str = " or ".join(map(str, final_labels))
     result = f"{relationship_str} [{top_prob_display:.1f}%]"
