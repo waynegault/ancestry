@@ -40,12 +40,13 @@ class RetryContext:
     Retry logic parameters for API calls and error handling.
 
     Used across multiple modules for exponential backoff retry logic.
+    Defaults now match .env configuration for consistency.
     """
     attempt: int
     max_attempts: int
     max_delay: float
-    backoff_factor: float = 2.0
-    current_delay: float = 1.0
+    backoff_factor: float = 1.80  # Matches .env BACKOFF_FACTOR (gentler escalation)
+    current_delay: float = 0.10   # Matches .env INITIAL_DELAY (faster initial retry)
     retries_left: Optional[int] = None
     retry_status_codes: Optional[Union[list[int], set[int]]] = None
 
@@ -415,10 +416,10 @@ def _test_request_config_initialization() -> bool:
 
 def _test_dataclass_defaults() -> bool:
     """Test that dataclass defaults work correctly."""
-    # RetryContext defaults
+    # RetryContext defaults (updated to match .env configuration)
     ctx = RetryContext(attempt=1, max_attempts=3, max_delay=10.0)
-    assert ctx.backoff_factor == 2.0, "Should have default backoff_factor"
-    assert ctx.current_delay == 1.0, "Should have default current_delay"
+    assert ctx.backoff_factor == 1.80, "Should have default backoff_factor from .env (1.80)"
+    assert ctx.current_delay == 0.10, "Should have default current_delay from .env (0.10)"
 
     # RequestConfig defaults
     config = RequestConfig(url="https://example.com")

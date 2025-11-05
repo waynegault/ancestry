@@ -53,7 +53,6 @@ from typing import Any, Optional
 # === THIRD-PARTY IMPORTS ===
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 try:
     import cloudscraper
@@ -232,18 +231,12 @@ class SessionManager:
         logger.debug("Initializing enhanced requests session...")
 
         # Enhanced retry strategy with more comprehensive status codes
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
-        )
-
-        # Advanced HTTPAdapter with connection pooling
+        # Advanced HTTPAdapter with connection pooling (no urllib3 retries)
+        # Retry logic handled at application level in utils.py for consistency
         adapter = HTTPAdapter(
             pool_connections=20,
             pool_maxsize=50,
-            max_retries=retry_strategy
+            max_retries=0  # Application handles retries
         )
 
         # Apply adapter to API manager's requests session
@@ -277,20 +270,12 @@ class SessionManager:
                 delay=10,
             )
 
-            # Enhanced retry strategy for CloudScraper
-            scraper_retry = Retry(
-                total=3,
-                backoff_factor=0.8,
-                status_forcelist=[403, 429, 500, 502, 503, 504],
-                allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
-            )
-
-            # Apply retry adapter to CloudScraper
-            scraper_adapter = HTTPAdapter(max_retries=scraper_retry)
+            # Apply HTTP adapter to CloudScraper (no urllib3 retries - application handles)
+            scraper_adapter = HTTPAdapter(max_retries=0)
             self._scraper.mount("http://", scraper_adapter)
             self._scraper.mount("https://", scraper_adapter)
 
-            logger.debug("CloudScraper initialized successfully with retry strategy")
+            logger.debug("CloudScraper initialized successfully with connection pooling")
 
         except Exception as scraper_init_e:
             logger.error(

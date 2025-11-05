@@ -2168,7 +2168,7 @@ def _check_startup_status(session_manager: SessionManager) -> None:
             logger.warning("⚠️ Database connection not available")
     except Exception as e:
         logger.warning(f"⚠️ Database connection check failed: {e}")
-    
+
     # CRITICAL: Proactive cookie sync during warmup
     # Ensures fresh cookies for ALL actions before menu display
     # Prevents 303 redirects from stale cookies across all actions
@@ -2351,7 +2351,7 @@ def _pre_authenticate_ms_graph() -> None:
 
 
 def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
-    """Clean up session manager on shutdown.
+    """Clean up session manager on shutdown with proper resource ordering.
 
     Args:
         session_manager: SessionManager instance to clean up
@@ -2361,13 +2361,23 @@ def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
     if session_manager is not None:
         try:
             import contextlib
+            import gc
             import io
+
             # Suppress stderr during cleanup to hide undetected_chromedriver errors
             with contextlib.redirect_stderr(io.StringIO()):
                 session_manager.close_sess(keep_db=False)
-            logger.debug("Session Manager closed in final cleanup.")
+
+            # Clear reference immediately to prevent delayed destruction
+            session_manager = None
+
+            # Force garbage collection while process is still active
+            # This ensures Chrome cleanup happens before Windows handles are invalidated
+            gc.collect()
+
+            logger.debug("✅ Session manager closed cleanly")
         except Exception as final_close_e:
-            logger.debug(f"Cleanup error (non-critical): {final_close_e}")
+            logger.debug(f"⚠️  Cleanup warning (non-critical): {final_close_e}")
 
     logger.info("--- Main program execution finished ---")
     print("\nExecution finished.")

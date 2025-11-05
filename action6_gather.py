@@ -1758,26 +1758,28 @@ def _apply_predictive_rate_limiting(
 
     # Get current token count and fill rate from session manager
     rate_limiter = getattr(session_manager, 'rate_limiter', None)
+
     if rate_limiter:
         current_tokens = getattr(rate_limiter, 'tokens', 0)
         fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
 
         # Predict if we'll run out of tokens
         tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
+
         if current_tokens < tokens_needed:
             # OPTIMIZATION: Account for token refill during batch execution
             # Old logic assumed API calls execute instantly → massive over-waiting
             # New logic: Estimate execution time and subtract tokens that will refill
             # CRITICAL: Account for parallel workers to avoid under-estimation
-            
+
             # Get number of parallel workers from config
-            from config.config_schema import config_schema
+            from config import config_schema
             num_workers = getattr(config_schema.api, 'parallel_workers', 2)
-            
+
             # Get effective RPS from rate limiter metrics (actual achieved rate)
             metrics = rate_limiter.get_metrics()
             effective_rps = metrics.get('effective_rps', 1.5)  # Default to conservative 1.5 RPS
-            
+
             # CRITICAL FIX: With parallel workers, execution is FASTER than serial
             # Adjust effective_rps by worker multiplier (conservative: use sqrt, not linear)
             # Why sqrt? Parallel speedup has diminishing returns (Amdahl's Law)
@@ -1785,17 +1787,17 @@ def _apply_predictive_rate_limiting(
             import math
             worker_speedup = math.sqrt(num_workers)
             adjusted_effective_rps = effective_rps * worker_speedup
-            
+
             # Estimate how long this batch will actually take to execute
             # Use adjusted effective_rps to account for parallelism
             estimated_execution_time = total_api_calls / max(adjusted_effective_rps, 1.0)  # Avoid division by zero
-            
+
             # Calculate tokens that will refill DURING execution
             tokens_refilled_during_execution = estimated_execution_time * fill_rate
-            
+
             # Actual tokens needed = required - current - (tokens that refill during execution)
             actual_tokens_deficit = tokens_needed - current_tokens - tokens_refilled_during_execution
-            
+
             # Only pre-wait for the ACTUAL deficit (can be 0 or even negative if batch is slow)
             # Add safety buffer for high worker counts (10% per worker above 2)
             safety_buffer = max(0, (num_workers - 2) * 0.10 * tokens_needed)
@@ -1821,13 +1823,16 @@ def _apply_predictive_rate_limiting(
             time.sleep(0.1)  # Minimal delay to prevent hammering
             logger.info(f"⚡ Adaptive rate limiting: Sufficient tokens ({current_tokens:.1f}) - minimal delay for {total_api_calls} API calls")
     # Fallback to original tiered approach if rate_limiter not available
-    elif total_api_calls >= 15:
+    else:
+        logger.debug("Rate limiter not available - using fallback tiered approach")
+
+    if not rate_limiter and total_api_calls >= 15:
         _apply_rate_limiting(session_manager)
         logger.info(f"⏱️ Rate limiting: Full delay for heavy batch ({total_api_calls} API calls)")
-    elif total_api_calls >= 5:
+    elif not rate_limiter and total_api_calls >= 5:
         time.sleep(1.2)
         logger.info(f"⏱️ Rate limiting: 1.2s delay for medium batch ({total_api_calls} API calls)")
-    else:
+    elif not rate_limiter:
         time.sleep(0.3)
         logger.debug(f"Rate limiting: 0.3s delay for light batch ({total_api_calls} API calls)")
 
@@ -2239,7 +2244,7 @@ def _check_session_health_periodic(
     from config import config_schema
     batch_size = getattr(config_schema, 'batch_size', 10)
     check_interval = max(5, batch_size // 2)
-    
+
     if processed_tasks % check_interval != 0:
         return
 
@@ -4455,7 +4460,7 @@ def _process_page_matches(
             _cleanup_batch_session(session_manager, batch_session, reused_session, current_page)
 
         _log_batch_summary_if_needed(is_batch, current_page, page_statuses)
-        
+
         # Log timing breakdown summary for slow pages (>30s total)
         # Purpose: Identify bottlenecks - is it rate limiting (API Prefetches), DB queries, or data processing?
         total_time = sum(timing_log.values())
@@ -4463,14 +4468,14 @@ def _process_page_matches(
             db_pct = timing_log.get('db_lookups', 0) / total_time * 100
             api_pct = timing_log.get('api_prefetches', 0) / total_time * 100
             data_pct = timing_log.get('data_prep_commit', 0) / total_time * 100
-            
+
             logger.warning(
                 f"⏱️  SLOW PAGE {current_page} - Total: {total_time:.1f}s | "
                 f"DB: {timing_log.get('db_lookups', 0):.1f}s ({db_pct:.0f}%) | "
                 f"API: {timing_log.get('api_prefetches', 0):.1f}s ({api_pct:.0f}%, includes rate limit pre-wait) | "
                 f"Data: {timing_log.get('data_prep_commit', 0):.1f}s ({data_pct:.0f}%)"
             )
-        
+
         return (
             page_statuses["new"],
             page_statuses["updated"],
