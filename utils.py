@@ -1699,6 +1699,83 @@ class RateLimiter:
 
     # End of print_metrics_summary
 
+    def save_adapted_settings(self) -> None:
+        """
+        Save adapted rate limiting settings to .env file.
+        This allows future runs to start with optimized delay settings.
+        
+        Saves the current delay settings that have been adapted through backoff/decrease
+        during this run, so the next run can start with better initial values.
+        """
+        import os
+        from pathlib import Path
+        
+        env_file = Path('.env')
+        if not env_file.exists():
+            logger.warning("No .env file found - cannot save adapted rate limiting settings")
+            return
+        
+        # Read current .env content
+        with open(env_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Settings to update/add
+        settings_to_save = {
+            'INITIAL_DELAY': f"{self.current_delay:.2f}",  # Save adapted delay as new initial
+            'MAX_DELAY': f"{self.max_delay:.1f}",
+            'BACKOFF_FACTOR': f"{self.backoff_factor:.2f}",
+            'DECREASE_FACTOR': f"{self.decrease_factor:.3f}",
+        }
+        
+        # Track which settings were found and updated
+        updated_settings = set()
+        new_lines = []
+        
+        for line in lines:
+            line_updated = False
+            for setting_key, setting_value in settings_to_save.items():
+                if line.strip().startswith(f"{setting_key}=") or line.strip().startswith(f"#{setting_key}="):
+                    # Update existing setting (commented or uncommented)
+                    new_lines.append(f"{setting_key}={setting_value}\n")
+                    updated_settings.add(setting_key)
+                    line_updated = True
+                    logger.info(f"Updated .env: {setting_key}={setting_value}")
+                    break
+            
+            if not line_updated:
+                new_lines.append(line)
+        
+        # Add any settings that weren't found
+        if updated_settings != set(settings_to_save.keys()):
+            # Find a good place to add them (after REQUESTS_PER_SECOND or at end of API section)
+            insert_index = None
+            for i, line in enumerate(new_lines):
+                if 'REQUESTS_PER_SECOND' in line:
+                    insert_index = i + 1
+                    break
+            
+            if insert_index is None:
+                insert_index = len(new_lines)
+            
+            # Add header comment if adding new settings
+            if insert_index < len(new_lines):
+                new_lines.insert(insert_index, "\n# Adapted rate limiting settings (auto-updated by rate limiter)\n")
+                insert_index += 1
+            
+            for setting_key, setting_value in settings_to_save.items():
+                if setting_key not in updated_settings:
+                    new_lines.insert(insert_index, f"{setting_key}={setting_value}\n")
+                    insert_index += 1
+                    logger.info(f"Added to .env: {setting_key}={setting_value}")
+        
+        # Write updated content back to .env
+        with open(env_file, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        
+        logger.info(f"✅ Saved adapted rate limiting settings to .env (current_delay: {self.current_delay:.2f}s)")
+
+    # End of save_adapted_settings
+
     def reset_metrics(self) -> None:
         """Reset all metrics counters."""
         with self._metrics_lock:

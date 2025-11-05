@@ -1375,6 +1375,11 @@ def _log_final_results(session_manager: SessionManager, state: dict[str, Any], a
     # Performance Statistics
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         session_manager.rate_limiter.print_metrics_summary()
+        # Save adapted rate limiting settings for next run
+        try:
+            session_manager.rate_limiter.save_adapted_settings()
+        except Exception as e:
+            logger.warning(f"Failed to save adapted rate limiting settings: {e}")
 
     # Success/Failure Statement
     log_action_status(
