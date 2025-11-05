@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "C:\Users\wayne\GitHub\Python\Projects\Ancestry\run_all_tests.py", line 72, in <module>
+    from code_quality_checker import CodeQualityChecker, QualityMetrics
+  File "C:\Users\wayne\GitHub\Python\Projects\Ancestry\code_quality_checker.py", line 75, in <module>
+    from standard_imports import setup_module
+  File "C:\Users\wayne\GitHub\Python\Projects\Ancestry\standard_imports.py", line 71, in <module>
+    from core_imports import (
+  File "C:\Users\wayne\GitHub\Python\Projects\Ancestry\core_imports.py", line 422, in <module>
+    from test_utilities import create_standard_test_runner
+  File "C:\Users\wayne\GitHub\Python\Projects\Ancestry\test_utilities.py", line 44, in <module>
+    from sqlalchemy.orm import Session
+ModuleNotFoundError: No module named 'sqlalchemy'

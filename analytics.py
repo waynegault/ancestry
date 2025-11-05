@@ -30,7 +30,7 @@ from typing import Any, Optional
 
 # Module-level transient extras storage (cleared after use)
 class _State:
-    extras: Optional[dict[str, Any]] = None
+    extras: dict[str, Any] | None = None
 
 
 def set_transient_extras(extras: dict[str, Any]) -> None:
@@ -42,7 +42,7 @@ def set_transient_extras(extras: dict[str, Any]) -> None:
         _State.extras = None
 
 
-def pop_transient_extras() -> Optional[dict[str, Any]]:
+def pop_transient_extras() -> dict[str, Any] | None:
     """Return and clear previously attached extras."""
     extras = _State.extras
     _State.extras = None
@@ -65,8 +65,8 @@ def log_event(
     choice: str,
     success: bool,
     duration_sec: float,
-    mem_used_mb: Optional[float] = None,
-    extras: Optional[dict[str, Any]] = None,
+    mem_used_mb: float | None = None,
+    extras: dict[str, Any] | None = None,
 ) -> None:
     """Append a single analytics event as JSON to the analytics file.
 
@@ -90,7 +90,7 @@ def log_event(
         logger.debug(f"analytics.log_event skipped due to error: {e}")
 
 
-def _parse_analytics_line(line: str) -> Optional[dict[str, Any]]:
+def _parse_analytics_line(line: str) -> dict[str, Any] | None:
     """Parse a single analytics log line.
 
     Args:
@@ -108,7 +108,7 @@ def _parse_analytics_line(line: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def _parse_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
+def _parse_timestamp(obj: dict[str, Any]) -> datetime | None:
     """Parse timestamp from analytics object.
 
     Args:

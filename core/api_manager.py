@@ -81,7 +81,7 @@ class APIManager:
 
     def _setup_requests_session(self) -> None:
         """Configure the requests session with connection pooling (no urllib3 retries).
-        
+
         Retry logic is handled at the application level in utils.py _api_req() to ensure:
         - Consistent retry behavior across all API calls
         - Proper 429 error visibility in metrics

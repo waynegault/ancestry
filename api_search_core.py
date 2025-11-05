@@ -22,12 +22,12 @@ from universal_scoring import calculate_display_bonuses
 # Scoring helpers (minimal port)
 # -----------------------------
 
-def _extract_candidate_data(raw: dict, idx: int, clean: Callable[[Any], Optional[str]]) -> dict[str, Any]:
+def _extract_candidate_data(raw: dict, idx: int, clean: Callable[[Any], str | None]) -> dict[str, Any]:
     # Extract name - TreesUI parser returns FullName, GivenName, Surname
     full_name = raw.get("FullName") or (f"{raw.get('GivenName','')} {raw.get('Surname','')}").strip() or "Unknown"
     pid = raw.get("PersonId", f"Unknown_{idx}")
 
-    def _p(s: Optional[str]) -> Optional[str]:
+    def _p(s: str | None) -> str | None:
         return clean(s) if isinstance(s, str) else None
 
     # Parse dates
@@ -85,7 +85,7 @@ def _build_processed_candidate(raw: dict, cand: dict[str, Any], score: float, fi
 
 
 def _process_and_score_suggestions(suggestions: list[dict], criteria: dict[str, Any]) -> list[dict]:
-    def clean_param(p: Any) -> Optional[str]:
+    def clean_param(p: Any) -> str | None:
         return (p.strip().lower() if p and isinstance(p, str) else None)
     processed: list[dict] = []
     for idx, raw in enumerate(suggestions or []):
@@ -151,7 +151,7 @@ def _create_table_row_for_candidate(candidate: dict) -> list[str]:
 # Search and post-selection
 # -----------------------------
 
-def _resolve_base_and_tree(session_manager: Any) -> tuple[str, Optional[str]]:
+def _resolve_base_and_tree(session_manager: Any) -> tuple[str, str | None]:
     """
     Resolve base_url and tree_id for API calls.
 
@@ -177,7 +177,7 @@ def search_ancestry_api_for_person(session_manager: Any, search_criteria: dict[s
     return processed[: max(1, max_results)]
 
 
-def _extract_year_from_candidate(selected_candidate_processed: dict, field_key: str, fallback_key: str) -> Optional[int]:
+def _extract_year_from_candidate(selected_candidate_processed: dict, field_key: str, fallback_key: str) -> int | None:
     """Extract and convert year value from candidate data."""
     val = selected_candidate_processed.get("field_scores", {}).get(field_key) or selected_candidate_processed.get(fallback_key)
     try:
@@ -189,15 +189,15 @@ def _extract_year_from_candidate(selected_candidate_processed: dict, field_key: 
 def _get_relationship_paths(
     session_manager_local: Any,
     person_id: str,
-    owner_tree_id: Optional[str],
+    owner_tree_id: str | None,
     base_url: str,
     owner_name: str,
     target_name: str,
-) -> tuple[Optional[str], Optional[list]]:
+) -> tuple[str | None, list | None]:
     """Retrieve relationship paths using relation ladder with labels API."""
     from api_utils import call_relation_ladder_with_labels_api
 
-    formatted_path: Optional[str] = None
+    formatted_path: str | None = None
     unified_path = None
 
     # Try relation ladder with labels API first (best option - returns clean JSON with names and dates)

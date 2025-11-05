@@ -126,7 +126,7 @@ except ImportError:
     USE_JSON_PROMPTS = False
     # Provide minimal fallback stubs so later references are defined
     from typing import Optional as _Optional
-    def get_prompt(prompt_key: str) -> _Optional[str]:  # type: ignore[misc]
+    def get_prompt(prompt_key: str) -> str | None:  # type: ignore[misc]
         _ = prompt_key  # Fallback stub - parameter required for API compatibility
         return None
     def load_prompts() -> dict[str, Any]:  # type: ignore
@@ -298,7 +298,7 @@ def _build_deepseek_request_params(
     messages: list[dict[str, str]],
     max_tokens: int,
     temperature: float,
-    response_format_type: Optional[str]
+    response_format_type: str | None
 ) -> dict[str, Any]:
     """Build request parameters for DeepSeek API call."""
     request_params: dict[str, Any] = {
@@ -313,7 +313,7 @@ def _build_deepseek_request_params(
     return request_params
 
 
-def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: Optional[str]) -> Optional[str]:
+def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
     """Call DeepSeek AI model."""
     if not openai_available or OpenAI is None:
         logger.error("_call_ai_model: OpenAI library not available for DeepSeek.")
@@ -356,7 +356,7 @@ def _validate_gemini_availability() -> bool:
     return True
 
 
-def _get_gemini_config() -> tuple[Optional[str], Optional[str]]:
+def _get_gemini_config() -> tuple[str | None, str | None]:
     """Get Gemini API key and model name from config."""
     api_key = getattr(config_schema.api, "google_api_key", None)
     model_name = getattr(config_schema.api, "google_ai_model", None)
@@ -368,7 +368,7 @@ def _get_gemini_config() -> tuple[Optional[str], Optional[str]]:
     return api_key, model_name
 
 
-def _initialize_gemini_model(api_key: str, model_name: str) -> Optional[Any]:
+def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
     """Initialize Gemini model."""
     try:
         genai.configure(api_key=api_key)  # type: ignore[attr-defined]
@@ -378,7 +378,7 @@ def _initialize_gemini_model(api_key: str, model_name: str) -> Optional[Any]:
         return None
 
 
-def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Optional[Any]:
+def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Any | None:
     """Create Gemini generation config."""
     if not hasattr(genai, "GenerationConfig"):
         return None
@@ -393,7 +393,7 @@ def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Opt
         return None
 
 
-def _generate_gemini_content(model: Any, full_prompt: str, generation_config: Optional[Any]) -> Optional[Any]:
+def _generate_gemini_content(model: Any, full_prompt: str, generation_config: Any | None) -> Any | None:
     """Generate content using Gemini model."""
     if not hasattr(model, "generate_content"):
         return None
@@ -405,7 +405,7 @@ def _generate_gemini_content(model: Any, full_prompt: str, generation_config: Op
         return None
 
 
-def _extract_gemini_response_text(response: Optional[Any]) -> Optional[str]:
+def _extract_gemini_response_text(response: Any | None) -> str | None:
     """Extract text from Gemini response."""
     if response is not None and getattr(response, "text", None):
         return getattr(response, "text", "").strip()
@@ -428,7 +428,7 @@ def _extract_gemini_response_text(response: Optional[Any]) -> Optional[str]:
     return None
 
 
-def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float) -> Optional[str]:
+def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float) -> str | None:
     """Call Gemini AI model."""
     # Validate Gemini availability
     if not _validate_gemini_availability():
@@ -455,7 +455,7 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     return _extract_gemini_response_text(response)
 
 
-def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: Optional[str]) -> Optional[str]:  # noqa: ARG001
+def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:  # noqa: ARG001
     """
     Call Local LLM model via LM Studio OpenAI-compatible API.
 
@@ -521,7 +521,7 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
         return None
 
 
-def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[Optional[str], Optional[str]]:
+def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[str | None, str | None]:
     """
     Validate that the requested model is loaded in LM Studio.
 
@@ -574,8 +574,8 @@ def _handle_rate_limit_error(session_manager: SessionManager) -> None:
 
 def _route_ai_provider_call(
     provider: str, system_prompt: str, user_content: str,
-    max_tokens: int, temperature: float, response_format_type: Optional[str]
-) -> Optional[str]:
+    max_tokens: int, temperature: float, response_format_type: str | None
+) -> str | None:
     """Route call to appropriate AI provider."""
     if provider == "deepseek":
         return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
@@ -619,8 +619,8 @@ def _call_ai_model(
     session_manager: SessionManager,
     max_tokens: int,
     temperature: float,
-    response_format_type: Optional[str] = None,
-) -> Optional[str]:
+    response_format_type: str | None = None,
+) -> str | None:
     """
     Private helper to call the specified AI model.
     Handles API key loading, request construction, rate limiting, and error handling.
@@ -644,7 +644,7 @@ def _call_ai_model(
 @cached_api_call("ai", ttl=3600)  # Cache AI responses for 1 hour
 def classify_message_intent(
     context_history: str, session_manager: SessionManager
-) -> Optional[str]:
+) -> str | None:
     """
     Classifies the intent of the LAST USER message within the provided context history.
     """
@@ -735,7 +735,7 @@ def _clean_json_response(response_str: str) -> str:
     return cleaned
 
 
-def _compute_component_coverage(parsed_json: dict[str, Any]) -> Optional[float]:
+def _compute_component_coverage(parsed_json: dict[str, Any]) -> float | None:
     """Compute component coverage for extraction quality."""
     try:
         extracted_component = parsed_json.get("extracted_data", {}) if isinstance(parsed_json, dict) else {}
@@ -749,7 +749,7 @@ def _compute_component_coverage(parsed_json: dict[str, Any]) -> Optional[float]:
         return None
 
 
-def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any], cleaned_response_str: str, session_manager: SessionManager, parse_success: bool, error: Optional[str] = None) -> None:
+def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any], cleaned_response_str: str, session_manager: SessionManager, parse_success: bool, error: str | None = None) -> None:
     """Record extraction telemetry event."""
     try:
         from ai_prompt_utils import get_prompt_version
@@ -839,7 +839,7 @@ def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: d
 
 def extract_genealogical_entities(
     context_history: str, session_manager: SessionManager
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Extracts genealogical entities and suggests follow-up tasks.
     Expects AI to return JSON: {"extracted_data": {...}, "suggested_tasks": [...]}.
@@ -907,7 +907,7 @@ def generate_genealogical_reply(
     user_last_message: str,
     genealogical_data_str: str,
     session_manager: SessionManager,
-) -> Optional[str]:
+) -> str | None:
     """
     Generates a personalized genealogical reply.
     """
@@ -978,7 +978,7 @@ def generate_genealogical_reply(
 # End of generate_genealogical_reply
 
 
-def _load_dialogue_prompt(log_prefix: str) -> Optional[str]:
+def _load_dialogue_prompt(log_prefix: str) -> str | None:
     """Load genealogical_dialogue_response prompt from JSON."""
     if not USE_JSON_PROMPTS:
         return None
@@ -1033,7 +1033,7 @@ def _format_dialogue_prompt(
     last_topic: str,
     pending_questions: str,
     log_prefix: str,
-) -> Optional[str]:
+) -> str | None:
     """Format dialogue prompt with all context variables."""
     try:
         defaults = _get_dialogue_defaults(
@@ -1063,7 +1063,7 @@ def generate_contextual_response(
     pending_questions: str,
     session_manager: SessionManager,
     log_prefix: str = "",
-) -> Optional[str]:
+) -> str | None:
     """
     Generate intelligent contextual genealogical response using Phase 3 dialogue engine.
 
@@ -1154,7 +1154,7 @@ def assess_engagement(
     conversation_history: str,
     session_manager: SessionManager,
     log_prefix: str = "",
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Assess engagement and summarize conversation using the Phase 3 engagement_assessment prompt.
 
@@ -1199,7 +1199,7 @@ def assess_engagement(
 
 def extract_with_custom_prompt(
     context_history: str, custom_prompt: str, session_manager: SessionManager
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Extracts data using a custom prompt. Attempts JSON parsing, falls back to text.
     """
@@ -1260,7 +1260,7 @@ def generate_with_custom_prompt(
     genealogical_data_str: str,
     custom_prompt: str,
     session_manager: SessionManager,
-) -> Optional[str]:
+) -> str | None:
     """
     Generates a reply using a custom prompt, formatting the custom prompt with provided data.
     """
@@ -1317,7 +1317,7 @@ def generate_with_custom_prompt(
 
 def analyze_dna_match_conversation(
     context_history: str, session_manager: SessionManager
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Analyzes conversations about DNA matches using specialized DNA analysis prompt.
     Returns structured data focused on DNA match information and genetic genealogy.
@@ -1378,7 +1378,7 @@ def analyze_dna_match_conversation(
 
 def verify_family_tree_connections(
     context_history: str, session_manager: SessionManager
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Analyzes conversations for family tree verification needs and conflicts.
     Returns structured data focused on verification requirements and conflict resolution.
@@ -1439,7 +1439,7 @@ def verify_family_tree_connections(
 
 def generate_record_research_strategy(
     context_history: str, session_manager: SessionManager
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Analyzes conversations to suggest specific genealogical record research strategies.
     Returns structured data focused on record search opportunities and research plans.

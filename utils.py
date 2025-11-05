@@ -1454,7 +1454,8 @@ class RateLimiter:
                 sleep_duration = min(base_sleep * jitter_factor, self.max_delay)
                 sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
                 logger.debug(
-                    f"Token available ({self.tokens:.2f} left). Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
+                    f"🪙 Token consumed: {self.tokens:.2f} remaining (POST-consumption, after 1 token used | Capacity: {self.capacity:.0f}). "
+                    f"Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
                 )
             else:
                 # Token bucket empty, wait for a token to generate
@@ -1504,7 +1505,7 @@ class RateLimiter:
         Uses adaptive decrease rate:
         - If delay is > 2x initial_delay: decrease by 10% (fast recovery)
         - Otherwise: decrease by configured decrease_factor (gradual recovery)
-        
+
         Note: Can decrease below initial_delay (which is a starting point, not a minimum).
         Hard minimum is 0.1s to prevent API hammering.
         """
@@ -1561,7 +1562,8 @@ class RateLimiter:
                 abs(previous_delay - self.current_delay) > 0.01
             ):  # Log only significant changes
                 logger.info(
-                    f"Rate limit feedback received. Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s (Circuit: {self.circuit_breaker.get_state()})"
+                    f"⚡ ADAPTIVE DELAY: Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s "
+                    f"(Circuit: {self.circuit_breaker.get_state()}) | This is the adaptive learning system, separate from 429 backoff delays"
                 )
             else:
                 logger.debug(
@@ -1699,38 +1701,36 @@ class RateLimiter:
 
     # End of print_metrics_summary
 
-    def save_adapted_settings(self) -> None:
+    def _get_settings_to_save(self) -> dict[str, str]:
+        """Get settings dictionary to save to .env file.
+
+        Returns:
+            Dictionary of setting names to values
         """
-        Save adapted rate limiting settings to .env file.
-        This allows future runs to start with optimized delay settings.
-        
-        Saves the current delay settings that have been adapted through backoff/decrease
-        during this run, so the next run can start with better initial values.
-        """
-        import os
-        from pathlib import Path
-        
-        env_file = Path('.env')
-        if not env_file.exists():
-            logger.warning("No .env file found - cannot save adapted rate limiting settings")
-            return
-        
-        # Read current .env content
-        with open(env_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        # Settings to update/add
-        settings_to_save = {
+        return {
             'INITIAL_DELAY': f"{self.current_delay:.2f}",  # Save adapted delay as new initial
             'MAX_DELAY': f"{self.max_delay:.1f}",
             'BACKOFF_FACTOR': f"{self.backoff_factor:.2f}",
             'DECREASE_FACTOR': f"{self.decrease_factor:.3f}",
         }
-        
-        # Track which settings were found and updated
+
+    def _update_existing_settings(
+        self,
+        lines: list[str],
+        settings_to_save: dict[str, str]
+    ) -> tuple[list[str], set[str]]:
+        """Update existing settings in .env file lines.
+
+        Args:
+            lines: Original .env file lines
+            settings_to_save: Settings to update
+
+        Returns:
+            Tuple of (updated_lines, set_of_updated_setting_keys)
+        """
         updated_settings = set()
         new_lines = []
-        
+
         for line in lines:
             line_updated = False
             for setting_key, setting_value in settings_to_save.items():
@@ -1741,37 +1741,87 @@ class RateLimiter:
                     line_updated = True
                     logger.info(f"Updated .env: {setting_key}={setting_value}")
                     break
-            
+
             if not line_updated:
                 new_lines.append(line)
-        
-        # Add any settings that weren't found
-        if updated_settings != set(settings_to_save.keys()):
-            # Find a good place to add them (after REQUESTS_PER_SECOND or at end of API section)
-            insert_index = None
-            for i, line in enumerate(new_lines):
-                if 'REQUESTS_PER_SECOND' in line:
-                    insert_index = i + 1
-                    break
-            
-            if insert_index is None:
-                insert_index = len(new_lines)
-            
-            # Add header comment if adding new settings
-            if insert_index < len(new_lines):
-                new_lines.insert(insert_index, "\n# Adapted rate limiting settings (auto-updated by rate limiter)\n")
+
+        return new_lines, updated_settings
+
+    def _add_missing_settings(
+        self,
+        new_lines: list[str],
+        settings_to_save: dict[str, str],
+        updated_settings: set[str]
+    ) -> list[str]:
+        """Add settings that weren't found in .env file.
+
+        Args:
+            new_lines: Current .env file lines
+            settings_to_save: All settings to save
+            updated_settings: Settings that were already updated
+
+        Returns:
+            Updated lines with missing settings added
+        """
+        if updated_settings == set(settings_to_save.keys()):
+            return new_lines  # All settings already updated
+
+        # Find insertion point (after REQUESTS_PER_SECOND or at end)
+        insert_index = None
+        for i, line in enumerate(new_lines):
+            if 'REQUESTS_PER_SECOND' in line:
+                insert_index = i + 1
+                break
+
+        if insert_index is None:
+            insert_index = len(new_lines)
+
+        # Add header comment if adding new settings
+        if insert_index < len(new_lines):
+            new_lines.insert(insert_index, "\n# Adapted rate limiting settings (auto-updated by rate limiter)\n")
+            insert_index += 1
+
+        # Add missing settings
+        for setting_key, setting_value in settings_to_save.items():
+            if setting_key not in updated_settings:
+                new_lines.insert(insert_index, f"{setting_key}={setting_value}\n")
                 insert_index += 1
-            
-            for setting_key, setting_value in settings_to_save.items():
-                if setting_key not in updated_settings:
-                    new_lines.insert(insert_index, f"{setting_key}={setting_value}\n")
-                    insert_index += 1
-                    logger.info(f"Added to .env: {setting_key}={setting_value}")
-        
+                logger.info(f"Added to .env: {setting_key}={setting_value}")
+
+        return new_lines
+
+    def save_adapted_settings(self) -> None:
+        """
+        Save adapted rate limiting settings to .env file.
+        This allows future runs to start with optimized delay settings.
+
+        Saves the current delay settings that have been adapted through backoff/decrease
+        during this run, so the next run can start with better initial values.
+        """
+        from pathlib import Path
+
+        env_file = Path('.env')
+        if not env_file.exists():
+            logger.warning("No .env file found - cannot save adapted rate limiting settings")
+            return
+
+        # Read current .env content
+        with Path(env_file).open(encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # Get settings to save
+        settings_to_save = self._get_settings_to_save()
+
+        # Update existing settings
+        new_lines, updated_settings = self._update_existing_settings(lines, settings_to_save)
+
+        # Add any settings that weren't found
+        new_lines = self._add_missing_settings(new_lines, settings_to_save, updated_settings)
+
         # Write updated content back to .env
-        with open(env_file, 'w', encoding='utf-8') as f:
+        with Path(env_file).open('w', encoding='utf-8') as f:
             f.writelines(new_lines)
-        
+
         logger.info(f"✅ Saved adapted rate limiting settings to .env (current_delay: {self.current_delay:.2f}s)")
 
     # End of save_adapted_settings
@@ -2262,7 +2312,7 @@ def _execute_api_request(
         )
 
         # REMOVED: RetryError tracking here is redundant - each 429 is already tracked in the retry loop (line 2316)
-        # Previously this caused cascading delays: 5 retries × increase_delay() + 1 final increase = 6x increases per failed API call
+        # Previously this caused cascading delays: 5 retries x increase_delay() + 1 final increase = 6x increases per failed API call
         # Now delays are increased exactly once per actual 429 status code in _handle_status_code_response()
 
         return None
@@ -2385,8 +2435,10 @@ def _handle_retryable_status(
     if status == 429 and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:  # Too Many Requests
         session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
 
+    retry_type = "🚨 429 EXPONENTIAL BACKOFF" if status == 429 else "Retry"
     logger.warning(
-        f"{api_description}: Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). Retrying in {sleep_time:.2f}s..."
+        f"{retry_type}: {api_description} Status {status} (Attempt {retry_ctx.attempt}/{retry_ctx.max_attempts}). "
+        f"Retrying in {sleep_time:.2f}s... | Note: This delay is SEPARATE from adaptive base delay and they stack"
     )
     if response and hasattr(response, 'text'):
         with contextlib.suppress(Exception):

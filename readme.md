@@ -43,15 +43,23 @@ Create a `.env` file with the following required settings:
 ANCESTRY_USERNAME=your_username
 ANCESTRY_PASSWORD=your_password
 
-# Rate Limiting (CRITICAL - Do not change without validation)
-THREAD_POOL_WORKERS=1
-REQUESTS_PER_SECOND=0.4
+# Rate Limiting (CRITICAL - Prevents 429 errors)
+# Effective RPS = PARALLEL_WORKERS × REQUESTS_PER_SECOND
+# MUST keep effective RPS ≤ 5.0 to prevent rate limiting
+PARALLEL_WORKERS=3
+REQUESTS_PER_SECOND=1.0  # 3 workers × 1.0 = 3.0 effective RPS (SAFE)
 
-# Processing Limits (Conservative defaults)
-MAX_PAGES=1
+# Adaptive rate limiting (auto-updated by system for convergence)
+INITIAL_DELAY=1.00  # Must equal 1 / REQUESTS_PER_SECOND
+MAX_DELAY=60.0
+BACKOFF_FACTOR=1.80
+DECREASE_FACTOR=0.980
+
+# Processing Limits
+MAX_PAGES=5
 MAX_INBOX=5
 MAX_PRODUCTIVE_TO_PROCESS=5
-BATCH_SIZE=5
+BATCH_SIZE=30  # Matches per page (30 is optimal)
 
 # Application Mode
 APP_MODE=development  # or 'production'
@@ -118,19 +126,42 @@ ai_interface.py         # Multi-provider AI abstraction
 
 ### Rate Limiting (CRITICAL)
 
-**Single Rate Limiter Architecture:**
-- Class: `RateLimiter` in `utils.py`
-- Instance: `session_manager.rate_limiter`
-- Algorithm: Thread-safe token bucket
-- Configuration:
-  - Capacity: 10 tokens
-  - Fill rate: 2 tokens/second
-  - Thread-safe with `threading.Lock()`
+**Adaptive Rate Limiting System:**
+- Class: `RateLimiter` in `utils.py` (lines 1360-1850)
+- Instance: `session_manager.rate_limiter` (single instance, thread-safe)
+- Algorithm: Token bucket with adaptive delay adjustment
+- Auto-saves optimized settings to `.env` after each run for convergence
 
-**DO NOT modify rate limiting settings without extensive validation!**
-- Changing `THREAD_POOL_WORKERS` or `REQUESTS_PER_SECOND` can cause 429 errors
-- 429 errors result in 72-second penalties
-- Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should return 0
+**Configuration Formula:**
+```
+Effective RPS = PARALLEL_WORKERS × REQUESTS_PER_SECOND
+MUST maintain: Effective RPS ≤ 5.0 (Ancestry rate limit)
+
+Current safe settings:
+  PARALLEL_WORKERS=3
+  REQUESTS_PER_SECOND=1.0
+  → Effective RPS = 3.0 (safe margin: 40%)
+```
+
+**Adaptive Learning:**
+- System automatically adjusts `INITIAL_DELAY` based on 429 errors
+- Settings saved to `.env` at end of run via `save_adapted_settings()`
+- Each run starts with optimized values from previous run
+- Converges to optimal settings over multiple runs
+
+**Validation:**
+```powershell
+# Check for 429 errors (should return 0)
+(Select-String -Path Logs\app.log -Pattern "429 error").Count
+
+# View current effective RPS
+Select-String -Path Logs\app.log -Pattern "effective RPS" | Select-Object -Last 1
+```
+
+**WARNING**: Do NOT manually change rate limiting settings without:
+1. Understanding the effective RPS calculation
+2. Testing for 50+ pages with zero 429 errors
+3. Monitoring logs for rate limit warnings
 
 ### Database Schema
 

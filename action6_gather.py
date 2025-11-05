@@ -43,7 +43,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     elif duration > 5.0:
         logger.warning(f"Slow API call detected: {api_name} took {duration:.3f}s")
     elif duration > 2.0:
-        logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
+        logger.debug(f"Moderate API call: {api_name} took {duration:.3f}s")
 
     # Track performance metrics for optimization analysis
     try:
@@ -365,14 +365,14 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
 def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Optional[int]]]:
     """
     Fetch and parse ethnicity comparison data for a single match (for parallel execution).
-    
+
     This function is called from ThreadPoolExecutor in the controlled parallel API fetch,
     ensuring ethnicity API calls respect rate limiting alongside other APIs.
-    
+
     Args:
         session_manager: Active session manager
         match_uuid: Match UUID to fetch ethnicity for
-        
+
     Returns:
         Dictionary of {column_name: percentage} or None if unavailable
     """
@@ -394,10 +394,9 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
     for region_key, percentage in percentages.items():
         column_name = column_map.get(str(region_key))
         if column_name:
-            try:
+            from contextlib import suppress
+            with suppress(TypeError, ValueError):
                 payload[column_name] = int(percentage) if percentage is not None else None
-            except (TypeError, ValueError):
-                pass  # Skip invalid values silently in batch mode
 
     return payload if payload else None
 
@@ -1278,13 +1277,26 @@ def _log_action_start(start_page: int) -> None:
     """
     from utils import log_action_configuration
 
+    # Calculate effective RPS (accounting for parallel workers)
+    workers = getattr(config_schema.api, 'parallel_workers', 1)
+    rps = getattr(config_schema.api, 'requests_per_second', 1.0)
+    effective_rps = workers * rps
+
+    # Validate effective RPS to prevent 429 errors
+    MAX_SAFE_EFFECTIVE_RPS = 5.0  # Conservative limit based on empirical testing
+    if effective_rps > MAX_SAFE_EFFECTIVE_RPS:
+        logger.warning(
+            f"⚠️  RISK OF 429 ERRORS: Effective RPS ({effective_rps:.1f}) exceeds safe limit ({MAX_SAFE_EFFECTIVE_RPS:.1f}). "
+            f"Recommendation: Reduce REQUESTS_PER_SECOND to {MAX_SAFE_EFFECTIVE_RPS / workers:.1f} or reduce PARALLEL_WORKERS."
+        )
+
     log_action_configuration({
-        "Action": "Action 6 - Gather DNA Matches",
-        "Start Page": start_page,
-        "Max Pages": getattr(config_schema.api, 'max_pages', 'unlimited'),
-        "Matches Per Page": MATCHES_PER_PAGE,
-        "App Mode": getattr(config_schema, 'app_mode', 'production'),
-        "Dry Run": getattr(config_schema, 'dry_run', False)
+        "Action": "Gather DNA Matches",
+        "Pages": f"{start_page}-{start_page + getattr(config_schema.api, 'max_pages', 1) - 1} (max {getattr(config_schema.api, 'max_pages', 1)})",
+        "Batch Size": MATCHES_PER_PAGE,
+        "Workers": workers,
+        "Rate Limit": f"{rps:.1f} RPS/worker ({effective_rps:.1f} effective RPS)",
+        "Mode": getattr(config_schema, 'app_mode', 'production')
     })
     logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
 
@@ -1740,6 +1752,76 @@ def _classify_match_priorities(
     return high_priority_uuids, medium_priority_uuids, priority_uuids
 
 
+def _calculate_optimal_delay(
+    rate_limiter: Any,
+    total_api_calls: int,
+    current_tokens: float,
+    tokens_needed: float
+) -> float:
+    """Calculate optimal pre-delay for token bucket refill.
+
+    Args:
+        rate_limiter: Rate limiter instance
+        total_api_calls: Total number of API calls to be made
+        current_tokens: Current available tokens
+        tokens_needed: Total tokens needed
+
+    Returns:
+        Optimal delay in seconds
+    """
+    import math
+
+    from config import config_schema
+
+    fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
+
+    # Get number of parallel workers from config
+    num_workers = getattr(config_schema.api, 'parallel_workers', 2)
+
+    # Get effective RPS from rate limiter metrics (actual achieved rate)
+    metrics = rate_limiter.get_metrics()
+    effective_rps = metrics.get('effective_rps', 1.5)  # Default to conservative 1.5 RPS
+
+    # CRITICAL FIX: With parallel workers, execution is FASTER than serial
+    # Adjust effective_rps by worker multiplier (conservative: use sqrt, not linear)
+    # Why sqrt? Parallel speedup has diminishing returns (Amdahl's Law)
+    worker_speedup = math.sqrt(num_workers)
+    adjusted_effective_rps = effective_rps * worker_speedup
+
+    # Estimate how long this batch will actually take to execute
+    estimated_execution_time = total_api_calls / max(adjusted_effective_rps, 1.0)
+
+    # Calculate tokens that will refill DURING execution
+    tokens_refilled_during_execution = estimated_execution_time * fill_rate
+
+    # Actual tokens needed = required - current - (tokens that refill during execution)
+    actual_tokens_deficit = tokens_needed - current_tokens - tokens_refilled_during_execution
+
+    # Add safety buffer for high worker counts (10% per worker above 2)
+    safety_buffer = max(0, (num_workers - 2) * 0.10 * tokens_needed)
+    return max(0, (actual_tokens_deficit + safety_buffer) / fill_rate)
+
+
+def _apply_tiered_delay(total_api_calls: int, session_manager: SessionManager) -> None:
+    """Apply tiered delay based on API call count.
+
+    Args:
+        total_api_calls: Number of API calls to be made
+        session_manager: SessionManager instance
+    """
+    import time
+
+    if total_api_calls >= 15:
+        _apply_rate_limiting(session_manager)
+        logger.info(f"⏱️ Adaptive rate limiting: Full delay for heavy batch ({total_api_calls} API calls)")
+    elif total_api_calls >= 5:
+        time.sleep(1.2)  # Shorter than normal rate limiting
+        logger.info(f"⏱️ Adaptive rate limiting: 1.2s delay for medium batch ({total_api_calls} API calls)")
+    else:
+        time.sleep(0.3)  # Just 300ms delay for light loads
+        logger.debug(f"Adaptive rate limiting: 0.3s delay for light batch ({total_api_calls} API calls)")
+
+
 def _apply_predictive_rate_limiting(
     session_manager: SessionManager,
     total_api_calls: int
@@ -1759,82 +1841,37 @@ def _apply_predictive_rate_limiting(
     # Get current token count and fill rate from session manager
     rate_limiter = getattr(session_manager, 'rate_limiter', None)
 
-    if rate_limiter:
-        current_tokens = getattr(rate_limiter, 'tokens', 0)
-        fill_rate = getattr(rate_limiter, 'fill_rate', 2.0)
+    if not rate_limiter:
+        return
 
-        # Predict if we'll run out of tokens
-        tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
+    current_tokens = getattr(rate_limiter, 'tokens', 0)
+    tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
 
-        if current_tokens < tokens_needed:
-            # OPTIMIZATION: Account for token refill during batch execution
-            # Old logic assumed API calls execute instantly → massive over-waiting
-            # New logic: Estimate execution time and subtract tokens that will refill
-            # CRITICAL: Account for parallel workers to avoid under-estimation
+    if current_tokens < tokens_needed:
+        # OPTIMIZATION: Account for token refill during batch execution
+        optimal_pre_delay = _calculate_optimal_delay(
+            rate_limiter, total_api_calls, current_tokens, tokens_needed
+        )
 
-            # Get number of parallel workers from config
+        if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
             from config import config_schema
             num_workers = getattr(config_schema.api, 'parallel_workers', 2)
-
-            # Get effective RPS from rate limiter metrics (actual achieved rate)
             metrics = rate_limiter.get_metrics()
-            effective_rps = metrics.get('effective_rps', 1.5)  # Default to conservative 1.5 RPS
+            adjusted_effective_rps = metrics.get('effective_rps', 1.5) * (num_workers ** 0.5)
 
-            # CRITICAL FIX: With parallel workers, execution is FASTER than serial
-            # Adjust effective_rps by worker multiplier (conservative: use sqrt, not linear)
-            # Why sqrt? Parallel speedup has diminishing returns (Amdahl's Law)
-            # 2 workers: ~1.4× faster, 3 workers: ~1.7× faster, 4 workers: ~2.0× faster
-            import math
-            worker_speedup = math.sqrt(num_workers)
-            adjusted_effective_rps = effective_rps * worker_speedup
-
-            # Estimate how long this batch will actually take to execute
-            # Use adjusted effective_rps to account for parallelism
-            estimated_execution_time = total_api_calls / max(adjusted_effective_rps, 1.0)  # Avoid division by zero
-
-            # Calculate tokens that will refill DURING execution
-            tokens_refilled_during_execution = estimated_execution_time * fill_rate
-
-            # Actual tokens needed = required - current - (tokens that refill during execution)
-            actual_tokens_deficit = tokens_needed - current_tokens - tokens_refilled_during_execution
-
-            # Only pre-wait for the ACTUAL deficit (can be 0 or even negative if batch is slow)
-            # Add safety buffer for high worker counts (10% per worker above 2)
-            safety_buffer = max(0, (num_workers - 2) * 0.10 * tokens_needed)
-            optimal_pre_delay = max(0, (actual_tokens_deficit + safety_buffer) / fill_rate)
-
-            if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
-                logger.info(f"⏱️ Adaptive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls "
-                           f"({num_workers} workers, {adjusted_effective_rps:.1f} adjusted RPS, "
-                           f"tokens: {current_tokens:.1f}/{tokens_needed:.1f}, will refill {tokens_refilled_during_execution:.1f})")
-                time.sleep(optimal_pre_delay)
-            # Use existing tiered approach for light loads
-            elif total_api_calls >= 15:
-                _apply_rate_limiting(session_manager)
-                logger.info(f"⏱️ Adaptive rate limiting: Full delay for heavy batch ({total_api_calls} API calls)")
-            elif total_api_calls >= 5:
-                time.sleep(1.2)  # Shorter than normal rate limiting
-                logger.info(f"⏱️ Adaptive rate limiting: 1.2s delay for medium batch ({total_api_calls} API calls)")
-            else:
-                time.sleep(0.3)  # Just 300ms delay for light loads
-                logger.debug(f"Adaptive rate limiting: 0.3s delay for light batch ({total_api_calls} API calls)")
+            logger.info(
+                f"⏱️ Adaptive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls "
+                f"({num_workers} workers, {adjusted_effective_rps:.1f} adjusted RPS, "
+                f"tokens: {current_tokens:.1f}/{tokens_needed:.1f})"
+            )
+            time.sleep(optimal_pre_delay)
         else:
-            # Sufficient tokens available - minimal delay
-            time.sleep(0.1)  # Minimal delay to prevent hammering
-            logger.info(f"⚡ Adaptive rate limiting: Sufficient tokens ({current_tokens:.1f}) - minimal delay for {total_api_calls} API calls")
-    # Fallback to original tiered approach if rate_limiter not available
+            # Use existing tiered approach for light loads
+            _apply_tiered_delay(total_api_calls, session_manager)
     else:
-        logger.debug("Rate limiter not available - using fallback tiered approach")
-
-    if not rate_limiter and total_api_calls >= 15:
-        _apply_rate_limiting(session_manager)
-        logger.info(f"⏱️ Rate limiting: Full delay for heavy batch ({total_api_calls} API calls)")
-    elif not rate_limiter and total_api_calls >= 5:
-        time.sleep(1.2)
-        logger.info(f"⏱️ Rate limiting: 1.2s delay for medium batch ({total_api_calls} API calls)")
-    elif not rate_limiter:
-        time.sleep(0.3)
-        logger.debug(f"Rate limiting: 0.3s delay for light batch ({total_api_calls} API calls)")
+        # Sufficient tokens available - minimal delay
+        time.sleep(0.1)  # Minimal delay to prevent hammering
+        logger.info(f"⚡ Adaptive rate limiting: Sufficient tokens ({current_tokens:.1f}) - minimal delay for {total_api_calls} API calls")
 
 
 def _submit_api_call_groups(
@@ -2220,7 +2257,7 @@ def _check_session_health_periodic(
     session_manager: SessionManager
 ) -> None:
     """Check session health periodically during batch processing.
-    
+
     ADAPTIVE HEALTH CHECK INTERVAL:
     - Dynamically adjusts based on configured BATCH_SIZE
     - Formula: check_interval = max(5, BATCH_SIZE // 2)
@@ -3941,6 +3978,107 @@ def _get_optimized_batch_size(
         return 10  # Safe fallback
 
 
+def _calculate_batch_metrics(
+    total_stats: dict[str, int],
+    batch_times: list[float],
+    total_batches: int,
+    batch_num: int,
+    batch_start_time: float
+) -> tuple[str, int]:
+    """Calculate ETA and throughput metrics for batch processing.
+
+    Args:
+        total_stats: Accumulated batch statistics
+        batch_times: List of batch execution times
+        total_batches: Total number of batches to process
+        batch_num: Current batch number
+        batch_start_time: Start time of entire page processing
+
+    Returns:
+        Tuple of (eta_str, matches_per_hour)
+    """
+    # Calculate ETA for remaining batches
+    remaining_batches = total_batches - batch_num
+    if remaining_batches > 0 and batch_times:
+        avg_batch_time = sum(batch_times) / len(batch_times)
+        eta_seconds = avg_batch_time * remaining_batches
+        eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s" if eta_seconds >= 60 else f"{int(eta_seconds)}s"
+    else:
+        eta_str = "N/A"
+
+    # Calculate matches/hour throughput
+    total_processed = total_stats["new"] + total_stats["updated"] + total_stats["skipped"]
+    elapsed_so_far = time.time() - batch_start_time
+    matches_per_hour = int((total_processed / elapsed_so_far) * 3600) if elapsed_so_far > 0 else 0
+
+    return eta_str, matches_per_hour
+
+
+def _get_cache_hit_rate(session_manager: SessionManager) -> float:
+    """Get cache hit rate from API manager if available.
+
+    Args:
+        session_manager: SessionManager instance
+
+    Returns:
+        Cache hit rate as percentage (0-100)
+    """
+    if not hasattr(session_manager, 'api_manager'):
+        return 0.0
+
+    try:
+        api_cache = getattr(session_manager.api_manager, '_api_cache', None)
+        if api_cache and hasattr(api_cache, 'get_stats'):
+            cache_stats = api_cache.get_stats()  # type: ignore[attr-defined]
+            return cache_stats.get('hit_rate', 0.0) * 100
+    except Exception:
+        pass
+
+    return 0.0
+
+
+def _log_batch_summary(
+    current_page: int,
+    batch_num: int,
+    total_batches: int,
+    batch_elapsed: float,
+    new: int,
+    updated: int,
+    skipped: int,
+    errors: int,
+    eta_str: str,
+    matches_per_hour: int,
+    cache_hit_rate: float,
+    num_matches_on_page: int
+) -> None:
+    """Log comprehensive batch summary with metrics.
+
+    Args:
+        current_page: Current page number
+        batch_num: Current batch number
+        total_batches: Total number of batches
+        batch_elapsed: Batch execution time
+        new: New records count
+        updated: Updated records count
+        skipped: Skipped records count
+        errors: Error count
+        eta_str: ETA string for remaining batches
+        matches_per_hour: Throughput metric
+        cache_hit_rate: Cache hit rate percentage
+        num_matches_on_page: Total matches on page
+    """
+    total_processed = new + updated + skipped
+    print()
+    logger.info(f"📊 Page {current_page} Batch {batch_num}/{total_batches} Summary (Batch Time: {batch_elapsed:.1f}s)")
+    logger.info(f"   ✨ New: {new} | 🔄 Updated: {updated} | ⏭️  Skipped: {skipped} | ❌ Errors: {errors}")
+    logger.info(f"   📈 Progress: {total_processed}/{num_matches_on_page} matches | Throughput: {matches_per_hour:,} matches/hour")
+    if cache_hit_rate > 0:
+        logger.info(f"   💾 Cache Hit Rate: {cache_hit_rate:.1f}%")
+    if batch_num < total_batches:
+        logger.info(f"   ⏱️  ETA for remaining {total_batches - batch_num} batches: {eta_str}")
+    logger.info("   " + "-" * 70 + "\n")
+
+
 def _do_batch(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
@@ -3949,24 +4087,13 @@ def _do_batch(
 ) -> tuple[int, int, int, int]:
     """
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
-    
+
     BATCHING BENEFITS (Why We Batch):
     1. **DB Transaction Efficiency**: Bulk commits reduce I/O operations
-       - Single transaction for 10-25 matches instead of 50 individual commits
-       - Reduces database locks and improves concurrent access
-       
     2. **Error Isolation**: One problematic match doesn't fail entire page
-       - Bad data in match 15 only fails that batch, not all 50 matches
-       - Allows partial success and retry of failed batches
-       
     3. **Memory Management**: Process large pages in manageable chunks
-       - With itemsPerPage=50, batching prevents memory spikes
-       - Allows garbage collection between batches
-       
     4. **Progress Visibility**: Granular logging for long-running pages
-       - See progress within a page (Batch 1/2, 2/2 complete)
-       - Easier debugging (know exactly which batch failed)
-    
+
     If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
     SURGICAL FIX #7: Reuses database session across all batches on a page.
     PRIORITY 5: Dynamic Batch Optimization with intelligent response-time adaptation.
@@ -3991,9 +4118,14 @@ def _do_batch(
         logger.debug(f"Splitting page {current_page} ({num_matches_on_page} matches) into batches of {optimized_batch_size}")
         total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
 
+        # Track timing for ETA calculation
+        batch_times: list[float] = []
+        total_batches = (num_matches_on_page + optimized_batch_size - 1) // optimized_batch_size
+
         for batch_idx in range(0, num_matches_on_page, optimized_batch_size):
             batch_matches = matches_on_page[batch_idx:batch_idx + optimized_batch_size]
             batch_num = (batch_idx // optimized_batch_size) + 1
+            batch_start = time.time()
 
             logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
 
@@ -4008,14 +4140,24 @@ def _do_batch(
             total_stats["skipped"] += skipped
             total_stats["error"] += errors
 
-            # Log batch summary
-            print()
-            logger.debug(f"---- Page {current_page} Batch No{batch_num} Summary ----")
-            logger.debug(f"  New Person/Data: {new}")
-            logger.debug(f"  Updated Person/Data: {updated}")
-            logger.debug(f"  Skipped (No Change): {skipped}")
-            logger.debug(f"  Errors during Prep/DB: {errors}")
-            logger.debug("---------------------------\n")
+            # Track batch timing
+            batch_elapsed = time.time() - batch_start
+            batch_times.append(batch_elapsed)
+
+            # Calculate metrics using helper function
+            eta_str, matches_per_hour = _calculate_batch_metrics(
+                total_stats, batch_times, total_batches, batch_num, batch_start_time
+            )
+
+            # Get cache stats using helper function
+            cache_hit_rate = _get_cache_hit_rate(session_manager)
+
+            # Log comprehensive batch summary using helper function
+            _log_batch_summary(
+                current_page, batch_num, total_batches, batch_elapsed,
+                new, updated, skipped, errors,
+                eta_str, matches_per_hour, cache_hit_rate, num_matches_on_page
+            )
 
         # PRIORITY 5: Track batch performance for future optimization
         batch_duration = time.time() - batch_start_time
@@ -4033,7 +4175,6 @@ def _do_batch(
                     f"({success_rate:.1%} success rate, batch size: {optimized_batch_size})")
 
         # OPTIMIZATION: Improved logging clarity - this measures full page processing time
-        # Note: With BATCH_SIZE=30 matching MATCHES_PER_PAGE=30, typically just 1 batch per page
         if batch_duration > 30.0:
             logger.debug(f"Page {current_page} processing took {batch_duration:.1f}s for {num_matches_on_page} matches "
                         f"(avg {batch_duration/num_matches_on_page:.1f}s per match)")
@@ -5006,7 +5147,7 @@ def _add_ethnicity_data(
     dna_dict_base: dict[str, Any],
     existing_dna_match: Optional[DnaMatch],
     match: dict[str, Any],
-    match_uuid: str,
+    _match_uuid: str,  # Unused but kept for API consistency
     log_ref_short: str,
     logger_instance: logging.Logger
 ) -> None:
@@ -5029,7 +5170,7 @@ def _prepare_dna_match_operation_data(
     predicted_relationship: Optional[str],
     log_ref_short: str,
     logger_instance: logging.Logger,
-    session_manager: SessionManager,
+    _session_manager: SessionManager,  # Unused but kept for future needs
 ) -> Optional[dict[str, Any]]:
     """
     Prepares DnaMatch data for create or update operations by comparing API data with existing records.
@@ -5322,7 +5463,7 @@ def _process_dna_data_safe(
             predicted_relationship=predicted_relationship,
             log_ref_short=log_ref_short,
             logger_instance=logger_instance,
-            session_manager=session_manager,
+            _session_manager=session_manager,
         )
     except Exception as dna_err:
         logger_instance.error(
@@ -6960,7 +7101,7 @@ def _extract_first_relationship(kinship_persons: list[dict[str, Any]]) -> Option
 
 
 def _fetch_batch_ladder(
-    session_manager: SessionManager, cfpid: str, tree_id: str
+    session_manager: SessionManager, cfpid: str, _tree_id: str  # tree_id unused - derived from session
 ) -> Optional[dict[str, Any]]:
     """
     Fetches the relationship ladder details (relationship path, actual relationship)
@@ -6972,7 +7113,7 @@ def _fetch_batch_ladder(
     Args:
         session_manager: The active SessionManager instance.
         cfpid: The CFPID (Person ID within the tree) of the target person.
-        tree_id: The ID of the user's tree containing the CFPID.
+        _tree_id: The ID of the user's tree (unused - derived from session context).
 
     Returns:
         A dictionary containing 'actual_relationship' and 'relationship_path' strings

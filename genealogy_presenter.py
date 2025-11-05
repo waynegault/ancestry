@@ -19,7 +19,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def _format_years_display(birth_year: Optional[int], death_year: Optional[int]) -> str:
+def _format_years_display(birth_year: int | None, death_year: int | None) -> str:
     """Format birth and death years for display."""
     if birth_year and death_year:
         return f" ({birth_year}-{death_year})"
@@ -73,7 +73,7 @@ def _filter_valid_members(members: list[dict]) -> list[dict]:
 
 def display_family_members(
     family_data: dict[str, list],
-    relation_labels: Optional[dict[str, str]] = None,
+    relation_labels: dict[str, str] | None = None,
 ) -> None:
     """
     Display family members in a consistent format for both Action 10 and Action 11.
@@ -109,13 +109,13 @@ def display_family_members(
 
 def present_post_selection(
     display_name: str,
-    birth_year: Optional[int],
-    death_year: Optional[int],
+    birth_year: int | None,
+    death_year: int | None,
     family_data: dict[str, list],
     owner_name: str,
-    relation_labels: Optional[dict[str, str]] = None,
-    unified_path: Optional[list] = None,
-    formatted_path: Optional[str] = None,
+    relation_labels: dict[str, str] | None = None,
+    unified_path: list | None = None,
+    formatted_path: str | None = None,
 ) -> None:
     """
     Unified presenter for post-selection info: match header, family, and relationship.
@@ -140,7 +140,7 @@ def present_post_selection(
     display_family_members(family_data, relation_labels)
 
     # 3) Relationship (blank line before)
-    relation_text: Optional[str] = None
+    relation_text: str | None = None
     if formatted_path:
         relation_text = formatted_path
     elif unified_path:
