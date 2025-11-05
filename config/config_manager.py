@@ -721,7 +721,7 @@ class ConfigManager:
                 logger.warning(f"Invalid ACTION6_COORD_TIMEOUT: {a6_coord_timeout}")
 
     def _load_env_var_if_present(self, api_config: dict[str, Any], env_var: str, config_key: str) -> None:
-        """Load environment variable into config if present.
+        """Load environment variable into config if present with type conversion.
 
         Args:
             api_config: Dictionary to update with config value
@@ -730,7 +730,17 @@ class ConfigManager:
         """
         value = os.getenv(env_var)
         if value:
-            api_config[config_key] = value
+            # Type conversion for known boolean fields
+            if config_key in ['lm_studio_auto_start']:
+                api_config[config_key] = value.lower() in ['true', '1', 'yes', 'on']
+            # Type conversion for known integer fields
+            elif config_key in ['lm_studio_startup_timeout']:
+                try:
+                    api_config[config_key] = int(value)
+                except ValueError:
+                    logger.warning(f"Invalid integer value for {env_var}: {value}, using default")
+            else:
+                api_config[config_key] = value
 
     def _load_api_keys_from_env(self, config: dict[str, Any]) -> None:
         """Load API keys configuration from environment variables."""
@@ -752,6 +762,9 @@ class ConfigManager:
             ("LOCAL_LLM_API_KEY", "local_llm_api_key"),
             ("LOCAL_LLM_MODEL", "local_llm_model"),
             ("LOCAL_LLM_BASE_URL", "local_llm_base_url"),
+            ("LM_STUDIO_PATH", "lm_studio_path"),
+            ("LM_STUDIO_AUTO_START", "lm_studio_auto_start"),
+            ("LM_STUDIO_STARTUP_TIMEOUT", "lm_studio_startup_timeout"),
         ]
 
         # Load all environment variables using helper method

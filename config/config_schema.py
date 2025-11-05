@@ -407,6 +407,9 @@ class APIConfig:
     local_llm_api_key: Optional[str] = None
     local_llm_model: str = "qwen2.5-14b-instruct"
     local_llm_base_url: str = "http://localhost:1234/v1"
+    lm_studio_path: str = r"C:\Program Files\LM Studio\LM Studio.exe"
+    lm_studio_auto_start: bool = True  # Auto-start LM Studio if not running
+    lm_studio_startup_timeout: int = 60  # Max seconds to wait for API readiness
 
     # Request settings
     request_timeout: int = 60  # Increased from 30 to 60 seconds for slower API responses during rate limiting

@@ -2180,12 +2180,14 @@ def _check_lm_studio_running() -> bool:
 
 
 def _validate_local_llm_config(config_schema: Any) -> bool:
-    """Validate local LLM configuration.
+    """Validate local LLM configuration with auto-start support.
 
     Returns:
         True if validation passed, False otherwise
     """
     from openai import OpenAI
+
+    from lm_studio_manager import create_manager_from_config
 
     api_key = config_schema.api.local_llm_api_key
     model_name = config_schema.api.local_llm_model
@@ -2195,9 +2197,18 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
         return False
 
-    if not _check_lm_studio_running():
-        logger.warning("⚠️ LM Studio is not running")
-        logger.warning("   Please start LM Studio and load a model before using AI features")
+    # Auto-start LM Studio if not running (or verify it's ready)
+    try:
+        lm_manager = create_manager_from_config(config_schema)
+        success, error_msg = lm_manager.ensure_ready()
+
+        if not success:
+            logger.warning(f"⚠️ LM Studio not ready: {error_msg}")
+            return False
+
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to start/verify LM Studio: {e}")
+        logger.warning("   Please start LM Studio manually and load a model")
         return False
 
     # Check if model is loaded
@@ -2214,7 +2225,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         return True
     except Exception as e:
         logger.warning(f"⚠️ Could not validate Local LLM: {e}")
-        logger.warning("   AI features may not work until LM Studio is running")
+        logger.warning("   AI features may not work until model is loaded in LM Studio")
         return False
 
 

@@ -175,37 +175,81 @@ Phase status snapshot:
 
 ## Local LLM Integration (Phase 7 – Real Use)
 
-Local models are supported via LM Studio (OpenAI-compatible server). Configure and validate as follows:
+Local models are supported via LM Studio (OpenAI-compatible server) with **automatic startup**. Configure and validate as follows:
 
-1. .env settings
+### Configuration (.env)
 ```bash
 AI_PROVIDER="local_llm"
 LOCAL_LLM_API_KEY="lm-studio"        # LM Studio default
 LOCAL_LLM_MODEL="qwen3-4b-2507"      # Or any model you load in LM Studio
 LOCAL_LLM_BASE_URL="http://localhost:1234/v1"
+
+# Auto-Start Settings (automatic LM Studio launch)
+LM_STUDIO_PATH=C:\Program Files\LM Studio\LM Studio.exe
+LM_STUDIO_AUTO_START=true            # Automatically start if not running
+LM_STUDIO_STARTUP_TIMEOUT=60         # Max seconds to wait for API readiness
 ```
 
-1. Start LM Studio (GUI)
-- Open LM Studio
-- Load your chosen instruct model (e.g., qwen3-4b-2507 or Llama/Mistral)
-- Click "Start Server"; ensure it shows Running at http://localhost:1234/v1
+### Automatic Startup
 
-1. Validate with the real tests
+**No manual startup required!** When you run `main.py` with `AI_PROVIDER="local_llm"`:
+
+1. **Process Detection**: Checks if LM Studio is already running
+2. **Auto-Start**: If not running, launches LM Studio automatically (configurable)
+3. **API Health Check**: Waits for API to be ready (with timeout)
+4. **Model Validation**: Verifies configured model is loaded
+
+You'll see:
+```
+🚀 Starting LM Studio from: C:\Program Files\LM Studio\LM Studio.exe
+✅ LM Studio process started
+⏳ Waiting for LM Studio API (timeout: 60s)...
+✅ LM Studio API ready (took 8.3s)
+✅ Local LLM ready: qwen3-4b-2507
+```
+
+### Manual Usage (if auto-start disabled)
+
+1. **Start LM Studio** (GUI)
+   - Open LM Studio
+   - Load your chosen instruct model (e.g., qwen3-4b-2507 or Llama/Mistral)
+   - Click "Start Server"; ensure it shows Running at http://localhost:1234/v1
+
+2. **Validate with tests**
+   ```bash
+   python test_local_llm.py
+   ```
+   - Test 1 (Direct connection) should PASS in <5s typical
+   - Test 2 (Configuration) should PASS with AI_PROVIDER=local_llm
+   - Test 3 (Genealogical prompt) should PASS and mention at least 3 of: census, birth, marriage, death, record, search, scotland
+
+3. **Use in normal actions**
+   - Keep LM Studio running
+   - Run Action 8 or 9 normally; AI calls will route to the local model
+
+### Testing Auto-Start
+
+Run the demo script to test auto-start functionality:
 ```bash
-python test_local_llm.py
+python demo_lm_studio_autostart.py
 ```
-- Test 1 (Direct connection) should PASS in <5s typical
-- Test 2 (Configuration) should PASS with AI_PROVIDER=local_llm
-- Test 3 (Genealogical prompt) should PASS and mention at least 3 of: census, birth, marriage, death, record, search, scotland
 
-1. Use in normal actions
-- Keep LM Studio running
-- Run Action 8 or 9 normally; AI calls will route to the local model
+### Troubleshooting
 
-Troubleshooting
-- Ensure the server status is Running and the model is loaded
-- Verify .env AI_PROVIDER/local LLM vars are set exactly
-- Restart LM Studio and re-run tests if connection errors persist
+**LM Studio executable not found**:
+- Update `LM_STUDIO_PATH` in `.env` to match your installation location
+
+**API timeout after 60s**:
+- Increase `LM_STUDIO_STARTUP_TIMEOUT` in `.env`
+- Check firewall isn't blocking localhost:1234
+- Verify nothing else is using port 1234: `netstat -ano | findstr :1234`
+
+**Model not loaded**:
+- LM Studio starts automatically, but you must manually load a model in the UI
+- Open LM Studio → "My Models" → Load your configured model
+
+**Disable auto-start**:
+- Set `LM_STUDIO_AUTO_START=false` in `.env` to require manual startup
 
 ## Future Developer Ideas
 
