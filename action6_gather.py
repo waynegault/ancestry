@@ -634,6 +634,17 @@ def _navigate_and_get_initial_page_data(
 
     logger.debug(f"Fetching initial page {start_page} to determine total pages...")
 
+    # CRITICAL FIX: Proactive cookie refresh to prevent 303 redirects
+    # The 303 "See Other" response indicates stale cookies from previous session
+    # Refreshing before first API call ensures fresh, valid cookies
+    logger.debug("Proactively refreshing browser cookies before first API call...")
+    try:
+        session_manager.api_manager.sync_cookies_from_browser(session_manager.browser_manager)
+        logger.debug("✅ Cookies refreshed successfully - preventing 303 redirect")
+    except Exception as cookie_refresh_err:
+        logger.warning(f"Cookie refresh warning (non-fatal): {cookie_refresh_err}")
+        # Continue anyway - if cookies are truly invalid, the API call will handle it
+
     # Get database session with retries
     db_session_for_page = _get_db_session_with_retries(session_manager)
     if not db_session_for_page:
@@ -2172,14 +2183,17 @@ def _check_session_health_periodic(
     Raises:
         MaxApiFailuresExceededError: If session death detected
     """
-    if processed_tasks % 10 != 0:
+    # CRITICAL FIX: Check every 5 tasks instead of 10 for faster session death detection
+    # Browser can crash quickly (saw death at task 10), need tighter monitoring
+    if processed_tasks % 5 != 0:
         return
 
     if session_manager.check_session_health():
         return
 
+    # Session death detected - must abort gracefully
     logger.critical(
-        f"🚨 Session death detected during batch processing "
+        f"🚨 Session death confirmed after recovery attempt "
         f"(task {processed_tasks}/{total_tasks}). Cancelling remaining tasks."
     )
 
@@ -3982,11 +3996,11 @@ def _process_batch_lookups(
     page_statuses: dict[str, int]
 ) -> tuple[dict[str, Person], set[str], list[dict[str, Any]], int]:
     """Process batch lookups and identify candidates."""
-    logger.debug(f"Batch {current_page}: Looking up existing persons...")
+    logger.debug(f"Page {current_page}: Looking up existing persons...")
     uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-    logger.info(f"Batch {current_page}: Looking up {len(uuids_on_page)} UUIDs in database...")
+    logger.info(f"Page {current_page}: DB lookup for {len(uuids_on_page)} matches...")
     existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
-    logger.info(f"Batch {current_page}: Found {len(existing_persons_map)} existing persons in database")
+    logger.info(f"Page {current_page}: Found {len(existing_persons_map)} in database (will fetch {len(uuids_on_page) - len(existing_persons_map)} new)")
 
     logger.debug(f"Batch {current_page}: Identifying candidates...")
     fetch_candidates_uuid, matches_to_process_later, skipped_count = (
