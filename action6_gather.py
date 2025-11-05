@@ -1901,19 +1901,27 @@ def _submit_api_call_groups(
     futures: dict[Any, tuple[str, str]] = {}
 
     # Group 1: Submit combined details calls first (most common)
-    for uuid_val in fetch_candidates_uuid:
+    # BURST PREVENTION: Stagger task submissions to spread out parallel worker execution
+    # Without stagger: 2 workers grab tasks instantly → 2 simultaneous API calls → burst → 429
+    # With stagger: Small delays between submissions → workers execute at different times → smooth rate
+    for idx, uuid_val in enumerate(fetch_candidates_uuid):
         future = executor.submit(_fetch_combined_details, session_manager, uuid_val)
         futures[future] = ("combined_details", uuid_val)
+        # Add micro-stagger: 50-150ms random jitter between submissions
+        # This spreads worker execution across time without significant slowdown
+        if idx % 2 == 0:  # Every other submission (don't overdo it)
+            time.sleep(random.uniform(0.05, 0.15))
 
     if fetch_candidates_uuid:
         # OPTIMIZATION: Reduced from 0.5s to 0.3s for faster batches
-        # With 3.5 RPS, we add 1.05 tokens in 0.3s, sufficient breathing room
+        # With 2.0 RPS, we add 0.6 tokens in 0.3s, sufficient breathing room
         time.sleep(0.3)
-        logger.debug(f"Submitted {len(fetch_candidates_uuid)} combined details API calls (waiting 0.3s for token refill)")
+        logger.debug(f"Submitted {len(fetch_candidates_uuid)} combined details API calls with staggered execution (waiting 0.3s for token refill)")
 
     # Group 2: Submit relationship probability calls (selective with priority)
+    # BURST PREVENTION: Stagger these submissions too
     rel_count = 0
-    for uuid_val in fetch_candidates_uuid:
+    for idx, uuid_val in enumerate(fetch_candidates_uuid):
         if uuid_val in priority_uuids:
             max_labels = 3 if uuid_val in high_priority_uuids else 2
             future = executor.submit(_fetch_batch_relationship_prob, session_manager, uuid_val, max_labels)
@@ -1921,30 +1929,39 @@ def _submit_api_call_groups(
             rel_count += 1
             logger.debug(f"Queued relationship probability for {uuid_val[:8]} "
                        f"(priority: {'high' if uuid_val in high_priority_uuids else 'medium'})")
+            # Stagger every other submission
+            if idx % 2 == 0:
+                time.sleep(random.uniform(0.05, 0.15))
 
     if rel_count > 0:
-        time.sleep(0.3)  # Reduced for faster batches with 3.5 RPS
-        logger.debug(f"Submitted {rel_count} relationship probability API calls (waiting 0.3s for token refill)")
+        time.sleep(0.3)  # Breathing room for token refill with 2.0 RPS
+        logger.debug(f"Submitted {rel_count} relationship probability API calls with staggered execution (waiting 0.3s for token refill)")
 
     # Group 3: Submit badge details calls last (tree-related)
-    for uuid_val in uuids_for_tree_badge_ladder:
+    # BURST PREVENTION: Stagger badge submissions
+    for idx, uuid_val in enumerate(uuids_for_tree_badge_ladder):
         future = executor.submit(_fetch_batch_badge_details, session_manager, uuid_val)
         futures[future] = ("badge_details", uuid_val)
+        if idx % 2 == 0:
+            time.sleep(random.uniform(0.05, 0.15))
 
     if uuids_for_tree_badge_ladder:
-        time.sleep(0.3)  # Reduced for faster batches with 3.5 RPS
-        logger.debug(f"Submitted {len(uuids_for_tree_badge_ladder)} badge details API calls (waiting 0.3s for token refill)")
+        time.sleep(0.3)  # Breathing room for token refill with 2.0 RPS
+        logger.debug(f"Submitted {len(uuids_for_tree_badge_ladder)} badge details API calls with staggered execution (waiting 0.3s for token refill)")
 
     # Group 4: Submit ethnicity comparison calls (controlled rate limiting)
     # OPTIMIZATION: Only fetch ethnicity for priority matches (>= DNA_MATCH_PROBABILITY_THRESHOLD_CM)
     # ethnicity_uuids is pre-calculated and passed as parameter to avoid duplicate calculation
-    for uuid_val in ethnicity_uuids:
+    # BURST PREVENTION: Stagger ethnicity submissions
+    for idx, uuid_val in enumerate(ethnicity_uuids):
         future = executor.submit(_fetch_ethnicity_for_batch, session_manager, uuid_val)
         futures[future] = ("ethnicity_data", uuid_val)
+        if idx % 2 == 0:
+            time.sleep(random.uniform(0.05, 0.15))
 
     if ethnicity_uuids:
         skipped_ethnicity = len(fetch_candidates_uuid) - len(ethnicity_uuids)
-        logger.info(f"🧬 Submitted {len(ethnicity_uuids)} ethnicity comparison API calls "
+        logger.info(f"🧬 Submitted {len(ethnicity_uuids)} ethnicity comparison API calls with staggered execution "
                    f"(skipped {skipped_ethnicity} low-priority matches < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM)")
 
     return futures

@@ -1330,11 +1330,14 @@ class RateLimiter:
         # CRITICAL FIX: Restore working version behavior (c3b5535)
         # Token bucket capacity and fill_rate MUST use config values
         # fill_rate = requests_per_second (controls actual rate limiting)
+        # BURST PREVENTION: Reduced capacity from 10.0 to 2.0 to prevent parallel worker bursts
+        # With 2 workers, max burst = 2 tokens = 2 simultaneous calls (safe for Ancestry)
+        # Original 10 tokens allowed 10 simultaneous calls = instant 429 errors!
         api = getattr(cfg, 'api', None)
         self.capacity = float(
             token_capacity
             if token_capacity is not None
-            else (getattr(api, "token_bucket_capacity", 10.0) if api else 10.0)
+            else (getattr(api, "token_bucket_capacity", 2.0) if api else 2.0)
         )
         # CRITICAL: fill_rate MUST use requests_per_second for proper rate limiting!
         # Working version (c3b5535) used: getattr(api, "requests_per_second", 0.7)
