@@ -4354,10 +4354,15 @@ def _process_page_matches(
     """
     my_uuid = session_manager.my_uuid
 
+    # TIMING BREAKDOWN: Track each phase for performance analysis
+    phase_start = time.time()
+    timing_log = {}
+
     try:
         page_statuses, num_matches_on_page, _ = _initialize_page_processing(
             matches_on_page, current_page, my_uuid
         )
+        timing_log["initialization"] = time.time() - phase_start
     except ValueError:
         return 0, 0, 0, 0
 
@@ -4365,23 +4370,49 @@ def _process_page_matches(
         batch_session = _get_batch_session(session_manager, reused_session, current_page)
 
         try:
+            # Phase 1: Database Lookups
+            phase_start = time.time()
             existing_persons_map, fetch_candidates_uuid, matches_to_process_later, _ = (
                 _process_batch_lookups(batch_session, matches_on_page, current_page, progress_bar, page_statuses)
             )
+            timing_log["db_lookups"] = time.time() - phase_start
+            logger.debug(f"⏱️  Page {current_page} - DB lookups: {timing_log['db_lookups']:.2f}s")
 
+            # Phase 2: API Prefetches (parallel API calls)
+            phase_start = time.time()
             prefetched_data = _perform_batch_api_prefetches(
                 session_manager, fetch_candidates_uuid, matches_to_process_later, current_page
             )
+            timing_log["api_prefetches"] = time.time() - phase_start
+            logger.debug(f"⏱️  Page {current_page} - API prefetches: {timing_log['api_prefetches']:.2f}s")
 
+            # Phase 3: Data Preparation & DB Commit
+            phase_start = time.time()
             _prepare_and_commit_batch_data(
                 batch_session, session_manager, matches_to_process_later,
                 existing_persons_map, prefetched_data, progress_bar,
                 current_page, page_statuses
             )
+            timing_log["data_prep_commit"] = time.time() - phase_start
+            logger.debug(f"⏱️  Page {current_page} - Data prep & commit: {timing_log['data_prep_commit']:.2f}s")
         finally:
             _cleanup_batch_session(session_manager, batch_session, reused_session, current_page)
 
         _log_batch_summary_if_needed(is_batch, current_page, page_statuses)
+        
+        # Log timing breakdown summary for slow pages
+        total_time = sum(timing_log.values())
+        if total_time > 30.0:
+            logger.warning(
+                f"⏱️  Page {current_page} TIMING BREAKDOWN (Total: {total_time:.1f}s):\n"
+                f"    - DB Lookups: {timing_log.get('db_lookups', 0):.2f}s "
+                f"({timing_log.get('db_lookups', 0) / total_time * 100:.1f}%)\n"
+                f"    - API Prefetches: {timing_log.get('api_prefetches', 0):.2f}s "
+                f"({timing_log.get('api_prefetches', 0) / total_time * 100:.1f}%)\n"
+                f"    - Data Prep & Commit: {timing_log.get('data_prep_commit', 0):.2f}s "
+                f"({timing_log.get('data_prep_commit', 0) / total_time * 100:.1f}%)"
+            )
+        
         return (
             page_statuses["new"],
             page_statuses["updated"],
@@ -5642,11 +5673,13 @@ def _call_match_list_api(
         API response (dict, Response object, or None)
     """
     # Use the working API endpoint pattern with itemsPerPage parameter
-    # CRITICAL OPTIMIZATION: itemsPerPage=50 reduces total pages by 60% (20→50 matches/page)
-    # This dramatically reduces API calls and page transitions
+    # OPTIMIZATION: itemsPerPage=30 balances throughput vs rate limiting
+    # - itemsPerPage=50 caused 429 errors (~70 API calls exceeds 10-token bucket capacity)
+    # - itemsPerPage=30 requires ~45 API calls (manageable with 2 workers, 3.5 RPS)
+    # - Still 50% better than default itemsPerPage=20
     match_list_url = urljoin(
         config_schema.api.base_url,
-        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage=50&currentPage={current_page}",
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage=30&currentPage={current_page}",
     )
     # Use simplified headers that were working earlier
     match_list_headers = {

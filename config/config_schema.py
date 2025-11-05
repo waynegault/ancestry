@@ -646,8 +646,8 @@ class ConfigSchema:
     user_location: str = ""
 
     # Batch processing settings
-    batch_size: int = 10  # Updated to match .env BATCH_SIZE=10
-    matches_per_page: int = 20  # Number of matches displayed per page by Ancestry
+    batch_size: int = 25  # Updated to match .env BATCH_SIZE=25
+    matches_per_page: int = 30  # Number of matches to fetch per API page (itemsPerPage parameter). Default 20, optimized to 30 (balances throughput vs rate limiting)
     max_productive_to_process: int = 50
     max_inbox: int = 100
     person_refresh_days: int = 14  # Skip re-fetching person details if updated within this many days (0 = always fetch)
