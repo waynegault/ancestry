@@ -6019,6 +6019,7 @@ def _refine_single_match(
 
         shared_cm = int(relationship_info.get("sharedCentimorgans", 0))
         shared_segments = int(relationship_info.get("numSharedSegments", 0))
+        predicted_relationship = relationship_info.get("relationshipRange") or relationship_info.get("predictedRelationship")
         created_date_raw = match_api_data.get("createdDate")
 
         compare_link = urljoin(
@@ -6039,6 +6040,7 @@ def _refine_single_match(
             "photoUrl": photo_url,
             "cm_dna": shared_cm,
             "numSharedSegments": shared_segments,
+            "predicted_relationship": predicted_relationship,
             "compare_link": compare_link,
             "message_link": None,
             "in_my_tree": is_in_tree,
