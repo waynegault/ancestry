@@ -1503,13 +1503,17 @@ class RateLimiter:
 
         Uses adaptive decrease rate:
         - If delay is > 2x initial_delay: decrease by 10% (fast recovery)
-        - Otherwise: decrease by 2% (gradual recovery)
+        - Otherwise: decrease by configured decrease_factor (gradual recovery)
+        
+        Note: Can decrease below initial_delay (which is a starting point, not a minimum).
+        Hard minimum is 0.1s to prevent API hammering.
         """
         # Record success in circuit breaker
         self.circuit_breaker.record_success()
 
         with self._lock:
-            if not self.last_throttled and self.current_delay > self.initial_delay:
+            # Allow decrease as long as we're above hard minimum and not recently throttled
+            if not self.last_throttled and self.current_delay > 0.1:
                 previous_delay = self.current_delay
 
                 # Adaptive decrease rate: faster recovery when delay is high
@@ -2185,11 +2189,11 @@ def _execute_api_request(
         # Each RetryError likely represents 3+ actual 429 errors that were hidden from our rate limiter
         error_str = str(e)
         if (("RetryError" in type(e).__name__ or "RetryError" in error_str) and ("429" in error_str or "too many 429" in error_str.lower()) and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter):
-            # This is a RetryError caused by 429s - track as failed request with 429 errors
-            # Estimate 3 actual 429s per RetryError (requests library default retry count)
-            for _ in range(3):
-                session_manager.rate_limiter.increase_delay()
-            logger.debug("Tracked RetryError as ~3 hidden 429 errors for rate limiter")
+            # This is a RetryError caused by 429s - increase delay ONCE per failed request
+            # NOTE: We used to call increase_delay() 3x here, but that caused exponential cascading (0.1s → 19.8s in one API call!)
+            # The backoff_factor already accounts for severity, no need to compound it
+            session_manager.rate_limiter.increase_delay()
+            logger.debug("Tracked RetryError with 429 errors - increased rate limit delay once")
 
         return None
     except Exception as e:

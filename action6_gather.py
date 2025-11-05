@@ -7319,10 +7319,10 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
         if hasattr(limiter, "decrease_delay"):
             limiter.decrease_delay()
         new_delay = getattr(limiter, "current_delay", None)
+        # Log all significant decreases (>0.01s change) - removed the unnecessary initial_delay check
         if (
             previous_delay is not None and new_delay is not None and
             abs(previous_delay - new_delay) > 0.01
-            and new_delay > getattr(config_schema.api, "initial_delay", 0.5)
         ):
             logger.info(
                 f"⚡ Adaptive rate limiting: Decreased delay to {new_delay:.2f}s after page {current_page} (was {previous_delay:.2f}s)."
