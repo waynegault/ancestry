@@ -362,6 +362,46 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
     return region_keys, column_map
 
 
+def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Optional[int]]]:
+    """
+    Fetch and parse ethnicity comparison data for a single match (for parallel execution).
+    
+    This function is called from ThreadPoolExecutor in the controlled parallel API fetch,
+    ensuring ethnicity API calls respect rate limiting alongside other APIs.
+    
+    Args:
+        session_manager: Active session manager
+        match_uuid: Match UUID to fetch ethnicity for
+        
+    Returns:
+        Dictionary of {column_name: percentage} or None if unavailable
+    """
+    my_uuid = session_manager.my_uuid
+    if not my_uuid or not match_uuid:
+        return None
+
+    region_keys, column_map = _get_ethnicity_config()
+    if not region_keys or not column_map:
+        return None
+
+    match_guid = str(match_uuid).upper()
+    comparison_data = fetch_ethnicity_comparison(session_manager, my_uuid, match_guid)
+    if not comparison_data:
+        return None
+
+    percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
+    payload: dict[str, Optional[int]] = {}
+    for region_key, percentage in percentages.items():
+        column_name = column_map.get(str(region_key))
+        if column_name:
+            try:
+                payload[column_name] = int(percentage) if percentage is not None else None
+            except (TypeError, ValueError):
+                pass  # Skip invalid values silently in batch mode
+
+    return payload if payload else None
+
+
 def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
     """Fetch ethnicity comparison data and map it to database column names."""
     if not my_uuid or not match_uuid:
@@ -1798,6 +1838,15 @@ def _submit_api_call_groups(
     if uuids_for_tree_badge_ladder:
         logger.debug(f"Submitted {len(uuids_for_tree_badge_ladder)} badge details API calls")
 
+    # Group 4: Submit ethnicity comparison calls (controlled rate limiting)
+    # Previously these were called inside data preparation, bypassing rate limiter
+    for uuid_val in fetch_candidates_uuid:
+        future = executor.submit(_fetch_ethnicity_for_batch, session_manager, uuid_val)
+        futures[future] = ("ethnicity_data", uuid_val)
+
+    if fetch_candidates_uuid:
+        logger.debug(f"Submitted {len(fetch_candidates_uuid)} ethnicity comparison API calls")
+
     return futures
 
 
@@ -1807,7 +1856,8 @@ def _store_future_result(
     result: Any,
     batch_combined_details: dict[str, Optional[dict[str, Any]]],
     temp_badge_results: dict[str, Optional[dict[str, Any]]],
-    batch_relationship_prob_data: dict[str, Optional[str]]
+    batch_relationship_prob_data: dict[str, Optional[str]],
+    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]]
 ) -> int:
     """Store result from a future in the appropriate dictionary.
 
@@ -1818,6 +1868,7 @@ def _store_future_result(
         batch_combined_details: Dictionary to store combined details results
         temp_badge_results: Dictionary to store badge results
         batch_relationship_prob_data: Dictionary to store relationship probability results
+        batch_ethnicity_data: Dictionary to store ethnicity comparison results
 
     Returns:
         Number of critical failures (0 or 1)
@@ -1833,6 +1884,8 @@ def _store_future_result(
         temp_badge_results[identifier_uuid] = result
     elif task_type == "relationship_prob":
         batch_relationship_prob_data[identifier_uuid] = result
+    elif task_type == "ethnicity_data":
+        batch_ethnicity_data[identifier_uuid] = result
 
     return critical_failures
 
@@ -1843,17 +1896,19 @@ def _process_single_future_result(
     identifier_uuid: str,
     batch_combined_details: dict[str, Optional[dict[str, Any]]],
     temp_badge_results: dict[str, Optional[dict[str, Any]]],
-    batch_relationship_prob_data: dict[str, Optional[str]]
+    batch_relationship_prob_data: dict[str, Optional[str]],
+    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]]
 ) -> int:
     """Process result from a single future.
 
     Args:
         future: Future object to process
-        task_type: Type of task ("combined_details", "badge_details", "relationship_prob")
+        task_type: Type of task ("combined_details", "badge_details", "relationship_prob", "ethnicity_data")
         identifier_uuid: UUID of the match
         batch_combined_details: Dictionary to store combined details results
         temp_badge_results: Dictionary to store badge results
         batch_relationship_prob_data: Dictionary to store relationship probability results
+        batch_ethnicity_data: Dictionary to store ethnicity comparison results
 
     Returns:
         Number of critical failures (0 or 1)
@@ -1862,21 +1917,21 @@ def _process_single_future_result(
         result = future.result()
         return _store_future_result(
             task_type, identifier_uuid, result,
-            batch_combined_details, temp_badge_results, batch_relationship_prob_data
+            batch_combined_details, temp_badge_results, batch_relationship_prob_data, batch_ethnicity_data
         )
 
     except ConnectionError as conn_err:
         logger.error(f"ConnErr prefetch '{task_type}' {identifier_uuid}: {conn_err}", exc_info=False)
         return _store_future_result(
             task_type, identifier_uuid, None,
-            batch_combined_details, temp_badge_results, batch_relationship_prob_data
+            batch_combined_details, temp_badge_results, batch_relationship_prob_data, batch_ethnicity_data
         )
 
     except Exception as exc:
         logger.error(f"Exc prefetch '{task_type}' {identifier_uuid}: {exc}", exc_info=True)
         return _store_future_result(
             task_type, identifier_uuid, None,
-            batch_combined_details, temp_badge_results, batch_relationship_prob_data
+            batch_combined_details, temp_badge_results, batch_relationship_prob_data, batch_ethnicity_data
         )
 
 
@@ -2171,10 +2226,11 @@ def _perform_api_prefetches(
         {}
     )  # Changed to Optional value
     batch_relationship_prob_data: dict[str, Optional[str]] = {}
+    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]] = {}
 
     if not fetch_candidates_uuid:
         logger.debug("No fetch candidates provided for API pre-fetch.")
-        return {"combined": {}, "tree": {}, "rel_prob": {}}
+        return {"combined": {}, "tree": {}, "rel_prob": {}, "ethnicity": {}}
 
     futures: dict[Any, tuple[str, str]] = {}
     fetch_start_time = time.time()
@@ -2230,7 +2286,7 @@ def _perform_api_prefetches(
             task_type, identifier_uuid = futures[future]
             critical_combined_details_failures += _process_single_future_result(
                 future, task_type, identifier_uuid,
-                batch_combined_details, temp_badge_results, batch_relationship_prob_data
+                batch_combined_details, temp_badge_results, batch_relationship_prob_data, batch_ethnicity_data
             )
 
             # Check if critical failure threshold exceeded
@@ -2255,6 +2311,7 @@ def _perform_api_prefetches(
         "combined": batch_combined_details,
         "tree": batch_tree_data,
         "rel_prob": batch_relationship_prob_data,
+        "ethnicity": batch_ethnicity_data,
     }
 
 
@@ -2264,7 +2321,7 @@ def _perform_api_prefetches(
 def _get_prefetched_data_for_match(
     uuid_val: str,
     prefetched_data: dict[str, dict[str, Any]]
-) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[str]]:
+) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[str], Optional[dict[str, Optional[int]]]]:
     """Get prefetched data for a match.
 
     Args:
@@ -2272,12 +2329,13 @@ def _get_prefetched_data_for_match(
         prefetched_data: Dictionary containing prefetched API data
 
     Returns:
-        Tuple of (combined, tree, rel_prob) data
+        Tuple of (combined, tree, rel_prob, ethnicity) data
     """
     prefetched_combined = prefetched_data.get("combined", {}).get(uuid_val)
     prefetched_tree = prefetched_data.get("tree", {}).get(uuid_val)
     prefetched_rel_prob = prefetched_data.get("rel_prob", {}).get(uuid_val)
-    return prefetched_combined, prefetched_tree, prefetched_rel_prob
+    prefetched_ethnicity = prefetched_data.get("ethnicity", {}).get(uuid_val)
+    return prefetched_combined, prefetched_tree, prefetched_rel_prob, prefetched_ethnicity
 
 
 def _process_single_match_for_bulk(
@@ -2309,12 +2367,16 @@ def _process_single_match_for_bulk(
 
     # Retrieve existing person and prefetched data
     existing_person = existing_persons_map.get(uuid_val.upper())
-    prefetched_combined, prefetched_tree, prefetched_rel_prob = _get_prefetched_data_for_match(
+    prefetched_combined, prefetched_tree, prefetched_rel_prob, prefetched_ethnicity = _get_prefetched_data_for_match(
         uuid_val, prefetched_data
     )
 
     # Add relationship probability to match dict
     match_list_data["predicted_relationship"] = prefetched_rel_prob
+
+    # Add prefetched ethnicity data to match dict (for use in _do_match)
+    if prefetched_ethnicity:
+        match_list_data["_prefetched_ethnicity"] = prefetched_ethnicity
 
     # Check WebDriver session validity
     if not session_manager.is_sess_valid():
@@ -4792,23 +4854,20 @@ def _filter_dna_dict(dna_dict_base: dict[str, Any]) -> dict[str, Any]:
 def _add_ethnicity_data(
     dna_dict_base: dict[str, Any],
     existing_dna_match: Optional[DnaMatch],
-    session_manager: SessionManager,
+    match: dict[str, Any],
     match_uuid: str,
     log_ref_short: str,
     logger_instance: logging.Logger
 ) -> None:
-    """Add ethnicity data to DNA match dictionary."""
+    """Add ethnicity data to DNA match dictionary from prefetched data."""
     if existing_dna_match is None or _needs_ethnicity_refresh(existing_dna_match):
-        my_uuid = session_manager.my_uuid
-        if my_uuid:
-            ethnicity_payload = _build_ethnicity_payload(session_manager, my_uuid, match_uuid)
-            if ethnicity_payload:
-                dna_dict_base.update(ethnicity_payload)
-                logger_instance.debug(f"{log_ref_short}: Added ethnicity data ({len(ethnicity_payload)} regions)")
-            elif _get_ethnicity_config()[0]:
-                logger_instance.debug(f"{log_ref_short}: No ethnicity payload generated")
+        # Use prefetched ethnicity data from parallel API fetch
+        prefetched_ethnicity = match.get("_prefetched_ethnicity")
+        if prefetched_ethnicity and isinstance(prefetched_ethnicity, dict):
+            dna_dict_base.update(prefetched_ethnicity)
+            logger_instance.debug(f"{log_ref_short}: Added ethnicity data ({len(prefetched_ethnicity)} regions)")
         else:
-            logger_instance.debug(f"{log_ref_short}: Cannot fetch ethnicity - my_uuid not available")
+            logger_instance.debug(f"{log_ref_short}: No prefetched ethnicity data available")
 
 
 def _prepare_dna_match_operation_data(
@@ -4857,7 +4916,7 @@ def _prepare_dna_match_operation_data(
 
     dna_dict_base = _build_dna_dict_base(match_uuid, match, safe_predicted_relationship)
     _add_dna_details(dna_dict_base, prefetched_combined_details, match, log_ref_short, logger_instance)
-    _add_ethnicity_data(dna_dict_base, existing_dna_match, session_manager, match_uuid, log_ref_short, logger_instance)
+    _add_ethnicity_data(dna_dict_base, existing_dna_match, match, match_uuid, log_ref_short, logger_instance)
     return _filter_dna_dict(dna_dict_base)
 
 
