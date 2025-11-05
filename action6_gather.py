@@ -1768,14 +1768,27 @@ def _apply_predictive_rate_limiting(
             # OPTIMIZATION: Account for token refill during batch execution
             # Old logic assumed API calls execute instantly → massive over-waiting
             # New logic: Estimate execution time and subtract tokens that will refill
+            # CRITICAL: Account for parallel workers to avoid under-estimation
+            
+            # Get number of parallel workers from config
+            from config.config_schema import config_schema
+            num_workers = getattr(config_schema.api, 'parallel_workers', 2)
             
             # Get effective RPS from rate limiter metrics (actual achieved rate)
             metrics = rate_limiter.get_metrics()
             effective_rps = metrics.get('effective_rps', 1.5)  # Default to conservative 1.5 RPS
             
+            # CRITICAL FIX: With parallel workers, execution is FASTER than serial
+            # Adjust effective_rps by worker multiplier (conservative: use sqrt, not linear)
+            # Why sqrt? Parallel speedup has diminishing returns (Amdahl's Law)
+            # 2 workers: ~1.4× faster, 3 workers: ~1.7× faster, 4 workers: ~2.0× faster
+            import math
+            worker_speedup = math.sqrt(num_workers)
+            adjusted_effective_rps = effective_rps * worker_speedup
+            
             # Estimate how long this batch will actually take to execute
-            # Use effective_rps (not fill_rate) as that's the real-world throughput
-            estimated_execution_time = total_api_calls / max(effective_rps, 1.0)  # Avoid division by zero
+            # Use adjusted effective_rps to account for parallelism
+            estimated_execution_time = total_api_calls / max(adjusted_effective_rps, 1.0)  # Avoid division by zero
             
             # Calculate tokens that will refill DURING execution
             tokens_refilled_during_execution = estimated_execution_time * fill_rate
@@ -1784,11 +1797,14 @@ def _apply_predictive_rate_limiting(
             actual_tokens_deficit = tokens_needed - current_tokens - tokens_refilled_during_execution
             
             # Only pre-wait for the ACTUAL deficit (can be 0 or even negative if batch is slow)
-            optimal_pre_delay = max(0, actual_tokens_deficit / fill_rate)
+            # Add safety buffer for high worker counts (10% per worker above 2)
+            safety_buffer = max(0, (num_workers - 2) * 0.10 * tokens_needed)
+            optimal_pre_delay = max(0, (actual_tokens_deficit + safety_buffer) / fill_rate)
 
             if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
                 logger.info(f"⏱️ Adaptive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls "
-                           f"(tokens: {current_tokens:.1f}/{tokens_needed:.1f}, will refill {tokens_refilled_during_execution:.1f} during execution)")
+                           f"({num_workers} workers, {adjusted_effective_rps:.1f} adjusted RPS, "
+                           f"tokens: {current_tokens:.1f}/{tokens_needed:.1f}, will refill {tokens_refilled_during_execution:.1f})")
                 time.sleep(optimal_pre_delay)
             # Use existing tiered approach for light loads
             elif total_api_calls >= 15:
