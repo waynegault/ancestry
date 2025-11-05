@@ -1814,10 +1814,10 @@ def _submit_api_call_groups(
         futures[future] = ("combined_details", uuid_val)
 
     if fetch_candidates_uuid:
-        # CRITICAL FIX: Increase gap to 0.5s to allow token bucket refill between groups
-        # With 2.5 RPS, we add 1.25 tokens in 0.5s, giving breathing room
-        time.sleep(0.5)
-        logger.debug(f"Submitted {len(fetch_candidates_uuid)} combined details API calls (waiting 0.5s for token refill)")
+        # OPTIMIZATION: Reduced from 0.5s to 0.3s for faster batches
+        # With 3.5 RPS, we add 1.05 tokens in 0.3s, sufficient breathing room
+        time.sleep(0.3)
+        logger.debug(f"Submitted {len(fetch_candidates_uuid)} combined details API calls (waiting 0.3s for token refill)")
 
     # Group 2: Submit relationship probability calls (selective with priority)
     rel_count = 0
@@ -1831,8 +1831,8 @@ def _submit_api_call_groups(
                        f"(priority: {'high' if uuid_val in high_priority_uuids else 'medium'})")
 
     if rel_count > 0:
-        time.sleep(0.5)  # Increase gap for token refill
-        logger.debug(f"Submitted {rel_count} relationship probability API calls (waiting 0.5s for token refill)")
+        time.sleep(0.3)  # Reduced for faster batches with 3.5 RPS
+        logger.debug(f"Submitted {rel_count} relationship probability API calls (waiting 0.3s for token refill)")
 
     # Group 3: Submit badge details calls last (tree-related)
     for uuid_val in uuids_for_tree_badge_ladder:
@@ -1840,8 +1840,8 @@ def _submit_api_call_groups(
         futures[future] = ("badge_details", uuid_val)
 
     if uuids_for_tree_badge_ladder:
-        time.sleep(0.5)  # Increase gap for token refill
-        logger.debug(f"Submitted {len(uuids_for_tree_badge_ladder)} badge details API calls (waiting 0.5s for token refill)")
+        time.sleep(0.3)  # Reduced for faster batches with 3.5 RPS
+        logger.debug(f"Submitted {len(uuids_for_tree_badge_ladder)} badge details API calls (waiting 0.3s for token refill)")
 
     # Group 4: Submit ethnicity comparison calls (controlled rate limiting)
     # Previously these were called inside data preparation, bypassing rate limiter
@@ -2299,12 +2299,12 @@ def _perform_api_prefetches(
                 critical_combined_details_failures, futures, session_manager
             )
 
-            # CRITICAL FIX: Add small delay between completed tasks to prevent burst retries
-            # With 4 workers, multiple futures can complete simultaneously and trigger retries
+            # OPTIMIZATION: Reduced from 0.3s to 0.2s with 3.5 RPS (faster token refill)
+            # With 2 workers, less aggressive than 4 workers, so can reduce pause
             # This throttles the processing to give rate limiter time to refill tokens
             if processed_tasks % 5 == 0:  # Every 5 tasks
-                time.sleep(0.3)  # 300ms breathing room
-                logger.debug(f"Rate limiting: 0.3s pause after processing {processed_tasks} tasks")
+                time.sleep(0.2)  # 200ms breathing room (down from 300ms)
+                logger.debug(f"Rate limiting: 0.2s pause after processing {processed_tasks} tasks")
 
         # Process ladder API calls
         temp_ladder_results = _process_ladder_api_calls(
