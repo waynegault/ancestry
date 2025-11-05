@@ -2184,16 +2184,9 @@ def _execute_api_request(
             f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}"
         )
 
-        # CRITICAL FIX: Track RetryError (which indicates 429 errors hidden by requests library)
-        # RetryError means the requests library exhausted its internal retries (usually 3x)
-        # Each RetryError likely represents 3+ actual 429 errors that were hidden from our rate limiter
-        error_str = str(e)
-        if (("RetryError" in type(e).__name__ or "RetryError" in error_str) and ("429" in error_str or "too many 429" in error_str.lower()) and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter):
-            # This is a RetryError caused by 429s - increase delay ONCE per failed request
-            # NOTE: We used to call increase_delay() 3x here, but that caused exponential cascading (0.1s → 19.8s in one API call!)
-            # The backoff_factor already accounts for severity, no need to compound it
-            session_manager.rate_limiter.increase_delay()
-            logger.debug("Tracked RetryError with 429 errors - increased rate limit delay once")
+        # REMOVED: RetryError tracking here is redundant - each 429 is already tracked in the retry loop (line 2316)
+        # Previously this caused cascading delays: 5 retries × increase_delay() + 1 final increase = 6x increases per failed API call
+        # Now delays are increased exactly once per actual 429 status code in _handle_status_code_response()
 
         return None
     except Exception as e:
