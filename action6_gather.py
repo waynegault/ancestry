@@ -1806,9 +1806,10 @@ def _submit_api_call_groups(
     fetch_candidates_uuid: set[str],
     priority_uuids: set[str],
     high_priority_uuids: set[str],
-    uuids_for_tree_badge_ladder: set[str]
+    uuids_for_tree_badge_ladder: set[str],
+    ethnicity_uuids: set[str]
 ) -> dict[Any, tuple[str, str]]:
-    """Submit all API call groups (combined, relationship, badge).
+    """Submit all API call groups (combined, relationship, badge, ethnicity).
 
     Args:
         executor: ThreadPoolExecutor instance
@@ -1817,6 +1818,7 @@ def _submit_api_call_groups(
         priority_uuids: Set of priority UUIDs for relationship calls
         high_priority_uuids: Set of high priority UUIDs
         uuids_for_tree_badge_ladder: Set of UUIDs for badge/ladder fetch
+        ethnicity_uuids: Set of UUIDs for ethnicity comparison (pre-calculated)
 
     Returns:
         Dictionary mapping futures to (task_type, uuid) tuples
@@ -1861,16 +1863,15 @@ def _submit_api_call_groups(
 
     # Group 4: Submit ethnicity comparison calls (controlled rate limiting)
     # OPTIMIZATION: Only fetch ethnicity for priority matches (>= DNA_MATCH_PROBABILITY_THRESHOLD_CM)
-    # This reduces API calls significantly - low cM matches (<10 cM) don't need ethnicity data
-    ethnicity_uuids = priority_uuids.intersection(fetch_candidates_uuid)
+    # ethnicity_uuids is pre-calculated and passed as parameter to avoid duplicate calculation
     for uuid_val in ethnicity_uuids:
         future = executor.submit(_fetch_ethnicity_for_batch, session_manager, uuid_val)
         futures[future] = ("ethnicity_data", uuid_val)
 
     if ethnicity_uuids:
         skipped_ethnicity = len(fetch_candidates_uuid) - len(ethnicity_uuids)
-        logger.debug(f"Submitted {len(ethnicity_uuids)} ethnicity comparison API calls "
-                    f"(skipped {skipped_ethnicity} low-priority matches < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM)")
+        logger.info(f"🧬 Submitted {len(ethnicity_uuids)} ethnicity comparison API calls "
+                   f"(skipped {skipped_ethnicity} low-priority matches < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM)")
 
     return futures
 
@@ -2305,13 +2306,24 @@ def _perform_api_prefetches(
         )
 
         # Apply intelligent rate limiting
-        total_api_calls = len(fetch_candidates_uuid) + len(priority_uuids) + len(uuids_for_tree_badge_ladder)
+        # Calculate ethnicity UUIDs (intersection of priority and fetch candidates)
+        ethnicity_uuids = priority_uuids.intersection(fetch_candidates_uuid)
+        total_api_calls = (
+            len(fetch_candidates_uuid) +  # Combined details API
+            len(priority_uuids) +          # Relationship probability API
+            len(uuids_for_tree_badge_ladder) +  # Badge details API
+            len(ethnicity_uuids)           # Ethnicity comparison API (NEW - was missing!)
+        )
+        logger.info(f"📊 Total API calls planned: {total_api_calls} "
+                   f"(combined:{len(fetch_candidates_uuid)}, rel:{len(priority_uuids)}, "
+                   f"badges:{len(uuids_for_tree_badge_ladder)}, ethnicity:{len(ethnicity_uuids)})")
         _apply_predictive_rate_limiting(session_manager, total_api_calls)
 
         # Submit all API call groups
         futures = _submit_api_call_groups(
             executor, session_manager, fetch_candidates_uuid,
-            priority_uuids, high_priority_uuids, uuids_for_tree_badge_ladder
+            priority_uuids, high_priority_uuids, uuids_for_tree_badge_ladder,
+            ethnicity_uuids
         )
 
         temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
