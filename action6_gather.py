@@ -1765,14 +1765,30 @@ def _apply_predictive_rate_limiting(
         # Predict if we'll run out of tokens
         tokens_needed = total_api_calls * 1.0  # Each API call needs 1 token
         if current_tokens < tokens_needed:
-            # Calculate optimal pre-delay to avoid token bucket depletion
-            # CRITICAL FIX: Remove 8s cap - with 4 workers and 45 API calls, we need full wait time
-            # to avoid immediate burst that triggers 429 errors
-            tokens_deficit = tokens_needed - current_tokens
-            optimal_pre_delay = tokens_deficit / fill_rate  # No cap - wait as long as needed
+            # OPTIMIZATION: Account for token refill during batch execution
+            # Old logic assumed API calls execute instantly → massive over-waiting
+            # New logic: Estimate execution time and subtract tokens that will refill
+            
+            # Get effective RPS from rate limiter metrics (actual achieved rate)
+            metrics = rate_limiter.get_metrics()
+            effective_rps = metrics.get('effective_rps', 1.5)  # Default to conservative 1.5 RPS
+            
+            # Estimate how long this batch will actually take to execute
+            # Use effective_rps (not fill_rate) as that's the real-world throughput
+            estimated_execution_time = total_api_calls / max(effective_rps, 1.0)  # Avoid division by zero
+            
+            # Calculate tokens that will refill DURING execution
+            tokens_refilled_during_execution = estimated_execution_time * fill_rate
+            
+            # Actual tokens needed = required - current - (tokens that refill during execution)
+            actual_tokens_deficit = tokens_needed - current_tokens - tokens_refilled_during_execution
+            
+            # Only pre-wait for the ACTUAL deficit (can be 0 or even negative if batch is slow)
+            optimal_pre_delay = max(0, actual_tokens_deficit / fill_rate)
 
             if optimal_pre_delay > 1.0:  # Only apply if meaningful delay needed
-                logger.info(f"⏱️ Adaptive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls (tokens: {current_tokens:.1f}/{tokens_needed:.1f})")
+                logger.info(f"⏱️ Adaptive rate limiting: Pre-waiting {optimal_pre_delay:.2f}s for {total_api_calls} API calls "
+                           f"(tokens: {current_tokens:.1f}/{tokens_needed:.1f}, will refill {tokens_refilled_during_execution:.1f} during execution)")
                 time.sleep(optimal_pre_delay)
             # Use existing tiered approach for light loads
             elif total_api_calls >= 15:
@@ -3995,11 +4011,14 @@ def _do_batch(
         logger.debug(f"Batch performance: {batch_duration:.2f}s for {num_matches_on_page} matches "
                     f"({success_rate:.1%} success rate, batch size: {optimized_batch_size})")
 
-        if batch_duration > 30.0:  # Log slow batch processing
-            logger.warning(f"Slow batch processing: Page {current_page} took {batch_duration:.1f}s")
+        # OPTIMIZATION: Improved logging clarity - this measures full page processing time
+        # Note: With BATCH_SIZE=30 matching MATCHES_PER_PAGE=30, typically just 1 batch per page
+        if batch_duration > 30.0:
+            logger.debug(f"Page {current_page} processing took {batch_duration:.1f}s for {num_matches_on_page} matches "
+                        f"(avg {batch_duration/num_matches_on_page:.1f}s per match)")
 
         # Track performance in global monitoring
-        _log_api_performance("batch_processing", batch_start_time, f"success_{success_rate:.0%}")
+        _log_api_performance("page_processing", batch_start_time, f"success_{success_rate:.0%}")
 
         return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
 
