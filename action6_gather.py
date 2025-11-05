@@ -1437,23 +1437,9 @@ def _lookup_existing_persons(
 
     # Step 3: Query the database
     try:
-        logger.debug(f"Querying DB for {len(uuids_on_page)} existing Person records...")
+        logger.debug(f"DB lookup: {len(uuids_on_page)} UUIDs")
         # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
         uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
-
-        # DEBUG: Log first 3 UUIDs being looked up
-        sample_uuids = list(uuids_norm)[:3]
-        logger.info(f"Sample UUIDs being looked up: {sample_uuids}")
-
-        # DEBUG: Check if data exists using raw SQL
-        from sqlalchemy import text
-        first_uuid = sample_uuids[0] if sample_uuids else None
-        if first_uuid:
-            raw_count = session.execute(
-                text("SELECT COUNT(*) FROM people WHERE uuid = :uuid AND deleted_at IS NULL"),
-                {"uuid": first_uuid}
-            ).scalar()
-            logger.info(f"Raw SQL count for UUID {first_uuid}: {raw_count}")
 
         existing_persons = (
             session.query(Person)
@@ -1469,15 +1455,8 @@ def _lookup_existing_persons(
             if person.uuid is not None
         }
 
-        # DEBUG: Log first 3 UUIDs found
-        if existing_persons_map:
-            sample_found = list(existing_persons_map.keys())[:3]
-            logger.info(f"Sample UUIDs found in DB: {sample_found}")
-        else:
-            logger.warning("No existing persons found in database!")
-
         logger.debug(
-            f"Found {len(existing_persons_map)} existing Person records for this batch."
+            f"Found {len(existing_persons_map)}/{len(uuids_on_page)} existing in DB"
         )
 
     # Step 5: Handle potential database errors
@@ -6332,7 +6311,6 @@ def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Opt
         try:
             cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
             if cached_data is not ENOVAL and isinstance(cached_data, dict):
-                logger.debug(f"Cache hit for combined details: {match_uuid}")
                 _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
                 return cached_data
         except Exception as cache_exc:
@@ -6559,7 +6537,6 @@ def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
     try:
         cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
         if cached_data is not ENOVAL and isinstance(cached_data, dict):
-            logger.debug(f"Cache hit for badge details: {match_uuid}")
             return cached_data
     except Exception as cache_exc:
         logger.debug(f"Cache check failed for badge details {match_uuid}: {cache_exc}")
@@ -6903,7 +6880,6 @@ def _check_relationship_prob_cache(match_uuid: str, max_labels_param: int, api_s
         try:
             cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
             if cached_data is not ENOVAL and isinstance(cached_data, str):
-                logger.debug(f"Cache hit for relationship probability: {match_uuid[:8]}")
                 _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
                 return cached_data
         except Exception as cache_exc:
