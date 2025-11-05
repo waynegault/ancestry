@@ -1168,7 +1168,7 @@ def _main_page_processing_loop(
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
     original_threshold = CRITICAL_API_FAILURE_THRESHOLD
     CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold
-    logger.info(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
+    logger.debug(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
 
     current_page_num = start_page
     # Estimate total matches for the progress bar based on pages *this run*
@@ -4400,17 +4400,19 @@ def _process_page_matches(
 
         _log_batch_summary_if_needed(is_batch, current_page, page_statuses)
         
-        # Log timing breakdown summary for slow pages
+        # Log timing breakdown summary for slow pages (>30s total)
+        # Purpose: Identify bottlenecks - is it rate limiting (API Prefetches), DB queries, or data processing?
         total_time = sum(timing_log.values())
         if total_time > 30.0:
+            db_pct = timing_log.get('db_lookups', 0) / total_time * 100
+            api_pct = timing_log.get('api_prefetches', 0) / total_time * 100
+            data_pct = timing_log.get('data_prep_commit', 0) / total_time * 100
+            
             logger.warning(
-                f"⏱️  Page {current_page} TIMING BREAKDOWN (Total: {total_time:.1f}s):\n"
-                f"    - DB Lookups: {timing_log.get('db_lookups', 0):.2f}s "
-                f"({timing_log.get('db_lookups', 0) / total_time * 100:.1f}%)\n"
-                f"    - API Prefetches: {timing_log.get('api_prefetches', 0):.2f}s "
-                f"({timing_log.get('api_prefetches', 0) / total_time * 100:.1f}%)\n"
-                f"    - Data Prep & Commit: {timing_log.get('data_prep_commit', 0):.2f}s "
-                f"({timing_log.get('data_prep_commit', 0) / total_time * 100:.1f}%)"
+                f"⏱️  SLOW PAGE {current_page} - Total: {total_time:.1f}s | "
+                f"DB: {timing_log.get('db_lookups', 0):.1f}s ({db_pct:.0f}%) | "
+                f"API: {timing_log.get('api_prefetches', 0):.1f}s ({api_pct:.0f}%, includes rate limit pre-wait) | "
+                f"Data: {timing_log.get('data_prep_commit', 0):.1f}s ({data_pct:.0f}%)"
             )
         
         return (
@@ -5673,13 +5675,15 @@ def _call_match_list_api(
         API response (dict, Response object, or None)
     """
     # Use the working API endpoint pattern with itemsPerPage parameter
-    # OPTIMIZATION: itemsPerPage=30 balances throughput vs rate limiting
-    # - itemsPerPage=50 caused 429 errors (~70 API calls exceeds 10-token bucket capacity)
-    # - itemsPerPage=30 requires ~45 API calls (manageable with 2 workers, 3.5 RPS)
-    # - Still 50% better than default itemsPerPage=20
+    # REVERTED: itemsPerPage back to 20 (default) - both 30 and 50 caused 429 errors
+    # - itemsPerPage=50: ~70 API calls/page → 429 ERRORS ❌
+    # - itemsPerPage=30: ~64-74 API calls/page → 429 ERRORS ❌ (ethnicity API hit per match!)
+    # - itemsPerPage=20: ~40-50 API calls/page (TESTING - may still have issues)
+    # Root cause: Ethnicity Comparison API called for EVERY match, not just high-priority
+    # TODO: Either disable ethnicity fetching or increase token bucket capacity to 20+
     match_list_url = urljoin(
         config_schema.api.base_url,
-        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage=30&currentPage={current_page}",
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage=20&currentPage={current_page}",
     )
     # Use simplified headers that were working earlier
     match_list_headers = {
