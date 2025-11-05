@@ -2173,6 +2173,15 @@ def _check_session_health_periodic(
     session_manager: SessionManager
 ) -> None:
     """Check session health periodically during batch processing.
+    
+    ADAPTIVE HEALTH CHECK INTERVAL:
+    - Dynamically adjusts based on configured BATCH_SIZE
+    - Formula: check_interval = max(5, BATCH_SIZE // 2)
+    - Examples:
+      * BATCH_SIZE=10 → check every 5 tasks (current behavior)
+      * BATCH_SIZE=20 → check every 10 tasks (scales up)
+      * BATCH_SIZE=25 → check every 12 tasks (matches new default)
+    - Balances crash detection speed vs logging overhead
 
     Args:
         processed_tasks: Number of tasks processed so far
@@ -2183,9 +2192,13 @@ def _check_session_health_periodic(
     Raises:
         MaxApiFailuresExceededError: If session death detected
     """
-    # CRITICAL FIX: Check every 5 tasks instead of 10 for faster session death detection
-    # Browser can crash quickly (saw death at task 10), need tighter monitoring
-    if processed_tasks % 5 != 0:
+    # ADAPTIVE: Check every BATCH_SIZE/2 (minimum 5) for optimal crash detection
+    # Aligns with batch processing rhythm while maintaining safety margin
+    from config import config_schema
+    batch_size = getattr(config_schema, 'batch_size', 10)
+    check_interval = max(5, batch_size // 2)
+    
+    if processed_tasks % check_interval != 0:
         return
 
     if session_manager.check_session_health():
@@ -3878,6 +3891,24 @@ def _do_batch(
 ) -> tuple[int, int, int, int]:
     """
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
+    
+    BATCHING BENEFITS (Why We Batch):
+    1. **DB Transaction Efficiency**: Bulk commits reduce I/O operations
+       - Single transaction for 10-25 matches instead of 50 individual commits
+       - Reduces database locks and improves concurrent access
+       
+    2. **Error Isolation**: One problematic match doesn't fail entire page
+       - Bad data in match 15 only fails that batch, not all 50 matches
+       - Allows partial success and retry of failed batches
+       
+    3. **Memory Management**: Process large pages in manageable chunks
+       - With itemsPerPage=50, batching prevents memory spikes
+       - Allows garbage collection between batches
+       
+    4. **Progress Visibility**: Granular logging for long-running pages
+       - See progress within a page (Batch 1/2, 2/2 complete)
+       - Easier debugging (know exactly which batch failed)
+    
     If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
     SURGICAL FIX #7: Reuses database session across all batches on a page.
     PRIORITY 5: Dynamic Batch Optimization with intelligent response-time adaptation.
@@ -5610,10 +5641,12 @@ def _call_match_list_api(
     Returns:
         API response (dict, Response object, or None)
     """
-    # Use the working API endpoint pattern
+    # Use the working API endpoint pattern with itemsPerPage parameter
+    # CRITICAL OPTIMIZATION: itemsPerPage=50 reduces total pages by 60% (20→50 matches/page)
+    # This dramatically reduces API calls and page transitions
     match_list_url = urljoin(
         config_schema.api.base_url,
-        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage=50&currentPage={current_page}",
     )
     # Use simplified headers that were working earlier
     match_list_headers = {

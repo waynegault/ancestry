@@ -2168,6 +2168,22 @@ def _check_startup_status(session_manager: SessionManager) -> None:
             logger.warning("⚠️ Database connection not available")
     except Exception as e:
         logger.warning(f"⚠️ Database connection check failed: {e}")
+    
+    # CRITICAL: Proactive cookie sync during warmup
+    # Ensures fresh cookies for ALL actions before menu display
+    # Prevents 303 redirects from stale cookies across all actions
+    try:
+        if session_manager.is_sess_valid() and session_manager.api_manager:
+            logger.debug("Syncing browser cookies to API session during warmup...")
+            synced = session_manager.api_manager.sync_cookies_from_browser(
+                session_manager.browser_manager, session_manager=session_manager
+            )
+            if synced:
+                logger.info("✅ Cookies refreshed for all actions")
+            else:
+                logger.debug("Cookie sync returned False (may be normal)")
+    except Exception as cookie_err:
+        logger.debug(f"Cookie sync during warmup failed (non-fatal): {cookie_err}")
 
 
 def _check_lm_studio_running() -> bool:
