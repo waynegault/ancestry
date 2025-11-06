@@ -11,6 +11,7 @@ Diagnoses common Chrome/ChromeDriver issues including:
 - Auto-fixes version mismatches by downloading correct ChromeDriver
 """
 
+import contextlib
 import json
 import os
 import subprocess
@@ -55,30 +56,75 @@ def get_chrome_version_from_registry() -> str | None:
     return None
 
 
-def check_chrome_installation() -> tuple[bool, str | None]:
-    """Check if Chrome is installed and get version.
-    
-    Returns:
-        Tuple of (success, version_string)
-    """
-    print_header("Chrome Installation Check")
-
+def _locate_chrome_executable() -> str | None:
+    """Return the first Chrome executable found in standard locations."""
     chrome_paths = [
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
     ]
 
-    chrome_found = False
-    chrome_path_found = None
-
     for chrome_path in chrome_paths:
         if Path(chrome_path).exists():
-            chrome_found = True
-            chrome_path_found = chrome_path
             print(f"✓ Chrome found at: {chrome_path}")
-            break
+            return chrome_path
 
-    if not chrome_found:
+    return None
+
+
+def _extract_version_from_executable(executable: str) -> str | None:
+    """Return Chrome version string from the executable if available."""
+    try:
+        result = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception as exc:
+        print(f"⚠ Could not get Chrome version from executable: {exc}")
+        return None
+
+    if result.returncode == 0 and result.stdout.strip():
+        version_output = result.stdout.strip()
+        print(f"✓ Chrome version (from executable): {version_output}")
+        parts = version_output.split()
+        return parts[2] if len(parts) >= 3 else version_output
+
+    return None
+
+
+def _extract_version_from_directory(executable: str) -> str | None:
+    """Return Chrome version from sibling directories if available."""
+    try:
+        chrome_dir = Path(executable).parent
+        version_dirs = [
+            d for d in chrome_dir.iterdir() if d.is_dir() and d.name and d.name[0].isdigit()
+        ]
+    except Exception as exc:
+        print(f"⚠ Could not get Chrome version from directory: {exc}")
+        return None
+
+    if not version_dirs:
+        return None
+
+    latest_version = sorted(version_dirs, key=lambda x: [int(p) for p in x.name.split('.')])[-1]
+    version_str = latest_version.name
+    print(f"✓ Chrome version (from directory): {version_str}")
+    return version_str
+
+
+def check_chrome_installation() -> tuple[bool, str | None]:
+    """Check if Chrome is installed and get version.
+
+    Returns:
+        Tuple of (success, version_string)
+    """
+    print_header("Chrome Installation Check")
+
+    chrome_path = _locate_chrome_executable()
+
+    if not chrome_path:
         print("✗ Chrome not found in standard locations")
         print("  Please install Google Chrome from https://www.google.com/chrome/")
         return False, None
@@ -90,37 +136,13 @@ def check_chrome_installation() -> tuple[bool, str | None]:
         return True, version
 
     # Fallback: Try to get version from executable
-    if chrome_path_found:
-        try:
-            result = subprocess.run(
-                [chrome_path_found, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                version_str = result.stdout.strip()
-                print(f"✓ Chrome version (from executable): {version_str}")
-                # Extract version number from "Google Chrome X.X.X.X"
-                parts = version_str.split()
-                if len(parts) >= 3:
-                    return True, parts[2]
-                return True, version_str
-        except Exception as e:
-            print(f"⚠ Could not get Chrome version from executable: {e}")
+    executable_version = _extract_version_from_executable(chrome_path)
+    if executable_version:
+        return True, executable_version
 
-        # Fallback: Try to get version from version folder
-        try:
-            chrome_dir = Path(chrome_path_found).parent
-            version_dirs = [d for d in chrome_dir.iterdir() if d.is_dir() and d.name[0].isdigit()]
-            if version_dirs:
-                latest_version = sorted(version_dirs, key=lambda x: [int(p) for p in x.name.split('.')])[-1]
-                version_str = latest_version.name
-                print(f"✓ Chrome version (from directory): {version_str}")
-                return True, version_str
-        except Exception as e:
-            print(f"⚠ Could not get Chrome version from directory: {e}")
+    directory_version = _extract_version_from_directory(chrome_path)
+    if directory_version:
+        return True, directory_version
 
     print("⚠ Chrome found but version could not be determined")
     return True, None  # Chrome exists even if we can't get version
@@ -239,76 +261,59 @@ def _validate_preferences_file(prefs_file: Path) -> bool:
         return False
 
 
-def check_chromedriver() -> tuple[bool, str | None]:
-    """Check ChromeDriver installation and version.
-    
-    Returns:
-        Tuple of (success, version_string)
-    """
-    print_header("ChromeDriver Check")
+def _extract_driver_version(executable: Path, *, context: str = "") -> str | None:
+    """Return ChromeDriver version string from executable output."""
+    try:
+        result = subprocess.run(
+            [str(executable), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception as exc:
+        print(f"{context}⚠ Could not get ChromeDriver version: {exc}")
+        return None
 
-    from dotenv import load_dotenv
-    load_dotenv()
+    if result.returncode == 0 and result.stdout.strip():
+        version_output = result.stdout.strip()
+        print(f"{context}✓ ChromeDriver version: {version_output}")
+        parts = version_output.split()
+        return parts[1] if len(parts) >= 2 else version_output
 
-    # Check configured path first
+    return None
+
+
+def _check_configured_chromedriver() -> tuple[bool, str | None]:
+    """Return status and version when ChromeDriver path is configured."""
     driver_path = os.getenv("CHROME_DRIVER_PATH")
-    if driver_path and Path(driver_path).exists():
-        print(f"✓ ChromeDriver found at: {driver_path}")
+    if not driver_path:
+        return False, None
 
-        # Try to get ChromeDriver version
-        try:
-            result = subprocess.run(
-                [driver_path, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                version_output = result.stdout.strip()
-                print(f"✓ ChromeDriver version: {version_output}")
+    driver_file = Path(driver_path)
+    if not driver_file.exists():
+        return False, None
 
-                # Extract version number from "ChromeDriver X.X.X.X (...)"
-                parts = version_output.split()
-                if len(parts) >= 2:
-                    return True, parts[1]
-                return True, version_output
-        except Exception as e:
-            print(f"⚠ Could not get ChromeDriver version: {e}")
+    print(f"✓ ChromeDriver found at: {driver_path}")
+    return True, _extract_driver_version(driver_file)
 
-        return True, None
 
-    # Check default UC ChromeDriver cache location
-    # UC stores in %APPDATA%\undetected_chromedriver\undetected_chromedriver.exe
+def _check_uc_default_location() -> tuple[bool, str | None]:
+    """Return status and version when UC stores ChromeDriver in AppData."""
     appdata = os.environ.get("APPDATA", "")
-    if appdata:
-        uc_driver_path = Path(appdata) / "undetected_chromedriver" / "undetected_chromedriver.exe"
-        if uc_driver_path.exists():
-            print(f"✓ ChromeDriver found in UC default location: {uc_driver_path}")
+    if not appdata:
+        return False, None
 
-            # Try to get version
-            try:
-                result = subprocess.run(
-                    [str(uc_driver_path), "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    version_output = result.stdout.strip()
-                    print(f"  Version: {version_output}")
+    uc_driver_path = Path(appdata) / "undetected_chromedriver" / "undetected_chromedriver.exe"
+    if not uc_driver_path.exists():
+        return False, None
 
-                    parts = version_output.split()
-                    if len(parts) >= 2:
-                        return True, parts[1]
-                    return True, version_output
-            except Exception as e:
-                print(f"  ⚠ Could not get version: {e}")
+    print(f"✓ ChromeDriver found in UC default location: {uc_driver_path}")
+    return True, _extract_driver_version(uc_driver_path, context="  ")
 
-            return True, None
 
-    # Fallback: Check selenium cache
+def _search_uc_cache_paths() -> tuple[bool, str | None]:
+    """Return status and version when ChromeDriver exists in UC cache directories."""
     home = Path.home()
     uc_cache_paths = [
         home / ".cache" / "selenium" / "chromedriver",
@@ -316,46 +321,53 @@ def check_chromedriver() -> tuple[bool, str | None]:
     ]
 
     for cache_path in uc_cache_paths:
-        if cache_path.exists():
-            # Find chromedriver.exe in subdirectories
-            for exe_path in cache_path.rglob("chromedriver*.exe"):
-                if exe_path.is_file():
-                    print(f"✓ ChromeDriver found in UC cache: {exe_path}")
+        if not cache_path.exists():
+            continue
 
-                    # Try to get version
-                    try:
-                        result = subprocess.run(
-                            [str(exe_path), "--version"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                            check=False
-                        )
-                        if result.returncode == 0 and result.stdout.strip():
-                            version_output = result.stdout.strip()
-                            print(f"✓ ChromeDriver version: {version_output}")
+        for exe_path in cache_path.rglob("chromedriver*.exe"):
+            if not exe_path.is_file():
+                continue
 
-                            parts = version_output.split()
-                            if len(parts) >= 2:
-                                return True, parts[1]
-                            return True, version_output
-                    except Exception:
-                        pass
+            print(f"✓ ChromeDriver found in UC cache: {exe_path}")
+            return True, _extract_driver_version(exe_path)
 
-                    return True, None
+    return False, None
+
+
+def check_chromedriver() -> tuple[bool, str | None]:
+    """Check ChromeDriver installation and version.
+
+    Returns:
+        Tuple of (success, version_string)
+    """
+    print_header("ChromeDriver Check")
+
+    from dotenv import load_dotenv
+    load_dotenv()
+    found, version = _check_configured_chromedriver()
+    if found:
+        return True, version
+
+    found, version = _check_uc_default_location()
+    if found:
+        return True, version
+
+    found, version = _search_uc_cache_paths()
+    if found:
+        return True, version
 
     print("⚠ ChromeDriver not found at configured path or UC cache")
     print("  undetected-chromedriver will auto-download on first use")
-    return True, None  # Not critical since UC auto-downloads
+    return True, version
 
 
 def check_version_compatibility(chrome_version: str | None, chromedriver_version: str | None) -> bool:
     """Check if Chrome and ChromeDriver versions are compatible.
-    
+
     Args:
         chrome_version: Chrome version string (e.g., "142.0.7444.135")
         chromedriver_version: ChromeDriver version string (e.g., "141.0.7390.37")
-    
+
     Returns:
         True if compatible or versions unknown, False if incompatible
     """
@@ -390,10 +402,10 @@ def check_version_compatibility(chrome_version: str | None, chromedriver_version
 
 def fix_chromedriver_version_mismatch(chrome_version: str) -> bool:
     """Download correct ChromeDriver version to match Chrome.
-    
+
     Args:
         chrome_version: Chrome version string to match
-        
+
     Returns:
         True if successfully downloaded, False otherwise
     """
@@ -467,7 +479,7 @@ def check_disk_space() -> bool:
         import shutil
 
         # Check system drive
-        system_drive = os.getenv("SystemDrive", "C:")
+        system_drive = os.getenv("SYSTEMDRIVE", "C:")
         total, used, free = shutil.disk_usage(system_drive)
 
         free_gb = free / (1024 ** 3)
@@ -518,6 +530,102 @@ def check_cache_directory() -> bool:
         return False
 
 
+def _build_version_guidance(
+    version_compatible: bool,
+    version_fixed: bool,
+    chrome_version: str | None,
+    chromedriver_version: str | None,
+) -> tuple[tuple[str, list[str]] | None, list[str]]:
+    """Return optional version mismatch issue and success notes."""
+    if version_compatible:
+        return None, []
+
+    if not version_fixed:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        driver_path = os.getenv("CHROME_DRIVER_PATH", "")
+
+        details = [
+            "The auto-fix failed. Manual steps:",
+            "- Delete ChromeDriver cache:",
+        ]
+
+        if driver_path:
+            details.append(f"  Delete: {Path(driver_path).parent}")
+
+        details.extend([
+            f"- Version mismatch: Chrome {chrome_version} vs ChromeDriver {chromedriver_version}",
+            "- Then run this script again to auto-download the correct version",
+        ])
+
+        return ("ChromeDriver version mismatch detected but NOT auto-fixed:", details), []
+
+    success_note = [
+        "✓ ChromeDriver version mismatch has been prepared for auto-fix",
+        "  Old ChromeDriver cache cleared",
+        "  Correct version will be downloaded automatically when you run browser automation",
+    ]
+
+    return None, success_note
+
+
+def _build_process_issue(process_entries: list | None, title: str, details: list[str]) -> tuple[str, list[str]] | None:
+    """Return process-related recommendation when entries are present."""
+    if not process_entries:
+        return None
+    return title, details
+
+
+def _build_profile_issue(profile_ok: bool) -> tuple[str, list[str]] | None:
+    """Return profile repair recommendation when profile check fails."""
+    if profile_ok:
+        return None
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    user_data_dir = os.getenv("CHROME_USER_DATA_DIR", "")
+
+    details = [
+        "- Close all Chrome windows",
+        "- Rename the Default profile folder:",
+    ]
+
+    if user_data_dir:
+        details.append(f"  From: {Path(user_data_dir) / 'Default'}")
+        details.append(f"  To:   {Path(user_data_dir) / 'Default.backup'}")
+
+    details.append("- Chrome will create a fresh profile on next run")
+    return "Fix Chrome profile corruption:", details
+
+
+def _build_disk_issue(disk_ok: bool) -> tuple[str, list[str]] | None:
+    """Return disk space recommendation when needed."""
+    if disk_ok:
+        return None
+
+    details = [
+        "- Delete temporary files",
+        "- Clear browser cache",
+        "- Remove unnecessary programs",
+        "- Chrome needs space for cache and logs",
+    ]
+    return "Free up disk space:", details
+
+
+def _build_cache_issue(cache_ok: bool) -> tuple[str, list[str]] | None:
+    """Return cache directory recommendation when needed."""
+    if cache_ok:
+        return None
+
+    details = [
+        "- Check folder permissions",
+        "- Run: icacls Cache /grant %USERNAME%:F",
+    ]
+    return "Fix Cache directory permissions:", details
+
+
 def provide_recommendations(
     processes: dict,
     profile_ok: bool,
@@ -530,91 +638,48 @@ def provide_recommendations(
 ) -> None:
     """Provide recommendations based on diagnostic results."""
     print_header("Recommendations")
+    version_issue, success_note = _build_version_guidance(
+        version_compatible,
+        version_fixed,
+        chrome_version,
+        chromedriver_version,
+    )
 
-    issues_found = False
+    for line in success_note:
+        print(line)
 
-    if not version_compatible and not version_fixed:
-        print("1. ChromeDriver version mismatch detected but NOT auto-fixed:")
-        print("   The auto-fix failed. Manual steps:")
-        print("   - Delete ChromeDriver cache:")
-        from dotenv import load_dotenv
-        load_dotenv()
-        driver_path = os.getenv("CHROME_DRIVER_PATH", "")
-        if driver_path:
-            driver_dir = Path(driver_path).parent
-            print(f"     Delete: {driver_dir}")
-        print(f"   - Version mismatch: Chrome {chrome_version} vs ChromeDriver {chromedriver_version}")
-        print("   - Then run this script again to auto-download the correct version")
-        issues_found = True
-    elif not version_compatible and version_fixed:
-        print("✓ ChromeDriver version mismatch has been prepared for auto-fix")
-        print("  Old ChromeDriver cache cleared")
-        print("  Correct version will be downloaded automatically when you run browser automation")
+    issues: list[tuple[str, list[str]]] = []
+    if version_issue:
+        issues.append(version_issue)
 
-    if processes["chrome"]:
-        issue_num = 2 if issues_found else 1
-        print(f"{issue_num}. Close all Chrome browser windows:")
-        print("   - Close Chrome manually, or")
-        print("   - Run: taskkill /F /IM chrome.exe")
-        issues_found = True
+    additional_issues = [
+        _build_process_issue(
+            processes.get("chrome"),
+            "Close all Chrome browser windows:",
+            [
+                "- Close Chrome manually, or",
+                "- Run: taskkill /F /IM chrome.exe",
+            ],
+        ),
+        _build_process_issue(
+            processes.get("chromedriver"),
+            "Kill orphaned ChromeDriver processes:",
+            ["- Run: taskkill /F /IM chromedriver.exe"],
+        ),
+        _build_profile_issue(profile_ok),
+        _build_disk_issue(disk_ok),
+        _build_cache_issue(cache_ok),
+    ]
 
-    if processes["chromedriver"]:
-        issue_num = (2 if not version_compatible else 1) + (1 if processes["chrome"] else 0) + (1 if issues_found else 0)
-        print(f"{issue_num}. Kill orphaned ChromeDriver processes:")
-        print("   - Run: taskkill /F /IM chromedriver.exe")
-        issues_found = True
+    issues.extend(issue for issue in additional_issues if issue)
 
-    if not profile_ok:
-        issue_num = sum([
-            1 if not version_compatible else 0,
-            1 if processes["chrome"] else 0,
-            1 if processes["chromedriver"] else 0,
-            1 if issues_found else 0
-        ]) + 1
-        print(f"{issue_num}. Fix Chrome profile corruption:")
-        print("   - Close all Chrome windows")
-        print("   - Rename the Default profile folder:")
-        from dotenv import load_dotenv
-        load_dotenv()
-        user_data_dir = os.getenv("CHROME_USER_DATA_DIR", "")
-        if user_data_dir:
-            default_path = Path(user_data_dir) / "Default"
-            backup_path = Path(user_data_dir) / "Default.backup"
-            print(f"     From: {default_path}")
-            print(f"     To:   {backup_path}")
-        print("   - Chrome will create a fresh profile on next run")
-        issues_found = True
+    if issues:
+        for index, (title, details) in enumerate(issues, start=1):
+            print(f"{index}. {title}")
+            for line in details:
+                print(f"   {line}")
+        return
 
-    if not disk_ok:
-        issue_num = sum([
-            1 if not version_compatible else 0,
-            1 if processes["chrome"] else 0,
-            1 if processes["chromedriver"] else 0,
-            1 if not profile_ok else 0,
-            1 if issues_found else 0
-        ]) + 1
-        print(f"{issue_num}. Free up disk space:")
-        print("   - Delete temporary files")
-        print("   - Clear browser cache")
-        print("   - Remove unnecessary programs")
-        print("   - Chrome needs space for cache and logs")
-        issues_found = True
-
-    if not cache_ok:
-        issue_num = sum([
-            1 if not version_compatible else 0,
-            1 if processes["chrome"] else 0,
-            1 if processes["chromedriver"] else 0,
-            1 if not profile_ok else 0,
-            1 if not disk_ok else 0,
-            1 if issues_found else 0
-        ]) + 1
-        print(f"{issue_num}. Fix Cache directory permissions:")
-        print("   - Check folder permissions")
-        print("   - Run: icacls Cache /grant %USERNAME%:F")
-        issues_found = True
-
-    if not issues_found:
         print("✓ No obvious issues detected")
         print("\nIf browser automation still fails, try:")
         print("1. Update Chrome to the latest version")
@@ -632,7 +697,7 @@ def main() -> int:
     chrome_ok, chrome_version = check_chrome_installation()
     processes = check_running_processes()
     profile_ok = check_chrome_profile()
-    driver_ok, chromedriver_version = check_chromedriver()
+    _driver_ok, chromedriver_version = check_chromedriver()
     version_compatible = check_version_compatibility(chrome_version, chromedriver_version)
 
     # Auto-fix version mismatch
@@ -659,89 +724,100 @@ def main() -> int:
     return 0 if all_ok else 1
 
 
+def _read_uc_driver_version(executable: Path) -> str | None:
+    """Return ChromeDriver version from undetected_chromedriver executable."""
+    try:
+        result = subprocess.run(
+            [str(executable), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    version_line = result.stdout.strip()
+    if "ChromeDriver" not in version_line:
+        return None
+
+    parts = version_line.split()
+    return parts[1] if len(parts) >= 2 else None
+
+
+def _attempt_uc_autofix(
+    chrome_version: str,
+    chromedriver_version: str,
+    uc_path: Path,
+) -> tuple[bool, str]:
+    """Attempt to align ChromeDriver with the installed Chrome version."""
+    chrome_major = chrome_version.split(".")[0]
+    driver_major = chromedriver_version.split(".")[0]
+
+    try:
+        from shutil import rmtree
+
+        import undetected_chromedriver as uc
+
+        uc_dir = Path(os.environ.get("APPDATA", "")) / "undetected_chromedriver"
+        if uc_dir.exists():
+            with contextlib.suppress(Exception):
+                rmtree(uc_dir)
+
+        patcher = uc.Patcher(version_main=int(chrome_major), force=True)
+        patcher.auto()
+
+        refreshed_version = _read_uc_driver_version(uc_path)
+        if refreshed_version:
+            return True, f"ChromeDriver auto-updated: {chromedriver_version} → {refreshed_version}"
+
+        return True, f"ChromeDriver update initiated for Chrome {chrome_major}"
+    except Exception as exc:
+        message = (
+            f"Version mismatch (Chrome {chrome_major} vs ChromeDriver {driver_major}) "
+            f"- auto-fix failed: {exc}"
+        )
+        return False, message
+
+
+def _evaluate_uc_alignment(
+    chrome_version: str,
+    chromedriver_version: str,
+    uc_path: Path,
+) -> tuple[bool, str]:
+    """Determine compatibility status and auto-fix if needed."""
+    chrome_major = chrome_version.split(".")[0]
+    driver_major = chromedriver_version.split(".")[0]
+
+    if chrome_major == driver_major:
+        message = f"Chrome {chrome_version} + ChromeDriver {chromedriver_version} compatible"
+        return True, message
+
+    return _attempt_uc_autofix(chrome_version, chromedriver_version, uc_path)
+
+
 def run_silent_diagnostic() -> tuple[bool, str]:
     """Run diagnostic checks silently (no output except errors).
-    
+
     Returns:
         Tuple of (success, message) where:
         - success: True if all checks passed
         - message: Status message for logging (e.g., "Chrome 142 + ChromeDriver 142 compatible")
     """
-    # Suppress all print output by redirecting to null
-    import contextlib
-    import io
-
-    # Check Chrome version
     chrome_version = get_chrome_version_from_registry()
     if not chrome_version:
         return False, "Chrome version detection failed"
 
-    # Check ChromeDriver
     uc_path = Path(os.environ.get("APPDATA", "")) / "undetected_chromedriver" / "undetected_chromedriver.exe"
-    chromedriver_version = None
-
-    if uc_path.exists():
-        try:
-            result = subprocess.run(
-                [str(uc_path), "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5, check=False
-            )
-            if result.returncode == 0:
-                version_line = result.stdout.strip()
-                if "ChromeDriver" in version_line:
-                    chromedriver_version = version_line.split()[1]
-        except Exception:
-            pass
-
-    # Check version compatibility
-    if chrome_version and chromedriver_version:
-        chrome_major = chrome_version.split(".")[0]
-        driver_major = chromedriver_version.split(".")[0]
-
-        if chrome_major == driver_major:
-            return True, f"Chrome {chrome_version} + ChromeDriver {chromedriver_version} compatible"
-        # Version mismatch - attempt auto-fix
-        try:
-            from shutil import rmtree
-
-            import undetected_chromedriver as uc
-
-            # Clear UC cache
-            uc_dir = Path(os.environ.get("APPDATA", "")) / "undetected_chromedriver"
-            if uc_dir.exists():
-                with contextlib.suppress(Exception):
-                    rmtree(uc_dir)
-
-            # Download correct version
-            major_version = int(chrome_major)
-            patcher = uc.Patcher(version_main=major_version, force=True)
-            patcher.auto()
-
-            # Re-check ChromeDriver version after fix
-            if uc_path.exists():
-                result = subprocess.run(
-                    [str(uc_path), "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5, check=False
-                )
-                if result.returncode == 0:
-                    version_line = result.stdout.strip()
-                    if "ChromeDriver" in version_line:
-                        new_driver_version = version_line.split()[1]
-                        return True, f"ChromeDriver auto-updated: {chromedriver_version} → {new_driver_version}"
-
-            return True, f"ChromeDriver update initiated for Chrome {chrome_major}"
-        except Exception as e:
-            return False, f"Version mismatch (Chrome {chrome_major} vs ChromeDriver {driver_major}) - auto-fix failed: {e}"
+    chromedriver_version = _read_uc_driver_version(uc_path) if uc_path.exists() else None
 
     if not chromedriver_version:
-        # ChromeDriver not found - will be downloaded on first UC usage
         return True, f"Chrome {chrome_version} ready (ChromeDriver will download on first use)"
 
-    return False, "Chrome diagnostic checks incomplete"
+    return _evaluate_uc_alignment(chrome_version, chromedriver_version, uc_path)
 
 
 if __name__ == "__main__":

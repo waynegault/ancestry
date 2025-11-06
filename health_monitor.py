@@ -42,14 +42,6 @@ Provides real-time health monitoring, session health scoring, early warning dete
 and predictive analytics for the Ancestry automation system.
 """
 
-# === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    register_function,
-    setup_module,
-)
-
-logger = setup_module(globals(), __name__)
-
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import sys
@@ -61,10 +53,23 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
+# === THIRD-PARTY IMPORTS ===
 import psutil
 
 # === LOCAL IMPORTS ===
+from standard_imports import register_function, setup_module
 from test_framework import TestSuite
+
+logger = setup_module(globals(), __name__)
+
+
+# Default thresholds for dynamically registered metrics
+_DYNAMIC_METRIC_DEFAULTS: dict[str, dict[str, float]] = {
+    "api_batch_processing_last_duration": {"warning": 120.0, "critical": 240.0, "weight": 1.5},
+    "api_combined_details_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.2},
+    "api_relationship_prob_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.0},
+    "api_ethnicity_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.0},
+}
 
 
 class HealthStatus(Enum):
@@ -220,15 +225,33 @@ class SessionHealthMonitor:
     def update_metric(self, name: str, value: float):
         """Update a specific health metric."""
         with self.lock:
-            if name in self.current_metrics:
-                self.current_metrics[name].value = value
-                self.current_metrics[name].timestamp = time.time()
-                self.metrics_history[name].append((time.time(), value))
+            if name not in self.current_metrics:
+                defaults = _DYNAMIC_METRIC_DEFAULTS.get(name)
 
-                # Check for alerts
-                self._check_metric_alerts(name)
-            else:
-                logger.warning(f"Unknown health metric: {name}")
+                if defaults is None and name.startswith("api_") and name.endswith("_last_duration"):
+                    defaults = {"warning": 8.0, "critical": 15.0, "weight": 1.0}
+
+                if defaults is not None:
+                    self.current_metrics[name] = HealthMetric(
+                        name=name,
+                        value=0.0,
+                        threshold_warning=defaults["warning"],
+                        threshold_critical=defaults["critical"],
+                        weight=defaults.get("weight", 1.0),
+                    )
+                    self.metrics_history[name] = deque(maxlen=100)
+                    logger.debug(f"Registered dynamic health metric: {name}")
+                else:
+                    logger.debug(f"Ignoring update for unrecognized metric without defaults: {name}")
+                    return
+
+            metric = self.current_metrics[name]
+            metric.value = value
+            metric.timestamp = time.time()
+            self.metrics_history[name].append((time.time(), value))
+
+            # Check for alerts
+            self._check_metric_alerts(name)
 
     def _check_metric_alerts(self, metric_name: str) -> None:
         """Check if a metric triggers any alerts, with de-duplication and cooldown."""
@@ -1383,6 +1406,8 @@ def integrate_with_action6(action6_module: Any) -> Any:
             def _record_api_metrics(api_name: str, duration: float, status: str) -> None:
                 metric_key = f"api_{api_name}_last_duration"
                 monitor.update_metric(metric_key, duration)
+                if status.lower().startswith("error"):
+                    monitor.record_error(f"{api_name}_{status}")
 
             try:
                 action6_module.register_api_metrics_callback(_record_api_metrics)

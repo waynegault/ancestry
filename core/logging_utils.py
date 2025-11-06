@@ -301,14 +301,14 @@ def _test_debug_decorator() -> bool:
 
         # Create a test function with decorator
         @debug_if_enabled(test_logger)
-        def test_debug_function():
+        def decorated_debug_function() -> str:
             return "debug_executed"
 
         # Test that decorator is callable
-        assert callable(test_debug_function)
+        assert callable(decorated_debug_function)
 
         # Test execution (result depends on debug level)
-        result = test_debug_function()
+        result = decorated_debug_function()
         # Should either return the result or None based on debug level
         assert result is None or result == "debug_executed"
 
@@ -336,12 +336,12 @@ def _test_optimized_logger_functionality() -> bool:
 
         # Test debug_lazy execution
         execution_count = 0
-        def test_msg_func():
+        def message_factory() -> str:
             nonlocal execution_count
             execution_count += 1
             return "test message"
 
-        opt_logger.debug_lazy(test_msg_func)
+        opt_logger.debug_lazy(message_factory)
         # Execution count depends on debug level, but should not error
 
         return True

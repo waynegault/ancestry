@@ -156,9 +156,9 @@ def create_test_function(return_value: Any = "test") -> Callable[[], Any]:
     Returns:
         Callable: A function that returns the specified value
     """
-    def test_function() -> Any:
+    def generated_function() -> Any:
         return return_value
-    return test_function
+    return generated_function
 
 
 def create_parameterized_test_function(operation: str = "multiply", factor: int = 2) -> Callable[[int], int]:
@@ -175,7 +175,7 @@ def create_parameterized_test_function(operation: str = "multiply", factor: int 
     Returns:
         Callable: A function that performs the specified operation
     """
-    def test_function(x: int) -> int:
+    def generated_function(x: int) -> int:
         if operation == "multiply":
             return x * factor
         if operation == "add":
@@ -183,7 +183,7 @@ def create_parameterized_test_function(operation: str = "multiply", factor: int 
         if operation == "subtract":
             return x - factor
         return x
-    return test_function
+    return generated_function
 
 
 # Test function registry for common test patterns

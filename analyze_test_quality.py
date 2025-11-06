@@ -241,17 +241,18 @@ class TestQualityAnalyzer:
         )
 
     def _needs_authentication(self, source: str) -> bool:
-        """Check if test likely needs authentication."""
-        auth_indicators = [
-            "session",
-            "login",
-            "auth",
-            "api_utils",
-            "SessionManager",
-            "get_session",
+        """Heuristically check if test likely interacts with authentication-protected flows."""
+        auth_patterns = [
+            r"SessionManager\s*\(",
+            r"login_status\s*\(",
+            r"ensure_session_ready\s*\(",
+            r"authenticate\s*\(",
+            r"auth_token",
+            r"api_utils\.",
+            r"GraphClient",
         ]
 
-        return any(indicator in source for indicator in auth_indicators)
+        return any(re.search(pattern, source) for pattern in auth_patterns)
 
     def _is_minimal_test(self, source: str) -> bool:
         """Check if test has minimal logic."""

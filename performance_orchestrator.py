@@ -709,12 +709,12 @@ def _test_global_optimization_functions() -> None:
 def _test_optimization_decorators() -> None:
     """Test performance optimization decorators"""
     @optimize_on_high_usage(memory_threshold=0.0)  # Very low threshold for testing
-    def test_function():
+    def sample_workload() -> str:
         import time
         time.sleep(0.001)  # Small delay
         return "test_result"
 
-    result = test_function()
+    result = sample_workload()
     assert result == "test_result"
 
 

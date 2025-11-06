@@ -25,6 +25,8 @@ logger = setup_module(globals(), __name__)
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from unittest.mock import MagicMock
+
     from core.session_manager import SessionManager
 else:
     # Runtime import to avoid circular dependency issues
@@ -4606,6 +4608,87 @@ def main() -> None:
 
 # End of main
 
+
+def _create_stubbed_session_manager() -> tuple[
+    "SessionManager",
+    "MagicMock",
+    "MagicMock",
+    "MagicMock",
+    "MagicMock",
+]:
+    """Create a SessionManager instance with patched dependencies for tests."""
+    from contextlib import ExitStack, nullcontext
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    import requests
+
+    from core.session_manager import SessionManager
+
+    mock_db = MagicMock()
+    mock_db.is_ready = True
+    mock_db.ensure_ready.return_value = True
+    mock_db.get_session.return_value = MagicMock()
+    mock_db.get_session_context.return_value = nullcontext()
+    mock_db.close_connections.return_value = None
+    mock_db.return_session.return_value = None
+
+    mock_browser = MagicMock()
+    mock_browser.browser_needed = False
+    mock_browser.driver_live = False
+    mock_browser.driver = None
+    mock_browser.ensure_driver_live.return_value = True
+    mock_browser.start_browser.return_value = True
+    mock_browser.close_browser.return_value = None
+    mock_browser.create_new_tab.return_value = "tab-id"
+
+    mock_api = MagicMock()
+    mock_api._requests_session = requests.Session()
+    mock_api.my_profile_id = None
+    mock_api.my_uuid = None
+    mock_api.my_tree_id = None
+    mock_api.csrf_token = None
+
+    mock_validator = MagicMock()
+
+    mock_config = SimpleNamespace(
+        api=SimpleNamespace(username="test-user", password="test-pass", tree_name=None)
+    )
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "core.session_manager.SessionManager._get_cached_database_manager",
+                return_value=mock_db,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "core.session_manager.SessionManager._get_cached_browser_manager",
+                return_value=mock_browser,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "core.session_manager.SessionManager._get_cached_api_manager",
+                return_value=mock_api,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "core.session_manager.SessionManager._get_cached_session_validator",
+                return_value=mock_validator,
+            )
+        )
+        stack.enter_context(patch("core.session_manager.config_schema", mock_config))
+        stack.enter_context(
+            patch("core.session_manager.SessionManager._initialize_cloudscraper")
+        )
+        session_manager = SessionManager()
+
+    return session_manager, mock_db, mock_browser, mock_api, mock_validator
+
+
 def utils_module_tests() -> bool:
     """Module-specific tests for utils.py functionality."""
     try:
@@ -4618,10 +4701,10 @@ def utils_module_tests() -> bool:
         limiter.wait()  # Should not hang
 
         # Test SessionManager - import it properly at runtime
-        from core.session_manager import SessionManager
-        sm = SessionManager()
+        sm, *_ = _create_stubbed_session_manager()
         assert hasattr(sm, "driver_live"), "SessionManager missing driver_live attribute"
         assert hasattr(sm, "session_ready"), "SessionManager missing session_ready attribute"
+        assert sm.session_ready is False, "SessionManager should initialize with session_ready=False"
 
         return True
     except Exception as e:
@@ -4780,10 +4863,10 @@ if __name__ == "__main__":
 
         # Basic decorator functionality test
         @retry(max_retries=1, backoff_factor=0.001)
-        def test_func():
+        def decorated_callable() -> str:
             return "success"
 
-        result = test_func()
+        result = decorated_callable()
         assert result == "success", "Retry decorator should work"
 
     def test_circuit_breaker():
@@ -4853,25 +4936,16 @@ if __name__ == "__main__":
         assert limiter.circuit_breaker.failure_count == 1, "Circuit should track failure"
 
     def test_session_manager():
-        # Test SessionManager class availability and basic attributes
-        # Import SessionManager directly to avoid circular import issues
-        from core.session_manager import SessionManager
+        sm, mock_db, mock_browser, mock_api, mock_validator = _create_stubbed_session_manager()
 
-        sm = SessionManager()
-        assert hasattr(
-            sm, "driver_live"
-        ), "SessionManager should have driver_live attribute"
-        assert hasattr(
-            sm, "session_ready"
-        ), "SessionManager should have session_ready attribute"
-        assert hasattr(
-            sm, "ensure_session_ready"
-        ), "SessionManager should have ensure_session_ready method"
-        assert hasattr(sm, "close_sess"), "SessionManager should have close_sess method"
-
-        # Test initial state
-        assert not sm.driver_live, "Driver should not be live initially"
-        assert not sm.session_ready, "Session should not be ready initially"
+        assert sm.db_manager is mock_db, "SessionManager should use cached database manager"
+        assert sm.browser_manager is mock_browser, "SessionManager should use cached browser manager"
+        assert sm.api_manager is mock_api, "SessionManager should use cached API manager"
+        assert sm.validator is mock_validator, "SessionManager should use cached session validator"
+        assert hasattr(sm, "ensure_session_ready"), "SessionManager missing ensure_session_ready method"
+        assert hasattr(sm, "close_sess"), "SessionManager missing close_sess method"
+        assert sm.session_ready is False, "SessionManager should initialize with session_ready=False"
+        assert sm.driver_live is False, "SessionManager driver should not be live initially"
 
     def test_api_request_function():
         # Test _api_req function availability
@@ -4931,48 +5005,39 @@ if __name__ == "__main__":
         ), f"Performance test should complete quickly, took {elapsed:.3f}s"
 
     def test_sleep_prevention():
-        """Test cross-platform sleep prevention utilities."""
-        import platform
+        """Test cross-platform sleep prevention utilities without side effects."""
+        from unittest.mock import MagicMock, patch
 
-        print("🔍 Testing sleep prevention utilities:")
-
-        # Test that functions exist and are callable
         assert callable(prevent_system_sleep), "prevent_system_sleep should be callable"
         assert callable(restore_system_sleep), "restore_system_sleep should be callable"
-        print("   ✅ Functions are callable")
 
-        # Test platform detection
-        system = platform.system()
-        print(f"   INFO: Detected platform: {system}")
+        # Windows branch uses ctypes to prevent sleep
+        with patch("platform.system", return_value="Windows"), patch(
+            "ctypes.windll", create=True
+        ) as mock_windll:
+            mock_windll.kernel32.SetThreadExecutionState.return_value = 1
+            state = prevent_system_sleep()
+            assert state is True, "Windows sleep prevention should return True"
+            restore_system_sleep(state)
+            mock_windll.kernel32.SetThreadExecutionState.assert_called()
 
-        # Test enable/disable cycle
-        print("   🧪 Testing enable...")
-        sleep_state = prevent_system_sleep()
+        # macOS branch spawns caffeinate process
+        mock_process = MagicMock()
+        with patch("platform.system", return_value="Darwin"), patch(
+            "subprocess.Popen", return_value=mock_process
+        ) as mock_popen:
+            state = prevent_system_sleep()
+            mock_popen.assert_called_once()
+            assert state is mock_process, "macOS sleep prevention should return process handle"
+            restore_system_sleep(state)
+            mock_process.terminate.assert_called_once()
 
-        if system == "Linux":
-            # Linux returns None (manual disable required)
-            assert sleep_state is None, "Linux should return None"
-            print("   ✅ Linux correctly returned None (manual disable required)")
-        elif system in ("Windows", "Darwin"):
-            # Windows/macOS should return a state object
-            assert sleep_state is not None, f"{system} should return a state object"
-            print(f"   ✅ {system} returned state: {type(sleep_state).__name__}")
-
-        # Test restore (should not raise exceptions)
-        print("   🧪 Testing restore...")
-        try:
-            restore_system_sleep(sleep_state)
-            print("   ✅ Restore completed without errors")
-        except Exception as e:
-            raise AssertionError(f"Restore failed: {e}") from e
-
-        # Test with None state (should handle gracefully)
-        print("   🧪 Testing restore with None state...")
-        try:
+        # Linux branch should return None and have no side effects
+        with patch("platform.system", return_value="Linux"):
+            assert (
+                prevent_system_sleep() is None
+            ), "Linux sleep prevention should return None"
             restore_system_sleep(None)
-            print("   ✅ Restore with None handled gracefully")
-        except Exception as e:
-            raise AssertionError(f"Restore with None failed: {e}") from e
 
     def test_check_for_unavailability():
         """Test unavailability detection logic (Priority 2)."""

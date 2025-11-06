@@ -389,10 +389,10 @@ def _test_progress_indicator_creation() -> bool:
 def _test_progress_decorator_creation() -> bool:
     """Test creating a progress decorator."""
     @with_progress("Test Operation", unit="items")
-    def test_func():
+    def sample_operation() -> str:
         return "success"
 
-    assert callable(test_func), "Decorated function should be callable"
+    assert callable(sample_operation), "Decorated function should be callable"
     return True
 
 

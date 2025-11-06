@@ -9,7 +9,8 @@ Fetches the user's DNA match list page by page, extracts relevant information,
 compares with existing database records, fetches additional details via API for
 new or changed matches, and performs bulk updates/inserts into the local database.
 Handles pagination, rate limiting, caching (via utils/cache.py decorators used
-within helpers), error handling, and concurrent API fetches using ThreadPoolExecutor.
+within helpers), error handling, and sequential API fetches coordinated through
+SessionManager.
 
 PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Enhanced logging with ETA calculations and memory monitoring
@@ -17,6 +18,7 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from core.enhanced_error_recovery import with_enhanced_recovery
@@ -30,39 +32,28 @@ def register_api_metrics_callback(callback: Callable[[str, float, str], None]) -
     _api_performance_callbacks.append(callback)
 
 
-# Automatically connect API performance metrics with the health monitor on import
-# === PHASE 1 OPTIMIZATIONS ===
-
-
-# Performance monitoring helper with session manager integration
-def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
-    """Log API performance metrics for monitoring and optimization."""
-    duration = time.time() - start_time
-
-    # Always log performance metrics for analysis
-    logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
-
-    # Record metrics with health monitor for centralized analytics
+def _record_health_monitor_metrics(duration: float, api_name: str, response_status: str) -> None:
+    """Send timing data to the health monitor."""
     try:
         monitor = get_health_monitor()
         monitor.record_api_response_time(duration)
-        if isinstance(response_status, str) and response_status.lower().startswith("error"):
+        if response_status.lower().startswith("error"):
             monitor.record_error(f"{api_name}_{response_status}")
     except Exception as monitor_exc:  # pragma: no cover - diagnostics only
         logger.debug(f"Health monitor recording failed for {api_name}: {monitor_exc}")
 
-    # Notify any registered callbacks (e.g., integration tests, analytics)
+
+def _notify_api_callbacks(api_name: str, duration: float, response_status: str) -> None:
+    """Invoke registered API metrics callbacks."""
     for callback in list(_api_performance_callbacks):
         try:
             callback(api_name, duration, response_status)
         except Exception as callback_exc:  # pragma: no cover - diagnostics only
             logger.debug(f"API metrics callback error for {api_name}: {callback_exc}")
 
-    # Update session manager performance tracking
-    if session_manager:
-        _update_session_performance_tracking(session_manager, duration, response_status)
 
-    # Log warnings for slow API calls with enhanced context
+def _log_api_duration_message(api_name: str, duration: float) -> None:
+    """Emit context-aware log messages for slow calls."""
     if duration > 10.0:
         logger.error(f"Very slow API call: {api_name} took {duration:.3f}s - consider optimization")
     elif duration > 5.0:
@@ -70,12 +61,32 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     elif duration > 2.0:
         logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
 
-    # Track performance metrics for optimization analysis
+
+def _track_api_metrics(api_name: str, duration: float, response_status: str) -> None:
+    """Forward metrics to optional performance monitor."""
     try:
         from performance_monitor import track_api_performance
+
         track_api_performance(api_name, duration, response_status)
     except ImportError:
         pass  # Graceful degradation if performance monitor not available
+
+
+# Performance monitoring helper with session manager integration
+def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
+    """Log API performance metrics for monitoring and optimization."""
+    duration = time.time() - start_time
+    logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
+
+    response_status = str(response_status or "unknown")
+    _record_health_monitor_metrics(duration, api_name, response_status)
+    _notify_api_callbacks(api_name, duration, response_status)
+
+    if session_manager:
+        _update_session_performance_tracking(session_manager, duration, response_status)
+
+    _log_api_duration_message(api_name, duration)
+    _track_api_metrics(api_name, duration, response_status)
 
 
 def _update_session_performance_tracking(session_manager, duration: float, response_status: str) -> None:  # noqa: ARG001
@@ -371,16 +382,15 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
 
 
 def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Optional[int]]]:
-    """
-    Fetch and parse ethnicity comparison data for a single match (for parallel execution).
-    
-    This function is called from ThreadPoolExecutor in the controlled parallel API fetch,
-    ensuring ethnicity API calls respect rate limiting alongside other APIs.
-    
+    """Fetch and parse ethnicity comparison data for a single match.
+
+    Sequential processing keeps this helper simple while still respecting the
+    shared rate limiter managed by SessionManager.
+
     Args:
         session_manager: Active session manager
         match_uuid: Match UUID to fetch ethnicity for
-        
+
     Returns:
         Dictionary of {column_name: percentage} or None if unavailable
     """
@@ -402,10 +412,8 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
     for region_key, percentage in percentages.items():
         column_name = column_map.get(str(region_key))
         if column_name:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 payload[column_name] = int(percentage) if percentage is not None else None
-            except (TypeError, ValueError):
-                pass  # Skip invalid values silently in batch mode
 
     return payload if payload else None
 
@@ -710,7 +718,11 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
-def _validate_session_before_page(session_manager: SessionManager, current_page_num: int, state: dict[str, Any]) -> bool:
+def _validate_session_before_page(
+    session_manager: SessionManager,
+    current_page_num: int,
+    _state: dict[str, Any],
+) -> bool:
     """Validate session before processing a page.
 
     Returns:
@@ -1026,7 +1038,7 @@ def _get_database_session_with_retry(
     return None
 
 
-def _handle_session_death(current_page_num: int, state: dict[str, Any]) -> None:
+def _handle_session_death(current_page_num: int, _state: dict[str, Any]) -> None:
     """Handle session death by updating state."""
     logger.critical(
         f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
@@ -1587,6 +1599,63 @@ def _check_if_fetch_needed(
 # Removed _calculate_optimized_workers - no longer needed for sequential processing
 
 
+_PRIORITY_DEBUG_LIMIT = 5
+
+
+def _safe_cm_value(match_data: dict[str, Any]) -> int:
+    """Return cM value from match data with defensive conversion."""
+    try:
+        return int(match_data.get("cm_dna", 0) or 0)
+    except (TypeError, ValueError):
+        logger.debug("Unable to parse cm_dna for priority classification; defaulting to 0")
+        return 0
+
+
+def _determine_match_priority(match_data: dict[str, Any]) -> tuple[str, int, bool, bool]:
+    """Map match attributes to priority level."""
+    cm_value = _safe_cm_value(match_data)
+    has_tree = bool(match_data.get("in_my_tree", False))
+    is_starred = bool(match_data.get("starred", False))
+
+    if is_starred or cm_value > 50:
+        return "high", cm_value, has_tree, is_starred
+    if cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
+        return "medium", cm_value, has_tree, is_starred
+    return "low", cm_value, has_tree, is_starred
+
+
+def _log_priority_decision(
+    priority: str,
+    uuid_val: str,
+    cm_value: int,
+    has_tree: bool,
+    is_starred: bool,
+    log_state: dict[str, int],
+) -> None:
+    """Emit limited debug output for priority classification."""
+    emitted = log_state.get(priority, 0)
+    suppressed_key = f"suppressed_{priority}"
+
+    if emitted < _PRIORITY_DEBUG_LIMIT:
+        if priority == "high":
+            logger.debug(
+                f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}"
+            )
+        elif priority == "medium":
+            logger.debug(
+                f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}"
+            )
+        else:
+            logger.debug(
+                f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
+                f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)"
+            )
+    else:
+        log_state[suppressed_key] = log_state.get(suppressed_key, 0) + 1
+
+    log_state[priority] = emitted + 1
+
+
 def _classify_match_priorities(
     matches_to_process_later: list[dict[str, Any]],
     fetch_candidates_uuid: set[str]
@@ -1603,40 +1672,28 @@ def _classify_match_priorities(
     high_priority_uuids = set()
     medium_priority_uuids = set()
 
-    suppressed_high_logs = 0
-    suppressed_medium_logs = 0
-    low_debug_emitted = 0
-    suppressed_low_logs = 0
+    log_state: dict[str, int] = {
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "suppressed_high": 0,
+        "suppressed_medium": 0,
+        "suppressed_low": 0,
+    }
 
     for match_data in matches_to_process_later:
         uuid_val = match_data.get("uuid")
-        if uuid_val and uuid_val in fetch_candidates_uuid:
-            cm_value = int(match_data.get("cm_dna", 0))
-            has_tree = match_data.get("in_my_tree", False)
-            is_starred = match_data.get("starred", False)
+        if not uuid_val or uuid_val not in fetch_candidates_uuid:
+            continue
 
-            # Enhanced priority classification
-            if is_starred or cm_value > 50:  # Very high priority
-                high_priority_uuids.add(uuid_val)
-                if len(high_priority_uuids) <= 5:
-                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
-                else:
-                    suppressed_high_logs += 1
-            elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
-                # Medium priority: above threshold OR low DNA but has tree
-                medium_priority_uuids.add(uuid_val)
-                if len(medium_priority_uuids) <= 5:
-                    logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
-                else:
-                    suppressed_medium_logs += 1
-            elif low_debug_emitted < 5:
-                logger.debug(
-                    f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
-                    f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)"
-                )
-                low_debug_emitted += 1
-            else:
-                suppressed_low_logs += 1
+        priority, cm_value, has_tree, is_starred = _determine_match_priority(match_data)
+
+        if priority == "high":
+            high_priority_uuids.add(uuid_val)
+        elif priority == "medium":
+            medium_priority_uuids.add(uuid_val)
+
+        _log_priority_decision(priority, uuid_val, cm_value, has_tree, is_starred, log_state)
 
     # Combined high and medium for API calls
     priority_uuids = high_priority_uuids.union(medium_priority_uuids)
@@ -1644,12 +1701,12 @@ def _classify_match_priorities(
                f"{len(medium_priority_uuids)} medium priority, "
                f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
 
-    if suppressed_high_logs:
-        logger.debug(f"Suppressed debug output for {suppressed_high_logs} additional high priority matches")
-    if suppressed_medium_logs:
-        logger.debug(f"Suppressed debug output for {suppressed_medium_logs} additional medium priority matches")
-    if suppressed_low_logs:
-        logger.debug(f"Suppressed debug output for {suppressed_low_logs} additional low priority matches")
+    if log_state["suppressed_high"]:
+        logger.debug(f"Suppressed debug output for {log_state['suppressed_high']} additional high priority matches")
+    if log_state["suppressed_medium"]:
+        logger.debug(f"Suppressed debug output for {log_state['suppressed_medium']} additional medium priority matches")
+    if log_state["suppressed_low"]:
+        logger.debug(f"Suppressed debug output for {log_state['suppressed_low']} additional low priority matches")
 
     return high_priority_uuids, medium_priority_uuids, priority_uuids
 
@@ -1676,6 +1733,230 @@ def _classify_match_priorities(
 # Removed _check_critical_failure_threshold - sequential processing uses simpler error handling
 
 # Removed _check_session_health_periodic - sequential processing checks after each API call
+
+
+@dataclass
+class _PrefetchStats:
+    """Tracks counters for sequential API prefetch operations."""
+
+    critical_failures: int = 0
+    ethnicity_fetch_count: int = 0
+    ethnicity_skipped: int = 0
+
+
+def _identify_badge_candidates(
+    matches_to_process_later: list[dict[str, Any]],
+    fetch_candidates_uuid: set[str],
+) -> set[str]:
+    """Collect UUIDs eligible for badge and ladder enrichment."""
+
+    return {
+        match_data["uuid"]
+        for match_data in matches_to_process_later
+        if match_data.get("in_my_tree") and match_data.get("uuid") in fetch_candidates_uuid
+    }
+
+
+def _enforce_session_health_for_prefetch(
+    session_manager: SessionManager,
+    processed_count: int,
+    num_candidates: int,
+) -> None:
+    """Abort processing if the session health check fails."""
+
+    if processed_count % 10 != 0:
+        return
+
+    if session_manager.check_session_health():
+        return
+
+    logger.critical(
+        f"🚨 Session death detected at item {processed_count}/{num_candidates}. Aborting."
+    )
+    raise MaxApiFailuresExceededError(
+        f"Session death detected during sequential processing at item {processed_count}"
+    )
+
+
+def _raise_prefetch_threshold_if_needed(stats: _PrefetchStats, exc: Exception | None = None) -> None:
+    """Raise when the critical API failure threshold is reached."""
+
+    if stats.critical_failures < CRITICAL_API_FAILURE_THRESHOLD:
+        return
+
+    logger.critical(
+        f"Exceeded critical API failure threshold ({stats.critical_failures}/"
+        f"{CRITICAL_API_FAILURE_THRESHOLD}). Halting batch."
+    )
+    message = f"Critical API failure threshold reached ({stats.critical_failures} failures)."
+    if exc is None:
+        raise MaxApiFailuresExceededError(message)
+    raise MaxApiFailuresExceededError(message) from exc
+
+
+def _handle_combined_details_fetch(
+    session_manager: SessionManager,
+    uuid_val: str,
+    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    stats: _PrefetchStats,
+) -> None:
+    """Fetch mandatory combined details for a match and update counters."""
+
+    try:
+        combined_result = _fetch_combined_details(session_manager, uuid_val)
+        batch_combined_details[uuid_val] = combined_result
+        if combined_result is None:
+            logger.warning(f"Combined details for {uuid_val[:8]} returned None.")
+            stats.critical_failures += 1
+            _raise_prefetch_threshold_if_needed(stats)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error(f"Exception fetching combined details for {uuid_val[:8]}: {exc}", exc_info=True)
+        batch_combined_details[uuid_val] = None
+        stats.critical_failures += 1
+        _raise_prefetch_threshold_if_needed(stats, exc)
+
+
+def _fetch_optional_relationship_data(
+    session_manager: SessionManager,
+    uuid_val: str,
+    high_priority_uuids: set[str],
+    priority_uuids: set[str],
+    batch_relationship_prob_data: dict[str, Optional[str]],
+) -> None:
+    """Fetch relationship probability when priority thresholds demand it."""
+
+    if uuid_val not in priority_uuids:
+        return
+
+    try:
+        max_labels = 3 if uuid_val in high_priority_uuids else 2
+        rel_prob_result = _fetch_batch_relationship_prob(session_manager, uuid_val, max_labels)
+        batch_relationship_prob_data[uuid_val] = rel_prob_result
+    except Exception as exc:  # pragma: no cover - logging only
+        logger.error(
+            f"Exception fetching relationship prob for {uuid_val[:8]}: {exc}",
+            exc_info=False,
+        )
+        batch_relationship_prob_data[uuid_val] = None
+
+
+def _fetch_optional_badge_data(
+    session_manager: SessionManager,
+    uuid_val: str,
+    badge_candidates: set[str],
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+) -> None:
+    """Fetch badge metadata for tree members."""
+
+    if uuid_val not in badge_candidates:
+        return
+
+    try:
+        temp_badge_results[uuid_val] = _fetch_batch_badge_details(session_manager, uuid_val)
+    except Exception as exc:  # pragma: no cover - logging only
+        logger.error(
+            f"Exception fetching badge details for {uuid_val[:8]}: {exc}",
+            exc_info=False,
+        )
+        temp_badge_results[uuid_val] = None
+
+
+def _process_ethnicity_candidate(
+    session_manager: SessionManager,
+    uuid_val: str,
+    ethnicity_candidates: set[str],
+    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
+    stats: _PrefetchStats,
+) -> None:
+    """Fetch ethnicity data when the match qualifies."""
+
+    if uuid_val not in ethnicity_candidates:
+        stats.ethnicity_skipped += 1
+        batch_ethnicity_data[uuid_val] = None
+        return
+
+    try:
+        ethnicity_result = _fetch_ethnicity_for_batch(session_manager, uuid_val)
+        batch_ethnicity_data[uuid_val] = ethnicity_result
+        stats.ethnicity_fetch_count += 1
+    except Exception as exc:  # pragma: no cover - logging only
+        logger.error(f"Exception fetching ethnicity for {uuid_val[:8]}: {exc}", exc_info=False)
+        batch_ethnicity_data[uuid_val] = None
+
+
+def _log_prefetch_progress(processed_count: int, num_candidates: int) -> None:
+    """Emit progress updates at consistent intervals."""
+
+    if processed_count % 10 == 0:
+        logger.info(f"📊 Progress: {processed_count}/{num_candidates} matches processed")
+
+
+def _build_cfpid_mapping(
+    temp_badge_results: dict[str, Optional[dict[str, Any]]]
+) -> tuple[list[str], dict[str, str]]:
+    """Translate badge data into CFPID lookup structures."""
+
+    cfpid_to_uuid_map: dict[str, str] = {}
+    cfpid_list: list[str] = []
+
+    for uuid_val, badge_result in temp_badge_results.items():
+        if not badge_result:
+            continue
+        cfpid = badge_result.get("their_cfpid")
+        if cfpid:
+            cfpid_list.append(cfpid)
+            cfpid_to_uuid_map[cfpid] = uuid_val
+
+    return cfpid_list, cfpid_to_uuid_map
+
+
+def _fetch_ladder_details_for_badges(
+    session_manager: SessionManager,
+    my_tree_id: Optional[str],
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+) -> dict[str, Optional[dict[str, Any]]]:
+    """Combine badge data with ladder enrichment where available."""
+
+    if not my_tree_id or not temp_badge_results:
+        return dict(temp_badge_results)
+
+    cfpid_list, cfpid_to_uuid_map = _build_cfpid_mapping(temp_badge_results)
+    enriched_tree_data = dict(temp_badge_results)
+
+    for cfpid in cfpid_list:
+        uuid_val = cfpid_to_uuid_map.get(cfpid)
+        if not uuid_val:
+            continue
+
+        try:
+            ladder_result = _fetch_batch_ladder(session_manager, cfpid, my_tree_id)
+            if not ladder_result:
+                continue
+
+            badge_data = temp_badge_results.get(uuid_val) or {}
+            combined_tree_info = badge_data.copy() if badge_data else {}
+            combined_tree_info.update(ladder_result)
+            enriched_tree_data[uuid_val] = combined_tree_info or ladder_result
+        except Exception as exc:  # pragma: no cover - logging only
+            logger.error(
+                f"Exception fetching ladder for CFPID {cfpid} (UUID {uuid_val[:8]}): {exc}",
+                exc_info=False,
+            )
+
+    return enriched_tree_data
+
+
+def _log_prefetch_summary(fetch_duration: float, stats: _PrefetchStats) -> None:
+    """Summarize prefetch work after completion."""
+
+    logger.info(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
+
+    if stats.ethnicity_fetch_count or stats.ethnicity_skipped:
+        logger.info(
+            "🧬 Ethnicity fetches: %s prioritized, %s skipped (low priority)",
+            stats.ethnicity_fetch_count,
+            stats.ethnicity_skipped,
+        )
 
 
 def _perform_api_prefetches(
@@ -1712,8 +1993,6 @@ def _perform_api_prefetches(
     Raises:
         MaxApiFailuresExceededError: If critical API failure threshold is met.
     """
-    import time  # For timing API operations
-
     batch_combined_details: dict[str, Optional[dict[str, Any]]] = {}
     batch_tree_data: dict[str, Optional[dict[str, Any]]] = {}
     batch_relationship_prob_data: dict[str, Optional[str]] = {}
@@ -1726,22 +2005,17 @@ def _perform_api_prefetches(
     fetch_start_time = time.time()
     num_candidates = len(fetch_candidates_uuid)
     my_tree_id = session_manager.my_tree_id
-
-    critical_combined_details_failures = 0
+    stats = _PrefetchStats()
 
     logger.info(
         f"--- Starting SEQUENTIAL API Pre-fetch ({num_candidates} candidates) ---"
     )
 
-    # Identify UUIDs for tree badge/ladder fetch
-    uuids_for_tree_badge_ladder = {
-        match_data["uuid"]
-        for match_data in matches_to_process_later
-        if match_data.get("in_my_tree")
-        and match_data.get("uuid") in fetch_candidates_uuid
-    }
+    badge_candidates = _identify_badge_candidates(
+        matches_to_process_later, fetch_candidates_uuid
+    )
     logger.debug(
-        f"Identified {len(uuids_for_tree_badge_ladder)} candidates for Badge/Ladder fetch."
+        f"Identified {len(badge_candidates)} candidates for Badge/Ladder fetch."
     )
 
     # Classify matches into priority tiers
@@ -1751,122 +2025,41 @@ def _perform_api_prefetches(
 
     # SEQUENTIAL PROCESSING: Process each match one at a time
     temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
-    processed_count = 0
+    ethnicity_candidates = set(priority_uuids)
 
-    for uuid_val in fetch_candidates_uuid:
-        processed_count += 1
+    for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
+        _enforce_session_health_for_prefetch(session_manager, processed_count, num_candidates)
+        _handle_combined_details_fetch(session_manager, uuid_val, batch_combined_details, stats)
+        _fetch_optional_relationship_data(
+            session_manager,
+            uuid_val,
+            high_priority_uuids,
+            priority_uuids,
+            batch_relationship_prob_data,
+        )
+        _fetch_optional_badge_data(
+            session_manager,
+            uuid_val,
+            badge_candidates,
+            temp_badge_results,
+        )
+        _process_ethnicity_candidate(
+            session_manager,
+            uuid_val,
+            ethnicity_candidates,
+            batch_ethnicity_data,
+            stats,
+        )
+        _log_prefetch_progress(processed_count, num_candidates)
 
-        # Check session health every 10 items
-        if processed_count % 10 == 0:
-            if not session_manager.check_session_health():
-                logger.critical(f"🚨 Session death detected at item {processed_count}/{num_candidates}. Aborting.")
-                raise MaxApiFailuresExceededError(
-                    f"Session death detected during sequential processing at item {processed_count}"
-                )
-
-        # Fetch combined details (CRITICAL - required for all matches)
-        try:
-            combined_result = _fetch_combined_details(session_manager, uuid_val)
-            batch_combined_details[uuid_val] = combined_result
-            if combined_result is None:
-                logger.warning(f"Combined details for {uuid_val[:8]} returned None.")
-                critical_combined_details_failures += 1
-
-                # Check critical failure threshold
-                if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
-                    logger.critical(
-                        f"Exceeded critical API failure threshold ({critical_combined_details_failures}/"
-                        f"{CRITICAL_API_FAILURE_THRESHOLD}). Halting batch."
-                    )
-                    raise MaxApiFailuresExceededError(
-                        f"Critical API failure threshold reached ({critical_combined_details_failures} failures)."
-                    )
-        except Exception as exc:
-            logger.error(f"Exception fetching combined details for {uuid_val[:8]}: {exc}", exc_info=True)
-            batch_combined_details[uuid_val] = None
-            critical_combined_details_failures += 1
-
-            if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
-                raise MaxApiFailuresExceededError(
-                    f"Critical API failure threshold reached ({critical_combined_details_failures} failures)."
-                )
-
-        # Fetch relationship probability (optional, for priority matches only)
-        if uuid_val in priority_uuids:
-            try:
-                max_labels = 3 if uuid_val in high_priority_uuids else 2
-                rel_prob_result = _fetch_batch_relationship_prob(session_manager, uuid_val, max_labels)
-                batch_relationship_prob_data[uuid_val] = rel_prob_result
-            except Exception as exc:
-                logger.error(f"Exception fetching relationship prob for {uuid_val[:8]}: {exc}", exc_info=False)
-                batch_relationship_prob_data[uuid_val] = None
-
-        # Fetch badge details (optional, for tree members only)
-        if uuid_val in uuids_for_tree_badge_ladder:
-            try:
-                badge_result = _fetch_batch_badge_details(session_manager, uuid_val)
-                temp_badge_results[uuid_val] = badge_result
-            except Exception as exc:
-                logger.error(f"Exception fetching badge details for {uuid_val[:8]}: {exc}", exc_info=False)
-                temp_badge_results[uuid_val] = None
-
-        # Fetch ethnicity data (optional)
-        try:
-            ethnicity_result = _fetch_ethnicity_for_batch(session_manager, uuid_val)
-            batch_ethnicity_data[uuid_val] = ethnicity_result
-        except Exception as exc:
-            logger.error(f"Exception fetching ethnicity for {uuid_val[:8]}: {exc}", exc_info=False)
-            batch_ethnicity_data[uuid_val] = None
-
-        # Log progress every 10 items
-        if processed_count % 10 == 0:
-            logger.info(f"📊 Progress: {processed_count}/{num_candidates} matches processed")
-
-    # SEQUENTIAL PROCESSING: Fetch ladder details for tree members
-    if my_tree_id and temp_badge_results:
-        logger.debug(f"Fetching ladder details for {len(temp_badge_results)} tree members...")
-
-        # Build CFPID mapping
-        cfpid_to_uuid_map: dict[str, str] = {}
-        cfpid_list: list[str] = []
-
-        for uuid_val, badge_result in temp_badge_results.items():
-            if badge_result:
-                cfpid = badge_result.get("their_cfpid")
-                if cfpid:
-                    cfpid_list.append(cfpid)
-                    cfpid_to_uuid_map[cfpid] = uuid_val
-
-        # Fetch ladder details sequentially
-        for cfpid in cfpid_list:
-            uuid_val = cfpid_to_uuid_map.get(cfpid)
-            if not uuid_val:
-                continue
-
-            try:
-                ladder_result = _fetch_batch_ladder(session_manager, cfpid, my_tree_id)
-                if ladder_result:
-                    # Combine badge and ladder results
-                    badge_data = temp_badge_results.get(uuid_val)
-                    if badge_data:
-                        combined_tree_info = badge_data.copy()
-                        combined_tree_info.update(ladder_result)
-                        batch_tree_data[uuid_val] = combined_tree_info
-                    else:
-                        batch_tree_data[uuid_val] = ladder_result
-                else:
-                    batch_tree_data[uuid_val] = temp_badge_results.get(uuid_val)
-            except Exception as exc:
-                logger.error(f"Exception fetching ladder for CFPID {cfpid} (UUID {uuid_val[:8]}): {exc}", exc_info=False)
-                batch_tree_data[uuid_val] = temp_badge_results.get(uuid_val)
-    else:
-        # No tree ID or no badge results - just use badge results
-        batch_tree_data = temp_badge_results
+    batch_tree_data = _fetch_ladder_details_for_badges(
+        session_manager,
+        my_tree_id,
+        temp_badge_results,
+    )
 
     fetch_duration = time.time() - fetch_start_time
-    logger.info(
-        f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---"
-    )
+    _log_prefetch_summary(fetch_duration, stats)
 
     return {
         "combined": batch_combined_details,
@@ -3322,28 +3515,27 @@ def _do_batch(
     matches_on_page: list[dict[str, Any]],
     current_page: int,
 ) -> tuple[int, int, int, int]:
-    """
-    Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
-    
+    """Process matches from a single page, respecting chunked BATCH_SIZE handling.
+
     BATCHING BENEFITS (Why We Batch):
     1. **DB Transaction Efficiency**: Bulk commits reduce I/O operations
        - Single transaction for 10-25 matches instead of 50 individual commits
        - Reduces database locks and improves concurrent access
-       
+
     2. **Error Isolation**: One problematic match doesn't fail entire page
        - Bad data in match 15 only fails that batch, not all 50 matches
        - Allows partial success and retry of failed batches
-       
+
     3. **Memory Management**: Process large pages in manageable chunks
        - With itemsPerPage=50, batching prevents memory spikes
        - Allows garbage collection between batches
-       
+
     4. **Progress Visibility**: Granular logging for long-running pages
        - See progress within a page (Batch 1/2, 2/2 complete)
        - Easier debugging (know exactly which batch failed)
-    
-    If BATCH_SIZE < page size, processes in chunks with individual batch summaries.
-    SURGICAL FIX #7: Reuses database session across all batches on a page.
+
+    If BATCH_SIZE < page size, processes occur in chunks with individual batch summaries.
+    SURGICAL FIX #7: Reuses a single database session across batches on a page.
     PRIORITY 5: Dynamic Batch Optimization with intelligent response-time adaptation.
     """
     # ENHANCED: Dynamic Batch Optimization with Server Performance Integration
@@ -3746,7 +3938,7 @@ def _process_page_matches(
             timing_log["db_lookups"] = time.time() - phase_start
             logger.debug(f"⏱️  Page {current_page} - DB lookups: {timing_log['db_lookups']:.2f}s")
 
-            # Phase 2: API Prefetches (parallel API calls)
+            # Phase 2: API Prefetches (sequential API calls)
             phase_start = time.time()
             prefetched_data = _perform_batch_api_prefetches(
                 session_manager, fetch_candidates_uuid, matches_to_process_later, current_page
@@ -4317,13 +4509,16 @@ def _add_ethnicity_data(
 ) -> None:
     """Add ethnicity data to DNA match dictionary from prefetched data."""
     if existing_dna_match is None or _needs_ethnicity_refresh(existing_dna_match):
-        # Use prefetched ethnicity data from parallel API fetch
+        # Use prefetched ethnicity data from sequential API fetch
         prefetched_ethnicity = match.get("_prefetched_ethnicity")
         if prefetched_ethnicity and isinstance(prefetched_ethnicity, dict):
             dna_dict_base.update(prefetched_ethnicity)
             logger_instance.debug(f"{log_ref_short}: Added ethnicity data ({len(prefetched_ethnicity)} regions)")
         else:
-            logger_instance.debug(f"{log_ref_short}: No prefetched ethnicity data available")
+            short_uuid = match_uuid[:8] if match_uuid else "unknown"
+            logger_instance.debug(
+                f"{log_ref_short}: No prefetched ethnicity data available for {short_uuid}"
+            )
 
 
 def _prepare_dna_match_operation_data(
@@ -4354,6 +4549,7 @@ def _prepare_dna_match_operation_data(
         or None if no create/update is needed. The dictionary includes fields like: cm_dna,
         shared_segments, longest_shared_segment, etc.
     """
+    _ = session_manager
     details_part = prefetched_combined_details or {}
     api_predicted_rel_for_comp = (
         predicted_relationship if predicted_relationship is not None else "N/A"
@@ -4843,6 +5039,45 @@ def _do_match(
 # ------------------------------------------------------------------------------
 
 
+def _session_recovery_required(
+    session_manager: SessionManager,
+    driver: Optional[Any],
+    my_uuid: Optional[str],
+) -> bool:
+    """Determine whether session recovery is needed for match retrieval."""
+
+    needs_recovery = False
+    if driver is None:
+        logger.warning("get_matches: WebDriver missing at validation time; attempting recovery.")
+        needs_recovery = True
+    if not my_uuid:
+        logger.warning("get_matches: my_uuid missing at validation time; attempting recovery.")
+        needs_recovery = True
+    if driver is not None and not session_manager.is_sess_valid():
+        logger.warning("get_matches: Detected invalid session prior to API fetch; attempting recovery.")
+        needs_recovery = True
+    return needs_recovery
+
+
+def _finalize_session_validation(
+    session_manager: SessionManager,
+    driver: Optional[Any],
+    my_uuid: Optional[str],
+) -> tuple[bool, Optional[Any], Optional[str]]:
+    """Verify driver, UUID, and session validity after optional recovery."""
+
+    if not driver:
+        logger.error("get_matches: WebDriver unavailable after recovery attempt.")
+        return False, None, None
+    if not my_uuid:
+        logger.error("get_matches: my_uuid unavailable after recovery attempt.")
+        return False, None, None
+    if not session_manager.is_sess_valid():
+        logger.error("get_matches: Session remains invalid after recovery attempt.")
+        return False, None, None
+    return True, driver, my_uuid
+
+
 def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool, Optional[Any], Optional[str]]:
     """
     Validate session manager, driver, UUID, and session validity for get_matches.
@@ -4851,20 +5086,20 @@ def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool
         Tuple of (is_valid, driver, my_uuid)
     """
     if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error("get_matches: Invalid SessionManager.")
+        logger.error("get_matches: Invalid SessionManager instance provided.")
         return False, None, None
+
     driver = session_manager.driver
-    if not driver:
-        logger.error("get_matches: WebDriver not initialized.")
-        return False, None, None
     my_uuid = session_manager.my_uuid
-    if not my_uuid:
-        logger.error("get_matches: SessionManager my_uuid not set.")
-        return False, None, None
-    if not session_manager.is_sess_valid():
-        logger.error("get_matches: Session invalid at start.")
-        return False, None, None
-    return True, driver, my_uuid
+
+    if _session_recovery_required(session_manager, driver, my_uuid):
+        if not _ensure_action6_session_ready(session_manager, context="match list fetch"):
+            logger.error("get_matches: Session recovery failed; cannot continue.")
+            return False, None, None
+        driver = session_manager.driver
+        my_uuid = session_manager.my_uuid
+
+    return _finalize_session_validation(session_manager, driver, my_uuid)
 
 
 def _validate_and_refresh_page_url(driver: Any, session_manager: SessionManager) -> bool:
@@ -5755,6 +5990,58 @@ def _sync_session_cookies(session_manager: SessionManager) -> None:
         logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
 
+def _ensure_action6_session_ready(
+    session_manager: SessionManager,
+    *,
+    context: str,
+    require_browser: bool = True,
+) -> bool:
+    """Ensure the SessionManager is ready for Action 6 operations.
+
+    Attempts a lightweight recovery using ``ensure_session_ready`` when the
+    underlying WebDriver session has gone away. Returns ``True`` when the
+    session
+    is usable, or ``False`` if recovery failed and browser access is still
+    required for the caller.
+    """
+    try:
+        if session_manager.is_sess_valid():
+            if session_manager.is_session_death_cascade():
+                logger.info(
+                    "Action6 session recovery: clearing death cascade flag after successful validation"
+                )
+                session_manager.reset_session_health_monitoring()
+            return True
+
+        logger.warning(
+            f"Action6 session recovery: WebDriver invalid during {context}. Attempting automatic recovery."
+        )
+        recovered = session_manager.ensure_session_ready(
+            action_name=f"Action6::{context}", skip_csrf=True
+        )
+        if recovered:
+            logger.info(f"Action6 session recovery: WebDriver restored for {context}.")
+            session_manager.reset_session_health_monitoring()
+            return True
+
+        logger.error(
+            f"Action6 session recovery: ensure_session_ready failed during {context}."
+        )
+    except Exception as recovery_exc:  # Defensive: ensure recovery issues don't blow up caller
+        logger.error(
+            f"Action6 session recovery: unexpected error during {context}: {recovery_exc}",
+            exc_info=True,
+        )
+
+    if not require_browser:
+        logger.warning(
+            f"Action6 session recovery: proceeding without active WebDriver for {context} (API-only fallback)."
+        )
+        return True
+
+    return False
+
+
 def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
     """Parse match details API response."""
     if details_response and isinstance(details_response, dict):
@@ -5941,13 +6228,14 @@ def _add_profile_details_to_combined_data(
         )
         return
 
-    if not session_manager.is_sess_valid():
+    if not _ensure_action6_session_ready(
+        session_manager,
+        context=f"profile details fetch ({tester_profile_id})",
+    ):
         logger.error(
-            f"_fetch_combined_details: WebDriver session invalid before profile fetch for {tester_profile_id}."
+            f"_fetch_combined_details: Skipping /profiles/details fetch for {tester_profile_id} due to unrecoverable session."
         )
-        raise ConnectionError(
-            f"WebDriver session invalid before profile fetch (Profile: {tester_profile_id})"
-        )
+        return
 
     cached_profile = _get_cached_profile(tester_profile_id)
     if cached_profile is not None:
@@ -5977,21 +6265,21 @@ def _cache_combined_details(combined_data: dict[str, Any], match_uuid: str) -> N
 
 
 def _validate_session_for_combined_details(session_manager: SessionManager, match_uuid: str) -> None:
-    """Validate session for combined details fetch."""
+    """Validate session for combined details fetch (with automatic recovery)."""
+    if _ensure_action6_session_ready(session_manager, context=f"combined details fetch ({match_uuid})"):
+        return
+
     if session_manager.should_halt_operations():
-        logger.warning(f"_fetch_combined_details: Halting due to session death cascade for UUID {match_uuid}")
+        logger.warning(
+            f"_fetch_combined_details: Halting due to session death cascade for UUID {match_uuid}"
+        )
         raise ConnectionError(
             f"Session death cascade detected - halting combined details fetch (UUID: {match_uuid})"
         )
 
-    if not session_manager.is_sess_valid():
-        session_manager.check_session_health()
-        logger.error(
-            f"_fetch_combined_details: WebDriver session invalid for UUID {match_uuid}."
-        )
-        raise ConnectionError(
-            f"WebDriver session invalid for combined details fetch (UUID: {match_uuid})"
-        )
+    raise ConnectionError(
+        f"Unable to recover WebDriver session for combined details fetch (UUID: {match_uuid})"
+    )
 
 
 def _fetch_combined_details(
@@ -6064,16 +6352,20 @@ def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
 
 def _validate_badge_session(session_manager: SessionManager, match_uuid: str) -> None:
     """Validate session for badge details fetch."""
+    if _ensure_action6_session_ready(session_manager, context=f"badge details fetch ({match_uuid})"):
+        return
+
     if session_manager.should_halt_operations():
-        logger.warning(f"_fetch_batch_badge_details: Halting due to session death cascade for UUID {match_uuid}")
+        logger.warning(
+            f"_fetch_batch_badge_details: Halting due to session death cascade for UUID {match_uuid}"
+        )
         raise ConnectionError(
             f"Session death cascade detected - halting badge details fetch (UUID: {match_uuid})"
         )
 
-    if not session_manager.is_sess_valid():
-        session_manager.check_session_health()
-        logger.error(f"_fetch_batch_badge_details: WebDriver session invalid for UUID {match_uuid}.")
-        raise ConnectionError(f"WebDriver session invalid for badge details fetch (UUID: {match_uuid})")
+    raise ConnectionError(
+        f"Unable to recover WebDriver session for badge details fetch (UUID: {match_uuid})"
+    )
 
 
 def _cache_badge_details(match_uuid: str, result_data: dict[str, Any]) -> None:
@@ -6280,6 +6572,8 @@ def _fetch_batch_ladder(
         A dictionary containing 'actual_relationship' and 'relationship_path' strings
         if successful, otherwise None.
     """
+    logger.debug(f"Fetching ladder for cfpid {cfpid} in tree {tree_id}")
+
     # Use the modern enhanced relationship ladder API (no legacy fallback)
     from api_utils import get_relationship_path_data
 

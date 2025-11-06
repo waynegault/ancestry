@@ -195,11 +195,13 @@ class ConfigManager:
         safe_rps = 0.3
         current_rps = getattr(api, "requests_per_second", safe_rps)
         if current_rps > safe_rps:
-            logger.warning(
-                "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
-                current_rps,
-                safe_rps,
-            )
+            if not getattr(self, "_rps_clamp_logged", False):
+                logger.debug(
+                    "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
+                    current_rps,
+                    safe_rps,
+                )
+                setattr(self, "_rps_clamp_logged", True)
             api.requests_per_second = safe_rps
 
         # Ensure token bucket fill rate never exceeds enforced RPS

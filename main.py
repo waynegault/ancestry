@@ -1559,6 +1559,37 @@ def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_resul
         return []
 
 
+def _format_table_row(row: list[str], widths: list[int]) -> str:
+    """Return padded string for display rows."""
+    return " | ".join((str(col) if col is not None else "").ljust(width) for col, width in zip(row, widths))
+
+
+def _compute_table_widths(rows: list[list[str]], headers: list[str]) -> list[int]:
+    """Return column widths based on headers and row content."""
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(str(cell)))
+    return widths
+
+
+def _log_result_table(label: str, rows: list[list[str]], total: int, headers: list[str]) -> None:
+    """Log table output for GEDCOM/API matches when debug logging is enabled."""
+    widths = _compute_table_widths(rows, headers)
+    header_row = _format_table_row(headers, widths)
+
+    logger.debug("")
+    logger.debug(f"=== {label} Results (Top {len(rows)} of {total}) ===")
+    logger.debug(header_row)
+    logger.debug("-" * len(header_row))
+
+    if rows:
+        for row in rows:
+            logger.debug(_format_table_row(row, widths))
+    else:
+        logger.debug("(no matches)")
+
+
 def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show: int) -> None:
     """Display GEDCOM and API search results in tables."""
     from action10 import _create_table_row as _create_row_gedcom  # type: ignore
@@ -1573,40 +1604,14 @@ def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show
         print("No matches found.")
         return
 
-    def _pad_row(row: list[str], widths: list[int]) -> str:
-        return " | ".join((str(c) if c is not None else "").ljust(w) for c, w in zip(row, widths))
-
-    def _compute_widths(rows: list[list[str]], headers_local: list[str]) -> list[int]:
-        widths = [len(h) for h in headers_local]
-        for r in rows:
-            for i, c in enumerate(r):
-                widths[i] = max(widths[i], len(str(c)))
-        return widths
-
     if logger.isEnabledFor(logging.DEBUG):
-        lw = _compute_widths(left_rows, headers)
-        rw = _compute_widths(right_rows, headers)
-
+        _log_result_table("GEDCOM", left_rows, len(gedcom_matches), headers)
+        _log_result_table("API", right_rows, len(api_matches), headers)
         logger.debug("")
-        logger.debug(f"=== GEDCOM Results (Top {len(left_rows)} of {len(gedcom_matches)}) ===")
-        logger.debug(_pad_row(headers, lw))
-        logger.debug("-" * len(_pad_row(headers, lw)))
-        for r in left_rows:
-            logger.debug(_pad_row(r, lw))
-        if not left_rows:
-            logger.debug("(no matches)")
-
-        logger.debug("")
-        logger.debug(f"=== API Results (Top {len(right_rows)} of {len(api_matches)}) ===")
-        logger.debug(_pad_row(headers, rw))
-        logger.debug("-" * len(_pad_row(headers, rw)))
-        for r in right_rows:
-            logger.debug(_pad_row(r, rw))
-        if not right_rows:
-            logger.debug("(no matches)")
-
-        logger.debug("")
-        logger.debug(f"Summary: GEDCOM — showing top {len(left_rows)} of {len(gedcom_matches)} total | API — showing top {len(right_rows)} of {len(api_matches)} total")
+        logger.debug(
+            f"Summary: GEDCOM — showing top {len(left_rows)} of {len(gedcom_matches)} total | "
+            f"API — showing top {len(right_rows)} of {len(api_matches)} total"
+        )
 
 
 def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom_data: Any,

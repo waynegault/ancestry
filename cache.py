@@ -1305,18 +1305,18 @@ def _test_cache_decorator() -> bool:
     call_count = 0
 
     @cache_result("test_decorator")
-    def test_function(x, y):
+    def cached_function(x: int, y: int) -> int:
         nonlocal call_count
         call_count += 1
         return x + y
 
     # First call should execute function
-    result1 = test_function(1, 2)
+    result1 = cached_function(1, 2)
     assert result1 == 3
     assert call_count == 1
 
     # Second call should use cache
-    result2 = test_function(1, 2)
+    result2 = cached_function(1, 2)
     assert result2 == 3
     assert call_count == 1  # Should not increment
     return True

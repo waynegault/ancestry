@@ -2988,88 +2988,126 @@ def test_source_citation_extraction():
     return True
 
 
-def test_source_citation_demonstration():
-    """
-    Demonstration test for source citation functionality.
-
-    Phase 5.1: Source Citation Support
-    Shows complete workflow from extraction to formatted output using real GEDCOM data.
-    Uses cached GEDCOM data for performance.
-    """
+def _should_run_real_demo() -> tuple[bool, Optional[str], Optional[str]]:
+    """Determine whether the heavy GEDCOM demo should execute."""
     import os
 
-    logger.info("\n" + "="*60)
+    if os.getenv("RUN_GEDCOM_DEMO", "").lower() not in {"1", "true", "yes", "y"}:
+        logger.info(
+            "Skipping GEDCOM source citation demonstration (set RUN_GEDCOM_DEMO=1 to enable heavy dataset load)."
+        )
+        return False, None, None
+
+    gedcom_path = config.database.gedcom_file_path
+    if not gedcom_path:
+        logger.info("GEDCOM file path not configured; running mock demonstration instead.")
+        return False, None, None
+
+    gedcom_file = str(gedcom_path)
+    if not Path(gedcom_file).exists():
+        logger.info("GEDCOM file not found; running mock demonstration instead.")
+        return False, None, None
+
+    test_person_id = os.getenv("TEST_PERSON_ID", "I102281560744")
+    return True, gedcom_file, test_person_id
+
+
+def _load_cached_gedcom(gedcom_file: str):
+    """Load GEDCOM data using the cached loader."""
+    from gedcom_cache import load_gedcom_with_aggressive_caching
+
+    return load_gedcom_with_aggressive_caching(gedcom_file)
+
+
+def _find_demo_person(gedcom_data: Any, test_person_id: str):
+    """Locate the demonstration person in the GEDCOM index."""
+    if not getattr(gedcom_data, "indi_index", None):
+        return None
+    return gedcom_data.indi_index.get(test_person_id)
+
+
+def _run_real_demo_output(test_person: Any) -> None:
+    """Log real GEDCOM source extraction details."""
+    logger.info("\n📋 Real GEDCOM Data: Extracting sources for Fraser Gault")
+    person_name = _get_full_name(test_person)
+    life_dates = format_life_dates(test_person)
+    logger.info(f"   Person: {person_name}{life_dates}")
+
+    sources = get_person_sources(test_person)
+    logger.info(f"   Birth sources: {sources['birth']}")
+    logger.info(f"   Death sources: {sources['death']}")
+    logger.info(f"   Other sources: {sources['other']}")
+
+    citation = format_source_citations(sources)
+    if citation:
+        logger.info(f"\n   ✓ Formatted citation: '{citation}'")
+        logger.info("\n📧 Complete message example:")
+        message = f"According to my tree, {person_name}{life_dates} is {citation}."
+        logger.info(f"   '{message}'")
+    else:
+        logger.info(f"\n   [i] No sources found for {person_name}")
+        logger.info("   This is normal - not all GEDCOM records have source citations")
+
+
+def _log_demo_header(gedcom_file: str, test_person_id: str) -> None:
+    """Emit header for the demonstration run."""
+    logger.info("\n" + "=" * 60)
     logger.info("DEMONSTRATION: Source Citation Extraction & Formatting")
-    logger.info("="*60)
-
-    # Load real GEDCOM data using cache
-    gedcom_file = str(config.database.gedcom_file_path)
-    test_person_id = os.getenv("TEST_PERSON_ID", "I102281560744")  # Fraser Gault
-
+    logger.info("=" * 60)
     logger.info(f"\n📁 Loading GEDCOM file (cached): {gedcom_file}")
     logger.info(f"🔍 Test subject: {test_person_id} (Fraser Gault)")
 
-    try:
-        # Load GEDCOM data using aggressive caching (memory + disk cache)
-        from gedcom_cache import load_gedcom_with_aggressive_caching
 
-        gedcom_data = load_gedcom_with_aggressive_caching(gedcom_file)
-        if not gedcom_data or not gedcom_data.indi_index:
-            logger.warning("   ⚠️  Could not load GEDCOM data - using mock examples")
-            _run_mock_demonstration()
-            return True
+def _log_demo_footer() -> None:
+    """Emit footer once the demonstration completes."""
+    logger.info("\n" + "=" * 60)
+    logger.info("✓ Source citation demonstration complete!")
+    logger.info("=" * 60 + "\n")
 
-        # Find Fraser Gault in GEDCOM
-        test_person = None
-        for person_id, individual in gedcom_data.indi_index.items():
-            if person_id == test_person_id:
-                test_person = individual
-                break
 
-        if not test_person:
-            logger.warning(f"   ⚠️  Could not find {test_person_id} in GEDCOM - using mock examples")
-            _run_mock_demonstration()
-            return True
-
-        # Extract real sources from Fraser Gault
-        logger.info("\n📋 Real GEDCOM Data: Extracting sources for Fraser Gault")
-        person_name = _get_full_name(test_person)
-        life_dates = format_life_dates(test_person)
-        logger.info(f"   Person: {person_name}{life_dates}")
-
-        sources = get_person_sources(test_person)
-        logger.info(f"   Birth sources: {sources['birth']}")
-        logger.info(f"   Death sources: {sources['death']}")
-        logger.info(f"   Other sources: {sources['other']}")
-
-        # Format citation
-        citation = format_source_citations(sources)
-        if citation:
-            logger.info(f"\n   ✓ Formatted citation: '{citation}'")
-
-            # Show complete message example
-            logger.info("\n📧 Complete message example:")
-            message = f"According to my tree, {person_name}{life_dates} is {citation}."
-            logger.info(f"   '{message}'")
-        else:
-            logger.info(f"\n   [i] No sources found for {person_name}")
-            logger.info("   This is normal - not all GEDCOM records have source citations")
-
-        # Also show formatting examples with mock data
-        logger.info("\n" + "-"*60)
-        logger.info("📋 Formatting Examples (Mock Data)")
-        logger.info("-"*60)
-
+def test_source_citation_demonstration():
+    """Demonstration test for source citation functionality."""
+    should_run, gedcom_file, test_person_id = _should_run_real_demo()
+    if not should_run:
         _run_mock_demonstration()
+        return True
 
-    except Exception as e:
-        logger.error(f"   ❌ Error in demonstration: {e}")
+    if gedcom_file is None or test_person_id is None:
+        _run_mock_demonstration()
+        return True
+
+    _log_demo_header(gedcom_file, test_person_id)
+
+    try:
+        gedcom_data = _load_cached_gedcom(gedcom_file)
+    except Exception as exc:  # pragma: no cover - defensive guard for optional dependency issues
+        logger.error(f"   ❌ Error loading GEDCOM data: {exc}")
         logger.info("   Falling back to mock examples")
         _run_mock_demonstration()
+        _log_demo_footer()
+        return True
 
-    logger.info("\n" + "="*60)
-    logger.info("✓ Source citation demonstration complete!")
-    logger.info("="*60 + "\n")
+    if not gedcom_data or not getattr(gedcom_data, "indi_index", None):
+        logger.warning("   ⚠️  Could not load GEDCOM data - using mock examples")
+        _run_mock_demonstration()
+        _log_demo_footer()
+        return True
+
+    test_person = _find_demo_person(gedcom_data, test_person_id)
+    if not test_person:
+        logger.warning(f"   ⚠️  Could not find {test_person_id} in GEDCOM - using mock examples")
+        _run_mock_demonstration()
+        _log_demo_footer()
+        return True
+
+    _run_real_demo_output(test_person)
+
+    logger.info("\n" + "-" * 60)
+    logger.info("📋 Formatting Examples (Mock Data)")
+    logger.info("-" * 60)
+    _run_mock_demonstration()
+
+    _log_demo_footer()
     return True
 
 

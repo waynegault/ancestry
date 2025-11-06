@@ -676,11 +676,11 @@ class TestDIContainer(unittest.TestCase):
         global_container.register_singleton(InjectedService, InjectedService)
 
         @inject(InjectedService)
-        def test_function(**kwargs: Any) -> str:
+        def decorated_action(**kwargs: Any) -> str:
             service = kwargs.get("injectedservice")
             return service.value if service else "not_injected"
 
-        result = test_function()
+        result = decorated_action()
         self.assertEqual(result, "injected")
 
         # Clean up
@@ -709,10 +709,37 @@ class TestDIContainer(unittest.TestCase):
         self.assertIsNot(container1, named_container)
 
     def test_configure_dependencies(self):
+        container = get_container()
         try:
             configure_dependencies()
         except Exception as e:
             self.fail(f"configure_dependencies raised an exception: {e}")
+
+        try:
+            from config.config_manager import ConfigManager
+            from core.api_manager import APIManager
+            from core.browser_manager import BrowserManager
+            from core.database_manager import DatabaseManager
+            from core.session_manager import SessionManager
+            from core.session_validator import SessionValidator
+
+            expected_services = (
+                APIManager,
+                BrowserManager,
+                DatabaseManager,
+                SessionManager,
+                SessionValidator,
+                ConfigManager,
+            )
+
+            for service in expected_services:
+                with self.subTest(service=service.__name__):
+                    self.assertTrue(
+                        container.is_registered(service),
+                        f"{service.__name__} should be registered after configure_dependencies",
+                    )
+        finally:
+            container.clear()
 
     def test_get_service_convenience(self):
         class ConvenienceService:
@@ -811,15 +838,32 @@ class TestDIContainer(unittest.TestCase):
 
 def dependency_injection_module_tests() -> bool:
     """Run dependency injection tests and return success status."""
-    try:
-        suite = unittest.TestSuite()
-        suite.addTest(unittest.TestLoader().loadTestsFromTestCase(TestDIContainer))
-        runner = unittest.TextTestRunner()
-        result = runner.run(suite)
-        return result.wasSuccessful()
-    except Exception as e:
-        print(f"❌ Dependency injection tests failed: {e}")
-        return False
+    from test_framework import TestSuite
+
+    def _run_unittest_case(case_cls: type[unittest.TestCase], case_name: str) -> None:
+        """Execute a unittest.TestCase method and raise on failure for standardized reporting."""
+        result = unittest.TestResult()
+        case = case_cls(methodName=case_name)
+        case.run(result)
+
+        if result.failures or result.errors:
+            failure_case, failure_trace = (result.failures + result.errors)[0]
+            summary = failure_trace.splitlines()[-1] if failure_trace else "Test case failed"
+            raise AssertionError(f"{failure_case.id()} failed: {summary}")
+
+    suite = TestSuite("Dependency Injection", "core/dependency_injection.py")
+    suite.start_suite()
+
+    loader = unittest.TestLoader()
+    for test_name in loader.getTestCaseNames(TestDIContainer):
+        suite.run_test(
+            test_name=f"TestDIContainer.{test_name}",
+            test_func=lambda name=test_name: _run_unittest_case(TestDIContainer, name),
+            test_summary=f"Execute unittest method '{test_name}' with standardized reporting",
+            expected_outcome="Underlying unittest TestCase completes with no failures or errors",
+        )
+
+    return suite.finish_suite()
 
 
 if __name__ == "__main__":

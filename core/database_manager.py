@@ -32,7 +32,8 @@ import sqlite3
 
 # Note: sys and Path already imported at top of file
 from collections.abc import AsyncGenerator, Generator
-from typing import Any, Optional
+from typing import Any, Callable, Optional, cast
+from unittest.mock import MagicMock, patch
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool, text
@@ -853,6 +854,31 @@ def database_manager_module_tests() -> bool:
 
 
 # Test functions for comprehensive testing
+def _build_stubbed_db_manager() -> tuple[DatabaseManager, MagicMock, MagicMock, list[MagicMock], Callable[[], None]]:
+    """Create a DatabaseManager with stubbed engine and session factory for tests."""
+    db_manager = DatabaseManager(db_path=":memory:")
+    engine_mock = MagicMock(name="engine")
+    created_sessions: list[MagicMock] = []
+
+    def _make_session() -> MagicMock:
+        session = MagicMock(name="session")
+        session.is_active = True
+        session.close.return_value = None
+        session.commit.return_value = None
+        session.rollback.return_value = None
+        created_sessions.append(session)
+        return session
+
+    session_factory = MagicMock(side_effect=_make_session)
+
+    def stub_initializer() -> None:
+        db_manager._db_init_attempted = True
+        db_manager.engine = engine_mock
+        db_manager.Session = session_factory
+
+    return db_manager, engine_mock, session_factory, created_sessions, stub_initializer
+
+
 def test_database_manager_initialization() -> None:
     """Test DatabaseManager initialization with various configurations."""
     # Test memory database initialization
@@ -869,76 +895,109 @@ def test_database_manager_initialization() -> None:
 
 def test_engine_session_creation() -> None:
     """Test SQLAlchemy engine and session factory creation."""
-    db_manager = DatabaseManager(db_path=":memory:")
-    try:
+    db_manager, engine_mock, session_factory, _sessions, stub_initializer = _build_stubbed_db_manager()
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
         result = db_manager.ensure_ready()
-        assert isinstance(result, bool), "ensure_ready should return boolean"
-    except Exception:
-        pass  # Database creation might fail in test environment
+
+    assert result is True, "ensure_ready should succeed with stubbed initialization"
+    assert db_manager.engine is engine_mock, "Stubbed engine should be set"
+    assert db_manager.Session is session_factory, "Stubbed session factory should be set"
+    assert db_manager.is_ready, "Database should report ready after initialization"
 
 
 def test_session_context_management() -> None:
     """Test session context manager for automatic transaction handling."""
-    db_manager = DatabaseManager(db_path=":memory:")
-    try:
+    db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
+        db_manager.ensure_ready()
+
+    with patch.object(db_manager, "return_session") as return_session_mock:
         with db_manager.get_session_context() as session:
-            assert session is None or hasattr(
-                session, "query"
-            ), "Session should be None or have query method"
-    except Exception:
-        pass  # Context manager might fail without proper database setup
+            assert session is not None, "Session context should provide a session"
+            assert session is sessions[-1], "Context should yield the latest created session"
+            session_mock = cast(MagicMock, session)
+
+        session_mock.commit.assert_called_once()
+        return_session_mock.assert_called_once_with(session_mock)
 
 
 def test_connection_pooling() -> None:
     """Test database connection pooling and resource management."""
-    db_manager = DatabaseManager(db_path=":memory:")
-    try:
-        session = db_manager.get_session()
-        if session:
-            db_manager.return_session(session)
-        assert True, "Session get/return cycle should complete"
-    except Exception:
-        pass  # Session operations might fail without proper setup
+    db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
+        db_manager.ensure_ready()
+
+    session = db_manager.get_session()
+    assert session is sessions[-1], "get_session should return a stubbed session"
+    assert db_manager._connection_stats["total_connections"] == 1
+    assert db_manager._connection_stats["active_connections"] == 1
+
+    session_mock = cast(MagicMock, session)
+    db_manager.return_session(session_mock)
+    session_mock.close.assert_called_once()
+    assert db_manager._connection_stats["active_connections"] == 0
 
 
 def test_database_readiness() -> None:
     """Test database readiness checks and initialization status."""
-    db_manager = DatabaseManager(db_path=":memory:")
-    initial_ready = db_manager.is_ready
-    assert isinstance(initial_ready, bool), "is_ready should return boolean"
+    db_manager, _engine_mock, _factory, _sessions, stub_initializer = _build_stubbed_db_manager()
+    assert db_manager.is_ready is False
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
+        ensure_result = db_manager.ensure_ready()
+
+    assert ensure_result is True
+    assert db_manager.is_ready is True
 
 
 def test_error_handling_recovery() -> None:
     """Test error handling during database operations."""
-    db_manager = DatabaseManager(db_path="/invalid/path/database.db")
-    try:
+    db_manager = DatabaseManager(db_path=":memory:")
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=RuntimeError("init failure")):
         result = db_manager.ensure_ready()
-        assert isinstance(result, bool), "ensure_ready should handle errors gracefully"
-    except Exception:
-        pass  # Error handling is acceptable for invalid paths
+
+    assert result is False, "ensure_ready should return False on initialization failure"
+    assert db_manager.is_ready is False
+    assert db_manager.engine is None
+    assert db_manager.Session is None
 
 
 def test_session_lifecycle() -> None:
     """Test complete session lifecycle from creation to cleanup."""
-    db_manager = DatabaseManager(db_path=":memory:")
-    try:
-        session = db_manager.get_session()
-        if session:
-            assert hasattr(session, "close"), "Session should have close method"
-            db_manager.return_session(session)
-    except Exception:
-        pass  # Session lifecycle might fail without proper setup
+    db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
+        db_manager.ensure_ready()
+
+    session = db_manager.get_session()
+    assert session is sessions[-1]
+    assert hasattr(session, "close")
+    session_mock = cast(MagicMock, session)
+    db_manager.return_session(session_mock)
+    session_mock.close.assert_called_once()
 
 
 def test_transaction_isolation() -> None:
     """Test transaction isolation and concurrent session handling."""
-    db_manager = DatabaseManager(db_path=":memory:")
-    try:
-        # Test that multiple session contexts don't interfere
-        with db_manager.get_session_context(), db_manager.get_session_context():
-            assert True, "Multiple session contexts should not interfere"
-    except Exception:
-        pass  # Transaction isolation testing might require specific setup
+    db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
+
+    with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
+        db_manager.ensure_ready()
+
+    with patch.object(db_manager, "return_session") as return_session_mock:
+        with db_manager.get_session_context() as session_a, db_manager.get_session_context() as session_b:
+            assert session_a is not None and session_b is not None
+            assert session_a is not session_b
+            session_a_mock = cast(MagicMock, session_a)
+            session_b_mock = cast(MagicMock, session_b)
+
+        assert return_session_mock.call_count == 2
+        session_a_mock.commit.assert_called_once()
+        session_b_mock.commit.assert_called_once()
 
 
 # ==============================================

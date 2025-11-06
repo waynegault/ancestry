@@ -1027,15 +1027,15 @@ def _test_function_profiling() -> None:
 
     # Test function profiling decorator
     @monitor.profile_function
-    def test_function(x, y=10):
+    def profiled_function(x: int, y: int = 10) -> int:
         import time
         time.sleep(0.001)  # Small sleep for timing
         return x + y
 
     # Call function multiple times
-    result1 = test_function(5)
-    result2 = test_function(3, y=7)
-    result3 = test_function(1)
+    result1 = profiled_function(5)
+    result2 = profiled_function(3, y=7)
+    result3 = profiled_function(1)
 
     assert result1 == 15
     assert result2 == 10
@@ -1046,16 +1046,16 @@ def _test_function_profiling() -> None:
     assert len(function_names) > 0
 
     # Find the test function profile
-    test_func_profile = None
+    profiled_entry = None
     for name in function_names:
-        if "test_function" in name:
-            test_func_profile = monitor.function_profiles[name]
+        if "profiled_function" in name:
+            profiled_entry = monitor.function_profiles[name]
             break
 
-    assert test_func_profile is not None
-    assert test_func_profile.call_count == 3
-    assert test_func_profile.total_time > 0
-    assert test_func_profile.avg_time > 0
+    assert profiled_entry is not None
+    assert profiled_entry.call_count == 3
+    assert profiled_entry.total_time > 0
+    assert profiled_entry.avg_time > 0
 
 
 def _test_alert_generation() -> None:
@@ -1192,13 +1192,29 @@ def _test_global_performance_functions() -> None:
     """Test global performance monitoring functions"""
     # Test API performance tracking
     track_api_performance("test_api_2", 0.5, "success")
+    assert _advanced_monitor.performance_history, "API tracking should append to performance history"
+    last_entry = _advanced_monitor.performance_history[-1]
+    assert last_entry.get("api_name") == "test_api_2"
+    assert last_entry.get("type") == "api_call"
 
     # Test advanced monitoring start/stop
     start_result = start_advanced_monitoring()
-    assert isinstance(start_result, bool)
+    assert start_result is True
+    assert _advanced_monitor.monitoring_active is True
 
-    stop_result = stop_advanced_monitoring()
+    try:
+        stop_result = stop_advanced_monitoring()
+    finally:
+        # Ensure monitoring is not left running even if assertion fails
+        _advanced_monitor.monitoring_active = False
+
     assert isinstance(stop_result, dict)
+    for required_key in ("final_health_score", "total_recommendations", "performance_samples", "monitoring_duration"):
+        assert required_key in stop_result, f"stop_advanced_monitoring should include '{required_key}'"
+    assert stop_result["final_health_score"] == _advanced_monitor.system_health_score
+    assert stop_result["total_recommendations"] == len(_advanced_monitor.optimization_recommendations)
+    assert stop_result["performance_samples"] == len(_advanced_monitor.performance_history)
+    assert _advanced_monitor.monitoring_active is False
 
 
 def _test_error_handling() -> None:
