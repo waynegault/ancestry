@@ -125,7 +125,7 @@ def _check_and_use_venv() -> bool:
     print(f"🔄 Re-running tests with venv Python: {venv_python}")
     print()
     result = subprocess.run(
-        [str(venv_python), __file__] + sys.argv[1:],
+        [str(venv_python), __file__, *sys.argv[1:]],
         cwd=Path.cwd(), check=False
     )
     sys.exit(result.returncode)

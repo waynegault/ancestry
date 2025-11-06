@@ -647,7 +647,7 @@ class ConfigSchema:
 
     # Batch processing settings
     batch_size: int = 25  # Updated to match .env BATCH_SIZE=25
-    matches_per_page: int = 30  # Number of matches to fetch per API page (itemsPerPage parameter). Default 20, optimized to 30 (balances throughput vs rate limiting)
+    matches_per_page: int = 30  # Number of matches to fetch per API page (itemsPerPage parameter). Optimized after fixing ethnicity fetch (now only priority matches >= 10 cM)
     max_productive_to_process: int = 50
     max_inbox: int = 100
     person_refresh_days: int = 14  # Skip re-fetching person details if updated within this many days (0 = always fetch)

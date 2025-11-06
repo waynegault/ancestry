@@ -29,7 +29,6 @@ import requests
 from requests import Response as RequestsResponse
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
-from urllib3.util.retry import Retry
 
 # === LOCAL IMPORTS ===
 from api_constants import (
@@ -81,16 +80,20 @@ class APIManager:
         logger.debug("APIManager initialized")
 
     def _setup_requests_session(self) -> None:
-        """Configure the requests session with retry strategy."""
-        retry_strategy = Retry(
-            total=3, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504]
-        )
+        """Configure the requests session with connection pooling (no urllib3 retries).
+
+        Retry logic is handled at the application level in utils.py _api_req() to ensure:
+        - Consistent retry behavior across all API calls
+        - Proper 429 error visibility in metrics
+        - Configurable backoff via .env settings
+        - Detailed logging for debugging
+        """
         adapter = HTTPAdapter(
-            pool_connections=20, pool_maxsize=50, max_retries=retry_strategy
+            pool_connections=20, pool_maxsize=50, max_retries=0  # Application handles retries
         )
         self._requests_session.mount("http://", adapter)
         self._requests_session.mount("https://", adapter)
-        logger.debug("Requests session configured with retry strategy.")
+        logger.debug("Requests session configured with connection pooling (application-level retries)")
 
     def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:  # noqa: ARG002
         """

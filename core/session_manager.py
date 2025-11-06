@@ -48,12 +48,16 @@ logger = setup_module(globals(), __name__)
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from selenium.webdriver.remote.webdriver import WebDriver as WebDriverType
+else:
+    WebDriverType = Any
 
 # === THIRD-PARTY IMPORTS ===
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 try:
     import cloudscraper
@@ -232,18 +236,12 @@ class SessionManager:
         logger.debug("Initializing enhanced requests session...")
 
         # Enhanced retry strategy with more comprehensive status codes
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
-        )
-
-        # Advanced HTTPAdapter with connection pooling
+        # Advanced HTTPAdapter with connection pooling (no urllib3 retries)
+        # Retry logic handled at application level in utils.py for consistency
         adapter = HTTPAdapter(
             pool_connections=20,
             pool_maxsize=50,
-            max_retries=retry_strategy
+            max_retries=0  # Application handles retries
         )
 
         # Apply adapter to API manager's requests session
@@ -277,20 +275,12 @@ class SessionManager:
                 delay=10,
             )
 
-            # Enhanced retry strategy for CloudScraper
-            scraper_retry = Retry(
-                total=3,
-                backoff_factor=0.8,
-                status_forcelist=[403, 429, 500, 502, 503, 504],
-                allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
-            )
-
-            # Apply retry adapter to CloudScraper
-            scraper_adapter = HTTPAdapter(max_retries=scraper_retry)
+            # Apply HTTP adapter to CloudScraper (no urllib3 retries - application handles)
+            scraper_adapter = HTTPAdapter(max_retries=0)
             self._scraper.mount("http://", scraper_adapter)
             self._scraper.mount("https://", scraper_adapter)
 
-            logger.debug("CloudScraper initialized successfully with retry strategy")
+            logger.debug("CloudScraper initialized successfully with connection pooling")
 
         except Exception as scraper_init_e:
             logger.error(
@@ -836,31 +826,66 @@ class SessionManager:
 
         return self._perform_final_cookie_check(cookie_names)
 
+    def _should_skip_cookie_sync(self, current_time: float) -> bool:
+        """
+        Determine if cookie sync should be skipped based on various conditions.
+
+        Returns:
+            True if sync should be skipped, False if sync should proceed
+        """
+        # Check 1: Recursion prevention
+        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
+            logger.debug("Cookie sync skipped: recursion detected")
+            return True
+
+        # Check 2: Prerequisites validation
+        if not self.driver or not hasattr(self.api_manager, '_requests_session'):
+            logger.debug("Cookie sync skipped: driver or requests_session not available")
+            return True
+
+        # Check 3: Cooldown period (60 seconds)
+        # Cookie state rarely changes during normal operation, so we can safely wait 1 minute
+        # This prevents burst syncs while still allowing updates during long-running sessions
+        COOKIE_SYNC_COOLDOWN = 60.0  # seconds
+        if hasattr(self, '_last_cookie_sync_time'):
+            time_since_last_sync = current_time - self._last_cookie_sync_time
+            if time_since_last_sync < COOKIE_SYNC_COOLDOWN:
+                logger.debug(
+                    f"Cookie sync skipped: cooldown active "
+                    f"(last sync: {time_since_last_sync:.1f}s ago, cooldown: {COOKIE_SYNC_COOLDOWN:.0f}s)"
+                )
+                return True
+
+        # Check 4: Already synced for this session
+        if hasattr(self, '_session_cookies_synced') and self._session_cookies_synced:
+            logger.debug("Cookie sync skipped: already synced for this session")
+            return True
+
+        return False
+
     def _sync_cookies_to_requests(self) -> None:
         """
         Synchronize cookies from WebDriver to requests session.
         Only syncs once per session unless forced due to auth errors.
 
-        Enhanced with recursion prevention and robust error handling.
+        Enhanced with recursion prevention, robust error handling, and cooldown period.
+        Uses _should_skip_cookie_sync() for clean separation of sync validation logic.
         """
-        # Recursion prevention check
-        if hasattr(self, '_in_sync_cookies') and self._in_sync_cookies:
-            logger.debug("Recursion detected in _sync_cookies_to_requests(), skipping to prevent loop")
-            return
+        current_time = time.time()
 
-        # Validate prerequisites
-        if not self.driver or not hasattr(self.api_manager, '_requests_session'):
-            return
-
-        # Check if already synced for this session
-        if hasattr(self, '_session_cookies_synced') and self._session_cookies_synced:
+        # Check if sync should be skipped
+        if self._should_skip_cookie_sync(current_time):
             return
 
         try:
             # Set recursion prevention flag
             self._in_sync_cookies = True
 
-            # Get cookies from WebDriver
+            # Get cookies from WebDriver (validated in _should_skip_cookie_sync)
+            if not self.driver:
+                logger.error("Driver not available for cookie sync")
+                return
+
             driver_cookies = self.driver.get_cookies()
 
             # Validate cookies were retrieved
@@ -872,6 +897,7 @@ class SessionManager:
             synced_count = self._sync_driver_cookies_to_requests(driver_cookies)
 
             self._session_cookies_synced = True
+            self._last_cookie_sync_time = current_time  # Track sync time for cooldown
             logger.debug(f"Synced {synced_count} cookies from WebDriver to requests session (once per session)")
 
         except Exception as e:
@@ -1439,7 +1465,7 @@ class SessionManager:
         self._csrf_cache_time = 0
 
     @property
-    def driver(self) -> Optional["WebDriver"]:
+    def driver(self) -> Optional[WebDriverType]:
         """Get the WebDriver instance."""
         return self.browser_manager.driver
 
