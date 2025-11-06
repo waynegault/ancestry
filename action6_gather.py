@@ -12,7 +12,7 @@ Handles pagination, rate limiting, caching (via utils/cache.py decorators used
 within helpers), error handling, and concurrent API fetches using ThreadPoolExecutor.
 
 PHASE 1 OPTIMIZATIONS (2025-01-16):
-- Enhanced progress indicators with ETA calculations and memory monitoring
+- Enhanced logging with ETA calculations and memory monitoring
 - Improved error recovery with exponential backoff and partial success handling
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
@@ -20,9 +20,18 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 from typing import Any, Callable
 
 from core.enhanced_error_recovery import with_enhanced_recovery
+from health_monitor import get_health_monitor, integrate_with_action6
 
+_api_performance_callbacks: list[Callable[[str, float, str], None]] = []
+
+
+def register_api_metrics_callback(callback: Callable[[str, float, str], None]) -> None:
+    """Register a callback invoked whenever API performance metrics are logged."""
+    _api_performance_callbacks.append(callback)
+
+
+# Automatically connect API performance metrics with the health monitor on import
 # === PHASE 1 OPTIMIZATIONS ===
-from core.progress_indicators import create_progress_indicator
 
 
 # Performance monitoring helper with session manager integration
@@ -32,6 +41,22 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
 
     # Always log performance metrics for analysis
     logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
+
+    # Record metrics with health monitor for centralized analytics
+    try:
+        monitor = get_health_monitor()
+        monitor.record_api_response_time(duration)
+        if isinstance(response_status, str) and response_status.lower().startswith("error"):
+            monitor.record_error(f"{api_name}_{response_status}")
+    except Exception as monitor_exc:  # pragma: no cover - diagnostics only
+        logger.debug(f"Health monitor recording failed for {api_name}: {monitor_exc}")
+
+    # Notify any registered callbacks (e.g., integration tests, analytics)
+    for callback in list(_api_performance_callbacks):
+        try:
+            callback(api_name, duration, response_status)
+        except Exception as callback_exc:  # pragma: no cover - diagnostics only
+            logger.debug(f"API metrics callback error for {api_name}: {callback_exc}")
 
     # Update session manager performance tracking
     if session_manager:
@@ -179,6 +204,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Callable, Literal, Optional
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
+# Automatically connect API performance metrics with the health monitor on import
+integrate_with_action6(sys.modules[__name__])
+
 # === THIRD-PARTY IMPORTS ===
 import cloudscraper
 import requests
@@ -191,8 +219,6 @@ from selenium.common.exceptions import (
 )
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
-from tqdm.auto import tqdm  # Progress bar
-from tqdm.contrib.logging import logging_redirect_tqdm  # Redirect logging through tqdm
 
 from error_handling import (
     AuthenticationExpiredError,
@@ -684,44 +710,7 @@ def _determine_page_processing_range(
 # End of _determine_page_processing_range
 
 
-def _cleanup_progress_bar(progress_bar, state: dict[str, Any], loop_final_success: bool) -> None:
-    """
-    Clean up progress bar at end of processing.
-
-    Args:
-        progress_bar: Progress bar instance
-        state: State dictionary
-        loop_final_success: Whether loop completed successfully
-    """
-    if not progress_bar:
-        return
-
-    progress_bar.set_postfix(
-        New=state["total_new"],
-        Upd=state["total_updated"],
-        Skip=state["total_skipped"],
-        Err=state["total_errors"],
-        refresh=True,
-    )
-
-    if progress_bar.n < progress_bar.total and not loop_final_success:
-        # If loop ended due to error, update bar to reflect error count for remaining
-        remaining_to_mark_error = progress_bar.total - progress_bar.n
-        if remaining_to_mark_error > 0:
-            progress_bar.update(remaining_to_mark_error)
-
-    try:
-        # set final status before closing
-        progress_bar.set_description("Complete")
-        progress_bar.refresh()  # Force update before close
-        progress_bar.close()
-    finally:
-        # Ensure clean output after progress bar with multiple newlines
-        print("", file=sys.stderr, flush=True)  # Newline to separate from any following log output
-        sys.stderr.flush()  # Additional flush to ensure output
-
-
-def _validate_session_before_page(session_manager: SessionManager, current_page_num: int, progress_bar, state: dict[str, Any]) -> bool:
+def _validate_session_before_page(session_manager: SessionManager, current_page_num: int, state: dict[str, Any]) -> bool:
     """Validate session before processing a page.
 
     Returns:
@@ -731,10 +720,6 @@ def _validate_session_before_page(session_manager: SessionManager, current_page_
         logger.critical(
             f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
         )
-        remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-        if remaining_matches_estimate > 0:
-            progress_bar.update(remaining_matches_estimate)
-            state["total_errors"] += remaining_matches_estimate
         return False
     return True
 
@@ -757,7 +742,6 @@ def _process_single_page(
     current_page_num: int,
     start_page: int,
     matches_on_page_for_batch: Optional[list[dict[str, Any]]],
-    progress_bar,
     state: dict[str, Any],
     loop_final_success: bool
 ) -> tuple[int, bool]:
@@ -769,25 +753,26 @@ def _process_single_page(
         current_page_num: Current page number
         start_page: Starting page number
         matches_on_page_for_batch: Existing matches if available
-        progress_bar: Progress bar instance
         state: State dictionary
         loop_final_success: Current success status
 
     Returns:
         tuple of (next_page_num, loop_success)
     """
+    logger.info(f"=== Processing Page {current_page_num} ===")
+
     # Check session health
-    if not _check_and_handle_session_health(session_manager, current_page_num, progress_bar, state):
+    if not _check_and_handle_session_health(session_manager, current_page_num, state):
         return current_page_num, False
 
     # Validate session
-    if not _validate_session_before_page(session_manager, current_page_num, progress_bar, state):
+    if not _validate_session_before_page(session_manager, current_page_num, state):
         return current_page_num, False
 
     # Fetch and validate page matches
     matches, should_continue, loop_final_success = _handle_page_fetch_and_validation(
         session_manager, current_page_num, start_page, matches_on_page_for_batch,
-        progress_bar, state, loop_final_success
+        state, loop_final_success
     )
 
     if should_continue:
@@ -796,13 +781,11 @@ def _process_single_page(
     # Handle empty matches
     if not matches:
         logger.info(f"No matches found or processed on page {current_page_num}.")
-        if not (current_page_num == start_page and state["total_pages_processed"] == 0):
-            progress_bar.update(MATCHES_PER_PAGE)
         time.sleep(0.2)
         return current_page_num + 1, loop_final_success
 
     # Try fast skip
-    if _try_fast_skip_page(session_manager, matches, current_page_num, progress_bar, state):
+    if _try_fast_skip_page(session_manager, matches, current_page_num, state):
         return current_page_num + 1, loop_final_success
 
     # Process batch
@@ -810,10 +793,11 @@ def _process_single_page(
         session_manager=session_manager,
         matches_on_page=matches,
         current_page=current_page_num,
-        progress_bar=progress_bar,
     )
 
-    _update_state_and_progress(state, progress_bar, page_new, page_updated, page_skipped, page_errors)
+    _update_state_and_progress(state, page_new, page_updated, page_skipped, page_errors)
+
+    logger.info(f"=== Page {current_page_num} Complete: {page_new} new, {page_updated} updated, {page_skipped} skipped, {page_errors} errors ===")
 
     # Rate limiting
     _apply_rate_limiting(session_manager, current_page_num)
@@ -826,7 +810,6 @@ def _handle_page_fetch_and_validation(
     current_page_num: int,
     start_page: int,
     matches_on_page_for_batch: Optional[list[dict[str, Any]]],
-    progress_bar,
     state: dict[str, Any],
     loop_final_success: bool
 ) -> tuple[Optional[list[dict[str, Any]]], bool, bool]:
@@ -838,7 +821,6 @@ def _handle_page_fetch_and_validation(
         current_page_num: Current page number
         start_page: Starting page number
         matches_on_page_for_batch: Existing matches if available
-        progress_bar: Progress bar instance
         state: State dictionary
         loop_final_success: Current success status
 
@@ -858,20 +840,15 @@ def _handle_page_fetch_and_validation(
 
     if not db_session_for_page:
         state["total_errors"] += MATCHES_PER_PAGE
-        progress_bar.update(MATCHES_PER_PAGE)
         if state["db_connection_errors"] >= DB_ERROR_PAGE_THRESHOLD:
             logger.critical(
                 f"Aborting run due to {state['db_connection_errors']} consecutive DB connection failures."
             )
-            remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-            if remaining_matches_estimate > 0:
-                progress_bar.update(remaining_matches_estimate)
-                state["total_errors"] += remaining_matches_estimate
             return None, True, False  # Continue to next page, but mark as failed
         return None, True, loop_final_success  # Continue to next page
 
     matches = _fetch_page_matches(
-        session_manager, db_session_for_page, current_page_num, progress_bar, state
+        session_manager, db_session_for_page, current_page_num, state
     )
 
     if not matches:  # If fetch failed or returned empty
@@ -883,18 +860,16 @@ def _handle_page_fetch_and_validation(
 
 def _update_state_and_progress(
     state: dict[str, Any],
-    progress_bar,
     page_new: int,
     page_updated: int,
     page_skipped: int,
     page_errors: int
 ) -> None:
     """
-    Update state counters and progress bar after processing a page.
+    Update state counters after processing a page.
 
     Args:
         state: State dictionary for tracking
-        progress_bar: Progress bar instance
         page_new: Number of new matches on page
         page_updated: Number of updated matches on page
         page_skipped: Number of skipped matches on page
@@ -906,20 +881,15 @@ def _update_state_and_progress(
     state["total_errors"] += page_errors
     state["total_pages_processed"] += 1
 
-    progress_bar.set_postfix(
-        New=state["total_new"],
-        Upd=state["total_updated"],
-        Skip=state["total_skipped"],
-        Err=state["total_errors"],
-        refresh=True,
-    )
+    # Log progress summary
+    logger.debug(f"Page totals: {page_new} new, {page_updated} updated, {page_skipped} skipped, {page_errors} errors")
+
 
 
 def _try_fast_skip_page(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
     current_page_num: int,
-    progress_bar,
     state: dict[str, Any]
 ) -> bool:
     """
@@ -927,10 +897,9 @@ def _try_fast_skip_page(
 
     Args:
         session_manager: SessionManager instance
-        matches_on_page: list of matches on current page
-        current_page_num: Current page number
-        progress_bar: Progress bar instance
-        state: State dictionary for tracking
+    matches_on_page: list of matches on current page
+    current_page_num: Current page number
+    state: State dictionary for tracking
 
     Returns:
         bool: True if page was fast-skipped, False otherwise
@@ -955,8 +924,9 @@ def _try_fast_skip_page(
 
         # If all matches on the page can be skipped, do fast processing
         if len(fetch_candidates_uuid) == 0:
-            logger.info(f"🚀 Page {current_page_num}: All {len(matches_on_page)} matches unchanged - fast skip")
-            progress_bar.update(len(matches_on_page))
+            logger.info(
+                f"Page {current_page_num}: All {len(matches_on_page)} matches unchanged - fast skip"
+            )
             state["total_skipped"] += page_skip_count
             state["total_pages_processed"] += 1
             return True
@@ -969,7 +939,6 @@ def _fetch_page_matches(
     session_manager: SessionManager,
     db_session: SqlAlchemySession,
     current_page_num: int,
-    progress_bar,
     state: dict[str, Any]
 ) -> Optional[list[dict[str, Any]]]:
     """
@@ -978,9 +947,8 @@ def _fetch_page_matches(
     Args:
         session_manager: SessionManager instance
         db_session: Database session
-        current_page_num: Current page number being processed
-        progress_bar: Progress bar instance for error tracking
-        state: State dictionary for error accumulation
+    current_page_num: Current page number being processed
+    state: State dictionary for error accumulation
 
     Returns:
         list of matches or None if fetch failed
@@ -995,7 +963,7 @@ def _fetch_page_matches(
             logger.warning(
                 f"get_matches returned None for page {current_page_num}. Skipping."
             )
-            progress_bar.update(MATCHES_PER_PAGE)
+
             state["total_errors"] += MATCHES_PER_PAGE
             return []
         matches_on_page, _ = result  # We don't need total_pages again
@@ -1005,7 +973,7 @@ def _fetch_page_matches(
             f"ConnectionError get_matches page {current_page_num}: {conn_e}",
             exc_info=False,
         )
-        progress_bar.update(MATCHES_PER_PAGE)
+
         state["total_errors"] += MATCHES_PER_PAGE
         return []
     except Exception as get_match_e:
@@ -1013,7 +981,7 @@ def _fetch_page_matches(
             f"Error get_matches page {current_page_num}: {get_match_e}",
             exc_info=True,
         )
-        progress_bar.update(MATCHES_PER_PAGE)
+
         state["total_errors"] += MATCHES_PER_PAGE
         return []
     finally:
@@ -1058,16 +1026,12 @@ def _get_database_session_with_retry(
     return None
 
 
-def _handle_session_death(current_page_num: int, progress_bar, state: dict[str, Any]) -> None:
-    """Handle session death by updating progress and state."""
+def _handle_session_death(current_page_num: int, state: dict[str, Any]) -> None:
+    """Handle session death by updating state."""
     logger.critical(
         f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
         f"Immediately halting processing to prevent cascade failures."
     )
-    remaining_matches_estimate = max(0, progress_bar.total - progress_bar.n)
-    if remaining_matches_estimate > 0:
-        progress_bar.update(remaining_matches_estimate)
-        state["total_errors"] += remaining_matches_estimate
 
 
 def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
@@ -1106,7 +1070,6 @@ def _check_database_pool_health(session_manager: SessionManager, current_page_nu
 def _check_and_handle_session_health(
     session_manager: SessionManager,
     current_page_num: int,
-    progress_bar,
     state: dict[str, Any]
 ) -> bool:
     """
@@ -1115,7 +1078,6 @@ def _check_and_handle_session_health(
     Args:
         session_manager: SessionManager instance
         current_page_num: Current page number being processed
-        progress_bar: Progress bar instance for error tracking
         state: State dictionary for error accumulation
 
     Returns:
@@ -1123,7 +1085,7 @@ def _check_and_handle_session_health(
     """
     # Check session health
     if not session_manager.check_session_health():
-        _handle_session_death(current_page_num, progress_bar, state)
+        _handle_session_death(current_page_num, state)
         return False
 
     # Proactive session refresh to prevent 900-second timeout
@@ -1153,7 +1115,7 @@ def _main_page_processing_loop(
     logger.info(f"🔧 Dynamic API failure threshold: {dynamic_threshold} (was {original_threshold}) for {total_pages_in_run} pages")
 
     current_page_num = start_page
-    # Estimate total matches for the progress bar based on pages *this run*
+    # Estimate total matches for logging based on pages processed in this run
     total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
     if (
         start_page == 1 and initial_matches_on_page is not None
@@ -1162,53 +1124,27 @@ def _main_page_processing_loop(
             total_matches_estimate_this_run, len(initial_matches_on_page)
         )
 
-    # Ensure we always have a valid total for the progress bar
+    # Ensure we always have a valid total for the estimate
     if total_matches_estimate_this_run <= 0:
         total_matches_estimate_this_run = MATCHES_PER_PAGE  # Default to one page worth
 
-    logger.debug(f"Progress bar total set to: {total_matches_estimate_this_run} matches")
+    logger.info(f"📊 Estimated matches to process: {total_matches_estimate_this_run}")
 
     loop_final_success = True  # Success flag for this loop's execution
 
-    # PHASE 1 OPTIMIZATION: Enhanced progress tracking with ETA and memory monitoring
-    with create_progress_indicator(
-        description="DNA Match Gathering",
-        total=total_matches_estimate_this_run,
-        unit="matches",
-        show_memory=True,
-        show_rate=True
-    ):
+    matches_on_page_for_batch: Optional[list[dict[str, Any]]] = (
+        initial_matches_on_page
+    )
 
-        # Keep original tqdm for compatibility
-        with logging_redirect_tqdm():
-            progress_bar = tqdm(
-                total=total_matches_estimate_this_run,
-                desc="",
-                unit=" match",
-                bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}\n",
-                file=sys.stderr,
-                leave=True,
-                dynamic_ncols=True,
-                ascii=False,
-                mininterval=0.1,
-                maxinterval=1.0,
-            )
-        try:
-            matches_on_page_for_batch: Optional[list[dict[str, Any]]] = (
-                initial_matches_on_page
-            )
+    while current_page_num <= last_page_to_process:
+        current_page_num, loop_final_success = _process_single_page(
+            session_manager, current_page_num, start_page, matches_on_page_for_batch,
+            state, loop_final_success
+        )
+        matches_on_page_for_batch = None  # Clear for next iteration
 
-            while current_page_num <= last_page_to_process:
-                current_page_num, loop_final_success = _process_single_page(
-                    session_manager, current_page_num, start_page, matches_on_page_for_batch,
-                    progress_bar, state, loop_final_success
-                )
-                matches_on_page_for_batch = None  # Clear for next iteration
-
-                if not loop_final_success:
-                    break  # Exit while loop on fatal error
-        finally:
-            _cleanup_progress_bar(progress_bar, state, loop_final_success)
+        if not loop_final_success:
+            break  # Exit while loop on fatal error
 
     return loop_final_success
 
@@ -1667,6 +1603,11 @@ def _classify_match_priorities(
     high_priority_uuids = set()
     medium_priority_uuids = set()
 
+    suppressed_high_logs = 0
+    suppressed_medium_logs = 0
+    low_debug_emitted = 0
+    suppressed_low_logs = 0
+
     for match_data in matches_to_process_later:
         uuid_val = match_data.get("uuid")
         if uuid_val and uuid_val in fetch_candidates_uuid:
@@ -1677,20 +1618,38 @@ def _classify_match_priorities(
             # Enhanced priority classification
             if is_starred or cm_value > 50:  # Very high priority
                 high_priority_uuids.add(uuid_val)
-                logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
+                if len(high_priority_uuids) <= 5:
+                    logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
+                else:
+                    suppressed_high_logs += 1
             elif cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
                 # Medium priority: above threshold OR low DNA but has tree
                 medium_priority_uuids.add(uuid_val)
-                logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
+                if len(medium_priority_uuids) <= 5:
+                    logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
+                else:
+                    suppressed_medium_logs += 1
+            elif low_debug_emitted < 5:
+                logger.debug(
+                    f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
+                    f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)"
+                )
+                low_debug_emitted += 1
             else:
-                logger.debug(f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
-                            f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)")
+                suppressed_low_logs += 1
 
     # Combined high and medium for API calls
     priority_uuids = high_priority_uuids.union(medium_priority_uuids)
     logger.info(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
                f"{len(medium_priority_uuids)} medium priority, "
                f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
+
+    if suppressed_high_logs:
+        logger.debug(f"Suppressed debug output for {suppressed_high_logs} additional high priority matches")
+    if suppressed_medium_logs:
+        logger.debug(f"Suppressed debug output for {suppressed_medium_logs} additional medium priority matches")
+    if suppressed_low_logs:
+        logger.debug(f"Suppressed debug output for {suppressed_low_logs} additional low priority matches")
 
     return high_priority_uuids, medium_priority_uuids, priority_uuids
 
@@ -1796,7 +1755,7 @@ def _perform_api_prefetches(
 
     for uuid_val in fetch_candidates_uuid:
         processed_count += 1
-        
+
         # Check session health every 10 items
         if processed_count % 10 == 0:
             if not session_manager.check_session_health():
@@ -1804,7 +1763,7 @@ def _perform_api_prefetches(
                 raise MaxApiFailuresExceededError(
                     f"Session death detected during sequential processing at item {processed_count}"
                 )
-        
+
         # Fetch combined details (CRITICAL - required for all matches)
         try:
             combined_result = _fetch_combined_details(session_manager, uuid_val)
@@ -1812,7 +1771,7 @@ def _perform_api_prefetches(
             if combined_result is None:
                 logger.warning(f"Combined details for {uuid_val[:8]} returned None.")
                 critical_combined_details_failures += 1
-                
+
                 # Check critical failure threshold
                 if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
                     logger.critical(
@@ -1826,12 +1785,12 @@ def _perform_api_prefetches(
             logger.error(f"Exception fetching combined details for {uuid_val[:8]}: {exc}", exc_info=True)
             batch_combined_details[uuid_val] = None
             critical_combined_details_failures += 1
-            
+
             if critical_combined_details_failures >= CRITICAL_API_FAILURE_THRESHOLD:
                 raise MaxApiFailuresExceededError(
                     f"Critical API failure threshold reached ({critical_combined_details_failures} failures)."
                 )
-        
+
         # Fetch relationship probability (optional, for priority matches only)
         if uuid_val in priority_uuids:
             try:
@@ -1841,7 +1800,7 @@ def _perform_api_prefetches(
             except Exception as exc:
                 logger.error(f"Exception fetching relationship prob for {uuid_val[:8]}: {exc}", exc_info=False)
                 batch_relationship_prob_data[uuid_val] = None
-        
+
         # Fetch badge details (optional, for tree members only)
         if uuid_val in uuids_for_tree_badge_ladder:
             try:
@@ -1850,7 +1809,7 @@ def _perform_api_prefetches(
             except Exception as exc:
                 logger.error(f"Exception fetching badge details for {uuid_val[:8]}: {exc}", exc_info=False)
                 temp_badge_results[uuid_val] = None
-        
+
         # Fetch ethnicity data (optional)
         try:
             ethnicity_result = _fetch_ethnicity_for_batch(session_manager, uuid_val)
@@ -1858,7 +1817,7 @@ def _perform_api_prefetches(
         except Exception as exc:
             logger.error(f"Exception fetching ethnicity for {uuid_val[:8]}: {exc}", exc_info=False)
             batch_ethnicity_data[uuid_val] = None
-        
+
         # Log progress every 10 items
         if processed_count % 10 == 0:
             logger.info(f"📊 Progress: {processed_count}/{num_candidates} matches processed")
@@ -1866,24 +1825,24 @@ def _perform_api_prefetches(
     # SEQUENTIAL PROCESSING: Fetch ladder details for tree members
     if my_tree_id and temp_badge_results:
         logger.debug(f"Fetching ladder details for {len(temp_badge_results)} tree members...")
-        
+
         # Build CFPID mapping
         cfpid_to_uuid_map: dict[str, str] = {}
         cfpid_list: list[str] = []
-        
+
         for uuid_val, badge_result in temp_badge_results.items():
             if badge_result:
                 cfpid = badge_result.get("their_cfpid")
                 if cfpid:
                     cfpid_list.append(cfpid)
                     cfpid_to_uuid_map[cfpid] = uuid_val
-        
+
         # Fetch ladder details sequentially
         for cfpid in cfpid_list:
             uuid_val = cfpid_to_uuid_map.get(cfpid)
             if not uuid_val:
                 continue
-            
+
             try:
                 ladder_result = _fetch_batch_ladder(session_manager, cfpid, my_tree_id)
                 if ladder_result:
@@ -2060,8 +2019,7 @@ def _prepare_bulk_db_data(
     session_manager: SessionManager,
     matches_to_process: list[dict[str, Any]],
     existing_persons_map: dict[str, Person],
-    prefetched_data: dict[str, dict[str, Any]],
-    progress_bar: Optional[tqdm],
+    prefetched_data: dict[str, dict[str, Any]]
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """
     Processes individual matches using prefetched API data, compares with existing
@@ -2072,9 +2030,8 @@ def _prepare_bulk_db_data(
         session: The active SQLAlchemy database session.
         session_manager: The active SessionManager instance.
         matches_to_process: list of match data dictionaries identified as candidates.
-        existing_persons_map: Dictionary mapping UUIDs to existing Person objects.
-        prefetched_data: Dictionary containing results from `_perform_api_prefetches`.
-        progress_bar: Optional tqdm progress bar instance to update.
+    existing_persons_map: Dictionary mapping UUIDs to existing Person objects.
+    prefetched_data: Dictionary containing results from `_perform_api_prefetches`.
 
     Returns:
         A tuple containing:
@@ -2117,13 +2074,6 @@ def _prepare_bulk_db_data(
                 exc_info=True,
             )
             page_statuses["error"] += 1
-        finally:
-            # Update progress bar
-            if progress_bar:
-                try:
-                    progress_bar.update(1)
-                except Exception as pbar_e:
-                    logger.warning(f"Progress bar update error: {pbar_e}")
 
     # Log summary and return results
     process_duration = time.time() - process_start_time
@@ -2134,90 +2084,11 @@ def _prepare_bulk_db_data(
 # End of _prepare_bulk_db_data
 
 # ===================================================================
-# PHASE 2: ASYNC/AWAIT API FUNCTIONS FOR IMPROVED PERFORMANCE
+# PHASE 2: API PREFETCH ORCHESTRATION (SEQUENTIAL ONLY)
 # ===================================================================
-# Removed unused async functions: _fetch_match_list_async, _fetch_match_details_async, _async_batch_api_prefetch
-
-
-# FINAL OPTIMIZATION 3: Advanced Async Integration - Enhanced Async Orchestrator
-async def _async_enhanced_api_orchestrator(
-    session_manager: SessionManager,
-    fetch_candidates_uuid: set[str],
-    matches_to_process_later: list[dict[str, Any]]
-) -> dict[str, dict[str, Any]]:
-    """
-    Advanced async orchestration that replaces ThreadPoolExecutor patterns
-    with native async/await for better resource utilization and scalability.
-
-    NOTE: Currently incomplete - only fetches combined details.
-    Using sync method for all batch sizes until async implementation is complete.
-    """
-    import asyncio
-
-    # Convert to lists for async processing
-    uuid_list = list(fetch_candidates_uuid)
-
-    # TEMPORARY FIX: Disable incomplete async orchestrator
-    # The async version only fetches combined details but NOT badge/ladder/rel_prob data
-    # This causes missing birth_year and family_tree records for batches with 10+ matches
-    # TODO: Complete async implementation for badge/ladder/rel_prob fetching
-    if len(uuid_list) < 1000:  # Changed from 10 to 1000 to always use complete sync method
-        logger.debug(f"Batch size {len(uuid_list)} - using proven sync method (async incomplete)")
-        return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
-
-    logger.info(f"Large batch ({len(uuid_list)} items) - using advanced async orchestration")
-
-    # Initialize result containers
-    batch_combined_details = {}
-    batch_tree_data = {}
-    batch_relationship_prob_data = {}
-
-    # PHASE 1: Async combined details fetching
-    async def fetch_combined_details_batch():
-        tasks = []
-        semaphore = asyncio.Semaphore(8)  # Control concurrency
-
-        async def fetch_single_combined(uuid_val):
-            async with semaphore:
-                try:
-                    # Convert sync call to async using thread executor
-                    loop = asyncio.get_event_loop()
-                    result = await loop.run_in_executor(
-                        None,
-                        lambda: _fetch_combined_details(session_manager, uuid_val)
-                    )
-                    return uuid_val, result
-                except Exception as e:
-                    logger.warning(f"Async combined details failed for {uuid_val[:8]}: {e}")
-                    return uuid_val, None
-
-        for uuid_val in uuid_list:
-            tasks.append(fetch_single_combined(uuid_val))
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for result in results:
-            if isinstance(result, Exception):
-                logger.warning(f"Async combined details exception: {result}")
-            elif isinstance(result, tuple) and len(result) == 2:
-                uuid_val, data = result
-                batch_combined_details[uuid_val] = data
-
-    # Execute async phases
-    try:
-        await fetch_combined_details_batch()
-        logger.debug(f"Async orchestrator completed: {len(batch_combined_details)} combined details fetched")
-    except Exception as e:
-        logger.error(f"Async orchestrator failed: {e}")
-        # Fallback to sync method
-        return _perform_api_prefetches(session_manager, fetch_candidates_uuid, matches_to_process_later)
-
-    # Return data in expected format
-    return {
-        "combined": batch_combined_details,
-        "tree": batch_tree_data,
-        "rel_prob": batch_relationship_prob_data,
-    }
+# ThreadPoolExecutor-based and async orchestrators removed to enforce
+# strictly sequential API access (critical for eliminating 429 errors).
+# Prefetching now funnels through _perform_api_prefetches exclusively.
 
 
 # ===================================================================
@@ -3450,7 +3321,6 @@ def _do_batch(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
     current_page: int,
-    progress_bar: Optional[tqdm] = None,  # Accept progress bar
 ) -> tuple[int, int, int, int]:
     """
     Processes matches from a single page, respecting BATCH_SIZE for chunked processing.
@@ -3483,7 +3353,7 @@ def _do_batch(
 
     # If we have fewer matches than optimized batch size, process normally (no need to split)
     if num_matches_on_page <= optimized_batch_size:
-        return _process_page_matches(session_manager, matches_on_page, current_page, progress_bar)
+        return _process_page_matches(session_manager, matches_on_page, current_page)
 
     # SURGICAL FIX #7: Create single session for all batches on this page
     page_session = session_manager.get_db_conn()
@@ -3504,7 +3374,7 @@ def _do_batch(
 
             # Process this batch using the original logic with reused session
             new, updated, skipped, errors = _process_page_matches(
-                session_manager, batch_matches, current_page, progress_bar, is_batch=True, reused_session=page_session
+                session_manager, batch_matches, current_page, is_batch=True, reused_session=page_session
             )
 
             # Accumulate totals
@@ -3586,7 +3456,6 @@ def _process_batch_lookups(
     batch_session: SqlAlchemySession,
     matches_on_page: list[dict[str, Any]],
     current_page: int,
-    progress_bar: Optional[tqdm],
     page_statuses: dict[str, int]
 ) -> tuple[dict[str, Person], set[str], list[dict[str, Any]], int]:
     """Process batch lookups and identify candidates."""
@@ -3602,57 +3471,20 @@ def _process_batch_lookups(
     )
     page_statuses["skipped"] = skipped_count
 
-    if progress_bar and skipped_count > 0:
-        try:
-            progress_bar.update(skipped_count)
-        except Exception as pbar_e:
-            logger.warning(f"Progress bar update error for skipped items: {pbar_e}")
-
     return existing_persons_map, fetch_candidates_uuid, matches_to_process_later, skipped_count
-
-
-def _update_progress_bar_for_error(
-    progress_bar: Optional[tqdm],
-    page_statuses: dict[str, int],
-    num_matches_on_page: int
-) -> None:
-    """Update progress bar for remaining items due to error."""
-    if not progress_bar:
-        return
-
-    items_already_accounted_for_in_bar = (
-        page_statuses["skipped"]
-        + page_statuses["new"]
-        + page_statuses["updated"]
-        + page_statuses["error"]
-    )
-    remaining_in_batch = max(0, num_matches_on_page - items_already_accounted_for_in_bar)
-    if remaining_in_batch > 0:
-        try:
-            logger.debug(
-                f"Updating progress bar by {remaining_in_batch} due to critical error in _do_batch."
-            )
-            progress_bar.update(remaining_in_batch)
-        except Exception as pbar_e:
-            logger.warning(
-                f"Progress bar update error during critical exception handling: {pbar_e}"
-            )
 
 
 def _handle_critical_batch_error(
     critical_err: Exception,
     current_page: int,
     page_statuses: dict[str, int],
-    num_matches_on_page: int,
-    progress_bar: Optional[tqdm]
+    num_matches_on_page: int
 ) -> tuple[int, int, int, int]:
     """Handle critical batch processing errors."""
     logger.critical(
         f"CRITICAL ERROR processing batch page {current_page}: {critical_err}",
         exc_info=True,
     )
-
-    _update_progress_bar_for_error(progress_bar, page_statuses, num_matches_on_page)
 
     final_error_count_for_page = page_statuses["error"] + max(
         0,
@@ -3677,27 +3509,13 @@ def _handle_unhandled_batch_error(
     outer_batch_exc: Exception,
     current_page: int,
     page_statuses: dict[str, int],
-    num_matches_on_page: int,
-    progress_bar: Optional[tqdm]
+    num_matches_on_page: int
 ) -> tuple[int, int, int, int]:
     """Handle unhandled batch processing exceptions."""
     logger.critical(
         f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}",
         exc_info=True,
     )
-
-    if progress_bar:
-        items_already_accounted_for_in_bar = (
-            page_statuses["skipped"]
-            + page_statuses["new"]
-            + page_statuses["updated"]
-            + page_statuses["error"]
-        )
-        remaining_in_batch = max(0, num_matches_on_page - items_already_accounted_for_in_bar)
-        if remaining_in_batch > 0:
-            from contextlib import suppress
-            with suppress(Exception):
-                progress_bar.update(remaining_in_batch)
 
     final_error_count_for_page = num_matches_on_page - (
         page_statuses["new"] + page_statuses["updated"] + page_statuses["skipped"]
@@ -3757,7 +3575,6 @@ def _prepare_and_commit_batch_data(
     matches_to_process_later: list[dict[str, Any]],
     existing_persons_map: dict[str, Person],
     prefetched_data: dict[str, Any],
-    progress_bar: Optional[tqdm],
     current_page: int,
     page_statuses: dict[str, int]
 ) -> None:
@@ -3769,7 +3586,6 @@ def _prepare_and_commit_batch_data(
         matches_to_process_later,
         existing_persons_map,
         prefetched_data,
-        progress_bar,
     )
     page_statuses["new"] = prep_statuses.get("new", 0)
     page_statuses["updated"] = prep_statuses.get("updated", 0)
@@ -3796,24 +3612,14 @@ def _perform_batch_api_prefetches(
         logger.debug(f"Batch {current_page}: All matches skipped (no API processing needed) - fast path")
         return {}
 
-    logger.debug(f"Batch {current_page}: Performing API Prefetches...")
-
-    if len(fetch_candidates_uuid) >= 15:
-        try:
-            import asyncio
-            logger.debug(f"Batch {current_page}: Using enhanced async orchestrator for {len(fetch_candidates_uuid)} candidates")
-
-            prefetched_data = asyncio.run(_async_enhanced_api_orchestrator(
-                session_manager, fetch_candidates_uuid, matches_to_process_later
-            ))
-
-            logger.debug(f"Batch {current_page}: Async orchestrator completed successfully")
-            return prefetched_data
-        except Exception as async_error:
-            logger.warning(f"Batch {current_page}: Async orchestrator failed: {async_error}, falling back to sync")
+    logger.debug(
+        f"Batch {current_page}: Performing sequential API prefetches for {len(fetch_candidates_uuid)} candidates"
+    )
 
     return _perform_api_prefetches(
-        session_manager, fetch_candidates_uuid, matches_to_process_later
+        session_manager,
+        fetch_candidates_uuid,
+        matches_to_process_later,
     )
 
 
@@ -3907,7 +3713,6 @@ def _process_page_matches(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
     current_page: int,
-    progress_bar: Optional[tqdm] = None,
     is_batch: bool = False,
     reused_session: Optional[SqlAlchemySession] = None,
 ) -> tuple[int, int, int, int]:
@@ -3936,7 +3741,7 @@ def _process_page_matches(
             # Phase 1: Database Lookups
             phase_start = time.time()
             existing_persons_map, fetch_candidates_uuid, matches_to_process_later, _ = (
-                _process_batch_lookups(batch_session, matches_on_page, current_page, progress_bar, page_statuses)
+                _process_batch_lookups(batch_session, matches_on_page, current_page, page_statuses)
             )
             timing_log["db_lookups"] = time.time() - phase_start
             logger.debug(f"⏱️  Page {current_page} - DB lookups: {timing_log['db_lookups']:.2f}s")
@@ -3953,7 +3758,7 @@ def _process_page_matches(
             phase_start = time.time()
             _prepare_and_commit_batch_data(
                 batch_session, session_manager, matches_to_process_later,
-                existing_persons_map, prefetched_data, progress_bar,
+                existing_persons_map, prefetched_data,
                 current_page, page_statuses
             )
             timing_log["data_prep_commit"] = time.time() - phase_start
@@ -3962,7 +3767,7 @@ def _process_page_matches(
             _cleanup_batch_session(session_manager, batch_session, reused_session, current_page)
 
         _log_batch_summary_if_needed(is_batch, current_page, page_statuses)
-        
+
         # Log timing breakdown summary for slow pages
         total_time = sum(timing_log.values())
         if total_time > 30.0:
@@ -3975,7 +3780,7 @@ def _process_page_matches(
                 f"    - Data Prep & Commit: {timing_log.get('data_prep_commit', 0):.2f}s "
                 f"({timing_log.get('data_prep_commit', 0) / total_time * 100:.1f}%)"
             )
-        
+
         return (
             page_statuses["new"],
             page_statuses["updated"],
@@ -3987,11 +3792,11 @@ def _process_page_matches(
         raise
     except (ValueError, SQLAlchemyError, ConnectionError) as critical_err:
         return _handle_critical_batch_error(
-            critical_err, current_page, page_statuses, num_matches_on_page, progress_bar
+            critical_err, current_page, page_statuses, num_matches_on_page
         )
     except Exception as outer_batch_exc:
         return _handle_unhandled_batch_error(
-            outer_batch_exc, current_page, page_statuses, num_matches_on_page, progress_bar
+            outer_batch_exc, current_page, page_statuses, num_matches_on_page
         )
 
     finally:
@@ -7540,7 +7345,7 @@ def _test_bulk_insert_source_code_pattern() -> bool:
 def _test_thread_pool_configuration() -> bool:
     """Test 4: Verify sequential processing configuration (THREAD_POOL_WORKERS removed)."""
     # NOTE: Sequential processing is now the only mode - parallel code has been removed
-    print(f"   ✅ Sequential processing configured (parallel code removed)")
+    print("   ✅ Sequential processing configured (parallel code removed)")
     return True
 
 
@@ -7597,7 +7402,7 @@ def _test_regression_prevention_configuration_respect():
             results.append(False)
 
         # Test that sequential processing is configured (parallel code removed)
-        print(f"   ✅ Sequential processing mode (parallel code removed)")
+        print("   ✅ Sequential processing mode (parallel code removed)")
         results.append(True)
 
     except Exception as e:

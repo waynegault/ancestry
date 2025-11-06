@@ -154,6 +154,7 @@ class ConfigManager:
         # Create and validate configuration schema
         try:
             config = ConfigSchema.from_dict(config_data)
+            self._enforce_api_safety_constraints(config)
 
             # Validate configuration
             validation_errors = config.validate()
@@ -175,6 +176,41 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
             raise ValidationError(f"Configuration loading failed: {e}") from e
+
+    def _enforce_api_safety_constraints(self, config: ConfigSchema) -> None:
+        """Clamp API settings to safe sequential defaults to prevent rate-limit breaches."""
+
+        api = getattr(config, "api", None)
+        if not api:
+            return
+
+        # Enforce sequential processing
+        if getattr(api, "max_concurrency", 1) != 1:
+            logger.warning(
+                "max_concurrency=%s overridden to sequential-safe value of 1",
+                getattr(api, "max_concurrency", "unknown"),
+            )
+            api.max_concurrency = 1
+
+        safe_rps = 0.3
+        current_rps = getattr(api, "requests_per_second", safe_rps)
+        if current_rps > safe_rps:
+            logger.warning(
+                "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
+                current_rps,
+                safe_rps,
+            )
+            api.requests_per_second = safe_rps
+
+        # Ensure token bucket fill rate never exceeds enforced RPS
+        token_fill_rate = getattr(api, "token_bucket_fill_rate", current_rps)
+        if token_fill_rate > api.requests_per_second:
+            logger.info(
+                "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
+                token_fill_rate,
+                api.requests_per_second,
+            )
+            api.token_bucket_fill_rate = api.requests_per_second
 
     def get_config(self, reload_if_changed: bool = True) -> ConfigSchema:
         """

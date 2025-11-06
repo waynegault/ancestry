@@ -1366,25 +1366,32 @@ def integrate_with_session_manager(session_manager: Any) -> Any:
 
 
 def integrate_with_action6(action6_module: Any) -> Any:
-    """Integrate health monitoring with Action 6."""
-    _ = action6_module  # Unused parameter for future integration
-    return get_health_monitor()
+    """Integrate health monitoring with Action 6.
 
-    # TODO: Hook into API response time tracking (for future use)
-    # def track_api_call(original_func):
-    #     def wrapper(*args, **kwargs):
-    #         start_time = time.time()
-    #         try:
-    #             result = original_func(*args, **kwargs)
-    #             response_time = time.time() - start_time
-    #             monitor.record_api_response_time(response_time)
-    #             return result
-    #         except Exception as e:
-    #             monitor.record_error(type(e).__name__)
-    #             raise
-    #     return wrapper
+    Action 6 exposes a lightweight callback registration hook that is invoked
+    whenever API performance is logged. We attach a listener that updates the
+    health monitor with per-endpoint metrics while relying on the module's
+    native logging to handle baseline response-time tracking.
+    """
 
-    # Return monitor with tracking capability
+    monitor = get_health_monitor()
+
+    if hasattr(action6_module, "register_api_metrics_callback"):
+        already_registered = getattr(monitor, "_action6_callback_registered", False)
+        if not already_registered:
+
+            def _record_api_metrics(api_name: str, duration: float, status: str) -> None:
+                metric_key = f"api_{api_name}_last_duration"
+                monitor.update_metric(metric_key, duration)
+
+            try:
+                action6_module.register_api_metrics_callback(_record_api_metrics)
+                monitor._action6_callback_registered = True  # type: ignore[attr-defined]
+                logger.debug("Registered Action 6 API performance callback with health monitor")
+            except Exception as integration_error:
+                logger.debug(f"Failed to register Action 6 health callback: {integration_error}")
+
+    return monitor
 
 
 def get_performance_recommendations(health_score: float, risk_score: float) -> dict[str, Any]:
